@@ -1,0 +1,21 @@
+[package]
+name = "bingle_test"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "bingle_test"
+path = "src/lib.rs"
+# rlib is sufficient; cdylib can be added later if needed for FFI packaging
+
+[dependencies]
+base64 = "0.21"
+data-encoding = "2"
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Depend on the main crate for real backend access to AlgoOps
+rust_comms = { path = ".." }

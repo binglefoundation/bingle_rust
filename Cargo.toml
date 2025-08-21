@@ -5,7 +5,7 @@ edition = "2024"
 
 [lib]
 name = "rust_comms"
-path = "src/lib_mod.rs"
+path = "src/lib.rs"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
@@ -29,3 +29,12 @@ sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = "0.6"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+
+[workspace]
+members = [
+    ".",
+    "bingle_test",
+]
+
+[dev-dependencies]
+bingle_test = { path = "bingle_test" }
