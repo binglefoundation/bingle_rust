@@ -21,26 +21,27 @@ Prerequisites
   bash scripts/build_ios_xcframework.sh
 
 What this does:
-- Builds release Rust static libraries for iOS device and simulators.
-- Packages them into ios/RustCommsFFI.xcframework.
-- Creates a Swift Package scaffold at ios/ with a test target RustCommsFFITests (if not already present).
+- Builds release Rust static libraries for iOS device and simulators for BOTH crates: rust_comms and bingle_test.
+- Packages them into ios/RustCommsFFI.xcframework and ios/BingleTestFFI.xcframework.
+- Creates/updates a Swift Package manifest at ios/ that exposes two binary targets: RustCommsFFI and BingleTestFFI.
+- You must link both in your Xcode target if you call the exported C test functions (rust_comms_run_*), which now live in BingleTestFFI.
 
 2) List Available Schemes and Simulators
-- Schemes: The Swift Package exposes an auto-generated scheme. List schemes with:
-  xcodebuild -list -json -package-path ios | sed 's/\\n/\n/g'
-  Tip: Look for a scheme named similar to RustCommsFFI-Package (exact name may vary by Xcode version).
+- Schemes: The Swift Package exposes auto-generated schemes. From the ios directory, list schemes with:
+  xcodebuild -list -json | sed 's/\\n/\n/g'
+  Tip: Prefer the scheme named "RustCommsFFITests" for running tests. If that scheme is not present, use whatever test scheme your Xcode generates (names vary by version), or open Package.swift in Xcode once to generate schemes.
 
 - Simulators: List simulators and their availability:
   xcrun simctl list devices
   Example to boot a simulator (if not already running):
-  xcrun simctl boot "iPhone 15"
+  xcrun simctl boot "iPhone 16"
   Optionally open the Simulator app:
   open -a Simulator
 
 3) Run All Tests on an iOS Simulator
 - From cd ios, run:
   xcodebuild \
-    -scheme "RustCommsFFI" \
+    -scheme "RustCommsFFI-Package" \
     -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
     -resultBundlePath ./TestResults.xcresult \
     test
@@ -53,15 +54,15 @@ Notes:
 4) Run a Single Test Class or Test Method
 - To run a single test class:
   xcodebuild \
-    -scheme "RustCommsFFI-Package" \
+    -scheme "RustCommsFFITests" \
     -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
     -only-testing:RustCommsFFITests/RustCommsFFITests \
     test
 
 - To run a single test method (example uses the sample test in this repo):
   xcodebuild \
-    -scheme "RustCommsFFI-Package" \
-    -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+    -scheme "RustCommsFFITests" \
+    -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
     -only-testing:RustCommsFFITests/RustCommsFFITests/testAddU64 \
     test
 
@@ -81,37 +82,38 @@ Notes:
 
 7) Cleaning and Troubleshooting
 - Clean DerivedData for a fresh build:
-  xcodebuild -scheme "RustCommsFFI-Package" -package-path ios clean
+  xcodebuild -scheme "RustCommsFFITests" clean
   rm -rf ~/Library/Developer/Xcode/DerivedData
 
 - Resolve/refresh packages:
-  xcodebuild -resolvePackageDependencies -package-path ios
+  xcodebuild -resolvePackageDependencies
 
 - “Unable to find a destination matching …”
   - Ensure the requested Simulator exists (xcrun simctl list devices).
   - If OS=latest fails, try specifying an exact version installed on your machine.
   - Install additional iOS runtimes in Xcode → Settings → Platforms.
 
-- “No such scheme: RustCommsFFI-Package”
-  - Re-run listing (step 2) to confirm the exact scheme name.
-  - Open ios/Package.swift in Xcode once to let Xcode generate schemes, then try again.
+- “Scheme RustCommsFFI-Package is not currently configured for the test action”
+  - Use the scheme "RustCommsFFITests" instead to run tests.
+  - If not visible, open ios/Package.swift in Xcode to generate schemes.
+  - Re-run listing (step 2) and use whichever test scheme is available in your environment.
 
 - Select the intended Xcode toolchain (if multiple Xcodes installed):
   sudo xcode-select -s /Applications/Xcode.app
 
 - Architecture/Simulator issues on Apple Silicon:
   - Ensure aarch64-apple-ios-sim target is installed (the build script does this).
-  - Prefer an arm64 simulator (e.g., iPhone 15) on Apple Silicon.
+  - Prefer an arm64 simulator (e.g., iPhone 16) on Apple Silicon.
 
 Appendix: Quick Commands Recap
 - Build XCFramework + Swift Package:
   bash scripts/build_ios_xcframework.sh
-- List schemes for the package:
-  xcodebuild -list -json -package-path ios | sed 's/\\n/\n/g'
-- Run all tests (adjust scheme and destination as needed):
-  xcodebuild -scheme "RustCommsFFI-Package" -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' -package-path ios test
-- Run a single test method:
-  xcodebuild -scheme "RustCommsFFI-Package" -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' -package-path ios -only-testing:RustCommsFFITests/RustCommsFFITests/testAddU64 test
+- List schemes for the package (run from ios directory):
+  xcodebuild -list -json | sed 's/\\n/\n/g'
+- Run all tests (adjust scheme and destination as needed, run from ios directory):
+  xcodebuild -scheme "RustCommsFFITests" -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' test
+- Run a single test method (run from ios directory):
+  xcodebuild -scheme "RustCommsFFITests" -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' -only-testing:RustCommsFFITests/RustCommsFFITests/testAddU64 test
 
 
 E0463: can't find crate for std (iOS target may not be installed for your active toolchain)

@@ -1,4 +1,0 @@
-module RustCommsFFI [system] {
-  header "rust_comms.h"
-  export *
-}

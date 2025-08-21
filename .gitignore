@@ -1,5 +1,10 @@
 /target
 
-
 # Ignore Xcode test results
-ios/TestResults.xcresult/
+**/TestResults.xcresult/
+**/TestResults*.xcresult/
+
+# Ignore generated iOS artifacts
+/ios/RustCommsFFI.xcframework/
+/ios/BingleTestFFI.xcframework/
+/ios/Package.swift

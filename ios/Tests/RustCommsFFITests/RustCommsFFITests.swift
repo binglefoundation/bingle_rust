@@ -1,5 +1,5 @@
 import XCTest
-import RustCommsFFI
+import BingleTestFFI
 
 final class RustCommsFFITests: XCTestCase {
     func test_canImportModule() {

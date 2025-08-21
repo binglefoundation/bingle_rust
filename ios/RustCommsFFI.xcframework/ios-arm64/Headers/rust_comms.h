@@ -7,13 +7,8 @@
 extern "C" {
 #endif
 
-// Adds two unsigned 64-bit integers. Provided by the Rust static library.
-uint64_t rust_comms_add_u64(uint64_t a, uint64_t b);
-
-// Test runners (return 1 on success, 0 on failure)
-uint8_t rust_comms_run_algo_ops_tests(void);
-uint8_t rust_comms_run_algo_ops_more_tests(void);
-uint8_t rust_comms_run_asset_ops_tests(void);
+// Public C interface for the rust_comms crate.
+// (Currently no C symbols are exported from rust_comms itself for iOS.)
 
 #ifdef __cplusplus
 } // extern "C"

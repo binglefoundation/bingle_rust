@@ -10,7 +10,8 @@ set -euo pipefail
 
 CRATE_NAME="rust_comms"
 ROOT_DIR="$(cd "$(dirname "$0")"/.. && pwd)"
-INCLUDE_DIR="$ROOT_DIR/include"
+INCLUDE_DIR_RUST="$ROOT_DIR/include"
+INCLUDE_DIR_TEST="$ROOT_DIR/include_bingle_test"
 IOS_DIR="$ROOT_DIR/ios"
 BUILD_DIR="$ROOT_DIR/target"
 
@@ -121,18 +122,65 @@ else
   SIM_LIB_TO_USE="$LIB_SIM_ARM64"
 fi
 
-# Create XCFramework
+# Create a temporary headers dir for rust_comms without module.modulemap to avoid collisions
+TMP_RUST_HEADERS="$BUILD_DIR/ios-tmp-headers/rust"
+rm -rf "$TMP_RUST_HEADERS"
+mkdir -p "$TMP_RUST_HEADERS"
+cp "$INCLUDE_DIR_RUST/rust_comms.h" "$TMP_RUST_HEADERS/"
+
+# Create XCFramework for rust_comms using the temp headers (no module.modulemap)
 xcodebuild -create-xcframework \
-  -library "$LIB_DEVICE" -headers "$INCLUDE_DIR" \
-  -library "$SIM_LIB_TO_USE" -headers "$INCLUDE_DIR" \
+  -library "$LIB_DEVICE" -headers "$TMP_RUST_HEADERS" \
+  -library "$SIM_LIB_TO_USE" -headers "$TMP_RUST_HEADERS" \
   -output "$XCFRAMEWORK_PATH"
 
 echo "Created $XCFRAMEWORK_PATH"
 
-# Create a basic SwiftPM package scaffold if not present
+# Now build and package the bingle_test crate as a separate XCFramework
+TEST_CRATE_NAME="bingle_test"
+
+# Build bingle_test for the same targets
+"${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --release --target aarch64-apple-ios
+"${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --release --target aarch64-apple-ios-sim
+if "${RUSTC_CMD[@]}" --print target-list | grep -q "^x86_64-apple-ios$"; then
+  "${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --release --target x86_64-apple-ios || true
+fi
+
+LIB_DEVICE_TEST="$BUILD_DIR/aarch64-apple-ios/release/lib${TEST_CRATE_NAME}.a"
+LIB_SIM_ARM64_TEST="$BUILD_DIR/aarch64-apple-ios-sim/release/lib${TEST_CRATE_NAME}.a"
+LIB_SIM_X64_TEST="$BUILD_DIR/x86_64-apple-ios/release/lib${TEST_CRATE_NAME}.a"
+
+if [[ ! -f "$LIB_DEVICE_TEST" ]]; then
+  echo "Missing device library: $LIB_DEVICE_TEST" >&2
+  exit 1
+fi
+if [[ ! -f "$LIB_SIM_ARM64_TEST" ]]; then
+  echo "Missing simulator ARM64 library: $LIB_SIM_ARM64_TEST" >&2
+  exit 1
+fi
+
+SIM_UNIV_LIB_TEST="$BUILD_DIR/ios-sim-universal/lib${TEST_CRATE_NAME}.a"
+if [[ -f "$LIB_SIM_X64_TEST" ]]; then
+  mkdir -p "$(dirname "$SIM_UNIV_LIB_TEST")"
+  lipo -create -output "$SIM_UNIV_LIB_TEST" "$LIB_SIM_ARM64_TEST" "$LIB_SIM_X64_TEST"
+  SIM_LIB_TO_USE_TEST="$SIM_UNIV_LIB_TEST"
+else
+  SIM_LIB_TO_USE_TEST="$LIB_SIM_ARM64_TEST"
+fi
+
+XCFRAMEWORK_PATH_TEST="$IOS_DIR/BingleTestFFI.xcframework"
+rm -rf "$XCFRAMEWORK_PATH_TEST"
+
+xcodebuild -create-xcframework \
+  -library "$LIB_DEVICE_TEST" -headers "$INCLUDE_DIR_TEST" \
+  -library "$SIM_LIB_TO_USE_TEST" -headers "$INCLUDE_DIR_TEST" \
+  -output "$XCFRAMEWORK_PATH_TEST"
+
+echo "Created $XCFRAMEWORK_PATH_TEST"
+
+# Create or update a SwiftPM package manifest to include both binary targets
 PKG_SWIFT="$IOS_DIR/Package.swift"
-if [[ ! -f "$PKG_SWIFT" ]]; then
-  cat > "$PKG_SWIFT" <<'SWIFT'
+cat > "$PKG_SWIFT" <<'SWIFT'
 // swift-tools-version:5.7
 import PackageDescription
 
@@ -142,13 +190,20 @@ let package = Package(
         .iOS(.v13)
     ],
     products: [
-        .library(name: "RustCommsFFI", targets: ["RustCommsFFI"])
+        // You can depend on either product, or both in your app/test target
+        .library(name: "RustCommsFFI", targets: ["RustCommsFFI"]),
+        .library(name: "BingleTestFFI", targets: ["BingleTestFFI"]) 
     ],
     targets: [
-        .binaryTarget(name: "RustCommsFFI", path: "RustCommsFFI.xcframework")
+        .binaryTarget(name: "RustCommsFFI", path: "RustCommsFFI.xcframework"),
+        .binaryTarget(name: "BingleTestFFI", path: "BingleTestFFI.xcframework"),
+        .testTarget(
+                    name: "RustCommsFFITests",
+                    dependencies: ["RustCommsFFI","BingleTestFFI"],
+                    path: "Tests/RustCommsFFITests"
+                )
     ]
 )
 SWIFT
-fi
 
 echo "SwiftPM package written at $IOS_DIR. In Xcode: File -> Open, select Package.swift."

@@ -1,0 +1,4 @@
+module BingleTestFFI [system] {
+  header "bingle_test.h"
+  export *
+}

@@ -7,15 +7,17 @@ let package = Package(
         .iOS(.v13)
     ],
     products: [
-        .library(name: "RustCommsFFI", targets: ["RustCommsFFI"])
+        // You can depend on either product, or both in your app/test target
+        .library(name: "RustCommsFFI", targets: ["RustCommsFFI"]),
+        .library(name: "BingleTestFFI", targets: ["BingleTestFFI"]) 
     ],
     targets: [
-        // Build the XCFramework first via scripts/build_ios_xcframework.sh
         .binaryTarget(name: "RustCommsFFI", path: "RustCommsFFI.xcframework"),
+        .binaryTarget(name: "BingleTestFFI", path: "BingleTestFFI.xcframework"),
         .testTarget(
-            name: "RustCommsFFITests",
-            dependencies: ["RustCommsFFI"],
-            path: "Tests/RustCommsFFITests"
-        )
+                    name: "RustCommsFFITests",
+                    dependencies: ["RustCommsFFI","BingleTestFFI"],
+                    path: "Tests/RustCommsFFITests"
+                )
     ]
 )

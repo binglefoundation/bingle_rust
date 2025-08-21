@@ -6,7 +6,7 @@ edition = "2024"
 [lib]
 name = "bingle_test"
 path = "src/lib.rs"
-# rlib is sufficient; cdylib can be added later if needed for FFI packaging
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 base64 = "0.21"
