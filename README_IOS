@@ -1,0 +1,132 @@
+README — iOS/Xcode: Run Tests from the Command Line on macOS
+
+This guide explains how to build the iOS XCFramework for this project and run the iOS unit tests from the command line using Xcode’s tooling.
+
+Overview
+- You will build the Rust static libraries for iOS and package them into an XCFramework.
+- A Swift Package (under ios/) contains a test target (RustCommsFFITests) with sample tests.
+- Use xcodebuild to execute tests on an iOS Simulator (or device) from the command line.
+
+Prerequisites
+- macOS with Xcode installed (Xcode 14+ recommended).
+- Xcode Command Line Tools installed and selected.
+  - Check: xcode-select -p
+  - If needed: sudo xcode-select -s /Applications/Xcode.app
+- Rust toolchain installed and iOS targets available:
+  - rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+- iOS Simulators installed in Xcode (Preferences → Platforms) for the iOS versions you plan to test.
+
+1) Build the XCFramework and Swift Package
+- From the repository root, run:
+  bash scripts/build_ios_xcframework.sh
+
+What this does:
+- Builds release Rust static libraries for iOS device and simulators.
+- Packages them into ios/RustCommsFFI.xcframework.
+- Creates a Swift Package scaffold at ios/ with a test target RustCommsFFITests (if not already present).
+
+2) List Available Schemes and Simulators
+- Schemes: The Swift Package exposes an auto-generated scheme. List schemes with:
+  xcodebuild -list -json -package-path ios | sed 's/\\n/\n/g'
+  Tip: Look for a scheme named similar to RustCommsFFI-Package (exact name may vary by Xcode version).
+
+- Simulators: List simulators and their availability:
+  xcrun simctl list devices
+  Example to boot a simulator (if not already running):
+  xcrun simctl boot "iPhone 15"
+  Optionally open the Simulator app:
+  open -a Simulator
+
+3) Run All Tests on an iOS Simulator
+- From cd ios, run:
+  xcodebuild \
+    -scheme "RustCommsFFI" \
+    -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+    -resultBundlePath ./TestResults.xcresult \
+    test
+
+Notes:
+- Replace the scheme if your environment lists a different name (see step 2).
+- You can pin a specific OS version in the destination (e.g., OS=17.5) if needed.
+- -resultBundlePath produces a rich .xcresult bundle you can open in Xcode.
+
+4) Run a Single Test Class or Test Method
+- To run a single test class:
+  xcodebuild \
+    -scheme "RustCommsFFI-Package" \
+    -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+    -only-testing:RustCommsFFITests/RustCommsFFITests \
+    test
+
+- To run a single test method (example uses the sample test in this repo):
+  xcodebuild \
+    -scheme "RustCommsFFI-Package" \
+    -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+    -only-testing:RustCommsFFITests/RustCommsFFITests/testAddU64 \
+    test
+
+5) Inspect Test Results
+- Open the result bundle in Xcode:
+  open ./TestResults.xcresult
+- Or print a brief summary:
+  xcrun xcresulttool get --format json --path ./TestResults.xcresult | head -n 50
+  (For nicer output, consider xcbeautify or xcpretty if you already use them.)
+
+6) Running on a Physical Device (Optional)
+- You can target a connected device by using a destination like:
+  -destination 'platform=iOS,id=DEVICE-UDID'
+- Find the device UDID:
+  xcrun xctrace list devices
+- Note: Code signing and provisioning must be correctly configured for device testing. The sample tests using a binary target may not require special signing, but your environment may.
+
+7) Cleaning and Troubleshooting
+- Clean DerivedData for a fresh build:
+  xcodebuild -scheme "RustCommsFFI-Package" -package-path ios clean
+  rm -rf ~/Library/Developer/Xcode/DerivedData
+
+- Resolve/refresh packages:
+  xcodebuild -resolvePackageDependencies -package-path ios
+
+- “Unable to find a destination matching …”
+  - Ensure the requested Simulator exists (xcrun simctl list devices).
+  - If OS=latest fails, try specifying an exact version installed on your machine.
+  - Install additional iOS runtimes in Xcode → Settings → Platforms.
+
+- “No such scheme: RustCommsFFI-Package”
+  - Re-run listing (step 2) to confirm the exact scheme name.
+  - Open ios/Package.swift in Xcode once to let Xcode generate schemes, then try again.
+
+- Select the intended Xcode toolchain (if multiple Xcodes installed):
+  sudo xcode-select -s /Applications/Xcode.app
+
+- Architecture/Simulator issues on Apple Silicon:
+  - Ensure aarch64-apple-ios-sim target is installed (the build script does this).
+  - Prefer an arm64 simulator (e.g., iPhone 15) on Apple Silicon.
+
+Appendix: Quick Commands Recap
+- Build XCFramework + Swift Package:
+  bash scripts/build_ios_xcframework.sh
+- List schemes for the package:
+  xcodebuild -list -json -package-path ios | sed 's/\\n/\n/g'
+- Run all tests (adjust scheme and destination as needed):
+  xcodebuild -scheme "RustCommsFFI-Package" -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' -package-path ios test
+- Run a single test method:
+  xcodebuild -scheme "RustCommsFFI-Package" -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' -package-path ios -only-testing:RustCommsFFITests/RustCommsFFITests/testAddU64 test
+
+
+E0463: can't find crate for std (iOS target may not be installed for your active toolchain)
+- Symptom: cargo build --target aarch64-apple-ios errors with "can't find crate for `std`" even though rustup shows the iOS targets installed.
+- Cause: Targets were installed for a different toolchain than the one your cargo/rustc is using, or your PATH cargo is not rustup-managed.
+- Fix:
+  1) Determine the active toolchain and install targets for it explicitly:
+     TC="$(rustup show active-toolchain | awk '{print $1}')"
+     rustup target add --toolchain "$TC" aarch64-apple-ios aarch64-apple-ios-sim
+     # Optional (if supported):
+     rustup target add --toolchain "$TC" x86_64-apple-ios
+  2) Ensure you're using rustup-managed cargo:
+     echo "PATH cargo:   $(command -v cargo)"
+     echo "rustup cargo: $(rustup which cargo)"
+     # If different, run cargo via rustup for the active toolchain:
+     rustup run "$TC" cargo build --release --target aarch64-apple-ios
+  3) Or simply run the provided script (it enforces the correct toolchain and targets):
+     bash scripts/build_ios_xcframework.sh
