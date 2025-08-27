@@ -1,2 +1,3 @@
+pub mod blockchain;
 #[cfg(not(target_os = "ios"))]
-pub mod algo_ops;
+pub use blockchain::algo_ops;

@@ -16,6 +16,11 @@ The repository already includes:
 - A build script at `scripts/build_ios_xcframework.sh`
 - A Swift Package scaffold in `ios/` with a test target.
 
+## Repository layout and legacy sources
+- Active library root: `src/lib.rs` re-exports modules from `src/blockchain/` (e.g., `rust_comms::algo_ops`).
+- Tests and FFI test runners live in the separate crate `bingle_test/` (see `bingle_test/src`). Rust integration tests import `bingle_test::tests_common`.
+- Legacy, unreferenced copies exist under `src/` (e.g., `src/tests_common/`, `src/ffi_tests.rs`, `src/lib_mod.rs`). These are intentionally left in place for reference during the transition. Because `src/lib.rs` does not `mod` or `pub use` them, Cargo does not compile them. You can safely ignore them; they do not affect builds. If/when you remove them, ensure all references point to `bingle_test` (for tests) and `src/blockchain` (for core code).
+
 ## 1) Build the iOS XCFramework
 From the repository root, run:
 

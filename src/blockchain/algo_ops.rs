@@ -352,9 +352,8 @@ impl AlgoOps {
 
         // Build CreateAsset transaction: minimal: total=units_in_issue, decimals=0
         // Additional descriptive fields are optional; some SDKs allow setting them on the builder.
-        let builder = algonaut::transaction::CreateAsset::new(issuer, units_in_issue, 0, false);
-        // Try to set names if supported by the builder; ignore if not applicable at runtime by keeping compile-time safe
         // We keep it minimal to ensure compatibility across versions.
+        let builder = algonaut::transaction::CreateAsset::new(issuer, units_in_issue, 0, false);
         let ca = builder.build();
 
         let tx = algonaut::transaction::TxnBuilder::with(&params, ca)
