@@ -8,7 +8,7 @@ pub mod non_ios {
     use std::thread;
     // OpenSSL DTLS imports (unused for now; will be used as we wire handshake)
     #[allow(unused_imports)]
-    use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode};
+    use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode, SslStream};
     #[allow(unused_imports)]
     use openssl::x509::X509;
     #[allow(unused_imports)]
@@ -48,7 +48,7 @@ pub mod non_ios {
         pub fn as_client(mut self) -> Self { self.role = DtlsRole::Client; self }
         pub fn as_server(mut self) -> Self { self.role = DtlsRole::Server; self }
 
-        fn prepare_client_context(&self) -> Result<()> {
+        fn prepare_client_context(&self) -> Result<SslConnector> {
             // Build a DTLSv1.2 client connector and configure mutual auth + verification.
             let ca_pem = self.ca_cert.as_deref().ok_or(())?;
             let client_cert_pem = self.client_cert.as_deref().ok_or(())?;
@@ -91,17 +91,39 @@ pub mod non_ios {
                 });
             }
 
-            // Note: We intentionally do not store the connector yet; when we implement the
-            // actual handshake path, we'll build and use it against a UDP transport.
-            Ok(())
+            // Build and return the configured connector
+            Ok(builder.build())
         }
 
-        // Next-step placeholder: perform DTLS client handshake over UDP to the given address.
-        // This will be implemented in a subsequent increment using OpenSSL DTLS over datagram BIOs.
-        fn client_handshake_connect(&self, _to: SocketAddr) -> Result<()> {
-            // Validate that prepare_client_context prerequisites are met (already checked in send()).
-            // For now, this function is a no-op placeholder to structure the future handshake logic.
-            Ok(())
+        // Perform a DTLS client handshake over UDP to the given address (no application I/O).
+        fn client_handshake_connect(&self, to: SocketAddr) -> Result<()> {
+            use std::io::{Read, Write};
+            use std::time::Duration;
+
+            // Build a DTLSv1.2 connector via the shared helper
+            let connector = self.prepare_client_context()?;
+
+            // Minimal UDP socket wrapper implementing Read/Write for OpenSSL
+            struct UdpConn(std::net::UdpSocket);
+            impl Read for UdpConn { fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.0.recv(buf) } }
+            impl Write for UdpConn {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.0.send(buf) }
+                fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            }
+
+            // Connect UDP socket to the target address
+            let sock = std::net::UdpSocket::bind(("127.0.0.1", 0)).map_err(|_| ())?;
+            let _ = sock.set_read_timeout(Some(Duration::from_millis(500)));
+            let _ = sock.set_nonblocking(false);
+            sock.connect(to).map_err(|_| ())?;
+
+            // Perform handshake only; do not exchange application data here
+            let mut conf = connector.configure().map_err(|_| ())?;
+            conf.set_verify_hostname(false);
+            match conf.connect("ignored-host", UdpConn(sock)) {
+                Ok(_s) => Ok(()),
+                Err(_e) => Err(())
+            }
         }
 
         fn prepare_server_acceptor(&mut self) -> Result<()> {
@@ -178,7 +200,7 @@ pub mod non_ios {
             }
             // Prepare and persist acceptor (validates PEMs, configures DTLSv1.2 + client auth)
             self.prepare_server_acceptor()?;
-            let acceptor = self.acceptor.take();
+            let acceptor = self.acceptor.take().map(std::sync::Arc::new);
 
             // Spawn a background UDP listener thread as a temporary scaffold
             // until full OpenSSL DTLS handshake is wired. This will deliver
@@ -217,7 +239,7 @@ pub mod non_ios {
 
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
-                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<SslAcceptor>, handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
@@ -251,35 +273,85 @@ pub mod non_ios {
                     let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
                     let _ = sock.set_nonblocking(false);
 
-                    // Receive one datagram to learn the client's address.
-                    let mut probe = [0u8; 2048];
-                    let (n, from) = match sock.recv_from(&mut probe) {
-                        Ok((n, from)) => (n, from),
-                        Err(_) => return Err(()),
-                    };
+                    loop {
+                        // Receive one datagram to learn the client's address and prefetch its payload.
+                        let mut probe = [0u8; 2048];
+                        let (n, from) = match sock.recv_from(&mut probe) {
+                            Ok((n, from)) => (n, from),
+                            Err(_) => return Err(()),
+                        };
 
-                    // Connect to peer to route subsequent recv/send to that address.
-                    if sock.connect(from).is_err() { return Err(()); }
+                        // Clone the listening socket and connect the clone to the peer.
+                        let sock_conn = match sock.try_clone() {
+                            Ok(s) => s,
+                            Err(_) => continue,
+                        };
+                        if sock_conn.connect(from).is_err() { continue; }
 
-                    // Attempt DTLS server handshake on the connected UDP socket using the openssl crate.
-                    // Feed the prefetched datagram (likely ClientHello) first to OpenSSL.
-                    let mut stream = match acceptor.accept(UdpConn { sock, pre: probe[..n].to_vec(), off: 0 }) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            // Not DTLS: fallback mode removed; do not deliver plaintext datagram.
-                            return Err(());
-                        },
-                    };
+                        // Clone acceptor and handler for the per-client thread.
+                        let acc2 = acceptor.clone();
+                        let handler2 = handler;
+                        let prebuf = probe[..n].to_vec();
 
-                    // Try to read a single application record and deliver to handler.
-                    let mut app = [0u8; 2048];
-                    if let Ok(n) = stream.read(&mut app) {
-                        if n > 0 {
-                            if let Some(h) = handler { let sh = ServerHandle; h(&sh, &from, &app[..n]); }
-                        }
+                        std::thread::spawn(move || {
+                            // Attempt DTLS server handshake on the connected UDP socket.
+                            let stream = match acc2.accept(UdpConn { sock: sock_conn, pre: prebuf, off: 0 }) {
+                                Ok(s) => s,
+                                Err(_) => return,
+                            };
+
+                            // DTLS-backed handle to allow replies via handler.
+                            struct StreamHandle {
+                                stream: std::sync::Arc<std::sync::Mutex<SslStream<UdpConn>>>,
+                            }
+                            impl Dtls for StreamHandle {
+                                fn send(&self, _to: SocketAddr, data: &[u8]) -> Result<()> {
+                                    let guard = self.stream.clone();
+                                    let mut s = guard.lock().map_err(|_| ())?;
+                                    use std::io::Write;
+                                    s.write_all(data).map_err(|_| ())?;
+                                    let _ = s.flush();
+                                    Ok(())
+                                }
+                                fn get_handle_message(&self) -> Option<HandleMessage> { None }
+                                fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+                                fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+                                fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+                                fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+                                fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
+                                fn get_ca_cert(&self) -> Option<&[u8]> { None }
+                                fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                                fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
+                                fn get_client_cert(&self) -> Option<&[u8]> { None }
+                                fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                                fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
+                                fn get_client_private_key(&self) -> Option<&[u8]> { None }
+                                fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+                                fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
+                                fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+                                fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                                fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
+                                fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+                                fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+                                fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
+                            }
+
+                            let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
+                            if let Some(h) = handler2 {
+                                loop {
+                                    use std::io::Read;
+                                    let mut app = [0u8; 2048];
+                                    let n = {
+                                        let mut s = match shared.lock() { Ok(g) => g, Err(_) => break };
+                                        match s.read(&mut app) { Ok(n) => n, Err(_) => break }
+                                    };
+                                    if n == 0 { break; }
+                                    let sh = StreamHandle { stream: shared.clone() };
+                                    h(&sh, &from, &app[..n]);
+                                }
+                            }
+                        });
                     }
-
-                    Ok(())
                 }
                 #[cfg(not(unix))]
                 fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<SslAcceptor>, _handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
@@ -299,40 +371,8 @@ pub mod non_ios {
             use std::time::Duration;
 
             if self.role != DtlsRole::Client { return Err(()); }
-            // Validate required credentials
-            let ca_pem = self.ca_cert.as_deref().ok_or(())?;
-            let client_cert_pem = self.client_cert.as_deref().ok_or(())?;
-            let client_key_pem = self.client_private_key.as_deref().ok_or(())?;
-
-            // Build DTLSv1.2 client connector and load materials
-            let ca_x509 = X509::from_pem(ca_pem).map_err(|_| ())?;
-            let client_x509 = X509::from_pem(client_cert_pem).map_err(|_| ())?;
-            let client_key = PKey::private_key_from_pem(client_key_pem).map_err(|_| ())?;
-
-            let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|_| ())?;
-            builder.set_options(SslOptions::NO_DTLSV1);
-            builder.set_certificate(&client_x509).map_err(|_| ())?;
-            builder.set_private_key(&client_key).map_err(|_| ())?;
-            builder.check_private_key().map_err(|_| ())?;
-
-            let mut store_builder = X509StoreBuilder::new().map_err(|_| ())?;
-            store_builder.add_cert(ca_x509).map_err(|_| ())?;
-            let store = store_builder.build();
-            builder.set_verify_cert_store(store).map_err(|_| ())?;
-            builder.set_verify(SslVerifyMode::PEER);
-            if let Some(handler) = self.handle_peer_certificate {
-                let ca_bytes = self.ca_cert.clone().unwrap_or_default();
-                builder.set_verify_callback(SslVerifyMode::PEER, move |preverify_ok, ctx| {
-                    if !preverify_ok { return false; }
-                    if let Some(cert_ref) = ctx.current_cert() {
-                        if let Ok(cert_pem) = cert_ref.to_pem() {
-                            return handler(&cert_pem, &ca_bytes).is_ok();
-                        }
-                    }
-                    false
-                });
-            }
-            let connector = builder.build();
+            // Build a DTLSv1.2 connector via the shared helper
+            let connector = self.prepare_client_context()?;
 
             // Wrap a connected UDP socket as a Read/Write stream
             struct UdpConn(std::net::UdpSocket);
@@ -353,7 +393,7 @@ pub mod non_ios {
             let mut stream = match conf.connect("ignored-host", UdpConn(sock)) {
                 Ok(s) => s,
                 Err(_) => {
-                    // Fallback removed: return error on DTLS handshake failure.
+                    // Handshake failed: surface the error to the caller.
                     return Err(());
                 }
             };
