@@ -18,7 +18,6 @@ fn handler(_server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
 }
 
 #[test]
-#[ignore = "DTLS handshake path under development; fallback removed"]
 fn dtls_openssl_udp_listener_invokes_handler() {
     // Load server PEM materials (self-signed) and client materials.
     let server_cert_pem: Vec<u8> = include_bytes!("../dtls_test/server.crt").to_vec();

@@ -15,7 +15,6 @@ fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
 }
 
 #[test]
-#[ignore = "DTLS handshake path under development; fallback removed"]
 fn dtls_openssl_end_to_end_loopback_echo() {
     use std::time::Instant;
     // Load server PEM materials for the server (CA = server cert in test env)
