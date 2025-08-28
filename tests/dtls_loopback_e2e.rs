@@ -8,6 +8,11 @@ use std::time::Duration;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 
 static SERVER_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
+static CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
+
+fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+    let _ = CLIENT_ECHOED.set(data.to_vec());
+}
 
 #[test]
 #[ignore = "DTLS handshake path under development; fallback removed"]
@@ -56,6 +61,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     // DTLS client: build and send payload to server.
     let client = DtlsOpenSsl::new()
         .as_client()
+        .with_handle_message(client_handler)
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(server_cert_pem.clone());
@@ -69,11 +75,19 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     }
     assert!(ok, "client DTLS send failed");
 
-    // Wait for the server echo handler to record the payload.
+    // Wait for the client handler to capture the echoed payload.
+    let start = Instant::now();
+    while CLIENT_ECHOED.get().is_none() && start.elapsed() < Duration::from_secs(2) {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let echoed = CLIENT_ECHOED.get().expect("client did not capture echoed payload within timeout");
+    assert_eq!(echoed.as_slice(), payload, "client captured echoed payload mismatch");
+
+    // Also ensure the server echo handler recorded the original payload.
     let start = Instant::now();
     while SERVER_ECHOED.get().is_none() && start.elapsed() < Duration::from_secs(2) {
         thread::sleep(Duration::from_millis(10));
     }
-    let echoed = SERVER_ECHOED.get().expect("server did not record payload within timeout");
-    assert_eq!(echoed.as_slice(), payload, "server recorded payload mismatch");
+    let server_echoed = SERVER_ECHOED.get().expect("server did not record payload within timeout");
+    assert_eq!(server_echoed.as_slice(), payload, "server recorded payload mismatch");
 }
