@@ -5,7 +5,6 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 #[cfg(not(target_os = "ios"))]
 pub mod non_ios {
     use super::*;
-    use std::net::UdpSocket;
     use std::thread;
     // OpenSSL DTLS imports (unused for now; will be used as we wire handshake)
     #[allow(unused_imports)]
@@ -186,6 +185,36 @@ pub mod non_ios {
             // plaintext datagrams to the message handler.
             let handler = self.handle_message;
             thread::spawn(move || {
+                // Lightweight handle that exposes send() for echoing via UDP.
+                struct ServerHandle;
+                impl Dtls for ServerHandle {
+                    fn send(&self, _to: SocketAddr, _data: &[u8]) -> Result<()> {
+                        // Fallback mode removed: no plaintext UDP send from server handle.
+                        Err(())
+                    }
+                    fn get_handle_message(&self) -> Option<HandleMessage> { None }
+                    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+                    fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+                    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+                    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+                    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
+                    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+                    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                    fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
+                    fn get_client_cert(&self) -> Option<&[u8]> { None }
+                    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                    fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
+                    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+                    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+                    fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
+                    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+                    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
+                    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+                    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+                    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
+                }
+
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
                 fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<SslAcceptor>, handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
@@ -237,21 +266,16 @@ pub mod non_ios {
                     let mut stream = match acceptor.accept(UdpConn { sock, pre: probe[..n].to_vec(), off: 0 }) {
                         Ok(s) => s,
                         Err(_) => {
-                            // Not DTLS: deliver the original datagram to the handler and fall back to UDP loop.
-                            if let Some(h) = handler { h(&from, &probe[..n]); }
+                            // Not DTLS: fallback mode removed; do not deliver plaintext datagram.
                             return Err(());
                         },
                     };
 
-                    // Try to read a single application record, deliver to handler, and echo back via DTLS.
+                    // Try to read a single application record and deliver to handler.
                     let mut app = [0u8; 2048];
                     if let Ok(n) = stream.read(&mut app) {
                         if n > 0 {
-                            // Deliver to handler if present
-                            if let Some(h) = handler { h(&from, &app[..n]); }
-                            // Echo back over the DTLS stream
-                            let _ = stream.write_all(&app[..n]);
-                            let _ = stream.flush();
+                            if let Some(h) = handler { let sh = ServerHandle; h(&sh, &from, &app[..n]); }
                         }
                     }
 
@@ -263,22 +287,7 @@ pub mod non_ios {
                 }
 
                 let _ = run_dtls_accept_loop(addr, acceptor, handler);
-
-                // Fallback plaintext UDP loop preserves current test behavior.
-                if let Ok(sock) = UdpSocket::bind(addr) {
-                    let mut buf = [0u8; 2048];
-                    loop {
-                        match sock.recv_from(&mut buf) {
-                            Ok((n, from)) => {
-                                if let Some(h) = handler { h(&from, &buf[..n]); }
-                            }
-                            Err(_) => {
-                                // Exit the loop on error for now
-                                break;
-                            }
-                        }
-                    }
-                }
+                // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
             Ok(())
         }
@@ -341,16 +350,17 @@ pub mod non_ios {
             // Perform client DTLS handshake using configuration with hostname verification disabled
             let mut conf = connector.configure().map_err(|_| ())?;
             conf.set_verify_hostname(false);
-            let mut stream = conf.connect("ignored-host", UdpConn(sock)).map_err(|_| ())?;
+            let mut stream = match conf.connect("ignored-host", UdpConn(sock)) {
+                Ok(s) => s,
+                Err(_) => {
+                    // Fallback removed: return error on DTLS handshake failure.
+                    return Err(());
+                }
+            };
 
-            // Send payload and wait for echo
-            stream.write_all(data).map_err(|_| ())?;
+            // Fire-and-forget: write payload and return without reading/echoing
+            let _ = stream.write_all(data);
             let _ = stream.flush();
-            let mut buf = [0u8; 2048];
-            let n = stream.read(&mut buf).map_err(|_| ())?;
-            if n > 0 {
-                if let Some(h) = self.handle_message { h(&to, &buf[..n]); }
-            }
             Ok(())
         }
 

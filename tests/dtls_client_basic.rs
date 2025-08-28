@@ -28,7 +28,7 @@ fn dtls_client_send_path_builds_and_returns_ok() {
     std::thread::spawn(move || {
         let mut server = DtlsOpenSsl::new()
             .as_server()
-            .with_handle_message(|_, _| {})
+            .with_handle_message(|_, _, _| {})
             .with_server_signing_cert(server_cert_pem)
             .with_server_signing_private_key(server_key_pem)
             .with_ca_cert(server_ca_pem);

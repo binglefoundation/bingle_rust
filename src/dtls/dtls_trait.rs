@@ -8,7 +8,7 @@ pub type Result<T = ()> = core::result::Result<T, ()>;
  * @param from_address the address of the peer
  * @param data the data received
  */
-pub type HandleMessage = fn(from_address: &SocketAddr, data: &[u8]);
+pub type HandleMessage = fn(server: &dyn Dtls, from_address: &SocketAddr, data: &[u8]);
 
 /**
  * Handle certificates presented by the peer for verification
