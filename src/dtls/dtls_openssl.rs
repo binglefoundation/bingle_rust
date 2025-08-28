@@ -168,37 +168,6 @@ pub mod non_ios {
             // plaintext datagrams to the message handler.
             let handler = self.handle_message;
             thread::spawn(move || {
-                // Lightweight handle that exposes send() for echoing via UDP.
-                struct ServerHandle;
-                impl Dtls for ServerHandle {
-                    fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
-                        // Plain UDP send for fallback path
-                        let sock = std::net::UdpSocket::bind(("127.0.0.1", 0)).map_err(|_| ())?;
-                        sock.send_to(data, to).map_err(|_| ())?;
-                        Ok(())
-                    }
-                    fn get_handle_message(&self) -> Option<HandleMessage> { None }
-                    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
-                    fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
-                    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
-                    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-                    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
-                    fn get_ca_cert(&self) -> Option<&[u8]> { None }
-                    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-                    fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
-                    fn get_client_cert(&self) -> Option<&[u8]> { None }
-                    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-                    fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
-                    fn get_client_private_key(&self) -> Option<&[u8]> { None }
-                    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-                    fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
-                    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
-                    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-                    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
-                    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
-                    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-                    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
-                }
 
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
