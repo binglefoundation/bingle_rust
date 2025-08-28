@@ -4,10 +4,6 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 
 #[cfg(not(target_os = "ios"))]
 pub mod non_ios {
-    #[cfg(unix)]
-    use std::os::unix::io::AsRawFd;
-    #[cfg(unix)]
-    use openssl_sys as ossl_sys;
     use super::*;
     use std::net::UdpSocket;
     use std::thread;
@@ -193,19 +189,73 @@ pub mod non_ios {
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
                 fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<SslAcceptor>, handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
+                    use std::io::{Read, Write};
                     use std::time::Duration;
-                    // Quickly validate we have an acceptor and can bind the UDP socket.
-                    let _acceptor = match acceptor { Some(a) => a, None => return Err(()) };
+
+                    // Wrapper to adapt a connected UdpSocket to Read/Write expected by openssl::ssl APIs,
+                    // with support for a prefetched first datagram to avoid losing the initial ClientHello.
+                    struct UdpConn {
+                        sock: std::net::UdpSocket,
+                        pre: Vec<u8>,
+                        off: usize,
+                    }
+                    impl Read for UdpConn {
+                        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                            if self.off < self.pre.len() {
+                                let remaining = &self.pre[self.off..];
+                                let n = remaining.len().min(buf.len());
+                                buf[..n].copy_from_slice(&remaining[..n]);
+                                self.off += n;
+                                Ok(n)
+                            } else {
+                                self.sock.recv(buf)
+                            }
+                        }
+                    }
+                    impl Write for UdpConn {
+                        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.sock.send(buf) }
+                        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+                    }
+
+                    let acceptor = match acceptor { Some(a) => a, None => return Err(()) };
                     let sock = std::net::UdpSocket::bind(addr).map_err(|_| ())?;
-                    // Set a small read timeout so we can periodically check loop conditions.
                     let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
                     let _ = sock.set_nonblocking(false);
 
-                    // NOTE: The actual DTLSv1_listen + BIO_dgram handshake and per-peer SSL_accept wiring
-                    // will be implemented next. For this increment, we verify we can bind and then return
-                    // an error to fall back to the plaintext loop, preserving existing tests.
-                    let _ = handler;
-                    Err(())
+                    // Receive one datagram to learn the client's address.
+                    let mut probe = [0u8; 2048];
+                    let (n, from) = match sock.recv_from(&mut probe) {
+                        Ok((n, from)) => (n, from),
+                        Err(_) => return Err(()),
+                    };
+
+                    // Connect to peer to route subsequent recv/send to that address.
+                    if sock.connect(from).is_err() { return Err(()); }
+
+                    // Attempt DTLS server handshake on the connected UDP socket using the openssl crate.
+                    // Feed the prefetched datagram (likely ClientHello) first to OpenSSL.
+                    let mut stream = match acceptor.accept(UdpConn { sock, pre: probe[..n].to_vec(), off: 0 }) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            // Not DTLS: deliver the original datagram to the handler and fall back to UDP loop.
+                            if let Some(h) = handler { h(&from, &probe[..n]); }
+                            return Err(());
+                        },
+                    };
+
+                    // Try to read a single application record, deliver to handler, and echo back via DTLS.
+                    let mut app = [0u8; 2048];
+                    if let Ok(n) = stream.read(&mut app) {
+                        if n > 0 {
+                            // Deliver to handler if present
+                            if let Some(h) = handler { h(&from, &app[..n]); }
+                            // Echo back over the DTLS stream
+                            let _ = stream.write_all(&app[..n]);
+                            let _ = stream.flush();
+                        }
+                    }
+
+                    Ok(())
                 }
                 #[cfg(not(unix))]
                 fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<SslAcceptor>, _handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
@@ -235,16 +285,72 @@ pub mod non_ios {
     }
 
     impl Dtls for DtlsOpenSsl {
-        fn send(&self, _to: SocketAddr, _data: &[u8]) -> Result<()> {
+        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
+            use std::io::{Read, Write};
+            use std::time::Duration;
+
             if self.role != DtlsRole::Client { return Err(()); }
-            // TODO: Implement DTLS over OpenSSL
-            if self.client_cert.is_none() || self.client_private_key.is_none() || self.ca_cert.is_none() {
-                return Err(());
+            // Validate required credentials
+            let ca_pem = self.ca_cert.as_deref().ok_or(())?;
+            let client_cert_pem = self.client_cert.as_deref().ok_or(())?;
+            let client_key_pem = self.client_private_key.as_deref().ok_or(())?;
+
+            // Build DTLSv1.2 client connector and load materials
+            let ca_x509 = X509::from_pem(ca_pem).map_err(|_| ())?;
+            let client_x509 = X509::from_pem(client_cert_pem).map_err(|_| ())?;
+            let client_key = PKey::private_key_from_pem(client_key_pem).map_err(|_| ())?;
+
+            let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|_| ())?;
+            builder.set_options(SslOptions::NO_DTLSV1);
+            builder.set_certificate(&client_x509).map_err(|_| ())?;
+            builder.set_private_key(&client_key).map_err(|_| ())?;
+            builder.check_private_key().map_err(|_| ())?;
+
+            let mut store_builder = X509StoreBuilder::new().map_err(|_| ())?;
+            store_builder.add_cert(ca_x509).map_err(|_| ())?;
+            let store = store_builder.build();
+            builder.set_verify_cert_store(store).map_err(|_| ())?;
+            builder.set_verify(SslVerifyMode::PEER);
+            if let Some(handler) = self.handle_peer_certificate {
+                let ca_bytes = self.ca_cert.clone().unwrap_or_default();
+                builder.set_verify_callback(SslVerifyMode::PEER, move |preverify_ok, ctx| {
+                    if !preverify_ok { return false; }
+                    if let Some(cert_ref) = ctx.current_cert() {
+                        if let Ok(cert_pem) = cert_ref.to_pem() {
+                            return handler(&cert_pem, &ca_bytes).is_ok();
+                        }
+                    }
+                    false
+                });
             }
-            // Prepare client context (placeholder for now)
-            self.prepare_client_context()?;
-            // Next-step placeholder: attempt a DTLS client handshake connection to the target.
-            self.client_handshake_connect(_to)?;
+            let connector = builder.build();
+
+            // Wrap a connected UDP socket as a Read/Write stream
+            struct UdpConn(std::net::UdpSocket);
+            impl Read for UdpConn { fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.0.recv(buf) } }
+            impl Write for UdpConn {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.0.send(buf) }
+                fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            }
+
+            let sock = std::net::UdpSocket::bind(("127.0.0.1", 0)).map_err(|_| ())?;
+            let _ = sock.set_read_timeout(Some(Duration::from_millis(500)));
+            let _ = sock.set_nonblocking(false);
+            sock.connect(to).map_err(|_| ())?;
+
+            // Perform client DTLS handshake using configuration with hostname verification disabled
+            let mut conf = connector.configure().map_err(|_| ())?;
+            conf.set_verify_hostname(false);
+            let mut stream = conf.connect("ignored-host", UdpConn(sock)).map_err(|_| ())?;
+
+            // Send payload and wait for echo
+            stream.write_all(data).map_err(|_| ())?;
+            let _ = stream.flush();
+            let mut buf = [0u8; 2048];
+            let n = stream.read(&mut buf).map_err(|_| ())?;
+            if n > 0 {
+                if let Some(h) = self.handle_message { h(&to, &buf[..n]); }
+            }
             Ok(())
         }
 
