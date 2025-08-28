@@ -1,6 +1,7 @@
-pub mod dtls;
-
 use std::net::SocketAddr;
+
+/// Local Result type for DTLS operations. For now, only success or failure without rich error info.
+pub type Result<T = ()> = core::result::Result<T, ()>;
 
 /**
  * Handle incoming messages
@@ -17,13 +18,14 @@ pub type HandleMessage = fn(from_address: &SocketAddr, data: &[u8]);
  */
 pub type HandlePeerCertificate = fn(certificate: &[u8], ca_certificate: &[u8]) -> Result<String>;
 
-trait Dtls {
+/// Public DTLS trait abstraction
+pub trait Dtls {
     /**
      * Send data to the peer
      * If no connection exists to `to`, a new connection will be established.
      * @param to the address of the peer
      * @param data the data to send
-     * @return true if the data was sent, false otherwise
+     * @return Ok(()) if the data was queued/sent, Err(()) otherwise
      */
     fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()>;
 
@@ -45,6 +47,23 @@ trait Dtls {
      * @return a new instance of the DTLS trait with the message handler function set
      */
     fn with_handle_message(self, handler: HandleMessage) -> Self
+    where
+        Self: Sized;
+
+    /**
+     * Get the peer certificate handler function
+     */
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate>;
+
+    /**
+     * Set the peer certificate handler function
+     */
+    fn set_handle_peer_certificate(&mut self, handler: Option<HandlePeerCertificate>);
+
+    /**
+     * Fluently set the peer certificate handler function
+     */
+    fn with_handle_peer_certificate(self, handler: HandlePeerCertificate) -> Self
     where
         Self: Sized;
 

@@ -17,6 +17,8 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+udp-dtls = "0.1.0"
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 algonaut = "0.4.2"
@@ -28,7 +30,8 @@ serde_json = "1"
 sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = "0.6"
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+openssl = { version = "0.10" }
+openssl-sys = { version = "0.9" }
 
 [workspace]
 members = [
