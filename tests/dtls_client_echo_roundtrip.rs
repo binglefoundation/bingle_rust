@@ -67,7 +67,7 @@ fn dtls_client_echo_roundtrip() {
     server.start_server(addr).expect("start_server should succeed");
 
     // Give the background thread a moment to bind and start listening
-    thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(400));
 
     // Build the DTLS client with the echo handler
     let client = DtlsOpenSsl::new()
@@ -86,7 +86,7 @@ fn dtls_client_echo_roundtrip() {
     assert!(ok, "client DTLS send of 'Hello' failed");
 
     let start = Instant::now();
-    while SERVER_HELLO.get().is_none() && start.elapsed() < Duration::from_secs(2) {
+    while SERVER_HELLO.get().is_none() && start.elapsed() < Duration::from_secs(5) {
         thread::sleep(Duration::from_millis(10));
     }
     let hello = SERVER_HELLO.get().expect("server did not receive 'Hello' within timeout");

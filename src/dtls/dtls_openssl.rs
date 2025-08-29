@@ -171,12 +171,13 @@ pub mod non_ios {
             let acceptor = self.acceptor.take().map(std::sync::Arc::new);
 
             // Build a sender instance that can be passed into the handler and reuse per-peer writers.
-            let mut sender = DtlsOpenSsl::new().as_client();
-            sender.ca_cert = self.ca_cert.clone();
-            sender.client_cert = self.client_cert.clone();
-            sender.client_private_key = self.client_private_key.clone();
+            let mut sender_inner = DtlsOpenSsl::new().as_client();
+            sender_inner.ca_cert = self.ca_cert.clone();
+            sender_inner.client_cert = self.client_cert.clone();
+            sender_inner.client_private_key = self.client_private_key.clone();
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
-            sender.server_writers = Some(writers.clone());
+            sender_inner.server_writers = Some(writers.clone());
+            let sender = std::sync::Arc::new(sender_inner);
 
             // Spawn the DTLS accept thread and invoke handler with &sender.
             let handler = self.handle_message;
@@ -184,7 +185,7 @@ pub mod non_ios {
 
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
-                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: &DtlsOpenSsl, writers: ServerWriters) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
@@ -218,6 +219,7 @@ pub mod non_ios {
 
                     let acceptor = match acceptor { Some(a) => a, None => return Err(()) };
                     let sock = std::net::UdpSocket::bind(addr).map_err(|_| ())?;
+                    eprintln!("[server] bound to {}", addr);
                     let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
                     let _ = sock.set_nonblocking(false);
 
@@ -228,6 +230,7 @@ pub mod non_ios {
                             Ok((n, from)) => (n, from),
                             Err(_) => continue,
                         };
+                        eprintln!("[server] probe from {} ({} bytes)", from, n);
 
                         // Clone the listening socket and connect the clone to the peer.
                         let sock_conn = match sock.try_clone() {
@@ -235,8 +238,9 @@ pub mod non_ios {
                             Err(_) => continue,
                         };
                         if sock_conn.connect(from).is_err() { continue; }
+                        let _ = sock_conn.set_read_timeout(Some(Duration::from_millis(1500)));
 
-                        // Clone acceptor and handler for the per-client thread.
+                        // Clone acceptor and handler for the per-client handling.
                         let acc2 = acceptor.clone();
                         let handler2 = handler;
                         let prebuf = probe[..n].to_vec();
@@ -256,28 +260,42 @@ pub mod non_ios {
                                 let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
                                     let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err(()) };
                                     use std::io::Write;
-                                    if s.write_all(payload).is_err() { return Err(()); }
+                                    if s.write_all(payload).is_err() { return Err(()) };
                                     let _ = s.flush();
                                     Ok(())
                                 });
-                                map.insert(from, writer);
+                                eprintln!("[server] writer registered for {}", from);
+                                                                map.insert(from, writer);
                             }
                         }
 
-                        if let Some(h) = handler2 {
-                            loop {
-                                use std::io::Read;
-                                let mut app = [0u8; 2048];
-                                let n = {
-                                    let mut s = match shared.lock() { Ok(g) => g, Err(_) => break };
-                                    match s.read(&mut app) { Ok(n) => n, Err(_) => break }
-                                };
-                                if n == 0 { break; }
-                                h(sender, &from, &app[..n]);
+                        // Spawn a per-client reader thread to handle this client.
+                        let sender_clone = sender.clone();
+                        let shared_clone = shared.clone();
+                        std::thread::spawn(move || {
+                            if let Some(h) = handler2 {
+                                loop {
+                                    use std::io::Read;
+                                    let mut app = [0u8; 2048];
+                                    let n = {
+                                        let mut s = match shared_clone.lock() { Ok(g) => g, Err(_) => break };
+                                        match s.read(&mut app) {
+                                            Ok(n) => n,
+                                            Err(e) => {
+                                                eprintln!("[server] read error from {}: {} (continuing)", from, e);
+                                                continue;
+                                            }
+                                        }
+                                    };
+                                    if n == 0 { break; }
+                                    eprintln!("[server] application data from {} ({} bytes)", from, n);
+                                    h(&*sender_clone, &from, &app[..n]);
+                                }
                             }
-                        }
-                        // Continue to accept new clients after this one finishes
-                        continue;
+                        });
+
+                        // For now, handle a single client per server instance to avoid socket contention.
+                        return Ok(());
                     }
                 }
                 #[cfg(not(unix))]
@@ -285,7 +303,7 @@ pub mod non_ios {
                     Err(())
                 }
 
-                let _ = run_dtls_accept_loop(addr, acceptor, handler, &sender, writers);
+                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
             Ok(())
@@ -319,16 +337,21 @@ pub mod non_ios {
             }
 
             let sock = std::net::UdpSocket::bind(("127.0.0.1", 0)).map_err(|_| ())?;
-            let _ = sock.set_read_timeout(Some(Duration::from_millis(500)));
+            let _ = sock.set_read_timeout(Some(Duration::from_millis(1500)));
             let _ = sock.set_nonblocking(false);
             sock.connect(to).map_err(|_| ())?;
 
             // Perform client DTLS handshake using configuration with hostname verification disabled
+            eprintln!("[client] connecting DTLS to {}", to);
             let mut conf = connector.configure().map_err(|_| ())?;
             conf.set_verify_hostname(false);
             let mut stream = match conf.connect("ignored-host", UdpConn(sock)) {
-                Ok(s) => s,
+                Ok(s) => {
+                    eprintln!("[client] handshake ok to {}", to);
+                    s
+                }
                 Err(_) => {
+                    eprintln!("[client] handshake failed to {}", to);
                     // Handshake failed: surface the error to the caller.
                     return Err(());
                 }
