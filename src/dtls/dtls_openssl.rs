@@ -6,9 +6,14 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 pub mod non_ios {
     use super::*;
     use std::thread;
+    use std::sync::{Arc, Mutex};
+    use std::collections::HashMap;
     // OpenSSL DTLS imports (unused for now; will be used as we wire handshake)
     #[allow(unused_imports)]
     use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode, SslStream};
+
+    type ServerWriter = Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync>;
+    type ServerWriters = Arc<Mutex<HashMap<SocketAddr, ServerWriter>>>;
     #[allow(unused_imports)]
     use openssl::x509::X509;
     #[allow(unused_imports)]
@@ -40,6 +45,7 @@ pub mod non_ios {
         pub(crate) role: DtlsRole,
         // Prepared DTLS server acceptor (DTLSv1.2), built on start_server
         pub(crate) acceptor: Option<SslAcceptor>,
+        pub(crate) server_writers: Option<ServerWriters>,
     }
 
     impl DtlsOpenSsl {
@@ -50,33 +56,29 @@ pub mod non_ios {
 
         fn prepare_client_context(&self) -> Result<SslConnector> {
             // Build a DTLSv1.2 client connector and configure mutual auth + verification.
-            let ca_pem = self.ca_cert.as_deref().ok_or(())?;
-            let client_cert_pem = self.client_cert.as_deref().ok_or(())?;
-            let client_key_pem = self.client_private_key.as_deref().ok_or(())?;
-
-            // Parse materials to validate and to allow store building.
-            let ca_x509 = X509::from_pem(ca_pem).map_err(|_| ())?;
-            let client_x509 = X509::from_pem(client_cert_pem).map_err(|_| ())?;
-            let client_key = PKey::private_key_from_pem(client_key_pem).map_err(|_| ())?;
-
-            // Create DTLS connector builder and load credentials.
             let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|_| ())?;
 
-            // Restrict to DTLSv1.2.
+            // Restrict to DTLSv1.2 and enable read_ahead.
             builder.set_options(SslOptions::NO_DTLSV1);
-            // DTLS best practice: enable read_ahead so OpenSSL buffers whole records
             builder.set_read_ahead(true);
 
-            // Load client cert and key.
-            builder.set_certificate(&client_x509).map_err(|_| ())?;
-            builder.set_private_key(&client_key).map_err(|_| ())?;
-            builder.check_private_key().map_err(|_| ())?;
+            // Optionally load client cert and key if provided.
+            if let (Some(cert_pem), Some(key_pem)) = (self.client_cert.as_deref(), self.client_private_key.as_deref()) {
+                let client_x509 = X509::from_pem(cert_pem).map_err(|_| ())?;
+                let client_key = PKey::private_key_from_pem(key_pem).map_err(|_| ())?;
+                builder.set_certificate(&client_x509).map_err(|_| ())?;
+                builder.set_private_key(&client_key).map_err(|_| ())?;
+                builder.check_private_key().map_err(|_| ())?;
+            }
 
-            // Install CA cert into the verify store for server auth.
-            let mut store_builder = X509StoreBuilder::new().map_err(|_| ())?;
-            store_builder.add_cert(ca_x509).map_err(|_| ())?;
-            let store = store_builder.build();
-            builder.set_verify_cert_store(store).map_err(|_| ())?;
+            // Optionally install CA cert into the verify store for server auth.
+            if let Some(ca_pem) = self.ca_cert.as_deref() {
+                let ca_x509 = X509::from_pem(ca_pem).map_err(|_| ())?;
+                let mut store_builder = X509StoreBuilder::new().map_err(|_| ())?;
+                store_builder.add_cert(ca_x509).map_err(|_| ())?;
+                let store = store_builder.build();
+                builder.set_verify_cert_store(store).map_err(|_| ())?;
+            }
 
             // For tests, disable peer verification to simplify handshake.
             builder.set_verify(SslVerifyMode::NONE);
@@ -163,15 +165,21 @@ pub mod non_ios {
             self.prepare_server_acceptor()?;
             let acceptor = self.acceptor.take().map(std::sync::Arc::new);
 
-            // Spawn a background UDP listener thread as a temporary scaffold
-            // until full OpenSSL DTLS handshake is wired. This will deliver
-            // plaintext datagrams to the message handler.
+            // Build a sender instance that can be passed into the handler and reuse per-peer writers.
+            let mut sender = DtlsOpenSsl::new().as_client();
+            sender.ca_cert = self.ca_cert.clone();
+            sender.client_cert = self.client_cert.clone();
+            sender.client_private_key = self.client_private_key.clone();
+            let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
+            sender.server_writers = Some(writers.clone());
+
+            // Spawn the DTLS accept thread and invoke handler with &sender.
             let handler = self.handle_message;
             thread::spawn(move || {
 
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
-                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: &DtlsOpenSsl, writers: ServerWriters) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
@@ -199,6 +207,9 @@ pub mod non_ios {
                         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.sock.send(buf) }
                         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
                     }
+
+                    // Avoid unused warning for writers in some builds
+                    let _ = &writers;
 
                     let acceptor = match acceptor { Some(a) => a, None => return Err(()) };
                     let sock = std::net::UdpSocket::bind(addr).map_err(|_| ())?;
@@ -231,43 +242,23 @@ pub mod non_ios {
                             Err(_) => continue,
                         };
 
-                        // DTLS-backed handle to allow replies via handler.
-                        struct StreamHandle {
-                            stream: std::sync::Arc<std::sync::Mutex<SslStream<UdpConn>>>,
-                        }
-                        impl Dtls for StreamHandle {
-                            fn send(&self, _to: SocketAddr, data: &[u8]) -> Result<()> {
-                                let guard = self.stream.clone();
-                                let mut s = guard.lock().map_err(|_| ())?;
-                                use std::io::Write;
-                                s.write_all(data).map_err(|_| ())?;
-                                let _ = s.flush();
-                                Ok(())
+                        let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
+
+                        // Register writer for this peer so handler can call sender.send(to, data)
+                        {
+                            if let Ok(mut map) = writers.lock() {
+                                let stream_arc = shared.clone();
+                                let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
+                                    let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err(()) };
+                                    use std::io::Write;
+                                    if s.write_all(payload).is_err() { return Err(()); }
+                                    let _ = s.flush();
+                                    Ok(())
+                                });
+                                map.insert(from, writer);
                             }
-                            fn get_handle_message(&self) -> Option<HandleMessage> { None }
-                            fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
-                            fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
-                            fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
-                            fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-                            fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
-                            fn get_ca_cert(&self) -> Option<&[u8]> { None }
-                            fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-                            fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
-                            fn get_client_cert(&self) -> Option<&[u8]> { None }
-                            fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-                            fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
-                            fn get_client_private_key(&self) -> Option<&[u8]> { None }
-                            fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-                            fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
-                            fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
-                            fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-                            fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
-                            fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
-                            fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-                            fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
                         }
 
-                        let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
                         if let Some(h) = handler2 {
                             loop {
                                 use std::io::Read;
@@ -277,8 +268,7 @@ pub mod non_ios {
                                     match s.read(&mut app) { Ok(n) => n, Err(_) => break }
                                 };
                                 if n == 0 { break; }
-                                let sh = StreamHandle { stream: shared.clone() };
-                                h(&sh, &from, &app[..n]);
+                                h(sender, &from, &app[..n]);
                             }
                         }
                         // Continue to accept new clients after this one finishes
@@ -286,11 +276,11 @@ pub mod non_ios {
                     }
                 }
                 #[cfg(not(unix))]
-                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<SslAcceptor>, _handler: Option<HandleMessage>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<SslAcceptor>, _handler: Option<HandleMessage>, _sender: &DtlsOpenSsl, _writers: ServerWriters) -> core::result::Result<(), ()> {
                     Err(())
                 }
 
-                let _ = run_dtls_accept_loop(addr, acceptor, handler);
+                let _ = run_dtls_accept_loop(addr, acceptor, handler, &sender, writers);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
             Ok(())
@@ -301,6 +291,15 @@ pub mod non_ios {
         fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
+
+            // If this instance has server-side writers (sender in server thread), use them first.
+            if let Some(writers) = &self.server_writers {
+                if let Ok(map) = writers.lock() {
+                    if let Some(writer) = map.get(&to) {
+                        return writer(data);
+                    }
+                }
+            }
 
             if self.role != DtlsRole::Client { return Err(()); }
             // Build a DTLSv1.2 connector via the shared helper
