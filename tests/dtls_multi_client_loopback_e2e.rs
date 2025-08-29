@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
+#[path = "pki.rs"]
 mod pki;
 
 static CLIENT1_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();

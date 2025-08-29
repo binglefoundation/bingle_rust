@@ -244,6 +244,13 @@ pub mod non_ios {
                         let acc2 = acceptor.clone();
                         let handler2 = handler;
                         let prebuf = probe[..n].to_vec();
+                        if sock_conn.connect(from).is_err() { continue; }
+                        let _ = sock_conn.set_read_timeout(Some(Duration::from_millis(1500)));
+
+                        // Clone acceptor and handler for the per-client handling.
+                        let acc2 = acceptor.clone();
+                        let handler2 = handler;
+                        let prebuf = probe[..n].to_vec();
 
                         // Attempt DTLS server handshake on the connected UDP socket (handle inline for single client).
                         let stream = match acc2.accept(UdpConn { sock: sock_conn, pre: prebuf, off: 0 }) {
@@ -294,8 +301,8 @@ pub mod non_ios {
                             }
                         });
 
-                        // For now, handle a single client per server instance to avoid socket contention.
-                        return Ok(());
+                        // Continue to listen for additional clients after spawning per-client reader.
+                        continue;
                     }
                 }
                 #[cfg(not(unix))]
