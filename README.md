@@ -116,3 +116,24 @@ You can also open the package in Xcode to run tests interactively:
      ```bash
      bash scripts/build_ios_xcframework.sh
      ```
+
+
+## Changelog
+
+2025-08-29
+- DTLS (non‑iOS, OpenSSL) server: Implemented DTLSv1.2 accept loop with per‑peer SSL streams and callbacks.
+  - Handlers now receive a reference to the Dtls instance (&dyn Dtls) so they can reply via server.send(to, data).
+  - Added DTLS cookie callbacks and read_ahead for better DTLS behavior.
+- DTLS client: Handshake over UDP via OpenSSL, send application data, and deliver responses to the configured with_handle_message callback. The client handler receives a lightweight handle that can write back on the same DTLS connection.
+- Echo semantics in tests: Server echo handler prepends "ECHOED: " to payloads; client echo handler prepends "CLIENT ECHOED: ".
+- Dynamic PKI for tests: Integration tests now generate an Ed25519 CA and ECDSA P‑256 server/client certs with the openssl CLI (tests/pki.rs). No static PEMs are required.
+- New integration tests:
+  - tests/dtls_openssl_smoke.rs: Starts a DTLS server and verifies the handler observes application data from a DTLS client.
+  - tests/dtls_loopback_e2e.rs: End‑to‑end loopback where the server echoes back with the required prefix; client validates echoed data and server records original payload.
+  - tests/dtls_client_echo_roundtrip.rs: Two‑way messaging where server triggers a Ping and client echoes back with the client prefix; server validates "CLIENT ECHOED: Ping".
+- Cleanup:
+  - Removed plaintext UDP fallback paths and unused scaffolding types; warnings reduced.
+  - Centralized client context preparation; tests pass locally.
+
+Notes
+- For simplicity in tests, peer verification is currently disabled (SslVerifyMode::NONE). The HandlePeerCertificate callback API exists and can be re‑enabled for strict verification when needed.
