@@ -37,21 +37,19 @@ fn dtls_openssl_udp_listener_invokes_handler() {
 
     // Build and configure the server instance.
     let mut server = DtlsOpenSsl::new()
-        .as_server()
         .with_handle_message(handler)
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    // Start the DTLS server.
-    server.start_server(addr).expect("start_server should succeed");
+    // Start the DTLS accept loop.
+    server.start(addr).expect("start should succeed");
 
     // Give the background thread a moment to bind.
     thread::sleep(Duration::from_millis(50));
 
     // DTLS client: build and send a payload.
     let client = DtlsOpenSsl::new()
-        .as_client()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());

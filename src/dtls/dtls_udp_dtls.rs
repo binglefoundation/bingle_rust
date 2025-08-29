@@ -154,6 +154,8 @@ impl DtlsUdpDtls {
 }
 
 impl Dtls for DtlsUdpDtls {
+    fn start(&mut self, addr: SocketAddr) -> Result<()> { self.start_server(addr) }
+    fn stop(&mut self) -> Result<()> { Ok(()) }
     fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
         // Validate role
         if self.role != DtlsRole::Client {

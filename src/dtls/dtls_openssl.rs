@@ -24,9 +24,6 @@ pub mod non_ios {
     /// OpenSSL-backed DTLS implementation (non-iOS only for now).
     /// This is a scaffold: wiring to OpenSSL's DTLS handshake, mutual auth,
     /// and async send/recv will be added next.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum DtlsRole { Client, Server }
-    impl Default for DtlsRole { fn default() -> Self { DtlsRole::Client } }
 
     #[derive(Default)]
     pub struct DtlsOpenSsl {
@@ -41,11 +38,13 @@ pub mod non_ios {
         pub(crate) server_signing_cert: Option<Vec<u8>>, // Server signing certificate (PEM)
         pub(crate) server_signing_private_key: Option<Vec<u8>>, // Server signing private key (PEM)
 
-        // Role and state placeholders
-        pub(crate) role: DtlsRole,
-        // Prepared DTLS server acceptor (DTLSv1.2), built on start_server
+        // State placeholders
+        // Prepared DTLS server acceptor (DTLSv1.2), built on start()
         pub(crate) acceptor: Option<SslAcceptor>,
         pub(crate) server_writers: Option<ServerWriters>,
+        // Lifecycle control for accept loop
+        pub(crate) stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+        pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
     }
 
     impl DtlsOpenSsl {
@@ -53,12 +52,10 @@ pub mod non_ios {
             use std::sync::{Arc, Mutex};
             use std::collections::HashMap;
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
-            Self { role: DtlsRole::default(), server_writers: Some(writers), ..Default::default() }
+            Self { server_writers: Some(writers), ..Default::default() }
         }
 
-        pub fn as_client(mut self) -> Self { self.role = DtlsRole::Client; self }
-        pub fn as_server(mut self) -> Self { self.role = DtlsRole::Server; self }
-
+        // Removed client/server role distinction; context builders are used by send() as-needed
         fn prepare_client_context(&self) -> Result<SslConnector> {
             // Build a DTLSv1.2 client connector and configure mutual auth + verification.
             let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|_| ())?;
@@ -160,8 +157,7 @@ pub mod non_ios {
             Ok(())
         }
 
-        pub fn start_server(&mut self, addr: SocketAddr) -> Result<()> {
-            if self.role != DtlsRole::Server { return Err(()); }
+        pub fn start_accept(&mut self, addr: SocketAddr) -> Result<()> {
             // Validate server creds
             if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
                 return Err(());
@@ -171,7 +167,7 @@ pub mod non_ios {
             let acceptor = self.acceptor.take().map(std::sync::Arc::new);
 
             // Build a sender instance that can be passed into the handler and reuse per-peer writers.
-            let mut sender_inner = DtlsOpenSsl::new().as_client();
+            let mut sender_inner = DtlsOpenSsl::new();
             sender_inner.ca_cert = self.ca_cert.clone();
             sender_inner.client_cert = self.client_cert.clone();
             sender_inner.client_private_key = self.client_private_key.clone();
@@ -179,13 +175,16 @@ pub mod non_ios {
             sender_inner.server_writers = Some(writers.clone());
             let sender = std::sync::Arc::new(sender_inner);
 
-            // Spawn the DTLS accept thread and invoke handler with &sender.
+            // Initialize stop flag and spawn the DTLS accept thread
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            self.stop_flag = Some(stop.clone());
             let handler = self.handle_message;
-            thread::spawn(move || {
+            let stop_clone = stop.clone();
+            let handle = thread::spawn(move || {
 
                 // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
                 #[cfg(unix)]
-                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters, stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
@@ -343,11 +342,11 @@ pub mod non_ios {
                     }
                 }
                 #[cfg(not(unix))]
-                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<SslAcceptor>, _handler: Option<HandleMessage>, _sender: &DtlsOpenSsl, _writers: ServerWriters) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<std::sync::Arc<SslAcceptor>>, _handler: Option<HandleMessage>, _sender: std::sync::Arc<DtlsOpenSsl>, _writers: ServerWriters, _stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
                     Err(())
                 }
 
-                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers);
+                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers, stop_clone);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
             Ok(())
@@ -355,6 +354,8 @@ pub mod non_ios {
     }
 
     impl Dtls for DtlsOpenSsl {
+            fn start(&mut self, addr: SocketAddr) -> Result<()> { self.start_accept(addr) }
+            fn stop(&mut self) -> Result<()> { Ok(()) }
         fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
@@ -368,7 +369,7 @@ pub mod non_ios {
                 }
             }
 
-            if self.role != DtlsRole::Client { return Err(()); }
+            // No explicit role: prefer inbound writer; otherwise initiate client DTLS handshake
             // Build a DTLSv1.2 connector via the shared helper
             let connector = self.prepare_client_context()?;
 

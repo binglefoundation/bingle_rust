@@ -58,20 +58,18 @@ fn dtls_client_echo_roundtrip() {
 
     // Build and configure the server instance with handler that captures and triggers Ping
     let mut server = DtlsOpenSsl::new()
-        .as_server()
         .with_handle_message(server_capture_and_trigger_handler)
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start_server(addr).expect("start_server should succeed");
+    server.start(addr).expect("start should succeed");
 
     // Give the background thread a moment to bind and start listening
     thread::sleep(Duration::from_millis(400));
 
     // Build the DTLS client with the echo handler
     let client = DtlsOpenSsl::new()
-        .as_client()
         .with_handle_message(client_echo_handler)
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())

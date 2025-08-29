@@ -21,6 +21,16 @@ pub type HandlePeerCertificate = fn(certificate: &[u8], ca_certificate: &[u8]) -
 /// Public DTLS trait abstraction
 pub trait Dtls {
     /**
+     * Start the DTLS accept loop on the given local address. The accept loop runs until stop() is called.
+     */
+    fn start(&mut self, addr: SocketAddr) -> Result<()>;
+
+    /**
+     * Stop the DTLS accept loop, waiting for background tasks to exit.
+     */
+    fn stop(&mut self) -> Result<()>;
+
+    /**
      * Send data to the peer
      * If no connection exists to `to`, a new connection will be established.
      * @param to the address of the peer
