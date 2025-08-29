@@ -329,14 +329,59 @@ pub mod non_ios {
                 }
             };
 
-            // Send payload and try to read an echo back, then invoke client handler if present.
-            let _ = stream.write_all(data);
-            let _ = stream.flush();
-            let mut buf = [0u8; 2048];
-            if let Ok(n) = stream.read(&mut buf) {
-                if n > 0 {
-                    if let Some(h) = self.handle_message { h(self, &to, &buf[..n]); }
+            // Wrap the stream to allow the client handler to write back on the same DTLS connection.
+            let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
+
+            // Minimal handle that writes to the existing DTLS stream when send() is called.
+            struct ClientHandle {
+                to: SocketAddr,
+                stream: std::sync::Arc<std::sync::Mutex<SslStream<UdpConn>>>,
+            }
+            impl Dtls for ClientHandle {
+                fn send(&self, _to: SocketAddr, data: &[u8]) -> Result<()> {
+                    let mut s = self.stream.lock().map_err(|_| ())?;
+                    use std::io::Write;
+                    s.write_all(data).map_err(|_| ())?;
+                    let _ = s.flush();
+                    Ok(())
                 }
+                fn get_handle_message(&self) -> Option<HandleMessage> { None }
+                fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+                fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+                fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+                fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+                fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
+                fn get_ca_cert(&self) -> Option<&[u8]> { None }
+                fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
+                fn get_client_cert(&self) -> Option<&[u8]> { None }
+                fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
+                fn get_client_private_key(&self) -> Option<&[u8]> { None }
+                fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+                fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
+                fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+                fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+                fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
+                fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+                fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+                fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
+            }
+
+            // Send payload, read response bytes, then drop lock before invoking handler.
+            let response: Option<Vec<u8>> = {
+                let mut s = shared.lock().map_err(|_| ())?;
+                let _ = s.write_all(data);
+                let _ = s.flush();
+                let mut buf = [0u8; 2048];
+                match s.read(&mut buf) {
+                    Ok(n) if n > 0 => Some(buf[..n].to_vec()),
+                    _ => None,
+                }
+            };
+            if let (Some(h), Some(bytes)) = (self.handle_message, response) {
+                let ch = ClientHandle { to, stream: shared.clone() };
+                h(&ch, &to, &bytes);
             }
             Ok(())
         }

@@ -15,6 +15,7 @@ fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
     let _ = CLIENT_ECHOED.set(data.to_vec());
 }
 
+
 #[test]
 fn dtls_openssl_end_to_end_loopback_echo() {
     use std::time::Instant;
