@@ -195,22 +195,43 @@ pub mod non_ios {
                         sock: std::net::UdpSocket,
                         pre: Vec<u8>,
                         off: usize,
+                        peer: std::net::SocketAddr,
                     }
                     impl Read for UdpConn {
                         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                            use std::time::Duration;
+                            // Serve any prefetched bytes first (from initial recv_from in accept loop)
                             if self.off < self.pre.len() {
                                 let remaining = &self.pre[self.off..];
                                 let n = remaining.len().min(buf.len());
                                 buf[..n].copy_from_slice(&remaining[..n]);
                                 self.off += n;
-                                Ok(n)
-                            } else {
-                                self.sock.recv(buf)
+                                return Ok(n);
+                            }
+                            // Only consume datagrams from the designated peer
+                            let mut tmp = vec![0u8; buf.len().max(2048)];
+                            loop {
+                                match self.sock.peek_from(&mut tmp) {
+                                    Ok((_, from)) => {
+                                        if from == self.peer {
+                                            // Now actually consume the datagram
+                                            let (n2, _from2) = self.sock.recv_from(&mut tmp)?;
+                                            let ncopy = n2.min(buf.len());
+                                            buf[..ncopy].copy_from_slice(&tmp[..ncopy]);
+                                            return Ok(ncopy);
+                                        } else {
+                                            // Yield briefly to allow accept loop/per-peer threads to handle their packets
+                                            std::thread::sleep(Duration::from_millis(1));
+                                            continue;
+                                        }
+                                    }
+                                    Err(e) => return Err(e),
+                                }
                             }
                         }
                     }
                     impl Write for UdpConn {
-                        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.sock.send(buf) }
+                        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.sock.send_to(buf, self.peer) }
                         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
                     }
 
@@ -220,72 +241,88 @@ pub mod non_ios {
                     let acceptor = match acceptor { Some(a) => a, None => return Err(()) };
                     let sock = std::net::UdpSocket::bind(addr).map_err(|_| ())?;
                     eprintln!("[server] bound to {}", addr);
-                    let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
                     let _ = sock.set_nonblocking(false);
 
                     loop {
-                        // Receive one datagram to learn the client's address and prefetch its payload.
+                        // Peek at the next datagram to decide if this is a new peer or an existing one.
                         let mut probe = [0u8; 2048];
+                        let (_n_peek, from) = match sock.peek_from(&mut probe) {
+                            Ok((n, from)) => (n, from),
+                            Err(_) => continue,
+                        };
+                        // If this peer already has a registered writer/stream, do not consume this packet here;
+                        // let the per-client reader on the connected socket handle it.
+                        if let Ok(map) = writers.lock() {
+                            if map.contains_key(&from) {
+                                // Brief nap to avoid a tight spin while the per-client thread drains data.
+                                std::thread::sleep(Duration::from_millis(1));
+                                continue;
+                            }
+                        }
+
+                        // This appears to be a new peer: consume the packet now and spawn a worker to handle handshake.
                         let (n, from) = match sock.recv_from(&mut probe) {
                             Ok((n, from)) => (n, from),
                             Err(_) => continue,
                         };
                         eprintln!("[server] probe from {} ({} bytes)", from, n);
 
-                        // Clone the listening socket and connect the clone to the peer.
+                        // Pre-register a placeholder writer to mark this peer as in-progress to avoid racing consumption.
+                        {
+                            if let Ok(mut map) = writers.lock() {
+                                let placeholder: ServerWriter = std::sync::Arc::new(|_payload: &[u8]| -> Result<()> { Err(()) });
+                                map.insert(from, placeholder);
+                            }
+                        }
+
+                        // Spawn a per-client worker thread to handle handshake and I/O, keeping the accept loop free.
+                        let acc2 = acceptor.clone();
+                        let handler2 = handler;
+                        let sender_clone = sender.clone();
+                        let writers_clone = writers.clone();
+                        let prebuf = probe[..n].to_vec();
                         let sock_conn = match sock.try_clone() {
                             Ok(s) => s,
                             Err(_) => continue,
                         };
-                        if sock_conn.connect(from).is_err() { continue; }
-                        let _ = sock_conn.set_read_timeout(Some(Duration::from_millis(1500)));
-
-                        // Clone acceptor and handler for the per-client handling.
-                        let acc2 = acceptor.clone();
-                        let handler2 = handler;
-                        let prebuf = probe[..n].to_vec();
-                        if sock_conn.connect(from).is_err() { continue; }
-                        let _ = sock_conn.set_read_timeout(Some(Duration::from_millis(1500)));
-
-                        // Clone acceptor and handler for the per-client handling.
-                        let acc2 = acceptor.clone();
-                        let handler2 = handler;
-                        let prebuf = probe[..n].to_vec();
-
-                        // Attempt DTLS server handshake on the connected UDP socket (handle inline for single client).
-                        let stream = match acc2.accept(UdpConn { sock: sock_conn, pre: prebuf, off: 0 }) {
-                            Ok(s) => s,
-                            Err(_) => continue,
-                        };
-
-                        let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
-
-                        // Register writer for this peer so handler can call sender.send(to, data)
-                        {
-                            if let Ok(mut map) = writers.lock() {
-                                let stream_arc = shared.clone();
-                                let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
-                                    let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err(()) };
-                                    use std::io::Write;
-                                    if s.write_all(payload).is_err() { return Err(()) };
-                                    let _ = s.flush();
-                                    Ok(())
-                                });
-                                eprintln!("[server] writer registered for {}", from);
-                                                                map.insert(from, writer);
-                            }
-                        }
-
-                        // Spawn a per-client reader thread to handle this client.
-                        let sender_clone = sender.clone();
-                        let shared_clone = shared.clone();
                         std::thread::spawn(move || {
+                            let _ = sock_conn.set_read_timeout(Some(Duration::from_millis(1500)));
+
+                            // Attempt DTLS server handshake on an unconnected UDP socket filtered to this peer.
+                            let stream = match acc2.accept(UdpConn { sock: sock_conn, pre: prebuf, off: 0, peer: from }) {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    // cleanup placeholder on handshake failure
+                                    if let Ok(mut map) = writers_clone.lock() { let _ = map.remove(&from); }
+                                    return;
+                                },
+                            };
+
+                            let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
+
+                            // Register writer for this peer so handler can call sender.send(to, data)
+                            {
+                                if let Ok(mut map) = writers_clone.lock() {
+                                    let stream_arc = shared.clone();
+                                    let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
+                                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err(()) };
+                                        use std::io::Write;
+                                        if s.write_all(payload).is_err() { return Err(()) };
+                                        let _ = s.flush();
+                                        Ok(())
+                                    });
+                                    eprintln!("[server] writer registered for {}", from);
+                                    map.insert(from, writer);
+                                }
+                            }
+
+                            // Per-client read loop (runs on this worker thread).
                             if let Some(h) = handler2 {
                                 loop {
                                     use std::io::Read;
                                     let mut app = [0u8; 2048];
                                     let n = {
-                                        let mut s = match shared_clone.lock() { Ok(g) => g, Err(_) => break };
+                                        let mut s = match shared.lock() { Ok(g) => g, Err(_) => break };
                                         match s.read(&mut app) {
                                             Ok(n) => n,
                                             Err(e) => {
@@ -301,7 +338,7 @@ pub mod non_ios {
                             }
                         });
 
-                        // Continue to listen for additional clients after spawning per-client reader.
+                        // Continue to listen for additional clients after spawning worker.
                         continue;
                     }
                 }
@@ -352,7 +389,7 @@ pub mod non_ios {
             eprintln!("[client] connecting DTLS to {}", to);
             let mut conf = connector.configure().map_err(|_| ())?;
             conf.set_verify_hostname(false);
-            let mut stream = match conf.connect("ignored-host", UdpConn(sock)) {
+            let stream = match conf.connect("ignored-host", UdpConn(sock)) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
                     s
