@@ -41,3 +41,4 @@ members = [
 
 [dev-dependencies]
 bingle_test = { path = "bingle_test" }
+tempfile = "3"

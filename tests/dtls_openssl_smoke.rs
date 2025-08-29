@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
+mod pki;
 
 static MESSAGE_SEEN: AtomicBool = AtomicBool::new(false);
 
@@ -19,11 +20,13 @@ fn handler(_server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
 
 #[test]
 fn dtls_openssl_udp_listener_invokes_handler() {
-    // Load server PEM materials (self-signed) and client materials.
-    let server_cert_pem: Vec<u8> = include_bytes!("../dtls_test/server.crt").to_vec();
-    let server_key_pem: Vec<u8> = include_bytes!("../dtls_test/server.key").to_vec();
-    let client_cert_pem: Vec<u8> = include_bytes!("../dtls_test/client.crt").to_vec();
-    let client_key_pem: Vec<u8> = include_bytes!("../dtls_test/client.key").to_vec();
+    // Generate Ed25519 CA, server, and client credentials dynamically
+    let certs = pki::generate_ed25519_test_certs();
+    let server_cert_pem: Vec<u8> = certs.server_crt.clone();
+    let server_key_pem: Vec<u8> = certs.server_key.clone();
+    let client_cert_pem: Vec<u8> = certs.client_crt.clone();
+    let client_key_pem: Vec<u8> = certs.client_key.clone();
+    let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
     let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
@@ -38,7 +41,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
         .with_handle_message(handler)
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
-        .with_ca_cert(server_cert_pem.clone());
+        .with_ca_cert(ca_pem.clone());
 
     // Start the DTLS server.
     server.start_server(addr).expect("start_server should succeed");
@@ -51,7 +54,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
         .as_client()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
-        .with_ca_cert(server_cert_pem.clone());
+        .with_ca_cert(ca_pem.clone());
 
     let payload = b"hello-dtls";
     assert!(client.send(addr, payload).is_ok(), "client DTLS send failed");

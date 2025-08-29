@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
+mod pki;
 
 static SERVER_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
@@ -17,12 +18,13 @@ fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
 #[test]
 fn dtls_openssl_end_to_end_loopback_echo() {
     use std::time::Instant;
-    // Load server PEM materials for the server (CA = server cert in test env)
-    let server_cert_pem: Vec<u8> = include_bytes!("../dtls_test/server.crt").to_vec();
-    let server_key_pem: Vec<u8> = include_bytes!("../dtls_test/server.key").to_vec();
-    // Load client PEM materials
-    let client_cert_pem: Vec<u8> = include_bytes!("../dtls_test/client.crt").to_vec();
-    let client_key_pem: Vec<u8> = include_bytes!("../dtls_test/client.key").to_vec();
+    // Generate Ed25519 CA, server, and client credentials dynamically
+    let certs = pki::generate_ed25519_test_certs();
+    let server_cert_pem: Vec<u8> = certs.server_crt.clone();
+    let server_key_pem: Vec<u8> = certs.server_key.clone();
+    let client_cert_pem: Vec<u8> = certs.client_crt.clone();
+    let client_key_pem: Vec<u8> = certs.client_key.clone();
+    let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
     let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
@@ -50,7 +52,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
         .with_handle_message(echo_handler)
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
-        .with_ca_cert(server_cert_pem.clone());
+        .with_ca_cert(ca_pem.clone());
 
     server.start_server(addr).expect("start_server should succeed");
 
@@ -63,7 +65,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
         .with_handle_message(client_handler)
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
-        .with_ca_cert(server_cert_pem.clone());
+        .with_ca_cert(ca_pem.clone());
 
     let payload = b"loopback-echo-payload";
     // Retry a few times in case of transient handshake timing.
