@@ -43,7 +43,9 @@ fn dtls_openssl_end_to_end_loopback_echo() {
             }
         }
         let _ = SERVER_ECHOED.set(data.to_vec());
-        let _ = server.send(*from, data);
+        let mut echoed = b"ECHOED: ".to_vec();
+        echoed.extend_from_slice(data);
+        let _ = server.send(*from, &echoed);
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
@@ -82,7 +84,9 @@ fn dtls_openssl_end_to_end_loopback_echo() {
         thread::sleep(Duration::from_millis(10));
     }
     let echoed = CLIENT_ECHOED.get().expect("client did not capture echoed payload within timeout");
-    assert_eq!(echoed.as_slice(), payload, "client captured echoed payload mismatch");
+    let mut expected = b"ECHOED: ".to_vec();
+    expected.extend_from_slice(payload);
+    assert_eq!(echoed.as_slice(), expected.as_slice(), "client captured echoed payload mismatch with prefix");
 
     // Also ensure the server echo handler recorded the original payload.
     let start = Instant::now();
