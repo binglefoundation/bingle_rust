@@ -96,8 +96,22 @@ pub mod non_ios {
                 builder.set_verify_cert_store(store).map_err(|_| ())?;
             }
 
-            // For tests, disable peer verification to simplify handshake.
-            builder.set_verify(SslVerifyMode::NONE);
+            // Wire client-side verify callback to delegate to handle_peer_certificate, if present.
+            if let Some(handler) = self.handle_peer_certificate {
+                let ca_bytes = self.ca_cert.clone().unwrap_or_default();
+                builder.set_verify_callback(SslVerifyMode::PEER, move |preverify_ok, ctx| {
+                    if !preverify_ok { return false; }
+                    if let Some(cert_ref) = ctx.current_cert() {
+                        if let Ok(cert_pem) = cert_ref.to_pem() {
+                            return handler(&cert_pem, &ca_bytes).is_ok();
+                        }
+                    }
+                    false
+                });
+            } else {
+                // For tests, disable peer verification to simplify handshake.
+                builder.set_verify(SslVerifyMode::NONE);
+            }
 
             // Build and return the configured connector
             Ok(builder.build())

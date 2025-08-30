@@ -1,0 +1,142 @@
+#![cfg(not(target_os = "ios"))]
+
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::{Mutex, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
+mod pki;
+
+// Storage for captured peer certificates and CA bytes
+static SERVER_CERTS_SEEN: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
+static CLIENT_CERTS_SEEN: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
+static SERVER_CA_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
+static CLIENT_CA_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
+static CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
+
+fn normalize_pem_body(pem_bytes: &[u8]) -> String {
+    // Extract only base64 body between BEGIN/END lines and strip all whitespace
+    let s = String::from_utf8_lossy(pem_bytes);
+    let mut in_body = false;
+    let mut body = String::new();
+    for line in s.lines() {
+        if line.starts_with("-----BEGIN ") { in_body = true; continue; }
+        if line.starts_with("-----END ") { break; }
+        if in_body {
+            for ch in line.chars() {
+                if !ch.is_whitespace() { body.push(ch); }
+            }
+        }
+    }
+    body
+}
+
+fn server_peer_cert_handler(cert_pem: &[u8], ca_pem: &[u8]) -> DtlsResult<String> {
+    let store = SERVER_CERTS_SEEN.get_or_init(|| Mutex::new(Vec::new()));
+    if let Ok(mut v) = store.lock() {
+        v.push(cert_pem.to_vec());
+    }
+    let _ = SERVER_CA_SEEN.set(ca_pem.to_vec());
+    Ok("server-verified".to_string())
+}
+
+fn client_peer_cert_handler(cert_pem: &[u8], ca_pem: &[u8]) -> DtlsResult<String> {
+    let store = CLIENT_CERTS_SEEN.get_or_init(|| Mutex::new(Vec::new()));
+    if let Ok(mut v) = store.lock() {
+        v.push(cert_pem.to_vec());
+    }
+    let _ = CLIENT_CA_SEEN.set(ca_pem.to_vec());
+    Ok("client-verified".to_string())
+}
+
+fn echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+    // Ignore DTLS record-layer types if any (not expected for application handler)
+    if let Some(first) = data.first() { if *first == 22 || *first == 23 { return; } }
+    let mut echoed = b"ECHOED: ".to_vec();
+    echoed.extend_from_slice(data);
+    let _ = server.send(*from, &echoed);
+}
+
+fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+    let _ = CLIENT_ECHOED.set(data.to_vec());
+}
+
+#[test]
+fn dtls_openssl_peer_certificate_handlers_are_invoked() {
+    // Generate test certificates
+    let certs = pki::generate_ed25519_test_certs();
+    let server_cert_pem: Vec<u8> = certs.server_crt.clone();
+    let server_key_pem: Vec<u8> = certs.server_key.clone();
+    let client_cert_pem: Vec<u8> = certs.client_crt.clone();
+    let client_key_pem: Vec<u8> = certs.client_key.clone();
+    let ca_pem: Vec<u8> = certs.ca_crt.clone();
+
+    // Find a free local UDP port
+    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+
+    // Start server with peer certificate handler and echo message handler
+    let mut server = DtlsOpenSsl::new()
+        .with_null_encryption()
+        .with_handle_peer_certificate(server_peer_cert_handler)
+        .with_handle_message(echo_handler)
+        .with_server_signing_cert(server_cert_pem.clone())
+        .with_server_signing_private_key(server_key_pem.clone())
+        .with_ca_cert(ca_pem.clone());
+
+    server.start(addr).expect("server start");
+    thread::sleep(Duration::from_millis(200));
+
+    // Build client with peer certificate handler
+    let client = DtlsOpenSsl::new()
+        .with_null_encryption()
+        .with_handle_peer_certificate(client_peer_cert_handler)
+        .with_handle_message(client_handler)
+        .with_client_cert(client_cert_pem.clone())
+        .with_client_private_key(client_key_pem.clone())
+        .with_ca_cert(ca_pem.clone());
+
+    // Send a payload to drive handshake and application data
+    let payload = b"peer-cert-test";
+    let mut ok = false;
+    for _ in 0..8 {
+        if client.send(addr, payload).is_ok() { ok = true; break; }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(ok, "client DTLS send failed");
+
+    // Wait for client to receive the echoed payload (ensures handshake completed)
+    let start = Instant::now();
+    while CLIENT_ECHOED.get().is_none() && start.elapsed() < Duration::from_secs(3) {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let echoed = CLIENT_ECHOED.get().expect("client did not capture echoed payload");
+    let mut expected = b"ECHOED: ".to_vec();
+    expected.extend_from_slice(payload);
+    assert_eq!(echoed.as_slice(), expected.as_slice(), "echo mismatch");
+
+    // Validate that server saw the client's certificate at least once
+    let client_norm = normalize_pem_body(&client_cert_pem);
+    let server_saw_client = SERVER_CERTS_SEEN
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|v| v.iter().any(|pem| normalize_pem_body(pem) == client_norm))
+        .unwrap_or(false);
+    assert!(server_saw_client, "server did not observe client's certificate in handler");
+
+    // Validate that client saw the server's certificate at least once
+    let server_norm = normalize_pem_body(&server_cert_pem);
+    let client_saw_server = CLIENT_CERTS_SEEN
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|v| v.iter().any(|pem| normalize_pem_body(pem) == server_norm))
+        .unwrap_or(false);
+    assert!(client_saw_server, "client did not observe server's certificate in handler");
+
+    // Validate CA bytes passed to handlers match the configured CA PEM
+    if let Some(ca) = SERVER_CA_SEEN.get() { assert_eq!(ca.as_slice(), ca_pem.as_slice(), "server CA bytes mismatch"); }
+    if let Some(ca) = CLIENT_CA_SEEN.get() { assert_eq!(ca.as_slice(), ca_pem.as_slice(), "client CA bytes mismatch"); }
+}
