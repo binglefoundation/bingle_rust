@@ -1,4 +1,5 @@
 pub mod dtls_trait;
+pub mod dtls_debug;
 #[cfg(not(target_os = "ios"))]
 pub mod dtls_openssl;
 

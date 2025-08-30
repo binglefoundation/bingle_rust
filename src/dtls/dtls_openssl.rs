@@ -37,6 +37,8 @@ pub mod non_ios {
         pub(crate) client_private_key: Option<Vec<u8>>, // Client private key (PEM)
         pub(crate) server_signing_cert: Option<Vec<u8>>, // Server signing certificate (PEM)
         pub(crate) server_signing_private_key: Option<Vec<u8>>, // Server signing private key (PEM)
+        // Debug: if true, configure OpenSSL to use NULL (eNULL) cipher suites for no-encryption handshakes.
+        pub(crate) null_encryption: bool,
 
         // State placeholders
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
@@ -55,6 +57,11 @@ pub mod non_ios {
             Self { server_writers: Some(writers), ..Default::default() }
         }
 
+        /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
+        pub fn with_null_encryption(mut self) -> Self { self.null_encryption = true; self }
+        /// Set NULL (no-encryption) ciphers on/off for debugging.
+        pub fn set_null_encryption(&mut self, enabled: bool) { self.null_encryption = enabled; }
+
         // Removed client/server role distinction; context builders are used by send() as-needed
         fn prepare_client_context(&self) -> Result<SslConnector> {
             // Build a DTLSv1.2 client connector and configure mutual auth + verification.
@@ -63,6 +70,13 @@ pub mod non_ios {
             // Restrict to DTLSv1.2 and enable read_ahead.
             builder.set_options(SslOptions::NO_DTLSV1);
             builder.set_read_ahead(true);
+
+            // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
+            if self.null_encryption {
+                // OpenSSL 3 defaults to security level >=1 which forbids NULL; drop to 0.
+                builder.set_security_level(0);
+                builder.set_cipher_list("eNULL").map_err(|_| ())?;
+            }
 
             // Optionally load client cert and key if provided.
             if let (Some(cert_pem), Some(key_pem)) = (self.client_cert.as_deref(), self.client_private_key.as_deref()) {
@@ -121,6 +135,12 @@ pub mod non_ios {
             builder.set_options(SslOptions::NO_DTLSV1);
             builder.set_read_ahead(true);
 
+            // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
+            if self.null_encryption {
+                builder.set_security_level(0);
+                builder.set_cipher_list("eNULL").map_err(|_| ())?;
+            }
+
             // Wire verify callback to delegate to handle_peer_certificate, if present.
             if let Some(handler) = self.handle_peer_certificate {
                 let ca_bytes = self.ca_cert.clone().unwrap_or_default();
@@ -171,6 +191,7 @@ pub mod non_ios {
             sender_inner.ca_cert = self.ca_cert.clone();
             sender_inner.client_cert = self.client_cert.clone();
             sender_inner.client_private_key = self.client_private_key.clone();
+            sender_inner.null_encryption = self.null_encryption;
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
             sender_inner.server_writers = Some(writers.clone());
             let sender = std::sync::Arc::new(sender_inner);
@@ -215,6 +236,14 @@ pub mod non_ios {
                                         if from == self.peer {
                                             // Now actually consume the datagram
                                             let (n2, _from2) = self.sock.recv_from(&mut tmp)?;
+                                            #[cfg(debug_assertions)]
+                                            {
+                                                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&tmp[..n2]) {
+                                                    eprintln!("[dtls][recv][server {}] {}", self.peer, json);
+                                                } else {
+                                                    eprintln!("[dtls][recv][server {}] <parse error> ({} bytes)", self.peer, n2);
+                                                }
+                                            }
                                             let ncopy = n2.min(buf.len());
                                             buf[..ncopy].copy_from_slice(&tmp[..ncopy]);
                                             return Ok(ncopy);
@@ -230,7 +259,17 @@ pub mod non_ios {
                         }
                     }
                     impl Write for UdpConn {
-                        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.sock.send_to(buf, self.peer) }
+                        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                            #[cfg(debug_assertions)]
+                            {
+                                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
+                                    eprintln!("[dtls][send][server {}] {}", self.peer, json);
+                                } else {
+                                    eprintln!("[dtls][send][server {}] <parse error> ({} bytes)", self.peer, buf.len());
+                                }
+                            }
+                            self.sock.send_to(buf, self.peer)
+                        }
                         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
                     }
 
@@ -267,6 +306,14 @@ pub mod non_ios {
                             Err(_) => continue,
                         };
                         eprintln!("[server] probe from {} ({} bytes)", from, n);
+                        #[cfg(debug_assertions)]
+                        {
+                            if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&probe[..n]) {
+                                eprintln!("[dtls][recv][server {}] {}", from, json);
+                            } else {
+                                eprintln!("[dtls][recv][server {}] <parse error> ({} bytes)", from, n);
+                            }
+                        }
 
                         // Pre-register a placeholder writer to mark this peer as in-progress to avoid racing consumption.
                         {
@@ -383,11 +430,36 @@ pub mod non_ios {
             // Build a DTLSv1.2 connector via the shared helper
             let connector = self.prepare_client_context()?;
 
-            // Wrap a connected UDP socket as a Read/Write stream
-            struct UdpConn(std::net::UdpSocket);
-            impl Read for UdpConn { fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.0.recv(buf) } }
+            // Wrap a connected UDP socket as a Read/Write stream with debug logging
+            struct UdpConn { sock: std::net::UdpSocket, peer: SocketAddr }
+            impl Read for UdpConn {
+                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                    let n = self.sock.recv(buf)?;
+                    #[cfg(debug_assertions)]
+                    {
+                        if n > 0 {
+                            if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n]) {
+                                eprintln!("[dtls][recv][client {}] {}", self.peer, json);
+                            } else {
+                                eprintln!("[dtls][recv][client {}] <parse error> ({} bytes)", self.peer, n);
+                            }
+                        }
+                    }
+                    Ok(n)
+                }
+            }
             impl Write for UdpConn {
-                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.0.send(buf) }
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                    #[cfg(debug_assertions)]
+                    {
+                        if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
+                            eprintln!("[dtls][send][client {}] {}", self.peer, json);
+                        } else {
+                            eprintln!("[dtls][send][client {}] <parse error> ({} bytes)", self.peer, buf.len());
+                        }
+                    }
+                    self.sock.send(buf)
+                }
                 fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
             }
 
@@ -400,7 +472,7 @@ pub mod non_ios {
             eprintln!("[client] connecting DTLS to {}", to);
             let mut conf = connector.configure().map_err(|_| ())?;
             conf.set_verify_hostname(false);
-            let stream = match conf.connect("ignored-host", UdpConn(sock)) {
+            let stream = match conf.connect("ignored-host", UdpConn { sock, peer: to }) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
                     s
