@@ -11,7 +11,6 @@ mod pki;
 static SERVER_HELLO: OnceLock<Vec<u8>> = OnceLock::new();
 static SERVER_CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT_PING_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
-static CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 
 fn client_echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
     // Record that client received the Ping

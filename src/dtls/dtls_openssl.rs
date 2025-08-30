@@ -243,6 +243,8 @@ pub mod non_ios {
                     let _ = sock.set_nonblocking(false);
 
                     loop {
+                        use std::sync::atomic::Ordering;
+                        if stop.load(Ordering::Relaxed) { break Ok(()); }
                         // Peek at the next datagram to decide if this is a new peer or an existing one.
                         let mut probe = [0u8; 2048];
                         let (_n_peek, from) = match sock.peek_from(&mut probe) {
@@ -349,13 +351,21 @@ pub mod non_ios {
                 let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers, stop_clone);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
+            self.server_thread = Some(handle);
             Ok(())
         }
     }
 
     impl Dtls for DtlsOpenSsl {
             fn start(&mut self, addr: SocketAddr) -> Result<()> { self.start_accept(addr) }
-            fn stop(&mut self) -> Result<()> { Ok(()) }
+            fn stop(&mut self) -> Result<()> {
+                if let Some(flag) = self.stop_flag.take() {
+                    use std::sync::atomic::Ordering;
+                    flag.store(true, Ordering::SeqCst);
+                }
+                let _ = self.server_thread.take();
+                Ok(())
+            }
         fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
