@@ -35,6 +35,7 @@ components:
         - $ref: '#/components/schemas/PlainTextMessage'
         - $ref: '#/components/schemas/PlainTextMessageWithNulls'
         - $ref: '#/components/schemas/TypedMessage'
+        - $ref: '#/components/schemas/RelayMessage'
       x-polymorphic-by:
         - app
         - type
@@ -87,6 +88,14 @@ components:
         type:
           type: string
           description: Type identifier within the application namespace
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag instructing responders which tag to echo back.
         text:
           type: string
           nullable: true
@@ -127,14 +136,14 @@ components:
     DdbMessage:
       description: |
         Distributed Database (DDB) messages where `app` is "ddb" and `type` selects the
-        specific command. |
-        Messages are sent to a relay node and may have a response. |
-        The DDB involves one or more relay nodes, which, when operational, have identical copies of the database |
-        Each client node has one relay node they access - this is algorithmically determined based on their id. |
-        Search messages `DdbQueryResolve` are executed in the relay node. |
-        Upserts and deletes are passed through each node (in an algorithmically determined graph) |
-        New relay nodes are initialized, receive a copy of the DB and are then added. |
-        This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed
+        specific command.
+        Messages are sent to a relay node and may have a response.
+        The DDB involves one or more relay nodes, which, when operational, have identical copies of the database.
+        Each client node has one relay node they access - this is algorithmically determined based on their id.
+        Search messages `DdbQueryResolve` are executed in the relay node.
+        Upserts and deletes are passed through each node (in an algorithmically determined graph).
+        New relay nodes are initialized, receive a copy of the DB and are then added.
+        This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed.
       oneOf:
         - $ref: '#/components/schemas/DdbUpsertResolve'
         - $ref: '#/components/schemas/DdbDeleteResolve'
@@ -150,10 +159,10 @@ components:
         - $ref: '#/components/schemas/DdbDumpResolveResponse'
 
     DdbBase:
+      description: Base schema for all DDB commands (app fixed to "ddb").
       allOf:
         - $ref: '#/components/schemas/TypedMessage'
         - type: object
-          description: Base schema for all DDB commands (app fixed to "ddb").
           properties:
             app:
               type: string
@@ -168,15 +177,16 @@ components:
 
     # Requests (type values from CommandTypeAdapter)
     DdbUpsertResolve:
+      description: |
+        Update or insert the advertisement record for a node.
+        If the record (identified by `startId`) exists it is updated.
+        If the record does not exist it is inserted.
+        The message ripples onward to all configured nodes in the graph.
+        The payload is an `AdvertRecord` describing how to connect to the node.
+        A `DdbUpdateResponse` is sent back to the sender.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Update or insert the advertisement record for a node. |
-            If the record (identified by `startId`) exists it is updated. |
-            If the record does not exist it is inserted. |
-            The message ripples onward to all configured nodes in the graph. |
-            The payload is an `AdvertRecord` describing how to connect to the node. |
-            A `DdbUpsertResponse` is sent back to the sender.`
           properties:
             type:
               type: string
@@ -192,12 +202,13 @@ components:
           required: [startId, epoch, record]
 
     DdbDeleteResolve:
+      description: |
+        Delete the advertisement record for a node.
+        The message ripples onward to all configured nodes in the graph.
+        A `DdbUpdateResponse` is sent back to the sender.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Delete the advertisement record for a node. |
-            The message ripples onward to all configured nodes in the graph. |
-            A `DdbDeleteResponse` is sent back to the sender.
           properties:
             type:
               type: string
@@ -211,12 +222,13 @@ components:
           required: [startId, epoch]
 
     DdbQueryResolve:
+      description: |
+        Query the database for an advertisement record.
+        The query is processed by the relay node that receives this message.
+        The relay node responds with a `DdbQueryResponse` message.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Query the database for an advertisement record. |
-            The query is processed by the relay node that receives this message. |
-            The relay node responds with a `DdbQueryResponse` message.
           properties:
             type:
               type: string
@@ -227,14 +239,15 @@ components:
           required: [id]
 
     DdbSignon:
+      description: |
+        Sign on as a relay node to the DDB.
+        This message is sent when the relay node has completed its initialization and has received all database records.
+        This causes the epoch number to be incremented, indicating a new configuration.
+        The message ripples onward to all configured nodes in the graph.
+        The relay node responds with a `DdbInitResponse` message.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sign on as a relay node to the DDB. |
-            This message is sent when the relay node has completed its initialization and has received all database records. |
-            This causes the epoch number to be incremented, indicating a new configuration. |
-            The message ripples onward to all configured nodes in the graph. |
-            The relay node responds with a `DdbSignonResponse` message.
           properties:
             type:
               type: string
@@ -245,13 +258,14 @@ components:
           required: [startId]
 
     DdbGetEpoch:
+      description: |
+        Get an epoch number together with database graph configuration details.
+        Can be sent to any initialized relay node.
+        This retrieves data for any loaded epoch including the current one.
+        The relay node responds with a `DdbGetEpochResponse` message.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Get an epoch number together with database graph configuration details. |
-            Can be sent to any initialized relay node. |
-            This retrieves data for any loaded epoch including the current one. |
-            The relay node responds with a `DdbGetEpochResponse` message.
           properties:
             type:
               type: string
@@ -259,27 +273,28 @@ components:
             epochId:
               type: integer
               description: The epoch number to retrieve, -1 to retrieve the current epoch.
-
           required: [epochId]
 
     DdbInitResolve:
+      description: |
+        Called to start initializing a new relay node.
+        Sent to the DDB node selected by the sender id and current epoch.
+        The relay node responds with a `DdbInitResponse` message followed by `DdbDumpResolveResponse` messages for each record in the database.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Called to start initializing a new relay node. |
-            Sent to the DDB node selected by the sender id and current epoch. |
-            The relay node responds with a `DdbInitResponse` message followed by `DumpResolveResponse` messages for each record in the database.
           properties:
             type:
               type: string
               enum: ["initResolve"]
 
     DdbDumpResolve:
+      description: |
+        Sent from an existing, active relay node to a new, initializing relay node.
+        Contains a single record from the database.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sent from an existing, active relay node to a new, initializing relay node |
-            Contains a single record from the database.
           properties:
             type:
               type: string
@@ -290,22 +305,24 @@ components:
 
     # Responses
     DdbUpdateResponse:
+      description: |
+        Sent from a relay node to the sender of a `DdbUpsertResolve` message.
+        Indicates that the update was successful.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sent from a relay node to the sender of a `DdbUpsertResolve` message. |
-            indicates that the update was successful.
           properties:
             type:
               type: string
               enum: ["updateResponse"]
 
     DdbGetEpochResponse:
+      description: |
+        Sent from a relay node to the sender of a `DdbGetEpoch` message.
+        Provides the database graph configuration details.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sent from a relay node to the sender of a `DdbGetEpoch` message. |
-            Provides the database graph configuration details.
           properties:
             type:
               type: string
@@ -324,11 +341,12 @@ components:
           required: [epochId, treeOrder, relayIds]
 
     DdbQueryResponse:
+      description: |
+        Sent from a relay node to the sender of a `DdbQueryResolve` message.
+        Contains a located advertisement record if found.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sent from a relay node to the sender of a `DdbQueryResolve` message. |
-            Contains a located advertisiement record if we found one.
           properties:
             type:
               type: string
@@ -344,11 +362,12 @@ components:
           required: [found]
 
     DdbInitResponse:
+      description: |
+        Sent from a relay node to the sender of a `DdbInitResolve` message.
+        Contains the number of records in the database.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sent from a relay node to the sender of a `DdbInitResolve` message. |
-            Contains the number of records in the database.
           properties:
             type:
               type: string
@@ -359,12 +378,13 @@ components:
           required: [dbCount]
 
     DdbDumpResolveResponse:
+      description: |
+        Sent from a relay node to the sender of a `DdbDumpResolve` message.
+        One response is sent per record in the database.
+        The response contains the record index, id and advertisement record.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
-          description: Sent from a relay node to the sender of a `DdbDumpResolve` message. |
-            One response is sent per record in the database. |
-            The response contains the record index, id and advertisement record.
           properties:
             type:
               type: string
@@ -449,10 +469,10 @@ components:
         - $ref: '#/components/schemas/PingResponse'
 
     PingBase:
+      description: Base schema for all Ping commands (app fixed to "ping").
       allOf:
         - $ref: '#/components/schemas/TypedMessage'
         - type: object
-          description: Base schema for all Ping commands (app fixed to "ping").
           properties:
             app:
               type: string
@@ -481,3 +501,216 @@ components:
             verifiedId:
               type: string
           required: [verifiedId]
+
+
+    InetSocketAddress:
+      description: A network endpoint consisting of a host and UDP port.
+      oneOf:
+        - type: object
+          properties:
+            host:
+              type: string
+              description: Hostname or IP address.
+            port:
+              type: integer
+              minimum: 1
+              maximum: 65535
+              description: UDP port number.
+          required: [host, port]
+          additionalProperties: false
+        - type: string
+          description: Host and port.
+
+    RelayMessage:
+      description: |
+        Relay messages where `app` is null and `type` equals the Kotlin class/data class name.
+        Mirrors the Kotlin RelayCommand hierarchy.
+      oneOf:
+        - $ref: '#/components/schemas/RelayCall'
+        - $ref: '#/components/schemas/RelayResponse'
+        - $ref: '#/components/schemas/RelayTriangleTest1'
+        - $ref: '#/components/schemas/RelayTriangleTest2'
+        - $ref: '#/components/schemas/RelayTriangleTest3'
+        - $ref: '#/components/schemas/RelayListen'
+        - $ref: '#/components/schemas/RelayCheck'
+        - $ref: '#/components/schemas/RelayListenResponse'
+        - $ref: '#/components/schemas/RelayCheckResponse'
+        - $ref: '#/components/schemas/RelayCallResponse'
+        - $ref: '#/components/schemas/RelayKeepAlive'
+
+    RelayBase:
+      type: object
+      description: Base schema for all Relay commands (app fixed to null).
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+      required: [app, type]
+
+    RelayCall:
+      description: |
+        Make a call to a node through a relay.
+        This command is sent from a node to a relay.
+        The relay establishes a channel to the `calledId` node.
+        The relay responds with a `RelayResponse` message.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["Call"]
+            calledId:
+              type: string
+              description: The identifier of the node to call.
+          required: [calledId]
+
+    RelayResponse:
+      description: |
+        Response message from a relay to a `RelayCall` message.
+        Indicates that a relay channel has been established.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["RelayResponse"]
+            channel:
+              type: integer
+              description: The channel number of the relay channel.
+              nullable: true
+
+    RelayTriangleTest1:
+      description: |
+        Called to initiate a relay triangle test.
+        This is used in determining if the initiating node is connected to the internet with "Full Cone" or "Restricted Cone" NAT.
+        With full cone NAT, the relay node is able to establish a direct connection to the called node, indicating that the IP and port number is consistent to all other internet endpoints.
+        With restricted cone NAT, the relay node is not able to establish a direct connection to the called node.
+        This message causes the relay node to send a `RelayTriangleTest2` message to a peer relay node.
+        Any response (`TriangleTest3`) is generated by that node.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["TriangleTest1"]
+            checkingEndpoint:
+              $ref: '#/components/schemas/InetSocketAddress'
+          required: [checkingEndpoint]
+
+    RelayTriangleTest2:
+      description: |
+        Received by the second relay in a triangle test.
+        Will attempt to send a `RelayTriangleTest3` message to the originating endpoint (CheckingEndpoint).
+        If this message is received, it indicates that the checkingId node has full cone NAT.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["TriangleTest2"]
+            checkingId:
+              type: string
+              description: The identifier of the node that initiated the test.
+            checkingEndpoint:
+              $ref: '#/components/schemas/InetSocketAddress'
+          required: [checkingId, checkingEndpoint]
+
+    RelayTriangleTest3:
+      description: |
+        Response sent by the second relay in a triangle test.
+        If received after a test is initiated, indicates that the node receiving this message has full cone NAT.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["TriangleTest3"]
+
+    RelayListen:
+      description: |
+        Sent to a relay node to inform that relay node to pass on messages for the originating node.
+        The relay node responds with a `RelayListenResponse` message.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["Listen"]
+
+    RelayCheck:
+      description: |
+        Sent to a relay node to check if it is available.
+        The relay node responds with a `RelayCheckResponse` message.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["Check"]
+
+    RelayListenResponse:
+      description: |
+        Response to a `RelayListen` message.
+        When received, indicates that the relay listener is set up.
+        The relay node will pass on messages for the originating node.
+        The receiver can then advertise the relay endpoint.
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["ListenResponse"]
+
+    RelayCheckResponse:
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          description: Response to a `RelayCheck` message. |
+            Indicates if a relay node is available.
+          properties:
+            type:
+              type: string
+              enum: ["CheckResponse"]
+            available:
+              type: boolean
+          required: [available]
+
+    RelayCallResponse:
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          description: Response to a `RelayCall` message. |
+            Provides the channel number of the relay channel and the id of the node being called. |
+            TURN encapsulated messages can then be sent via the relay node and channel.
+          properties:
+            type:
+              type: string
+              enum: ["CallResponse"]
+            calledId:
+              type: string
+            channel:
+              type: integer
+          required: [calledId, channel]
+
+    RelayKeepAlive:
+      allOf:
+        - $ref: '#/components/schemas/RelayBase'
+        - type: object
+          description: Keep-alive message. |
+            Sent from a node to a relay when a call is active to indicate that |
+            the call should be kept open.
+          properties:
+            type:
+              type: string
+              enum: ["KeepAlive"]

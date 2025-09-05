@@ -8,3 +8,7 @@
 /ios/RustCommsFFI.xcframework/
 /ios/BingleTestFFI.xcframework/
 /ios/Package.swift
+
+
+# Ignore generated spec artifacts
+/generated/

@@ -29,6 +29,12 @@ There is a financial incentive to operate a relay node - based on availabiliuty 
 
 ## Handle lookup
 
+This is initiated by a Bingle API call `handleLookup(handle)`.
+
+The prerequisite for this is that the node has been initialized.
+
+
+
 ## Message transfer
 
 ### Direct DTLS
@@ -42,5 +48,7 @@ There is a financial incentive to operate a relay node - based on availabiliuty 
 ## Distributed database
 
 # Message reference
+
+!include ../generated/message_reference.md
 
 # Blockchain interface
