@@ -1,0 +1,483 @@
+openapi: 3.0.3
+info:
+  title: Bingle Message API
+  version: 0.1.0
+  description: |
+    OpenAPI 3 specification for a message-based interface.
+
+    Messages are polymorphic based on the pair of fields `app` and `type`:
+    - When both `app` and `type` are present and non-null, the message is a typed message and
+      its specific class is determined by the values of (`app`, `type`).
+    - When `app` and `type` are null or not present, the message is a plain text message with a single
+      string field `text`.
+
+    Notes on modeling:
+    - OpenAPI 3.0 only supports a single-field discriminator, so we model the (`app`, `type`) based
+      polymorphism with `oneOf` and schema constraints. Specific typed messages can be defined by
+      constraining `app` and `type` with single-value enums in composed schemas.
+  contact:
+    name: Bingle
+    url: https://example.com
+servers:
+  - url: https://example.com/api
+    description: Placeholder server URL (adjust as needed)
+
+paths: {}
+
+components:
+  schemas:
+    Message:
+      description: |
+        A message that is either plain text or a typed message. Polymorphism is based
+        on the pair (`app`, `type`). If those fields are absent or null, the message
+        is plain text with field `text`.
+      oneOf:
+        - $ref: '#/components/schemas/PlainTextMessage'
+        - $ref: '#/components/schemas/PlainTextMessageWithNulls'
+        - $ref: '#/components/schemas/TypedMessage'
+      x-polymorphic-by:
+        - app
+        - type
+
+    PlainTextMessage:
+      type: object
+      description: |
+        Plain text message without `app` and `type` fields present.
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Message text content
+      additionalProperties: false
+
+    PlainTextMessageWithNulls:
+      type: object
+      description: |
+        Plain text message that explicitly includes `app` and `type` set to null.
+      required:
+        - text
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for a plain text message variant that explicitly includes these fields
+        type:
+          nullable: true
+          enum: [null]
+          description: Must be null for a plain text message variant that explicitly includes these fields
+        text:
+          type: string
+          description: Message text content
+      additionalProperties: false
+
+    TypedMessage:
+      type: object
+      description: |
+        A typed message indicated by the presence of non-null `app` and `type` fields.
+        Specific message classes should be defined by constraining `app` and `type` to
+        single values (via single-value enums) and by refining the payload shape.
+      required:
+        - app
+        - type
+      properties:
+        app:
+          type: string
+          description: Application namespace identifier for the message class
+        type:
+          type: string
+          description: Type identifier within the application namespace
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+      additionalProperties: true
+      example:
+        app: "chat"
+        type: "markdown"
+        text: "Hello"
+        data:
+          markdown: "**Hello**"
+
+    # Example of a specialized typed message schema (optional pattern)
+    ChatMarkdownMessage:
+      allOf:
+        - $ref: '#/components/schemas/TypedMessage'
+        - type: object
+          properties:
+            app:
+              type: string
+              enum: ["chat"]
+            type:
+              type: string
+              enum: ["markdown"]
+            data:
+              type: object
+              required: [markdown]
+              properties:
+                markdown:
+                  type: string
+              additionalProperties: false
+          required: [app, type]
+
+    DdbMessage:
+      description: |
+        Distributed Database (DDB) messages where `app` is "ddb" and `type` selects the
+        specific command. |
+        Messages are sent to a relay node and may have a response. |
+        The DDB involves one or more relay nodes, which, when operational, have identical copies of the database |
+        Each client node has one relay node they access - this is algorithmically determined based on their id. |
+        Search messages `DdbQueryResolve` are executed in the relay node. |
+        Upserts and deletes are passed through each node (in an algorithmically determined graph) |
+        New relay nodes are initialized, receive a copy of the DB and are then added. |
+        This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed
+      oneOf:
+        - $ref: '#/components/schemas/DdbUpsertResolve'
+        - $ref: '#/components/schemas/DdbDeleteResolve'
+        - $ref: '#/components/schemas/DdbQueryResolve'
+        - $ref: '#/components/schemas/DdbSignon'
+        - $ref: '#/components/schemas/DdbGetEpoch'
+        - $ref: '#/components/schemas/DdbInitResolve'
+        - $ref: '#/components/schemas/DdbDumpResolve'
+        - $ref: '#/components/schemas/DdbUpdateResponse'
+        - $ref: '#/components/schemas/DdbGetEpochResponse'
+        - $ref: '#/components/schemas/DdbQueryResponse'
+        - $ref: '#/components/schemas/DdbInitResponse'
+        - $ref: '#/components/schemas/DdbDumpResolveResponse'
+
+    DdbBase:
+      allOf:
+        - $ref: '#/components/schemas/TypedMessage'
+        - type: object
+          description: Base schema for all DDB commands (app fixed to "ddb").
+          properties:
+            app:
+              type: string
+              enum: ["ddb"]
+            type:
+              type: string
+            responseTag:
+              type: string
+              nullable: true
+              description: Optional correlation tag for responses.
+          required: [app, type]
+
+    # Requests (type values from CommandTypeAdapter)
+    DdbUpsertResolve:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Update or insert the advertisement record for a node. |
+            If the record (identified by `startId`) exists it is updated. |
+            If the record does not exist it is inserted. |
+            The message ripples onward to all configured nodes in the graph. |
+            The payload is an `AdvertRecord` describing how to connect to the node. |
+            A `DdbUpsertResponse` is sent back to the sender.`
+          properties:
+            type:
+              type: string
+              enum: ["upsertResolve"]
+            startId:
+              type: string
+              description: The identifier of the node making the original request, an Algorand address.
+            epoch:
+              type: integer
+              description: The epoch number of the database graph configuration.
+            record:
+              $ref: '#/components/schemas/AdvertRecord'
+          required: [startId, epoch, record]
+
+    DdbDeleteResolve:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Delete the advertisement record for a node. |
+            The message ripples onward to all configured nodes in the graph. |
+            A `DdbDeleteResponse` is sent back to the sender.
+          properties:
+            type:
+              type: string
+              enum: ["deleteResolve"]
+            startId:
+              type: string
+              description: The identifier of the node making the original request, an Algorand address.
+            epoch:
+              type: integer
+              description: The epoch number of the database graph configuration.
+          required: [startId, epoch]
+
+    DdbQueryResolve:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Query the database for an advertisement record. |
+            The query is processed by the relay node that receives this message. |
+            The relay node responds with a `DdbQueryResponse` message.
+          properties:
+            type:
+              type: string
+              enum: ["queryResolve"]
+            id:
+              type: string
+              description: The identifier of the node we require the advertisement record for, an Algorand address.
+          required: [id]
+
+    DdbSignon:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sign on as a relay node to the DDB. |
+            This message is sent when the relay node has completed its initialization and has received all database records. |
+            This causes the epoch number to be incremented, indicating a new configuration. |
+            The message ripples onward to all configured nodes in the graph. |
+            The relay node responds with a `DdbSignonResponse` message.
+          properties:
+            type:
+              type: string
+              enum: ["signon"]
+            startId:
+              type: string
+              description: The identifier of the new node that is signing on, an Algorand address.
+          required: [startId]
+
+    DdbGetEpoch:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Get an epoch number together with database graph configuration details. |
+            Can be sent to any initialized relay node. |
+            This retrieves data for any loaded epoch including the current one. |
+            The relay node responds with a `DdbGetEpochResponse` message.
+          properties:
+            type:
+              type: string
+              enum: ["getEpoch"]
+            epochId:
+              type: integer
+              description: The epoch number to retrieve, -1 to retrieve the current epoch.
+
+          required: [epochId]
+
+    DdbInitResolve:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Called to start initializing a new relay node. |
+            Sent to the DDB node selected by the sender id and current epoch. |
+            The relay node responds with a `DdbInitResponse` message followed by `DumpResolveResponse` messages for each record in the database.
+          properties:
+            type:
+              type: string
+              enum: ["initResolve"]
+
+    DdbDumpResolve:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sent from an existing, active relay node to a new, initializing relay node |
+            Contains a single record from the database.
+          properties:
+            type:
+              type: string
+              enum: ["dumpResolve"]
+            record:
+              $ref: '#/components/schemas/AdvertRecord'
+          required: [record]
+
+    # Responses
+    DdbUpdateResponse:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sent from a relay node to the sender of a `DdbUpsertResolve` message. |
+            indicates that the update was successful.
+          properties:
+            type:
+              type: string
+              enum: ["updateResponse"]
+
+    DdbGetEpochResponse:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sent from a relay node to the sender of a `DdbGetEpoch` message. |
+            Provides the database graph configuration details.
+          properties:
+            type:
+              type: string
+              enum: ["getEpochResponse"]
+            epochId:
+              type: integer
+              description: The epoch number requested, or the current epoch number if -1 was specified.
+            treeOrder:
+              type: integer
+              description: The tree order of the database graph, indicating the number of leaves on a node in the NetDet algorithm.
+            relayIds:
+              type: array
+              description: The identifiers of all active relay nodes in the graph.
+              items:
+                type: string
+          required: [epochId, treeOrder, relayIds]
+
+    DdbQueryResponse:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sent from a relay node to the sender of a `DdbQueryResolve` message. |
+            Contains a located advertisiement record if we found one.
+          properties:
+            type:
+              type: string
+              enum: ["queryResponse"]
+            found:
+              type: boolean
+              description: True if we found an advert record for the requested id.
+            advert:
+              description: The advert record if found, null otherwise.
+              allOf:
+                - $ref: '#/components/schemas/AdvertRecord'
+              nullable: true
+          required: [found]
+
+    DdbInitResponse:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sent from a relay node to the sender of a `DdbInitResolve` message. |
+            Contains the number of records in the database.
+          properties:
+            type:
+              type: string
+              enum: ["initResponse"]
+            dbCount:
+              type: integer
+              description: The number of records in the database.
+          required: [dbCount]
+
+    DdbDumpResolveResponse:
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          description: Sent from a relay node to the sender of a `DdbDumpResolve` message. |
+            One response is sent per record in the database. |
+            The response contains the record index, id and advertisement record.
+          properties:
+            type:
+              type: string
+              enum: ["dumpResolveResponse"]
+            recordIndex:
+              type: integer
+              description: The index of the record in the database.
+            recordId:
+              type: string
+              description: The identifier of the node the record describes.
+            record:
+              $ref: '#/components/schemas/AdvertRecord'
+          required: [recordIndex, recordId, record]
+
+    AdvertRecord:
+      type: object
+      description: Advertisement record for a node, as used by the Distributed Database (DDB).
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: Identifier of the node (Algorand address).
+        endpoint:
+          nullable: true
+          description: Optional network endpoint (IP/hostname and port) for direct DTLS.
+          oneOf:
+            - type: object
+              properties:
+                host:
+                  type: string
+                  description: Hostname or IP address.
+                port:
+                  type: integer
+                  minimum: 1
+                  maximum: 65535
+                  description: UDP port number.
+              required: [host, port]
+              additionalProperties: false
+            - type: string
+              description: Host and port.
+        amRelay:
+          type: boolean
+          nullable: true
+          default: false
+          description: True if this node provides relay services.
+        relayId:
+          type: string
+          nullable: true
+          description: Optional identifier of the relay this node uses.
+        relaySig:
+          type: string
+          nullable: true
+          description: Optional signature from the relay verifying this record.
+        date:
+          type: string
+          format: date-time
+          description: Record creation or update timestamp (RFC 3339 date-time).
+        sig:
+          type: string
+          nullable: true
+          description: Optional signature of this record by the node.
+      required: [date, id]
+      additionalProperties: false
+      example:
+        id: "P7JQ...ALGONODEID"
+        endpoint:
+          host: "203.0.113.10"
+          port: 4444
+        amRelay: false
+        relayId: null
+        relaySig: null
+        date: "2025-09-05T12:00:00Z"
+        sig: "MEUCIQD...BASE64SIG"
+
+
+    PingMessage:
+      description: |
+        Ping messages where `app` is "ping" and `type` selects the specific variant.
+        Mirrors the Kotlin PingCommand hierarchy.
+      oneOf:
+        - $ref: '#/components/schemas/PingPing'
+        - $ref: '#/components/schemas/PingResponse'
+
+    PingBase:
+      allOf:
+        - $ref: '#/components/schemas/TypedMessage'
+        - type: object
+          description: Base schema for all Ping commands (app fixed to "ping").
+          properties:
+            app:
+              type: string
+              enum: ["ping"]
+            type:
+              type: string
+          required: [app, type]
+
+    PingPing:
+      allOf:
+        - $ref: '#/components/schemas/PingBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["ping"]
+
+    PingResponse:
+      allOf:
+        - $ref: '#/components/schemas/PingBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["response"]
+            verifiedId:
+              type: string
+          required: [verifiedId]
