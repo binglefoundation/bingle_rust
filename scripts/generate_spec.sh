@@ -64,6 +64,9 @@ PANDOC_INPUT="spec/spec_main.md"
 pandoc \
   "$PANDOC_INPUT" \
   --lua-filter="$LUA_FILTER" \
+  --from=markdown \
+  --to markdown+hard_line_breaks \
+  --wrap=auto \
   -s \
   -t gfm \
   -o "$OUTPUT_MD"

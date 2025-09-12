@@ -153,14 +153,15 @@ components:
         - $ref: '#/components/schemas/DdbInitResolve'
         - $ref: '#/components/schemas/DdbDumpResolve'
         - $ref: '#/components/schemas/DdbUpdateResponse'
-        - $ref: '#/components/schemas/DdbGetEpochResponse'
+        - $ref: '#/components/schemas/DdbSignonResponse'
+        - $ref: '#/components/schemas/DdbEpochInfo'
         - $ref: '#/components/schemas/DdbQueryResponse'
         - $ref: '#/components/schemas/DdbInitResponse'
         - $ref: '#/components/schemas/DdbDumpResolveResponse'
 
     DdbBase:
-      description: Base schema for all DDB commands (app fixed to "ddb").
       allOf:
+        - description: Base schema for all DDB commands (app fixed to "ddb").
         - $ref: '#/components/schemas/TypedMessage'
         - type: object
           properties:
@@ -199,7 +200,13 @@ components:
               description: The epoch number of the database graph configuration.
             record:
               $ref: '#/components/schemas/AdvertRecord'
-          required: [startId, epoch, record]
+            originalSignature:
+              type: string
+              description: A ed25519 signature of `startId` + `epoch`+ `record` by the node making the request.
+            rippled:
+              type: boolean
+              description: True if the message was rippled to the database.
+          required: [startId, epoch, record, originalSignature, rippled]
 
     DdbDeleteResolve:
       description: |
@@ -219,7 +226,13 @@ components:
             epoch:
               type: integer
               description: The epoch number of the database graph configuration.
-          required: [startId, epoch]
+            originalSignature:
+              type: string
+              description: A ed25519 signature of `startId` + `epoch` by the node making the request.
+            rippled:
+              type: boolean
+              description: True if the message was rippled to the database.
+          required: [startId, epoch, originalSignature, rippled]
 
     DdbQueryResolve:
       description: |
@@ -244,7 +257,7 @@ components:
         This message is sent when the relay node has completed its initialization and has received all database records.
         This causes the epoch number to be incremented, indicating a new configuration.
         The message ripples onward to all configured nodes in the graph.
-        The relay node responds with a `DdbInitResponse` message.
+        A `DdbSignonResponse` is sent back to the sender.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
@@ -255,6 +268,12 @@ components:
             startId:
               type: string
               description: The identifier of the new node that is signing on, an Algorand address.
+            originalSignature:
+              type: string
+              description: A ed25519 signature of `startId` + `epoch` by the node making the request.
+            rippled:
+              type: boolean
+              description: True if the message was rippled to the database.
           required: [startId]
 
     DdbGetEpoch:
@@ -262,7 +281,7 @@ components:
         Get an epoch number together with database graph configuration details.
         Can be sent to any initialized relay node.
         This retrieves data for any loaded epoch including the current one.
-        The relay node responds with a `DdbGetEpochResponse` message.
+        The relay node responds with a `DdbEpochInfo` message.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
         - type: object
@@ -306,7 +325,7 @@ components:
     # Responses
     DdbUpdateResponse:
       description: |
-        Sent from a relay node to the sender of a `DdbUpsertResolve` message.
+        Sent from a relay node to the sender of a `DdbUpsertResolve` or `DdbDeleteResolve` message.
         Indicates that the update was successful.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
@@ -316,9 +335,21 @@ components:
               type: string
               enum: ["updateResponse"]
 
-    DdbGetEpochResponse:
+    DdbSignonResponse:
       description: |
-        Sent from a relay node to the sender of a `DdbGetEpoch` message.
+        Sent from a relay node to the sender of a `DdbSignon` message.
+        Indicates that the update was successful.
+      allOf:
+        - $ref: '#/components/schemas/DdbBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: ["signonResponse"]
+
+    DdbEpochInfo:
+      description: |
+        Sent from a relay node to the sender of a `DdbGetEpoch` message, or sent to all nodes when the epoch changes.
         Provides the database graph configuration details.
       allOf:
         - $ref: '#/components/schemas/DdbBase'
@@ -338,6 +369,23 @@ components:
               description: The identifiers of all active relay nodes in the graph.
               items:
                 type: string
+            relayEndpoints:
+              type: array
+              description: The IP endpoints of all active relay nodes in the graph.
+              items:
+                type: object
+                properties:
+                  host:
+                    type: string
+                    description: Hostname or IP address.
+                  port:
+                    type: integer
+                    minimum: 1
+                    maximum: 65535
+                    description: UDP port number.
+                required: [ host, port ]
+                additionalProperties: false
+                description: Host and port of the relay node.
           required: [epochId, treeOrder, relayIds]
 
     DdbQueryResponse:
