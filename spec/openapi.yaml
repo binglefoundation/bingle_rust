@@ -26,20 +26,6 @@ paths: {}
 
 components:
   schemas:
-    Message:
-      description: |
-        A message that is either plain text or a typed message. Polymorphism is based
-        on the pair (`app`, `type`). If those fields are absent or null, the message
-        is plain text with field `text`.
-      oneOf:
-        - $ref: '#/components/schemas/PlainTextMessage'
-        - $ref: '#/components/schemas/PlainTextMessageWithNulls'
-        - $ref: '#/components/schemas/TypedMessage'
-        - $ref: '#/components/schemas/RelayMessage'
-      x-polymorphic-by:
-        - app
-        - type
-
     PlainTextMessage:
       type: object
       description: |
@@ -114,70 +100,42 @@ components:
 
     # Example of a specialized typed message schema (optional pattern)
     ChatMarkdownMessage:
-      allOf:
-        - $ref: '#/components/schemas/TypedMessage'
-        - type: object
+      type: object
+      description: Example of a specialized typed message schema (optional pattern)
+      properties:
+        app:
+          type: string
+          enum: ["chat"]
+          description: chat
+        type:
+          type: string
+          enum: ["markdown"]
+          description: markdown
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag instructing responders which tag to echo back.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          required: [markdown]
           properties:
-            app:
+            markdown:
               type: string
-              enum: ["chat"]
-            type:
-              type: string
-              enum: ["markdown"]
-            data:
-              type: object
-              required: [markdown]
-              properties:
-                markdown:
-                  type: string
-              additionalProperties: false
-          required: [app, type]
-
-    DdbMessage:
-      description: |
-        Distributed Database (DDB) messages where `app` is "ddb" and `type` selects the
-        specific command.
-        Messages are sent to a relay node and may have a response.
-        The DDB involves one or more relay nodes, which, when operational, have identical copies of the database.
-        Each client node has one relay node they access - this is algorithmically determined based on their id.
-        Search messages `DdbQueryResolve` are executed in the relay node.
-        Upserts and deletes are passed through each node (in an algorithmically determined graph).
-        New relay nodes are initialized, receive a copy of the DB and are then added.
-        This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed.
-      oneOf:
-        - $ref: '#/components/schemas/DdbUpsertResolve'
-        - $ref: '#/components/schemas/DdbDeleteResolve'
-        - $ref: '#/components/schemas/DdbQueryResolve'
-        - $ref: '#/components/schemas/DdbSignon'
-        - $ref: '#/components/schemas/DdbGetEpoch'
-        - $ref: '#/components/schemas/DdbInitResolve'
-        - $ref: '#/components/schemas/DdbDumpResolve'
-        - $ref: '#/components/schemas/DdbUpdateResponse'
-        - $ref: '#/components/schemas/DdbSignonResponse'
-        - $ref: '#/components/schemas/DdbEpochInfo'
-        - $ref: '#/components/schemas/DdbQueryResponse'
-        - $ref: '#/components/schemas/DdbInitResponse'
-        - $ref: '#/components/schemas/DdbDumpResolveResponse'
-
-    DdbBase:
-      allOf:
-        - description: Base schema for all DDB commands (app fixed to "ddb").
-        - $ref: '#/components/schemas/TypedMessage'
-        - type: object
-          properties:
-            app:
-              type: string
-              enum: ["ddb"]
-            type:
-              type: string
-            responseTag:
-              type: string
-              nullable: true
-              description: Optional correlation tag for responses.
-          required: [app, type]
+          additionalProperties: false
+      required: [app, type]
+      additionalProperties: true
 
     # Requests (type values from CommandTypeAdapter)
     DdbUpsertResolve:
+      type: object
       description: |
         Update or insert the advertisement record for a node.
         If the record (identified by `startId`) exists it is updated.
@@ -185,267 +143,529 @@ components:
         The message ripples onward to all configured nodes in the graph.
         The payload is an `AdvertRecord` describing how to connect to the node.
         A `DdbUpdateResponse` is sent back to the sender.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["upsertResolve"]
-            startId:
-              type: string
-              description: The identifier of the node making the original request, an Algorand address.
-            epoch:
-              type: integer
-              description: The epoch number of the database graph configuration.
-            record:
-              $ref: '#/components/schemas/AdvertRecord'
-            originalSignature:
-              type: string
-              description: A ed25519 signature of `startId` + `epoch`+ `record` by the node making the request.
-            rippled:
-              type: boolean
-              description: True if the message was rippled to the database.
-          required: [startId, epoch, record, originalSignature, rippled]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["upsertResolve"]
+          description: upsertResolve
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        startId:
+          type: string
+          description: The identifier of the node making the original request, an Algorand address.
+        epoch:
+          type: integer
+          description: The epoch number of the database graph configuration.
+        record:
+          $ref: '#/components/schemas/AdvertRecord'
+        originalSignature:
+          type: string
+          description: A ed25519 signature of `startId` + `epoch`+ `record` by the node making the request.
+        rippled:
+          type: boolean
+          description: True if the message was rippled to the database.
+      required: [app, type, startId, epoch, record, originalSignature, rippled]
+      additionalProperties: true
 
     DdbDeleteResolve:
+      type: object
       description: |
         Delete the advertisement record for a node.
         The message ripples onward to all configured nodes in the graph.
         A `DdbUpdateResponse` is sent back to the sender.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["deleteResolve"]
-            startId:
-              type: string
-              description: The identifier of the node making the original request, an Algorand address.
-            epoch:
-              type: integer
-              description: The epoch number of the database graph configuration.
-            originalSignature:
-              type: string
-              description: A ed25519 signature of `startId` + `epoch` by the node making the request.
-            rippled:
-              type: boolean
-              description: True if the message was rippled to the database.
-          required: [startId, epoch, originalSignature, rippled]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["deleteResolve"]
+          description: deleteResolve
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        startId:
+          type: string
+          description: The identifier of the node making the original request, an Algorand address.
+        epoch:
+          type: integer
+          description: The epoch number of the database graph configuration.
+        originalSignature:
+          type: string
+          description: A ed25519 signature of `startId` + `epoch` by the node making the request.
+        rippled:
+          type: boolean
+          description: True if the message was rippled to the database.
+      required: [app, type, startId, epoch, originalSignature, rippled]
+      additionalProperties: true
 
     DdbQueryResolve:
+      type: object
       description: |
         Query the database for an advertisement record.
         The query is processed by the relay node that receives this message.
         The relay node responds with a `DdbQueryResponse` message.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["queryResolve"]
-            id:
-              type: string
-              description: The identifier of the node we require the advertisement record for, an Algorand address.
-          required: [id]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["queryResolve"]
+          description: queryResolve
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        id:
+          type: string
+          description: The identifier of the node we require the advertisement record for, an Algorand address.
+      required: [app, type, id]
+      additionalProperties: true
 
     DdbSignon:
+      type: object
       description: |
         Sign on as a relay node to the DDB.
         This message is sent when the relay node has completed its initialization and has received all database records.
         This causes the epoch number to be incremented, indicating a new configuration.
         The message ripples onward to all configured nodes in the graph.
         A `DdbSignonResponse` is sent back to the sender.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["signon"]
-            startId:
-              type: string
-              description: The identifier of the new node that is signing on, an Algorand address.
-            originalSignature:
-              type: string
-              description: A ed25519 signature of `startId` + `epoch` by the node making the request.
-            rippled:
-              type: boolean
-              description: True if the message was rippled to the database.
-          required: [startId]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["signon"]
+          description: signon
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        startId:
+          type: string
+          description: The identifier of the new node that is signing on, an Algorand address.
+        originalSignature:
+          type: string
+          description: A ed25519 signature of `startId` + `epoch` by the node making the request.
+        rippled:
+          type: boolean
+          description: True if the message was rippled to the database.
+      required: [app, type, startId]
+      additionalProperties: true
 
     DdbGetEpoch:
+      type: object
       description: |
         Get an epoch number together with database graph configuration details.
         Can be sent to any initialized relay node.
         This retrieves data for any loaded epoch including the current one.
         The relay node responds with a `DdbEpochInfo` message.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["getEpoch"]
-            epochId:
-              type: integer
-              description: The epoch number to retrieve, -1 to retrieve the current epoch.
-          required: [epochId]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["getEpoch"]
+          description: getEpoch
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        epochId:
+          type: integer
+          description: The epoch number to retrieve, -1 to retrieve the current epoch.
+      required: [app, type, epochId]
+      additionalProperties: true
 
     DdbInitResolve:
+      type: object
       description: |
         Called to start initializing a new relay node.
         Sent to the DDB node selected by the sender id and current epoch.
         The relay node responds with a `DdbInitResponse` message followed by `DdbDumpResolveResponse` messages for each record in the database.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["initResolve"]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["initResolve"]
+          description: initResolve
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+      required: [app, type]
+      additionalProperties: true
 
     DdbDumpResolve:
+      type: object
       description: |
         Sent from an existing, active relay node to a new, initializing relay node.
         Contains a single record from the database.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["dumpResolve"]
-            record:
-              $ref: '#/components/schemas/AdvertRecord'
-          required: [record]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["dumpResolve"]
+          description: dumpResolve
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        record:
+          $ref: '#/components/schemas/AdvertRecord'
+      required: [app, type, record]
+      additionalProperties: true
 
     # Responses
     DdbUpdateResponse:
+      type: object
       description: |
         Sent from a relay node to the sender of a `DdbUpsertResolve` or `DdbDeleteResolve` message.
         Indicates that the update was successful.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["updateResponse"]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["updateResponse"]
+          description: updateResponse
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+      required: [app, type]
+      additionalProperties: true
 
     DdbSignonResponse:
+      type: object
       description: |
         Sent from a relay node to the sender of a `DdbSignon` message.
         Indicates that the update was successful.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["signonResponse"]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["signonResponse"]
+          description: signonResponse
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+      required: [app, type]
+      additionalProperties: true
 
     DdbEpochInfo:
+      type: object
       description: |
         Sent from a relay node to the sender of a `DdbGetEpoch` message, or sent to all nodes when the epoch changes.
         Provides the database graph configuration details.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["getEpochResponse"]
-            epochId:
-              type: integer
-              description: The epoch number requested, or the current epoch number if -1 was specified.
-            treeOrder:
-              type: integer
-              description: The tree order of the database graph, indicating the number of leaves on a node in the NetDet algorithm.
-            relayIds:
-              type: array
-              description: The identifiers of all active relay nodes in the graph.
-              items:
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["getEpochResponse"]
+          description: getEpochResponse
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        epochId:
+          type: integer
+          description: The epoch number requested, or the current epoch number if -1 was specified.
+        treeOrder:
+          type: integer
+          description: The tree order of the database graph, indicating the number of leaves on a node in the NetDet algorithm.
+        relayIds:
+          type: array
+          description: The identifiers of all active relay nodes in the graph.
+          items:
+            type: string
+        relayEndpoints:
+          type: array
+          description: The IP endpoints of all active relay nodes in the graph.
+          items:
+            type: object
+            properties:
+              host:
                 type: string
-            relayEndpoints:
-              type: array
-              description: The IP endpoints of all active relay nodes in the graph.
-              items:
-                type: object
-                properties:
-                  host:
-                    type: string
-                    description: Hostname or IP address.
-                  port:
-                    type: integer
-                    minimum: 1
-                    maximum: 65535
-                    description: UDP port number.
-                required: [ host, port ]
-                additionalProperties: false
-                description: Host and port of the relay node.
-          required: [epochId, treeOrder, relayIds]
+                description: Hostname or IP address.
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+                description: UDP port number.
+            required: [ host, port ]
+            additionalProperties: false
+            description: Host and port of the relay node.
+      required: [app, type, epochId, treeOrder, relayIds]
+      additionalProperties: true
 
     DdbQueryResponse:
+      type: object
       description: |
         Sent from a relay node to the sender of a `DdbQueryResolve` message.
         Contains a located advertisement record if found.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["queryResponse"]
-            found:
-              type: boolean
-              description: True if we found an advert record for the requested id.
-            advert:
-              description: The advert record if found, null otherwise.
-              allOf:
-                - $ref: '#/components/schemas/AdvertRecord'
-              nullable: true
-          required: [found]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["queryResponse"]
+          description: queryResponse
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        found:
+          type: boolean
+          description: True if we found an advert record for the requested id.
+        advert:
+          description: The advert record if found, null otherwise.
+          allOf:
+            - $ref: '#/components/schemas/AdvertRecord'
+          nullable: true
+      required: [app, type, found]
+      additionalProperties: true
 
     DdbInitResponse:
+      type: object
       description: |
         Sent from a relay node to the sender of a `DdbInitResolve` message.
         Contains the number of records in the database.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["initResponse"]
-            dbCount:
-              type: integer
-              description: The number of records in the database.
-          required: [dbCount]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["initResponse"]
+          description: initResponse
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        dbCount:
+          type: integer
+          description: The number of records in the database.
+      required: [app, type, dbCount]
+      additionalProperties: true
 
     DdbDumpResolveResponse:
+      type: object
       description: |
         Sent from a relay node to the sender of a `DdbDumpResolve` message.
         One response is sent per record in the database.
         The response contains the record index, id and advertisement record.
-      allOf:
-        - $ref: '#/components/schemas/DdbBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["dumpResolveResponse"]
-            recordIndex:
-              type: integer
-              description: The index of the record in the database.
-            recordId:
-              type: string
-              description: The identifier of the node the record describes.
-            record:
-              $ref: '#/components/schemas/AdvertRecord'
-          required: [recordIndex, recordId, record]
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["dumpResolveResponse"]
+          description: dumpResolveResponse
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        recordIndex:
+          type: integer
+          description: The index of the record in the database.
+        recordId:
+          type: string
+          description: The identifier of the node the record describes.
+        record:
+          $ref: '#/components/schemas/AdvertRecord'
+      required: [app, type, recordIndex, recordId, record]
+      additionalProperties: true
 
     AdvertRecord:
       type: object
@@ -507,88 +727,90 @@ components:
         date: "2025-09-05T12:00:00Z"
         sig: "MEUCIQD...BASE64SIG"
 
-
-    PingMessage:
-      description: |
-        Ping messages where `app` is "ping" and `type` selects the specific variant.
-        Mirrors the Kotlin PingCommand hierarchy.
-      oneOf:
-        - $ref: '#/components/schemas/PingPing'
-        - $ref: '#/components/schemas/PingResponse'
-
-    PingBase:
-      description: Base schema for all Ping commands (app fixed to "ping").
-      allOf:
-        - $ref: '#/components/schemas/TypedMessage'
-        - type: object
-          properties:
-            app:
-              type: string
-              enum: ["ping"]
-            type:
-              type: string
-          required: [app, type]
-
     PingPing:
-      allOf:
-        - $ref: '#/components/schemas/PingBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["ping"]
+      type: object
+      properties:
+        app:
+          type: string
+          enum: ["ping"]
+          description: ping
+        type:
+          type: string
+          enum: ["ping"]
+          description: ping
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+      required: [app, type]
+      additionalProperties: true
 
     PingResponse:
-      allOf:
-        - $ref: '#/components/schemas/PingBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["response"]
-            verifiedId:
-              type: string
-          required: [verifiedId]
+      type: object
+      properties:
+        app:
+          type: string
+          enum: ["ping"]
+          description: ping
+        type:
+          type: string
+          enum: ["response"]
+          description: response
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        verifiedId:
+          type: string
+      required: [app, type, verifiedId]
+      additionalProperties: true
 
 
     InetSocketAddress:
-      description: A network endpoint consisting of a host and UDP port.
-      oneOf:
-        - type: object
-          properties:
-            host:
-              type: string
-              description: Hostname or IP address.
-            port:
-              type: integer
-              minimum: 1
-              maximum: 65535
-              description: UDP port number.
-          required: [host, port]
-          additionalProperties: false
-        - type: string
-          description: Host and port.
+        type: object
+        properties:
+          host:
+            type: string
+            description: Hostname or IP address.
+          port:
+            type: integer
+            minimum: 1
+            maximum: 65535
+            description: UDP port number.
+        required: [host, port]
+        additionalProperties: false
 
-    RelayMessage:
-      description: |
-        Relay messages where `app` is null and `type` equals the Kotlin class/data class name.
-        Mirrors the Kotlin RelayCommand hierarchy.
-      oneOf:
-        - $ref: '#/components/schemas/RelayCall'
-        - $ref: '#/components/schemas/RelayResponse'
-        - $ref: '#/components/schemas/RelayTriangleTest1'
-        - $ref: '#/components/schemas/RelayTriangleTest2'
-        - $ref: '#/components/schemas/RelayTriangleTest3'
-        - $ref: '#/components/schemas/RelayListen'
-        - $ref: '#/components/schemas/RelayCheck'
-        - $ref: '#/components/schemas/RelayListenResponse'
-        - $ref: '#/components/schemas/RelayCheckResponse'
-        - $ref: '#/components/schemas/RelayCallResponse'
-        - $ref: '#/components/schemas/RelayKeepAlive'
-
-    RelayBase:
+    RelayCall:
       type: object
-      description: Base schema for all Relay commands (app fixed to null).
+      description: |
+        Make a call to a node through a relay.
+        This command is sent from a node to a relay.
+        The relay establishes a channel to the `calledId` node.
+        The relay responds with a `RelayResponse` message.
       properties:
         app:
           nullable: true
@@ -596,43 +818,35 @@ components:
           description: Must be null for Relay commands.
         type:
           type: string
-      required: [app, type]
-
-    RelayCall:
-      description: |
-        Make a call to a node through a relay.
-        This command is sent from a node to a relay.
-        The relay establishes a channel to the `calledId` node.
-        The relay responds with a `RelayResponse` message.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["Call"]
-            calledId:
-              type: string
-              description: The identifier of the node to call.
-          required: [calledId]
+          enum: ["Call"]
+          description: Call
+        calledId:
+          type: string
+          description: The identifier of the node to call.
+      required: [app, type, calledId]
 
     RelayResponse:
+      type: object
       description: |
         Response message from a relay to a `RelayCall` message.
         Indicates that a relay channel has been established.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["RelayResponse"]
-            channel:
-              type: integer
-              description: The channel number of the relay channel.
-              nullable: true
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["RelayResponse"]
+          description: RelayResponse
+        channel:
+          type: integer
+          description: The channel number of the relay channel.
+          nullable: true
+      required: [app, type]
 
     RelayTriangleTest1:
+      type: object
       description: |
         Called to initiate a relay triangle test.
         This is used in determining if the initiating node is connected to the internet with "Full Cone" or "Restricted Cone" NAT.
@@ -640,125 +854,156 @@ components:
         With restricted cone NAT, the relay node is not able to establish a direct connection to the called node.
         This message causes the relay node to send a `RelayTriangleTest2` message to a peer relay node.
         Any response (`TriangleTest3`) is generated by that node.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["TriangleTest1"]
-            checkingEndpoint:
-              $ref: '#/components/schemas/InetSocketAddress'
-          required: [checkingEndpoint]
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["TriangleTest1"]
+          description: TriangleTest1
+        checkingEndpoint:
+          $ref: '#/components/schemas/InetSocketAddress'
+      required: [app, type, checkingEndpoint]
 
     RelayTriangleTest2:
+      type: object
       description: |
         Received by the second relay in a triangle test.
         Will attempt to send a `RelayTriangleTest3` message to the originating endpoint (CheckingEndpoint).
         If this message is received, it indicates that the checkingId node has full cone NAT.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["TriangleTest2"]
-            checkingId:
-              type: string
-              description: The identifier of the node that initiated the test.
-            checkingEndpoint:
-              $ref: '#/components/schemas/InetSocketAddress'
-          required: [checkingId, checkingEndpoint]
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["TriangleTest2"]
+          description: TriangleTest2
+        checkingId:
+          type: string
+          description: The identifier of the node that initiated the test.
+        checkingEndpoint:
+          $ref: '#/components/schemas/InetSocketAddress'
+      required: [app, type, checkingId, checkingEndpoint]
 
     RelayTriangleTest3:
+      type: object
       description: |
         Response sent by the second relay in a triangle test.
         If received after a test is initiated, indicates that the node receiving this message has full cone NAT.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["TriangleTest3"]
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["TriangleTest3"]
+          description: TriangleTest3
+      required: [app, type]
 
     RelayListen:
+      type: object
       description: |
         Sent to a relay node to inform that relay node to pass on messages for the originating node.
         The relay node responds with a `RelayListenResponse` message.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["Listen"]
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["Listen"]
+          description: Listen
+      required: [app, type]
 
     RelayCheck:
+      type: object
       description: |
         Sent to a relay node to check if it is available.
         The relay node responds with a `RelayCheckResponse` message.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["Check"]
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["Check"]
+          description: Check
+      required: [app, type]
 
     RelayListenResponse:
+      type: object
       description: |
         Response to a `RelayListen` message.
         When received, indicates that the relay listener is set up.
         The relay node will pass on messages for the originating node.
         The receiver can then advertise the relay endpoint.
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum: ["ListenResponse"]
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["ListenResponse"]
+          description: ListenResponse
+      required: [app, type]
 
     RelayCheckResponse:
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          description: Response to a `RelayCheck` message. |
-            Indicates if a relay node is available.
-          properties:
-            type:
-              type: string
-              enum: ["CheckResponse"]
-            available:
-              type: boolean
-          required: [available]
+      type: object
+      description: Response to a `RelayCheck` message. |
+        Indicates if a relay node is available.
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["CheckResponse"]
+          description: CheckResponse
+        available:
+          type: boolean
+      required: [app, type, available]
 
     RelayCallResponse:
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          description: Response to a `RelayCall` message. |
-            Provides the channel number of the relay channel and the id of the node being called. |
-            TURN encapsulated messages can then be sent via the relay node and channel.
-          properties:
-            type:
-              type: string
-              enum: ["CallResponse"]
-            calledId:
-              type: string
-            channel:
-              type: integer
-          required: [calledId, channel]
+      type: object
+      description: Response to a `RelayCall` message. |
+        Provides the channel number of the relay channel and the id of the node being called. |
+        TURN encapsulated messages can then be sent via the relay node and channel.
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["CallResponse"]
+          description: CallResponse
+        calledId:
+          type: string
+        channel:
+          type: integer
+      required: [app, type, calledId, channel]
 
     RelayKeepAlive:
-      allOf:
-        - $ref: '#/components/schemas/RelayBase'
-        - type: object
-          description: Keep-alive message. |
-            Sent from a node to a relay when a call is active to indicate that |
-            the call should be kept open.
-          properties:
-            type:
-              type: string
-              enum: ["KeepAlive"]
+      type: object
+      description: Keep-alive message. |
+        Sent from a node to a relay when a call is active to indicate that |
+        the call should be kept open.
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["KeepAlive"]
+          description: KeepAlive
+      required: [app, type]

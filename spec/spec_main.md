@@ -393,6 +393,20 @@ The peer relay responds with a "DdbDeleteResponse" message.
 
 # Message reference
 
+Polymorphism is based on the pair (app, type). If those fields are absent or null, the message is plain text with field text.
+
+## DdbMessage
+
+Distributed Database (DDB) messages where `app` is "ddb" and `type` selects the
+specific command.
+Messages are sent to a relay node and may have a response.
+The DDB involves one or more relay nodes, which, when operational, have identical copies of the database.
+Each client node has one relay node they access - this is algorithmically determined based on their id.
+Search messages `DdbQueryResolve` are executed in the relay node.
+Upserts and deletes are passed through each node (in an algorithmically determined graph).
+New relay nodes are initialized, receive a copy of the DB and are then added.
+This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed.
+
 !include ../generated/message_reference.md
 
 # Blockchain interface
