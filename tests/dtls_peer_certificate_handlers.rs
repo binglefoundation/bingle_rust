@@ -87,7 +87,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start(addr).expect("server start");
+    server.start(addr, None).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
     // Build client with peer certificate handler

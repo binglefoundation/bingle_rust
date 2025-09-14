@@ -43,7 +43,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
         .with_ca_cert(ca_pem.clone());
 
     // Start the DTLS accept loop.
-    server.start(addr).expect("start should succeed");
+    server.start(addr, None).expect("start should succeed");
 
     // Give the background thread a moment to bind.
     thread::sleep(Duration::from_millis(50));

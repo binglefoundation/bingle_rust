@@ -5,10 +5,11 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 #[cfg(not(target_os = "ios"))]
 pub mod non_ios {
     use super::*;
+    use crate::dtls::network_mux_trait::NetworkMux;
     use std::thread;
     use std::sync::{Arc, Mutex};
     use std::collections::HashMap;
-    // OpenSSL DTLS imports (unused for now; will be used as we wire handshake)
+    // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]
     use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode, SslStream};
 
@@ -21,12 +22,19 @@ pub mod non_ios {
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
 
-    /// OpenSSL-backed DTLS implementation (non-iOS only for now).
-    /// This is a scaffold: wiring to OpenSSL's DTLS handshake, mutual auth,
-    /// and async send/recv will be added next.
+    /// OpenSSL-backed DTLS implementation (non-iOS).
+    /// Provides:
+    /// - A server accept loop (Unix) performing DTLSv1.2 handshakes over UDP and spawning per-peer workers.
+    /// - A client path that performs a DTLSv1.2 handshake on first send to a peer.
+    /// Notes/limits: synchronous, test-oriented API; hostname verification disabled on client; client verification
+    /// is disabled by default on server but can be provided via handle_peer_certificate; no plaintext UDP fallback.
 
     #[derive(Default)]
     pub struct DtlsOpenSsl {
+        // Optional NetworkMux used for STUN/TURN or raw UDP writes
+        pub(crate) network_mux: Option<std::sync::Arc<dyn crate::dtls::NetworkMux + Send + Sync>>,
+        // If we created a UDP mux internally on start(None), keep a typed handle to manage its lifecycle
+        pub(crate) owned_udp_mux: Option<std::sync::Arc<crate::dtls::UdpNetworkMux>>,
         // Handlers
         pub(crate) handle_message: Option<HandleMessage>,
         pub(crate) handle_peer_certificate: Option<HandlePeerCertificate>,
@@ -119,7 +127,8 @@ pub mod non_ios {
 
 
         fn prepare_server_acceptor(&mut self) -> Result<()> {
-            // Build an SslAcceptor for DTLSv1.2 and require client certificate authentication.
+            // Build an SslAcceptor for DTLSv1.2. For tests we disable client authentication by default; a custom
+            // verify callback can be supplied via handle_peer_certificate to enforce checks if desired.
             let ca_pem = self.ca_cert.as_deref().ok_or(())?;
             let server_cert_pem = self.server_signing_cert.as_deref().ok_or(())?;
             let server_key_pem = self.server_signing_private_key.as_deref().ok_or(())?;
@@ -196,7 +205,8 @@ pub mod non_ios {
             if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
                 return Err(());
             }
-            // Prepare and persist acceptor (validates PEMs, configures DTLSv1.2 + client auth)
+            // Prepare and persist acceptor (validates PEMs, configures DTLSv1.2; server-side client verification
+            // is disabled by default but can be implemented via verify callback).
             self.prepare_server_acceptor()?;
             let acceptor = self.acceptor.take().map(std::sync::Arc::new);
 
@@ -217,21 +227,21 @@ pub mod non_ios {
             let stop_clone = stop.clone();
             let handle = thread::spawn(move || {
 
-                // Try the DTLS accept loop first (unix-only). On any error, fall back to plaintext UDP loop.
+                // Run the DTLS accept loop (unix-only). If it exits or fails, the server thread finishes; no plaintext fallback.
                 #[cfg(unix)]
                 fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters, stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
-                    // Wrapper to adapt a connected UdpSocket to Read/Write expected by openssl::ssl APIs,
-                    // with support for a prefetched first datagram to avoid losing the initial ClientHello.
-                    struct UdpConn {
-                        sock: std::net::UdpSocket,
+                    // Adapter that exposes a NetworkMux as a Read/Write stream expected by openssl::ssl APIs,
+                    // with support for a prefetched first datagram to avoid losing the initial ClientHello (reads filtered to a peer).
+                    struct NetworkMuxConn {
+                        mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
                         pre: Vec<u8>,
                         off: usize,
                         peer: std::net::SocketAddr,
                     }
-                    impl Read for UdpConn {
+                    impl Read for NetworkMuxConn {
                         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
                             use std::time::Duration;
                             // Serve any prefetched bytes first (from initial recv_from in accept loop)
@@ -242,37 +252,35 @@ pub mod non_ios {
                                 self.off += n;
                                 return Ok(n);
                             }
-                            // Only consume datagrams from the designated peer
+                            // Only consume datagrams from the designated peer using mux's DTLS queue
                             let mut tmp = vec![0u8; buf.len().max(2048)];
                             loop {
-                                match self.sock.peek_from(&mut tmp) {
-                                    Ok((_, from)) => {
-                                        if from == self.peer {
-                                            // Now actually consume the datagram
-                                            let (n2, _from2) = self.sock.recv_from(&mut tmp)?;
-                                            #[cfg(debug_assertions)]
-                                            {
-                                                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&tmp[..n2]) {
-                                                    eprintln!("[dtls][recv][server {}] {}", self.peer, json);
-                                                } else {
-                                                    eprintln!("[dtls][recv][server {}] <parse error> ({} bytes)", self.peer, n2);
-                                                }
+                                match self.mux.dtls_recv_from_peer(self.peer, &mut tmp) {
+                                    Ok(n2) => {
+                                        #[cfg(debug_assertions)]
+                                        {
+                                            if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&tmp[..n2]) {
+                                                eprintln!("[dtls][recv][server {}] {}", self.peer, json);
+                                            } else {
+                                                eprintln!("[dtls][recv][server {}] <parse error> ({} bytes)", self.peer, n2);
                                             }
-                                            let ncopy = n2.min(buf.len());
-                                            buf[..ncopy].copy_from_slice(&tmp[..ncopy]);
-                                            return Ok(ncopy);
-                                        } else {
-                                            // Yield briefly to allow accept loop/per-peer threads to handle their packets
+                                        }
+                                        let ncopy = n2.min(buf.len());
+                                        buf[..ncopy].copy_from_slice(&tmp[..ncopy]);
+                                        return Ok(ncopy);
+                                    }
+                                    Err(e) => {
+                                        if e.kind() == std::io::ErrorKind::WouldBlock {
                                             std::thread::sleep(Duration::from_millis(1));
                                             continue;
                                         }
+                                        return Err(e);
                                     }
-                                    Err(e) => return Err(e),
                                 }
                             }
                         }
                     }
-                    impl Write for UdpConn {
+                    impl Write for NetworkMuxConn {
                         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
                             #[cfg(debug_assertions)]
                             {
@@ -282,7 +290,7 @@ pub mod non_ios {
                                     eprintln!("[dtls][send][server {}] <parse error> ({} bytes)", self.peer, buf.len());
                                 }
                             }
-                            self.sock.send_to(buf, self.peer)
+                            match self.mux.write(self.peer, buf) { Ok(()) => Ok(buf.len()), Err(()) => Err(std::io::Error::new(std::io::ErrorKind::Other, "mux write failed")) }
                         }
                         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
                     }
@@ -291,21 +299,24 @@ pub mod non_ios {
                     let _ = &writers;
 
                     let acceptor = match acceptor { Some(a) => a, None => return Err(()) };
-                    let sock = std::net::UdpSocket::bind(addr).map_err(|_| ())?;
+                    let mux = std::sync::Arc::new(crate::dtls::UdpNetworkMux::bind(addr).map_err(|_| ())?);
                     eprintln!("[server] bound to {}", addr);
-                    let _ = sock.set_nonblocking(false);
+                    // ensure reasonable timeout for accept loop responsiveness
+                    let _ = mux.set_read_timeout(Some(Duration::from_millis(200)));
+                    // start the mux's receive thread so DTLS datagrams are enqueued for demux
+                    mux.start().map_err(|_| ())?;
 
                     loop {
                         use std::sync::atomic::Ordering;
                         if stop.load(Ordering::Relaxed) { break Ok(()); }
                         // Peek at the next datagram to decide if this is a new peer or an existing one.
                         let mut probe = [0u8; 2048];
-                        let (_n_peek, from) = match sock.peek_from(&mut probe) {
+                        let (_n_peek, from) = match mux.dtls_peek_from(&mut probe) {
                             Ok((n, from)) => (n, from),
                             Err(_) => continue,
                         };
                         // If this peer already has a registered writer/stream, do not consume this packet here;
-                        // let the per-client reader on the connected socket handle it.
+                        // let the per-client worker's reader handle it.
                         if let Ok(map) = writers.lock() {
                             if map.contains_key(&from) {
                                 // Brief nap to avoid a tight spin while the per-client thread drains data.
@@ -315,7 +326,7 @@ pub mod non_ios {
                         }
 
                         // This appears to be a new peer: consume the packet now and spawn a worker to handle handshake.
-                        let (n, from) = match sock.recv_from(&mut probe) {
+                        let (n, from) = match mux.dtls_recv_from(&mut probe) {
                             Ok((n, from)) => (n, from),
                             Err(_) => continue,
                         };
@@ -343,15 +354,12 @@ pub mod non_ios {
                         let sender_clone = sender.clone();
                         let writers_clone = writers.clone();
                         let prebuf = probe[..n].to_vec();
-                        let sock_conn = match sock.try_clone() {
-                            Ok(s) => s,
-                            Err(_) => continue,
-                        };
+                        let mux2 = mux.clone();
                         std::thread::spawn(move || {
-                            let _ = sock_conn.set_read_timeout(Some(Duration::from_millis(1500)));
+                            let _ = mux2.set_read_timeout(Some(Duration::from_millis(1500)));
 
-                            // Attempt DTLS server handshake on an unconnected UDP socket filtered to this peer.
-                            let stream = match acc2.accept(UdpConn { sock: sock_conn, pre: prebuf, off: 0, peer: from }) {
+                            // Attempt DTLS server handshake using NetworkMuxConn filtered to this peer.
+                            let stream = match acc2.accept(NetworkMuxConn { mux: mux2, pre: prebuf, off: 0, peer: from }) {
                                 Ok(s) => s,
                                 Err(_) => {
                                     // cleanup placeholder on handshake failure
@@ -418,13 +426,25 @@ pub mod non_ios {
     }
 
     impl Dtls for DtlsOpenSsl {
-            fn start(&mut self, addr: SocketAddr) -> Result<()> { self.start_accept(addr) }
+            fn start(&mut self, addr: SocketAddr, mux: Option<std::sync::Arc<dyn crate::dtls::NetworkMux + Send + Sync>>) -> Result<()> {
+                // Use provided mux if any; avoid auto-binding a UDP mux on the same addr to prevent double-bind with DTLS accept loop.
+                if let Some(m) = mux {
+                    self.network_mux = Some(m);
+                }
+                // Start DTLS accept loop
+                self.start_accept(addr)
+            }
             fn stop(&mut self) -> Result<()> {
                 if let Some(flag) = self.stop_flag.take() {
                     use std::sync::atomic::Ordering;
                     flag.store(true, Ordering::SeqCst);
                 }
                 let _ = self.server_thread.take();
+                // Stop any internally owned UDP mux
+                if let Some(mux) = &self.owned_udp_mux {
+                    mux.stop();
+                }
+                self.owned_udp_mux = None;
                 Ok(())
             }
         fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
@@ -445,8 +465,8 @@ pub mod non_ios {
             let connector = self.prepare_client_context()?;
 
             // Wrap a connected UDP socket as a Read/Write stream with debug logging
-            struct UdpConn { sock: std::net::UdpSocket, peer: SocketAddr }
-            impl Read for UdpConn {
+            struct NetworkMuxConn { sock: std::net::UdpSocket, peer: SocketAddr }
+            impl Read for NetworkMuxConn {
                 fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
                     let n = self.sock.recv(buf)?;
                     #[cfg(debug_assertions)]
@@ -462,7 +482,7 @@ pub mod non_ios {
                     Ok(n)
                 }
             }
-            impl Write for UdpConn {
+            impl Write for NetworkMuxConn {
                 fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
                     #[cfg(debug_assertions)]
                     {
@@ -486,7 +506,7 @@ pub mod non_ios {
             eprintln!("[client] connecting DTLS to {}", to);
             let mut conf = connector.configure().map_err(|_| ())?;
             conf.set_verify_hostname(false);
-            let stream = match conf.connect("ignored-host", UdpConn { sock, peer: to }) {
+            let stream = match conf.connect("ignored-host", NetworkMuxConn { sock, peer: to }) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
                     s

@@ -62,7 +62,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start(addr).expect("start should succeed");
+    server.start(addr, None).expect("start should succeed");
 
     // Give the background thread a moment to bind.
     thread::sleep(Duration::from_millis(200));

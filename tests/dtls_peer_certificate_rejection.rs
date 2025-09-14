@@ -35,7 +35,7 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start(addr).expect("server start");
+    server.start(addr, None).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
     // Build client with valid certs
@@ -74,7 +74,7 @@ fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
-    server.start(addr).expect("server start");
+    server.start(addr, None).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
     // Build client with a rejecting peer certificate handler
