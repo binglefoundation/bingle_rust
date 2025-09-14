@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
+mod pki;
 
 static MESSAGE_SEEN: AtomicBool = AtomicBool::new(false);
 
@@ -18,7 +19,6 @@ fn handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
 #[test]
 fn dtls_start_accepts_external_network_mux_udp() {
     // Generate test certs
-    mod pki { include!("pki.rs"); }
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
     let server_key_pem: Vec<u8> = certs.server_key.clone();
