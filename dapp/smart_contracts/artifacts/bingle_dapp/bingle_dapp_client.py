@@ -19,7 +19,7 @@ from algosdk.v2client.models import SimulateTraceConfig
 import algokit_utils
 from algokit_utils import AlgorandClient as _AlgoKitAlgorandClient
 
-_APP_SPEC_JSON = r"""{"arcs": [22, 28], "bareActions": {"call": [], "create": ["NoOp"]}, "methods": [{"actions": {"call": ["NoOp"], "create": []}, "args": [{"type": "string", "name": "name"}], "name": "hello", "returns": {"type": "string"}, "events": [], "readonly": false, "recommendations": {}}], "name": "BingleDapp", "state": {"keys": {"box": {}, "global": {}, "local": {}}, "maps": {"box": {}, "global": {}, "local": {}}, "schema": {"global": {"bytes": 0, "ints": 0}, "local": {"bytes": 0, "ints": 0}}}, "structs": {}, "byteCode": {"approval": "CjEbQQA0gAQCvs4RNhoAjgEAA4EAQzEZFEQxGEQ2GgFXAgCIACBJFRZXBgJMUIAEFR98dUxQsIEBQzEZQP/UMRgURIEBQ4oBAYAHSGVsbG8sIIv/UIk=", "clear": "CoEBQw=="}, "events": [], "networks": {}, "source": {"approval": "I3ByYWdtYSB2ZXJzaW9uIDEwCiNwcmFnbWEgdHlwZXRyYWNrIGZhbHNlCgovLyBhbGdvcHkuYXJjNC5BUkM0Q29udHJhY3QuYXBwcm92YWxfcHJvZ3JhbSgpIC0+IHVpbnQ2NDoKbWFpbjoKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weTo2CiAgICAvLyBjbGFzcyBCaW5nbGVEYXBwKEFSQzRDb250cmFjdCk6CiAgICB0eG4gTnVtQXBwQXJncwogICAgYnogbWFpbl9iYXJlX3JvdXRpbmdANgogICAgcHVzaGJ5dGVzIDB4MDJiZWNlMTEgLy8gbWV0aG9kICJoZWxsbyhzdHJpbmcpc3RyaW5nIgogICAgdHhuYSBBcHBsaWNhdGlvbkFyZ3MgMAogICAgbWF0Y2ggbWFpbl9oZWxsb19yb3V0ZUAzCgptYWluX2FmdGVyX2lmX2Vsc2VAMTA6CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NgogICAgLy8gY2xhc3MgQmluZ2xlRGFwcChBUkM0Q29udHJhY3QpOgogICAgcHVzaGludCAwIC8vIDAKICAgIHJldHVybgoKbWFpbl9oZWxsb19yb3V0ZUAzOgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjcKICAgIC8vIEBhYmltZXRob2QoKQogICAgdHhuIE9uQ29tcGxldGlvbgogICAgIQogICAgYXNzZXJ0IC8vIE9uQ29tcGxldGlvbiBpcyBub3QgTm9PcAogICAgdHhuIEFwcGxpY2F0aW9uSUQKICAgIGFzc2VydCAvLyBjYW4gb25seSBjYWxsIHdoZW4gbm90IGNyZWF0aW5nCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NgogICAgLy8gY2xhc3MgQmluZ2xlRGFwcChBUkM0Q29udHJhY3QpOgogICAgdHhuYSBBcHBsaWNhdGlvbkFyZ3MgMQogICAgZXh0cmFjdCAyIDAKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weTo3CiAgICAvLyBAYWJpbWV0aG9kKCkKICAgIGNhbGxzdWIgaGVsbG8KICAgIGR1cAogICAgbGVuCiAgICBpdG9iCiAgICBleHRyYWN0IDYgMgogICAgc3dhcAogICAgY29uY2F0CiAgICBwdXNoYnl0ZXMgMHgxNTFmN2M3NQogICAgc3dhcAogICAgY29uY2F0CiAgICBsb2cKICAgIHB1c2hpbnQgMSAvLyAxCiAgICByZXR1cm4KCm1haW5fYmFyZV9yb3V0aW5nQDY6CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NgogICAgLy8gY2xhc3MgQmluZ2xlRGFwcChBUkM0Q29udHJhY3QpOgogICAgdHhuIE9uQ29tcGxldGlvbgogICAgYm56IG1haW5fYWZ0ZXJfaWZfZWxzZUAxMAogICAgdHhuIEFwcGxpY2F0aW9uSUQKICAgICEKICAgIGFzc2VydCAvLyBjYW4gb25seSBjYWxsIHdoZW4gY3JlYXRpbmcKICAgIHB1c2hpbnQgMSAvLyAxCiAgICByZXR1cm4KCgovLyBzbWFydF9jb250cmFjdHMuYmluZ2xlX2RhcHAuY29udHJhY3QuQmluZ2xlRGFwcC5oZWxsbyhuYW1lOiBieXRlcykgLT4gYnl0ZXM6CmhlbGxvOgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjctOAogICAgLy8gQGFiaW1ldGhvZCgpCiAgICAvLyBkZWYgaGVsbG8oc2VsZiwgbmFtZTogU3RyaW5nKSAtPiBTdHJpbmc6CiAgICBwcm90byAxIDEKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weTo5CiAgICAvLyByZXR1cm4gIkhlbGxvLCAiICsgbmFtZQogICAgcHVzaGJ5dGVzICJIZWxsbywgIgogICAgZnJhbWVfZGlnIC0xCiAgICBjb25jYXQKICAgIHJldHN1Ygo=", "clear": "I3ByYWdtYSB2ZXJzaW9uIDEwCiNwcmFnbWEgdHlwZXRyYWNrIGZhbHNlCgovLyBhbGdvcHkuYXJjNC5BUkM0Q29udHJhY3QuY2xlYXJfc3RhdGVfcHJvZ3JhbSgpIC0+IHVpbnQ2NDoKbWFpbjoKICAgIHB1c2hpbnQgMSAvLyAxCiAgICByZXR1cm4K"}, "sourceInfo": {"approval": {"pcOffsetMethod": "none", "sourceInfo": [{"pc": [25], "errorMessage": "OnCompletion is not NoOp"}, {"pc": [66], "errorMessage": "can only call when creating"}, {"pc": [28], "errorMessage": "can only call when not creating"}]}, "clear": {"pcOffsetMethod": "none", "sourceInfo": []}}, "templateVariables": {}}"""
+_APP_SPEC_JSON = r"""{"arcs": [22, 28], "bareActions": {"call": [], "create": ["NoOp"]}, "methods": [{"actions": {"call": ["NoOp"], "create": []}, "args": [{"type": "string", "name": "name"}], "name": "hello", "returns": {"type": "string"}, "events": [], "readonly": false, "recommendations": {}}, {"actions": {"call": ["NoOp"], "create": []}, "args": [{"type": "uint64", "name": "price"}], "name": "set_bingle_price", "returns": {"type": "void"}, "desc": "Set the Bingle$ price in microAlgos.\nOnly the application creator can call this method. Stores the value in global state under key \"BinglePrice\".", "events": [], "readonly": false, "recommendations": {}}, {"actions": {"call": ["NoOp"], "create": []}, "args": [], "name": "buy_bingle", "returns": {"type": "void"}, "desc": "Buy 1 Bingle$.\nRequirements enforced via transaction group: - The app call must include at least one foreign asset; the first one is treated   as the Bingle$ ASA to credit. - There must be a payment in the group to the application address for exactly the   current Bingle$ price held in global state. - There must be an asset transfer in the group that transfers exactly 1 unit of   the referenced asset to the caller (Txn.sender).\nNote: The contract does not perform an inner transfer; instead it validates an accompanying asset transfer and payment in the same group. This allows flexible funding sources (creator, reserve, distributor) without specific ASA roles.", "events": [], "readonly": false, "recommendations": {}}], "name": "BingleDapp", "state": {"keys": {"box": {}, "global": {"bingle_price": {"key": "QmluZ2xlUHJpY2U=", "keyType": "AVMString", "valueType": "AVMUint64"}}, "local": {}}, "maps": {"box": {}, "global": {}, "local": {}}, "schema": {"global": {"bytes": 0, "ints": 1}, "local": {"bytes": 0, "ints": 0}}}, "structs": {}, "byteCode": {"approval": "CiACAQAmAQtCaW5nbGVQcmljZTEbQQBdggMEAr7OEQQ5wrfiBAviJAY2GgCOAwAeAA4AAiNDMRkURDEYRIgAXiJDMRkURDEYRDYaAReIAEAiQzEZFEQxGEQ2GgFXAgCIAB5JFRZXBgJMUIAEFR98dUxQsCJDMRlA/7oxGBREIkOKAQGAB0hlbGxvLCCL/1CJigEAMQAyCRJEKIv/Z4mKAACAAEk2MAAjKGVEMgoxACNJMgQjiwmLCAxBAFyLCTgHiwQSiwaMAUEAEYsJOAiLAxKLBowBQQADIowBiwGMBosJOBGLAhKLB4wAQQAeiwk4FIsFEosHjABBABCLCTgSIhKLB4wAQQADIowAiwCMB4sJIgiMCUL/nIsGRIsHRIk=", "clear": "CoEBQw=="}, "events": [], "networks": {}, "source": {"approval": "I3ByYWdtYSB2ZXJzaW9uIDEwCiNwcmFnbWEgdHlwZXRyYWNrIGZhbHNlCgovLyBzbWFydF9jb250cmFjdHMuYmluZ2xlX2RhcHAuY29udHJhY3QuQmluZ2xlRGFwcC5fX2FsZ29weV9lbnRyeXBvaW50X3dpdGhfaW5pdCgpIC0+IHVpbnQ2NDoKbWFpbjoKICAgIGludGNibG9jayAxIDAKICAgIGJ5dGVjYmxvY2sgIkJpbmdsZVByaWNlIgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjYKICAgIC8vIGNsYXNzIEJpbmdsZURhcHAoQVJDNENvbnRyYWN0KToKICAgIHR4biBOdW1BcHBBcmdzCiAgICBieiBtYWluX2JhcmVfcm91dGluZ0A4CiAgICBwdXNoYnl0ZXNzIDB4MDJiZWNlMTEgMHgzOWMyYjdlMiAweDBiZTIyNDA2IC8vIG1ldGhvZCAiaGVsbG8oc3RyaW5nKXN0cmluZyIsIG1ldGhvZCAic2V0X2JpbmdsZV9wcmljZSh1aW50NjQpdm9pZCIsIG1ldGhvZCAiYnV5X2JpbmdsZSgpdm9pZCIKICAgIHR4bmEgQXBwbGljYXRpb25BcmdzIDAKICAgIG1hdGNoIG1haW5faGVsbG9fcm91dGVANSBtYWluX3NldF9iaW5nbGVfcHJpY2Vfcm91dGVANiBtYWluX2J1eV9iaW5nbGVfcm91dGVANwoKbWFpbl9hZnRlcl9pZl9lbHNlQDEwOgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjYKICAgIC8vIGNsYXNzIEJpbmdsZURhcHAoQVJDNENvbnRyYWN0KToKICAgIGludGNfMSAvLyAwCiAgICByZXR1cm4KCm1haW5fYnV5X2JpbmdsZV9yb3V0ZUA3OgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjI1CiAgICAvLyBAYWJpbWV0aG9kKCkKICAgIHR4biBPbkNvbXBsZXRpb24KICAgICEKICAgIGFzc2VydCAvLyBPbkNvbXBsZXRpb24gaXMgbm90IE5vT3AKICAgIHR4biBBcHBsaWNhdGlvbklECiAgICBhc3NlcnQgLy8gY2FuIG9ubHkgY2FsbCB3aGVuIG5vdCBjcmVhdGluZwogICAgY2FsbHN1YiBidXlfYmluZ2xlCiAgICBpbnRjXzAgLy8gMQogICAgcmV0dXJuCgptYWluX3NldF9iaW5nbGVfcHJpY2Vfcm91dGVANjoKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weToxNQogICAgLy8gQGFiaW1ldGhvZCgpCiAgICB0eG4gT25Db21wbGV0aW9uCiAgICAhCiAgICBhc3NlcnQgLy8gT25Db21wbGV0aW9uIGlzIG5vdCBOb09wCiAgICB0eG4gQXBwbGljYXRpb25JRAogICAgYXNzZXJ0IC8vIGNhbiBvbmx5IGNhbGwgd2hlbiBub3QgY3JlYXRpbmcKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weTo2CiAgICAvLyBjbGFzcyBCaW5nbGVEYXBwKEFSQzRDb250cmFjdCk6CiAgICB0eG5hIEFwcGxpY2F0aW9uQXJncyAxCiAgICBidG9pCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6MTUKICAgIC8vIEBhYmltZXRob2QoKQogICAgY2FsbHN1YiBzZXRfYmluZ2xlX3ByaWNlCiAgICBpbnRjXzAgLy8gMQogICAgcmV0dXJuCgptYWluX2hlbGxvX3JvdXRlQDU6CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6MTEKICAgIC8vIEBhYmltZXRob2QoKQogICAgdHhuIE9uQ29tcGxldGlvbgogICAgIQogICAgYXNzZXJ0IC8vIE9uQ29tcGxldGlvbiBpcyBub3QgTm9PcAogICAgdHhuIEFwcGxpY2F0aW9uSUQKICAgIGFzc2VydCAvLyBjYW4gb25seSBjYWxsIHdoZW4gbm90IGNyZWF0aW5nCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NgogICAgLy8gY2xhc3MgQmluZ2xlRGFwcChBUkM0Q29udHJhY3QpOgogICAgdHhuYSBBcHBsaWNhdGlvbkFyZ3MgMQogICAgZXh0cmFjdCAyIDAKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weToxMQogICAgLy8gQGFiaW1ldGhvZCgpCiAgICBjYWxsc3ViIGhlbGxvCiAgICBkdXAKICAgIGxlbgogICAgaXRvYgogICAgZXh0cmFjdCA2IDIKICAgIHN3YXAKICAgIGNvbmNhdAogICAgcHVzaGJ5dGVzIDB4MTUxZjdjNzUKICAgIHN3YXAKICAgIGNvbmNhdAogICAgbG9nCiAgICBpbnRjXzAgLy8gMQogICAgcmV0dXJuCgptYWluX2JhcmVfcm91dGluZ0A4OgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjYKICAgIC8vIGNsYXNzIEJpbmdsZURhcHAoQVJDNENvbnRyYWN0KToKICAgIHR4biBPbkNvbXBsZXRpb24KICAgIGJueiBtYWluX2FmdGVyX2lmX2Vsc2VAMTAKICAgIHR4biBBcHBsaWNhdGlvbklECiAgICAhCiAgICBhc3NlcnQgLy8gY2FuIG9ubHkgY2FsbCB3aGVuIGNyZWF0aW5nCiAgICBpbnRjXzAgLy8gMQogICAgcmV0dXJuCgoKLy8gc21hcnRfY29udHJhY3RzLmJpbmdsZV9kYXBwLmNvbnRyYWN0LkJpbmdsZURhcHAuaGVsbG8obmFtZTogYnl0ZXMpIC0+IGJ5dGVzOgpoZWxsbzoKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weToxMS0xMgogICAgLy8gQGFiaW1ldGhvZCgpCiAgICAvLyBkZWYgaGVsbG8oc2VsZiwgbmFtZTogU3RyaW5nKSAtPiBTdHJpbmc6CiAgICBwcm90byAxIDEKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weToxMwogICAgLy8gcmV0dXJuICJIZWxsbywgIiArIG5hbWUKICAgIHB1c2hieXRlcyAiSGVsbG8sICIKICAgIGZyYW1lX2RpZyAtMQogICAgY29uY2F0CiAgICByZXRzdWIKCgovLyBzbWFydF9jb250cmFjdHMuYmluZ2xlX2RhcHAuY29udHJhY3QuQmluZ2xlRGFwcC5zZXRfYmluZ2xlX3ByaWNlKHByaWNlOiB1aW50NjQpIC0+IHZvaWQ6CnNldF9iaW5nbGVfcHJpY2U6CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6MTUtMTYKICAgIC8vIEBhYmltZXRob2QoKQogICAgLy8gZGVmIHNldF9iaW5nbGVfcHJpY2Uoc2VsZiwgcHJpY2U6IFVJbnQ2NCkgLT4gTm9uZToKICAgIHByb3RvIDEgMAogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjIyCiAgICAvLyBhc3NlcnQgVHhuLnNlbmRlciA9PSBHbG9iYWwuY3JlYXRvcl9hZGRyZXNzCiAgICB0eG4gU2VuZGVyCiAgICBnbG9iYWwgQ3JlYXRvckFkZHJlc3MKICAgID09CiAgICBhc3NlcnQKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weToyMwogICAgLy8gc2VsZi5iaW5nbGVfcHJpY2UudmFsdWUgPSBwcmljZQogICAgYnl0ZWNfMCAvLyAiQmluZ2xlUHJpY2UiCiAgICBmcmFtZV9kaWcgLTEKICAgIGFwcF9nbG9iYWxfcHV0CiAgICByZXRzdWIKCgovLyBzbWFydF9jb250cmFjdHMuYmluZ2xlX2RhcHAuY29udHJhY3QuQmluZ2xlRGFwcC5idXlfYmluZ2xlKCkgLT4gdm9pZDoKYnV5X2JpbmdsZToKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weToyNS0yNgogICAgLy8gQGFiaW1ldGhvZCgpCiAgICAvLyBkZWYgYnV5X2JpbmdsZShzZWxmKSAtPiBOb25lOgogICAgcHJvdG8gMCAwCiAgICBwdXNoYnl0ZXMgIiIKICAgIGR1cAogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjQxLTQyCiAgICAvLyAjIEVuc3VyZSBhIGZvcmVpZ24gYXNzZXQgaXMgc3VwcGxpZWQgdG8gaWRlbnRpZnkgQmluZ2xlJCBBU0EKICAgIC8vIGFzc2V0X2lkID0gVHhuLmFzc2V0cygwKQogICAgdHhuYSBBc3NldHMgMAogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjQ0CiAgICAvLyBwcmljZSA9IHNlbGYuYmluZ2xlX3ByaWNlLnZhbHVlCiAgICBpbnRjXzEgLy8gMAogICAgYnl0ZWNfMCAvLyAiQmluZ2xlUHJpY2UiCiAgICBhcHBfZ2xvYmFsX2dldF9leAogICAgYXNzZXJ0IC8vIGNoZWNrIHNlbGYuYmluZ2xlX3ByaWNlIGV4aXN0cwogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjQ1CiAgICAvLyBhcHBfYWRkciA9IEdsb2JhbC5jdXJyZW50X2FwcGxpY2F0aW9uX2FkZHJlc3MKICAgIGdsb2JhbCBDdXJyZW50QXBwbGljYXRpb25BZGRyZXNzCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NDYKICAgIC8vIGJ1eWVyID0gVHhuLnNlbmRlcgogICAgdHhuIFNlbmRlcgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjQ4CiAgICAvLyBzYXdfcGF5bWVudCA9IEZhbHNlCiAgICBpbnRjXzEgLy8gMAogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjQ5CiAgICAvLyBzYXdfYXhmZXIgPSBGYWxzZQogICAgZHVwCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NTEtNTIKICAgIC8vICMgU2NhbiB0aGUgY3VycmVudCB0cmFuc2FjdGlvbiBncm91cCBmb3IgcmVxdWlyZWQgcGF5bWVudCBhbmQgYXNzZXQgdHJhbnNmZXIKICAgIC8vIGZvciBpIGluIHVyYW5nZShHbG9iYWwuZ3JvdXBfc2l6ZSk6CiAgICBnbG9iYWwgR3JvdXBTaXplCiAgICBpbnRjXzEgLy8gMAoKYnV5X2JpbmdsZV9mb3JfaGVhZGVyQDE6CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NTEtNTIKICAgIC8vICMgU2NhbiB0aGUgY3VycmVudCB0cmFuc2FjdGlvbiBncm91cCBmb3IgcmVxdWlyZWQgcGF5bWVudCBhbmQgYXNzZXQgdHJhbnNmZXIKICAgIC8vIGZvciBpIGluIHVyYW5nZShHbG9iYWwuZ3JvdXBfc2l6ZSk6CiAgICBmcmFtZV9kaWcgOQogICAgZnJhbWVfZGlnIDgKICAgIDwKICAgIGJ6IGJ1eV9iaW5nbGVfYWZ0ZXJfZm9yQDExCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NTQtNTUKICAgIC8vICMgUGF5bWVudCBjaGVjazogcmVjZWl2ZXIgaXMgYXBwIGFuZCBhbW91bnQgZXF1YWxzIGN1cnJlbnQgcHJpY2UKICAgIC8vIGlmIHQucmVjZWl2ZXIgPT0gYXBwX2FkZHIgYW5kIHQuYW1vdW50ID09IHByaWNlOgogICAgZnJhbWVfZGlnIDkKICAgIGd0eG5zIFJlY2VpdmVyCiAgICBmcmFtZV9kaWcgNAogICAgPT0KICAgIGZyYW1lX2RpZyA2CiAgICBmcmFtZV9idXJ5IDEKICAgIGJ6IGJ1eV9iaW5nbGVfYWZ0ZXJfaWZfZWxzZUA1CiAgICBmcmFtZV9kaWcgOQogICAgZ3R4bnMgQW1vdW50CiAgICBmcmFtZV9kaWcgMwogICAgPT0KICAgIGZyYW1lX2RpZyA2CiAgICBmcmFtZV9idXJ5IDEKICAgIGJ6IGJ1eV9iaW5nbGVfYWZ0ZXJfaWZfZWxzZUA1CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NTYKICAgIC8vIHNhd19wYXltZW50ID0gVHJ1ZQogICAgaW50Y18wIC8vIDEKICAgIGZyYW1lX2J1cnkgMQoKYnV5X2JpbmdsZV9hZnRlcl9pZl9lbHNlQDU6CiAgICBmcmFtZV9kaWcgMQogICAgZnJhbWVfYnVyeSA2CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjAKICAgIC8vIHQueGZlcl9hc3NldCA9PSBhc3NldF9pZAogICAgZnJhbWVfZGlnIDkKICAgIGd0eG5zIFhmZXJBc3NldAogICAgZnJhbWVfZGlnIDIKICAgID09CiAgICBmcmFtZV9kaWcgNwogICAgZnJhbWVfYnVyeSAwCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjAtNjIKICAgIC8vIHQueGZlcl9hc3NldCA9PSBhc3NldF9pZAogICAgLy8gYW5kIHQuYXNzZXRfcmVjZWl2ZXIgPT0gYnV5ZXIKICAgIC8vIGFuZCB0LmFzc2V0X2Ftb3VudCA9PSBVSW50NjQoMSkKICAgIGJ6IGJ1eV9iaW5nbGVfYWZ0ZXJfaWZfZWxzZUA5CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjEKICAgIC8vIGFuZCB0LmFzc2V0X3JlY2VpdmVyID09IGJ1eWVyCiAgICBmcmFtZV9kaWcgOQogICAgZ3R4bnMgQXNzZXRSZWNlaXZlcgogICAgZnJhbWVfZGlnIDUKICAgID09CiAgICBmcmFtZV9kaWcgNwogICAgZnJhbWVfYnVyeSAwCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjAtNjIKICAgIC8vIHQueGZlcl9hc3NldCA9PSBhc3NldF9pZAogICAgLy8gYW5kIHQuYXNzZXRfcmVjZWl2ZXIgPT0gYnV5ZXIKICAgIC8vIGFuZCB0LmFzc2V0X2Ftb3VudCA9PSBVSW50NjQoMSkKICAgIGJ6IGJ1eV9iaW5nbGVfYWZ0ZXJfaWZfZWxzZUA5CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjIKICAgIC8vIGFuZCB0LmFzc2V0X2Ftb3VudCA9PSBVSW50NjQoMSkKICAgIGZyYW1lX2RpZyA5CiAgICBndHhucyBBc3NldEFtb3VudAogICAgaW50Y18wIC8vIDEKICAgID09CiAgICBmcmFtZV9kaWcgNwogICAgZnJhbWVfYnVyeSAwCiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjAtNjIKICAgIC8vIHQueGZlcl9hc3NldCA9PSBhc3NldF9pZAogICAgLy8gYW5kIHQuYXNzZXRfcmVjZWl2ZXIgPT0gYnV5ZXIKICAgIC8vIGFuZCB0LmFzc2V0X2Ftb3VudCA9PSBVSW50NjQoMSkKICAgIGJ6IGJ1eV9iaW5nbGVfYWZ0ZXJfaWZfZWxzZUA5CiAgICAvLyBzbWFydF9jb250cmFjdHMvYmluZ2xlX2RhcHAvY29udHJhY3QucHk6NjQKICAgIC8vIHNhd19heGZlciA9IFRydWUKICAgIGludGNfMCAvLyAxCiAgICBmcmFtZV9idXJ5IDAKCmJ1eV9iaW5nbGVfYWZ0ZXJfaWZfZWxzZUA5OgogICAgZnJhbWVfZGlnIDAKICAgIGZyYW1lX2J1cnkgNwogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjUxLTUyCiAgICAvLyAjIFNjYW4gdGhlIGN1cnJlbnQgdHJhbnNhY3Rpb24gZ3JvdXAgZm9yIHJlcXVpcmVkIHBheW1lbnQgYW5kIGFzc2V0IHRyYW5zZmVyCiAgICAvLyBmb3IgaSBpbiB1cmFuZ2UoR2xvYmFsLmdyb3VwX3NpemUpOgogICAgZnJhbWVfZGlnIDkKICAgIGludGNfMCAvLyAxCiAgICArCiAgICBmcmFtZV9idXJ5IDkKICAgIGIgYnV5X2JpbmdsZV9mb3JfaGVhZGVyQDEKCmJ1eV9iaW5nbGVfYWZ0ZXJfZm9yQDExOgogICAgLy8gc21hcnRfY29udHJhY3RzL2JpbmdsZV9kYXBwL2NvbnRyYWN0LnB5OjY2LTY3CiAgICAvLyAjIFJlcXVpcmUgYm90aCBjb25kaXRpb25zCiAgICAvLyBhc3NlcnQgc2F3X3BheW1lbnQKICAgIGZyYW1lX2RpZyA2CiAgICBhc3NlcnQKICAgIC8vIHNtYXJ0X2NvbnRyYWN0cy9iaW5nbGVfZGFwcC9jb250cmFjdC5weTo2OAogICAgLy8gYXNzZXJ0IHNhd19heGZlcgogICAgZnJhbWVfZGlnIDcKICAgIGFzc2VydAogICAgcmV0c3ViCg==", "clear": "I3ByYWdtYSB2ZXJzaW9uIDEwCiNwcmFnbWEgdHlwZXRyYWNrIGZhbHNlCgovLyBhbGdvcHkuYXJjNC5BUkM0Q29udHJhY3QuY2xlYXJfc3RhdGVfcHJvZ3JhbSgpIC0+IHVpbnQ2NDoKbWFpbjoKICAgIHB1c2hpbnQgMSAvLyAxCiAgICByZXR1cm4K"}, "sourceInfo": {"approval": {"pcOffsetMethod": "none", "sourceInfo": [{"pc": [57, 69, 85], "errorMessage": "OnCompletion is not NoOp"}, {"pc": [125], "errorMessage": "can only call when creating"}, {"pc": [60, 72, 88], "errorMessage": "can only call when not creating"}, {"pc": [170], "errorMessage": "check self.bingle_price exists"}]}, "clear": {"pcOffsetMethod": "none", "sourceInfo": []}}, "templateVariables": {}}"""
 APP_SPEC = algokit_utils.Arc56Contract.from_json(_APP_SPEC_JSON)
 
 def _parse_abi_args(args: object | None = None) -> list[object] | None:
@@ -73,6 +73,15 @@ class HelloArgs:
     def abi_method_signature(self) -> str:
         return "hello(string)string"
 
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class SetBinglePriceArgs:
+    """Dataclass for set_bingle_price arguments"""
+    price: int
+
+    @property
+    def abi_method_signature(self) -> str:
+        return "set_bingle_price(uint64)void"
+
 
 class BingleDappParams:
     def __init__(self, app_client: algokit_utils.AppClient):
@@ -89,6 +98,30 @@ class BingleDappParams:
             **dataclasses.asdict(params),
             "method": "hello(string)string",
             "args": method_args,
+        }))
+
+    def set_bingle_price(
+        self,
+        args: tuple[int] | SetBinglePriceArgs,
+        params: algokit_utils.CommonAppCallParams | None = None
+    ) -> algokit_utils.AppCallMethodCallParams:
+        method_args = _parse_abi_args(args)
+        params = params or algokit_utils.CommonAppCallParams()
+        return self.app_client.params.call(algokit_utils.AppClientMethodCallParams(**{
+            **dataclasses.asdict(params),
+            "method": "set_bingle_price(uint64)void",
+            "args": method_args,
+        }))
+
+    def buy_bingle(
+        self,
+        params: algokit_utils.CommonAppCallParams | None = None
+    ) -> algokit_utils.AppCallMethodCallParams:
+    
+        params = params or algokit_utils.CommonAppCallParams()
+        return self.app_client.params.call(algokit_utils.AppClientMethodCallParams(**{
+            **dataclasses.asdict(params),
+            "method": "buy_bingle()void",
         }))
 
     def clear_state(
@@ -117,6 +150,30 @@ class BingleDappCreateTransactionParams:
             **dataclasses.asdict(params),
             "method": "hello(string)string",
             "args": method_args,
+        }))
+
+    def set_bingle_price(
+        self,
+        args: tuple[int] | SetBinglePriceArgs,
+        params: algokit_utils.CommonAppCallParams | None = None
+    ) -> algokit_utils.BuiltTransactions:
+        method_args = _parse_abi_args(args)
+        params = params or algokit_utils.CommonAppCallParams()
+        return self.app_client.create_transaction.call(algokit_utils.AppClientMethodCallParams(**{
+            **dataclasses.asdict(params),
+            "method": "set_bingle_price(uint64)void",
+            "args": method_args,
+        }))
+
+    def buy_bingle(
+        self,
+        params: algokit_utils.CommonAppCallParams | None = None
+    ) -> algokit_utils.BuiltTransactions:
+    
+        params = params or algokit_utils.CommonAppCallParams()
+        return self.app_client.create_transaction.call(algokit_utils.AppClientMethodCallParams(**{
+            **dataclasses.asdict(params),
+            "method": "buy_bingle()void",
         }))
 
     def clear_state(
@@ -150,6 +207,36 @@ class BingleDappSend:
         parsed_response = response
         return typing.cast(algokit_utils.SendAppTransactionResult[str], parsed_response)
 
+    def set_bingle_price(
+        self,
+        args: tuple[int] | SetBinglePriceArgs,
+        params: algokit_utils.CommonAppCallParams | None = None,
+        send_params: algokit_utils.SendParams | None = None
+    ) -> algokit_utils.SendAppTransactionResult[None]:
+        method_args = _parse_abi_args(args)
+        params = params or algokit_utils.CommonAppCallParams()
+        response = self.app_client.send.call(algokit_utils.AppClientMethodCallParams(**{
+            **dataclasses.asdict(params),
+            "method": "set_bingle_price(uint64)void",
+            "args": method_args,
+        }), send_params=send_params)
+        parsed_response = response
+        return typing.cast(algokit_utils.SendAppTransactionResult[None], parsed_response)
+
+    def buy_bingle(
+        self,
+        params: algokit_utils.CommonAppCallParams | None = None,
+        send_params: algokit_utils.SendParams | None = None
+    ) -> algokit_utils.SendAppTransactionResult[None]:
+    
+        params = params or algokit_utils.CommonAppCallParams()
+        response = self.app_client.send.call(algokit_utils.AppClientMethodCallParams(**{
+            **dataclasses.asdict(params),
+            "method": "buy_bingle()void",
+        }), send_params=send_params)
+        parsed_response = response
+        return typing.cast(algokit_utils.SendAppTransactionResult[None], parsed_response)
+
     def clear_state(
         self,
         params: algokit_utils.AppClientBareCallParams | None = None,
@@ -161,11 +248,53 @@ class BingleDappSend:
         )
 
 
+class GlobalStateValue(typing.TypedDict):
+    """Shape of global_state state key values"""
+    bingle_price: int
+
 class BingleDappState:
     """Methods to access state for the current BingleDapp app"""
 
     def __init__(self, app_client: algokit_utils.AppClient):
         self.app_client = app_client
+
+    @property
+    def global_state(
+        self
+    ) -> "_GlobalState":
+            """Methods to access global_state for the current app"""
+            return _GlobalState(self.app_client)
+
+class _GlobalState:
+    def __init__(self, app_client: algokit_utils.AppClient):
+        self.app_client = app_client
+        
+        # Pre-generated mapping of value types to their struct classes
+        self._struct_classes: dict[str, typing.Type[typing.Any]] = {}
+
+    def get_all(self) -> GlobalStateValue:
+        """Get all current keyed values from global_state state"""
+        result = self.app_client.state.global_state.get_all()
+        if not result:
+            return typing.cast(GlobalStateValue, {})
+
+        converted = {}
+        for key, value in result.items():
+            key_info = self.app_client.app_spec.state.keys.global_state.get(key)
+            struct_class = self._struct_classes.get(key_info.value_type) if key_info else None
+            converted[key] = (
+                _init_dataclass(struct_class, value) if struct_class and isinstance(value, dict)
+                else value
+            )
+        return typing.cast(GlobalStateValue, converted)
+
+    @property
+    def bingle_price(self) -> int:
+        """Get the current value of the bingle_price key in global_state state"""
+        value = self.app_client.state.global_state.get_value("bingle_price")
+        if isinstance(value, dict) and "AVMUint64" in self._struct_classes:
+            return _init_dataclass(self._struct_classes["AVMUint64"], value)  # type: ignore
+        return typing.cast(int, value)
 
 class BingleDappClient:
     """Client for interacting with BingleDapp smart contract"""
@@ -316,6 +445,18 @@ class BingleDappClient:
         method: typing.Literal["hello(string)string"],
         return_value: algokit_utils.ABIReturn | None
     ) -> str | None: ...
+    @typing.overload
+    def decode_return_value(
+        self,
+        method: typing.Literal["set_bingle_price(uint64)void"],
+        return_value: algokit_utils.ABIReturn | None
+    ) -> None: ...
+    @typing.overload
+    def decode_return_value(
+        self,
+        method: typing.Literal["buy_bingle()void"],
+        return_value: algokit_utils.ABIReturn | None
+    ) -> None: ...
     @typing.overload
     def decode_return_value(
         self,
@@ -518,6 +659,45 @@ class BingleDappFactoryCreateParams:
             compilation_params=compilation_params
         )
 
+    def set_bingle_price(
+        self,
+        args: tuple[int] | SetBinglePriceArgs,
+        *,
+        params: algokit_utils.CommonAppCallCreateParams | None = None,
+        compilation_params: algokit_utils.AppClientCompilationParams | None = None
+    ) -> algokit_utils.AppCreateMethodCallParams:
+        """Creates a new instance using the set_bingle_price(uint64)void ABI method"""
+        params = params or algokit_utils.CommonAppCallCreateParams()
+        return self.app_factory.params.create(
+            algokit_utils.AppFactoryCreateMethodCallParams(
+                **{
+                **dataclasses.asdict(params),
+                "method": "set_bingle_price(uint64)void",
+                "args": _parse_abi_args(args),
+                }
+            ),
+            compilation_params=compilation_params
+        )
+
+    def buy_bingle(
+        self,
+        *,
+        params: algokit_utils.CommonAppCallCreateParams | None = None,
+        compilation_params: algokit_utils.AppClientCompilationParams | None = None
+    ) -> algokit_utils.AppCreateMethodCallParams:
+        """Creates a new instance using the buy_bingle()void ABI method"""
+        params = params or algokit_utils.CommonAppCallCreateParams()
+        return self.app_factory.params.create(
+            algokit_utils.AppFactoryCreateMethodCallParams(
+                **{
+                **dataclasses.asdict(params),
+                "method": "buy_bingle()void",
+                "args": None,
+                }
+            ),
+            compilation_params=compilation_params
+        )
+
 class BingleDappFactoryUpdateParams:
     """Parameters for 'update' operations of BingleDapp contract"""
 
@@ -633,6 +813,41 @@ class BingleDappComposer:
         self._result_mappers.append(
             lambda v: self.client.decode_return_value(
                 "hello(string)string", v
+            )
+        )
+        return self
+
+    def set_bingle_price(
+        self,
+        args: tuple[int] | SetBinglePriceArgs,
+        params: algokit_utils.CommonAppCallParams | None = None
+    ) -> "BingleDappComposer":
+        self._composer.add_app_call_method_call(
+            self.client.params.set_bingle_price(
+                args=args,
+                params=params,
+            )
+        )
+        self._result_mappers.append(
+            lambda v: self.client.decode_return_value(
+                "set_bingle_price(uint64)void", v
+            )
+        )
+        return self
+
+    def buy_bingle(
+        self,
+        params: algokit_utils.CommonAppCallParams | None = None
+    ) -> "BingleDappComposer":
+        self._composer.add_app_call_method_call(
+            self.client.params.buy_bingle(
+                
+                params=params,
+            )
+        )
+        self._result_mappers.append(
+            lambda v: self.client.decode_return_value(
+                "buy_bingle()void", v
             )
         )
         return self

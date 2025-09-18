@@ -22,6 +22,15 @@ def deployer(algorand_client: AlgorandClient) -> SigningAccount:
 
 
 @pytest.fixture()
+def other(algorand_client: AlgorandClient) -> SigningAccount:
+    account = algorand_client.account.random()
+    algorand_client.account.ensure_funded_from_environment(
+        account_to_fund=account.address, min_spending_balance=AlgoAmount.from_algo(5)
+    )
+    return account
+
+
+@pytest.fixture()
 def bingle_dapp_client(
     algorand_client: AlgorandClient, deployer: SigningAccount
 ) -> BingleDappClient:
@@ -53,3 +62,32 @@ def test_simulate_says_hello_with_correct_budget_consumed(
     assert result.returns[0].value == "Hello, World"
     assert result.returns[1].value == "Hello, Jane"
     assert result.simulate_response["txn-groups"][0]["app-budget-consumed"] < 100
+
+
+def test_set_bingle_price_updates_global_state(
+    bingle_dapp_client: BingleDappClient,
+) -> None:
+    price = 4321
+    bingle_dapp_client.send.set_bingle_price(args=(price,))
+
+    # Prefer typed accessor; fall back to raw value if mapping differs
+    try:
+        read_price = bingle_dapp_client.state.global_state.bingle_price
+    except Exception:
+        read_price = bingle_dapp_client.app_client.state.global_state.get_value("BinglePrice")
+
+    assert read_price == price
+
+
+def test_set_bingle_price_rejects_non_creator(
+    algorand_client: AlgorandClient,
+    bingle_dapp_client: BingleDappClient,
+    other: SigningAccount,
+) -> None:
+    # Clone the client to use a different default sender/signer
+    other_client = bingle_dapp_client.clone(
+        default_sender=other.address, default_signer=other.signer
+    )
+
+    with pytest.raises(Exception):
+        other_client.send.set_bingle_price(args=(9999,))
