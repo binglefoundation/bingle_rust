@@ -3,18 +3,32 @@
 
 // smart_contracts.bingle_dapp.contract.BingleDapp.__algopy_entrypoint_with_init() -> uint64:
 main:
+    intcblock 1 0
+    bytecblock "BinglePrice"
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
     txn NumAppArgs
-    bz main_bare_routing@7
-    pushbytess 0x02bece11 0x39c2b7e2 // method "hello(string)string", method "set_bingle_price(uint64)void"
+    bz main_bare_routing@8
+    pushbytess 0x02bece11 0x39c2b7e2 0x0be22406 // method "hello(string)string", method "set_bingle_price(uint64)void", method "buy_bingle()void"
     txna ApplicationArgs 0
-    match main_hello_route@5 main_set_bingle_price_route@6
+    match main_hello_route@5 main_set_bingle_price_route@6 main_buy_bingle_route@7
 
-main_after_if_else@9:
+main_after_if_else@10:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
-    pushint 0 // 0
+    intc_1 // 0
+    return
+
+main_buy_bingle_route@7:
+    // smart_contracts/bingle_dapp/contract.py:25
+    // @abimethod()
+    txn OnCompletion
+    !
+    assert // OnCompletion is not NoOp
+    txn ApplicationID
+    assert // can only call when not creating
+    callsub buy_bingle
+    intc_0 // 1
     return
 
 main_set_bingle_price_route@6:
@@ -32,7 +46,7 @@ main_set_bingle_price_route@6:
     // smart_contracts/bingle_dapp/contract.py:15
     // @abimethod()
     callsub set_bingle_price
-    pushint 1 // 1
+    intc_0 // 1
     return
 
 main_hello_route@5:
@@ -60,18 +74,18 @@ main_hello_route@5:
     swap
     concat
     log
-    pushint 1 // 1
+    intc_0 // 1
     return
 
-main_bare_routing@7:
+main_bare_routing@8:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
     txn OnCompletion
-    bnz main_after_if_else@9
+    bnz main_after_if_else@10
     txn ApplicationID
     !
     assert // can only call when creating
-    pushint 1 // 1
+    intc_0 // 1
     return
 
 
@@ -103,7 +117,145 @@ set_bingle_price:
     assert
     // smart_contracts/bingle_dapp/contract.py:23
     // self.bingle_price.value = price
-    pushbytes "BinglePrice"
+    bytec_0 // "BinglePrice"
     frame_dig -1
     app_global_put
+    retsub
+
+
+// smart_contracts.bingle_dapp.contract.BingleDapp.buy_bingle() -> void:
+buy_bingle:
+    // smart_contracts/bingle_dapp/contract.py:25-26
+    // @abimethod()
+    // def buy_bingle(self) -> None:
+    proto 0 0
+    pushbytes ""
+    dup
+    // smart_contracts/bingle_dapp/contract.py:41-42
+    // # Ensure a foreign asset is supplied to identify Bingle$ ASA
+    // asset_id = Txn.assets(0)
+    txna Assets 0
+    // smart_contracts/bingle_dapp/contract.py:44
+    // price = self.bingle_price.value
+    intc_1 // 0
+    bytec_0 // "BinglePrice"
+    app_global_get_ex
+    assert // check self.bingle_price exists
+    // smart_contracts/bingle_dapp/contract.py:45
+    // app_addr = Global.current_application_address
+    global CurrentApplicationAddress
+    // smart_contracts/bingle_dapp/contract.py:46
+    // buyer = Txn.sender
+    txn Sender
+    // smart_contracts/bingle_dapp/contract.py:48
+    // saw_payment = False
+    intc_1 // 0
+    // smart_contracts/bingle_dapp/contract.py:49
+    // saw_axfer = False
+    dup
+    // smart_contracts/bingle_dapp/contract.py:51-52
+    // # Scan the current transaction group for required payment and asset transfer
+    // for i in urange(Global.group_size):
+    global GroupSize
+    intc_1 // 0
+
+buy_bingle_for_header@1:
+    // smart_contracts/bingle_dapp/contract.py:51-52
+    // # Scan the current transaction group for required payment and asset transfer
+    // for i in urange(Global.group_size):
+    frame_dig 9
+    frame_dig 8
+    <
+    bz buy_bingle_after_for@11
+    // smart_contracts/bingle_dapp/contract.py:54-55
+    // # Payment check: receiver is app and amount equals current price
+    // if t.receiver == app_addr and t.amount == price:
+    frame_dig 9
+    gtxns Receiver
+    frame_dig 4
+    ==
+    frame_dig 6
+    frame_bury 1
+    bz buy_bingle_after_if_else@5
+    frame_dig 9
+    gtxns Amount
+    frame_dig 3
+    ==
+    frame_dig 6
+    frame_bury 1
+    bz buy_bingle_after_if_else@5
+    // smart_contracts/bingle_dapp/contract.py:56
+    // saw_payment = True
+    intc_0 // 1
+    frame_bury 1
+
+buy_bingle_after_if_else@5:
+    frame_dig 1
+    frame_bury 6
+    // smart_contracts/bingle_dapp/contract.py:60
+    // t.xfer_asset == asset_id
+    frame_dig 9
+    gtxns XferAsset
+    frame_dig 2
+    ==
+    frame_dig 7
+    frame_bury 0
+    // smart_contracts/bingle_dapp/contract.py:60-62
+    // t.xfer_asset == asset_id
+    // and t.asset_receiver == buyer
+    // and t.asset_amount == UInt64(1)
+    bz buy_bingle_after_if_else@9
+    // smart_contracts/bingle_dapp/contract.py:61
+    // and t.asset_receiver == buyer
+    frame_dig 9
+    gtxns AssetReceiver
+    frame_dig 5
+    ==
+    frame_dig 7
+    frame_bury 0
+    // smart_contracts/bingle_dapp/contract.py:60-62
+    // t.xfer_asset == asset_id
+    // and t.asset_receiver == buyer
+    // and t.asset_amount == UInt64(1)
+    bz buy_bingle_after_if_else@9
+    // smart_contracts/bingle_dapp/contract.py:62
+    // and t.asset_amount == UInt64(1)
+    frame_dig 9
+    gtxns AssetAmount
+    intc_0 // 1
+    ==
+    frame_dig 7
+    frame_bury 0
+    // smart_contracts/bingle_dapp/contract.py:60-62
+    // t.xfer_asset == asset_id
+    // and t.asset_receiver == buyer
+    // and t.asset_amount == UInt64(1)
+    bz buy_bingle_after_if_else@9
+    // smart_contracts/bingle_dapp/contract.py:64
+    // saw_axfer = True
+    intc_0 // 1
+    frame_bury 0
+
+buy_bingle_after_if_else@9:
+    frame_dig 0
+    frame_bury 7
+    // smart_contracts/bingle_dapp/contract.py:51-52
+    // # Scan the current transaction group for required payment and asset transfer
+    // for i in urange(Global.group_size):
+    frame_dig 9
+    intc_0 // 1
+    +
+    frame_bury 9
+    b buy_bingle_for_header@1
+
+buy_bingle_after_for@11:
+    // smart_contracts/bingle_dapp/contract.py:66-67
+    // # Require both conditions
+    // assert saw_payment
+    frame_dig 6
+    assert
+    // smart_contracts/bingle_dapp/contract.py:68
+    // assert saw_axfer
+    frame_dig 7
+    assert
     retsub
