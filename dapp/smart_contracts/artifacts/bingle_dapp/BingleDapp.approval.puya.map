@@ -3,67 +3,146 @@
   "sources": [
     "../../bingle_dapp/contract.py"
   ],
-  "mappings": ";AAKA;;AAAA;;;AAAA;;;;;;AAAA;;;AAAA;;;;AAAA;;;AACK;;AAAA;AAAA;AAAA;;AAAA;AADL;;;AAAA;;;AACK;;;AAAA;AAAA;AAAA;AAAA;;;AAAA;AAAA;AAAA;;;;;;AAAA;AAAA;AAAA;AAAA;;;AADL;;AAAA;;;;;;;;;;AACA;;;AAEe;;;;;;;;;AAAA;;AAAA;AAAP",
+  "mappings": ";AAKA;;AAAA;;;AAAA;;;;;;;;;;;;AAAA;;;AAAA;;;;;;AAAA;;;AASK;;AAAA;AAAA;AAAA;;AAAA;AATL;;;AAAA;AASK;;;AAAA;;;AAJA;;AAAA;AAAA;AAAA;;AAAA;AALL;;;AAAA;;;AAKK;;;AAAA;AAAA;AAAA;AAAA;;;AAAA;AAAA;AAAA;;;;;;AAAA;AAAA;AAAA;AAAA;;;AALL;;AAAA;;;;;;;;;;AAKA;;;AAEe;;;;;;;;;AAAA;;AAAA;AAAP;AAER;;;AAOe;;AAAc;;AAAd;AAAP;AACA;;;;;;;;;;;;;AAAA;;AAAA;",
   "op_pc_offset": 0,
   "pc_events": {
     "1": {
-      "subroutine": "algopy.arc4.ARC4Contract.approval_program",
+      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.__algopy_entrypoint_with_init",
       "params": {},
       "block": "main",
       "stack_in": [],
       "op": "txn NumAppArgs",
       "defined_out": [
-        "tmp%0#1"
+        "tmp%0#2"
       ],
       "stack_out": [
-        "tmp%0#1"
+        "tmp%0#2"
       ]
     },
     "3": {
-      "op": "bz main_bare_routing@6",
+      "op": "bz main_bare_routing@7",
       "stack_out": []
     },
     "6": {
-      "op": "pushbytes 0x02bece11 // method \"hello(string)string\"",
+      "op": "pushbytess 0x02bece11 0x39c2b7e2 // method \"hello(string)string\", method \"set_bingle_price(uint64)void\"",
       "defined_out": [
-        "Method(hello(string)string)"
+        "Method(hello(string)string)",
+        "Method(set_bingle_price(uint64)void)"
       ],
       "stack_out": [
-        "Method(hello(string)string)"
+        "Method(hello(string)string)",
+        "Method(set_bingle_price(uint64)void)"
       ]
     },
-    "12": {
+    "18": {
       "op": "txna ApplicationArgs 0",
       "defined_out": [
         "Method(hello(string)string)",
+        "Method(set_bingle_price(uint64)void)",
         "tmp%2#0"
       ],
       "stack_out": [
         "Method(hello(string)string)",
+        "Method(set_bingle_price(uint64)void)",
         "tmp%2#0"
       ]
     },
-    "15": {
-      "op": "match main_hello_route@3",
+    "21": {
+      "op": "match main_hello_route@5 main_set_bingle_price_route@6",
       "stack_out": []
     },
-    "19": {
-      "block": "main_after_if_else@10",
+    "27": {
+      "block": "main_after_if_else@9",
       "stack_in": [],
       "op": "pushint 0 // 0",
       "defined_out": [
-        "tmp%0#0"
+        "tmp%0#1"
       ],
       "stack_out": [
-        "tmp%0#0"
+        "tmp%0#1"
       ]
     },
-    "21": {
+    "29": {
       "op": "return",
       "stack_out": []
     },
-    "22": {
-      "block": "main_hello_route@3",
+    "30": {
+      "block": "main_set_bingle_price_route@6",
+      "stack_in": [],
+      "op": "txn OnCompletion",
+      "defined_out": [
+        "tmp%10#0"
+      ],
+      "stack_out": [
+        "tmp%10#0"
+      ]
+    },
+    "32": {
+      "op": "!",
+      "defined_out": [
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "tmp%11#0"
+      ]
+    },
+    "33": {
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
+      "stack_out": []
+    },
+    "34": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%12#0"
+      ],
+      "stack_out": [
+        "tmp%12#0"
+      ]
+    },
+    "36": {
+      "error": "can only call when not creating",
+      "op": "assert // can only call when not creating",
+      "stack_out": []
+    },
+    "37": {
+      "op": "txna ApplicationArgs 1",
+      "defined_out": [
+        "reinterpret_bytes[8]%0#0"
+      ],
+      "stack_out": [
+        "reinterpret_bytes[8]%0#0"
+      ]
+    },
+    "40": {
+      "op": "btoi",
+      "defined_out": [
+        "tmp%14#0"
+      ],
+      "stack_out": [
+        "tmp%14#0"
+      ]
+    },
+    "41": {
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
+      "op": "callsub set_bingle_price",
+      "stack_out": []
+    },
+    "44": {
+      "op": "pushint 1 // 1",
+      "defined_out": [
+        "tmp%0#1"
+      ],
+      "stack_out": [
+        "tmp%0#1"
+      ]
+    },
+    "46": {
+      "op": "return",
+      "stack_out": []
+    },
+    "47": {
+      "block": "main_hello_route@5",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
@@ -73,7 +152,7 @@
         "tmp%3#0"
       ]
     },
-    "24": {
+    "49": {
       "op": "!",
       "defined_out": [
         "tmp%4#0"
@@ -82,12 +161,12 @@
         "tmp%4#0"
       ]
     },
-    "25": {
+    "50": {
       "error": "OnCompletion is not NoOp",
       "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "26": {
+    "51": {
       "op": "txn ApplicationID",
       "defined_out": [
         "tmp%5#0"
@@ -96,12 +175,12 @@
         "tmp%5#0"
       ]
     },
-    "28": {
+    "53": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "29": {
+    "54": {
       "op": "txna ApplicationArgs 1",
       "defined_out": [
         "tmp%7#0"
@@ -110,7 +189,7 @@
         "tmp%7#0"
       ]
     },
-    "32": {
+    "57": {
       "op": "extract 2 0",
       "defined_out": [
         "tmp%8#0"
@@ -119,7 +198,7 @@
         "tmp%8#0"
       ]
     },
-    "35": {
+    "60": {
       "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
       "op": "callsub hello",
       "defined_out": [
@@ -129,7 +208,7 @@
         "to_encode%0#0"
       ]
     },
-    "38": {
+    "63": {
       "op": "dup",
       "defined_out": [
         "to_encode%0#0",
@@ -140,7 +219,7 @@
         "to_encode%0#0 (copy)"
       ]
     },
-    "39": {
+    "64": {
       "op": "len",
       "defined_out": [
         "length%0#0",
@@ -151,7 +230,7 @@
         "length%0#0"
       ]
     },
-    "40": {
+    "65": {
       "op": "itob",
       "defined_out": [
         "as_bytes%0#0",
@@ -162,7 +241,7 @@
         "as_bytes%0#0"
       ]
     },
-    "41": {
+    "66": {
       "op": "extract 6 2",
       "defined_out": [
         "length_uint16%0#0",
@@ -173,14 +252,14 @@
         "length_uint16%0#0"
       ]
     },
-    "44": {
+    "69": {
       "op": "swap",
       "stack_out": [
         "length_uint16%0#0",
         "to_encode%0#0"
       ]
     },
-    "45": {
+    "70": {
       "op": "concat",
       "defined_out": [
         "encoded_value%0#0"
@@ -189,7 +268,7 @@
         "encoded_value%0#0"
       ]
     },
-    "46": {
+    "71": {
       "op": "pushbytes 0x151f7c75",
       "defined_out": [
         "0x151f7c75",
@@ -200,14 +279,14 @@
         "0x151f7c75"
       ]
     },
-    "52": {
+    "77": {
       "op": "swap",
       "stack_out": [
         "0x151f7c75",
         "encoded_value%0#0"
       ]
     },
-    "53": {
+    "78": {
       "op": "concat",
       "defined_out": [
         "tmp%9#0"
@@ -216,75 +295,75 @@
         "tmp%9#0"
       ]
     },
-    "54": {
+    "79": {
       "op": "log",
       "stack_out": []
     },
-    "55": {
+    "80": {
       "op": "pushint 1 // 1",
       "defined_out": [
-        "tmp%0#0"
+        "tmp%0#1"
       ],
       "stack_out": [
-        "tmp%0#0"
+        "tmp%0#1"
       ]
     },
-    "57": {
+    "82": {
       "op": "return",
       "stack_out": []
     },
-    "58": {
-      "block": "main_bare_routing@6",
+    "83": {
+      "block": "main_bare_routing@7",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%10#0"
+        "tmp%15#0"
       ],
       "stack_out": [
-        "tmp%10#0"
+        "tmp%15#0"
       ]
     },
-    "60": {
-      "op": "bnz main_after_if_else@10",
+    "85": {
+      "op": "bnz main_after_if_else@9",
       "stack_out": []
     },
-    "63": {
+    "88": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%11#0"
+        "tmp%16#0"
       ],
       "stack_out": [
-        "tmp%11#0"
+        "tmp%16#0"
       ]
     },
-    "65": {
+    "90": {
       "op": "!",
       "defined_out": [
-        "tmp%12#0"
+        "tmp%17#0"
       ],
       "stack_out": [
-        "tmp%12#0"
+        "tmp%17#0"
       ]
     },
-    "66": {
+    "91": {
       "error": "can only call when creating",
       "op": "assert // can only call when creating",
       "stack_out": []
     },
-    "67": {
+    "92": {
       "op": "pushint 1 // 1",
       "defined_out": [
-        "tmp%0#0"
+        "tmp%0#1"
       ],
       "stack_out": [
-        "tmp%0#0"
+        "tmp%0#1"
       ]
     },
-    "69": {
+    "94": {
       "op": "return",
       "stack_out": []
     },
-    "70": {
+    "95": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
       "params": {
         "name#0": "bytes"
@@ -293,7 +372,7 @@
       "stack_in": [],
       "op": "proto 1 1"
     },
-    "73": {
+    "98": {
       "op": "pushbytes \"Hello, \"",
       "defined_out": [
         "\"Hello, \""
@@ -302,7 +381,7 @@
         "\"Hello, \""
       ]
     },
-    "82": {
+    "107": {
       "op": "frame_dig -1",
       "defined_out": [
         "\"Hello, \"",
@@ -313,7 +392,7 @@
         "name#0 (copy)"
       ]
     },
-    "84": {
+    "109": {
       "op": "concat",
       "defined_out": [
         "tmp%0#0"
@@ -322,7 +401,77 @@
         "tmp%0#0"
       ]
     },
-    "85": {
+    "110": {
+      "retsub": true,
+      "op": "retsub"
+    },
+    "111": {
+      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
+      "params": {
+        "price#0": "uint64"
+      },
+      "block": "set_bingle_price",
+      "stack_in": [],
+      "op": "proto 1 0"
+    },
+    "114": {
+      "op": "txn Sender",
+      "defined_out": [
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "tmp%0#0"
+      ]
+    },
+    "116": {
+      "op": "global CreatorAddress",
+      "defined_out": [
+        "tmp%0#0",
+        "tmp%1#0"
+      ],
+      "stack_out": [
+        "tmp%0#0",
+        "tmp%1#0"
+      ]
+    },
+    "118": {
+      "op": "==",
+      "defined_out": [
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "tmp%2#0"
+      ]
+    },
+    "119": {
+      "op": "assert",
+      "stack_out": []
+    },
+    "120": {
+      "op": "pushbytes \"BinglePrice\"",
+      "defined_out": [
+        "\"BinglePrice\""
+      ],
+      "stack_out": [
+        "\"BinglePrice\""
+      ]
+    },
+    "133": {
+      "op": "frame_dig -1",
+      "defined_out": [
+        "\"BinglePrice\"",
+        "price#0 (copy)"
+      ],
+      "stack_out": [
+        "\"BinglePrice\"",
+        "price#0 (copy)"
+      ]
+    },
+    "135": {
+      "op": "app_global_put",
+      "stack_out": []
+    },
+    "136": {
       "retsub": true,
       "op": "retsub"
     }

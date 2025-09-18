@@ -1,24 +1,42 @@
 #pragma version 10
 #pragma typetrack false
 
-// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+// smart_contracts.bingle_dapp.contract.BingleDapp.__algopy_entrypoint_with_init() -> uint64:
 main:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
     txn NumAppArgs
-    bz main_bare_routing@6
-    pushbytes 0x02bece11 // method "hello(string)string"
+    bz main_bare_routing@7
+    pushbytess 0x02bece11 0x39c2b7e2 // method "hello(string)string", method "set_bingle_price(uint64)void"
     txna ApplicationArgs 0
-    match main_hello_route@3
+    match main_hello_route@5 main_set_bingle_price_route@6
 
-main_after_if_else@10:
+main_after_if_else@9:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
     pushint 0 // 0
     return
 
-main_hello_route@3:
-    // smart_contracts/bingle_dapp/contract.py:7
+main_set_bingle_price_route@6:
+    // smart_contracts/bingle_dapp/contract.py:15
+    // @abimethod()
+    txn OnCompletion
+    !
+    assert // OnCompletion is not NoOp
+    txn ApplicationID
+    assert // can only call when not creating
+    // smart_contracts/bingle_dapp/contract.py:6
+    // class BingleDapp(ARC4Contract):
+    txna ApplicationArgs 1
+    btoi
+    // smart_contracts/bingle_dapp/contract.py:15
+    // @abimethod()
+    callsub set_bingle_price
+    pushint 1 // 1
+    return
+
+main_hello_route@5:
+    // smart_contracts/bingle_dapp/contract.py:11
     // @abimethod()
     txn OnCompletion
     !
@@ -29,7 +47,7 @@ main_hello_route@3:
     // class BingleDapp(ARC4Contract):
     txna ApplicationArgs 1
     extract 2 0
-    // smart_contracts/bingle_dapp/contract.py:7
+    // smart_contracts/bingle_dapp/contract.py:11
     // @abimethod()
     callsub hello
     dup
@@ -45,11 +63,11 @@ main_hello_route@3:
     pushint 1 // 1
     return
 
-main_bare_routing@6:
+main_bare_routing@7:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
     txn OnCompletion
-    bnz main_after_if_else@10
+    bnz main_after_if_else@9
     txn ApplicationID
     !
     assert // can only call when creating
@@ -59,13 +77,33 @@ main_bare_routing@6:
 
 // smart_contracts.bingle_dapp.contract.BingleDapp.hello(name: bytes) -> bytes:
 hello:
-    // smart_contracts/bingle_dapp/contract.py:7-8
+    // smart_contracts/bingle_dapp/contract.py:11-12
     // @abimethod()
     // def hello(self, name: String) -> String:
     proto 1 1
-    // smart_contracts/bingle_dapp/contract.py:9
+    // smart_contracts/bingle_dapp/contract.py:13
     // return "Hello, " + name
     pushbytes "Hello, "
     frame_dig -1
     concat
+    retsub
+
+
+// smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price(price: uint64) -> void:
+set_bingle_price:
+    // smart_contracts/bingle_dapp/contract.py:15-16
+    // @abimethod()
+    // def set_bingle_price(self, price: UInt64) -> None:
+    proto 1 0
+    // smart_contracts/bingle_dapp/contract.py:22
+    // assert Txn.sender == Global.creator_address
+    txn Sender
+    global CreatorAddress
+    ==
+    assert
+    // smart_contracts/bingle_dapp/contract.py:23
+    // self.bingle_price.value = price
+    pushbytes "BinglePrice"
+    frame_dig -1
+    app_global_put
     retsub
