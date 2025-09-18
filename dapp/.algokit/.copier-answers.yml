@@ -1,0 +1,21 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 1.6.3
+_src_path: gh:algorandfoundation/algokit-python-template
+author_email: bingle.foundation@gmail.com
+author_name: Bingle Foundation
+code_tours: false
+contract_name: bingle_dapp
+deployment_language: python
+ide_jetbrains: true
+ide_vscode: false
+preset_name: custom
+project_name: dapp
+python_linter: none
+use_dispenser: true
+use_github_actions: false
+use_pre_commit: false
+use_python_black: true
+use_python_mypy: true
+use_python_pip_audit: true
+use_python_pytest: true
+
