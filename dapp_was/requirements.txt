@@ -1,7 +1,0 @@
-# Algorand Python (algopy) dependencies for the DApp skeleton
-# Note: Versions are intentionally left flexible for a lightweight skeleton.
-# Pin versions as needed for reproducible builds.
-algorand-python
-py-algorand-sdk
-algokit-utils
-algorand-python-testing>=0.4.0
