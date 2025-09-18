@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DAPP_DIR = ROOT / "dapp"
+DAPP_DIR = ROOT / "dapp_was"
 SRC = DAPP_DIR / "src" / "app.py"
 OUT = DAPP_DIR / "build"
 
@@ -17,7 +17,7 @@ def main() -> int:
         return 1
     OUT.mkdir(parents=True, exist_ok=True)
 
-    # Attempt to run: python -m algopy compile dapp/src/app.py --out dapp/build
+    # Attempt to run: python -m algopy compile dapp_was/src/app.py --out dapp_was/build
     cmd = [sys.executable, "-m", "algopy", "compile", str(SRC), "--out", str(OUT)]
     try:
         print(f"[algopy] compiling {SRC} -> {OUT} ...")

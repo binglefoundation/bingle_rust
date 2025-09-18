@@ -1,4 +1,4 @@
-# This test exercises dapp/src/client.py by calling the Mini.fn ABI method via the generated client.
+# This test exercises dapp_was/src/client.py by calling the Mini.fn ABI method via the generated client.
 # It does not require a live Algorand node; instead, it stubs the minimal parts of algosdk/algokit_utils
 # needed for import and for building method call params. The call result is produced by a fake AppClient.
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 def _install_stub_modules() -> None:
-    """Install minimal stubs for algosdk and algokit_utils so that dapp/src/client.py can be imported
+    """Install minimal stubs for algosdk and algokit_utils so that dapp_was/src/client.py can be imported
     without requiring the full Algorand toolchain during unit testing.
     """
     # ----- algosdk stubs -----
@@ -181,11 +181,11 @@ def _install_stub_modules() -> None:
 
 
 def test_mini_fn_via_client_with_tuple_args():
-    # Arrange: make dapp/src importable and install stubs before importing client
+    # Arrange: make dapp_was/src importable and install stubs before importing client
     _install_stub_modules()
 
     repo_root = Path(__file__).resolve().parents[2]
-    dapp_src = repo_root / "dapp" / "src"
+    dapp_src = repo_root / "dapp_was" / "src"
     sys.path.insert(0, str(dapp_src))
 
     import client as client_mod  # type: ignore
@@ -217,7 +217,7 @@ def test_mini_fn_via_client_with_dataclass_args():
     _install_stub_modules()
 
     repo_root = Path(__file__).resolve().parents[2]
-    dapp_src = repo_root / "dapp" / "src"
+    dapp_src = repo_root / "dapp_was" / "src"
     if str(dapp_src) not in sys.path:
         sys.path.insert(0, str(dapp_src))
 

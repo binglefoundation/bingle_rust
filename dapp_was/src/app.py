@@ -7,7 +7,7 @@ class Mini(ARC4Contract):
 
     Exposes a single ABI method `fn(uint64)uint64` that returns 2*x + 1.
     This mirrors the behavior used by the Rust integration tests for the
-    TEAL samples in tests/dapp.
+    TEAL samples in tests/dapp_was.
     """
 
     @arc4.abimethod()
