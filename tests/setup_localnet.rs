@@ -42,7 +42,7 @@ fn parse_funded_account(list_output: &str) -> Option<String> {
 
 pub fn ensure_localnet_accounts_funded(cfg: &AlgoProviderConfig, target_addrs: &[&str]) -> Result<(), String> {
     // Ensure algokit CLI is available and get a funding source account
-    let list = run_cmd("algokit", &["goal", "account", "list"]) ?;
+    let list = run_cmd("algokit", &["goal", "account", "list", "-w", "unencrypted-default-wallet"]) ?;
     let funded = parse_funded_account(&list).ok_or_else(|| "Could not determine a funded localnet account from `algokit goal account list` output".to_string())?;
 
     // For each target, ensure it's funded with at least some ALGOs
@@ -53,7 +53,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoProviderConfig, target_addrs: &
         if needs_fund {
             // Send 900_000_000 microalgos (~900 ALGO) as per Kotlin SetupLocalnet
             let amount = "900000000";
-            let _ = run_cmd("algokit", &["goal", "clerk", "send", "-a", amount, "-t", addr, "-f", &funded])?;
+            let _ = run_cmd("algokit", &["goal", "clerk", "send", "-w", "unencrypted-default-wallet", "-a", amount, "-t", addr, "-f", &funded])?;
             // Poll until balance appears
             let deadline = Instant::now() + Duration::from_secs(20);
             while Instant::now() < deadline {
