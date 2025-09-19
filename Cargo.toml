@@ -41,3 +41,82 @@ members = [
 [dev-dependencies]
 bingle_test = { path = "bingle_test" }
 tempfile = "3"
+
+
+
+[[test]]
+name = "algo_ops_test"
+path = "tests/blockchain/algo_ops_test.rs"
+
+[[test]]
+name = "asset_ops_test"
+path = "tests/blockchain/asset_ops_test.rs"
+
+[[test]]
+name = "dapp_app_integration"
+path = "tests/blockchain/dapp_app_integration.rs"
+
+[[test]]
+name = "algo_ops_more_test"
+path = "tests/blockchain/algo_ops_more_test.rs"
+
+[[test]]
+name = "bingle_api_impl_integration"
+path = "tests/api/bingle_api_impl_integration.rs"
+
+[[test]]
+name = "bingle_api_impl_unit"
+path = "tests/api/bingle_api_impl_unit.rs"
+
+[[test]]
+name = "dtls_client_echo_roundtrip"
+path = "tests/dtls/dtls_client_echo_roundtrip.rs"
+
+[[test]]
+name = "dtls_external_openssl_server"
+path = "tests/dtls/dtls_external_openssl_server.rs"
+
+[[test]]
+name = "dtls_loopback_e2e"
+path = "tests/dtls/dtls_loopback_e2e.rs"
+
+[[test]]
+name = "dtls_multi_client_loopback_e2e"
+path = "tests/dtls/dtls_multi_client_loopback_e2e.rs"
+
+[[test]]
+name = "dtls_openssl_smoke"
+path = "tests/dtls/dtls_openssl_smoke.rs"
+
+[[test]]
+name = "dtls_peer_certificate_handlers"
+path = "tests/dtls/dtls_peer_certificate_handlers.rs"
+
+[[test]]
+name = "dtls_peer_certificate_rejection"
+path = "tests/dtls/dtls_peer_certificate_rejection.rs"
+
+[[test]]
+name = "dtls_start_with_network_mux"
+path = "tests/dtls/dtls_start_with_network_mux.rs"
+
+[[test]]
+name = "dtls_stun_interleave_handshake"
+path = "tests/dtls/dtls_stun_interleave_handshake.rs"
+
+[[test]]
+name = "network_mux_udp_tests"
+path = "tests/dtls/network_mux_udp_tests.rs"
+
+[[test]]
+name = "pki"
+path = "tests/dtls/pki.rs"
+
+[[test]]
+name = "algo_bingle_unit"
+path = "tests/blockchain/algo_bingle_unit.rs"
+
+
+[[test]]
+name = "algo_ops_integration_localnet"
+path = "tests/blockchain/algo_ops_integration_localnet.rs"

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha512_256};
 use std::future::Future;
 use std::str::FromStr;
 
-use crate::algo_ops::AlgoOps;
+use crate::blockchain::algo_ops::AlgoOps;
 
 #[cfg(not(target_os = "ios"))]
 use algonaut::{
