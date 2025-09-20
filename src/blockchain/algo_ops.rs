@@ -379,6 +379,23 @@ impl AlgoOps {
         }
     }
 
+    /// Check whether `account_address` has opted-in to `asset_id`.
+    pub fn is_account_opted_in_to_asset(&self, account_address: &str, asset_id: u64) -> Result<bool> {
+        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        let client = self.algod_client()?;
+        let address = Self::parse_address(account_address)?;
+        let res = self.rt_block_on(client.account_information(&address))?;
+        let info = match res { Ok(v) => v, Err(_e) => return Ok(false) };
+        let v = serde_json::to_value(&info).map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
+        let assets_arr = v.get("assets").or_else(|| v.get("assets")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        for a in assets_arr {
+            let id = a.get("asset-id").and_then(|x| x.as_u64()).or_else(|| a.get("asset_id").and_then(|x| x.as_u64())).unwrap_or(0);
+            if id == asset_id { return Ok(true); }
+        }
+        Ok(false)
+    }
+
+
     pub fn send_asset(&self, asset_id: u64, amount: u64, to_address: &str) -> Result<()> {
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if amount == 0 { bail!("amount must be > 0"); }
@@ -466,8 +483,10 @@ impl AlgoOps {
         // Build programs and schemas
         let approval = algonaut::core::CompiledTeal(approval_program.to_vec());
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
-        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 0, number_byteslices: 0 };
-        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 0, number_byteslices: 0 };
+        // Schema: Global needs at least 1 integer (e.g., BinglePrice).
+        // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime).
+        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 1, number_byteslices: 0 };
+        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 1, number_byteslices: 1 };
 
         let client = self.algod_client()?;
         let params = match self.rt_block_on(client.suggested_transaction_params())? { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
@@ -497,6 +516,21 @@ impl AlgoOps {
                 let app_id = v.get("application-index").and_then(|x| x.as_u64())
                     .or_else(|| v.get("application_index").and_then(|x| x.as_u64()))
                     .unwrap_or(0);
+
+                if app_id != 0 {
+                    // After successful creation, fund the app account with 321 ALGO from the creator
+                    if let Ok(app_addr) = self.contract_address(app_id) {
+                        // Best-effort funding; bubble up error if funding fails
+                        self.send_algo(&app_addr, 321.0)?;
+                    }
+                    // If an asset id was provided, opt the app address in via the dApp admin method
+                    if let Some(aid) = asset_id {
+                        // Use AlgoBingle helper to call the admin method
+                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone());
+                        // Propagate any error from the admin call; ignore returned tx id
+                        let _ = ab.opt_in_app_to_asset(app_id, aid)?;
+                    }
+                }
                 Ok((app_id != 0).then_some(app_id))
             }
             Err(e) => Err(anyhow!("failed to fetch pending transaction info for app id: {e}")),
@@ -559,9 +593,32 @@ impl AlgoOps {
             .app_arguments(app_args);
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![aid]); }
         let call = builder.build();
-        let tx = algonaut::transaction::TxnBuilder::with(&params, call)
-            .build()
-            .map_err(|e| anyhow!("failed to build app call transaction: {e}"))?;
+        // Explicitly estimate and set a fee for this transaction. Build a zero-fee txn to estimate size,
+        // then compute fee = max(min_fee, fee_per_byte * estimated_signed_tx_size).
+        let tx_zero_fee = algonaut::transaction::TxnBuilder::with_fee(
+            &params,
+            algonaut::transaction::builder::TxnFee::zero(),
+            call.clone(),
+        )
+        .build()
+        .map_err(|e| anyhow!("failed to build app call transaction for fee estimation: {e}"))?;
+        let est_size = tx_zero_fee
+            .estimate_basic_sig_size()
+            .map_err(|e| anyhow!("failed to estimate signed tx size: {e}"))?;
+        let est_fee = {
+            use algonaut::core::MicroAlgos;
+            let per_byte = params.fee_per_byte; // MicroAlgos
+            let min_fee = params.min_fee; // MicroAlgos
+            let sized = per_byte * est_size;
+            if sized > min_fee { sized } else { min_fee }
+        };
+        let tx = algonaut::transaction::TxnBuilder::with_fee(
+            &params,
+            algonaut::transaction::builder::TxnFee::Fixed(est_fee),
+            call,
+        )
+        .build()
+        .map_err(|e| anyhow!("failed to build app call transaction: {e}"))?;
 
         // Sign, submit, wait
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;

@@ -3,7 +3,7 @@
   "sources": [
     "../../bingle_dapp/contract.py"
   ],
-  "mappings": ";;;;;;;;;;;;;;;;;;;AAKA;;AAAA;;;AAAA;;;;;;;;;;;;;;;;;AAAA;;;AAAA;;;;;;;;AAAA;;AAmBK;;AAAA;AAAA;AAAA;;AAAA;AAAA;;;AAAA;;AAVA;;AAAA;AAAA;AAAA;;AAAA;AATL;;;AAAA;AASK;;;AAAA;;AAJA;;AAAA;AAAA;AAAA;;AAAA;AALL;;;AAAA;;;AAKK;;;AAAA;AAAA;AAAA;AAAA;;;AAAA;AAAA;AAAA;;;;;;AAAA;AAAA;AAAA;AAAA;;AALL;;AAAA;;;;;;;;;AAKA;;;AAEe;;;;;;;;;AAAA;;AAAA;AAAP;AAER;;;AAOe;;AAAc;;AAAd;AAAP;AACA;AAAA;;AAAA;;AAER;;;;;;AAiBmB;;;AAEH;AAAA;AAAA;AAAA;AACG;;AACH;;AAEM;AACF;AAGI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAA2B;;AAAA;;AAAA;;AAAA;;;;;AAA3B;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAkB;AAAlB;;;;;AAFJ;;;AAIY;;;;;;;AAZX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;",
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;AAKA;;AAAA;;;AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;AAAA;;;AAAA;;;;;;;;;;;;;;AAAA;;AAgIK;;AAAA;AAAA;AAAA;;AAAA;AAhIL;;;AAAA;;;AAgIK;;;AAAA;;AA5CA;;AAAA;AAAA;AAAA;;AAAA;AApFL;;;AAAA;AAoFK;;;AAAA;;AA7CA;;AAAA;AAAA;AAAA;;AAAA;AAAA;;;AAAA;;AAVA;;AAAA;AAAA;AAAA;;AAAA;AA7BL;;;AAAA;AA6BK;;;AAAA;;AAjBA;;AAAA;AAAA;AAAA;;AAAA;AAZL;;;AAAA;AAYK;;;AAAA;;AAJA;;AAAA;AAAA;AAAA;;AAAA;AARL;;;AAAA;;;AAQK;;;AAAA;AAAA;AAAA;AAAA;;;AAAA;AAAA;AAAA;;;;;;AAAA;AAAA;AAAA;AAAA;;AARL;;AAAA;;;;;;;;;AAQA;;;AAEe;;;;;;;;;AAAA;;AAAA;AAAP;AAER;;;AAOe;;AAAc;;AAAd;AAAP;AAGA;AAIQ;;AAFW;;AACF;;;;;;;;;AAHjB;;;;;;AAAA;;AAOR;;;AAOe;;AAAc;;AAAd;AAAP;AACA;AAAA;;AAAA;;AAER;;;;;AAiBmB;;;AAEH;AAAA;AAAA;AAAA;AACG;;AACH;;AAEM;AACF;AAGI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAA2B;;AAAA;;AAAA;;AAAA;;;;;AAA3B;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAkB;AAAlB;;;;;AAFJ;;;AAIY;;;;;;;AAZX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;;AAER;;;;;AAiBmB;;;AACH;AAAA;AAAA;AAAA;AACC;;AAAT;AACW;;AAAX;AACA;;AAAS;AAEK;AACF;AAEI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAAyB;;AAAA;;AAAA;;AAAA;;;;;AAAzB;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAA;;AAAA;;;;;AAFJ;;;AAGI;;AAAA;;AAAA;;AAAA;;;;;AAHJ;;;AAKY;;;;;;;AAbX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;;AAER;;;;;AAemB;;;AACA;;AACF;;AACD;AAAA;AAAA;AAAA;AAEE;AACM;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGgB;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAA;;AAAA;;;;;AAFJ;;;AAGI;;AAAA;;AAAA;;AAAA;;;;;AAHJ;;;AAKU;;;;;;;AART;;AAAA;AAAA;AAAA;;;;;AAST;;AAAA;AAGoC;;AAAlB;AAAA;AAAA;AAAA;AAAA;;AACf;;;AAAc;;AAAW;AAAX;AAAd;;;AACa;;AAAZ;AAAA;;AAAA;AACiB;;AAAjB;;;;;;;;;;;;AAA+B;;AAA/B;",
   "op_pc_offset": 0,
   "pc_events": {
     "1": {
@@ -14,9 +14,9 @@
       "op": "intcblock 1 0"
     },
     "5": {
-      "op": "bytecblock \"BinglePrice\""
+      "op": "bytecblock \"BinglePrice\" \"\" \"Handle\""
     },
-    "19": {
+    "27": {
       "op": "txn NumAppArgs",
       "defined_out": [
         "tmp%0#2"
@@ -25,44 +25,56 @@
         "tmp%0#2"
       ]
     },
-    "21": {
-      "op": "bz main_bare_routing@8",
+    "29": {
+      "op": "bz main_bare_routing@11",
       "stack_out": []
     },
-    "24": {
-      "op": "pushbytess 0x02bece11 0x39c2b7e2 0x0be22406 // method \"hello(string)string\", method \"set_bingle_price(uint64)void\", method \"buy_bingle()void\"",
+    "32": {
+      "op": "pushbytess 0x02bece11 0x39e60880 0x39c2b7e2 0x0be22406 0x216dec90 0xbd6099e5 // method \"hello(string)string\", method \"opt_in_to_bingle(uint64)void\", method \"set_bingle_price(uint64)void\", method \"buy_bingle()void\", method \"sell_bingle(uint64)void\", method \"register(string)void\"",
       "defined_out": [
         "Method(buy_bingle()void)",
         "Method(hello(string)string)",
+        "Method(opt_in_to_bingle(uint64)void)",
+        "Method(register(string)void)",
+        "Method(sell_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)"
       ],
       "stack_out": [
         "Method(hello(string)string)",
+        "Method(opt_in_to_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)",
-        "Method(buy_bingle()void)"
+        "Method(buy_bingle()void)",
+        "Method(sell_bingle(uint64)void)",
+        "Method(register(string)void)"
       ]
     },
-    "41": {
+    "64": {
       "op": "txna ApplicationArgs 0",
       "defined_out": [
         "Method(buy_bingle()void)",
         "Method(hello(string)string)",
+        "Method(opt_in_to_bingle(uint64)void)",
+        "Method(register(string)void)",
+        "Method(sell_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)",
         "tmp%2#0"
       ],
       "stack_out": [
         "Method(hello(string)string)",
+        "Method(opt_in_to_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)",
         "Method(buy_bingle()void)",
+        "Method(sell_bingle(uint64)void)",
+        "Method(register(string)void)",
         "tmp%2#0"
       ]
     },
-    "44": {
-      "op": "match main_hello_route@5 main_set_bingle_price_route@6 main_buy_bingle_route@7",
+    "67": {
+      "op": "match main_hello_route@5 main_opt_in_to_bingle_route@6 main_set_bingle_price_route@7 main_buy_bingle_route@8 main_sell_bingle_route@9 main_register_route@10",
       "stack_out": []
     },
-    "52": {
-      "block": "main_after_if_else@10",
+    "81": {
+      "block": "main_after_if_else@13",
       "stack_in": [],
       "op": "intc_1 // 0",
       "defined_out": [
@@ -72,297 +84,145 @@
         "tmp%0#1"
       ]
     },
-    "53": {
-      "op": "return",
-      "stack_out": []
-    },
-    "54": {
-      "block": "main_buy_bingle_route@7",
-      "stack_in": [],
-      "op": "txn OnCompletion",
-      "defined_out": [
-        "tmp%15#0"
-      ],
-      "stack_out": [
-        "tmp%15#0"
-      ]
-    },
-    "56": {
-      "op": "!",
-      "defined_out": [
-        "tmp%16#0"
-      ],
-      "stack_out": [
-        "tmp%16#0"
-      ]
-    },
-    "57": {
-      "error": "OnCompletion is not NoOp",
-      "op": "assert // OnCompletion is not NoOp",
-      "stack_out": []
-    },
-    "58": {
-      "op": "txn ApplicationID",
-      "defined_out": [
-        "tmp%17#0"
-      ],
-      "stack_out": [
-        "tmp%17#0"
-      ]
-    },
-    "60": {
-      "error": "can only call when not creating",
-      "op": "assert // can only call when not creating",
-      "stack_out": []
-    },
-    "61": {
-      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.buy_bingle",
-      "op": "callsub buy_bingle"
-    },
-    "64": {
-      "op": "intc_0 // 1",
-      "defined_out": [
-        "tmp%0#1"
-      ],
-      "stack_out": [
-        "tmp%0#1"
-      ]
-    },
-    "65": {
-      "op": "return",
-      "stack_out": []
-    },
-    "66": {
-      "block": "main_set_bingle_price_route@6",
-      "stack_in": [],
-      "op": "txn OnCompletion",
-      "defined_out": [
-        "tmp%10#0"
-      ],
-      "stack_out": [
-        "tmp%10#0"
-      ]
-    },
-    "68": {
-      "op": "!",
-      "defined_out": [
-        "tmp%11#0"
-      ],
-      "stack_out": [
-        "tmp%11#0"
-      ]
-    },
-    "69": {
-      "error": "OnCompletion is not NoOp",
-      "op": "assert // OnCompletion is not NoOp",
-      "stack_out": []
-    },
-    "70": {
-      "op": "txn ApplicationID",
-      "defined_out": [
-        "tmp%12#0"
-      ],
-      "stack_out": [
-        "tmp%12#0"
-      ]
-    },
-    "72": {
-      "error": "can only call when not creating",
-      "op": "assert // can only call when not creating",
-      "stack_out": []
-    },
-    "73": {
-      "op": "txna ApplicationArgs 1",
-      "defined_out": [
-        "reinterpret_bytes[8]%0#0"
-      ],
-      "stack_out": [
-        "reinterpret_bytes[8]%0#0"
-      ]
-    },
-    "76": {
-      "op": "btoi",
-      "defined_out": [
-        "tmp%14#0"
-      ],
-      "stack_out": [
-        "tmp%14#0"
-      ]
-    },
-    "77": {
-      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
-      "op": "callsub set_bingle_price",
-      "stack_out": []
-    },
-    "80": {
-      "op": "intc_0 // 1",
-      "defined_out": [
-        "tmp%0#1"
-      ],
-      "stack_out": [
-        "tmp%0#1"
-      ]
-    },
-    "81": {
-      "op": "return",
-      "stack_out": []
-    },
     "82": {
-      "block": "main_hello_route@5",
+      "op": "return",
+      "stack_out": []
+    },
+    "83": {
+      "block": "main_register_route@10",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%3#0"
+        "tmp%29#0"
       ],
       "stack_out": [
-        "tmp%3#0"
-      ]
-    },
-    "84": {
-      "op": "!",
-      "defined_out": [
-        "tmp%4#0"
-      ],
-      "stack_out": [
-        "tmp%4#0"
+        "tmp%29#0"
       ]
     },
     "85": {
+      "op": "!",
+      "defined_out": [
+        "tmp%30#0"
+      ],
+      "stack_out": [
+        "tmp%30#0"
+      ]
+    },
+    "86": {
       "error": "OnCompletion is not NoOp",
       "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "86": {
+    "87": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%5#0"
+        "tmp%31#0"
       ],
       "stack_out": [
-        "tmp%5#0"
+        "tmp%31#0"
       ]
     },
-    "88": {
+    "89": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "89": {
+    "90": {
       "op": "txna ApplicationArgs 1",
       "defined_out": [
-        "tmp%7#0"
+        "tmp%33#0"
       ],
       "stack_out": [
-        "tmp%7#0"
+        "tmp%33#0"
       ]
     },
-    "92": {
+    "93": {
       "op": "extract 2 0",
       "defined_out": [
-        "tmp%8#0"
+        "tmp%34#0"
       ],
       "stack_out": [
-        "tmp%8#0"
+        "tmp%34#0"
       ]
     },
-    "95": {
-      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
-      "op": "callsub hello",
-      "defined_out": [
-        "to_encode%0#0"
-      ],
-      "stack_out": [
-        "to_encode%0#0"
-      ]
-    },
-    "98": {
-      "op": "dup",
-      "defined_out": [
-        "to_encode%0#0",
-        "to_encode%0#0 (copy)"
-      ],
-      "stack_out": [
-        "to_encode%0#0",
-        "to_encode%0#0 (copy)"
-      ]
+    "96": {
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.register",
+      "op": "callsub register",
+      "stack_out": []
     },
     "99": {
-      "op": "len",
+      "op": "intc_0 // 1",
       "defined_out": [
-        "length%0#0",
-        "to_encode%0#0"
+        "tmp%0#1"
       ],
       "stack_out": [
-        "to_encode%0#0",
-        "length%0#0"
+        "tmp%0#1"
       ]
     },
     "100": {
-      "op": "itob",
-      "defined_out": [
-        "as_bytes%0#0",
-        "to_encode%0#0"
-      ],
-      "stack_out": [
-        "to_encode%0#0",
-        "as_bytes%0#0"
-      ]
+      "op": "return",
+      "stack_out": []
     },
     "101": {
-      "op": "extract 6 2",
+      "block": "main_sell_bingle_route@9",
+      "stack_in": [],
+      "op": "txn OnCompletion",
       "defined_out": [
-        "length_uint16%0#0",
-        "to_encode%0#0"
+        "tmp%24#0"
       ],
       "stack_out": [
-        "to_encode%0#0",
-        "length_uint16%0#0"
+        "tmp%24#0"
+      ]
+    },
+    "103": {
+      "op": "!",
+      "defined_out": [
+        "tmp%25#0"
+      ],
+      "stack_out": [
+        "tmp%25#0"
       ]
     },
     "104": {
-      "op": "swap",
-      "stack_out": [
-        "length_uint16%0#0",
-        "to_encode%0#0"
-      ]
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
+      "stack_out": []
     },
     "105": {
-      "op": "concat",
+      "op": "txn ApplicationID",
       "defined_out": [
-        "encoded_value%0#0"
+        "tmp%26#0"
       ],
       "stack_out": [
-        "encoded_value%0#0"
+        "tmp%26#0"
       ]
     },
-    "106": {
-      "op": "pushbytes 0x151f7c75",
+    "107": {
+      "error": "can only call when not creating",
+      "op": "assert // can only call when not creating",
+      "stack_out": []
+    },
+    "108": {
+      "op": "txna ApplicationArgs 1",
       "defined_out": [
-        "0x151f7c75",
-        "encoded_value%0#0"
+        "reinterpret_bytes[8]%2#0"
       ],
       "stack_out": [
-        "encoded_value%0#0",
-        "0x151f7c75"
+        "reinterpret_bytes[8]%2#0"
+      ]
+    },
+    "111": {
+      "op": "btoi",
+      "defined_out": [
+        "tmp%28#0"
+      ],
+      "stack_out": [
+        "tmp%28#0"
       ]
     },
     "112": {
-      "op": "swap",
-      "stack_out": [
-        "0x151f7c75",
-        "encoded_value%0#0"
-      ]
-    },
-    "113": {
-      "op": "concat",
-      "defined_out": [
-        "tmp%9#0"
-      ],
-      "stack_out": [
-        "tmp%9#0"
-      ]
-    },
-    "114": {
-      "op": "log",
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.sell_bingle",
+      "op": "callsub sell_bingle",
       "stack_out": []
     },
     "115": {
@@ -379,30 +239,17 @@
       "stack_out": []
     },
     "117": {
-      "block": "main_bare_routing@8",
+      "block": "main_buy_bingle_route@8",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%19#0"
+        "tmp%20#0"
       ],
       "stack_out": [
-        "tmp%19#0"
+        "tmp%20#0"
       ]
     },
     "119": {
-      "op": "bnz main_after_if_else@10",
-      "stack_out": []
-    },
-    "122": {
-      "op": "txn ApplicationID",
-      "defined_out": [
-        "tmp%20#0"
-      ],
-      "stack_out": [
-        "tmp%20#0"
-      ]
-    },
-    "124": {
       "op": "!",
       "defined_out": [
         "tmp%21#0"
@@ -411,12 +258,30 @@
         "tmp%21#0"
       ]
     },
-    "125": {
-      "error": "can only call when creating",
-      "op": "assert // can only call when creating",
+    "120": {
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "126": {
+    "121": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%22#0"
+      ],
+      "stack_out": [
+        "tmp%22#0"
+      ]
+    },
+    "123": {
+      "error": "can only call when not creating",
+      "op": "assert // can only call when not creating",
+      "stack_out": []
+    },
+    "124": {
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.buy_bingle",
+      "op": "callsub buy_bingle"
+    },
+    "127": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -425,11 +290,383 @@
         "tmp%0#1"
       ]
     },
-    "127": {
+    "128": {
       "op": "return",
       "stack_out": []
     },
-    "128": {
+    "129": {
+      "block": "main_set_bingle_price_route@7",
+      "stack_in": [],
+      "op": "txn OnCompletion",
+      "defined_out": [
+        "tmp%15#0"
+      ],
+      "stack_out": [
+        "tmp%15#0"
+      ]
+    },
+    "131": {
+      "op": "!",
+      "defined_out": [
+        "tmp%16#0"
+      ],
+      "stack_out": [
+        "tmp%16#0"
+      ]
+    },
+    "132": {
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
+      "stack_out": []
+    },
+    "133": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%17#0"
+      ],
+      "stack_out": [
+        "tmp%17#0"
+      ]
+    },
+    "135": {
+      "error": "can only call when not creating",
+      "op": "assert // can only call when not creating",
+      "stack_out": []
+    },
+    "136": {
+      "op": "txna ApplicationArgs 1",
+      "defined_out": [
+        "reinterpret_bytes[8]%1#0"
+      ],
+      "stack_out": [
+        "reinterpret_bytes[8]%1#0"
+      ]
+    },
+    "139": {
+      "op": "btoi",
+      "defined_out": [
+        "tmp%19#0"
+      ],
+      "stack_out": [
+        "tmp%19#0"
+      ]
+    },
+    "140": {
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
+      "op": "callsub set_bingle_price",
+      "stack_out": []
+    },
+    "143": {
+      "op": "intc_0 // 1",
+      "defined_out": [
+        "tmp%0#1"
+      ],
+      "stack_out": [
+        "tmp%0#1"
+      ]
+    },
+    "144": {
+      "op": "return",
+      "stack_out": []
+    },
+    "145": {
+      "block": "main_opt_in_to_bingle_route@6",
+      "stack_in": [],
+      "op": "txn OnCompletion",
+      "defined_out": [
+        "tmp%10#0"
+      ],
+      "stack_out": [
+        "tmp%10#0"
+      ]
+    },
+    "147": {
+      "op": "!",
+      "defined_out": [
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "tmp%11#0"
+      ]
+    },
+    "148": {
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
+      "stack_out": []
+    },
+    "149": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%12#0"
+      ],
+      "stack_out": [
+        "tmp%12#0"
+      ]
+    },
+    "151": {
+      "error": "can only call when not creating",
+      "op": "assert // can only call when not creating",
+      "stack_out": []
+    },
+    "152": {
+      "op": "txna ApplicationArgs 1",
+      "defined_out": [
+        "reinterpret_bytes[8]%0#0"
+      ],
+      "stack_out": [
+        "reinterpret_bytes[8]%0#0"
+      ]
+    },
+    "155": {
+      "op": "btoi",
+      "defined_out": [
+        "tmp%14#0"
+      ],
+      "stack_out": [
+        "tmp%14#0"
+      ]
+    },
+    "156": {
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.opt_in_to_bingle",
+      "op": "callsub opt_in_to_bingle",
+      "stack_out": []
+    },
+    "159": {
+      "op": "intc_0 // 1",
+      "defined_out": [
+        "tmp%0#1"
+      ],
+      "stack_out": [
+        "tmp%0#1"
+      ]
+    },
+    "160": {
+      "op": "return",
+      "stack_out": []
+    },
+    "161": {
+      "block": "main_hello_route@5",
+      "stack_in": [],
+      "op": "txn OnCompletion",
+      "defined_out": [
+        "tmp%3#0"
+      ],
+      "stack_out": [
+        "tmp%3#0"
+      ]
+    },
+    "163": {
+      "op": "!",
+      "defined_out": [
+        "tmp%4#0"
+      ],
+      "stack_out": [
+        "tmp%4#0"
+      ]
+    },
+    "164": {
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
+      "stack_out": []
+    },
+    "165": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%5#0"
+      ],
+      "stack_out": [
+        "tmp%5#0"
+      ]
+    },
+    "167": {
+      "error": "can only call when not creating",
+      "op": "assert // can only call when not creating",
+      "stack_out": []
+    },
+    "168": {
+      "op": "txna ApplicationArgs 1",
+      "defined_out": [
+        "tmp%7#0"
+      ],
+      "stack_out": [
+        "tmp%7#0"
+      ]
+    },
+    "171": {
+      "op": "extract 2 0",
+      "defined_out": [
+        "tmp%8#0"
+      ],
+      "stack_out": [
+        "tmp%8#0"
+      ]
+    },
+    "174": {
+      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
+      "op": "callsub hello",
+      "defined_out": [
+        "to_encode%0#0"
+      ],
+      "stack_out": [
+        "to_encode%0#0"
+      ]
+    },
+    "177": {
+      "op": "dup",
+      "defined_out": [
+        "to_encode%0#0",
+        "to_encode%0#0 (copy)"
+      ],
+      "stack_out": [
+        "to_encode%0#0",
+        "to_encode%0#0 (copy)"
+      ]
+    },
+    "178": {
+      "op": "len",
+      "defined_out": [
+        "length%0#0",
+        "to_encode%0#0"
+      ],
+      "stack_out": [
+        "to_encode%0#0",
+        "length%0#0"
+      ]
+    },
+    "179": {
+      "op": "itob",
+      "defined_out": [
+        "as_bytes%0#0",
+        "to_encode%0#0"
+      ],
+      "stack_out": [
+        "to_encode%0#0",
+        "as_bytes%0#0"
+      ]
+    },
+    "180": {
+      "op": "extract 6 2",
+      "defined_out": [
+        "length_uint16%0#0",
+        "to_encode%0#0"
+      ],
+      "stack_out": [
+        "to_encode%0#0",
+        "length_uint16%0#0"
+      ]
+    },
+    "183": {
+      "op": "swap",
+      "stack_out": [
+        "length_uint16%0#0",
+        "to_encode%0#0"
+      ]
+    },
+    "184": {
+      "op": "concat",
+      "defined_out": [
+        "encoded_value%0#0"
+      ],
+      "stack_out": [
+        "encoded_value%0#0"
+      ]
+    },
+    "185": {
+      "op": "pushbytes 0x151f7c75",
+      "defined_out": [
+        "0x151f7c75",
+        "encoded_value%0#0"
+      ],
+      "stack_out": [
+        "encoded_value%0#0",
+        "0x151f7c75"
+      ]
+    },
+    "191": {
+      "op": "swap",
+      "stack_out": [
+        "0x151f7c75",
+        "encoded_value%0#0"
+      ]
+    },
+    "192": {
+      "op": "concat",
+      "defined_out": [
+        "tmp%9#0"
+      ],
+      "stack_out": [
+        "tmp%9#0"
+      ]
+    },
+    "193": {
+      "op": "log",
+      "stack_out": []
+    },
+    "194": {
+      "op": "intc_0 // 1",
+      "defined_out": [
+        "tmp%0#1"
+      ],
+      "stack_out": [
+        "tmp%0#1"
+      ]
+    },
+    "195": {
+      "op": "return",
+      "stack_out": []
+    },
+    "196": {
+      "block": "main_bare_routing@11",
+      "stack_in": [],
+      "op": "txn OnCompletion",
+      "defined_out": [
+        "tmp%35#0"
+      ],
+      "stack_out": [
+        "tmp%35#0"
+      ]
+    },
+    "198": {
+      "op": "bnz main_after_if_else@13",
+      "stack_out": []
+    },
+    "201": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%36#0"
+      ],
+      "stack_out": [
+        "tmp%36#0"
+      ]
+    },
+    "203": {
+      "op": "!",
+      "defined_out": [
+        "tmp%37#0"
+      ],
+      "stack_out": [
+        "tmp%37#0"
+      ]
+    },
+    "204": {
+      "error": "can only call when creating",
+      "op": "assert // can only call when creating",
+      "stack_out": []
+    },
+    "205": {
+      "op": "intc_0 // 1",
+      "defined_out": [
+        "tmp%0#1"
+      ],
+      "stack_out": [
+        "tmp%0#1"
+      ]
+    },
+    "206": {
+      "op": "return",
+      "stack_out": []
+    },
+    "207": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
       "params": {
         "name#0": "bytes"
@@ -438,7 +675,7 @@
       "stack_in": [],
       "op": "proto 1 1"
     },
-    "131": {
+    "210": {
       "op": "pushbytes \"Hello, \"",
       "defined_out": [
         "\"Hello, \""
@@ -447,7 +684,7 @@
         "\"Hello, \""
       ]
     },
-    "140": {
+    "219": {
       "op": "frame_dig -1",
       "defined_out": [
         "\"Hello, \"",
@@ -458,7 +695,7 @@
         "name#0 (copy)"
       ]
     },
-    "142": {
+    "221": {
       "op": "concat",
       "defined_out": [
         "tmp%0#0"
@@ -467,20 +704,20 @@
         "tmp%0#0"
       ]
     },
-    "143": {
+    "222": {
       "retsub": true,
       "op": "retsub"
     },
-    "144": {
-      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
+    "223": {
+      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.opt_in_to_bingle",
       "params": {
-        "price#0": "uint64"
+        "asset_id#0": "uint64"
       },
-      "block": "set_bingle_price",
+      "block": "opt_in_to_bingle",
       "stack_in": [],
       "op": "proto 1 0"
     },
-    "147": {
+    "226": {
       "op": "txn Sender",
       "defined_out": [
         "tmp%0#0"
@@ -489,7 +726,7 @@
         "tmp%0#0"
       ]
     },
-    "149": {
+    "228": {
       "op": "global CreatorAddress",
       "defined_out": [
         "tmp%0#0",
@@ -500,7 +737,7 @@
         "tmp%1#0"
       ]
     },
-    "151": {
+    "230": {
       "op": "==",
       "defined_out": [
         "tmp%2#0"
@@ -509,11 +746,147 @@
         "tmp%2#0"
       ]
     },
-    "152": {
+    "231": {
       "op": "assert",
       "stack_out": []
     },
-    "153": {
+    "232": {
+      "op": "itxn_begin"
+    },
+    "233": {
+      "op": "global MinTxnFee",
+      "defined_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ],
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ]
+    },
+    "235": {
+      "op": "global CurrentApplicationAddress",
+      "defined_out": [
+        "inner_txn_params%0%%param_AssetReceiver_idx_0#0",
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ],
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0",
+        "inner_txn_params%0%%param_AssetReceiver_idx_0#0"
+      ]
+    },
+    "237": {
+      "op": "intc_1 // 0",
+      "defined_out": [
+        "0",
+        "inner_txn_params%0%%param_AssetReceiver_idx_0#0",
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ],
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0",
+        "inner_txn_params%0%%param_AssetReceiver_idx_0#0",
+        "0"
+      ]
+    },
+    "238": {
+      "op": "itxn_field AssetAmount",
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0",
+        "inner_txn_params%0%%param_AssetReceiver_idx_0#0"
+      ]
+    },
+    "240": {
+      "op": "itxn_field AssetReceiver",
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ]
+    },
+    "242": {
+      "op": "frame_dig -1",
+      "defined_out": [
+        "asset_id#0 (copy)",
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ],
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0",
+        "asset_id#0 (copy)"
+      ]
+    },
+    "244": {
+      "op": "itxn_field XferAsset",
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ]
+    },
+    "246": {
+      "op": "pushint 4 // axfer",
+      "defined_out": [
+        "axfer",
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ],
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0",
+        "axfer"
+      ]
+    },
+    "248": {
+      "op": "itxn_field TypeEnum",
+      "stack_out": [
+        "inner_txn_params%0%%param_Fee_idx_0#0"
+      ]
+    },
+    "250": {
+      "op": "itxn_field Fee",
+      "stack_out": []
+    },
+    "252": {
+      "op": "itxn_submit"
+    },
+    "253": {
+      "retsub": true,
+      "op": "retsub"
+    },
+    "254": {
+      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
+      "params": {
+        "price#0": "uint64"
+      },
+      "block": "set_bingle_price",
+      "stack_in": [],
+      "op": "proto 1 0"
+    },
+    "257": {
+      "op": "txn Sender",
+      "defined_out": [
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "tmp%0#0"
+      ]
+    },
+    "259": {
+      "op": "global CreatorAddress",
+      "defined_out": [
+        "tmp%0#0",
+        "tmp%1#0"
+      ],
+      "stack_out": [
+        "tmp%0#0",
+        "tmp%1#0"
+      ]
+    },
+    "261": {
+      "op": "==",
+      "defined_out": [
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "tmp%2#0"
+      ]
+    },
+    "262": {
+      "op": "assert",
+      "stack_out": []
+    },
+    "263": {
       "op": "bytec_0 // \"BinglePrice\"",
       "defined_out": [
         "\"BinglePrice\""
@@ -522,7 +895,7 @@
         "\"BinglePrice\""
       ]
     },
-    "154": {
+    "264": {
       "op": "frame_dig -1",
       "defined_out": [
         "\"BinglePrice\"",
@@ -533,41 +906,41 @@
         "price#0 (copy)"
       ]
     },
-    "156": {
+    "266": {
       "op": "app_global_put",
       "stack_out": []
     },
-    "157": {
+    "267": {
       "retsub": true,
       "op": "retsub"
     },
-    "158": {
+    "268": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.buy_bingle",
       "params": {},
       "block": "buy_bingle",
       "stack_in": [],
       "op": "proto 0 0"
     },
-    "161": {
-      "op": "pushbytes \"\"",
+    "271": {
+      "op": "bytec_1 // \"\"",
       "stack_out": [
         "saw_axfer#11"
       ]
     },
-    "163": {
+    "272": {
       "op": "dup",
       "stack_out": [
         "saw_axfer#11",
         "saw_payment#11"
       ]
     },
-    "164": {
+    "273": {
       "op": "txna Assets 0"
     },
-    "167": {
+    "276": {
       "op": "intc_1 // 0"
     },
-    "168": {
+    "277": {
       "op": "bytec_0 // \"BinglePrice\"",
       "defined_out": [
         "\"BinglePrice\"",
@@ -582,7 +955,7 @@
         "\"BinglePrice\""
       ]
     },
-    "169": {
+    "278": {
       "op": "app_global_get_ex",
       "defined_out": [
         "asset_id#0",
@@ -597,7 +970,7 @@
         "maybe_exists%0#0"
       ]
     },
-    "170": {
+    "279": {
       "error": "check self.bingle_price exists",
       "op": "assert // check self.bingle_price exists",
       "stack_out": [
@@ -607,22 +980,22 @@
         "price#0"
       ]
     },
-    "171": {
+    "280": {
       "op": "global CurrentApplicationAddress"
     },
-    "173": {
+    "282": {
       "op": "txn Sender"
     },
-    "175": {
+    "284": {
       "op": "intc_1 // 0"
     },
-    "176": {
+    "285": {
       "op": "dup"
     },
-    "177": {
+    "286": {
       "op": "global GroupSize"
     },
-    "179": {
+    "288": {
       "op": "intc_1 // 0",
       "defined_out": [
         "app_addr#0",
@@ -647,7 +1020,7 @@
         "i#0"
       ]
     },
-    "180": {
+    "289": {
       "block": "buy_bingle_for_header@1",
       "stack_in": [
         "saw_axfer#11",
@@ -679,7 +1052,7 @@
         "i#0"
       ]
     },
-    "182": {
+    "291": {
       "op": "frame_dig 8",
       "defined_out": [
         "i#0",
@@ -700,7 +1073,7 @@
         "tmp%0#0"
       ]
     },
-    "184": {
+    "293": {
       "op": "<",
       "defined_out": [
         "continue_looping%0#0",
@@ -721,7 +1094,7 @@
         "continue_looping%0#0"
       ]
     },
-    "185": {
+    "294": {
       "op": "bz buy_bingle_after_for@11",
       "stack_out": [
         "saw_axfer#11",
@@ -736,7 +1109,7 @@
         "i#0"
       ]
     },
-    "188": {
+    "297": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -752,7 +1125,7 @@
         "i#0"
       ]
     },
-    "190": {
+    "299": {
       "op": "gtxns Receiver",
       "defined_out": [
         "i#0",
@@ -773,7 +1146,7 @@
         "tmp%1#0"
       ]
     },
-    "192": {
+    "301": {
       "op": "frame_dig 4",
       "defined_out": [
         "app_addr#0",
@@ -796,7 +1169,7 @@
         "app_addr#0"
       ]
     },
-    "194": {
+    "303": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -818,7 +1191,7 @@
         "tmp%2#0"
       ]
     },
-    "195": {
+    "304": {
       "op": "frame_dig 6",
       "defined_out": [
         "app_addr#0",
@@ -842,7 +1215,7 @@
         "saw_payment#11"
       ]
     },
-    "197": {
+    "306": {
       "op": "frame_bury 1",
       "defined_out": [
         "app_addr#0",
@@ -865,7 +1238,7 @@
         "tmp%2#0"
       ]
     },
-    "199": {
+    "308": {
       "op": "bz buy_bingle_after_if_else@5",
       "stack_out": [
         "saw_axfer#11",
@@ -880,7 +1253,7 @@
         "i#0"
       ]
     },
-    "202": {
+    "311": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -896,7 +1269,7 @@
         "i#0"
       ]
     },
-    "204": {
+    "313": {
       "op": "gtxns Amount",
       "defined_out": [
         "app_addr#0",
@@ -919,7 +1292,7 @@
         "tmp%3#0"
       ]
     },
-    "206": {
+    "315": {
       "op": "frame_dig 3",
       "defined_out": [
         "app_addr#0",
@@ -944,7 +1317,7 @@
         "price#0"
       ]
     },
-    "208": {
+    "317": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -968,7 +1341,7 @@
         "tmp%4#0"
       ]
     },
-    "209": {
+    "318": {
       "op": "frame_dig 6",
       "stack_out": [
         "saw_axfer#11",
@@ -985,7 +1358,7 @@
         "saw_payment#11"
       ]
     },
-    "211": {
+    "320": {
       "op": "frame_bury 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1001,7 +1374,7 @@
         "tmp%4#0"
       ]
     },
-    "213": {
+    "322": {
       "op": "bz buy_bingle_after_if_else@5",
       "stack_out": [
         "saw_axfer#11",
@@ -1016,7 +1389,7 @@
         "i#0"
       ]
     },
-    "216": {
+    "325": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1032,7 +1405,7 @@
         "saw_payment#11"
       ]
     },
-    "217": {
+    "326": {
       "op": "frame_bury 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1047,7 +1420,7 @@
         "i#0"
       ]
     },
-    "219": {
+    "328": {
       "block": "buy_bingle_after_if_else@5",
       "stack_in": [
         "saw_axfer#11",
@@ -1079,7 +1452,7 @@
         "saw_payment#0"
       ]
     },
-    "221": {
+    "330": {
       "op": "frame_bury 6",
       "defined_out": [
         "saw_payment#0"
@@ -1097,7 +1470,7 @@
         "i#0"
       ]
     },
-    "223": {
+    "332": {
       "op": "frame_dig 9",
       "defined_out": [
         "i#0",
@@ -1117,7 +1490,7 @@
         "i#0"
       ]
     },
-    "225": {
+    "334": {
       "op": "gtxns XferAsset",
       "defined_out": [
         "i#0",
@@ -1138,7 +1511,7 @@
         "tmp%5#0"
       ]
     },
-    "227": {
+    "336": {
       "op": "frame_dig 2",
       "defined_out": [
         "asset_id#0",
@@ -1161,7 +1534,7 @@
         "asset_id#0"
       ]
     },
-    "229": {
+    "338": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -1183,7 +1556,7 @@
         "tmp%6#0"
       ]
     },
-    "230": {
+    "339": {
       "op": "frame_dig 7",
       "defined_out": [
         "asset_id#0",
@@ -1207,7 +1580,7 @@
         "saw_axfer#11"
       ]
     },
-    "232": {
+    "341": {
       "op": "frame_bury 0",
       "defined_out": [
         "asset_id#0",
@@ -1230,7 +1603,7 @@
         "tmp%6#0"
       ]
     },
-    "234": {
+    "343": {
       "op": "bz buy_bingle_after_if_else@9",
       "stack_out": [
         "saw_axfer#11",
@@ -1245,7 +1618,7 @@
         "i#0"
       ]
     },
-    "237": {
+    "346": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -1261,7 +1634,7 @@
         "i#0"
       ]
     },
-    "239": {
+    "348": {
       "op": "gtxns AssetReceiver",
       "defined_out": [
         "asset_id#0",
@@ -1284,7 +1657,7 @@
         "tmp%7#0"
       ]
     },
-    "241": {
+    "350": {
       "op": "frame_dig 5",
       "defined_out": [
         "asset_id#0",
@@ -1309,7 +1682,7 @@
         "buyer#0"
       ]
     },
-    "243": {
+    "352": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -1333,7 +1706,7 @@
         "tmp%8#0"
       ]
     },
-    "244": {
+    "353": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#11",
@@ -1350,7 +1723,7 @@
         "saw_axfer#11"
       ]
     },
-    "246": {
+    "355": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#11",
@@ -1366,7 +1739,7 @@
         "tmp%8#0"
       ]
     },
-    "248": {
+    "357": {
       "op": "bz buy_bingle_after_if_else@9",
       "stack_out": [
         "saw_axfer#11",
@@ -1381,7 +1754,7 @@
         "i#0"
       ]
     },
-    "251": {
+    "360": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -1397,7 +1770,7 @@
         "i#0"
       ]
     },
-    "253": {
+    "362": {
       "op": "gtxns AssetAmount",
       "defined_out": [
         "asset_id#0",
@@ -1421,7 +1794,7 @@
         "tmp%9#0"
       ]
     },
-    "255": {
+    "364": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1438,7 +1811,7 @@
         "1"
       ]
     },
-    "256": {
+    "365": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -1462,7 +1835,7 @@
         "tmp%10#0"
       ]
     },
-    "257": {
+    "366": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#11",
@@ -1479,7 +1852,7 @@
         "saw_axfer#11"
       ]
     },
-    "259": {
+    "368": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#11",
@@ -1495,7 +1868,7 @@
         "tmp%10#0"
       ]
     },
-    "261": {
+    "370": {
       "op": "bz buy_bingle_after_if_else@9",
       "stack_out": [
         "saw_axfer#11",
@@ -1510,7 +1883,7 @@
         "i#0"
       ]
     },
-    "264": {
+    "373": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1526,7 +1899,7 @@
         "saw_axfer#11"
       ]
     },
-    "265": {
+    "374": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#11",
@@ -1541,7 +1914,7 @@
         "i#0"
       ]
     },
-    "267": {
+    "376": {
       "block": "buy_bingle_after_if_else@9",
       "stack_in": [
         "saw_axfer#11",
@@ -1573,7 +1946,7 @@
         "saw_axfer#0"
       ]
     },
-    "269": {
+    "378": {
       "op": "frame_bury 7",
       "defined_out": [
         "saw_axfer#0"
@@ -1591,7 +1964,7 @@
         "i#0"
       ]
     },
-    "271": {
+    "380": {
       "op": "frame_dig 9",
       "defined_out": [
         "i#0",
@@ -1611,7 +1984,7 @@
         "i#0"
       ]
     },
-    "273": {
+    "382": {
       "op": "intc_0 // 1",
       "defined_out": [
         "1",
@@ -1633,7 +2006,7 @@
         "1"
       ]
     },
-    "274": {
+    "383": {
       "op": "+",
       "stack_out": [
         "saw_axfer#11",
@@ -1649,7 +2022,7 @@
         "i#0"
       ]
     },
-    "275": {
+    "384": {
       "op": "frame_bury 9",
       "defined_out": [
         "i#0",
@@ -1668,10 +2041,10 @@
         "i#0"
       ]
     },
-    "277": {
+    "386": {
       "op": "b buy_bingle_for_header@1"
     },
-    "280": {
+    "389": {
       "block": "buy_bingle_after_for@11",
       "stack_in": [
         "saw_axfer#11",
@@ -1703,7 +2076,7 @@
         "saw_payment#0"
       ]
     },
-    "282": {
+    "391": {
       "op": "assert",
       "stack_out": [
         "saw_axfer#11",
@@ -1718,7 +2091,7 @@
         "i#0"
       ]
     },
-    "283": {
+    "392": {
       "op": "frame_dig 7",
       "defined_out": [
         "saw_axfer#0",
@@ -1738,7 +2111,7 @@
         "saw_axfer#0"
       ]
     },
-    "285": {
+    "394": {
       "op": "assert",
       "stack_out": [
         "saw_axfer#11",
@@ -1753,7 +2126,2776 @@
         "i#0"
       ]
     },
-    "286": {
+    "395": {
+      "retsub": true,
+      "op": "retsub"
+    },
+    "396": {
+      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.sell_bingle",
+      "params": {
+        "amount#0": "uint64"
+      },
+      "block": "sell_bingle",
+      "stack_in": [],
+      "op": "proto 1 0"
+    },
+    "399": {
+      "op": "bytec_1 // \"\"",
+      "stack_out": [
+        "saw_axfer#12"
+      ]
+    },
+    "400": {
+      "op": "dup",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11"
+      ]
+    },
+    "401": {
+      "op": "txna Assets 0"
+    },
+    "404": {
+      "op": "intc_1 // 0"
+    },
+    "405": {
+      "op": "bytec_0 // \"BinglePrice\"",
+      "defined_out": [
+        "\"BinglePrice\"",
+        "0",
+        "asset_id#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "0",
+        "\"BinglePrice\""
+      ]
+    },
+    "406": {
+      "op": "app_global_get_ex",
+      "defined_out": [
+        "asset_id#0",
+        "maybe_exists%0#0",
+        "price#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "price#0",
+        "maybe_exists%0#0"
+      ]
+    },
+    "407": {
+      "error": "check self.bingle_price exists",
+      "op": "assert // check self.bingle_price exists",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "price#0"
+      ]
+    },
+    "408": {
+      "op": "txn Sender",
+      "defined_out": [
+        "asset_id#0",
+        "price#0",
+        "seller#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "price#0",
+        "seller#0"
+      ]
+    },
+    "410": {
+      "op": "swap",
+      "defined_out": [
+        "asset_id#0",
+        "price#0",
+        "seller#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "price#0"
+      ]
+    },
+    "411": {
+      "op": "global CurrentApplicationAddress",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "price#0",
+        "seller#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "price#0",
+        "app_addr#0"
+      ]
+    },
+    "413": {
+      "op": "swap",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "price#0",
+        "seller#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "price#0"
+      ]
+    },
+    "414": {
+      "op": "frame_dig -1",
+      "defined_out": [
+        "amount#0 (copy)",
+        "app_addr#0",
+        "asset_id#0",
+        "price#0",
+        "seller#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "price#0",
+        "amount#0 (copy)"
+      ]
+    },
+    "416": {
+      "op": "*",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "payout#0",
+        "seller#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0"
+      ]
+    },
+    "417": {
+      "op": "intc_1 // 0"
+    },
+    "418": {
+      "op": "dup"
+    },
+    "419": {
+      "op": "global GroupSize"
+    },
+    "421": {
+      "op": "intc_1 // 0",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "payout#0",
+        "saw_axfer#0",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "422": {
+      "block": "sell_bingle_for_header@1",
+      "stack_in": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 9",
+      "defined_out": [
+        "i#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "424": {
+      "op": "frame_dig 8",
+      "defined_out": [
+        "i#0",
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0",
+        "tmp%0#0"
+      ]
+    },
+    "426": {
+      "op": "<",
+      "defined_out": [
+        "continue_looping%0#0",
+        "i#0",
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "continue_looping%0#0"
+      ]
+    },
+    "427": {
+      "op": "bz sell_bingle_after_for@12",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "430": {
+      "op": "frame_dig 9",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "432": {
+      "op": "gtxns Receiver",
+      "defined_out": [
+        "i#0",
+        "tmp%0#0",
+        "tmp%1#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%1#0"
+      ]
+    },
+    "434": {
+      "op": "frame_dig 3",
+      "defined_out": [
+        "i#0",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%1#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%1#0",
+        "seller#0"
+      ]
+    },
+    "436": {
+      "op": "==",
+      "defined_out": [
+        "i#0",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%2#0"
+      ]
+    },
+    "437": {
+      "op": "frame_dig 6",
+      "defined_out": [
+        "i#0",
+        "saw_payment#11",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%2#0",
+        "saw_payment#11"
+      ]
+    },
+    "439": {
+      "op": "frame_bury 1",
+      "defined_out": [
+        "i#0",
+        "saw_payment#11",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%2#0"
+      ]
+    },
+    "441": {
+      "op": "bz sell_bingle_after_if_else@5",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "444": {
+      "op": "frame_dig 9",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "446": {
+      "op": "gtxns Amount",
+      "defined_out": [
+        "i#0",
+        "saw_payment#11",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%3#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%3#0"
+      ]
+    },
+    "448": {
+      "op": "frame_dig 5",
+      "defined_out": [
+        "i#0",
+        "payout#0",
+        "saw_payment#11",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%3#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%3#0",
+        "payout#0"
+      ]
+    },
+    "450": {
+      "op": "==",
+      "defined_out": [
+        "i#0",
+        "payout#0",
+        "saw_payment#11",
+        "seller#0",
+        "tmp%0#0",
+        "tmp%4#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%4#0"
+      ]
+    },
+    "451": {
+      "op": "frame_dig 6",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%4#0",
+        "saw_payment#11"
+      ]
+    },
+    "453": {
+      "op": "frame_bury 1",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%4#0"
+      ]
+    },
+    "455": {
+      "op": "bz sell_bingle_after_if_else@5",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "458": {
+      "op": "intc_0 // 1",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_payment#11"
+      ]
+    },
+    "459": {
+      "op": "frame_bury 1",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "461": {
+      "block": "sell_bingle_after_if_else@5",
+      "stack_in": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 1",
+      "defined_out": [
+        "saw_payment#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_payment#0"
+      ]
+    },
+    "463": {
+      "op": "frame_bury 6",
+      "defined_out": [
+        "saw_payment#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "465": {
+      "op": "frame_dig 9",
+      "defined_out": [
+        "i#0",
+        "saw_payment#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "467": {
+      "op": "gtxns XferAsset",
+      "defined_out": [
+        "i#0",
+        "saw_payment#0",
+        "tmp%5#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%5#0"
+      ]
+    },
+    "469": {
+      "op": "frame_dig 2",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_payment#0",
+        "tmp%5#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%5#0",
+        "asset_id#0"
+      ]
+    },
+    "471": {
+      "op": "==",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_payment#0",
+        "tmp%6#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%6#0"
+      ]
+    },
+    "472": {
+      "op": "frame_dig 7",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "tmp%6#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%6#0",
+        "saw_axfer#12"
+      ]
+    },
+    "474": {
+      "op": "frame_bury 0",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "tmp%6#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%6#0"
+      ]
+    },
+    "476": {
+      "op": "bz sell_bingle_after_if_else@10",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "479": {
+      "op": "frame_dig 9",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "481": {
+      "op": "gtxns Sender",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "tmp%7#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%7#0"
+      ]
+    },
+    "483": {
+      "op": "frame_dig 3",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%7#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%7#0",
+        "seller#0"
+      ]
+    },
+    "485": {
+      "op": "==",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%8#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%8#0"
+      ]
+    },
+    "486": {
+      "op": "frame_dig 7",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%8#0",
+        "saw_axfer#12"
+      ]
+    },
+    "488": {
+      "op": "frame_bury 0",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%8#0"
+      ]
+    },
+    "490": {
+      "op": "bz sell_bingle_after_if_else@10",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "493": {
+      "op": "frame_dig 9",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "495": {
+      "op": "gtxns AssetReceiver",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%9#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%9#0"
+      ]
+    },
+    "497": {
+      "op": "frame_dig 4",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%9#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%9#0",
+        "app_addr#0"
+      ]
+    },
+    "499": {
+      "op": "==",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%10#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%10#0"
+      ]
+    },
+    "500": {
+      "op": "frame_dig 7",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%10#0",
+        "saw_axfer#12"
+      ]
+    },
+    "502": {
+      "op": "frame_bury 0",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%10#0"
+      ]
+    },
+    "504": {
+      "op": "bz sell_bingle_after_if_else@10",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "507": {
+      "op": "frame_dig 9",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "509": {
+      "op": "gtxns AssetAmount",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%11#0"
+      ]
+    },
+    "511": {
+      "op": "frame_dig -1",
+      "defined_out": [
+        "amount#0 (copy)",
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%11#0",
+        "amount#0 (copy)"
+      ]
+    },
+    "513": {
+      "op": "==",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_axfer#12",
+        "saw_payment#0",
+        "seller#0",
+        "tmp%12#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%12#0"
+      ]
+    },
+    "514": {
+      "op": "frame_dig 7",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%12#0",
+        "saw_axfer#12"
+      ]
+    },
+    "516": {
+      "op": "frame_bury 0",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%12#0"
+      ]
+    },
+    "518": {
+      "op": "bz sell_bingle_after_if_else@10",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "521": {
+      "op": "intc_0 // 1",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_axfer#12"
+      ]
+    },
+    "522": {
+      "op": "frame_bury 0",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "524": {
+      "block": "sell_bingle_after_if_else@10",
+      "stack_in": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 0",
+      "defined_out": [
+        "saw_axfer#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_axfer#0"
+      ]
+    },
+    "526": {
+      "op": "frame_bury 7",
+      "defined_out": [
+        "saw_axfer#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "528": {
+      "op": "frame_dig 9",
+      "defined_out": [
+        "i#0",
+        "saw_axfer#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "530": {
+      "op": "intc_0 // 1",
+      "defined_out": [
+        "1",
+        "i#0",
+        "saw_axfer#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0",
+        "1"
+      ]
+    },
+    "531": {
+      "op": "+",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "532": {
+      "op": "frame_bury 9",
+      "defined_out": [
+        "i#0",
+        "saw_axfer#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "534": {
+      "op": "b sell_bingle_for_header@1"
+    },
+    "537": {
+      "block": "sell_bingle_after_for@12",
+      "stack_in": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 6",
+      "defined_out": [
+        "saw_payment#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_payment#0"
+      ]
+    },
+    "539": {
+      "op": "assert",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "540": {
+      "op": "frame_dig 7",
+      "defined_out": [
+        "saw_axfer#0",
+        "saw_payment#0"
+      ],
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_axfer#0"
+      ]
+    },
+    "542": {
+      "op": "assert",
+      "stack_out": [
+        "saw_axfer#12",
+        "saw_payment#11",
+        "asset_id#0",
+        "seller#0",
+        "app_addr#0",
+        "payout#0",
+        "saw_payment#0",
+        "saw_axfer#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "543": {
+      "retsub": true,
+      "op": "retsub"
+    },
+    "544": {
+      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.register",
+      "params": {
+        "handle#0": "bytes"
+      },
+      "block": "register",
+      "stack_in": [],
+      "op": "proto 1 0"
+    },
+    "547": {
+      "op": "intc_1 // 0",
+      "stack_out": [
+        "current#0"
+      ]
+    },
+    "548": {
+      "op": "bytec_1 // \"\"",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12"
+      ]
+    },
+    "549": {
+      "op": "txna Assets 0"
+    },
+    "552": {
+      "op": "global CurrentApplicationAddress"
+    },
+    "554": {
+      "op": "txn Sender"
+    },
+    "556": {
+      "op": "intc_1 // 0"
+    },
+    "557": {
+      "op": "bytec_0 // \"BinglePrice\"",
+      "defined_out": [
+        "\"BinglePrice\"",
+        "0",
+        "app_addr#0",
+        "asset_id#0",
+        "sender#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "0",
+        "\"BinglePrice\""
+      ]
+    },
+    "558": {
+      "op": "app_global_get_ex",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "maybe_exists%0#0",
+        "price#0",
+        "sender#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "maybe_exists%0#0"
+      ]
+    },
+    "559": {
+      "error": "check self.bingle_price exists",
+      "op": "assert // check self.bingle_price exists",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0"
+      ]
+    },
+    "560": {
+      "op": "intc_1 // 0"
+    },
+    "561": {
+      "op": "global GroupSize"
+    },
+    "563": {
+      "op": "intc_1 // 0",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "price#0",
+        "saw_fee#0",
+        "sender#0",
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "564": {
+      "block": "register_for_header@1",
+      "stack_in": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 8",
+      "defined_out": [
+        "i#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "566": {
+      "op": "frame_dig 7",
+      "defined_out": [
+        "i#0",
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0",
+        "tmp%0#0"
+      ]
+    },
+    "568": {
+      "op": "<",
+      "defined_out": [
+        "continue_looping%0#0",
+        "i#0",
+        "tmp%0#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "continue_looping%0#0"
+      ]
+    },
+    "569": {
+      "op": "bz register_after_for@9",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "572": {
+      "op": "frame_dig 8",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "574": {
+      "op": "gtxns XferAsset",
+      "defined_out": [
+        "i#0",
+        "tmp%0#0",
+        "tmp%1#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%1#0"
+      ]
+    },
+    "576": {
+      "op": "frame_dig 2",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "tmp%0#0",
+        "tmp%1#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%1#0",
+        "asset_id#0"
+      ]
+    },
+    "578": {
+      "op": "==",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "tmp%0#0",
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%2#0"
+      ]
+    },
+    "579": {
+      "op": "frame_dig 6",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "tmp%0#0",
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%2#0",
+        "saw_fee#12"
+      ]
+    },
+    "581": {
+      "op": "frame_bury 1",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "tmp%0#0",
+        "tmp%2#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%2#0"
+      ]
+    },
+    "583": {
+      "op": "bz register_after_if_else@7",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "586": {
+      "op": "frame_dig 8",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "588": {
+      "op": "gtxns Sender",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "tmp%0#0",
+        "tmp%3#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%3#0"
+      ]
+    },
+    "590": {
+      "op": "frame_dig 4",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%3#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%3#0",
+        "sender#0"
+      ]
+    },
+    "592": {
+      "op": "==",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%4#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%4#0"
+      ]
+    },
+    "593": {
+      "op": "frame_dig 6",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%4#0",
+        "saw_fee#12"
+      ]
+    },
+    "595": {
+      "op": "frame_bury 1",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%4#0"
+      ]
+    },
+    "597": {
+      "op": "bz register_after_if_else@7",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "600": {
+      "op": "frame_dig 8",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "602": {
+      "op": "gtxns AssetReceiver",
+      "defined_out": [
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%5#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%5#0"
+      ]
+    },
+    "604": {
+      "op": "frame_dig 3",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%5#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%5#0",
+        "app_addr#0"
+      ]
+    },
+    "606": {
+      "op": "==",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%6#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%6#0"
+      ]
+    },
+    "607": {
+      "op": "frame_dig 6",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%6#0",
+        "saw_fee#12"
+      ]
+    },
+    "609": {
+      "op": "frame_bury 1",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%6#0"
+      ]
+    },
+    "611": {
+      "op": "bz register_after_if_else@7",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "614": {
+      "op": "frame_dig 8",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "616": {
+      "op": "gtxns AssetAmount",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%7#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%7#0"
+      ]
+    },
+    "618": {
+      "op": "frame_dig 5",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "price#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%7#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%7#0",
+        "price#0"
+      ]
+    },
+    "620": {
+      "op": "==",
+      "defined_out": [
+        "app_addr#0",
+        "asset_id#0",
+        "i#0",
+        "price#0",
+        "saw_fee#12",
+        "sender#0",
+        "tmp%0#0",
+        "tmp%8#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%8#0"
+      ]
+    },
+    "621": {
+      "op": "frame_dig 6",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%8#0",
+        "saw_fee#12"
+      ]
+    },
+    "623": {
+      "op": "frame_bury 1",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%8#0"
+      ]
+    },
+    "625": {
+      "op": "bz register_after_if_else@7",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "628": {
+      "op": "intc_0 // 1",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_fee#12"
+      ]
+    },
+    "629": {
+      "op": "frame_bury 1",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "631": {
+      "block": "register_after_if_else@7",
+      "stack_in": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 1",
+      "defined_out": [
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_fee#0"
+      ]
+    },
+    "633": {
+      "op": "frame_bury 6",
+      "defined_out": [
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "635": {
+      "op": "frame_dig 8",
+      "defined_out": [
+        "i#0",
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "637": {
+      "op": "intc_0 // 1",
+      "defined_out": [
+        "1",
+        "i#0",
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0",
+        "1"
+      ]
+    },
+    "638": {
+      "op": "+",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "i#0"
+      ]
+    },
+    "639": {
+      "op": "frame_bury 8",
+      "defined_out": [
+        "i#0",
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "641": {
+      "op": "b register_for_header@1"
+    },
+    "644": {
+      "block": "register_after_for@9",
+      "stack_in": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "frame_dig 6",
+      "defined_out": [
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "saw_fee#0"
+      ]
+    },
+    "646": {
+      "op": "assert",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "647": {
+      "op": "txn Sender",
+      "defined_out": [
+        "saw_fee#0",
+        "tmp%9#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%9#0"
+      ]
+    },
+    "649": {
+      "op": "intc_1 // 0",
+      "defined_out": [
+        "0",
+        "saw_fee#0",
+        "tmp%9#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%9#0",
+        "0"
+      ]
+    },
+    "650": {
+      "op": "bytec_2 // \"Handle\"",
+      "defined_out": [
+        "\"Handle\"",
+        "0",
+        "saw_fee#0",
+        "tmp%9#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%9#0",
+        "0",
+        "\"Handle\""
+      ]
+    },
+    "651": {
+      "op": "app_local_get_ex",
+      "defined_out": [
+        "current#0",
+        "exists#0",
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "current#0",
+        "exists#0"
+      ]
+    },
+    "652": {
+      "op": "swap",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "exists#0",
+        "current#0"
+      ]
+    },
+    "653": {
+      "op": "frame_bury 0",
+      "defined_out": [
+        "current#0",
+        "exists#0",
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "exists#0"
+      ]
+    },
+    "655": {
+      "op": "bz register_if_body@11",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "658": {
+      "op": "frame_dig 0",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "current#0"
+      ]
+    },
+    "660": {
+      "op": "bytec_1 // \"\"",
+      "defined_out": [
+        "\"\"",
+        "current#0",
+        "saw_fee#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "current#0",
+        "\"\""
+      ]
+    },
+    "661": {
+      "op": "==",
+      "defined_out": [
+        "current#0",
+        "saw_fee#0",
+        "tmp%10#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%10#0"
+      ]
+    },
+    "662": {
+      "op": "bz register_after_if_else@12",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "665": {
+      "block": "register_if_body@11",
+      "stack_in": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ],
+      "op": "txn Sender",
+      "defined_out": [
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%11#0"
+      ]
+    },
+    "667": {
+      "op": "bytec_2 // \"Handle\"",
+      "defined_out": [
+        "\"Handle\"",
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%11#0",
+        "\"Handle\""
+      ]
+    },
+    "668": {
+      "op": "frame_dig -1",
+      "defined_out": [
+        "\"Handle\"",
+        "handle#0 (copy)",
+        "tmp%11#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%11#0",
+        "\"Handle\"",
+        "handle#0 (copy)"
+      ]
+    },
+    "670": {
+      "op": "app_local_put",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "671": {
+      "op": "txn Sender",
+      "defined_out": [
+        "tmp%12#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%12#0"
+      ]
+    },
+    "673": {
+      "op": "pushbytes \"HandleTime\"",
+      "defined_out": [
+        "\"HandleTime\"",
+        "tmp%12#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%12#0",
+        "\"HandleTime\""
+      ]
+    },
+    "685": {
+      "op": "global LatestTimestamp",
+      "defined_out": [
+        "\"HandleTime\"",
+        "materialized_values%0#0",
+        "tmp%12#0"
+      ],
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0",
+        "tmp%12#0",
+        "\"HandleTime\"",
+        "materialized_values%0#0"
+      ]
+    },
+    "687": {
+      "op": "app_local_put",
+      "stack_out": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ]
+    },
+    "688": {
+      "block": "register_after_if_else@12",
+      "stack_in": [
+        "current#0",
+        "saw_fee#12",
+        "asset_id#0",
+        "app_addr#0",
+        "sender#0",
+        "price#0",
+        "saw_fee#0",
+        "tmp%0#0",
+        "i#0"
+      ],
       "retsub": true,
       "op": "retsub"
     }

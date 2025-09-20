@@ -120,3 +120,7 @@ path = "tests/blockchain/algo_bingle_unit.rs"
 [[test]]
 name = "algo_ops_integration_localnet"
 path = "tests/blockchain/algo_ops_integration_localnet.rs"
+
+[[test]]
+name = "algo_bingle_integration_localnet"
+path = "tests/blockchain/algo_bingle_integration_localnet.rs"

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha512_256};
 use std::future::Future;
 use std::str::FromStr;
 
-use crate::blockchain::algo_ops::AlgoOps;
+use crate::blockchain::algo_ops::{AlgoOps, AppArg};
 
 #[cfg(not(target_os = "ios"))]
 use algonaut::{
@@ -209,6 +209,8 @@ impl AlgoBingle {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if amount == 0 { bail!("amount must be > 0"); }
+        // Ensure the app account is opted-in to the ASA so it can receive transfers
+        self.opt_in_app_to_asset(app_id, asset_id)?;
         let client = self.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
@@ -252,6 +254,8 @@ impl AlgoBingle {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if handle.is_empty() { bail!("handle must not be empty"); }
+        // Ensure the app account is opted-in to the ASA so it can receive the registration fee
+        self.opt_in_app_to_asset(app_id, asset_id)?;
         let client = self.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
@@ -278,5 +282,28 @@ impl AlgoBingle {
         let s2 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
 
         self.broadcast_group(&client, vec![s1, s2])
+    }
+
+    /// Admin method: Opt the application account into the given ASA by calling the
+    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app creator.
+    /// Returns the transaction id of the app call when an opt-in was required; if the
+    /// app was already opted in, returns Ok("") without making a call.
+    pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        // If the app address already holds the asset, nothing to do
+        let app_addr_str = self.ops.contract_address(app_id)?;
+        if self.ops.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
+        // Call the admin method on the contract; this must be signed by the creator
+        let creator_addr = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("This operation needs an address"))?;
+        let (_tx_id, _logs) = self
+            .ops
+            .call_app(app_id, creator_addr, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
+        // Return tx id to signal a call occurred; fetch from tuple index 0
+        Ok(_tx_id)
     }
 }
