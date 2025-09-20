@@ -12,3 +12,6 @@
 
 # Ignore generated spec artifacts
 /generated/
+
+# Ignore generated DAPP artifcats
+/dapp/smart_contracts/artifacts/
