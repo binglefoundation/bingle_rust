@@ -1,6 +1,6 @@
 # pyright: reportMissingModuleSource=false
-from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState
-from algopy.arc4 import abimethod
+from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn
+from algopy.arc4 import abimethod, baremethod
 
 
 class BingleDapp(ARC4Contract):
@@ -11,9 +11,26 @@ class BingleDapp(ARC4Contract):
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
 
+    @baremethod(allow_actions=["OptIn"])
+    def optin(self) -> None:
+        return
+
     @abimethod()
-    def hello(self, name: String) -> String:
-        return "Hello, " + name
+    def opt_in_to_bingle(self, asset_id: UInt64) -> None:
+        """Opt the application account into the provided ASA.
+
+        Admin-only: must be called by the application creator.
+        Performs an inner asset transfer of 0 to the app's own address to complete the opt-in.
+        """
+        assert Txn.sender == Global.creator_address
+        # Inner transaction: axfer 0 of `asset_id` to current_application_address
+        # Use Algopy itxn builder for AssetTransfer with named arguments and submit.
+        itxn.AssetTransfer(
+            xfer_asset=asset_id,
+            asset_receiver=Global.current_application_address,
+            asset_amount=UInt64(0),
+            fee=Global.min_txn_fee,
+        ).submit()
 
     @abimethod()
     def set_bingle_price(self, price: UInt64) -> None:

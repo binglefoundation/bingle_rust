@@ -1,0 +1,166 @@
+//! Bingle API trait definitions.
+//!
+//! This file defines the BingleApi trait and associated types only.
+//! It does not provide a concrete implementation.
+
+use std::sync::Arc;
+use std::net::SocketAddr;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
+/// Convenience type aliases used by the Bingle API.
+pub type UserId = String; // Algorand address (id)
+pub type Handle = String; // User handle string
+/// NetworkSourceKey identifies where to send network traffic (direct or via relay).
+/// Translated from the provided Kotlin data class.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkSourceKey {
+    /// Direct socket address if sending directly.
+    pub inet_socket_address: Option<SocketAddr>,
+    /// TURN relay channel number if using a relay (16-bit per RFC 5766).
+    pub relay_channel: Option<u16>,
+    /// Relay server socket address (IP:port) if using a relay.
+    pub relay_address: Option<SocketAddr>,
+}
+
+impl NetworkSourceKey {
+    /// Construct a direct (non-relay) endpoint key.
+    pub fn new_direct(addr: SocketAddr) -> Self {
+        Self {
+            inet_socket_address: Some(addr),
+            relay_channel: None,
+            relay_address: None,
+        }
+    }
+
+    /// Construct a relay endpoint key.
+    pub fn new_relay(relay_address: SocketAddr, relay_channel: u16) -> Self {
+        Self {
+            inet_socket_address: None,
+            relay_channel: Some(relay_channel),
+            relay_address: Some(relay_address),
+        }
+    }
+
+    /// True if this key represents a relay endpoint.
+    pub fn is_relay(&self) -> bool { self.relay_channel.is_some() }
+}
+
+impl fmt::Display for NetworkSourceKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_relay() {
+            write!(f, "NetworkSourceKey(relayChannel={:?}, relayAddress={:?})", self.relay_channel, self.relay_address)
+        } else {
+            write!(f, "NetworkSourceKey(inetSocketAddress={:?})", self.inet_socket_address)
+        }
+    }
+}
+
+/// Progress callback reported during send operations.
+/// Parameters:
+/// - percent_done: 0..=100 indicating the percentage complete
+/// - message: human-readable progress message
+pub type ProgressCallback = dyn Fn(u8, String) + Send + Sync + 'static;
+
+/// Handler invoked when a plaintext message is received.
+/// Parameters:
+/// - sender: id of the sender
+/// - sender_handle: handle of the sender
+/// - message: the inbound message deserialized from JSON
+pub type OnMessageHandler = dyn Fn(UserId, Handle, JsonValue) + Send + Sync + 'static;
+
+/// Handler invoked when a peer connects.
+/// Parameters:
+/// - sender: id of the sender
+/// - sender_handle: handle of the sender
+pub type OnConnectHandler = dyn Fn(UserId, Handle) + Send + Sync + 'static;
+
+/// Options used to start the Bingle node.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StartOptions {
+    /// The local user's handle (unique globally).
+    pub handle: Handle,
+    /// The Algorand passphrase to the user account.
+    pub passphrase: String,
+    /// Optional static IP address (and port) as seen externally, e.g. "203.0.113.5:4433".
+    pub static_ip: Option<SocketAddr>,
+    /// True if we are to become a relay.
+    pub am_relay: bool,
+    /// Optional array of STUN servers (IP:port) to determine our IP address.
+    pub stun_servers: Option<Vec<SocketAddr>>,
+}
+
+/// The Bingle API trait surface.
+/// This describes the minimal shape expected by the Bingle client per spec.
+pub trait BingleApi: Send + Sync {
+    /// Start the node using the provided options. Implementations may spawn background tasks.
+    fn start(&mut self, options: StartOptions) -> Result<(), String>;
+
+    /// Stop all threads/tasks and release resources.
+    fn stop(&mut self);
+
+    /// Indicates the network connection has changed and we need to rescan for IP address/port.
+    fn network_change(&mut self);
+
+    // Outgoing message transfer methods (see BINGLE_SPEC.md - Outgoing message transfer):
+
+    /// Send a message when we have the id and don't need a response.
+    fn send_message_to_id(
+        &self,
+        user_id: &UserId,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> bool;
+
+    /// Send a message when we have the handle and don't need a response.
+    fn send_message_to_handle(
+        &self,
+        handle: &Handle,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> bool;
+
+    /// Send a message when we have the endpoint NetworkSourceKey and the id.
+    fn send_message_to_network(
+        &self,
+        network_source_key: &NetworkSourceKey,
+        user_id: &UserId,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> bool;
+
+    /// Send a message when we have the id and need a response.
+    fn send_message_to_id_with_response(
+        &self,
+        user_id: &UserId,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<JsonValue, String>;
+
+    /// Send a message when we have the handle and need a response.
+    fn send_message_to_handle_with_response(
+        &self,
+        handle: &Handle,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<JsonValue, String>;
+
+    /// Send a message when we have the endpoint NetworkSourceKey and the id and need a response.
+    fn send_message_to_network_with_response(
+        &self,
+        network_source_key: &NetworkSourceKey,
+        user_id: &UserId,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<JsonValue, String>;
+
+    // Handler properties:
+
+    /// Set or clear the onMessage callback. Pass None to clear.
+    fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>);
+
+    /// Set or clear the onConnect callback. Pass None to clear.
+    fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>);
+}

@@ -1,9 +1,9 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use rust_comms::algo_ops::{AlgoOps, AlgoProviderConfig, AppArg};
+use rust_comms::algo_ops::{AlgoProviderConfig, AppArg};
 
-#[path = "setup_localnet.rs"]
+#[path = "../setup_localnet.rs"]
 mod setup_localnet;
-#[path = "test_util.rs"]
+#[path = "../test_util.rs"]
 mod test_util;
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, should_run_localnet};
 
@@ -28,19 +28,25 @@ fn bingle_end_to_end_calls() {
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
     let receiver = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
 
+    // Create an ASA to act as Bingle$
+    let total_units = 1_000_000u64;
+    let asset_id = creator.create_asset("BINGLE", total_units).expect("asset create").expect("asset id");
+
     // Deploy the dapp from TEAL artifacts
+    // Print current working directory to help diagnose path issues
+    match std::env::current_dir() {
+        Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
+        Err(e) => eprintln!("Failed to get current working directory: {}", e),
+    }
     let approval_src = fs::read_to_string("dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
     let clear_src = fs::read_to_string("dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
     let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval teal");
     let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear teal");
-    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, None).expect("deploy app call").expect("app id");
+    // Pass asset_id to deploy so the app account is auto opted-in to the ASA
+    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, Some(asset_id)).expect("deploy app call").expect("app id");
 
     // Set price = 1 (microAlgo and unit) using creator (must be app creator)
     let _ = creator.call_app(app_id, ADDRESS_SPEND, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]).expect("set_bingle_price call");
-
-    // Create an ASA to act as Bingle$
-    let total_units = 1_000_000u64;
-    let asset_id = creator.create_asset("BINGLE", total_units).expect("asset create").expect("asset id");
 
     // Receiver opts in to ASA and receives 10 units
     receiver.opt_in_to_asset(asset_id).expect("receiver opt-in ASA");

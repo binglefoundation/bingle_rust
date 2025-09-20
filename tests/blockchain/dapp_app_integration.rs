@@ -1,12 +1,10 @@
 use rust_comms::algo_ops::AppArg;
 use std::fs;
 
-#[path = "setup_localnet.rs"]
+#[path = "../setup_localnet.rs"]
 mod setup_localnet;
-#[path = "test_util.rs"]
+#[path = "../test_util.rs"]
 mod test_util;
-
-
 
 #[test]
 fn deploy_call_validate_and_delete_teal_app() {
@@ -22,6 +20,12 @@ fn deploy_call_validate_and_delete_teal_app() {
     let ops = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
 
     // Read TEAL sources (both sets present; no fallback needed)
+    // Print current working directory to help diagnose path issues
+    match std::env::current_dir() {
+        Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
+        Err(e) => eprintln!("Failed to get current working directory: {}", e),
+    }
+
     let approval_src = fs::read_to_string("tests/dapp/mini_approval.teal").expect("read approval teal");
     let clear_src = fs::read_to_string("tests/dapp/mini_clear_state.teal").expect("read clear teal");
 
