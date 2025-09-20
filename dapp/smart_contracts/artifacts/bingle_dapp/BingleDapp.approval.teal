@@ -8,10 +8,10 @@ main:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
     txn NumAppArgs
-    bz main_bare_routing@11
-    pushbytess 0x02bece11 0x39e60880 0x39c2b7e2 0x0be22406 0x216dec90 0xbd6099e5 // method "hello(string)string", method "opt_in_to_bingle(uint64)void", method "set_bingle_price(uint64)void", method "buy_bingle()void", method "sell_bingle(uint64)void", method "register(string)void"
+    bz main_bare_routing@10
+    pushbytess 0x39e60880 0x39c2b7e2 0x0be22406 0x216dec90 0xbd6099e5 // method "opt_in_to_bingle(uint64)void", method "set_bingle_price(uint64)void", method "buy_bingle()void", method "sell_bingle(uint64)void", method "register(string)void"
     txna ApplicationArgs 0
-    match main_hello_route@5 main_opt_in_to_bingle_route@6 main_set_bingle_price_route@7 main_buy_bingle_route@8 main_sell_bingle_route@9 main_register_route@10
+    match main_opt_in_to_bingle_route@5 main_set_bingle_price_route@6 main_buy_bingle_route@7 main_sell_bingle_route@8 main_register_route@9
 
 main_after_if_else@13:
     // smart_contracts/bingle_dapp/contract.py:6
@@ -19,7 +19,7 @@ main_after_if_else@13:
     intc_1 // 0
     return
 
-main_register_route@10:
+main_register_route@9:
     // smart_contracts/bingle_dapp/contract.py:134
     // @abimethod()
     txn OnCompletion
@@ -37,7 +37,7 @@ main_register_route@10:
     intc_0 // 1
     return
 
-main_sell_bingle_route@9:
+main_sell_bingle_route@8:
     // smart_contracts/bingle_dapp/contract.py:90
     // @abimethod()
     txn OnCompletion
@@ -55,7 +55,7 @@ main_sell_bingle_route@9:
     intc_0 // 1
     return
 
-main_buy_bingle_route@8:
+main_buy_bingle_route@7:
     // smart_contracts/bingle_dapp/contract.py:45
     // @abimethod()
     txn OnCompletion
@@ -67,7 +67,7 @@ main_buy_bingle_route@8:
     intc_0 // 1
     return
 
-main_set_bingle_price_route@7:
+main_set_bingle_price_route@6:
     // smart_contracts/bingle_dapp/contract.py:35
     // @abimethod()
     txn OnCompletion
@@ -85,7 +85,7 @@ main_set_bingle_price_route@7:
     intc_0 // 1
     return
 
-main_opt_in_to_bingle_route@6:
+main_opt_in_to_bingle_route@5:
     // smart_contracts/bingle_dapp/contract.py:18
     // @abimethod()
     txn OnCompletion
@@ -103,58 +103,27 @@ main_opt_in_to_bingle_route@6:
     intc_0 // 1
     return
 
-main_hello_route@5:
-    // smart_contracts/bingle_dapp/contract.py:14
-    // @abimethod()
-    txn OnCompletion
-    !
-    assert // OnCompletion is not NoOp
-    txn ApplicationID
-    assert // can only call when not creating
+main_bare_routing@10:
     // smart_contracts/bingle_dapp/contract.py:6
     // class BingleDapp(ARC4Contract):
-    txna ApplicationArgs 1
-    extract 2 0
+    txn OnCompletion
+    switch main___algopy_default_create@12 main_optin@11
+    b main_after_if_else@13
+
+main_optin@11:
     // smart_contracts/bingle_dapp/contract.py:14
-    // @abimethod()
-    callsub hello
-    dup
-    len
-    itob
-    extract 6 2
-    swap
-    concat
-    pushbytes 0x151f7c75
-    swap
-    concat
-    log
+    // @baremethod(allow_actions=["OptIn"])
+    txn ApplicationID
+    assert // can only call when not creating
     intc_0 // 1
     return
 
-main_bare_routing@11:
-    // smart_contracts/bingle_dapp/contract.py:6
-    // class BingleDapp(ARC4Contract):
-    txn OnCompletion
-    bnz main_after_if_else@13
+main___algopy_default_create@12:
     txn ApplicationID
     !
     assert // can only call when creating
     intc_0 // 1
     return
-
-
-// smart_contracts.bingle_dapp.contract.BingleDapp.hello(name: bytes) -> bytes:
-hello:
-    // smart_contracts/bingle_dapp/contract.py:14-15
-    // @abimethod()
-    // def hello(self, name: String) -> String:
-    proto 1 1
-    // smart_contracts/bingle_dapp/contract.py:16
-    // return "Hello, " + name
-    pushbytes "Hello, "
-    frame_dig -1
-    concat
-    retsub
 
 
 // smart_contracts.bingle_dapp.contract.BingleDapp.opt_in_to_bingle(asset_id: uint64) -> void:

@@ -1,6 +1,6 @@
 # pyright: reportMissingModuleSource=false
 from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn
-from algopy.arc4 import abimethod
+from algopy.arc4 import abimethod, baremethod
 
 
 class BingleDapp(ARC4Contract):
@@ -11,9 +11,9 @@ class BingleDapp(ARC4Contract):
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
 
-    @abimethod()
-    def hello(self, name: String) -> String:
-        return "Hello, " + name
+    @baremethod(allow_actions=["OptIn"])
+    def optin(self) -> None:
+        return
 
     @abimethod()
     def opt_in_to_bingle(self, asset_id: UInt64) -> None:

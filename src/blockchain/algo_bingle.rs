@@ -265,10 +265,17 @@ impl AlgoBingle {
         let ax = TransferAsset::new(sender, asset_id, price_units, app_addr).build();
         let tx_ax = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build axfer: {e}"))?;
 
-        // 2) App call: register(string)void with handle arg (ARC-4 string = length-prefixed? For ARC-4, argument is raw UTF-8 bytes.)
+        // 2) App call: register(string)void with handle arg
+        // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(Self::arc4_selector("register(string)void").to_vec());
-        app_args.push(handle.as_bytes().to_vec());
+        let handle_bytes = handle.as_bytes();
+        let len = handle_bytes.len();
+        if len > u16::MAX as usize { bail!("handle too long"); }
+        let mut arg = Vec::with_capacity(2 + len);
+        arg.extend_from_slice(&(len as u16).to_be_bytes());
+        arg.extend_from_slice(handle_bytes);
+        app_args.push(arg);
         let call = CallApplication::new(sender, app_id)
             .app_arguments(app_args)
             .foreign_assets(vec![asset_id])

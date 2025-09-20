@@ -3,7 +3,7 @@
   "sources": [
     "../../bingle_dapp/contract.py"
   ],
-  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;AAKA;;AAAA;;;AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;AAAA;;;AAAA;;;;;;;;;;;;;;AAAA;;AAgIK;;AAAA;AAAA;AAAA;;AAAA;AAhIL;;;AAAA;;;AAgIK;;;AAAA;;AA5CA;;AAAA;AAAA;AAAA;;AAAA;AApFL;;;AAAA;AAoFK;;;AAAA;;AA7CA;;AAAA;AAAA;AAAA;;AAAA;AAAA;;;AAAA;;AAVA;;AAAA;AAAA;AAAA;;AAAA;AA7BL;;;AAAA;AA6BK;;;AAAA;;AAjBA;;AAAA;AAAA;AAAA;;AAAA;AAZL;;;AAAA;AAYK;;;AAAA;;AAJA;;AAAA;AAAA;AAAA;;AAAA;AARL;;;AAAA;;;AAQK;;;AAAA;AAAA;AAAA;AAAA;;;AAAA;AAAA;AAAA;;;;;;AAAA;AAAA;AAAA;AAAA;;AARL;;AAAA;;;;;;;;;AAQA;;;AAEe;;;;;;;;;AAAA;;AAAA;AAAP;AAER;;;AAOe;;AAAc;;AAAd;AAAP;AAGA;AAIQ;;AAFW;;AACF;;;;;;;;;AAHjB;;;;;;AAAA;;AAOR;;;AAOe;;AAAc;;AAAd;AAAP;AACA;AAAA;;AAAA;;AAER;;;;;AAiBmB;;;AAEH;AAAA;AAAA;AAAA;AACG;;AACH;;AAEM;AACF;AAGI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAA2B;;AAAA;;AAAA;;AAAA;;;;;AAA3B;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAkB;AAAlB;;;;;AAFJ;;;AAIY;;;;;;;AAZX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;;AAER;;;;;AAiBmB;;;AACH;AAAA;AAAA;AAAA;AACC;;AAAT;AACW;;AAAX;AACA;;AAAS;AAEK;AACF;AAEI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAAyB;;AAAA;;AAAA;;AAAA;;;;;AAAzB;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAA;;AAAA;;;;;AAFJ;;;AAGI;;AAAA;;AAAA;;AAAA;;;;;AAHJ;;;AAKY;;;;;;;AAbX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;;AAER;;;;;AAemB;;;AACA;;AACF;;AACD;AAAA;AAAA;AAAA;AAEE;AACM;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGgB;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAA;;AAAA;;;;;AAFJ;;;AAGI;;AAAA;;AAAA;;AAAA;;;;;AAHJ;;;AAKU;;;;;;;AART;;AAAA;AAAA;AAAA;;;;;AAST;;AAAA;AAGoC;;AAAlB;AAAA;AAAA;AAAA;AAAA;;AACf;;;AAAc;;AAAW;AAAX;AAAd;;;AACa;;AAAZ;AAAA;;AAAA;AACiB;;AAAjB;;;;;;;;;;;;AAA+B;;AAA/B;",
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;AAKA;;AAAA;;;AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;AAAA;;;AAAA;;;;;;;;;;;;AAAA;;AAgIK;;AAAA;AAAA;AAAA;;AAAA;AAhIL;;;AAAA;;;AAgIK;;;AAAA;;AA5CA;;AAAA;AAAA;AAAA;;AAAA;AApFL;;;AAAA;AAoFK;;;AAAA;;AA7CA;;AAAA;AAAA;AAAA;;AAAA;AAAA;;;AAAA;;AAVA;;AAAA;AAAA;AAAA;;AAAA;AA7BL;;;AAAA;AA6BK;;;AAAA;;AAjBA;;AAAA;AAAA;AAAA;;AAAA;AAZL;;;AAAA;AAYK;;;AAAA;;AAZL;;AAAA;;;;;;AAAA;;;AAQK;;AAAA;AAAA;;;;;;;;AAIL;;;AAOe;;AAAc;;AAAd;AAAP;AAGA;AAIQ;;AAFW;;AACF;;;;;;;;;AAHjB;;;;;;AAAA;;AAOR;;;AAOe;;AAAc;;AAAd;AAAP;AACA;AAAA;;AAAA;;AAER;;;;;AAiBmB;;;AAEH;AAAA;AAAA;AAAA;AACG;;AACH;;AAEM;AACF;AAGI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAA2B;;AAAA;;AAAA;;AAAA;;;;;AAA3B;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAkB;AAAlB;;;;;AAFJ;;;AAIY;;;;;;;AAZX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;;AAER;;;;;AAiBmB;;;AACH;AAAA;AAAA;AAAA;AACC;;AAAT;AACW;;AAAX;AACA;;AAAS;AAEK;AACF;AAEI;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGe;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AAAyB;;AAAA;;AAAA;;AAAA;;;;;AAAzB;;;AACe;;;;;;;AAId;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAA;;AAAA;;;;;AAFJ;;;AAGI;;AAAA;;AAAA;;AAAA;;;;;AAHJ;;;AAKY;;;;;;;AAbX;;AAAA;AAAA;AAAA;;;;;AAeT;;AAAA;AACA;;AAAA;;AAER;;;;;AAemB;;;AACA;;AACF;;AACD;AAAA;AAAA;AAAA;AAEE;AACM;;AAAP;AAAA;;AAAA;;AAAA;AAAjB;;;AAGgB;;AAAA;;AAAA;;AAAA;;;;;AAAA;;;AACI;;AAAA;;AAAA;;AAAA;;;;;AADJ;;;AAEI;;AAAA;;AAAA;;AAAA;;;;;AAFJ;;;AAGI;;AAAA;;AAAA;;AAAA;;;;;AAHJ;;;AAKU;;;;;;;AART;;AAAA;AAAA;AAAA;;;;;AAST;;AAAA;AAGoC;;AAAlB;AAAA;AAAA;AAAA;AAAA;;AACf;;;AAAc;;AAAW;AAAX;AAAd;;;AACa;;AAAZ;AAAA;;AAAA;AACiB;;AAAjB;;;;;;;;;;;;AAA+B;;AAA/B;",
   "op_pc_offset": 0,
   "pc_events": {
     "1": {
@@ -26,21 +26,19 @@
       ]
     },
     "29": {
-      "op": "bz main_bare_routing@11",
+      "op": "bz main_bare_routing@10",
       "stack_out": []
     },
     "32": {
-      "op": "pushbytess 0x02bece11 0x39e60880 0x39c2b7e2 0x0be22406 0x216dec90 0xbd6099e5 // method \"hello(string)string\", method \"opt_in_to_bingle(uint64)void\", method \"set_bingle_price(uint64)void\", method \"buy_bingle()void\", method \"sell_bingle(uint64)void\", method \"register(string)void\"",
+      "op": "pushbytess 0x39e60880 0x39c2b7e2 0x0be22406 0x216dec90 0xbd6099e5 // method \"opt_in_to_bingle(uint64)void\", method \"set_bingle_price(uint64)void\", method \"buy_bingle()void\", method \"sell_bingle(uint64)void\", method \"register(string)void\"",
       "defined_out": [
         "Method(buy_bingle()void)",
-        "Method(hello(string)string)",
         "Method(opt_in_to_bingle(uint64)void)",
         "Method(register(string)void)",
         "Method(sell_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)"
       ],
       "stack_out": [
-        "Method(hello(string)string)",
         "Method(opt_in_to_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)",
         "Method(buy_bingle()void)",
@@ -48,11 +46,10 @@
         "Method(register(string)void)"
       ]
     },
-    "64": {
+    "59": {
       "op": "txna ApplicationArgs 0",
       "defined_out": [
         "Method(buy_bingle()void)",
-        "Method(hello(string)string)",
         "Method(opt_in_to_bingle(uint64)void)",
         "Method(register(string)void)",
         "Method(sell_bingle(uint64)void)",
@@ -60,7 +57,6 @@
         "tmp%2#0"
       ],
       "stack_out": [
-        "Method(hello(string)string)",
         "Method(opt_in_to_bingle(uint64)void)",
         "Method(set_bingle_price(uint64)void)",
         "Method(buy_bingle()void)",
@@ -69,11 +65,11 @@
         "tmp%2#0"
       ]
     },
-    "67": {
-      "op": "match main_hello_route@5 main_opt_in_to_bingle_route@6 main_set_bingle_price_route@7 main_buy_bingle_route@8 main_sell_bingle_route@9 main_register_route@10",
+    "62": {
+      "op": "match main_opt_in_to_bingle_route@5 main_set_bingle_price_route@6 main_buy_bingle_route@7 main_sell_bingle_route@8 main_register_route@9",
       "stack_out": []
     },
-    "81": {
+    "74": {
       "block": "main_after_if_else@13",
       "stack_in": [],
       "op": "intc_1 // 0",
@@ -84,73 +80,73 @@
         "tmp%0#1"
       ]
     },
-    "82": {
+    "75": {
       "op": "return",
       "stack_out": []
     },
-    "83": {
-      "block": "main_register_route@10",
+    "76": {
+      "block": "main_register_route@9",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%29#0"
+        "tmp%22#0"
       ],
       "stack_out": [
-        "tmp%29#0"
+        "tmp%22#0"
       ]
     },
-    "85": {
+    "78": {
       "op": "!",
       "defined_out": [
-        "tmp%30#0"
+        "tmp%23#0"
       ],
       "stack_out": [
-        "tmp%30#0"
+        "tmp%23#0"
       ]
     },
-    "86": {
+    "79": {
       "error": "OnCompletion is not NoOp",
       "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "87": {
+    "80": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%31#0"
+        "tmp%24#0"
       ],
       "stack_out": [
-        "tmp%31#0"
+        "tmp%24#0"
       ]
     },
-    "89": {
+    "82": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "90": {
+    "83": {
       "op": "txna ApplicationArgs 1",
       "defined_out": [
-        "tmp%33#0"
+        "tmp%26#0"
       ],
       "stack_out": [
-        "tmp%33#0"
+        "tmp%26#0"
       ]
     },
-    "93": {
+    "86": {
       "op": "extract 2 0",
       "defined_out": [
-        "tmp%34#0"
+        "tmp%27#0"
       ],
       "stack_out": [
-        "tmp%34#0"
+        "tmp%27#0"
       ]
     },
-    "96": {
+    "89": {
       "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.register",
       "op": "callsub register",
       "stack_out": []
     },
-    "99": {
+    "92": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -159,50 +155,50 @@
         "tmp%0#1"
       ]
     },
-    "100": {
+    "93": {
       "op": "return",
       "stack_out": []
     },
-    "101": {
-      "block": "main_sell_bingle_route@9",
+    "94": {
+      "block": "main_sell_bingle_route@8",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%24#0"
+        "tmp%17#0"
       ],
       "stack_out": [
-        "tmp%24#0"
+        "tmp%17#0"
       ]
     },
-    "103": {
+    "96": {
       "op": "!",
       "defined_out": [
-        "tmp%25#0"
+        "tmp%18#0"
       ],
       "stack_out": [
-        "tmp%25#0"
+        "tmp%18#0"
       ]
     },
-    "104": {
+    "97": {
       "error": "OnCompletion is not NoOp",
       "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "105": {
+    "98": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%26#0"
+        "tmp%19#0"
       ],
       "stack_out": [
-        "tmp%26#0"
+        "tmp%19#0"
       ]
     },
-    "107": {
+    "100": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "108": {
+    "101": {
       "op": "txna ApplicationArgs 1",
       "defined_out": [
         "reinterpret_bytes[8]%2#0"
@@ -211,77 +207,77 @@
         "reinterpret_bytes[8]%2#0"
       ]
     },
-    "111": {
+    "104": {
       "op": "btoi",
       "defined_out": [
-        "tmp%28#0"
+        "tmp%21#0"
       ],
       "stack_out": [
-        "tmp%28#0"
+        "tmp%21#0"
       ]
     },
-    "112": {
+    "105": {
       "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.sell_bingle",
       "op": "callsub sell_bingle",
       "stack_out": []
     },
-    "115": {
+    "108": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
       ],
       "stack_out": [
         "tmp%0#1"
+      ]
+    },
+    "109": {
+      "op": "return",
+      "stack_out": []
+    },
+    "110": {
+      "block": "main_buy_bingle_route@7",
+      "stack_in": [],
+      "op": "txn OnCompletion",
+      "defined_out": [
+        "tmp%13#0"
+      ],
+      "stack_out": [
+        "tmp%13#0"
+      ]
+    },
+    "112": {
+      "op": "!",
+      "defined_out": [
+        "tmp%14#0"
+      ],
+      "stack_out": [
+        "tmp%14#0"
+      ]
+    },
+    "113": {
+      "error": "OnCompletion is not NoOp",
+      "op": "assert // OnCompletion is not NoOp",
+      "stack_out": []
+    },
+    "114": {
+      "op": "txn ApplicationID",
+      "defined_out": [
+        "tmp%15#0"
+      ],
+      "stack_out": [
+        "tmp%15#0"
       ]
     },
     "116": {
-      "op": "return",
-      "stack_out": []
-    },
-    "117": {
-      "block": "main_buy_bingle_route@8",
-      "stack_in": [],
-      "op": "txn OnCompletion",
-      "defined_out": [
-        "tmp%20#0"
-      ],
-      "stack_out": [
-        "tmp%20#0"
-      ]
-    },
-    "119": {
-      "op": "!",
-      "defined_out": [
-        "tmp%21#0"
-      ],
-      "stack_out": [
-        "tmp%21#0"
-      ]
-    },
-    "120": {
-      "error": "OnCompletion is not NoOp",
-      "op": "assert // OnCompletion is not NoOp",
-      "stack_out": []
-    },
-    "121": {
-      "op": "txn ApplicationID",
-      "defined_out": [
-        "tmp%22#0"
-      ],
-      "stack_out": [
-        "tmp%22#0"
-      ]
-    },
-    "123": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "124": {
+    "117": {
       "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.buy_bingle",
       "op": "callsub buy_bingle"
     },
-    "127": {
+    "120": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -290,50 +286,50 @@
         "tmp%0#1"
       ]
     },
-    "128": {
+    "121": {
       "op": "return",
       "stack_out": []
     },
-    "129": {
-      "block": "main_set_bingle_price_route@7",
+    "122": {
+      "block": "main_set_bingle_price_route@6",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%15#0"
+        "tmp%8#0"
       ],
       "stack_out": [
-        "tmp%15#0"
+        "tmp%8#0"
       ]
     },
-    "131": {
+    "124": {
       "op": "!",
       "defined_out": [
-        "tmp%16#0"
+        "tmp%9#0"
       ],
       "stack_out": [
-        "tmp%16#0"
+        "tmp%9#0"
       ]
     },
-    "132": {
+    "125": {
       "error": "OnCompletion is not NoOp",
       "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "133": {
+    "126": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%17#0"
+        "tmp%10#0"
       ],
       "stack_out": [
-        "tmp%17#0"
+        "tmp%10#0"
       ]
     },
-    "135": {
+    "128": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "136": {
+    "129": {
       "op": "txna ApplicationArgs 1",
       "defined_out": [
         "reinterpret_bytes[8]%1#0"
@@ -342,21 +338,21 @@
         "reinterpret_bytes[8]%1#0"
       ]
     },
-    "139": {
+    "132": {
       "op": "btoi",
       "defined_out": [
-        "tmp%19#0"
+        "tmp%12#0"
       ],
       "stack_out": [
-        "tmp%19#0"
+        "tmp%12#0"
       ]
     },
-    "140": {
+    "133": {
       "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
       "op": "callsub set_bingle_price",
       "stack_out": []
     },
-    "143": {
+    "136": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -365,50 +361,50 @@
         "tmp%0#1"
       ]
     },
-    "144": {
+    "137": {
       "op": "return",
       "stack_out": []
     },
-    "145": {
-      "block": "main_opt_in_to_bingle_route@6",
+    "138": {
+      "block": "main_opt_in_to_bingle_route@5",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%10#0"
+        "tmp%3#0"
       ],
       "stack_out": [
-        "tmp%10#0"
+        "tmp%3#0"
       ]
     },
-    "147": {
+    "140": {
       "op": "!",
       "defined_out": [
-        "tmp%11#0"
+        "tmp%4#0"
       ],
       "stack_out": [
-        "tmp%11#0"
+        "tmp%4#0"
       ]
     },
-    "148": {
+    "141": {
       "error": "OnCompletion is not NoOp",
       "op": "assert // OnCompletion is not NoOp",
       "stack_out": []
     },
-    "149": {
+    "142": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%12#0"
+        "tmp%5#0"
       ],
       "stack_out": [
-        "tmp%12#0"
+        "tmp%5#0"
       ]
     },
-    "151": {
+    "144": {
       "error": "can only call when not creating",
       "op": "assert // can only call when not creating",
       "stack_out": []
     },
-    "152": {
+    "145": {
       "op": "txna ApplicationArgs 1",
       "defined_out": [
         "reinterpret_bytes[8]%0#0"
@@ -417,21 +413,21 @@
         "reinterpret_bytes[8]%0#0"
       ]
     },
-    "155": {
+    "148": {
       "op": "btoi",
       "defined_out": [
-        "tmp%14#0"
+        "tmp%7#0"
       ],
       "stack_out": [
-        "tmp%14#0"
+        "tmp%7#0"
       ]
     },
-    "156": {
+    "149": {
       "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.opt_in_to_bingle",
       "op": "callsub opt_in_to_bingle",
       "stack_out": []
     },
-    "159": {
+    "152": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -440,42 +436,37 @@
         "tmp%0#1"
       ]
     },
-    "160": {
+    "153": {
       "op": "return",
       "stack_out": []
     },
-    "161": {
-      "block": "main_hello_route@5",
+    "154": {
+      "block": "main_bare_routing@10",
       "stack_in": [],
       "op": "txn OnCompletion",
       "defined_out": [
-        "tmp%3#0"
+        "tmp%28#0"
       ],
       "stack_out": [
-        "tmp%3#0"
+        "tmp%28#0"
       ]
     },
-    "163": {
-      "op": "!",
-      "defined_out": [
-        "tmp%4#0"
-      ],
-      "stack_out": [
-        "tmp%4#0"
-      ]
-    },
-    "164": {
-      "error": "OnCompletion is not NoOp",
-      "op": "assert // OnCompletion is not NoOp",
+    "156": {
+      "op": "switch main___algopy_default_create@12 main_optin@11",
       "stack_out": []
     },
+    "162": {
+      "op": "b main_after_if_else@13"
+    },
     "165": {
+      "block": "main_optin@11",
+      "stack_in": [],
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%5#0"
+        "tmp%29#0"
       ],
       "stack_out": [
-        "tmp%5#0"
+        "tmp%29#0"
       ]
     },
     "167": {
@@ -484,125 +475,6 @@
       "stack_out": []
     },
     "168": {
-      "op": "txna ApplicationArgs 1",
-      "defined_out": [
-        "tmp%7#0"
-      ],
-      "stack_out": [
-        "tmp%7#0"
-      ]
-    },
-    "171": {
-      "op": "extract 2 0",
-      "defined_out": [
-        "tmp%8#0"
-      ],
-      "stack_out": [
-        "tmp%8#0"
-      ]
-    },
-    "174": {
-      "callsub": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
-      "op": "callsub hello",
-      "defined_out": [
-        "to_encode%0#0"
-      ],
-      "stack_out": [
-        "to_encode%0#0"
-      ]
-    },
-    "177": {
-      "op": "dup",
-      "defined_out": [
-        "to_encode%0#0",
-        "to_encode%0#0 (copy)"
-      ],
-      "stack_out": [
-        "to_encode%0#0",
-        "to_encode%0#0 (copy)"
-      ]
-    },
-    "178": {
-      "op": "len",
-      "defined_out": [
-        "length%0#0",
-        "to_encode%0#0"
-      ],
-      "stack_out": [
-        "to_encode%0#0",
-        "length%0#0"
-      ]
-    },
-    "179": {
-      "op": "itob",
-      "defined_out": [
-        "as_bytes%0#0",
-        "to_encode%0#0"
-      ],
-      "stack_out": [
-        "to_encode%0#0",
-        "as_bytes%0#0"
-      ]
-    },
-    "180": {
-      "op": "extract 6 2",
-      "defined_out": [
-        "length_uint16%0#0",
-        "to_encode%0#0"
-      ],
-      "stack_out": [
-        "to_encode%0#0",
-        "length_uint16%0#0"
-      ]
-    },
-    "183": {
-      "op": "swap",
-      "stack_out": [
-        "length_uint16%0#0",
-        "to_encode%0#0"
-      ]
-    },
-    "184": {
-      "op": "concat",
-      "defined_out": [
-        "encoded_value%0#0"
-      ],
-      "stack_out": [
-        "encoded_value%0#0"
-      ]
-    },
-    "185": {
-      "op": "pushbytes 0x151f7c75",
-      "defined_out": [
-        "0x151f7c75",
-        "encoded_value%0#0"
-      ],
-      "stack_out": [
-        "encoded_value%0#0",
-        "0x151f7c75"
-      ]
-    },
-    "191": {
-      "op": "swap",
-      "stack_out": [
-        "0x151f7c75",
-        "encoded_value%0#0"
-      ]
-    },
-    "192": {
-      "op": "concat",
-      "defined_out": [
-        "tmp%9#0"
-      ],
-      "stack_out": [
-        "tmp%9#0"
-      ]
-    },
-    "193": {
-      "op": "log",
-      "stack_out": []
-    },
-    "194": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -611,49 +483,36 @@
         "tmp%0#1"
       ]
     },
-    "195": {
+    "169": {
       "op": "return",
       "stack_out": []
     },
-    "196": {
-      "block": "main_bare_routing@11",
+    "170": {
+      "block": "main___algopy_default_create@12",
       "stack_in": [],
-      "op": "txn OnCompletion",
-      "defined_out": [
-        "tmp%35#0"
-      ],
-      "stack_out": [
-        "tmp%35#0"
-      ]
-    },
-    "198": {
-      "op": "bnz main_after_if_else@13",
-      "stack_out": []
-    },
-    "201": {
       "op": "txn ApplicationID",
       "defined_out": [
-        "tmp%36#0"
+        "tmp%31#0"
       ],
       "stack_out": [
-        "tmp%36#0"
+        "tmp%31#0"
       ]
     },
-    "203": {
+    "172": {
       "op": "!",
       "defined_out": [
-        "tmp%37#0"
+        "tmp%32#0"
       ],
       "stack_out": [
-        "tmp%37#0"
+        "tmp%32#0"
       ]
     },
-    "204": {
+    "173": {
       "error": "can only call when creating",
       "op": "assert // can only call when creating",
       "stack_out": []
     },
-    "205": {
+    "174": {
       "op": "intc_0 // 1",
       "defined_out": [
         "tmp%0#1"
@@ -662,53 +521,11 @@
         "tmp%0#1"
       ]
     },
-    "206": {
+    "175": {
       "op": "return",
       "stack_out": []
     },
-    "207": {
-      "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.hello",
-      "params": {
-        "name#0": "bytes"
-      },
-      "block": "hello",
-      "stack_in": [],
-      "op": "proto 1 1"
-    },
-    "210": {
-      "op": "pushbytes \"Hello, \"",
-      "defined_out": [
-        "\"Hello, \""
-      ],
-      "stack_out": [
-        "\"Hello, \""
-      ]
-    },
-    "219": {
-      "op": "frame_dig -1",
-      "defined_out": [
-        "\"Hello, \"",
-        "name#0 (copy)"
-      ],
-      "stack_out": [
-        "\"Hello, \"",
-        "name#0 (copy)"
-      ]
-    },
-    "221": {
-      "op": "concat",
-      "defined_out": [
-        "tmp%0#0"
-      ],
-      "stack_out": [
-        "tmp%0#0"
-      ]
-    },
-    "222": {
-      "retsub": true,
-      "op": "retsub"
-    },
-    "223": {
+    "176": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.opt_in_to_bingle",
       "params": {
         "asset_id#0": "uint64"
@@ -717,7 +534,7 @@
       "stack_in": [],
       "op": "proto 1 0"
     },
-    "226": {
+    "179": {
       "op": "txn Sender",
       "defined_out": [
         "tmp%0#0"
@@ -726,7 +543,7 @@
         "tmp%0#0"
       ]
     },
-    "228": {
+    "181": {
       "op": "global CreatorAddress",
       "defined_out": [
         "tmp%0#0",
@@ -737,7 +554,7 @@
         "tmp%1#0"
       ]
     },
-    "230": {
+    "183": {
       "op": "==",
       "defined_out": [
         "tmp%2#0"
@@ -746,14 +563,14 @@
         "tmp%2#0"
       ]
     },
-    "231": {
+    "184": {
       "op": "assert",
       "stack_out": []
     },
-    "232": {
+    "185": {
       "op": "itxn_begin"
     },
-    "233": {
+    "186": {
       "op": "global MinTxnFee",
       "defined_out": [
         "inner_txn_params%0%%param_Fee_idx_0#0"
@@ -762,7 +579,7 @@
         "inner_txn_params%0%%param_Fee_idx_0#0"
       ]
     },
-    "235": {
+    "188": {
       "op": "global CurrentApplicationAddress",
       "defined_out": [
         "inner_txn_params%0%%param_AssetReceiver_idx_0#0",
@@ -773,7 +590,7 @@
         "inner_txn_params%0%%param_AssetReceiver_idx_0#0"
       ]
     },
-    "237": {
+    "190": {
       "op": "intc_1 // 0",
       "defined_out": [
         "0",
@@ -786,20 +603,20 @@
         "0"
       ]
     },
-    "238": {
+    "191": {
       "op": "itxn_field AssetAmount",
       "stack_out": [
         "inner_txn_params%0%%param_Fee_idx_0#0",
         "inner_txn_params%0%%param_AssetReceiver_idx_0#0"
       ]
     },
-    "240": {
+    "193": {
       "op": "itxn_field AssetReceiver",
       "stack_out": [
         "inner_txn_params%0%%param_Fee_idx_0#0"
       ]
     },
-    "242": {
+    "195": {
       "op": "frame_dig -1",
       "defined_out": [
         "asset_id#0 (copy)",
@@ -810,13 +627,13 @@
         "asset_id#0 (copy)"
       ]
     },
-    "244": {
+    "197": {
       "op": "itxn_field XferAsset",
       "stack_out": [
         "inner_txn_params%0%%param_Fee_idx_0#0"
       ]
     },
-    "246": {
+    "199": {
       "op": "pushint 4 // axfer",
       "defined_out": [
         "axfer",
@@ -827,24 +644,24 @@
         "axfer"
       ]
     },
-    "248": {
+    "201": {
       "op": "itxn_field TypeEnum",
       "stack_out": [
         "inner_txn_params%0%%param_Fee_idx_0#0"
       ]
     },
-    "250": {
+    "203": {
       "op": "itxn_field Fee",
       "stack_out": []
     },
-    "252": {
+    "205": {
       "op": "itxn_submit"
     },
-    "253": {
+    "206": {
       "retsub": true,
       "op": "retsub"
     },
-    "254": {
+    "207": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.set_bingle_price",
       "params": {
         "price#0": "uint64"
@@ -853,7 +670,7 @@
       "stack_in": [],
       "op": "proto 1 0"
     },
-    "257": {
+    "210": {
       "op": "txn Sender",
       "defined_out": [
         "tmp%0#0"
@@ -862,7 +679,7 @@
         "tmp%0#0"
       ]
     },
-    "259": {
+    "212": {
       "op": "global CreatorAddress",
       "defined_out": [
         "tmp%0#0",
@@ -873,7 +690,7 @@
         "tmp%1#0"
       ]
     },
-    "261": {
+    "214": {
       "op": "==",
       "defined_out": [
         "tmp%2#0"
@@ -882,11 +699,11 @@
         "tmp%2#0"
       ]
     },
-    "262": {
+    "215": {
       "op": "assert",
       "stack_out": []
     },
-    "263": {
+    "216": {
       "op": "bytec_0 // \"BinglePrice\"",
       "defined_out": [
         "\"BinglePrice\""
@@ -895,7 +712,7 @@
         "\"BinglePrice\""
       ]
     },
-    "264": {
+    "217": {
       "op": "frame_dig -1",
       "defined_out": [
         "\"BinglePrice\"",
@@ -906,41 +723,41 @@
         "price#0 (copy)"
       ]
     },
-    "266": {
+    "219": {
       "op": "app_global_put",
       "stack_out": []
     },
-    "267": {
+    "220": {
       "retsub": true,
       "op": "retsub"
     },
-    "268": {
+    "221": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.buy_bingle",
       "params": {},
       "block": "buy_bingle",
       "stack_in": [],
       "op": "proto 0 0"
     },
-    "271": {
+    "224": {
       "op": "bytec_1 // \"\"",
       "stack_out": [
         "saw_axfer#11"
       ]
     },
-    "272": {
+    "225": {
       "op": "dup",
       "stack_out": [
         "saw_axfer#11",
         "saw_payment#11"
       ]
     },
-    "273": {
+    "226": {
       "op": "txna Assets 0"
     },
-    "276": {
+    "229": {
       "op": "intc_1 // 0"
     },
-    "277": {
+    "230": {
       "op": "bytec_0 // \"BinglePrice\"",
       "defined_out": [
         "\"BinglePrice\"",
@@ -955,7 +772,7 @@
         "\"BinglePrice\""
       ]
     },
-    "278": {
+    "231": {
       "op": "app_global_get_ex",
       "defined_out": [
         "asset_id#0",
@@ -970,7 +787,7 @@
         "maybe_exists%0#0"
       ]
     },
-    "279": {
+    "232": {
       "error": "check self.bingle_price exists",
       "op": "assert // check self.bingle_price exists",
       "stack_out": [
@@ -980,22 +797,22 @@
         "price#0"
       ]
     },
-    "280": {
+    "233": {
       "op": "global CurrentApplicationAddress"
     },
-    "282": {
+    "235": {
       "op": "txn Sender"
     },
-    "284": {
+    "237": {
       "op": "intc_1 // 0"
     },
-    "285": {
+    "238": {
       "op": "dup"
     },
-    "286": {
+    "239": {
       "op": "global GroupSize"
     },
-    "288": {
+    "241": {
       "op": "intc_1 // 0",
       "defined_out": [
         "app_addr#0",
@@ -1020,7 +837,7 @@
         "i#0"
       ]
     },
-    "289": {
+    "242": {
       "block": "buy_bingle_for_header@1",
       "stack_in": [
         "saw_axfer#11",
@@ -1052,7 +869,7 @@
         "i#0"
       ]
     },
-    "291": {
+    "244": {
       "op": "frame_dig 8",
       "defined_out": [
         "i#0",
@@ -1073,7 +890,7 @@
         "tmp%0#0"
       ]
     },
-    "293": {
+    "246": {
       "op": "<",
       "defined_out": [
         "continue_looping%0#0",
@@ -1094,7 +911,7 @@
         "continue_looping%0#0"
       ]
     },
-    "294": {
+    "247": {
       "op": "bz buy_bingle_after_for@11",
       "stack_out": [
         "saw_axfer#11",
@@ -1109,7 +926,7 @@
         "i#0"
       ]
     },
-    "297": {
+    "250": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -1125,7 +942,7 @@
         "i#0"
       ]
     },
-    "299": {
+    "252": {
       "op": "gtxns Receiver",
       "defined_out": [
         "i#0",
@@ -1146,7 +963,7 @@
         "tmp%1#0"
       ]
     },
-    "301": {
+    "254": {
       "op": "frame_dig 4",
       "defined_out": [
         "app_addr#0",
@@ -1169,7 +986,7 @@
         "app_addr#0"
       ]
     },
-    "303": {
+    "256": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -1191,7 +1008,7 @@
         "tmp%2#0"
       ]
     },
-    "304": {
+    "257": {
       "op": "frame_dig 6",
       "defined_out": [
         "app_addr#0",
@@ -1215,7 +1032,7 @@
         "saw_payment#11"
       ]
     },
-    "306": {
+    "259": {
       "op": "frame_bury 1",
       "defined_out": [
         "app_addr#0",
@@ -1238,7 +1055,7 @@
         "tmp%2#0"
       ]
     },
-    "308": {
+    "261": {
       "op": "bz buy_bingle_after_if_else@5",
       "stack_out": [
         "saw_axfer#11",
@@ -1253,7 +1070,7 @@
         "i#0"
       ]
     },
-    "311": {
+    "264": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -1269,7 +1086,7 @@
         "i#0"
       ]
     },
-    "313": {
+    "266": {
       "op": "gtxns Amount",
       "defined_out": [
         "app_addr#0",
@@ -1292,7 +1109,7 @@
         "tmp%3#0"
       ]
     },
-    "315": {
+    "268": {
       "op": "frame_dig 3",
       "defined_out": [
         "app_addr#0",
@@ -1317,7 +1134,7 @@
         "price#0"
       ]
     },
-    "317": {
+    "270": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -1341,7 +1158,7 @@
         "tmp%4#0"
       ]
     },
-    "318": {
+    "271": {
       "op": "frame_dig 6",
       "stack_out": [
         "saw_axfer#11",
@@ -1358,7 +1175,7 @@
         "saw_payment#11"
       ]
     },
-    "320": {
+    "273": {
       "op": "frame_bury 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1374,7 +1191,7 @@
         "tmp%4#0"
       ]
     },
-    "322": {
+    "275": {
       "op": "bz buy_bingle_after_if_else@5",
       "stack_out": [
         "saw_axfer#11",
@@ -1389,7 +1206,7 @@
         "i#0"
       ]
     },
-    "325": {
+    "278": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1405,7 +1222,7 @@
         "saw_payment#11"
       ]
     },
-    "326": {
+    "279": {
       "op": "frame_bury 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1420,7 +1237,7 @@
         "i#0"
       ]
     },
-    "328": {
+    "281": {
       "block": "buy_bingle_after_if_else@5",
       "stack_in": [
         "saw_axfer#11",
@@ -1452,7 +1269,7 @@
         "saw_payment#0"
       ]
     },
-    "330": {
+    "283": {
       "op": "frame_bury 6",
       "defined_out": [
         "saw_payment#0"
@@ -1470,7 +1287,7 @@
         "i#0"
       ]
     },
-    "332": {
+    "285": {
       "op": "frame_dig 9",
       "defined_out": [
         "i#0",
@@ -1490,7 +1307,7 @@
         "i#0"
       ]
     },
-    "334": {
+    "287": {
       "op": "gtxns XferAsset",
       "defined_out": [
         "i#0",
@@ -1511,7 +1328,7 @@
         "tmp%5#0"
       ]
     },
-    "336": {
+    "289": {
       "op": "frame_dig 2",
       "defined_out": [
         "asset_id#0",
@@ -1534,7 +1351,7 @@
         "asset_id#0"
       ]
     },
-    "338": {
+    "291": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -1556,7 +1373,7 @@
         "tmp%6#0"
       ]
     },
-    "339": {
+    "292": {
       "op": "frame_dig 7",
       "defined_out": [
         "asset_id#0",
@@ -1580,7 +1397,7 @@
         "saw_axfer#11"
       ]
     },
-    "341": {
+    "294": {
       "op": "frame_bury 0",
       "defined_out": [
         "asset_id#0",
@@ -1603,7 +1420,7 @@
         "tmp%6#0"
       ]
     },
-    "343": {
+    "296": {
       "op": "bz buy_bingle_after_if_else@9",
       "stack_out": [
         "saw_axfer#11",
@@ -1618,7 +1435,7 @@
         "i#0"
       ]
     },
-    "346": {
+    "299": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -1634,7 +1451,7 @@
         "i#0"
       ]
     },
-    "348": {
+    "301": {
       "op": "gtxns AssetReceiver",
       "defined_out": [
         "asset_id#0",
@@ -1657,7 +1474,7 @@
         "tmp%7#0"
       ]
     },
-    "350": {
+    "303": {
       "op": "frame_dig 5",
       "defined_out": [
         "asset_id#0",
@@ -1682,7 +1499,7 @@
         "buyer#0"
       ]
     },
-    "352": {
+    "305": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -1706,7 +1523,7 @@
         "tmp%8#0"
       ]
     },
-    "353": {
+    "306": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#11",
@@ -1723,7 +1540,7 @@
         "saw_axfer#11"
       ]
     },
-    "355": {
+    "308": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#11",
@@ -1739,7 +1556,7 @@
         "tmp%8#0"
       ]
     },
-    "357": {
+    "310": {
       "op": "bz buy_bingle_after_if_else@9",
       "stack_out": [
         "saw_axfer#11",
@@ -1754,7 +1571,7 @@
         "i#0"
       ]
     },
-    "360": {
+    "313": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#11",
@@ -1770,7 +1587,7 @@
         "i#0"
       ]
     },
-    "362": {
+    "315": {
       "op": "gtxns AssetAmount",
       "defined_out": [
         "asset_id#0",
@@ -1794,7 +1611,7 @@
         "tmp%9#0"
       ]
     },
-    "364": {
+    "317": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1811,7 +1628,7 @@
         "1"
       ]
     },
-    "365": {
+    "318": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -1835,7 +1652,7 @@
         "tmp%10#0"
       ]
     },
-    "366": {
+    "319": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#11",
@@ -1852,7 +1669,7 @@
         "saw_axfer#11"
       ]
     },
-    "368": {
+    "321": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#11",
@@ -1868,7 +1685,7 @@
         "tmp%10#0"
       ]
     },
-    "370": {
+    "323": {
       "op": "bz buy_bingle_after_if_else@9",
       "stack_out": [
         "saw_axfer#11",
@@ -1883,7 +1700,7 @@
         "i#0"
       ]
     },
-    "373": {
+    "326": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#11",
@@ -1899,7 +1716,7 @@
         "saw_axfer#11"
       ]
     },
-    "374": {
+    "327": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#11",
@@ -1914,7 +1731,7 @@
         "i#0"
       ]
     },
-    "376": {
+    "329": {
       "block": "buy_bingle_after_if_else@9",
       "stack_in": [
         "saw_axfer#11",
@@ -1946,7 +1763,7 @@
         "saw_axfer#0"
       ]
     },
-    "378": {
+    "331": {
       "op": "frame_bury 7",
       "defined_out": [
         "saw_axfer#0"
@@ -1964,7 +1781,7 @@
         "i#0"
       ]
     },
-    "380": {
+    "333": {
       "op": "frame_dig 9",
       "defined_out": [
         "i#0",
@@ -1984,7 +1801,7 @@
         "i#0"
       ]
     },
-    "382": {
+    "335": {
       "op": "intc_0 // 1",
       "defined_out": [
         "1",
@@ -2006,7 +1823,7 @@
         "1"
       ]
     },
-    "383": {
+    "336": {
       "op": "+",
       "stack_out": [
         "saw_axfer#11",
@@ -2022,7 +1839,7 @@
         "i#0"
       ]
     },
-    "384": {
+    "337": {
       "op": "frame_bury 9",
       "defined_out": [
         "i#0",
@@ -2041,10 +1858,10 @@
         "i#0"
       ]
     },
-    "386": {
+    "339": {
       "op": "b buy_bingle_for_header@1"
     },
-    "389": {
+    "342": {
       "block": "buy_bingle_after_for@11",
       "stack_in": [
         "saw_axfer#11",
@@ -2076,7 +1893,7 @@
         "saw_payment#0"
       ]
     },
-    "391": {
+    "344": {
       "op": "assert",
       "stack_out": [
         "saw_axfer#11",
@@ -2091,7 +1908,7 @@
         "i#0"
       ]
     },
-    "392": {
+    "345": {
       "op": "frame_dig 7",
       "defined_out": [
         "saw_axfer#0",
@@ -2111,7 +1928,7 @@
         "saw_axfer#0"
       ]
     },
-    "394": {
+    "347": {
       "op": "assert",
       "stack_out": [
         "saw_axfer#11",
@@ -2126,11 +1943,11 @@
         "i#0"
       ]
     },
-    "395": {
+    "348": {
       "retsub": true,
       "op": "retsub"
     },
-    "396": {
+    "349": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.sell_bingle",
       "params": {
         "amount#0": "uint64"
@@ -2139,26 +1956,26 @@
       "stack_in": [],
       "op": "proto 1 0"
     },
-    "399": {
+    "352": {
       "op": "bytec_1 // \"\"",
       "stack_out": [
         "saw_axfer#12"
       ]
     },
-    "400": {
+    "353": {
       "op": "dup",
       "stack_out": [
         "saw_axfer#12",
         "saw_payment#11"
       ]
     },
-    "401": {
+    "354": {
       "op": "txna Assets 0"
     },
-    "404": {
+    "357": {
       "op": "intc_1 // 0"
     },
-    "405": {
+    "358": {
       "op": "bytec_0 // \"BinglePrice\"",
       "defined_out": [
         "\"BinglePrice\"",
@@ -2173,7 +1990,7 @@
         "\"BinglePrice\""
       ]
     },
-    "406": {
+    "359": {
       "op": "app_global_get_ex",
       "defined_out": [
         "asset_id#0",
@@ -2188,7 +2005,7 @@
         "maybe_exists%0#0"
       ]
     },
-    "407": {
+    "360": {
       "error": "check self.bingle_price exists",
       "op": "assert // check self.bingle_price exists",
       "stack_out": [
@@ -2198,7 +2015,7 @@
         "price#0"
       ]
     },
-    "408": {
+    "361": {
       "op": "txn Sender",
       "defined_out": [
         "asset_id#0",
@@ -2213,7 +2030,7 @@
         "seller#0"
       ]
     },
-    "410": {
+    "363": {
       "op": "swap",
       "defined_out": [
         "asset_id#0",
@@ -2228,7 +2045,7 @@
         "price#0"
       ]
     },
-    "411": {
+    "364": {
       "op": "global CurrentApplicationAddress",
       "defined_out": [
         "app_addr#0",
@@ -2245,7 +2062,7 @@
         "app_addr#0"
       ]
     },
-    "413": {
+    "366": {
       "op": "swap",
       "defined_out": [
         "app_addr#0",
@@ -2262,7 +2079,7 @@
         "price#0"
       ]
     },
-    "414": {
+    "367": {
       "op": "frame_dig -1",
       "defined_out": [
         "amount#0 (copy)",
@@ -2281,7 +2098,7 @@
         "amount#0 (copy)"
       ]
     },
-    "416": {
+    "369": {
       "op": "*",
       "defined_out": [
         "app_addr#0",
@@ -2298,16 +2115,16 @@
         "payout#0"
       ]
     },
-    "417": {
+    "370": {
       "op": "intc_1 // 0"
     },
-    "418": {
+    "371": {
       "op": "dup"
     },
-    "419": {
+    "372": {
       "op": "global GroupSize"
     },
-    "421": {
+    "374": {
       "op": "intc_1 // 0",
       "defined_out": [
         "app_addr#0",
@@ -2332,7 +2149,7 @@
         "i#0"
       ]
     },
-    "422": {
+    "375": {
       "block": "sell_bingle_for_header@1",
       "stack_in": [
         "saw_axfer#12",
@@ -2364,7 +2181,7 @@
         "i#0"
       ]
     },
-    "424": {
+    "377": {
       "op": "frame_dig 8",
       "defined_out": [
         "i#0",
@@ -2385,7 +2202,7 @@
         "tmp%0#0"
       ]
     },
-    "426": {
+    "379": {
       "op": "<",
       "defined_out": [
         "continue_looping%0#0",
@@ -2406,7 +2223,7 @@
         "continue_looping%0#0"
       ]
     },
-    "427": {
+    "380": {
       "op": "bz sell_bingle_after_for@12",
       "stack_out": [
         "saw_axfer#12",
@@ -2421,7 +2238,7 @@
         "i#0"
       ]
     },
-    "430": {
+    "383": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#12",
@@ -2437,7 +2254,7 @@
         "i#0"
       ]
     },
-    "432": {
+    "385": {
       "op": "gtxns Receiver",
       "defined_out": [
         "i#0",
@@ -2458,7 +2275,7 @@
         "tmp%1#0"
       ]
     },
-    "434": {
+    "387": {
       "op": "frame_dig 3",
       "defined_out": [
         "i#0",
@@ -2481,7 +2298,7 @@
         "seller#0"
       ]
     },
-    "436": {
+    "389": {
       "op": "==",
       "defined_out": [
         "i#0",
@@ -2503,7 +2320,7 @@
         "tmp%2#0"
       ]
     },
-    "437": {
+    "390": {
       "op": "frame_dig 6",
       "defined_out": [
         "i#0",
@@ -2527,7 +2344,7 @@
         "saw_payment#11"
       ]
     },
-    "439": {
+    "392": {
       "op": "frame_bury 1",
       "defined_out": [
         "i#0",
@@ -2550,7 +2367,7 @@
         "tmp%2#0"
       ]
     },
-    "441": {
+    "394": {
       "op": "bz sell_bingle_after_if_else@5",
       "stack_out": [
         "saw_axfer#12",
@@ -2565,7 +2382,7 @@
         "i#0"
       ]
     },
-    "444": {
+    "397": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#12",
@@ -2581,7 +2398,7 @@
         "i#0"
       ]
     },
-    "446": {
+    "399": {
       "op": "gtxns Amount",
       "defined_out": [
         "i#0",
@@ -2604,7 +2421,7 @@
         "tmp%3#0"
       ]
     },
-    "448": {
+    "401": {
       "op": "frame_dig 5",
       "defined_out": [
         "i#0",
@@ -2629,7 +2446,7 @@
         "payout#0"
       ]
     },
-    "450": {
+    "403": {
       "op": "==",
       "defined_out": [
         "i#0",
@@ -2653,7 +2470,7 @@
         "tmp%4#0"
       ]
     },
-    "451": {
+    "404": {
       "op": "frame_dig 6",
       "stack_out": [
         "saw_axfer#12",
@@ -2670,7 +2487,7 @@
         "saw_payment#11"
       ]
     },
-    "453": {
+    "406": {
       "op": "frame_bury 1",
       "stack_out": [
         "saw_axfer#12",
@@ -2686,7 +2503,7 @@
         "tmp%4#0"
       ]
     },
-    "455": {
+    "408": {
       "op": "bz sell_bingle_after_if_else@5",
       "stack_out": [
         "saw_axfer#12",
@@ -2701,7 +2518,7 @@
         "i#0"
       ]
     },
-    "458": {
+    "411": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#12",
@@ -2717,7 +2534,7 @@
         "saw_payment#11"
       ]
     },
-    "459": {
+    "412": {
       "op": "frame_bury 1",
       "stack_out": [
         "saw_axfer#12",
@@ -2732,7 +2549,7 @@
         "i#0"
       ]
     },
-    "461": {
+    "414": {
       "block": "sell_bingle_after_if_else@5",
       "stack_in": [
         "saw_axfer#12",
@@ -2764,7 +2581,7 @@
         "saw_payment#0"
       ]
     },
-    "463": {
+    "416": {
       "op": "frame_bury 6",
       "defined_out": [
         "saw_payment#0"
@@ -2782,7 +2599,7 @@
         "i#0"
       ]
     },
-    "465": {
+    "418": {
       "op": "frame_dig 9",
       "defined_out": [
         "i#0",
@@ -2802,7 +2619,7 @@
         "i#0"
       ]
     },
-    "467": {
+    "420": {
       "op": "gtxns XferAsset",
       "defined_out": [
         "i#0",
@@ -2823,7 +2640,7 @@
         "tmp%5#0"
       ]
     },
-    "469": {
+    "422": {
       "op": "frame_dig 2",
       "defined_out": [
         "asset_id#0",
@@ -2846,7 +2663,7 @@
         "asset_id#0"
       ]
     },
-    "471": {
+    "424": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -2868,7 +2685,7 @@
         "tmp%6#0"
       ]
     },
-    "472": {
+    "425": {
       "op": "frame_dig 7",
       "defined_out": [
         "asset_id#0",
@@ -2892,7 +2709,7 @@
         "saw_axfer#12"
       ]
     },
-    "474": {
+    "427": {
       "op": "frame_bury 0",
       "defined_out": [
         "asset_id#0",
@@ -2915,7 +2732,7 @@
         "tmp%6#0"
       ]
     },
-    "476": {
+    "429": {
       "op": "bz sell_bingle_after_if_else@10",
       "stack_out": [
         "saw_axfer#12",
@@ -2930,7 +2747,7 @@
         "i#0"
       ]
     },
-    "479": {
+    "432": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#12",
@@ -2946,7 +2763,7 @@
         "i#0"
       ]
     },
-    "481": {
+    "434": {
       "op": "gtxns Sender",
       "defined_out": [
         "asset_id#0",
@@ -2969,7 +2786,7 @@
         "tmp%7#0"
       ]
     },
-    "483": {
+    "436": {
       "op": "frame_dig 3",
       "defined_out": [
         "asset_id#0",
@@ -2994,7 +2811,7 @@
         "seller#0"
       ]
     },
-    "485": {
+    "438": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -3018,7 +2835,7 @@
         "tmp%8#0"
       ]
     },
-    "486": {
+    "439": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#12",
@@ -3035,7 +2852,7 @@
         "saw_axfer#12"
       ]
     },
-    "488": {
+    "441": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#12",
@@ -3051,7 +2868,7 @@
         "tmp%8#0"
       ]
     },
-    "490": {
+    "443": {
       "op": "bz sell_bingle_after_if_else@10",
       "stack_out": [
         "saw_axfer#12",
@@ -3066,7 +2883,7 @@
         "i#0"
       ]
     },
-    "493": {
+    "446": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#12",
@@ -3082,7 +2899,7 @@
         "i#0"
       ]
     },
-    "495": {
+    "448": {
       "op": "gtxns AssetReceiver",
       "defined_out": [
         "asset_id#0",
@@ -3106,7 +2923,7 @@
         "tmp%9#0"
       ]
     },
-    "497": {
+    "450": {
       "op": "frame_dig 4",
       "defined_out": [
         "app_addr#0",
@@ -3132,7 +2949,7 @@
         "app_addr#0"
       ]
     },
-    "499": {
+    "452": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -3157,7 +2974,7 @@
         "tmp%10#0"
       ]
     },
-    "500": {
+    "453": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#12",
@@ -3174,7 +2991,7 @@
         "saw_axfer#12"
       ]
     },
-    "502": {
+    "455": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#12",
@@ -3190,7 +3007,7 @@
         "tmp%10#0"
       ]
     },
-    "504": {
+    "457": {
       "op": "bz sell_bingle_after_if_else@10",
       "stack_out": [
         "saw_axfer#12",
@@ -3205,7 +3022,7 @@
         "i#0"
       ]
     },
-    "507": {
+    "460": {
       "op": "frame_dig 9",
       "stack_out": [
         "saw_axfer#12",
@@ -3221,7 +3038,7 @@
         "i#0"
       ]
     },
-    "509": {
+    "462": {
       "op": "gtxns AssetAmount",
       "defined_out": [
         "app_addr#0",
@@ -3246,7 +3063,7 @@
         "tmp%11#0"
       ]
     },
-    "511": {
+    "464": {
       "op": "frame_dig -1",
       "defined_out": [
         "amount#0 (copy)",
@@ -3273,7 +3090,7 @@
         "amount#0 (copy)"
       ]
     },
-    "513": {
+    "466": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -3298,7 +3115,7 @@
         "tmp%12#0"
       ]
     },
-    "514": {
+    "467": {
       "op": "frame_dig 7",
       "stack_out": [
         "saw_axfer#12",
@@ -3315,7 +3132,7 @@
         "saw_axfer#12"
       ]
     },
-    "516": {
+    "469": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#12",
@@ -3331,7 +3148,7 @@
         "tmp%12#0"
       ]
     },
-    "518": {
+    "471": {
       "op": "bz sell_bingle_after_if_else@10",
       "stack_out": [
         "saw_axfer#12",
@@ -3346,7 +3163,7 @@
         "i#0"
       ]
     },
-    "521": {
+    "474": {
       "op": "intc_0 // 1",
       "stack_out": [
         "saw_axfer#12",
@@ -3362,7 +3179,7 @@
         "saw_axfer#12"
       ]
     },
-    "522": {
+    "475": {
       "op": "frame_bury 0",
       "stack_out": [
         "saw_axfer#12",
@@ -3377,7 +3194,7 @@
         "i#0"
       ]
     },
-    "524": {
+    "477": {
       "block": "sell_bingle_after_if_else@10",
       "stack_in": [
         "saw_axfer#12",
@@ -3409,7 +3226,7 @@
         "saw_axfer#0"
       ]
     },
-    "526": {
+    "479": {
       "op": "frame_bury 7",
       "defined_out": [
         "saw_axfer#0"
@@ -3427,7 +3244,7 @@
         "i#0"
       ]
     },
-    "528": {
+    "481": {
       "op": "frame_dig 9",
       "defined_out": [
         "i#0",
@@ -3447,7 +3264,7 @@
         "i#0"
       ]
     },
-    "530": {
+    "483": {
       "op": "intc_0 // 1",
       "defined_out": [
         "1",
@@ -3469,7 +3286,7 @@
         "1"
       ]
     },
-    "531": {
+    "484": {
       "op": "+",
       "stack_out": [
         "saw_axfer#12",
@@ -3485,7 +3302,7 @@
         "i#0"
       ]
     },
-    "532": {
+    "485": {
       "op": "frame_bury 9",
       "defined_out": [
         "i#0",
@@ -3504,10 +3321,10 @@
         "i#0"
       ]
     },
-    "534": {
+    "487": {
       "op": "b sell_bingle_for_header@1"
     },
-    "537": {
+    "490": {
       "block": "sell_bingle_after_for@12",
       "stack_in": [
         "saw_axfer#12",
@@ -3539,7 +3356,7 @@
         "saw_payment#0"
       ]
     },
-    "539": {
+    "492": {
       "op": "assert",
       "stack_out": [
         "saw_axfer#12",
@@ -3554,7 +3371,7 @@
         "i#0"
       ]
     },
-    "540": {
+    "493": {
       "op": "frame_dig 7",
       "defined_out": [
         "saw_axfer#0",
@@ -3574,7 +3391,7 @@
         "saw_axfer#0"
       ]
     },
-    "542": {
+    "495": {
       "op": "assert",
       "stack_out": [
         "saw_axfer#12",
@@ -3589,11 +3406,11 @@
         "i#0"
       ]
     },
-    "543": {
+    "496": {
       "retsub": true,
       "op": "retsub"
     },
-    "544": {
+    "497": {
       "subroutine": "smart_contracts.bingle_dapp.contract.BingleDapp.register",
       "params": {
         "handle#0": "bytes"
@@ -3602,32 +3419,32 @@
       "stack_in": [],
       "op": "proto 1 0"
     },
-    "547": {
+    "500": {
       "op": "intc_1 // 0",
       "stack_out": [
         "current#0"
       ]
     },
-    "548": {
+    "501": {
       "op": "bytec_1 // \"\"",
       "stack_out": [
         "current#0",
         "saw_fee#12"
       ]
     },
-    "549": {
+    "502": {
       "op": "txna Assets 0"
     },
-    "552": {
+    "505": {
       "op": "global CurrentApplicationAddress"
     },
-    "554": {
+    "507": {
       "op": "txn Sender"
     },
-    "556": {
+    "509": {
       "op": "intc_1 // 0"
     },
-    "557": {
+    "510": {
       "op": "bytec_0 // \"BinglePrice\"",
       "defined_out": [
         "\"BinglePrice\"",
@@ -3646,7 +3463,7 @@
         "\"BinglePrice\""
       ]
     },
-    "558": {
+    "511": {
       "op": "app_global_get_ex",
       "defined_out": [
         "app_addr#0",
@@ -3665,7 +3482,7 @@
         "maybe_exists%0#0"
       ]
     },
-    "559": {
+    "512": {
       "error": "check self.bingle_price exists",
       "op": "assert // check self.bingle_price exists",
       "stack_out": [
@@ -3677,13 +3494,13 @@
         "price#0"
       ]
     },
-    "560": {
+    "513": {
       "op": "intc_1 // 0"
     },
-    "561": {
+    "514": {
       "op": "global GroupSize"
     },
-    "563": {
+    "516": {
       "op": "intc_1 // 0",
       "defined_out": [
         "app_addr#0",
@@ -3706,7 +3523,7 @@
         "i#0"
       ]
     },
-    "564": {
+    "517": {
       "block": "register_for_header@1",
       "stack_in": [
         "current#0",
@@ -3736,7 +3553,7 @@
         "i#0"
       ]
     },
-    "566": {
+    "519": {
       "op": "frame_dig 7",
       "defined_out": [
         "i#0",
@@ -3756,7 +3573,7 @@
         "tmp%0#0"
       ]
     },
-    "568": {
+    "521": {
       "op": "<",
       "defined_out": [
         "continue_looping%0#0",
@@ -3776,7 +3593,7 @@
         "continue_looping%0#0"
       ]
     },
-    "569": {
+    "522": {
       "op": "bz register_after_for@9",
       "stack_out": [
         "current#0",
@@ -3790,7 +3607,7 @@
         "i#0"
       ]
     },
-    "572": {
+    "525": {
       "op": "frame_dig 8",
       "stack_out": [
         "current#0",
@@ -3805,7 +3622,7 @@
         "i#0"
       ]
     },
-    "574": {
+    "527": {
       "op": "gtxns XferAsset",
       "defined_out": [
         "i#0",
@@ -3825,7 +3642,7 @@
         "tmp%1#0"
       ]
     },
-    "576": {
+    "529": {
       "op": "frame_dig 2",
       "defined_out": [
         "asset_id#0",
@@ -3847,7 +3664,7 @@
         "asset_id#0"
       ]
     },
-    "578": {
+    "531": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -3868,7 +3685,7 @@
         "tmp%2#0"
       ]
     },
-    "579": {
+    "532": {
       "op": "frame_dig 6",
       "defined_out": [
         "asset_id#0",
@@ -3891,7 +3708,7 @@
         "saw_fee#12"
       ]
     },
-    "581": {
+    "534": {
       "op": "frame_bury 1",
       "defined_out": [
         "asset_id#0",
@@ -3913,7 +3730,7 @@
         "tmp%2#0"
       ]
     },
-    "583": {
+    "536": {
       "op": "bz register_after_if_else@7",
       "stack_out": [
         "current#0",
@@ -3927,7 +3744,7 @@
         "i#0"
       ]
     },
-    "586": {
+    "539": {
       "op": "frame_dig 8",
       "stack_out": [
         "current#0",
@@ -3942,7 +3759,7 @@
         "i#0"
       ]
     },
-    "588": {
+    "541": {
       "op": "gtxns Sender",
       "defined_out": [
         "asset_id#0",
@@ -3964,7 +3781,7 @@
         "tmp%3#0"
       ]
     },
-    "590": {
+    "543": {
       "op": "frame_dig 4",
       "defined_out": [
         "asset_id#0",
@@ -3988,7 +3805,7 @@
         "sender#0"
       ]
     },
-    "592": {
+    "545": {
       "op": "==",
       "defined_out": [
         "asset_id#0",
@@ -4011,7 +3828,7 @@
         "tmp%4#0"
       ]
     },
-    "593": {
+    "546": {
       "op": "frame_dig 6",
       "stack_out": [
         "current#0",
@@ -4027,7 +3844,7 @@
         "saw_fee#12"
       ]
     },
-    "595": {
+    "548": {
       "op": "frame_bury 1",
       "stack_out": [
         "current#0",
@@ -4042,7 +3859,7 @@
         "tmp%4#0"
       ]
     },
-    "597": {
+    "550": {
       "op": "bz register_after_if_else@7",
       "stack_out": [
         "current#0",
@@ -4056,7 +3873,7 @@
         "i#0"
       ]
     },
-    "600": {
+    "553": {
       "op": "frame_dig 8",
       "stack_out": [
         "current#0",
@@ -4071,7 +3888,7 @@
         "i#0"
       ]
     },
-    "602": {
+    "555": {
       "op": "gtxns AssetReceiver",
       "defined_out": [
         "asset_id#0",
@@ -4094,7 +3911,7 @@
         "tmp%5#0"
       ]
     },
-    "604": {
+    "557": {
       "op": "frame_dig 3",
       "defined_out": [
         "app_addr#0",
@@ -4119,7 +3936,7 @@
         "app_addr#0"
       ]
     },
-    "606": {
+    "559": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -4143,7 +3960,7 @@
         "tmp%6#0"
       ]
     },
-    "607": {
+    "560": {
       "op": "frame_dig 6",
       "stack_out": [
         "current#0",
@@ -4159,7 +3976,7 @@
         "saw_fee#12"
       ]
     },
-    "609": {
+    "562": {
       "op": "frame_bury 1",
       "stack_out": [
         "current#0",
@@ -4174,7 +3991,7 @@
         "tmp%6#0"
       ]
     },
-    "611": {
+    "564": {
       "op": "bz register_after_if_else@7",
       "stack_out": [
         "current#0",
@@ -4188,7 +4005,7 @@
         "i#0"
       ]
     },
-    "614": {
+    "567": {
       "op": "frame_dig 8",
       "stack_out": [
         "current#0",
@@ -4203,7 +4020,7 @@
         "i#0"
       ]
     },
-    "616": {
+    "569": {
       "op": "gtxns AssetAmount",
       "defined_out": [
         "app_addr#0",
@@ -4227,7 +4044,7 @@
         "tmp%7#0"
       ]
     },
-    "618": {
+    "571": {
       "op": "frame_dig 5",
       "defined_out": [
         "app_addr#0",
@@ -4253,7 +4070,7 @@
         "price#0"
       ]
     },
-    "620": {
+    "573": {
       "op": "==",
       "defined_out": [
         "app_addr#0",
@@ -4278,7 +4095,7 @@
         "tmp%8#0"
       ]
     },
-    "621": {
+    "574": {
       "op": "frame_dig 6",
       "stack_out": [
         "current#0",
@@ -4294,7 +4111,7 @@
         "saw_fee#12"
       ]
     },
-    "623": {
+    "576": {
       "op": "frame_bury 1",
       "stack_out": [
         "current#0",
@@ -4309,7 +4126,7 @@
         "tmp%8#0"
       ]
     },
-    "625": {
+    "578": {
       "op": "bz register_after_if_else@7",
       "stack_out": [
         "current#0",
@@ -4323,7 +4140,7 @@
         "i#0"
       ]
     },
-    "628": {
+    "581": {
       "op": "intc_0 // 1",
       "stack_out": [
         "current#0",
@@ -4338,7 +4155,7 @@
         "saw_fee#12"
       ]
     },
-    "629": {
+    "582": {
       "op": "frame_bury 1",
       "stack_out": [
         "current#0",
@@ -4352,7 +4169,7 @@
         "i#0"
       ]
     },
-    "631": {
+    "584": {
       "block": "register_after_if_else@7",
       "stack_in": [
         "current#0",
@@ -4382,7 +4199,7 @@
         "saw_fee#0"
       ]
     },
-    "633": {
+    "586": {
       "op": "frame_bury 6",
       "defined_out": [
         "saw_fee#0"
@@ -4399,7 +4216,7 @@
         "i#0"
       ]
     },
-    "635": {
+    "588": {
       "op": "frame_dig 8",
       "defined_out": [
         "i#0",
@@ -4418,7 +4235,7 @@
         "i#0"
       ]
     },
-    "637": {
+    "590": {
       "op": "intc_0 // 1",
       "defined_out": [
         "1",
@@ -4439,7 +4256,7 @@
         "1"
       ]
     },
-    "638": {
+    "591": {
       "op": "+",
       "stack_out": [
         "current#0",
@@ -4454,7 +4271,7 @@
         "i#0"
       ]
     },
-    "639": {
+    "592": {
       "op": "frame_bury 8",
       "defined_out": [
         "i#0",
@@ -4472,10 +4289,10 @@
         "i#0"
       ]
     },
-    "641": {
+    "594": {
       "op": "b register_for_header@1"
     },
-    "644": {
+    "597": {
       "block": "register_after_for@9",
       "stack_in": [
         "current#0",
@@ -4505,7 +4322,7 @@
         "saw_fee#0"
       ]
     },
-    "646": {
+    "599": {
       "op": "assert",
       "stack_out": [
         "current#0",
@@ -4519,7 +4336,7 @@
         "i#0"
       ]
     },
-    "647": {
+    "600": {
       "op": "txn Sender",
       "defined_out": [
         "saw_fee#0",
@@ -4538,7 +4355,7 @@
         "tmp%9#0"
       ]
     },
-    "649": {
+    "602": {
       "op": "intc_1 // 0",
       "defined_out": [
         "0",
@@ -4559,7 +4376,7 @@
         "0"
       ]
     },
-    "650": {
+    "603": {
       "op": "bytec_2 // \"Handle\"",
       "defined_out": [
         "\"Handle\"",
@@ -4582,7 +4399,7 @@
         "\"Handle\""
       ]
     },
-    "651": {
+    "604": {
       "op": "app_local_get_ex",
       "defined_out": [
         "current#0",
@@ -4603,7 +4420,7 @@
         "exists#0"
       ]
     },
-    "652": {
+    "605": {
       "op": "swap",
       "stack_out": [
         "current#0",
@@ -4619,7 +4436,7 @@
         "current#0"
       ]
     },
-    "653": {
+    "606": {
       "op": "frame_bury 0",
       "defined_out": [
         "current#0",
@@ -4639,7 +4456,7 @@
         "exists#0"
       ]
     },
-    "655": {
+    "608": {
       "op": "bz register_if_body@11",
       "stack_out": [
         "current#0",
@@ -4653,7 +4470,7 @@
         "i#0"
       ]
     },
-    "658": {
+    "611": {
       "op": "frame_dig 0",
       "stack_out": [
         "current#0",
@@ -4668,7 +4485,7 @@
         "current#0"
       ]
     },
-    "660": {
+    "613": {
       "op": "bytec_1 // \"\"",
       "defined_out": [
         "\"\"",
@@ -4689,7 +4506,7 @@
         "\"\""
       ]
     },
-    "661": {
+    "614": {
       "op": "==",
       "defined_out": [
         "current#0",
@@ -4709,7 +4526,7 @@
         "tmp%10#0"
       ]
     },
-    "662": {
+    "615": {
       "op": "bz register_after_if_else@12",
       "stack_out": [
         "current#0",
@@ -4723,7 +4540,7 @@
         "i#0"
       ]
     },
-    "665": {
+    "618": {
       "block": "register_if_body@11",
       "stack_in": [
         "current#0",
@@ -4753,7 +4570,7 @@
         "tmp%11#0"
       ]
     },
-    "667": {
+    "620": {
       "op": "bytec_2 // \"Handle\"",
       "defined_out": [
         "\"Handle\"",
@@ -4773,7 +4590,7 @@
         "\"Handle\""
       ]
     },
-    "668": {
+    "621": {
       "op": "frame_dig -1",
       "defined_out": [
         "\"Handle\"",
@@ -4795,7 +4612,7 @@
         "handle#0 (copy)"
       ]
     },
-    "670": {
+    "623": {
       "op": "app_local_put",
       "stack_out": [
         "current#0",
@@ -4809,7 +4626,7 @@
         "i#0"
       ]
     },
-    "671": {
+    "624": {
       "op": "txn Sender",
       "defined_out": [
         "tmp%12#0"
@@ -4827,7 +4644,7 @@
         "tmp%12#0"
       ]
     },
-    "673": {
+    "626": {
       "op": "pushbytes \"HandleTime\"",
       "defined_out": [
         "\"HandleTime\"",
@@ -4847,7 +4664,7 @@
         "\"HandleTime\""
       ]
     },
-    "685": {
+    "638": {
       "op": "global LatestTimestamp",
       "defined_out": [
         "\"HandleTime\"",
@@ -4869,7 +4686,7 @@
         "materialized_values%0#0"
       ]
     },
-    "687": {
+    "640": {
       "op": "app_local_put",
       "stack_out": [
         "current#0",
@@ -4883,7 +4700,7 @@
         "i#0"
       ]
     },
-    "688": {
+    "641": {
       "block": "register_after_if_else@12",
       "stack_in": [
         "current#0",

@@ -105,6 +105,10 @@ impl AlgoOps {
     }
 
     // Helper: decode TEAL key/value state entries from JSON into vector of (key, value) strings.
+    // - Keys are base64-encoded in algod JSON and represent UTF-8 strings: decode to UTF-8.
+    // - Byte values (type == 1) may be represented as an array of numbers (bytes) or as a base64 string,
+    //   depending on the source struct and serializer. Handle both. Attempt to decode to UTF-8; if not valid,
+    //   fall back to a 0x-prefixed hex string for readability.
     fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
         let mut kvs: Vec<(String, String)> = Vec::new();
         for entry in entries {
@@ -116,7 +120,40 @@ impl AlgoOps {
             let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
             let vtype = val_obj.get("type").and_then(|x| x.as_u64()).unwrap_or(0);
             let val = if vtype == 1 {
-                val_obj.get("bytes").and_then(|x| x.as_str()).unwrap_or("").to_string()
+                // bytes can be an array of numbers or a base64 string
+                let bytes_opt = if let Some(arr) = val_obj.get("bytes").and_then(|x| x.as_array()) {
+                    // Collect numeric array into bytes
+                    let mut buf: Vec<u8> = Vec::with_capacity(arr.len());
+                    for n in arr {
+                        if let Some(u) = n.as_u64() {
+                            buf.push((u & 0xFF) as u8);
+                        } else if let Some(i) = n.as_i64() {
+                            if i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
+                        }
+                    }
+                    Some(buf)
+                } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
+                    match general_purpose::STANDARD.decode(b64) {
+                        Ok(b) => Some(b),
+                        Err(_) => None,
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(bytes) = bytes_opt {
+                    match String::from_utf8(bytes.clone()) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            // Fallback: hex string for non-UTF8 bytes
+                            let mut hex = String::from("0x");
+                            for byte in bytes { hex.push_str(&format!("{:02x}", byte)); }
+                            hex
+                        }
+                    }
+                } else {
+                    String::new()
+                }
             } else {
                 val_obj.get("uint").and_then(|x| x.as_u64()).map(|u| u.to_string()).unwrap_or_else(|| "0".to_string())
             };
