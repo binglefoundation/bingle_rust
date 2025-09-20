@@ -15,4 +15,4 @@
 
 # Ignore generated DAPP artifcats
 /dapp/smart_contracts/artifacts/
-cd ..
+
