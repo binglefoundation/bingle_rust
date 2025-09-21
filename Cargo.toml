@@ -18,6 +18,7 @@ rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+stun-rs = "0.1.11"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 algonaut = "0.4.2"
@@ -124,3 +125,16 @@ path = "tests/blockchain/algo_ops_integration_localnet.rs"
 [[test]]
 name = "algo_bingle_integration_localnet"
 path = "tests/blockchain/algo_bingle_integration_localnet.rs"
+
+[[test]]
+name = "stun_endpoint_finder_tests"
+path = "tests/stun/endpoint_finder_tests.rs"
+
+
+[[test]]
+name = "stun_endpoint_finder_impl_send_handler"
+path = "tests/stun/endpoint_finder_impl_send_handler.rs"
+
+[[test]]
+name = "stun_live_udp_mux"
+path = "tests/stun/stun_live_udp_mux.rs"
