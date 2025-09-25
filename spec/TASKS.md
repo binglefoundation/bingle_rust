@@ -20,13 +20,13 @@
 - ~~else~~
 - ~~if the staticEndpoint is not set, raise a non implemented error~~
 
-## Implement relay ping handling
+## ~~Implement relay ping handling~~
 
-- Implement a handler for RelayTriangleTest1
--- If we have a peer relay node, send it a RelayTriangleTest2 message
+- ~~Implement a handler for RelayTriangleTest1~~
+-- ~~If we have a peer relay node, send it a RelayTriangleTest2 message~~
 
-- Implement a handler for RelayTriangleTest2
--- Send a RelayTriangleTest3 message to the node at `CheckingEndpoint`
+- ~~Implement a handler for RelayTriangleTest2~~
+-- ~~Send a RelayTriangleTest3 message to the node at `CheckingEndpoint`~~
 
 # dtls_pki
 
