@@ -48,7 +48,7 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     // Attempt to send; expect handshake failure => Err
     let mut any_ok = false;
     for _ in 0..6 {
-        if client.send(addr, b"should-fail").is_ok() { any_ok = true; break; }
+        if client.send(addr, "", b"should-fail").is_ok() { any_ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(!any_ok, "handshake unexpectedly succeeded when server rejected peer certificate");
@@ -86,7 +86,7 @@ fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
     // Attempt to send; expect handshake failure => Err
     let mut any_ok = false;
     for _ in 0..6 {
-        if client.send(addr, b"should-fail").is_ok() { any_ok = true; break; }
+        if client.send(addr, "", b"should-fail").is_ok() { any_ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(!any_ok, "handshake unexpectedly succeeded when client rejected server certificate");

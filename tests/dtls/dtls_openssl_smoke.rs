@@ -10,7 +10,7 @@ mod pki;
 
 static MESSAGE_SEEN: AtomicBool = AtomicBool::new(false);
 
-fn handler(_server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+fn handler(_server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
     // Record that the server received application data.
     if !data.is_empty() {
         let _ = from;
@@ -55,7 +55,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
         .with_ca_cert(ca_pem.clone());
 
     let payload = b"hello-dtls";
-    assert!(client.send(addr, payload).is_ok(), "client DTLS send failed");
+    assert!(client.send(addr, "", payload).is_ok(), "client DTLS send failed");
 
     // Spin-wait up to ~1 second for the handler to observe the message.
     let start = Instant::now();

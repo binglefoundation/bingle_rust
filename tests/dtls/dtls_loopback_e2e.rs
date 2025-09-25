@@ -11,7 +11,7 @@ mod pki;
 static SERVER_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 
-fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
     let _ = CLIENT_ECHOED.set(data.to_vec());
 }
 
@@ -35,7 +35,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
     // Echo handler: save payload then send back to sender using the server instance.
-    fn echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+    fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
         // Ignore DTLS record-layer datagrams (Handshake=22, Application=23) that may arrive
         // when the server is in plaintext fallback mode; we only want to record real app payload.
         if let Some(first) = data.first() {
@@ -46,7 +46,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
         let _ = SERVER_ECHOED.set(data.to_vec());
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
-        let _ = server.send(*from, &echoed);
+        let _ = server.send(*from, "", &echoed);
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
@@ -74,7 +74,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     // Retry a few times in case of transient handshake timing.
     let mut ok = false;
     for _ in 0..5 {
-        if client.send(addr, payload).is_ok() { ok = true; break; }
+        if client.send(addr, "", payload).is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client DTLS send failed");

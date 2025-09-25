@@ -131,7 +131,7 @@ fn dtls_openssl_external_s_server_client_send() {
     // Step 2: Attempt to receive the payload by creating a fresh client that handshakes and reads once
     use std::sync::atomic::{AtomicBool, Ordering};
     static RECEIVED: AtomicBool = AtomicBool::new(false);
-    fn capture_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+    fn capture_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
         if !data.is_empty() && !RECEIVED.load(Ordering::Relaxed) {
             // store into CLIENT_SEEN only first time
             let _ = CLIENT_SEEN.set(data.to_vec());
@@ -143,7 +143,7 @@ fn dtls_openssl_external_s_server_client_send() {
     let mut attempt_ok = false;
     while CLIENT_SEEN.get().is_none() && Instant::now() < deadline {
         let client = DtlsOpenSsl::new().with_null_encryption().with_handle_message(capture_handler);
-        if client.send(addr, b"probe").is_ok() { attempt_ok = true; }
+        if client.send(addr, "", b"probe").is_ok() { attempt_ok = true; }
         // if not yet received, wait a moment before next attempt
         if CLIENT_SEEN.get().is_some() { break; }
         thread::sleep(Duration::from_millis(100));
