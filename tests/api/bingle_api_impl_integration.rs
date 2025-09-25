@@ -6,7 +6,7 @@ fn start_creates_dtls_instance() {
     let mut api = BingleApiImpl::new();
     let opts = StartOptions {
         handle: Handle::from("alice"),
-        passphrase: "test passphrase".to_string(),
+        algo_passphrase: Some("test passphrase".to_string()),
         static_ip: None,
         am_relay: false,
         stun_servers: None,
