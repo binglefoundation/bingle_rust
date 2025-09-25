@@ -38,7 +38,7 @@
 
 ## Initialize our certificates
  
-- Initialize an AlgoOps instance from a passphrase in config "AlgoPassphrase"
+- Initialize an AlgoOps instance from a passphrase in StartOptions "algoPassphrase" (add this field)
 - Obtain our id (address) from the AlgoOps and use this as issuer by appending .ids.bingle.home.arpa to it
 - Generate a CA certificate using ed25519 using the Algorand private key
 - Use RSAPSS algorithm with a 2048 bit key and a SHA-512 hash for server and client certs
