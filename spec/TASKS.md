@@ -1,25 +1,24 @@
 # ping_process
 
-## Create message classes
+## ~~Create message classes~~
 
-- Create (using OpenAPI 3) handlers for each message class defined in spec/openapi.yaml
-- Create a marshaller that decodes JSON messages into message types
-- Create a message router that calls a handler function for each message type, leaving all unimplemented
-- Create an unimplemented message handler that prints the message
+- ~~Create (using OpenAPI 3) handlers for each message class defined in spec/openapi.yaml~~
+- ~~Create a marshaller that decodes JSON messages into message types~~
+- ~~Create a message router that calls a handler function for each message type, leaving all unimplemented~~
+- ~~Create an unimplemented message handler that prints the message~~
 
-## Implement an Engine class.
+## ~~Implement an Engine class.~~
 
-- This is initialized with config from StartOptions and then performs the following startup processing:
-
-- if the staticEndpoint is set:
--- create a NetworkMuxUdp instance
--- create a DtlsOpenSsl instance 
--- add a handle_message to the DtlsOpenSsl instance
---- decode the JSON and call the message router to select a handler
--- start this DtlsOpenSsl instance, passing in the NetworkMuxUdp instance
--- start the NetworkMuxUdp instance
-- else
-- if the staticEndpoint is not set, raise a non implemented error
+- ~~This is initialized with config from StartOptions and then performs the following startup processing:~~
+- ~~if the staticEndpoint is set:~~
+-- ~~create a NetworkMuxUdp instance~~
+-- ~~create a DtlsOpenSsl instance~~
+-- ~~add a handle_message to the DtlsOpenSsl instance~~
+--- ~~decode the JSON and call the message router to select a handler~~
+-- ~~start this DtlsOpenSsl instance, passing in the NetworkMuxUdp instance~~
+-- ~~start the NetworkMuxUdp instance~~
+- ~~else~~
+- ~~if the staticEndpoint is not set, raise a non implemented error~~
 
 ## Implement relay ping handling
 
@@ -31,19 +30,19 @@
 
 # dtls_pki
 
-## Add issuer information to DTLS
+## ~~Add issuer information to DTLS~~
 
-- Add issuer string to dtls_trait.send
-- Add issuer string to HandleMessage
+- ~~Add issuer string to dtls_trait.send~~
+- ~~Add issuer string to HandleMessage~~
 
-## Initialize our certificates
+## ~~Initialize our certificates~~
  
-- Initialize an AlgoOps instance from a passphrase in StartOptions "algoPassphrase" (add this field)
-- Obtain our id (address) from the AlgoOps and use this as issuer by appending .ids.bingle.home.arpa to it
-- Generate a CA certificate using ed25519 using the Algorand private key
-- Use RSAPSS algorithm with a 2048 bit key and a SHA-512 hash for server and client certs
-- Generate an ephemeral server certificate and private key and sign with CA cert
-- Generate an ephemeral client certificate and private key and sign with CA cert
+- ~~Initialize an AlgoOps instance from a passphrase in StartOptions "algoPassphrase" (add this field)~~
+- ~~Obtain our id (address) from the AlgoOps and use this as issuer by appending .ids.bingle.home.arpa to it~~
+- ~~Generate a CA certificate using ed25519 using the Algorand private key~~
+- ~~Use RSAPSS algorithm with a 2048 bit key and a SHA-512 hash for server and client certs~~
+- ~~Generate an ephemeral server certificate and private key and sign with CA cert~~
+- ~~Generate an ephemeral client certificate and private key and sign with CA cert~~
 
 ## Create a HandlePeerCertificate
 
@@ -65,24 +64,24 @@
 
 # relay_finder
 
-## Implement message tagging
+## ~~Implement message tagging~~
 
-- Implement `send_message_to_network_with_response`
--- Create a tag as a random UUID
--- Store this in a map of tag UUID to a structure with a signal primitive and a response message
--- Add the field `responseTag: <tag>` to the message
--- Split into two threads
--- In one thread, wait sychronously to be signalled via the signal primitive 
--- In the other thread, send the message and end the thread
--- Once signalled, remove the tag from the map and return the message
--- If a timeout occurs, remove the tag from the map and return an error
+- ~~Implement `send_message_to_network_with_response`~~
+-- ~~Create a tag as a random UUID~~
+-- ~~Store this in a map of tag UUID to a structure with a signal primitive and a response message~~
+-- ~~Add the field `responseTag: <tag>` to the message~~
+-- ~~Split into two threads~~
+-- ~~In one thread, wait sychronously to be signalled via the signal primitive ~~
+-- ~~In the other thread, send the message and end the thread~~
+-- ~~Once signalled, remove the tag from the map and return the message~~
+-- ~~If a timeout occurs, remove the tag from the map and return an error~~
 
-- In the message handler, if we have a `tag` in the message look it up in the above map
-- Discard the message and log an error if not found
-- Otherwise, populate the received message field
-- and signal the signalling primitive
+- ~~In the message handler, if we have a `tag` in the message look it up in the above map~~
+- ~~Discard the message and log an error if not found~~
+- ~~Otherwise, populate the received message field~~
+- ~~and signal the signalling primitive~~
 
-(Choose an appropriate signalling primitive)
+~~(Choose an appropriate signalling primitive)~~
 
 ## Implement RelayCheck
 
