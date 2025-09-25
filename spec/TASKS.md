@@ -9,7 +9,7 @@
 
 ## Implement an Engine class.
 
-- This is initialized with config and then performs the following startup processing:
+- This is initialized with config from StartOptions and then performs the following startup processing:
 
 - if the staticEndpoint is set:
 -- create a NetworkMuxUdp instance
