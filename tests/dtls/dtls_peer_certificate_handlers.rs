@@ -82,7 +82,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     let mut server = DtlsOpenSsl::new()
         .with_null_encryption()
         .with_handle_peer_certificate(server_peer_cert_handler)
-        .with_handle_message(echo_handler)
+        .with_handle_message(std::sync::Arc::new(echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
@@ -94,7 +94,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     let client = DtlsOpenSsl::new()
         .with_null_encryption()
         .with_handle_peer_certificate(client_peer_cert_handler)
-        .with_handle_message(client_handler)
+        .with_handle_message(std::sync::Arc::new(client_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());

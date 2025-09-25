@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Condvar};
 use std::time::{Duration, Instant};
-use std::thread;
 
-use serde_json::{json, Value as JsonValue, Map as JsonMap};
+use serde_json::{Value as JsonValue, Map as JsonMap};
 use uuid::Uuid;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
@@ -108,7 +107,7 @@ impl BingleApi for BingleApiImpl {
                     Ok(s) => serde_json::from_str::<JsonValue>(s).ok(),
                     Err(_) => None,
                 };
-                if let Some(mut msg) = json_opt {
+                if let Some(msg) = json_opt {
                     // Extract optional sender fields from message if present
                     let sender = msg.get("sender").and_then(|v| v.as_str()).unwrap_or_default().to_string();
                     let sender_handle = msg

@@ -56,13 +56,13 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
-        .with_handle_message(client_handler);
+        .with_handle_message(std::sync::Arc::new(client_handler));
 
     let client2 = DtlsOpenSsl::new()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
-        .with_handle_message(client_handler);
+        .with_handle_message(std::sync::Arc::new(client_handler));
 
     // 1) Send first DTLS message (this will perform handshake if needed)
     let payload1 = b"hello-dtls-1";
