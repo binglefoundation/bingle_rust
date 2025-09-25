@@ -10,7 +10,7 @@ pub type Result<T = ()> = core::result::Result<T, ()>;
  * @param from_address the address of the peer
  * @param data the data received
  */
-pub type HandleMessage = fn(server: &dyn Dtls, from_address: &SocketAddr, data: &[u8]);
+pub type HandleMessage = fn(server: &dyn Dtls, from_address: &SocketAddr, issuer: &str, data: &[u8]);
 
 /**
  * Handle certificates presented by the peer for verification
@@ -39,7 +39,7 @@ pub trait Dtls {
      * @param data the data to send
      * @return Ok(()) if the data was queued/sent, Err(()) otherwise
      */
-    fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()>;
+    fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()>;
 
     /**
      * Get a message handler function

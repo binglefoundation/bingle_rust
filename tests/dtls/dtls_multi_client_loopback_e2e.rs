@@ -13,11 +13,11 @@ static CLIENT1_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT2_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static SERVER_SEEN: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn client1_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+fn client1_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
     let _ = CLIENT1_ECHOED.set(data.to_vec());
 }
 
-fn client2_handler(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+fn client2_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
     let _ = CLIENT2_ECHOED.set(data.to_vec());
 }
 
@@ -41,7 +41,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
     let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
     // Echo handler: save payload (when it looks like application data) then send back with prefix using the server instance.
-    fn echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+    fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
         if let Some(first) = data.first() {
             // Ignore DTLS record-layer (Handshake=22, Application=23) ciphertext bytes
             if *first == 22 || *first == 23 {
@@ -52,7 +52,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
         if let Ok(mut v) = store.lock() { v.push(data.to_vec()); }
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
-        let _ = server.send(*from, &echoed);
+        let _ = server.send(*from, "", &echoed);
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
@@ -86,7 +86,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
     // Send from client1 with small retry loop.
     let mut ok1 = false;
     for _ in 0..8 {
-        if client1.send(addr, payload1).is_ok() { ok1 = true; break; }
+        if client1.send(addr, "", payload1).is_ok() { ok1 = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok1, "client1 DTLS send failed");
@@ -103,7 +103,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
     // Now send from client2 with a larger retry window to allow server to cycle back.
     let mut ok2 = false;
     for _ in 0..20 {
-        if client2.send(addr, payload2).is_ok() { ok2 = true; break; }
+        if client2.send(addr, "", payload2).is_ok() { ok2 = true; break; }
         thread::sleep(Duration::from_millis(100));
     }
     assert!(ok2, "client2 DTLS send failed");

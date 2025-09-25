@@ -12,14 +12,14 @@ mod pki;
 static CLIENT_ECHO_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CLIENT_ECHOS: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn client_handler(_client: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+fn client_handler(_client: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
     let m = CLIENT_ECHOS.get_or_init(|| Mutex::new(Vec::new()));
     m.lock().unwrap().push(data.to_vec());
     CLIENT_ECHO_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
-fn server_echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
-    let _ = server.send(*from, data);
+fn server_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
+    let _ = server.send(*from, "", data);
 }
 
 #[test]

@@ -403,7 +403,7 @@ pub mod non_ios {
                                     };
                                     if n == 0 { break; }
                                     eprintln!("[server] application data from {} ({} bytes)", from, n);
-                                    h(&*sender_clone, &from, &app[..n]);
+                                    h(&*sender_clone, &from, "", &app[..n]);
                                 }
                             }
                         });
@@ -447,7 +447,7 @@ pub mod non_ios {
                 self.owned_udp_mux = None;
                 Ok(())
             }
-        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
+        fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
 
@@ -549,7 +549,7 @@ pub mod non_ios {
             };
             if let (Some(h), Some(bytes)) = (self.handle_message, response) {
                 // Invoke the handler with the calling instance; it can write back via self.send()
-                h(self, &to, &bytes);
+                h(self, &to, issuer, &bytes);
             }
             Ok(())
         }

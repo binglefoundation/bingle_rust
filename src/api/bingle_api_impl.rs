@@ -51,13 +51,13 @@ impl BingleApiImpl {
         }
     }
 
-    fn send_over_dtls(&self, addr: SocketAddr, message: JsonValue) -> bool {
+    fn send_over_dtls(&self, addr: SocketAddr, issuer: &str, message: JsonValue) -> bool {
         let bytes = match serde_json::to_vec(&message) {
             Ok(b) => b,
             Err(_) => return false,
         };
         if let Some(dtls) = &self.dtls {
-            dtls.send(addr, &bytes).is_ok()
+            dtls.send(addr, issuer, &bytes).is_ok()
         } else {
             false
         }
@@ -101,7 +101,7 @@ impl BingleApi for BingleApiImpl {
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
         // Only direct socket address path is implemented at this stage.
         if let Some(addr) = network_source_key.inet_socket_address {
-            let ok = self.send_over_dtls(addr, message);
+            let ok = self.send_over_dtls(addr, _user_id.as_str(), message);
             if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
             ok
         } else {

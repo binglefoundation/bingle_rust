@@ -12,7 +12,7 @@ static SERVER_HELLO: OnceLock<Vec<u8>> = OnceLock::new();
 static SERVER_CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT_PING_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
 
-fn client_echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+fn client_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
     // Record that client received the Ping
     if data == b"Ping" {
         let _ = CLIENT_PING_SEEN.set(data.to_vec());
@@ -20,14 +20,14 @@ fn client_echo_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
     // Echo back to the server with the required prefix
     let mut echoed = b"CLIENT ECHOED: ".to_vec();
     echoed.extend_from_slice(data);
-    let _ = server.send(*from, &echoed);
+    let _ = server.send(*from, "", &echoed);
 }
 
-fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
     // Capture the initial Hello and immediately send Ping to the client
     if data == b"Hello" {
         let _ = SERVER_HELLO.set(data.to_vec());
-        let _ = server.send(*from, b"Ping");
+        let _ = server.send(*from, "", b"Ping");
         return;
     }
     // Capture the client's echoed message
@@ -77,7 +77,7 @@ fn dtls_client_echo_roundtrip() {
     // Step 1: Send initial "Hello" from client to server and validate reception
     let mut ok = false;
     for _ in 0..6 {
-        if client.send(addr, b"Hello").is_ok() { ok = true; break; }
+        if client.send(addr, "", b"Hello").is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client DTLS send of 'Hello' failed");
