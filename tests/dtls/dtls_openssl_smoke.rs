@@ -37,7 +37,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
 
     // Build and configure the server instance.
     let mut server = DtlsOpenSsl::new()
-        .with_handle_message(handler)
+        .with_handle_message(std::sync::Arc::new(handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());

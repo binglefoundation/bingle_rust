@@ -142,7 +142,7 @@ fn dtls_openssl_external_s_server_client_send() {
     let deadline = Instant::now() + Duration::from_secs(8);
     let mut attempt_ok = false;
     while CLIENT_SEEN.get().is_none() && Instant::now() < deadline {
-        let client = DtlsOpenSsl::new().with_null_encryption().with_handle_message(capture_handler);
+        let client = DtlsOpenSsl::new().with_null_encryption().with_handle_message(std::sync::Arc::new(capture_handler));
         if client.send(addr, b"probe").is_ok() { attempt_ok = true; }
         // if not yet received, wait a moment before next attempt
         if CLIENT_SEEN.get().is_some() { break; }

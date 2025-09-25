@@ -44,7 +44,7 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
 
     // Start the server
     let mut server = DtlsOpenSsl::new()
-        .with_handle_message(server_echo_handler)
+        .with_handle_message(std::sync::Arc::new(server_echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());

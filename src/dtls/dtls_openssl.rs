@@ -223,7 +223,7 @@ pub mod non_ios {
             // Initialize stop flag and spawn the DTLS accept thread
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             self.stop_flag = Some(stop.clone());
-            let handler = self.handle_message;
+            let handler = self.handle_message.clone();
             let stop_clone = stop.clone();
             let handle = thread::spawn(move || {
 
@@ -350,7 +350,7 @@ pub mod non_ios {
 
                         // Spawn a per-client worker thread to handle handshake and I/O, keeping the accept loop free.
                         let acc2 = acceptor.clone();
-                        let handler2 = handler;
+                        let handler2 = handler.clone();
                         let sender_clone = sender.clone();
                         let writers_clone = writers.clone();
                         let prebuf = probe[..n].to_vec();
@@ -547,14 +547,14 @@ pub mod non_ios {
                     _ => None,
                 }
             };
-            if let (Some(h), Some(bytes)) = (self.handle_message, response) {
+            if let (Some(h), Some(bytes)) = (self.handle_message.clone(), response) {
                 // Invoke the handler with the calling instance; it can write back via self.send()
                 h(self, &to, &bytes);
             }
             Ok(())
         }
 
-        fn get_handle_message(&self) -> Option<HandleMessage> { self.handle_message }
+        fn get_handle_message(&self) -> Option<HandleMessage> { self.handle_message.clone() }
         fn set_handle_message(&mut self, handler: Option<HandleMessage>) { self.handle_message = handler; }
         fn with_handle_message(mut self, handler: HandleMessage) -> Self { self.handle_message = Some(handler); self }
 
