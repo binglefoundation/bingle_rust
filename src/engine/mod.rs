@@ -35,7 +35,7 @@ impl Engine {
 
         // Create a DTLS instance and install a message handler that decodes JSON and routes it.
         let mut dtls = DtlsOpenSsl::new();
-        dtls.set_handle_message(Some(Self::handle_dtls_message));
+        dtls.set_handle_message(Some(Arc::new(|server, from, data| Self::handle_dtls_message(server, from, data))));
 
         // Start DTLS accept loop with the mux and the concrete local address
         dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
