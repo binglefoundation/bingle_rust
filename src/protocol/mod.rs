@@ -1,0 +1,6 @@
+/// Bingle protocol-wide constants
+
+/// Global issuer suffix for Bingle identities used in certificate CNs and issuers.
+pub const ISSUER_SUFFIX: &str = ".ids.bingle.home.arpa";
+
+pub mod cert_verify;

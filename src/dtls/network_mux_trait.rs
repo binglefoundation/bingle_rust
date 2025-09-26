@@ -1,8 +1,8 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::any::Any;
 
-/// Local Result type for NetworkMux operations. For now, only success or failure without rich error info.
-pub type Result<T = ()> = core::result::Result<T, ()>;
+/// Local Result type for NetworkMux operations with string error messages.
+pub type Result<T = ()> = core::result::Result<T, String>;
 
 /**
  * Handle DTLS packets arriving on the mux

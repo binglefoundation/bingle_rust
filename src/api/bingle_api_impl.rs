@@ -5,6 +5,7 @@ use serde_json::Value as JsonValue;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use crate::dtls::Dtls;
+use crate::protocol::ISSUER_SUFFIX;
 use crate::blockchain::algo_ops::{AlgoOps, byte_key_to_address};
 
 /// Concrete implementation of the BingleApi trait.
@@ -190,7 +191,7 @@ impl BingleApi for BingleApiImpl {
                 }
             }
             if let Some(addr) = ops.address.clone() {
-                let issuer = format!("{}.ids.bingle.home.arpa", addr);
+                let issuer = format!("{}{}", addr, ISSUER_SUFFIX);
                 self.issuer = Some(issuer.clone());
 
                 // Generate certificates: CA = Ed25519 self-signed using Algorand key; server/client = RSA-2048 signed by CA (SHA-512).
@@ -202,6 +203,8 @@ impl BingleApi for BingleApiImpl {
                             dtls.set_server_signing_private_key(Some(server_key_pem));
                             dtls.set_client_cert(Some(client_cert_pem));
                             dtls.set_client_private_key(Some(client_key_pem));
+                            // Install default peer certificate handler for verification
+                            dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
                         }
                     }
                     Err(e) => {

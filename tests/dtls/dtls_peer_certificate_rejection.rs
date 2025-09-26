@@ -8,7 +8,7 @@ use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
 mod pki;
 
 fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
-    Err(())
+    Err("rejected".to_string())
 }
 
 #[test]

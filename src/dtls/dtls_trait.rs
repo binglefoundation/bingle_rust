@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use super::network_mux_trait::NetworkMux;
 
-/// Local Result type for DTLS operations. For now, only success or failure without rich error info.
-pub type Result<T = ()> = core::result::Result<T, ()>;
+/// Local Result type for DTLS operations with string error messages.
+pub type Result<T = ()> = core::result::Result<T, String>;
 
 /**
  * Handle incoming messages
