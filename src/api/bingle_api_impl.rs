@@ -101,13 +101,33 @@ impl BingleApi for BingleApiImpl {
         if let Some(dtls) = self.dtls.as_mut() {
             let pending = Arc::clone(&self.pending_responses);
             let onmsg_shared = Arc::clone(&self.shared_on_message);
-            dtls.set_handle_message(Some(Arc::new(move |_server, from_address, data| {
+            dtls.set_handle_message(Some(Arc::new(move |server, from_address, data| {
                 // Try to parse incoming bytes as JSON
                 let json_opt: Option<JsonValue> = match std::str::from_utf8(data) {
                     Ok(s) => serde_json::from_str::<JsonValue>(s).ok(),
                     Err(_) => None,
                 };
                 if let Some(msg) = json_opt {
+                    // Special-case: RelayCheck handler (app == null, type == "Check")
+                    let is_relay_check = msg
+                        .get("type").and_then(|v| v.as_str()) == Some("Check") &&
+                        msg.get("app").map(|v| v.is_null()).unwrap_or(true);
+                    if is_relay_check {
+                        // Build RelayCheckResponse, echoing any responseTag into a `tag` field.
+                        let mut resp_obj = serde_json::Map::new();
+                        resp_obj.insert("app".to_string(), JsonValue::Null);
+                        resp_obj.insert("type".to_string(), JsonValue::String("CheckResponse".to_string()));
+                        resp_obj.insert("available".to_string(), JsonValue::Bool(true));
+                        if let Some(tag_str) = msg.get("responseTag").and_then(|v| v.as_str()) {
+                            resp_obj.insert("tag".to_string(), JsonValue::String(tag_str.to_string()));
+                        }
+                        let resp = JsonValue::Object(resp_obj);
+                        if let Ok(bytes) = serde_json::to_vec(&resp) {
+                            let _ = server.send(*from_address, &bytes);
+                        }
+                        return; // Do not route further
+                    }
+
                     // Extract optional sender fields from message if present
                     let sender = msg.get("sender").and_then(|v| v.as_str()).unwrap_or_default().to_string();
                     let sender_handle = msg
