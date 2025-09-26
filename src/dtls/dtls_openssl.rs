@@ -370,7 +370,7 @@ pub mod non_ios {
                             let _ = mux2.set_read_timeout(Some(Duration::from_millis(1500)));
 
                             // Attempt DTLS server handshake using NetworkMuxConn filtered to this peer.
-                            let mut stream = match acc2.accept(NetworkMuxConn { mux: mux2, pre: prebuf, off: 0, peer: from }) {
+                            let stream = match acc2.accept(NetworkMuxConn { mux: mux2, pre: prebuf, off: 0, peer: from }) {
                                 Ok(s) => s,
                                 Err(_) => {
                                     // cleanup placeholder on handshake failure
@@ -558,7 +558,7 @@ pub mod non_ios {
             eprintln!("[client] connecting DTLS to {}", to);
             let mut conf = connector.configure().map_err(|e| format!("client: connector configure failed: {}", e))?;
             conf.set_verify_hostname(false);
-            let mut stream = match conf.connect("ignored-host", NetworkMuxConn { sock, peer: to }) {
+            let stream = match conf.connect("ignored-host", NetworkMuxConn { sock, peer: to }) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
                     s

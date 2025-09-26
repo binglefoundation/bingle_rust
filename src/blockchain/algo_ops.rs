@@ -643,7 +643,6 @@ impl AlgoOps {
             .estimate_basic_sig_size()
             .map_err(|e| anyhow!("failed to estimate signed tx size: {e}"))?;
         let est_fee = {
-            use algonaut::core::MicroAlgos;
             let per_byte = params.fee_per_byte; // MicroAlgos
             let min_fee = params.min_fee; // MicroAlgos
             let sized = per_byte * est_size;

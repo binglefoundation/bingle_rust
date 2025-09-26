@@ -27,6 +27,8 @@ impl Default for BingleApiImpl {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
+
 impl BingleApiImpl {
     pub fn new() -> Self { Self::default() }
 
@@ -34,6 +36,10 @@ impl BingleApiImpl {
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Self {
         Self { dtls: Some(dtls), ..Default::default() }
     }
+
+    /// Test-only helper: override issuer directly for unit/integration tests.
+    /// Not part of the stable API surface.
+    pub fn set_issuer_for_tests(&mut self, issuer: String) { self.issuer = Some(issuer); }
 
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool { self.dtls.is_some() }
@@ -74,8 +80,7 @@ fn generate_pki_from_ops(ops: &AlgoOps, issuer_cn: &str) -> Result<(Vec<u8>, Vec
     use openssl::hash::MessageDigest;
     use openssl::nid::Nid;
     use openssl::pkey::{Id, PKey};
-    use openssl::rsa::Rsa;
-    use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectKeyIdentifier, AuthorityKeyIdentifier};
+    use openssl::x509::extension::{BasicConstraints, SubjectKeyIdentifier};
     use openssl::x509::{X509NameBuilder, X509};
 
     // 1) Build CA PKey from Algorand private key (ed25519 32 bytes)
