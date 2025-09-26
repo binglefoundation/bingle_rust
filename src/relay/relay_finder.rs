@@ -45,6 +45,25 @@ impl RelayFinder {
         Self { api, cache_ttl, cache: Mutex::new(None), discover_roots }
     }
 
+    /// Convenience constructor: wire discovery to AlgoBingle::discover_root_relays using provided ops, app_id and candidate accounts.
+    #[cfg(not(target_os = "ios"))]
+    pub fn with_algo_discovery(
+        api: Arc<dyn BingleApi>,
+        cache_ttl: Duration,
+        ops: crate::blockchain::algo_ops::AlgoOps,
+        app_id: u64,
+        accounts: Vec<String>,
+    ) -> Self {
+        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops);
+        let discover = Arc::new(move || {
+            match ab.discover_root_relays(app_id, &accounts) {
+                Ok(pairs) => pairs.into_iter().map(|(id, address)| RootRelayInfo { id, address }).collect(),
+                Err(_) => Vec::new(),
+            }
+        });
+        Self { api, cache_ttl, cache: Mutex::new(None), discover_roots: discover }
+    }
+
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     pub fn find_root_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
         // 1) Return cached if valid
