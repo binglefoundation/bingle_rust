@@ -167,4 +167,4 @@ class BingleDapp(ARC4Contract):
         current, exists = self.handle.maybe(Txn.sender)
         if not exists or current == String():
             self.handle[Txn.sender] = handle
-            self.handle_time[Txn.sender] = Global.latest_timestamp
+            self.handle_time[Txn.sender] = Global.latest_timestamp()

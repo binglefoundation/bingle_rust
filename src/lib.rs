@@ -1,6 +1,7 @@
 pub mod blockchain;
 pub mod dtls;
 pub mod api;
+pub mod relay;
 pub mod stun;
 pub mod messages;
 pub mod engine;

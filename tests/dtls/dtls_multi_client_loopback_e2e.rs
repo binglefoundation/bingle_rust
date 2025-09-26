@@ -57,7 +57,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
     let mut server = DtlsOpenSsl::new()
-        .with_handle_message(echo_handler)
+        .with_handle_message(std::sync::Arc::new(echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
@@ -69,13 +69,13 @@ fn dtls_openssl_multi_client_loopback_echo() {
 
     // DTLS clients: build and send payloads to server.
     let client1 = DtlsOpenSsl::new()
-        .with_handle_message(client1_handler)
+        .with_handle_message(std::sync::Arc::new(client1_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
     let client2 = DtlsOpenSsl::new()
-        .with_handle_message(client2_handler)
+        .with_handle_message(std::sync::Arc::new(client2_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());

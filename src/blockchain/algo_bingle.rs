@@ -40,6 +40,48 @@ pub struct AlgoBingle {
 impl AlgoBingle {
     pub fn new(ops: AlgoOps) -> Self { Self { ops } }
 
+    /// Parse a RelayIP string into a SocketAddr. Accepts forms like "host:port" or "ip:port".
+    /// Returns None if parsing fails.
+    pub fn parse_relay_ip(ip: &str) -> Option<std::net::SocketAddr> {
+        ip.parse::<std::net::SocketAddr>().ok()
+    }
+
+    /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "RelayIP".
+    /// This variant uses an injected local-state getter for testability.
+    pub fn discover_root_relays_with<F>(
+        app_id: u64,
+        accounts: &[String],
+        get_local: F,
+    ) -> Vec<(String, std::net::SocketAddr)>
+    where
+        F: Fn(u64, &str) -> Option<Vec<(String, String)>>,
+    {
+        let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
+        for acct in accounts {
+            if let Some(entries) = get_local(app_id, acct) {
+                // find RelayIP
+                if let Some((_k, v)) = entries.into_iter().find(|(k, _)| k == "RelayIP") {
+                    if let Some(addr) = Self::parse_relay_ip(&v) {
+                        out.push((acct.clone(), addr));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Discover root relay ids and socket addresses using AlgoOps for local state fetching.
+    /// Requires a list of candidate accounts to check.
+    pub fn discover_root_relays(&self, app_id: u64, accounts: &[String]) -> anyhow::Result<Vec<(String, std::net::SocketAddr)>> {
+        let res = Self::discover_root_relays_with(app_id, accounts, |aid, acct| {
+            match self.ops.local_state_for_account(aid, acct) {
+                Ok(v) => v,
+                Err(_) => None,
+            }
+        });
+        Ok(res)
+    }
+
     /// Compute 4-byte ARC-4 method selector from a signature string.
     fn arc4_selector(sig: &str) -> [u8; 4] {
         let mut h = Sha512_256::new();
