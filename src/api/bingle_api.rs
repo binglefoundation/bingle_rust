@@ -83,7 +83,9 @@ pub struct StartOptions {
     /// The local user's handle (unique globally).
     pub handle: Handle,
     /// The Algorand passphrase to the user account.
-    pub passphrase: String,
+    /// JSON field name: "algoPassphrase" to match Kotlin/JS naming.
+    #[serde(rename = "algoPassphrase", default)]
+    pub algo_passphrase: Option<String>,
     /// Optional static IP address (and port) as seen externally, e.g. "203.0.113.5:4433".
     pub static_ip: Option<SocketAddr>,
     /// True if we are to become a relay.

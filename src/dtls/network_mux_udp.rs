@@ -207,7 +207,7 @@ impl NetworkMux for UdpNetworkMux {
     fn write<A: ToSocketAddrs>(&self, to: A, buf: &[u8]) -> Result<()> {
         match self.socket.send_to(buf, to) {
             Ok(_) => Ok(()),
-            Err(_) => Err(()),
+            Err(e) => Err(format!("udp send_to failed: {}", e)),
         }
     }
 

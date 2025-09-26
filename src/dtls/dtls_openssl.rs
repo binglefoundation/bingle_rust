@@ -22,6 +22,8 @@ pub mod non_ios {
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
 
+    type EndpointIssuers = Arc<Mutex<HashMap<SocketAddr, String>>>;
+
     /// OpenSSL-backed DTLS implementation (non-iOS).
     /// Provides:
     /// - A server accept loop (Unix) performing DTLSv1.2 handshakes over UDP and spawning per-peer workers.
@@ -52,6 +54,8 @@ pub mod non_ios {
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
         pub(crate) acceptor: Option<SslAcceptor>,
         pub(crate) server_writers: Option<ServerWriters>,
+        // Map from endpoint to verified issuer (CN)
+        pub(crate) endpoint_issuers: Option<EndpointIssuers>,
         // Lifecycle control for accept loop
         pub(crate) stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
@@ -62,7 +66,8 @@ pub mod non_ios {
             use std::sync::{Arc, Mutex};
             use std::collections::HashMap;
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
-            Self { server_writers: Some(writers), ..Default::default() }
+            let issuers: EndpointIssuers = Arc::new(Mutex::new(HashMap::new()));
+            Self { server_writers: Some(writers), endpoint_issuers: Some(issuers), ..Default::default() }
         }
 
         /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
@@ -73,7 +78,7 @@ pub mod non_ios {
         // Removed client/server role distinction; context builders are used by send() as-needed
         fn prepare_client_context(&self) -> Result<SslConnector> {
             // Build a DTLSv1.2 client connector and configure mutual auth + verification.
-            let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|_| ())?;
+            let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|e| format!("openssl: build dtls connector: {}", e))?;
 
             // Restrict to DTLSv1.2 and enable read_ahead.
             builder.set_options(SslOptions::NO_DTLSV1);
@@ -83,25 +88,25 @@ pub mod non_ios {
             if self.null_encryption {
                 // OpenSSL 3 defaults to security level >=1 which forbids NULL; drop to 0.
                 builder.set_security_level(0);
-                builder.set_cipher_list("eNULL").map_err(|_| ())?;
+                builder.set_cipher_list("eNULL").map_err(|e| format!("openssl: set cipher list eNULL failed: {}", e))?;
             }
 
             // Optionally load client cert and key if provided.
             if let (Some(cert_pem), Some(key_pem)) = (self.client_cert.as_deref(), self.client_private_key.as_deref()) {
-                let client_x509 = X509::from_pem(cert_pem).map_err(|_| ())?;
-                let client_key = PKey::private_key_from_pem(key_pem).map_err(|_| ())?;
-                builder.set_certificate(&client_x509).map_err(|_| ())?;
-                builder.set_private_key(&client_key).map_err(|_| ())?;
-                builder.check_private_key().map_err(|_| ())?;
+                let client_x509 = X509::from_pem(cert_pem).map_err(|e| format!("client cert PEM parse failed: {}", e))?;
+                let client_key = PKey::private_key_from_pem(key_pem).map_err(|e| format!("client private key PEM parse failed: {}", e))?;
+                builder.set_certificate(&client_x509).map_err(|e| format!("set client certificate failed: {}", e))?;
+                builder.set_private_key(&client_key).map_err(|e| format!("set client private key failed: {}", e))?;
+                builder.check_private_key().map_err(|e| format!("client private key check failed: {}", e))?;
             }
 
             // Optionally install CA cert into the verify store for server auth.
             if let Some(ca_pem) = self.ca_cert.as_deref() {
-                let ca_x509 = X509::from_pem(ca_pem).map_err(|_| ())?;
-                let mut store_builder = X509StoreBuilder::new().map_err(|_| ())?;
-                store_builder.add_cert(ca_x509).map_err(|_| ())?;
+                let ca_x509 = X509::from_pem(ca_pem).map_err(|e| format!("client: CA PEM parse failed: {}", e))?;
+                let mut store_builder = X509StoreBuilder::new().map_err(|e| format!("client: build X509 store failed: {}", e))?;
+                store_builder.add_cert(ca_x509).map_err(|e| format!("client: add CA to store failed: {}", e))?;
                 let store = store_builder.build();
-                builder.set_verify_cert_store(store).map_err(|_| ())?;
+                builder.set_verify_cert_store(store).map_err(|e| format!("client: set verify cert store failed: {}", e))?;
             }
 
             // Wire client-side verify callback to delegate to handle_peer_certificate, if present.
@@ -129,30 +134,30 @@ pub mod non_ios {
         fn prepare_server_acceptor(&mut self) -> Result<()> {
             // Build an SslAcceptor for DTLSv1.2. For tests we disable client authentication by default; a custom
             // verify callback can be supplied via handle_peer_certificate to enforce checks if desired.
-            let ca_pem = self.ca_cert.as_deref().ok_or(())?;
-            let server_cert_pem = self.server_signing_cert.as_deref().ok_or(())?;
-            let server_key_pem = self.server_signing_private_key.as_deref().ok_or(())?;
+            let ca_pem = self.ca_cert.as_deref().ok_or_else(|| "missing ca_cert".to_string())?;
+            let server_cert_pem = self.server_signing_cert.as_deref().ok_or_else(|| "missing server_signing_cert".to_string())?;
+            let server_key_pem = self.server_signing_private_key.as_deref().ok_or_else(|| "missing server_signing_private_key".to_string())?;
 
-            let ca_x509 = X509::from_pem(ca_pem).map_err(|_| ())?;
-            let server_x509 = X509::from_pem(server_cert_pem).map_err(|_| ())?;
-            let server_key = PKey::private_key_from_pem(server_key_pem).map_err(|_| ())?;
+            let ca_x509 = X509::from_pem(ca_pem).map_err(|e| format!("server: CA PEM parse failed: {}", e))?;
+            let server_x509 = X509::from_pem(server_cert_pem).map_err(|e| format!("server: server cert PEM parse failed: {}", e))?;
+            let server_key = PKey::private_key_from_pem(server_key_pem).map_err(|e| format!("server: server private key PEM parse failed: {}", e))?;
 
             // Context builder for DTLS (we will constrain to DTLSv1.2)
-            let mut builder = SslAcceptor::mozilla_modern_v5(SslMethod::dtls()).map_err(|_| ())?;
+            let mut builder = SslAcceptor::mozilla_modern_v5(SslMethod::dtls()).map_err(|e| format!("server: build SslAcceptor failed: {}", e))?;
 
             // Load server certificate and private key
-            builder.set_certificate(&server_x509).map_err(|_| ())?;
-            builder.set_private_key(&server_key).map_err(|_| ())?;
-            builder.check_private_key().map_err(|_| ())?;
+            builder.set_certificate(&server_x509).map_err(|e| format!("server: set certificate failed: {}", e))?;
+            builder.set_private_key(&server_key).map_err(|e| format!("server: set private key failed: {}", e))?;
+            builder.check_private_key().map_err(|e| format!("server: private key check failed: {}", e))?;
 
             // For tests, do not require client authentication to keep handshake simple
             builder.set_verify(SslVerifyMode::NONE);
 
             // Install CA into store
-            let mut store_builder = X509StoreBuilder::new().map_err(|_| ())?;
-            store_builder.add_cert(ca_x509).map_err(|_| ())?;
+            let mut store_builder = X509StoreBuilder::new().map_err(|e| format!("server: build X509 store failed: {}", e))?;
+            store_builder.add_cert(ca_x509).map_err(|e| format!("server: add CA to store failed: {}", e))?;
             let store = store_builder.build();
-            builder.set_verify_cert_store(store).map_err(|_| ())?;
+            builder.set_verify_cert_store(store).map_err(|e| format!("server: set verify cert store failed: {}", e))?;
 
             // Constrain to DTLSv1.2 only
             builder.set_options(SslOptions::NO_DTLSV1);
@@ -161,7 +166,7 @@ pub mod non_ios {
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
             if self.null_encryption {
                 builder.set_security_level(0);
-                builder.set_cipher_list("eNULL").map_err(|_| ())?;
+                builder.set_cipher_list("eNULL").map_err(|e| format!("server: set cipher list eNULL failed: {}", e))?;
             }
 
             // Wire verify callback to delegate to handle_peer_certificate, if present.
@@ -203,7 +208,7 @@ pub mod non_ios {
         pub fn start_accept(&mut self, addr: SocketAddr) -> Result<()> {
             // Validate server creds
             if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
-                return Err(());
+                return Err("missing server credentials or CA".to_string());
             }
             // Prepare and persist acceptor (validates PEMs, configures DTLSv1.2; server-side client verification
             // is disabled by default but can be implemented via verify callback).
@@ -224,12 +229,15 @@ pub mod non_ios {
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             self.stop_flag = Some(stop.clone());
             let handler = self.handle_message.clone();
+            let peer_cert_handler = self.handle_peer_certificate;
+            let ca_bytes_for_handler = std::sync::Arc::new(self.ca_cert.clone().unwrap_or_default());
+            let endpoint_issuers = sender.endpoint_issuers.as_ref().cloned();
             let stop_clone = stop.clone();
             let handle = thread::spawn(move || {
 
                 // Run the DTLS accept loop (unix-only). If it exits or fails, the server thread finishes; no plaintext fallback.
                 #[cfg(unix)]
-                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters, stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters, stop: std::sync::Arc<std::sync::atomic::AtomicBool>, endpoint_issuers: Option<EndpointIssuers>, peer_cert_handler: Option<HandlePeerCertificate>, ca_bytes_for_handler: std::sync::Arc<Vec<u8>>) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
@@ -290,7 +298,7 @@ pub mod non_ios {
                                     eprintln!("[dtls][send][server {}] <parse error> ({} bytes)", self.peer, buf.len());
                                 }
                             }
-                            match self.mux.write(self.peer, buf) { Ok(()) => Ok(buf.len()), Err(()) => Err(std::io::Error::new(std::io::ErrorKind::Other, "mux write failed")) }
+                            match self.mux.write(self.peer, buf) { Ok(()) => Ok(buf.len()), Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e))) }
                         }
                         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
                     }
@@ -343,7 +351,7 @@ pub mod non_ios {
                         // Pre-register a placeholder writer to mark this peer as in-progress to avoid racing consumption.
                         {
                             if let Ok(mut map) = writers.lock() {
-                                let placeholder: ServerWriter = std::sync::Arc::new(|_payload: &[u8]| -> Result<()> { Err(()) });
+                                let placeholder: ServerWriter = std::sync::Arc::new(|_payload: &[u8]| -> Result<()> { Err("writer not ready".to_string()) });
                                 map.insert(from, placeholder);
                             }
                         }
@@ -355,6 +363,9 @@ pub mod non_ios {
                         let writers_clone = writers.clone();
                         let prebuf = probe[..n].to_vec();
                         let mux2 = mux.clone();
+                        let endpoint_issuers2 = endpoint_issuers.clone();
+                        let peer_cert_handler2 = peer_cert_handler;
+                        let ca_bytes2 = ca_bytes_for_handler.clone();
                         std::thread::spawn(move || {
                             let _ = mux2.set_read_timeout(Some(Duration::from_millis(1500)));
 
@@ -364,9 +375,27 @@ pub mod non_ios {
                                 Err(_) => {
                                     // cleanup placeholder on handshake failure
                                     if let Ok(mut map) = writers_clone.lock() { let _ = map.remove(&from); }
+                                    // also clear any issuer mapping
+                                    if let Some(ep) = &endpoint_issuers2 { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
                                     return;
                                 },
                             };
+
+                            // After handshake, extract peer certificate and derive issuer mapping
+                            if let (Some(h), Some(ep)) = (peer_cert_handler2, &endpoint_issuers2) {
+                                if let Some(cert) = stream.ssl().peer_certificate() {
+                                    if let Ok(pem) = cert.to_pem() {
+                                        if let Ok(issuer) = h(&pem, &ca_bytes2[..]) {
+                                            let _ = ep.lock().map(|mut m| { m.insert(from, issuer); });
+                                        } else {
+                                            // Verification failed: close connection and cleanup
+                                            if let Ok(mut map) = writers_clone.lock() { let _ = map.remove(&from); }
+                                            if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); }
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
 
                             let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
 
@@ -374,10 +403,14 @@ pub mod non_ios {
                             {
                                 if let Ok(mut map) = writers_clone.lock() {
                                     let stream_arc = shared.clone();
+                                    let ep_map = endpoint_issuers2.clone();
                                     let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
-                                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err(()) };
+                                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
                                         use std::io::Write;
-                                        if s.write_all(payload).is_err() { return Err(()) };
+                                        if let Err(e) = s.write_all(payload) {
+                                            if let Some(ep) = &ep_map { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
+                                            return Err(format!("dtls writer write_all failed: {}", e));
+                                        }
                                         let _ = s.flush();
                                         Ok(())
                                     });
@@ -397,13 +430,20 @@ pub mod non_ios {
                                             Ok(n) => n,
                                             Err(e) => {
                                                 eprintln!("[server] read error from {}: {} (continuing)", from, e);
+                                                if let Some(ep) = &endpoint_issuers2 { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
                                                 continue;
                                             }
                                         }
                                     };
                                     if n == 0 { break; }
                                     eprintln!("[server] application data from {} ({} bytes)", from, n);
-                                    h(&*sender_clone, &from, &app[..n]);
+                                    let issuer_str = if let Some(ep) = &endpoint_issuers2 {
+                                        match ep.lock() {
+                                            Ok(m) => m.get(&from).cloned().unwrap_or_default(),
+                                            Err(_) => String::new(),
+                                        }
+                                    } else { String::new() };
+                                    h(&*sender_clone, &from, &issuer_str, &app[..n]);
                                 }
                             }
                         });
@@ -413,11 +453,11 @@ pub mod non_ios {
                     }
                 }
                 #[cfg(not(unix))]
-                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<std::sync::Arc<SslAcceptor>>, _handler: Option<HandleMessage>, _sender: std::sync::Arc<DtlsOpenSsl>, _writers: ServerWriters, _stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<std::sync::Arc<SslAcceptor>>, _handler: Option<HandleMessage>, _sender: std::sync::Arc<DtlsOpenSsl>, _writers: ServerWriters, _stop: std::sync::Arc<std::sync::atomic::AtomicBool>, _endpoint_issuers: Option<EndpointIssuers>, _peer_cert_handler: Option<HandlePeerCertificate>, _ca_bytes_for_handler: std::sync::Arc<Vec<u8>>) -> core::result::Result<(), ()> {
                     Err(())
                 }
 
-                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers, stop_clone);
+                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers, stop_clone, endpoint_issuers, peer_cert_handler, ca_bytes_for_handler);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
             self.server_thread = Some(handle);
@@ -447,9 +487,20 @@ pub mod non_ios {
                 self.owned_udp_mux = None;
                 Ok(())
             }
-        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
+        fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
+
+            // Validate issuer mapping if known and issuer provided
+            if let Some(map_arc) = &self.endpoint_issuers {
+                if let Ok(map) = map_arc.lock() {
+                    if let Some(mapped) = map.get(&to) {
+                        if !issuer.is_empty() && mapped != issuer {
+                            return Err(format!("issuer mismatch for endpoint {}: expected '{}', got '{}'", to, mapped, issuer));
+                        }
+                    }
+                }
+            }
 
             // If this instance has server-side writers (sender in server thread), use them first.
             if let Some(writers) = &self.server_writers {
@@ -465,6 +516,7 @@ pub mod non_ios {
             let connector = self.prepare_client_context()?;
 
             // Wrap a connected UDP socket as a Read/Write stream with debug logging
+            #[derive(Debug)]
             struct NetworkMuxConn { sock: std::net::UdpSocket, peer: SocketAddr }
             impl Read for NetworkMuxConn {
                 fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -497,26 +549,37 @@ pub mod non_ios {
                 fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
             }
 
-            let sock = std::net::UdpSocket::bind(("127.0.0.1", 0)).map_err(|_| ())?;
+            let sock = std::net::UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| format!("client: udp bind failed: {}", e))?;
             let _ = sock.set_read_timeout(Some(Duration::from_millis(1500)));
             let _ = sock.set_nonblocking(false);
-            sock.connect(to).map_err(|_| ())?;
+            sock.connect(to).map_err(|e| format!("client: udp connect failed: {}", e))?;
 
             // Perform client DTLS handshake using configuration with hostname verification disabled
             eprintln!("[client] connecting DTLS to {}", to);
-            let mut conf = connector.configure().map_err(|_| ())?;
+            let mut conf = connector.configure().map_err(|e| format!("client: connector configure failed: {}", e))?;
             conf.set_verify_hostname(false);
             let stream = match conf.connect("ignored-host", NetworkMuxConn { sock, peer: to }) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
                     s
                 }
-                Err(_) => {
+                Err(e) => {
                     eprintln!("[client] handshake failed to {}", to);
                     // Handshake failed: surface the error to the caller.
-                    return Err(());
+                    return Err(format!("client handshake failed: {}", e));
                 }
             };
+
+            // After handshake, extract and map server issuer if handler provided
+            if let Some(h) = self.handle_peer_certificate {
+                if let Some(cert) = stream.ssl().peer_certificate() {
+                    if let Ok(pem) = cert.to_pem() {
+                        let ca = self.ca_cert.as_deref().unwrap_or(&[]);
+                        let issuer = h(&pem, ca).map_err(|e| format!("client: peer certificate verification failed: {}", e))?;
+                        if let Some(epmap) = &self.endpoint_issuers { let _ = epmap.lock().map(|mut m| { m.insert(to, issuer); }); }
+                    }
+                }
+            }
 
             // Wrap the stream to allow the client handler to write back on the same DTLS connection.
             let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
@@ -525,10 +588,15 @@ pub mod non_ios {
             if let Some(writers) = &self.server_writers {
                 if let Ok(mut map) = writers.lock() {
                     let stream_arc = shared.clone();
+                    let endpoint_issuers = self.endpoint_issuers.as_ref().cloned();
+                    let to_addr = to.clone();
                     let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
-                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err(()) };
+                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
                         use std::io::Write;
-                        if s.write_all(payload).is_err() { return Err(()) };
+                        if let Err(e) = s.write_all(payload) {
+                            if let Some(ep) = &endpoint_issuers { if let Ok(mut m) = ep.lock() { let _ = m.remove(&to_addr); } }
+                            return Err(format!("dtls writer write_all failed: {}", e));
+                        }
                         let _ = s.flush();
                         Ok(())
                     });
@@ -538,7 +606,7 @@ pub mod non_ios {
 
             // Send payload, read response bytes, then drop lock before invoking handler.
             let response: Option<Vec<u8>> = {
-                let mut s = shared.lock().map_err(|_| ())?;
+                let mut s = shared.lock().map_err(|_| "client: stream lock poisoned".to_string())?;
                 let _ = s.write_all(data);
                 let _ = s.flush();
                 let mut buf = [0u8; 2048];
@@ -549,7 +617,10 @@ pub mod non_ios {
             };
             if let (Some(h), Some(bytes)) = (self.handle_message.clone(), response) {
                 // Invoke the handler with the calling instance; it can write back via self.send()
-                h(self, &to, &bytes);
+                let issuer_str = if let Some(ep) = &self.endpoint_issuers {
+                    match ep.lock() { Ok(m) => m.get(&to).cloned().unwrap_or_default(), Err(_) => String::new() }
+                } else { String::new() };
+                h(self, &to, &issuer_str, &bytes);
             }
             Ok(())
         }
