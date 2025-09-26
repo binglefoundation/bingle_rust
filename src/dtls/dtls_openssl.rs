@@ -22,6 +22,8 @@ pub mod non_ios {
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
 
+    type EndpointIssuers = Arc<Mutex<HashMap<SocketAddr, String>>>;
+
     /// OpenSSL-backed DTLS implementation (non-iOS).
     /// Provides:
     /// - A server accept loop (Unix) performing DTLSv1.2 handshakes over UDP and spawning per-peer workers.
@@ -52,6 +54,8 @@ pub mod non_ios {
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
         pub(crate) acceptor: Option<SslAcceptor>,
         pub(crate) server_writers: Option<ServerWriters>,
+        // Map from endpoint to verified issuer (CN)
+        pub(crate) endpoint_issuers: Option<EndpointIssuers>,
         // Lifecycle control for accept loop
         pub(crate) stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
@@ -62,7 +66,8 @@ pub mod non_ios {
             use std::sync::{Arc, Mutex};
             use std::collections::HashMap;
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
-            Self { server_writers: Some(writers), ..Default::default() }
+            let issuers: EndpointIssuers = Arc::new(Mutex::new(HashMap::new()));
+            Self { server_writers: Some(writers), endpoint_issuers: Some(issuers), ..Default::default() }
         }
 
         /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
@@ -224,12 +229,15 @@ pub mod non_ios {
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             self.stop_flag = Some(stop.clone());
             let handler = self.handle_message;
+            let peer_cert_handler = self.handle_peer_certificate;
+            let ca_bytes_for_handler = std::sync::Arc::new(self.ca_cert.clone().unwrap_or_default());
+            let endpoint_issuers = sender.endpoint_issuers.as_ref().cloned();
             let stop_clone = stop.clone();
             let handle = thread::spawn(move || {
 
                 // Run the DTLS accept loop (unix-only). If it exits or fails, the server thread finishes; no plaintext fallback.
                 #[cfg(unix)]
-                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters, stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(addr: SocketAddr, acceptor: Option<std::sync::Arc<SslAcceptor>>, handler: Option<HandleMessage>, sender: std::sync::Arc<DtlsOpenSsl>, writers: ServerWriters, stop: std::sync::Arc<std::sync::atomic::AtomicBool>, endpoint_issuers: Option<EndpointIssuers>, peer_cert_handler: Option<HandlePeerCertificate>, ca_bytes_for_handler: std::sync::Arc<Vec<u8>>) -> core::result::Result<(), ()> {
                     use std::io::{Read, Write};
                     use std::time::Duration;
 
@@ -355,18 +363,39 @@ pub mod non_ios {
                         let writers_clone = writers.clone();
                         let prebuf = probe[..n].to_vec();
                         let mux2 = mux.clone();
+                        let endpoint_issuers2 = endpoint_issuers.clone();
+                        let peer_cert_handler2 = peer_cert_handler;
+                        let ca_bytes2 = ca_bytes_for_handler.clone();
                         std::thread::spawn(move || {
                             let _ = mux2.set_read_timeout(Some(Duration::from_millis(1500)));
 
                             // Attempt DTLS server handshake using NetworkMuxConn filtered to this peer.
-                            let stream = match acc2.accept(NetworkMuxConn { mux: mux2, pre: prebuf, off: 0, peer: from }) {
+                            let mut stream = match acc2.accept(NetworkMuxConn { mux: mux2, pre: prebuf, off: 0, peer: from }) {
                                 Ok(s) => s,
                                 Err(_) => {
                                     // cleanup placeholder on handshake failure
                                     if let Ok(mut map) = writers_clone.lock() { let _ = map.remove(&from); }
+                                    // also clear any issuer mapping
+                                    if let Some(ep) = &endpoint_issuers2 { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
                                     return;
                                 },
                             };
+
+                            // After handshake, extract peer certificate and derive issuer mapping
+                            if let (Some(h), Some(ep)) = (peer_cert_handler2, &endpoint_issuers2) {
+                                if let Some(cert) = stream.ssl().peer_certificate() {
+                                    if let Ok(pem) = cert.to_pem() {
+                                        if let Ok(issuer) = h(&pem, &ca_bytes2[..]) {
+                                            let _ = ep.lock().map(|mut m| { m.insert(from, issuer); });
+                                        } else {
+                                            // Verification failed: close connection and cleanup
+                                            if let Ok(mut map) = writers_clone.lock() { let _ = map.remove(&from); }
+                                            if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); }
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
 
                             let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
 
@@ -374,10 +403,14 @@ pub mod non_ios {
                             {
                                 if let Ok(mut map) = writers_clone.lock() {
                                     let stream_arc = shared.clone();
+                                    let ep_map = endpoint_issuers2.clone();
                                     let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
                                         let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
                                         use std::io::Write;
-                                        if let Err(e) = s.write_all(payload) { return Err(format!("dtls writer write_all failed: {}", e)); }
+                                        if let Err(e) = s.write_all(payload) {
+                                            if let Some(ep) = &ep_map { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
+                                            return Err(format!("dtls writer write_all failed: {}", e));
+                                        }
                                         let _ = s.flush();
                                         Ok(())
                                     });
@@ -397,13 +430,20 @@ pub mod non_ios {
                                             Ok(n) => n,
                                             Err(e) => {
                                                 eprintln!("[server] read error from {}: {} (continuing)", from, e);
+                                                if let Some(ep) = &endpoint_issuers2 { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
                                                 continue;
                                             }
                                         }
                                     };
                                     if n == 0 { break; }
                                     eprintln!("[server] application data from {} ({} bytes)", from, n);
-                                    h(&*sender_clone, &from, "", &app[..n]);
+                                    let issuer_str = if let Some(ep) = &endpoint_issuers2 {
+                                        match ep.lock() {
+                                            Ok(m) => m.get(&from).cloned().unwrap_or_default(),
+                                            Err(_) => String::new(),
+                                        }
+                                    } else { String::new() };
+                                    h(&*sender_clone, &from, &issuer_str, &app[..n]);
                                 }
                             }
                         });
@@ -413,11 +453,11 @@ pub mod non_ios {
                     }
                 }
                 #[cfg(not(unix))]
-                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<std::sync::Arc<SslAcceptor>>, _handler: Option<HandleMessage>, _sender: std::sync::Arc<DtlsOpenSsl>, _writers: ServerWriters, _stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> core::result::Result<(), ()> {
+                fn run_dtls_accept_loop(_addr: SocketAddr, _acceptor: Option<std::sync::Arc<SslAcceptor>>, _handler: Option<HandleMessage>, _sender: std::sync::Arc<DtlsOpenSsl>, _writers: ServerWriters, _stop: std::sync::Arc<std::sync::atomic::AtomicBool>, _endpoint_issuers: Option<EndpointIssuers>, _peer_cert_handler: Option<HandlePeerCertificate>, _ca_bytes_for_handler: std::sync::Arc<Vec<u8>>) -> core::result::Result<(), ()> {
                     Err(())
                 }
 
-                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers, stop_clone);
+                let _ = run_dtls_accept_loop(addr, acceptor, handler, sender, writers, stop_clone, endpoint_issuers, peer_cert_handler, ca_bytes_for_handler);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
             self.server_thread = Some(handle);
@@ -450,6 +490,17 @@ pub mod non_ios {
         fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
+
+            // Validate issuer mapping if known and issuer provided
+            if let Some(map_arc) = &self.endpoint_issuers {
+                if let Ok(map) = map_arc.lock() {
+                    if let Some(mapped) = map.get(&to) {
+                        if !issuer.is_empty() && mapped != issuer {
+                            return Err(format!("issuer mismatch for endpoint {}: expected '{}', got '{}'", to, mapped, issuer));
+                        }
+                    }
+                }
+            }
 
             // If this instance has server-side writers (sender in server thread), use them first.
             if let Some(writers) = &self.server_writers {
@@ -507,7 +558,7 @@ pub mod non_ios {
             eprintln!("[client] connecting DTLS to {}", to);
             let mut conf = connector.configure().map_err(|e| format!("client: connector configure failed: {}", e))?;
             conf.set_verify_hostname(false);
-            let stream = match conf.connect("ignored-host", NetworkMuxConn { sock, peer: to }) {
+            let mut stream = match conf.connect("ignored-host", NetworkMuxConn { sock, peer: to }) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
                     s
@@ -519,6 +570,17 @@ pub mod non_ios {
                 }
             };
 
+            // After handshake, extract and map server issuer if handler provided
+            if let Some(h) = self.handle_peer_certificate {
+                if let Some(cert) = stream.ssl().peer_certificate() {
+                    if let Ok(pem) = cert.to_pem() {
+                        let ca = self.ca_cert.as_deref().unwrap_or(&[]);
+                        let issuer = h(&pem, ca).map_err(|e| format!("client: peer certificate verification failed: {}", e))?;
+                        if let Some(epmap) = &self.endpoint_issuers { let _ = epmap.lock().map(|mut m| { m.insert(to, issuer); }); }
+                    }
+                }
+            }
+
             // Wrap the stream to allow the client handler to write back on the same DTLS connection.
             let shared = std::sync::Arc::new(std::sync::Mutex::new(stream));
 
@@ -526,10 +588,15 @@ pub mod non_ios {
             if let Some(writers) = &self.server_writers {
                 if let Ok(mut map) = writers.lock() {
                     let stream_arc = shared.clone();
+                    let endpoint_issuers = self.endpoint_issuers.as_ref().cloned();
+                    let to_addr = to.clone();
                     let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
                         let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
                         use std::io::Write;
-                        if let Err(e) = s.write_all(payload) { return Err(format!("dtls writer write_all failed: {}", e)); }
+                        if let Err(e) = s.write_all(payload) {
+                            if let Some(ep) = &endpoint_issuers { if let Ok(mut m) = ep.lock() { let _ = m.remove(&to_addr); } }
+                            return Err(format!("dtls writer write_all failed: {}", e));
+                        }
                         let _ = s.flush();
                         Ok(())
                     });
@@ -550,7 +617,10 @@ pub mod non_ios {
             };
             if let (Some(h), Some(bytes)) = (self.handle_message, response) {
                 // Invoke the handler with the calling instance; it can write back via self.send()
-                h(self, &to, issuer, &bytes);
+                let issuer_str = if let Some(ep) = &self.endpoint_issuers {
+                    match ep.lock() { Ok(m) => m.get(&to).cloned().unwrap_or_default(), Err(_) => String::new() }
+                } else { String::new() };
+                h(self, &to, &issuer_str, &bytes);
             }
             Ok(())
         }
