@@ -83,17 +83,17 @@
 
 ~~(Choose an appropriate signalling primitive)~~
 
-## Implement RelayCheck
+## ~~Implement RelayCheck~~
 
-- Implement a handler for RelayCheck as specified
-- In this handler, put the `responseTag` in the `tag` field of the `RelayCheckResponse` and send it
+- ~~Implement a handler for RelayCheck as specified~~
+- ~~In this handler, put the `responseTag` in the `tag` field of the `RelayCheckResponse` and send it~~
 
-## Create a RelayFinder for root relays
+## ~~Create a RelayFinder for root relays~~
 
-- Create a RelayFinder class
-- Implement this as described in the spec "Finding relay servers" for root relays only
-- Once RelayCheck has been called, cache and return the root relay to use
-- Return from further calls with the cached value until it times out
+- ~~Create a RelayFinder class~~
+- ~~Implement this as described in the spec "Finding relay servers" for root relays only~~
+- ~~Once RelayCheck has been called, cache and return the root relay to use~~
+- ~~Return from further calls with the cached value until it times out~~
 
 # endpoint_identify
 
