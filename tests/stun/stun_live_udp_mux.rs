@@ -41,7 +41,7 @@ fn live_stun_endpoint_finder_with_udp_mux() {
     let mux = Arc::new(
         UdpNetworkMux::bind(("0.0.0.0", 0))
             .expect("bind mux")
-            .with_handle_stun(stun_handler),
+            .with_handle_stun(Arc::new(stun_handler)),
     );
     mux.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
     mux.start().expect("start mux");

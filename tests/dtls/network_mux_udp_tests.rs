@@ -84,9 +84,9 @@ fn ignores_zrtp_rtp_unknown() {
     clear_all_records();
 
     let mux_inner = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux")
-        .with_handle_stun(stun_handler)
-        .with_handle_dtls(dtls_handler)
-        .with_handle_turn(turn_handler);
+        .with_handle_stun(Arc::new(stun_handler))
+        .with_handle_dtls(Arc::new(dtls_handler))
+        .with_handle_turn(Arc::new(turn_handler));
     let mux = Arc::new(mux_inner);
 
     let addr = mux.local_addr().unwrap();
