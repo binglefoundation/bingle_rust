@@ -56,7 +56,7 @@ fn dtls_start_accepts_external_network_mux_udp() {
     let payload = b"hello-with-external-mux";
     let mut ok = false;
     for _ in 0..6 {
-        if client.send(addr, "", payload).is_ok() { ok = true; break; }
+        if client.send(addr, payload).is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client DTLS send failed with external mux supplied");

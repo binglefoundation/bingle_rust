@@ -16,7 +16,7 @@ impl MockDtls { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let
 impl Dtls for MockDtls {
     fn start(&mut self, _addr: SocketAddr, _mux: Option<Arc<dyn NetworkMux + Send + Sync>>) -> Result<()> { Ok(()) }
     fn stop(&mut self) -> Result<()> { Ok(()) }
-    fn send(&self, to: SocketAddr, _issuer: &str, data: &[u8]) -> Result<()> { self.sends.lock().unwrap().push((to, data.to_vec())); Ok(()) }
+    fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> { self.sends.lock().unwrap().push((to, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
@@ -69,14 +69,14 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     // Mock DTLS that captures the issuer parameter
     #[derive(Clone)]
     struct MockDtlsCapture {
-        pub captured: Arc<Mutex<Vec<(SocketAddr, String, Vec<u8>)>>>,
+        pub captured: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
     }
-    impl MockDtlsCapture { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, String, Vec<u8>)>>>) { let v = Arc::new(Mutex::new(vec![])); (Self { captured: v.clone() }, v) } }
+    impl MockDtlsCapture { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let v = Arc::new(Mutex::new(vec![])); (Self { captured: v.clone() }, v) } }
     impl Dtls for MockDtlsCapture {
         fn start(&mut self, _addr: SocketAddr, _mux: Option<Arc<dyn NetworkMux + Send + Sync>>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
-        fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()> {
-            self.captured.lock().unwrap().push((to, issuer.to_string(), data.to_vec()));
+        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
+            self.captured.lock().unwrap().push((to, data.to_vec()));
             Ok(())
         }
         fn get_handle_message(&self) -> Option<HandleMessage> { None }
@@ -121,5 +121,4 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     let cap = captured.lock().unwrap();
     assert_eq!(cap.len(), 1);
     assert_eq!(cap[0].0, addr_send);
-    assert_eq!(cap[0].1, issuer_expected);
 }

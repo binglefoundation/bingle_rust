@@ -52,7 +52,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
     // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing tag
-    fn server_handler(server: &dyn Dtls, from: &SocketAddr, data: &[u8]) {
+    fn server_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
         if let Ok(text) = std::str::from_utf8(data) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
                 let is_check = v.get("type").and_then(|x| x.as_str()) == Some("Check")
@@ -87,7 +87,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
 
     // Build BingleApiImpl client and install on_message to capture the RelayCheckResponse
     let mut api = BingleApiImpl::new();
-    let opts = StartOptions { handle: Handle::from("client"), passphrase: "pass".to_string(), static_ip: None, am_relay: false, stun_servers: None };
+    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some("pass".to_string()), static_ip: None, am_relay: false, stun_servers: None };
     api.start(opts).expect("api start");
 
     api.set_on_message(Some(Arc::new(|_sender, _handle, msg| {

@@ -52,7 +52,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
         if let Ok(mut v) = store.lock() { v.push(data.to_vec()); }
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
-        let _ = server.send(*from, "", &echoed);
+        let _ = server.send(*from, &echoed);
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
@@ -86,7 +86,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
     // Send from client1 with small retry loop.
     let mut ok1 = false;
     for _ in 0..8 {
-        if client1.send(addr, "", payload1).is_ok() { ok1 = true; break; }
+        if client1.send(addr,  payload1).is_ok() { ok1 = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok1, "client1 DTLS send failed");
@@ -103,7 +103,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
     // Now send from client2 with a larger retry window to allow server to cycle back.
     let mut ok2 = false;
     for _ in 0..20 {
-        if client2.send(addr, "", payload2).is_ok() { ok2 = true; break; }
+        if client2.send(addr, payload2).is_ok() { ok2 = true; break; }
         thread::sleep(Duration::from_millis(100));
     }
     assert!(ok2, "client2 DTLS send failed");

@@ -487,20 +487,10 @@ pub mod non_ios {
                 self.owned_udp_mux = None;
                 Ok(())
             }
-        fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()> {
+        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
             use std::io::{Read, Write};
             use std::time::Duration;
 
-            // Validate issuer mapping if known and issuer provided
-            if let Some(map_arc) = &self.endpoint_issuers {
-                if let Ok(map) = map_arc.lock() {
-                    if let Some(mapped) = map.get(&to) {
-                        if !issuer.is_empty() && mapped != issuer {
-                            return Err(format!("issuer mismatch for endpoint {}: expected '{}', got '{}'", to, mapped, issuer));
-                        }
-                    }
-                }
-            }
 
             // If this instance has server-side writers (sender in server thread), use them first.
             if let Some(writers) = &self.server_writers {

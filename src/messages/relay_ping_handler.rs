@@ -29,10 +29,10 @@ impl RelayPingHandler {
 }
 
 impl MessageHandler for RelayPingHandler {
-    fn on_triangle_test1(&self, msg: &RelayTriangleTest1) {
+    fn on_triangle_test1(&self, from_id: &str, msg: &RelayTriangleTest1) {
         if let Some(to_peer) = self.peer_relay {
             // Compose TriangleTest2 to the peer relay, echoing the checkingEndpoint.
-            let t2 = RelayTriangleTest2 { app: None, checkingId: String::new(), checkingEndpoint: msg.checkingEndpoint };
+            let t2 = RelayTriangleTest2 { app: None, checkingId: from_id.to_string(), checkingEndpoint: msg.checkingEndpoint };
             let out = Message::Relay(RelayMessage::TriangleTest2(t2));
             self.send_json_to(to_peer, &out);
         } else {
@@ -41,7 +41,7 @@ impl MessageHandler for RelayPingHandler {
         }
     }
 
-    fn on_triangle_test2(&self, msg: &RelayTriangleTest2) {
+    fn on_triangle_test2(&self, _from_id: &str, msg: &RelayTriangleTest2) {
         // Send TriangleTest3 to the node at checkingEndpoint
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));

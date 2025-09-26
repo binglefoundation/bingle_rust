@@ -11,7 +11,7 @@ pub type Result<T = ()> = core::result::Result<T, String>;
  * @param data the data received
  * Note: Use an Arc<dyn Fn> so implementations can capture per-instance context without globals.
  */
-pub type HandleMessage = Arc<dyn Fn(&dyn Dtls, &SocketAddr, &[u8]) + Send + Sync>;
+pub type HandleMessage = Arc<dyn Fn(&dyn Dtls, &SocketAddr, &str, &[u8]) + Send + Sync>;
 
 /**
  * Handle certificates presented by the peer for verification
@@ -40,7 +40,7 @@ pub trait Dtls {
      * @param data the data to send
      * @return Ok(()) if the data was queued/sent, Err(()) otherwise
      */
-    fn send(&self, to: SocketAddr, issuer: &str, data: &[u8]) -> Result<()>;
+    fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()>;
 
     /**
      * Get a message handler function

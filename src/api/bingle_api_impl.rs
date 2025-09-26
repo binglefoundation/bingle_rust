@@ -95,8 +95,7 @@ impl BingleApiImpl {
             Err(_) => return false,
         };
         if let Some(dtls) = &self.dtls {
-            let issuer = self.issuer.as_deref().unwrap_or("");
-            dtls.send(addr, issuer, &bytes).is_ok()
+            dtls.send(addr, &bytes).is_ok()
         } else {
             false
         }
@@ -252,7 +251,7 @@ impl BingleApi for BingleApiImpl {
         if let Some(dtls) = self.dtls.as_mut() {
             let pending = Arc::clone(&self.pending_responses);
             let onmsg_shared = Arc::clone(&self.shared_on_message);
-            dtls.set_handle_message(Some(Arc::new(move |server, from_address, data| {
+            dtls.set_handle_message(Some(Arc::new(move |server, from_address, issuer, data| {
                 // Try to parse incoming bytes as JSON
                 let json_opt: Option<JsonValue> = match std::str::from_utf8(data) {
                     Ok(s) => serde_json::from_str::<JsonValue>(s).ok(),

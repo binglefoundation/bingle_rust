@@ -35,7 +35,7 @@ impl Engine {
 
         // Create a DTLS instance and install a message handler that decodes JSON and routes it.
         let mut dtls = DtlsOpenSsl::new();
-        dtls.set_handle_message(Some(Arc::new(|server, from, data| Self::handle_dtls_message(server, from, data))));
+        dtls.set_handle_message(Some(Arc::new(|server, from, issuer, data| Self::handle_dtls_message(server, from, issuer, data))));
 
         // Start DTLS accept loop with the mux and the concrete local address
         dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
@@ -62,13 +62,13 @@ impl Engine {
     }
 
     /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.
-    fn handle_dtls_message(_server: &dyn Dtls, _from: &SocketAddr, data: &[u8]) {
+    fn handle_dtls_message(_server: &dyn Dtls, _from: &SocketAddr, issuer: &str, data: &[u8]) {
         // Best-effort decode; print unimplemented on failure via default handler
         let handler = DefaultPrintingHandler;
         match std::str::from_utf8(data) {
             Ok(s) => {
                 match from_json_str(s) {
-                    Ok(msg) => route(&handler, &msg),
+                    Ok(msg) => route(&handler, &msg, issuer),
                     Err(_) => {
                         // Not valid JSON per our schema; treat as plaintext with raw bytes
                         // For now, just print

@@ -19,7 +19,7 @@ fn client_handler(_client: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &
 }
 
 fn server_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
-    let _ = server.send(*from, "", data);
+    let _ = server.send(*from, data);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
     let payload1 = b"hello-dtls-1";
     let mut ok = false;
     for _ in 0..5 {
-        if client1.send(addr, "", payload1).is_ok() { ok = true; break; }
+        if client1.send(addr, payload1).is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "first DTLS send failed");
@@ -93,7 +93,7 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
     let payload2 = b"hello-dtls-2";
     let mut ok2 = false;
     for _ in 0..5 {
-        if client2.send(addr, "", payload2).is_ok() { ok2 = true; break; }
+        if client2.send(addr, payload2).is_ok() { ok2 = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok2, "second DTLS send failed");
