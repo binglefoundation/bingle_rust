@@ -44,23 +44,23 @@
 - ~~Generate an ephemeral server certificate and private key and sign with CA cert~~
 - ~~Generate an ephemeral client certificate and private key and sign with CA cert~~
 
-## Create a HandlePeerCertificate
+## ~~Create a HandlePeerCertificate~~
 
-- Extract the CA certificates id (Algo public key) from its issuer by removing the trailing .ids.bingle.home.arpa
-- Validate that the CA certificate is signed by the Algo public key
-- Extract the server/client certificate id (Algo public key) from its issuer by removing the trailing .ids.bingle.home.arpa
-- Validate that the server/client certificate is signed by the CA certificate
-- Validate that the server/client certificate has a valid issuer which matches the AC cert
-- If everything valid return the issuer
-- If not return an Error
+- ~~Extract the CA certificates id (Algo public key) from its issuer by removing the trailing .ids.bingle.home.arpa~~
+- ~~Validate that the CA certificate is signed by the Algo public key~~
+- ~~Extract the server/client certificate id (Algo public key) from its issuer by removing the trailing .ids.bingle.home.arpa~~
+- ~~Validate that the server/client certificate is signed by the CA certificate~~
+- ~~Validate that the server/client certificate has a valid issuer which matches the AC cert~~
+- ~~If everything valid return the issuer~~
+- ~~If not return an Error~~
 
-## Associate issuer with socket endpoint
+## ~~Associate issuer with socket endpoint~~
 
-- create a map of endpoint to issuer
-- When HandlePeerCertificate is called, associate the issuer with the socket endpoint
-- On any DTLS error, clear the issuer from the map
-- When a message is received, look up the issuer and include it in the message
-- When a message is sent, validate that the endpoint and issuer match
+- ~~create a map of endpoint to issuer~~
+- ~~When HandlePeerCertificate is called, associate the issuer with the socket endpoint~~
+- ~~On any DTLS error, clear the issuer from the map~~
+- ~~When a message is received, look up the issuer and include it in the message~~
+- ~~When a message is sent, validate that the endpoint and issuer match~~
 
 # relay_finder
 
@@ -71,7 +71,7 @@
 -- ~~Store this in a map of tag UUID to a structure with a signal primitive and a response message~~
 -- ~~Add the field `responseTag: <tag>` to the message~~
 -- ~~Split into two threads~~
--- ~~In one thread, wait sychronously to be signalled via the signal primitive ~~
+-- ~~In one thread, wait sychronously to be signalled via the signal primitive~~
 -- ~~In the other thread, send the message and end the thread~~
 -- ~~Once signalled, remove the tag from the map and return the message~~
 -- ~~If a timeout occurs, remove the tag from the map and return an error~~

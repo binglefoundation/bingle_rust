@@ -10,6 +10,7 @@ use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandl
 use crate::dtls::Dtls;
 use crate::protocol::ISSUER_SUFFIX;
 use crate::blockchain::algo_ops::{AlgoOps, byte_key_to_address};
+use crate::engine::{Engine, EngineState};
 
 /// Concrete implementation of the BingleApi trait.
 ///
@@ -26,6 +27,8 @@ pub struct BingleApiImpl {
     // Shared on_message handler accessible from DTLS callback without needing &self
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
     issuer: Option<String>,
+    // Engine instance for endpoint identification and DTLS/mux lifecycle
+    engine: Option<Engine>,
 }
 
 impl Default for BingleApiImpl {
@@ -38,6 +41,7 @@ impl Default for BingleApiImpl {
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             shared_on_message: Arc::new(Mutex::new(None)),
             issuer: None,
+            engine: None,
         }
     }
 }
@@ -69,6 +73,14 @@ impl BingleApiImpl {
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
     pub fn set_issuer_for_tests(&mut self, issuer: String) { self.issuer = Some(issuer); }
+
+    /// Test helpers to access the Engine from integration tests (not part of stable API).
+    #[cfg(test)]
+    pub fn engine_state_for_tests(&self) -> Option<EngineState> { self.engine.as_ref().map(|e| e.state()) }
+    #[cfg(test)]
+    pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> { self.engine.as_ref().and_then(|e| e.last_public_addr()) }
+    #[cfg(test)]
+    pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) { if let Some(e) = self.engine.as_mut() { e.test_force_stun_consistent(addr); } }
 
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool { self.dtls.is_some() }
@@ -310,10 +322,20 @@ impl BingleApi for BingleApiImpl {
                 }
             })));
         }
+
+        // Start Engine using the provided StartOptions
+        let mut eng = Engine::new();
+        let _ = eng.start(options.clone()); // For tests we ignore errors here
+        self.engine = Some(eng);
+
         Ok(())
     }
 
     fn stop(&mut self) {
+        // Stop Engine if running
+        if let Some(e) = &mut self.engine {
+            e.stop();
+        }
         // For now, simply drop the DTLS instance; more graceful shutdown can be added later.
         self.dtls = None;
     }

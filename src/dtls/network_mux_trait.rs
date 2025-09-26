@@ -10,7 +10,7 @@ pub type Result<T = ()> = core::result::Result<T, String>;
  * @param from_address the address of the peer
  * @param data the datagram payload
  */
-pub type HandleDtls = fn(source: &dyn NetworkMux, from_address: &SocketAddr, data: &[u8]);
+pub type HandleDtls = std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync + 'static>;
 
 /**
  * Handle STUN packets arriving on the mux
@@ -18,7 +18,7 @@ pub type HandleDtls = fn(source: &dyn NetworkMux, from_address: &SocketAddr, dat
  * @param from_address the address of the peer
  * @param data the datagram payload
  */
-pub type HandleStun = fn(source: &dyn NetworkMux, from_address: &SocketAddr, data: &[u8]);
+pub type HandleStun = std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync + 'static>;
 
 /**
  * Handle TURN packets arriving on the mux
@@ -26,7 +26,7 @@ pub type HandleStun = fn(source: &dyn NetworkMux, from_address: &SocketAddr, dat
  * @param from_address the address of the peer
  * @param data the datagram payload
  */
-pub type HandleTurn = fn(source: &dyn NetworkMux, from_address: &SocketAddr, data: &[u8]);
+pub type HandleTurn = std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync + 'static>;
 
 /// Public NetworkMux trait abstraction
 pub trait NetworkMux {

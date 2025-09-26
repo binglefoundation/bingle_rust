@@ -143,22 +143,22 @@ impl UdpNetworkMux {
                                 if let Ok(mut q) = this.dtls_queue.lock() {
                                     q.push_back((from, data.to_vec()));
                                 }
-                                if let Some(h) = this.handle_dtls {
+                                if let Some(h) = this.handle_dtls.clone() {
                                     // Pass `&this` as &dyn NetworkMux
                                     let source: &dyn NetworkMux = &*this;
-                                    h(source, &from, data);
+                                    (h)(source, &from, data);
                                 }
                             }
                             MuxType::Stun => {
-                                if let Some(h) = this.handle_stun {
+                                if let Some(h) = this.handle_stun.clone() {
                                     let source: &dyn NetworkMux = &*this;
-                                    h(source, &from, data);
+                                    (h)(source, &from, data);
                                 }
                             }
                             MuxType::TurnChannelData => {
-                                if let Some(h) = this.handle_turn {
+                                if let Some(h) = this.handle_turn.clone() {
                                     let source: &dyn NetworkMux = &*this;
-                                    h(source, &from, data);
+                                    (h)(source, &from, data);
                                 }
                             }
                             // Currently ignore ZRTP, RTP, UNKNOWN
@@ -211,7 +211,7 @@ impl NetworkMux for UdpNetworkMux {
         }
     }
 
-    fn get_handle_dtls(&self) -> Option<HandleDtls> { self.handle_dtls }
+    fn get_handle_dtls(&self) -> Option<HandleDtls> { self.handle_dtls.clone() }
 
     fn set_handle_dtls(&mut self, handler: Option<HandleDtls>) { self.handle_dtls = handler; }
 
@@ -220,7 +220,7 @@ impl NetworkMux for UdpNetworkMux {
         self
     }
 
-    fn get_handle_stun(&self) -> Option<HandleStun> { self.handle_stun }
+    fn get_handle_stun(&self) -> Option<HandleStun> { self.handle_stun.clone() }
 
     fn set_handle_stun(&mut self, handler: Option<HandleStun>) { self.handle_stun = handler; }
 
@@ -229,7 +229,7 @@ impl NetworkMux for UdpNetworkMux {
         self
     }
 
-    fn get_handle_turn(&self) -> Option<HandleTurn> { self.handle_turn }
+    fn get_handle_turn(&self) -> Option<HandleTurn> { self.handle_turn.clone() }
 
     fn set_handle_turn(&mut self, handler: Option<HandleTurn>) { self.handle_turn = handler; }
 
