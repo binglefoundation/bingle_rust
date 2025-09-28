@@ -75,11 +75,8 @@ impl BingleApiImpl {
     pub fn set_issuer_for_tests(&mut self, issuer: String) { self.issuer = Some(issuer); }
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
-    #[cfg(test)]
     pub fn engine_state_for_tests(&self) -> Option<EngineState> { self.engine.as_ref().map(|e| e.state()) }
-    #[cfg(test)]
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> { self.engine.as_ref().and_then(|e| e.last_public_addr()) }
-    #[cfg(test)]
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) { if let Some(e) = self.engine.as_mut() { e.test_force_stun_consistent(addr); } }
 
     /// Exposed for integration tests: whether a DTLS instance has been created.
@@ -323,9 +320,9 @@ impl BingleApi for BingleApiImpl {
             })));
         }
 
-        // Start Engine using the provided StartOptions
+        // Start Engine using the provided StartOptions and propagate any errors
         let mut eng = Engine::new();
-        let _ = eng.start(options.clone()); // For tests we ignore errors here
+        eng.start(options.clone())?;
         self.engine = Some(eng);
 
         Ok(())

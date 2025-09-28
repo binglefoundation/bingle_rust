@@ -147,10 +147,9 @@ impl Engine {
         self.last_public_addr = public_addr;
         // Transition to TrianglePing and perform relay triangle test
         self.state = EngineState::TrianglePing;
-        // If DTLS isn't started (e.g., in tests), consider endpoint available immediately
+        // If DTLS isn't started (e.g., in tests), this is an error: we cannot proceed with triangle ping
         if self.dtls.is_none() {
-            self.state = EngineState::EndpointAvailable;
-            return;
+            panic!("DTLS not started: cannot proceed with triangle ping after STUN consistent");
         }
         // Find peer relay - for now, use RelayFinder with empty discovery returning empty => will error; ignore for minimal path
         // If we cannot find, we cannot proceed; in a full implementation, discovery would be wired.
@@ -198,7 +197,6 @@ impl Engine {
 
     pub fn state(&self) -> EngineState { self.state }
     pub fn last_public_addr(&self) -> Option<SocketAddr> { self.last_public_addr }
-    #[cfg(test)]
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) { self.on_stun_consistent(Some(addr)); }
 
     /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.

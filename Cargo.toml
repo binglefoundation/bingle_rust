@@ -139,3 +139,11 @@ path = "tests/stun/endpoint_finder_impl_send_handler.rs"
 [[test]]
 name = "stun_live_udp_mux"
 path = "tests/stun/stun_live_udp_mux.rs"
+
+[[test]]
+name = "engine_endpoint_identify"
+path = "tests/engine/endpoint_identify.rs"
+
+[[test]]
+name = "api_endpoint_identify_integration"
+path = "tests/api/endpoint_identify_integration.rs"

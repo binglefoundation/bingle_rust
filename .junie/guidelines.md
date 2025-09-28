@@ -3,4 +3,7 @@ corresponding to the src subfolder, eg tests for src/api go in tests/api
 
 Do not put Rust tests inline with the code, put unit tests in the test tree (like we do for Java).
 
-Before finishing a task, run `cargo test` to make sure all tests pass.
+Before finishing a task:
+
+- Ensure all tests are referenced in Cargo.toml
+- run `cargo test` to make sure all tests pass.
