@@ -67,7 +67,7 @@ impl RelayFinder {
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     pub fn find_root_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
         // 1) Return cached if valid
-        if let Some(c) = self.cache.lock().map_err(|_| "cache lock poisoned")?.as_ref() {
+        if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
             if Instant::now() < c.expires_at {
                 return Ok(RootRelayInfo { id: c.id.clone(), address: c.address });
             }
@@ -93,7 +93,7 @@ impl RelayFinder {
                 let info = RootRelayInfo { id: cand.id.clone(), address: cand.address };
                 // Cache
                 let expires = Instant::now() + self.cache_ttl;
-                *self.cache.lock().map_err(|_| "cache lock poisoned")? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
+                *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
                 return Ok(info);
             }
         }

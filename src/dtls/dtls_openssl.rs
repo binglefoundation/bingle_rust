@@ -405,7 +405,7 @@ pub mod non_ios {
                                     let stream_arc = shared.clone();
                                     let ep_map = endpoint_issuers2.clone();
                                     let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
-                                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
+                                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(e) => return Err(format!("stream lock poisoned: {}", e)) };
                                         use std::io::Write;
                                         if let Err(e) = s.write_all(payload) {
                                             if let Some(ep) = &ep_map { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }

@@ -19,7 +19,6 @@ fn find_unused_loopback_port() -> u16 {
 // (static endpoints) and two client instances, then validate that the clients reach
 // EndpointAvailable with the expected public address.
 #[test]
-#[ignore] // Disabled pending DTLS certificate wiring in Engine::start; enable when triangle ping path is fully implemented
 fn bingle_api_endpoint_identify_via_forced_stun() {
     // Set up two relay instances with static endpoints (127.0.0.1 with known, unused ports)
     let r1_port = find_unused_loopback_port();
@@ -47,8 +46,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some("pass3".into()), static_ip: None, am_relay: false, stun_servers: Some(dummy_stun.clone()) };
     let c2_opts = StartOptions { handle: "client2".into(), algo_passphrase: Some("pass4".into()), static_ip: None, am_relay: false, stun_servers: Some(dummy_stun.clone()) };
 
-    let _ = client1.start(c1_opts);
-    let _ = client2.start(c2_opts);
+    client1.start(c1_opts).expect("client1 start() failed");
+    client2.start(c2_opts).expect("client2 start() failed");
 
     // Force STUN Consistent with known loopback ports to emulate the endpoint determination result
     // TODO: instead emulate a STUN server

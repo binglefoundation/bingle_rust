@@ -10,8 +10,8 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         use openssl::x509::X509;
 
         // Parse certificates
-        let cert = X509::from_pem(cert_pem).map_err(|_| "invalid peer certificate PEM".to_string())?;
-        let ca = X509::from_pem(ca_pem).map_err(|_| "invalid CA certificate PEM".to_string())?;
+        let cert = X509::from_pem(cert_pem).map_err(|e| format!("invalid peer certificate PEM: {}", e))?;
+        let ca = X509::from_pem(ca_pem).map_err(|e| format!("invalid CA certificate PEM: {}", e))?;
 
         // Extract CA issuer/subject CN (self-signed)
         let ca_cn = ca
@@ -26,12 +26,12 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         let ca_id = ca_cn.trim_end_matches(ISSUER_SUFFIX);
 
         // Validate CA public key corresponds to Algorand address from CN
-        let algo_pk = address_to_byte_key(ca_id).map_err(|_| "invalid Algorand address in CA CN".to_string())?; // 32-byte public key
-        let algo_pkey = PKey::public_key_from_raw_bytes(&algo_pk, Id::ED25519).map_err(|_| "failed to build Algorand public key".to_string())?;
+        let algo_pk = address_to_byte_key(ca_id).map_err(|e| format!("invalid Algorand address in CA CN: {}", e))?; // 32-byte public key
+        let algo_pkey = PKey::public_key_from_raw_bytes(&algo_pk, Id::ED25519).map_err(|e| format!("failed to build Algorand public key: {}", e))?;
         // Compare DER encodings of public keys to ensure same key
-        let ca_pub = ca.public_key().map_err(|_| "extract CA public key failed".to_string())?;
-        let ca_pub_der = ca_pub.public_key_to_der().map_err(|_| "encode CA public key DER failed".to_string())?;
-        let algo_der = algo_pkey.public_key_to_der().map_err(|_| "encode Algorand public key DER failed".to_string())?;
+        let ca_pub = ca.public_key().map_err(|e| format!("extract CA public key failed: {}", e))?;
+        let ca_pub_der = ca_pub.public_key_to_der().map_err(|e| format!("encode CA public key DER failed: {}", e))?;
+        let algo_der = algo_pkey.public_key_to_der().map_err(|e| format!("encode Algorand public key DER failed: {}", e))?;
         if ca_pub_der != algo_der { return Err("CA public key does not match Algorand address".to_string()); }
         // Additionally, verify the CA is self-signed correctly
         if !ca.verify(&ca_pub).unwrap_or(false) { return Err("CA self-signature verification failed".to_string()); }

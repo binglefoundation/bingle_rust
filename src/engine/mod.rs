@@ -51,8 +51,8 @@ impl Engine {
         self.state = EngineState::StunIdentify;
 
         // Bind UDP on 0.0.0.0:0 and create mux (we will install STUN handler before wrapping in Arc)
-        let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0").map_err(|_| "Failed to bind UDP mux")?;
-        let local_addr: SocketAddr = mux0.local_addr().map_err(|_| "Failed to get local addr")?;
+        let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+        let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create a DTLS instance and install message handler
         let mut dtls = DtlsOpenSsl::new();
@@ -92,7 +92,7 @@ impl Engine {
         if let Ok(mut f) = finder.lock() {
             let mux_clone = mux.clone();
             f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
-                let _ = mux_clone.write((host, port), payload);
+                mux_clone.write((host, port), payload).expect("UDP mux write failed in STUN send_packet_handler");
             })));
             // In this minimal engine, we do not mutate engine state from STUN thread; tests can drive via helpers
             f.set_state_change_handler(None);
@@ -107,10 +107,10 @@ impl Engine {
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
         dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
-            .map_err(|_| "Failed to start DTLS")?;
+            .map_err(|e| format!("Failed to start DTLS: {}", e))?;
 
         // Start mux thread
-        mux.start().map_err(|_| "Failed to start UDP mux")?;
+        mux.start().map_err(|e| format!("Failed to start UDP mux: {}", e))?;
 
         self.mux = Some(mux);
         self.dtls = Some(dtls);
@@ -122,9 +122,9 @@ impl Engine {
 
     fn start_with_addr(&mut self, _options: StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
         // Create a UDP NetworkMux bound to the requested address (port may be 0 for OS-assigned)
-        let mux = Arc::new(UdpNetworkMux::bind(bind_addr).map_err(|_| "Failed to bind UDP mux")?);
+        let mux = Arc::new(UdpNetworkMux::bind(bind_addr).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
         // Determine the concrete local address after bind (handles port 0)
-        let local_addr: SocketAddr = mux.local_addr().map_err(|_| "Failed to get local addr")?;
+        let local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create a DTLS instance and install a message handler that decodes JSON and routes it.
         let mut dtls = DtlsOpenSsl::new();
@@ -132,7 +132,7 @@ impl Engine {
 
         // Start DTLS accept loop with the mux and the concrete local address
         dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
-            .map_err(|_| "Failed to start DTLS")?;
+            .map_err(|e| format!("Failed to start DTLS: {}", e))?;
 
         // Start the UDP mux background loop
         mux.start().map_err(|_| "Failed to start UDP mux")?;
@@ -157,7 +157,7 @@ impl Engine {
         if let (Some(dtls), Some(addr)) = (self.dtls.as_ref(), public_addr) {
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: addr }));
             let json = to_json_string(&msg);
-            let _ = dtls.send(addr, json.as_bytes());
+            dtls.send(addr, json.as_bytes()).expect("DTLS send failed in Engine triangle ping");
             // Wait up to 10 seconds for TriangleTest3 indicated by DTLS handler
             if let Some((handle, _ts)) = &self.triangle_wait {
                 let (lock, cvar) = (&handle.0, &handle.1);
@@ -180,7 +180,7 @@ impl Engine {
     /// Stop the engine and background tasks if started.
     pub fn stop(&mut self) {
         if let Some(dtls) = &mut self.dtls {
-            let _ = dtls.stop();
+            dtls.stop().expect("DTLS stop failed in Engine::stop");
         }
         if let Some(mux) = &self.mux {
             mux.stop();

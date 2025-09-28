@@ -84,7 +84,7 @@ impl UdpNetworkMux {
     /// Peek the next DTLS datagram from the internal queue without removing it.
     pub fn dtls_peek_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
         use std::io::{Error, ErrorKind};
-        let q = self.dtls_queue.lock().map_err(|_| Error::new(ErrorKind::Other, "queue poisoned"))?;
+        let q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
         if let Some((from, data)) = q.front() {
             let n = data.len().min(buf.len());
             buf[..n].copy_from_slice(&data[..n]);
@@ -97,7 +97,7 @@ impl UdpNetworkMux {
     /// Pop the next DTLS datagram from the internal queue.
     pub fn dtls_recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
         use std::io::{Error, ErrorKind};
-        let mut q = self.dtls_queue.lock().map_err(|_| Error::new(ErrorKind::Other, "queue poisoned"))?;
+        let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
         if let Some((from, data)) = q.pop_front() {
             let n = data.len().min(buf.len());
             buf[..n].copy_from_slice(&data[..n]);
@@ -110,7 +110,7 @@ impl UdpNetworkMux {
     /// Pop the next DTLS datagram for a specific peer from the internal queue.
     pub fn dtls_recv_from_peer(&self, peer: SocketAddr, buf: &mut [u8]) -> std::io::Result<usize> {
         use std::io::{Error, ErrorKind};
-        let mut q = self.dtls_queue.lock().map_err(|_| Error::new(ErrorKind::Other, "queue poisoned"))?;
+        let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
         if let Some(idx) = q.iter().position(|(from, _)| *from == peer) {
             if let Some((_, data)) = q.remove(idx) {
                 let n = data.len().min(buf.len());
