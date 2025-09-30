@@ -64,6 +64,11 @@ impl RelayFinder {
         Self { api, cache_ttl, cache: Mutex::new(None), discover_roots: discover }
     }
 
+    /// Find any relay suitable for us. Currently identical to finding the preferred root relay.
+    pub fn find_relay(&self, my_id: &str) -> Result<SocketAddr, String> {
+        self.find_root_relay(my_id).map(|info| info.address)
+    }
+
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     pub fn find_root_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
         // 1) Return cached if valid
@@ -82,7 +87,6 @@ impl RelayFinder {
         relays.sort_by(|a, b| a.id.cmp(&b.id));
 
         // 3) Choose preferred and alternate per partitioning rule
-        let n = relays.len();
         let (pref_idx, alt_idx) = self.select_indices(&relays, my_id);
 
         // 4) Try preferred then alternate via RelayCheck

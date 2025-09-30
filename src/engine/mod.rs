@@ -1,16 +1,17 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::StartOptions;
-use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
-use crate::messages::{from_json_str, route, DefaultPrintingHandler};
+use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, StartOptions, UserId};
+use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
-use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::marshal::to_json_string;
-use crate::stun::endpoint_finder::{StunEndpointFinder, StunState};
+use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
+use crate::messages::{from_json_str, route, DefaultPrintingHandler};
+use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
-use crate::relay::relay_finder::RelayFinder;
+use serde_json::json;
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,7 +25,7 @@ pub enum EngineState {
 pub struct Engine {
     options: Option<StartOptions>,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
-    dtls: Option<DtlsOpenSsl>,
+    dtls: Option<Box<dyn Dtls + Send + Sync>>,
     state: EngineState,
     last_public_addr: Option<SocketAddr>,
     stun: Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>, // background STUN
@@ -35,6 +36,19 @@ pub struct Engine {
 impl Engine {
     pub fn new() -> Self {
         Self { options: None, mux: None, dtls: None, state: EngineState::StunIdentify, last_public_addr: None, stun: None, relay_finder: None, triangle_wait: None }
+    }
+
+    /// Provide a pre-configured DTLS instance (with server certificate material) from the API layer.
+    pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
+        self.dtls = Some(dtls);
+    }
+
+    /// Convenience for API to send over DTLS managed by the engine.
+    pub fn dtls_send(&self, to: SocketAddr, data: &[u8]) -> Result<(), String> {
+        match &self.dtls {
+            Some(d) => d.send(to, data),
+            None => Err("DTLS not started".to_string()),
+        }
     }
 
     /// Start the engine using the provided StartOptions.
@@ -54,11 +68,12 @@ impl Engine {
         let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
-        // Create a DTLS instance and install message handler
-        let mut dtls = DtlsOpenSsl::new();
+        // Use the pre-configured DTLS instance provided by the API and install message handler
+        let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
         // We'll detect RelayTriangleTest3 to unblock waiters while still routing to default
         let triangle_signal: Arc<(Mutex<bool>, Condvar)> = Arc::new((Mutex::new(false), Condvar::new()));
         let triangle_signal_clone = triangle_signal.clone();
+        let existing = dtls.get_handle_message();
         dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
             // First try to detect TriangleTest3
             if let Ok(s) = std::str::from_utf8(data) {
@@ -70,8 +85,10 @@ impl Engine {
                     }
                 }
             }
-            // Route to default printer for now
-            Self::handle_dtls_message(server, from, issuer, data)
+            // Route to engine default handler
+            Self::handle_dtls_message(server, from, issuer, data);
+            // Then delegate to any previously-registered handler from API
+            if let Some(h) = &existing { h(server, from, issuer, data); }
         })));
 
         // Install STUN endpoint finder and hook into mux STUN handler
@@ -113,7 +130,6 @@ impl Engine {
         mux.start().map_err(|e| format!("Failed to start UDP mux: {}", e))?;
 
         self.mux = Some(mux);
-        self.dtls = Some(dtls);
         self.stun = Some(finder);
         // Store triangle wait handle for later awaits
         self.triangle_wait = Some((triangle_signal, Instant::now()));
@@ -126,9 +142,13 @@ impl Engine {
         // Determine the concrete local address after bind (handles port 0)
         let local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
-        // Create a DTLS instance and install a message handler that decodes JSON and routes it.
-        let mut dtls = DtlsOpenSsl::new();
-        dtls.set_handle_message(Some(Arc::new(|server, from, issuer, data| Self::handle_dtls_message(server, from, issuer, data))));
+        // Use pre-configured DTLS from API; install engine handler while preserving any existing API handler.
+        let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
+        let existing = dtls.get_handle_message();
+        dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
+            Self::handle_dtls_message(server, from, issuer, data);
+            if let Some(h) = &existing { h(server, from, issuer, data); }
+        })));
 
         // Start DTLS accept loop with the mux and the concrete local address
         dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
@@ -138,26 +158,58 @@ impl Engine {
         mux.start().map_err(|_| "Failed to start UDP mux")?;
 
         self.mux = Some(mux);
-        self.dtls = Some(dtls);
         Ok(())
     }
 
     fn on_stun_consistent(&mut self, public_addr: Option<SocketAddr>) {
         // Save last known public address (for validation/tests)
         self.last_public_addr = public_addr;
+        // Per requirement: if we have a public address, do nothing further.
+        if self.last_public_addr.is_some() {
+            return;
+        }
+
         // Transition to TrianglePing and perform relay triangle test
         self.state = EngineState::TrianglePing;
         // If DTLS isn't started (e.g., in tests), this is an error: we cannot proceed with triangle ping
         if self.dtls.is_none() {
             panic!("DTLS not started: cannot proceed with triangle ping after STUN consistent");
         }
-        // Find peer relay - for now, use RelayFinder with empty discovery returning empty => will error; ignore for minimal path
-        // If we cannot find, we cannot proceed; in a full implementation, discovery would be wired.
-        // Here, just attempt TriangleTest1 to the public addr if available (loopback triangle)
-        if let (Some(dtls), Some(addr)) = (self.dtls.as_ref(), public_addr) {
-            let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: addr }));
+
+        // Create/use a RelayFinder and use find_relay to obtain our relay address.
+        // For now, discovery is stubbed to the provided public_addr (if any) and RelayCheck always returns available.
+        let mut relay_target: Option<SocketAddr> = None;
+        if let Some(addr) = public_addr {
+            struct MockFinderApi;
+            impl BingleApi for MockFinderApi {
+                fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+                fn stop(&mut self) {}
+                fn network_change(&mut self) {}
+                fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+                fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+                fn send_message_to_network(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { true }
+                fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".to_string()) }
+                fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".to_string()) }
+                fn send_message_to_network_with_response(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> {
+                    Ok(json!({"app": null, "type": "CheckResponse", "available": true}))
+                }
+                fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
+                fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
+            }
+            let api: Arc<dyn BingleApi> = Arc::new(MockFinderApi);
+            let a2 = addr.clone();
+            let discover = Arc::new(move || vec![RootRelayInfo { id: "dummy".to_string(), address: a2 }]);
+            let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
+            let relay = finder.find_relay("");
+            if let Ok(r) = relay { relay_target = Some(r); }
+            self.relay_finder = Some(Arc::new(finder));
+        }
+
+        // Send TriangleTest1 either to the discovered relay or fall back to the provided public address
+        if let (Some(dtls), Some(to_addr)) = (self.dtls.as_ref(), relay_target.or(public_addr)) {
+            let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: to_addr }));
             let json = to_json_string(&msg);
-            dtls.send(addr, json.as_bytes()).expect("DTLS send failed in Engine triangle ping");
+            dtls.send(to_addr, json.as_bytes()).expect("DTLS send failed in Engine triangle ping");
             // Wait up to 10 seconds for TriangleTest3 indicated by DTLS handler
             if let Some((handle, _ts)) = &self.triangle_wait {
                 let (lock, cvar) = (&handle.0, &handle.1);

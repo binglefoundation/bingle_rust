@@ -31,8 +31,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut relay1 = BingleApiImpl::new();
     let mut relay2 = BingleApiImpl::new();
 
-    let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some("pass1".into()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None };
-    let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some("pass2".into()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None };
+    let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some("b64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None };
+    let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some("b64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None };
 
     // Start relays (no assertions about DTLS; we use them only as placeholders)
     let _ = relay1.start(r1_opts);
@@ -43,8 +43,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut client2 = BingleApiImpl::new();
 
     let dummy_stun = vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3478)];
-    let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some("pass3".into()), static_ip: None, am_relay: false, stun_servers: Some(dummy_stun.clone()) };
-    let c2_opts = StartOptions { handle: "client2".into(), algo_passphrase: Some("pass4".into()), static_ip: None, am_relay: false, stun_servers: Some(dummy_stun.clone()) };
+    let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some("b64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into()), static_ip: None, am_relay: false, stun_servers: Some(dummy_stun.clone()) };
+    let c2_opts = StartOptions { handle: "client2".into(), algo_passphrase: Some("b64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into()), static_ip: None, am_relay: false, stun_servers: Some(dummy_stun.clone()) };
 
     client1.start(c1_opts).expect("client1 start() failed");
     client2.start(c2_opts).expect("client2 start() failed");
@@ -57,10 +57,12 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     client2.engine_force_stun_consistent_for_tests(pub2);
 
     // Validate state and recorded public addresses
-    assert_eq!(client1.engine_state_for_tests(), Some(EngineState::EndpointAvailable));
+    // As of change: on_stun_consistent does nothing further if a public address is provided.
+    // So state remains StunIdentify, but last_public_addr is recorded.
+    assert_eq!(client1.engine_state_for_tests(), Some(EngineState::StunIdentify));
     assert_eq!(client1.engine_last_public_addr_for_tests(), Some(pub1));
 
-    assert_eq!(client2.engine_state_for_tests(), Some(EngineState::EndpointAvailable));
+    assert_eq!(client2.engine_state_for_tests(), Some(EngineState::StunIdentify));
     assert_eq!(client2.engine_last_public_addr_for_tests(), Some(pub2));
 
     // Stop instances
