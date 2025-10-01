@@ -147,3 +147,11 @@ path = "tests/engine/endpoint_identify.rs"
 [[test]]
 name = "api_endpoint_identify_integration"
 path = "tests/api/endpoint_identify_integration.rs"
+
+[[test]]
+name = "stun_simple_server_consistent"
+path = "tests/stun/simple_server_consistent.rs"
+
+[[test]]
+name = "api_bingle_api_start_fail"
+path = "tests/api/bingle_api_start_fail.rs"

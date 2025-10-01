@@ -162,15 +162,25 @@ impl Engine {
     }
 
     fn on_stun_consistent(&mut self, public_addr: Option<SocketAddr>) {
+        println!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
         self.last_public_addr = public_addr;
         // Per requirement: if we have a public address, do nothing further.
         if self.last_public_addr.is_some() {
+            let prev = self.state;
+            self.state = EngineState::EndpointAvailable;
+            println!(
+                "[Engine] STUN consistent with public address {:?}. State change: {:?} -> EndpointAvailable",
+                self.last_public_addr, prev
+            );
+            // Minimal path: we do not send TriangleTest1 when a public address is known.
             return;
         }
 
         // Transition to TrianglePing and perform relay triangle test
+        let prev = self.state;
         self.state = EngineState::TrianglePing;
+        println!("[Engine] state change: {:?} -> TrianglePing (no public addr provided)", prev);
         // If DTLS isn't started (e.g., in tests), this is an error: we cannot proceed with triangle ping
         if self.dtls.is_none() {
             panic!("DTLS not started: cannot proceed with triangle ping after STUN consistent");
@@ -209,6 +219,7 @@ impl Engine {
         if let (Some(dtls), Some(to_addr)) = (self.dtls.as_ref(), relay_target.or(public_addr)) {
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: to_addr }));
             let json = to_json_string(&msg);
+            println!("[Engine] sending TriangleTest1 to {} ({} bytes)", to_addr, json.len());
             dtls.send(to_addr, json.as_bytes()).expect("DTLS send failed in Engine triangle ping");
             // Wait up to 10 seconds for TriangleTest3 indicated by DTLS handler
             if let Some((handle, _ts)) = &self.triangle_wait {
@@ -217,11 +228,15 @@ impl Engine {
                 let timeout = Duration::from_secs(10);
                 let (g, _res) = cvar.wait_timeout(done, timeout).unwrap();
                 if *g {
+                    println!("[Engine] received TriangleTest3 signal; state -> EndpointAvailable");
                     self.state = EngineState::EndpointAvailable;
                 } else {
+                    println!("[Engine][WARN] no TriangleTest3 within 10s; panic follows (NotImplemented)");
                     panic!("NotImplemented: STUN Consistent but no RelayTriangleTest3 received within 10 seconds");
                 }
             }
+        } else {
+            println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
         }
     }
 
