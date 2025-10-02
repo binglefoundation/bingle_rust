@@ -58,7 +58,7 @@ pub fn should_run_localnet() -> bool {
 
 #[allow(dead_code)]
 pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoProviderConfig) -> AlgoOps {
-    let key32 = mnemonic::to_key(mnem).expect("mnemonic to key");
-    let pass = format!("b64:{}", general_purpose::STANDARD.encode(&key32));
+    // Pass the mnemonic directly as the passphrase (ASCII string)
+    let pass = mnem.to_string();
     AlgoOps::new(Some(pass), Some(addr.to_string()), Some(cfg))
 }

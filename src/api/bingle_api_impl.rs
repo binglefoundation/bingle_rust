@@ -333,12 +333,15 @@ impl BingleApi for BingleApiImpl {
         }
 
         // Start Engine using the provided StartOptions and propagate any errors
-        let mut eng = Engine::new();
-        if let Some(dtls) = self.dtls.take() {
-            eng.set_dtls(dtls);
+        if self.engine.is_none() {
+            self.engine = Some(Engine::new());
         }
-        eng.start(options.clone())?;
-        self.engine = Some(eng);
+        if let Some(eng) = self.engine.as_mut() {
+            if let Some(dtls) = self.dtls.take() {
+                eng.set_dtls(dtls);
+            }
+            eng.start(options.clone())?;
+        }
 
         Ok(())
     }

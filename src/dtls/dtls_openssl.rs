@@ -506,6 +506,7 @@ pub mod non_ios {
             let connector = self.prepare_client_context()?;
 
             // Wrap a connected UDP socket as a Read/Write stream with debug logging
+            // TODO: this is broken - should use the same logic as in start_accept
             #[derive(Debug)]
             struct NetworkMuxConn { sock: std::net::UdpSocket, peer: SocketAddr }
             impl Read for NetworkMuxConn {

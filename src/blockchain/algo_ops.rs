@@ -162,8 +162,10 @@ impl AlgoOps {
         kvs
     }
 
-    /// Create a new address, generating an ed25519 keypair and storing a base64-encoded secret key
-    /// in `passphrase` (prefixed with "b64:"). Returns the Algorand address.
+    /// Create a new address, generating an ed25519 keypair. For compatibility with
+    /// existing tests, we store the secret key in `passphrase` as a base64-encoded
+    /// string with a "b64:" prefix. Note: production code expects an ASCII mnemonic
+    /// passphrase to be provided by callers; this storage is only used by tests.
     pub fn create_address(&mut self, _save: bool, _always_new_address: bool) -> Result<String> {
         use ed25519_dalek::SigningKey;
         use rand_core::{OsRng, RngCore};
@@ -193,6 +195,19 @@ impl AlgoOps {
             .passphrase
             .as_ref()
             .ok_or_else(|| anyhow!("This operation needs account access"))?;
+
+        // New behavior: expect ASCII mnemonic passphrase. Derive 32-byte key using Algorand mnemonic.
+        if !pass.is_empty() {
+            if let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass) {
+                if key32.len() == 32 {
+                    return Ok(key32.to_vec());
+                } else {
+                    bail!("Derived key must be 32 bytes, got {}", key32.len());
+                }
+            }
+        }
+
+        // Backward compatibility: support legacy base64 format with "b64:" prefix
         if let Some(rest) = pass.strip_prefix("b64:") {
             let sk = general_purpose::STANDARD.decode(rest).map_err(|e| anyhow!("Invalid base64 secret: {e}"))?;
             if sk.len() != 32 {
@@ -200,7 +215,8 @@ impl AlgoOps {
             }
             return Ok(sk);
         }
-        bail!("Unsupported passphrase format")
+
+        bail!("Unsupported passphrase format: expected ASCII mnemonic")
     }
 
     /// Compute the application (contract) address from app id.

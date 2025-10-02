@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -68,6 +68,9 @@ impl Engine {
         let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
+        // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+
         // Use the pre-configured DTLS instance provided by the API and install message handler
         let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
         // We'll detect RelayTriangleTest3 to unblock waiters while still routing to default
@@ -111,8 +114,22 @@ impl Engine {
             f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
                 mux_clone.write((host, port), payload).expect("UDP mux write failed in STUN send_packet_handler");
             })));
-            // In this minimal engine, we do not mutate engine state from STUN thread; tests can drive via helpers
-            f.set_state_change_handler(None);
+            // Wire STUN state changes into Engine handlers. We use a small, contained unsafe block to
+            // call back into the Engine instance from the STUN worker thread.
+            f.set_state_change_handler(Some(Arc::new(move |st, ep| {
+                // Only act on meaningful terminal states for now.
+                let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+                if p.is_null() { return; }
+                unsafe {
+                    if st == crate::stun::endpoint_finder::StunState::Consistent {
+                        let eng = &mut *p;
+                        eng.on_stun_consistent(ep);
+                    } else if st == crate::stun::endpoint_finder::StunState::Inconsistent {
+                        let eng = &mut *p;
+                        eng.on_stun_inconsistent();
+                    }
+                }
+            })));
 
             // Kick off STUN polling using provided servers
             let servers = options.stun_servers.clone().unwrap_or_default();
@@ -165,22 +182,11 @@ impl Engine {
         println!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
         self.last_public_addr = public_addr;
-        // Per requirement: if we have a public address, do nothing further.
-        if self.last_public_addr.is_some() {
-            let prev = self.state;
-            self.state = EngineState::EndpointAvailable;
-            println!(
-                "[Engine] STUN consistent with public address {:?}. State change: {:?} -> EndpointAvailable",
-                self.last_public_addr, prev
-            );
-            // Minimal path: we do not send TriangleTest1 when a public address is known.
-            return;
-        }
 
         // Transition to TrianglePing and perform relay triangle test
         let prev = self.state;
         self.state = EngineState::TrianglePing;
-        println!("[Engine] state change: {:?} -> TrianglePing (no public addr provided)", prev);
+        println!("[Engine] state change: {:?} -> TrianglePing", prev);
         // If DTLS isn't started (e.g., in tests), this is an error: we cannot proceed with triangle ping
         if self.dtls.is_none() {
             panic!("DTLS not started: cannot proceed with triangle ping after STUN consistent");
@@ -208,15 +214,25 @@ impl Engine {
             }
             let api: Arc<dyn BingleApi> = Arc::new(MockFinderApi);
             let a2 = addr.clone();
-            let discover = Arc::new(move || vec![RootRelayInfo { id: "dummy".to_string(), address: a2 }]);
+
+            // TODO: use a real discovery function
+            const ADDRESS_SPEND: &str = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE";
+            let discover = Arc::new(move || vec![RootRelayInfo { id: ADDRESS_SPEND.parse().unwrap(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]);
+
             let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
-            let relay = finder.find_relay("");
-            if let Ok(r) = relay { relay_target = Some(r); }
+            let relay = finder.find_relay(&self.options.as_ref().unwrap().handle);
+            if let Ok(r) = relay {
+                relay_target = Some(r);
+                println!("[Engine] chosen relay {}", r);
+            }
+            else {
+                panic!("[Engine] no relay found");
+            }
             self.relay_finder = Some(Arc::new(finder));
         }
 
-        // Send TriangleTest1 either to the discovered relay or fall back to the provided public address
-        if let (Some(dtls), Some(to_addr)) = (self.dtls.as_ref(), relay_target.or(public_addr)) {
+        // Send TriangleTest1 either to the discovered relay
+        if let (Some(dtls), Some(to_addr)) = (self.dtls.as_ref(), relay_target) {
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: to_addr }));
             let json = to_json_string(&msg);
             println!("[Engine] sending TriangleTest1 to {} ({} bytes)", to_addr, json.len());

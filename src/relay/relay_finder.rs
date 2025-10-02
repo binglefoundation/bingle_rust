@@ -74,6 +74,7 @@ impl RelayFinder {
         // 1) Return cached if valid
         if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
             if Instant::now() < c.expires_at {
+                println!("find_root_relay: using cached root relay: {} {}", c.id, c.address);
                 return Ok(RootRelayInfo { id: c.id.clone(), address: c.address });
             }
         }
@@ -93,7 +94,7 @@ impl RelayFinder {
         let order = [pref_idx, alt_idx];
         for &idx in &order {
             let cand = &relays[idx];
-            if self.relay_check(cand.address) {
+            if self.relay_check(&*cand.id, cand.address) {
                 let info = RootRelayInfo { id: cand.id.clone(), address: cand.address };
                 // Cache
                 let expires = Instant::now() + self.cache_ttl;
@@ -130,11 +131,10 @@ impl RelayFinder {
         u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]])
     }
 
-    fn relay_check(&self, addr: SocketAddr) -> bool {
+    fn relay_check(&self, id: &str, addr: SocketAddr) -> bool {
         let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
         let req = json!({ "app": null, "type": "Check" });
-        // Note: user_id is not needed by the DTLS layer for RelayCheck; pass empty string.
-        match self.api.send_message_to_network_with_response(&nsk, &"".to_string(), req, None) {
+        match self.api.send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {
             Ok(resp) => {
                 let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
                     && resp.get("available").and_then(|v| v.as_bool()).unwrap_or(false);
