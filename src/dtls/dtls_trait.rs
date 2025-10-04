@@ -24,9 +24,10 @@ pub type HandlePeerCertificate = fn(certificate: &[u8], ca_certificate: &[u8]) -
 /// Public DTLS trait abstraction
 pub trait Dtls {
     /**
-     * Start the DTLS accept loop on the given local address. The accept loop runs until stop() is called.
+     * Start the DTLS accept loop using the provided, already-bound UDP mux.
+     * Implementations must not bind or start their own mux; a valid mux is required.
      */
-    fn start(&mut self, addr: SocketAddr, mux: Option<Arc<UdpNetworkMux>>) -> Result<()>;
+    fn start(&mut self, mux: Arc<UdpNetworkMux>) -> Result<()>;
 
     /**
      * Stop the DTLS accept loop, waiting for background tasks to exit.

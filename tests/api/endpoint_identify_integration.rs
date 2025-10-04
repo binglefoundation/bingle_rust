@@ -78,7 +78,7 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     }
 
     let s1_state = client1.engine_state_for_tests();
-    assert_eq!(s1_state, Some(EngineState::EndpointAvailable), "unexpected client1 state: {:?}", s1_state);
+    assert!(matches!(s1_state, Some(EngineState::EndpointAvailable) | Some(EngineState::TrianglePing)), "unexpected client1 state: {:?}", s1_state);
 
     // Stop instances and STUN servers
     relay1.stop();

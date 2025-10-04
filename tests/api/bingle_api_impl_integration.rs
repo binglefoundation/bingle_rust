@@ -49,11 +49,10 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    // Find a free port
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing tag
     fn server_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
@@ -84,7 +83,8 @@ fn relay_check_end_to_end_on_message_receives_response() {
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
-    server.start(addr, None).expect("server start");
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("server start");
 
     // Give server time to bind
     thread::sleep(Duration::from_millis(200));

@@ -48,12 +48,10 @@ fn dtls_client_echo_roundtrip() {
     let client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe); // free the port for the server
-
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Build and configure the server instance with handler that captures and triggers Ping
     let mut server = DtlsOpenSsl::new()
@@ -62,17 +60,25 @@ fn dtls_client_echo_roundtrip() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start(addr, None).expect("start should succeed");
+    // Start mux then the DTLS server with the mux
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("start should succeed");
 
-    // Give the background thread a moment to bind and start listening
+    // Give the background thread a moment
     thread::sleep(Duration::from_millis(400));
 
     // Build the DTLS client with the echo handler
-    let client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new()
         .with_handle_message(std::sync::Arc::new(client_echo_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
+
+    // Start client mux and DTLS
+    let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+    let cmux = std::sync::Arc::new(cmux0);
+    cmux.start().expect("client mux start");
+    client.start(cmux.clone()).expect("client start");
 
     // Step 1: Send initial "Hello" from client to server and validate reception
     let mut ok = false;

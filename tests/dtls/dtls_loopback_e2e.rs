@@ -27,12 +27,10 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     let client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe); // free the port for the server
-
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Echo handler: save payload then send back to sender using the server instance.
     fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
@@ -57,18 +55,26 @@ fn dtls_openssl_end_to_end_loopback_echo() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start(addr, None).expect("start should succeed");
+    // Start mux then the DTLS server with the mux.
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("start should succeed");
 
-    // Give the background thread a moment to bind.
+    // Give the background thread a moment.
     thread::sleep(Duration::from_millis(200));
 
     // DTLS client: build and send payload to server.
-    let client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new()
         .with_null_encryption()
         .with_handle_message(std::sync::Arc::new(client_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
+
+    // Start client mux and initialize client DTLS
+    let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+    let cmux = std::sync::Arc::new(cmux0);
+    cmux.start().expect("client mux start");
+    client.start(cmux.clone()).expect("client start");
 
     let payload = b"loopback-echo-payload";
     // Retry a few times in case of transient handshake timing.

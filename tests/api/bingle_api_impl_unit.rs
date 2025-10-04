@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{NetworkSourceKey, BingleApi};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result, NetworkMux};
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result, UdpNetworkMux};
 use rust_comms::blockchain::algo_ops::byte_key_to_address;
 
 #[derive(Clone)]
@@ -14,7 +14,7 @@ struct MockDtls {
 impl MockDtls { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let v = Arc::new(Mutex::new(vec![])); (Self { sends: v.clone() }, v) } }
 
 impl Dtls for MockDtls {
-    fn start(&mut self, _addr: SocketAddr, _mux: Option<Arc<rust_comms::dtls::UdpNetworkMux>>) -> Result<()> { Ok(()) }
+    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
     fn stop(&mut self) -> Result<()> { Ok(()) }
     fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> { self.sends.lock().unwrap().push((to, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
@@ -73,7 +73,7 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     }
     impl MockDtlsCapture { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let v = Arc::new(Mutex::new(vec![])); (Self { captured: v.clone() }, v) } }
     impl Dtls for MockDtlsCapture {
-        fn start(&mut self, _addr: SocketAddr, _mux: Option<Arc<rust_comms::dtls::UdpNetworkMux>>) -> Result<()> { Ok(()) }
+        fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
         fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
             self.captured.lock().unwrap().push((to, data.to_vec()));

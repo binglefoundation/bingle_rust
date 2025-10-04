@@ -42,17 +42,27 @@ fn dtls_openssl_udp_listener_invokes_handler() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    // Start the DTLS accept loop.
-    server.start(addr, None).expect("start should succeed");
+    // Create and start a UDP mux for the server, and start the DTLS accept loop with it.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("start should succeed");
 
-    // Give the background thread a moment to bind.
+    // Give the background thread a moment.
     thread::sleep(Duration::from_millis(50));
 
     // DTLS client: build and send a payload.
-    let client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
+
+    // Start a client-side mux and initialize DTLS before sending
+    let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+    let cmux = std::sync::Arc::new(cmux0);
+    cmux.start().expect("client mux start");
+    client.start(cmux.clone()).expect("client start");
 
     let payload = b"hello-dtls";
     assert!(client.send(addr,  payload).is_ok(), "client DTLS send failed");

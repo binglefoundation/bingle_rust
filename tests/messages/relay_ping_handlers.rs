@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use rust_comms::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
+use rust_comms::dtls::UdpNetworkMux;
 use rust_comms::messages::*;
 
 #[derive(Default, Clone)]
@@ -10,7 +11,7 @@ struct MockDtls {
 }
 
 impl Dtls for MockDtls {
-    fn start(&mut self, _addr: SocketAddr, _mux: Option<Arc<dyn rust_comms::dtls::NetworkMux + Send + Sync>>) -> DtlsResult<()> { Ok(()) }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
     fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
     fn send(&self, to: SocketAddr, data: &[u8]) -> DtlsResult<()> {
         let mut g = self.sent.lock().unwrap();

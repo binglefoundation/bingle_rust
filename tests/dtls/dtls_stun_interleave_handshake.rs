@@ -36,11 +36,10 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
     let client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    // Pick a free UDP port for the DTLS server
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Start the server
     let mut server = DtlsOpenSsl::new()
@@ -48,21 +47,33 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
-    server.start(addr, None).expect("server start");
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(150));
 
     // Build two DTLS clients with a handler to record echoes
-    let client1 = DtlsOpenSsl::new()
+    let mut client1 = DtlsOpenSsl::new()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
         .with_handle_message(std::sync::Arc::new(client_handler));
 
-    let client2 = DtlsOpenSsl::new()
+    let mut client2 = DtlsOpenSsl::new()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
         .with_handle_message(std::sync::Arc::new(client_handler));
+
+    // Start muxes and initialize both clients
+    let cmux1_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
+    let cmux1 = std::sync::Arc::new(cmux1_0);
+    cmux1.start().expect("client1 mux start");
+    client1.start(cmux1.clone()).expect("client1 start");
+
+    let cmux2_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client2 mux");
+    let cmux2 = std::sync::Arc::new(cmux2_0);
+    cmux2.start().expect("client2 mux start");
+    client2.start(cmux2.clone()).expect("client2 start");
 
     // 1) Send first DTLS message (this will perform handshake if needed)
     let payload1 = b"hello-dtls-1";

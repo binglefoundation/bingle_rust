@@ -37,6 +37,8 @@ pub mod non_ios {
         pub(crate) network_mux: Option<std::sync::Arc<dyn crate::dtls::NetworkMux + Send + Sync>>,
         // If we created a UDP mux internally on start(None), keep a typed handle to manage its lifecycle
         pub(crate) owned_udp_mux: Option<std::sync::Arc<crate::dtls::UdpNetworkMux>>,
+        // Client/General send path requires a started mux; store it when start() is called
+        pub(crate) client_mux: Option<std::sync::Arc<crate::dtls::UdpNetworkMux>>,
         // Handlers
         pub(crate) handle_message: Option<HandleMessage>,
         pub(crate) handle_peer_certificate: Option<HandlePeerCertificate>,
@@ -215,6 +217,8 @@ pub mod non_ios {
             // is disabled by default but can be implemented via verify callback).
             self.prepare_server_acceptor()?;
             let acceptor = self.acceptor.take().map(std::sync::Arc::new);
+            // Record the provided mux for later client send operations
+            self.client_mux = Some(mux.clone());
 
             // Build a sender instance that can be passed into the handler and reuse per-peer writers.
             let mut sender_inner = DtlsOpenSsl::new();
@@ -464,9 +468,8 @@ pub mod non_ios {
     }
 
     impl Dtls for DtlsOpenSsl {
-            fn start(&mut self, _addr: SocketAddr, mux: Option<std::sync::Arc<crate::dtls::UdpNetworkMux>>) -> Result<()> {
-                let m = mux.ok_or_else(|| "missing bound UDP mux".to_string())?;
-                self.start_accept_with_mux(m)
+            fn start(&mut self, mux: std::sync::Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
+                self.start_accept_with_mux(mux)
             }
             fn stop(&mut self) -> Result<()> {
                 if let Some(flag) = self.stop_flag.take() {
@@ -543,10 +546,9 @@ pub mod non_ios {
                 fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
             }
 
-            // Bind and start a temporary UDP mux for the client handshake path
-            let mux = std::sync::Arc::new(crate::dtls::UdpNetworkMux::bind(("0.0.0.0", 0)).map_err(|e| format!("client: udp mux bind failed: {}", e))?);
+            // Use the mux provided via start(); require that start() has been called
+            let mux = match &self.client_mux { Some(m) => m.clone(), None => { return Err("DTLS send requires start(mux) to be called before send".to_string()); } };
             let _ = mux.set_read_timeout(Some(Duration::from_millis(1500)));
-            mux.start().map_err(|e| format!("client: start mux failed: {}", e))?;
 
             // Perform client DTLS handshake using configuration with hostname verification disabled
             eprintln!("[client] connecting DTLS to {}", to);

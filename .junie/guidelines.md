@@ -5,5 +5,6 @@ Do not put Rust tests inline with the code, put unit tests in the test tree (lik
 
 Before finishing a task:
 
+- Ensure the tests tree compiles
 - Ensure all tests are referenced in Cargo.toml
 - run `cargo test` to make sure all tests pass.

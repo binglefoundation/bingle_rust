@@ -142,7 +142,12 @@ fn dtls_openssl_external_s_server_client_send() {
     let deadline = Instant::now() + Duration::from_secs(8);
     let mut attempt_ok = false;
     while CLIENT_SEEN.get().is_none() && Instant::now() < deadline {
-        let client = DtlsOpenSsl::new().with_null_encryption().with_handle_message(std::sync::Arc::new(capture_handler));
+        let mut client = DtlsOpenSsl::new().with_null_encryption().with_handle_message(std::sync::Arc::new(capture_handler));
+        // Start client mux and DTLS before sending
+        let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+        let cmux = std::sync::Arc::new(cmux0);
+        cmux.start().expect("client mux start");
+        client.start(cmux.clone()).expect("client start");
         if client.send(addr, b"probe").is_ok() { attempt_ok = true; }
         // if not yet received, wait a moment before next attempt
         if CLIENT_SEEN.get().is_some() { break; }

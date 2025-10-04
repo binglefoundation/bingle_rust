@@ -43,7 +43,7 @@ fn server_assert_and_reply(server: &dyn Dtls, from: &SocketAddr, issuer: &str, d
     let _ = SERVER_SEEN_ISSUER.set(issuer.to_string());
     let _ = SERVER_SEEN_DATA.set(data.to_vec());
     // Reply
-    let _ = server.send(*from, "", b"hi-from-server");
+    let _ = server.send(*from, b"hi-from-server");
 }
 
 fn client_capture(_server: &dyn Dtls, _from: &SocketAddr, issuer: &str, data: &[u8]) {
@@ -67,22 +67,28 @@ fn issuer_mapping_basic_send_and_reply() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    // Pick a free UDP port
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
-    server.start(addr, None).expect("server start");
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
     // Client uses provided client cert (CN may be anything); issuer mapping will return server CN on client side and client CN on server side
-    let client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_handle_message(client_capture)
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
         .with_ca_cert(ca_pem.clone());
+
+    // Start client mux and DTLS
+    let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+    let cmux = std::sync::Arc::new(cmux0);
+    cmux.start().expect("client mux start");
+    client.start(cmux.clone()).expect("client start");
 
     let server_cn = extract_subject_cn(&server_cert_pem);
     let client_cn = extract_subject_cn(&certs.client_crt);
@@ -90,7 +96,7 @@ fn issuer_mapping_basic_send_and_reply() {
     // Send from client to server
     let mut ok = false;
     for _ in 0..8 {
-        if client.send(addr, "", b"hello").is_ok() { ok = true; break; }
+        if client.send(addr, b"hello").is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client send failed");
@@ -167,13 +173,13 @@ fn multiple_clients_to_server_have_correct_issuers() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    // Port
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
-    server.start(addr, None).expect("server start");
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
     // Create three distinct client certs with CN A,B,C
@@ -182,16 +188,32 @@ fn multiple_clients_to_server_have_correct_issuers() {
     let (c_crt, c_key) = make_self_signed_rsa_cert_with_cn("C");
 
     // Clients (each extracts server CN for mapping on their side, but we only assert server-side issuers here)
-    let client_a = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(a_crt.clone()).with_client_private_key(a_key.clone()).with_ca_cert(ca_pem.clone());
-    let client_b = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(b_crt.clone()).with_client_private_key(b_key.clone()).with_ca_cert(ca_pem.clone());
-    let client_c = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(c_crt.clone()).with_client_private_key(c_key.clone()).with_ca_cert(ca_pem.clone());
+    let mut client_a = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(a_crt.clone()).with_client_private_key(a_key.clone()).with_ca_cert(ca_pem.clone());
+    let mut client_b = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(b_crt.clone()).with_client_private_key(b_key.clone()).with_ca_cert(ca_pem.clone());
+    let mut client_c = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(c_crt.clone()).with_client_private_key(c_key.clone()).with_ca_cert(ca_pem.clone());
+
+    // Start muxes for each client and initialize DTLS
+    let cmux_a0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client_a mux");
+    let cmux_a = std::sync::Arc::new(cmux_a0);
+    cmux_a.start().expect("client_a mux start");
+    client_a.start(cmux_a.clone()).expect("client_a start");
+
+    let cmux_b0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client_b mux");
+    let cmux_b = std::sync::Arc::new(cmux_b0);
+    cmux_b.start().expect("client_b mux start");
+    client_b.start(cmux_b.clone()).expect("client_b start");
+
+    let cmux_c0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client_c mux");
+    let cmux_c = std::sync::Arc::new(cmux_c0);
+    cmux_c.start().expect("client_c mux start");
+    client_c.start(cmux_c.clone()).expect("client_c start");
 
     // Send messages from A, B, C
-    let mut ok = false; for _ in 0..6 { if client_a.send(addr, "", b"mA").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
+    let mut ok = false; for _ in 0..6 { if client_a.send(addr, b"mA").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
     thread::sleep(Duration::from_millis(200));
-    let mut ok = false; for _ in 0..10 { if client_b.send(addr, "", b"mB").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
+    let mut ok = false; for _ in 0..10 { if client_b.send(addr, b"mB").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
     thread::sleep(Duration::from_millis(200));
-    let mut ok = false; for _ in 0..10 { if client_c.send(addr, "", b"mC").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
+    let mut ok = false; for _ in 0..10 { if client_c.send(addr, b"mC").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
 
     // Wait and assert issuers collected
     let start = Instant::now();

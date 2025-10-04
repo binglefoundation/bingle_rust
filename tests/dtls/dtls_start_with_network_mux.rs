@@ -26,15 +26,11 @@ fn dtls_start_accepts_external_network_mux_udp() {
     let client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    // Choose a free UDP port for the DTLS server
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
-
     // Create and bind a standalone UdpNetworkMux (on its own ephemeral port) and pass it to start
     let mux0 = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
     let mux: Arc<UdpNetworkMux> = Arc::new(mux0);
+    // Determine the concrete local address the mux is bound to (client should send to this)
+    let addr: SocketAddr = mux.local_addr().expect("mux local addr");
 
     // Build and configure the server
     let mut server = DtlsOpenSsl::new()
@@ -43,15 +39,23 @@ fn dtls_start_accepts_external_network_mux_udp() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    // Start the server with the externally created mux
-    server.start(addr, Some(mux)).expect("server start with external mux");
+    // Start the server with the externally created mux (pass a clone) and start the mux thread explicitly
+    let mux_for_server = mux.clone();
+    mux.start().expect("start mux");
+    server.start(mux_for_server).expect("server start with external mux");
     thread::sleep(Duration::from_millis(100));
 
     // Build DTLS client and send a payload
-    let client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new()
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
+
+    // Start client mux and DTLS
+    let cmux0 = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+    let cmux = Arc::new(cmux0);
+    cmux.start().expect("client mux start");
+    client.start(cmux.clone()).expect("client start");
 
     let payload = b"hello-with-external-mux";
     let mut ok = false;

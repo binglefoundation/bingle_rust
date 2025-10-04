@@ -1,13 +1,13 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use dtls_pki::dtls::{Dtls, HandleMessage, HandlePeerCertificate, NetworkMux};
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, UdpNetworkMux};
 
 #[derive(Default)]
 struct DummyDtls;
 
 impl Dtls for DummyDtls {
-    fn start(&mut self, _addr: SocketAddr, _mux: Option<Arc<dyn NetworkMux + Send + Sync>>) -> Result<(), String> { Ok(()) }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) -> Result<(), String> { Ok(()) }
     fn send(&self, _to: SocketAddr, _data: &[u8]) -> Result<(), String> { Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }

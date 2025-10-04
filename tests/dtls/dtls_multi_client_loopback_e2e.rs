@@ -33,12 +33,10 @@ fn dtls_openssl_multi_client_loopback_echo() {
     let client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
-    let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
-    let port = probe.local_addr().unwrap().port();
-    drop(probe); // free the port for the server
-
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Create and start a UDP mux for the server and determine its bound address.
+    let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux = std::sync::Arc::new(mux0);
+    let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Echo handler: save payload (when it looks like application data) then send back with prefix using the server instance.
     fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
@@ -62,23 +60,36 @@ fn dtls_openssl_multi_client_loopback_echo() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    server.start(addr, None).expect("start should succeed");
+    // Start mux then the DTLS server with the mux
+    mux.start().expect("mux start");
+    server.start(mux.clone()).expect("start should succeed");
 
-    // Give the background thread a moment to bind.
+    // Give the background thread a moment.
     thread::sleep(Duration::from_millis(200));
 
     // DTLS clients: build and send payloads to server.
-    let client1 = DtlsOpenSsl::new()
+    let mut client1 = DtlsOpenSsl::new()
         .with_handle_message(std::sync::Arc::new(client1_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
 
-    let client2 = DtlsOpenSsl::new()
+    let mut client2 = DtlsOpenSsl::new()
         .with_handle_message(std::sync::Arc::new(client2_handler))
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
+
+    // Start separate muxes for each client and initialize DTLS
+    let cmux1_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
+    let cmux1 = std::sync::Arc::new(cmux1_0);
+    cmux1.start().expect("client1 mux start");
+    client1.start(cmux1.clone()).expect("client1 start");
+
+    let cmux2_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client2 mux");
+    let cmux2 = std::sync::Arc::new(cmux2_0);
+    cmux2.start().expect("client2 mux start");
+    client2.start(cmux2.clone()).expect("client2 start");
 
     let payload1 = b"multi-client-msg-1";
     let payload2 = b"multi-client-msg-2";
