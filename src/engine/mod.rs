@@ -140,7 +140,7 @@ impl Engine {
         }
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
-        dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
+        dtls.start(local_addr, Some(mux.clone()))
             .map_err(|e| format!("Failed to start DTLS: {}", e))?;
 
         // Start mux thread
@@ -155,6 +155,7 @@ impl Engine {
 
     fn start_with_addr(&mut self, _options: StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
         // Create a UDP NetworkMux bound to the requested address (port may be 0 for OS-assigned)
+        eprintln!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
         let mux = Arc::new(UdpNetworkMux::bind(bind_addr).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
         // Determine the concrete local address after bind (handles port 0)
         let local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
@@ -168,7 +169,7 @@ impl Engine {
         })));
 
         // Start DTLS accept loop with the mux and the concrete local address
-        dtls.start(local_addr, Some(mux.clone() as Arc<dyn NetworkMux + Send + Sync>))
+        dtls.start(local_addr, Some(mux.clone()))
             .map_err(|e| format!("Failed to start DTLS: {}", e))?;
 
         // Start the UDP mux background loop

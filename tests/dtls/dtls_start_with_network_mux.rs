@@ -32,9 +32,9 @@ fn dtls_start_accepts_external_network_mux_udp() {
     drop(probe);
     let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    // Create and bind a standalone NetworkMuxUdp (on its own ephemeral port) and pass it to start
-    let mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
-    let mux: Arc<dyn rust_comms::dtls::NetworkMux + Send + Sync> = Arc::new(mux);
+    // Create and bind a standalone UdpNetworkMux (on its own ephemeral port) and pass it to start
+    let mux0 = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
+    let mux: Arc<UdpNetworkMux> = Arc::new(mux0);
 
     // Build and configure the server
     let mut server = DtlsOpenSsl::new()

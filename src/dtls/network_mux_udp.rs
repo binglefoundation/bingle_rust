@@ -56,8 +56,9 @@ pub struct UdpNetworkMux {
 
 impl UdpNetworkMux {
     /// Bind a UDP socket on the given local address
-    pub fn bind<A: ToSocketAddrs>(addr: A) -> std::io::Result<Self> {
-        let socket = UdpSocket::bind(addr)?;
+    pub fn bind<A: ToSocketAddrs + std::fmt::Debug>(addr: A) -> std::io::Result<Self> {
+        eprintln!("[UdpNetworkMux] bind {:?}", addr);
+        let socket = UdpSocket::bind(&addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         Ok(Self {
@@ -130,6 +131,7 @@ impl UdpNetworkMux {
         }
         let socket = self.socket.try_clone()?;
         let this = Arc::clone(self);
+        let to = self.local_addr().unwrap();
         let handle = thread::spawn(move || {
             let mut buf = [0u8; 2048];
             while this.running.load(Ordering::SeqCst) {
@@ -140,6 +142,12 @@ impl UdpNetworkMux {
                         match mux_type_for(data) {
                             MuxType::Dtls => {
                                 // Enqueue DTLS datagram for consumers
+                                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
+                                    eprintln!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
+                                } else {
+                                    eprintln!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len());
+                                }
+
                                 if let Ok(mut q) = this.dtls_queue.lock() {
                                     q.push_back((from, data.to_vec()));
                                 }

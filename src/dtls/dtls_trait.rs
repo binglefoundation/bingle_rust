@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use super::network_mux_trait::NetworkMux;
+use super::network_mux_udp::UdpNetworkMux;
 
 /// Local Result type for DTLS operations with string error messages.
 pub type Result<T = ()> = core::result::Result<T, String>;
@@ -26,7 +26,7 @@ pub trait Dtls {
     /**
      * Start the DTLS accept loop on the given local address. The accept loop runs until stop() is called.
      */
-    fn start(&mut self, addr: SocketAddr, mux: Option<Arc<dyn NetworkMux + Send + Sync>>) -> Result<()>;
+    fn start(&mut self, addr: SocketAddr, mux: Option<Arc<UdpNetworkMux>>) -> Result<()>;
 
     /**
      * Stop the DTLS accept loop, waiting for background tasks to exit.
