@@ -41,6 +41,10 @@ fn relay_check_end_to_end_on_message_receives_response() {
     #[path = "../dtls/pki.rs"]
     mod pki;
 
+    fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
+        Ok("MOCK-ISSUER".to_string())
+    }
+
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
 
     // Spin up a DTLS server that responds to RelayCheck with RelayCheckResponse
@@ -82,7 +86,8 @@ fn relay_check_end_to_end_on_message_receives_response() {
         .with_handle_message(Arc::new(server_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(ca_pem.clone())
+        .with_handle_peer_certificate(mock_peer_cert_handler);
     mux.start().expect("mux start");
     server.start(mux.clone()).expect("server start");
 

@@ -57,6 +57,11 @@ pub struct UdpNetworkMux {
 impl UdpNetworkMux {
     /// Bind a UDP socket on the given local address
     pub fn bind<A: ToSocketAddrs + std::fmt::Debug>(addr: A) -> std::io::Result<Self> {
+        // Ensure immediate printing for tests/envs where buffering would hide logs
+        #[allow(unused)]
+        {
+            crate::util::printing::enable_immediate_prints();
+        }
         eprintln!("[UdpNetworkMux] bind {:?}", addr);
         let socket = UdpSocket::bind(&addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
@@ -144,8 +149,10 @@ impl UdpNetworkMux {
                                 // Enqueue DTLS datagram for consumers
                                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
                                     eprintln!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json)); }
                                 } else {
                                     eprintln!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len());
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len())); }
                                 }
 
                                 if let Ok(mut q) = this.dtls_queue.lock() {
@@ -213,7 +220,30 @@ impl Drop for UdpNetworkMux {
 
 impl NetworkMux for UdpNetworkMux {
     fn write<A: ToSocketAddrs>(&self, to: A, buf: &[u8]) -> Result<()> {
-        match self.socket.send_to(buf, to) {
+        // Resolve destination for logging and send
+        let to_addr_opt = to.to_socket_addrs().ok().and_then(|mut it| it.next());
+        let to_addr = match to_addr_opt {
+            Some(a) => a,
+            None => return Err("to address resolution failed".to_string()),
+        };
+        // Determine mux type and print a debug line; if DTLS, try to print JSON packet
+        let from_addr = self.socket.local_addr().ok();
+        match mux_type_for(buf) {
+            MuxType::Dtls => {
+                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
+                    eprintln!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json)); }
+                } else {
+                    eprintln!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len());
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len())); }
+                }
+            }
+            other => {
+                eprintln!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len());
+                #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len())); }
+            }
+        }
+        match self.socket.send_to(buf, to_addr) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("udp send_to failed: {}", e)),
         }

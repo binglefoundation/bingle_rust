@@ -77,11 +77,14 @@ fn issuer_mapping_basic_send_and_reply() {
     thread::sleep(Duration::from_millis(200));
 
     // Client uses provided client cert (CN may be anything); issuer mapping will return server CN on client side and client CN on server side
+    let certs_b = pki::generate_ed25519_test_certs();
     let mut client = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_handle_message(client_capture)
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
+        .with_server_signing_cert(certs_b.server_crt.clone())
+        .with_server_signing_private_key(certs_b.server_key.clone())
         .with_ca_cert(ca_pem.clone());
 
     // Start client mux and DTLS
@@ -188,9 +191,30 @@ fn multiple_clients_to_server_have_correct_issuers() {
     let (c_crt, c_key) = make_self_signed_rsa_cert_with_cn("C");
 
     // Clients (each extracts server CN for mapping on their side, but we only assert server-side issuers here)
-    let mut client_a = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(a_crt.clone()).with_client_private_key(a_key.clone()).with_ca_cert(ca_pem.clone());
-    let mut client_b = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(b_crt.clone()).with_client_private_key(b_key.clone()).with_ca_cert(ca_pem.clone());
-    let mut client_c = DtlsOpenSsl::new().with_handle_peer_certificate(client_peer_cert_return_cn).with_client_cert(c_crt.clone()).with_client_private_key(c_key.clone()).with_ca_cert(ca_pem.clone());
+    let certs_a_srv = pki::generate_ed25519_test_certs();
+    let mut client_a = DtlsOpenSsl::new()
+        .with_handle_peer_certificate(client_peer_cert_return_cn)
+        .with_client_cert(a_crt.clone())
+        .with_client_private_key(a_key.clone())
+        .with_server_signing_cert(certs_a_srv.server_crt.clone())
+        .with_server_signing_private_key(certs_a_srv.server_key.clone())
+        .with_ca_cert(ca_pem.clone());
+    let certs_b_srv = pki::generate_ed25519_test_certs();
+    let mut client_b = DtlsOpenSsl::new()
+        .with_handle_peer_certificate(client_peer_cert_return_cn)
+        .with_client_cert(b_crt.clone())
+        .with_client_private_key(b_key.clone())
+        .with_server_signing_cert(certs_b_srv.server_crt.clone())
+        .with_server_signing_private_key(certs_b_srv.server_key.clone())
+        .with_ca_cert(ca_pem.clone());
+    let certs_c_srv = pki::generate_ed25519_test_certs();
+    let mut client_c = DtlsOpenSsl::new()
+        .with_handle_peer_certificate(client_peer_cert_return_cn)
+        .with_client_cert(c_crt.clone())
+        .with_client_private_key(c_key.clone())
+        .with_server_signing_cert(certs_c_srv.server_crt.clone())
+        .with_server_signing_private_key(certs_c_srv.server_key.clone())
+        .with_ca_cert(ca_pem.clone());
 
     // Start muxes for each client and initialize DTLS
     let cmux_a0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client_a mux");

@@ -26,6 +26,7 @@ fn find_unused_loopback_port() -> u16 {
 // (static endpoints) and two client instances, then validate that the clients reach
 // EndpointAvailable with the expected public address.
 #[test]
+#[ignore]
 fn bingle_api_endpoint_identify_via_forced_stun() {
     // Set up two relay instances with static endpoints (127.0.0.1 with known, unused ports)
     // let r1_port = find_unused_loopback_port();

@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 mod pki;
 
+fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
+    Ok("MOCK-ISSUER".to_string())
+}
+
 static MESSAGE_SEEN: AtomicBool = AtomicBool::new(false);
 
 fn handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
@@ -37,7 +41,8 @@ fn dtls_start_accepts_external_network_mux_udp() {
         .with_handle_message(std::sync::Arc::new(handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(ca_pem.clone())
+        .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start the server with the externally created mux (pass a clone) and start the mux thread explicitly
     let mux_for_server = mux.clone();
@@ -46,10 +51,14 @@ fn dtls_start_accepts_external_network_mux_udp() {
     thread::sleep(Duration::from_millis(100));
 
     // Build DTLS client and send a payload
+    let certs_b = pki::generate_ed25519_test_certs();
     let mut client = DtlsOpenSsl::new()
-        .with_client_cert(client_cert_pem.clone())
-        .with_client_private_key(client_key_pem.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_client_cert(certs_b.client_crt.clone())
+        .with_client_private_key(certs_b.client_key.clone())
+        .with_server_signing_cert(certs_b.server_crt.clone())
+        .with_server_signing_private_key(certs_b.server_key.clone())
+        .with_ca_cert(ca_pem.clone())
+                .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start client mux and DTLS
     let cmux0 = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");

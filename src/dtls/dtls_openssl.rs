@@ -24,6 +24,44 @@ pub mod non_ios {
 
     type EndpointIssuers = Arc<Mutex<HashMap<SocketAddr, String>>>;
 
+    // Minimal adapter that implements Dtls::send by delegating to the writers map.
+    // Used by the client-side background reader to allow handlers to reply using the same DTLS stream.
+    struct WriterAdapter(ServerWriters);
+
+    impl Dtls for WriterAdapter {
+        fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
+        fn stop(&mut self) -> Result<()> { Ok(()) }
+        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
+            match self.0.lock() {
+                Ok(map) => {
+                    if let Some(w) = map.get(&to) { w(data) } else { Err("no writer for peer".to_string()) }
+                }
+                Err(_) => Err("writers lock poisoned".to_string()),
+            }
+        }
+        fn get_handle_message(&self) -> Option<HandleMessage> { None }
+        fn set_handle_message(&mut self, _handler: Option<HandleMessage>) { }
+        fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+        fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+        fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) { }
+        fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
+        fn get_ca_cert(&self) -> Option<&[u8]> { None }
+        fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) { }
+        fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
+        fn get_client_cert(&self) -> Option<&[u8]> { None }
+        fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) { }
+        fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
+        fn get_client_private_key(&self) -> Option<&[u8]> { None }
+        fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) { }
+        fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
+        fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+        fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) { }
+        fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
+        fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+        fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) { }
+        fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
+    }
+
     /// OpenSSL-backed DTLS implementation (non-iOS).
     /// Provides:
     /// - A server accept loop (Unix) performing DTLSv1.2 handshakes over UDP and spawning per-peer workers.
@@ -65,6 +103,11 @@ pub mod non_ios {
 
     impl DtlsOpenSsl {
         pub fn new() -> Self {
+            // Ensure test logs print immediately without buffering
+            #[allow(unused)]
+            {
+                crate::util::printing::enable_immediate_prints();
+            }
             use std::sync::{Arc, Mutex};
             use std::collections::HashMap;
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
@@ -84,6 +127,9 @@ pub mod non_ios {
 
             // Restrict to DTLSv1.2 and enable read_ahead.
             builder.set_options(SslOptions::NO_DTLSV1);
+            // Pin protocol to DTLS 1.2 explicitly to avoid DTLS 1.3 negotiation mismatches with server
+            builder.set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2)).map_err(|e| format!("client: set_min_proto_version failed: {}", e))?;
+            builder.set_max_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2)).map_err(|e| format!("client: set_max_proto_version failed: {}", e))?;
             builder.set_read_ahead(true);
 
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
@@ -163,6 +209,9 @@ pub mod non_ios {
 
             // Constrain to DTLSv1.2 only
             builder.set_options(SslOptions::NO_DTLSV1);
+            // Pin protocol explicitly to DTLS 1.2 to match client
+            builder.set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2)).map_err(|e| format!("server: set_min_proto_version failed: {}", e))?;
+            builder.set_max_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2)).map_err(|e| format!("server: set_max_proto_version failed: {}", e))?;
             builder.set_read_ahead(true);
 
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
@@ -213,6 +262,10 @@ pub mod non_ios {
             if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
                 return Err("missing server credentials or CA".to_string());
             }
+            // Require a peer certificate handler to be set; starting without one should fail per API contract.
+            if self.handle_peer_certificate.is_none() {
+                return Err("handle_peer_certificate not set".to_string());
+            }
             // Prepare and persist acceptor (validates PEMs, configures DTLSv1.2; server-side client verification
             // is disabled by default but can be implemented via verify callback).
             self.prepare_server_acceptor()?;
@@ -227,7 +280,9 @@ pub mod non_ios {
             sender_inner.client_private_key = self.client_private_key.clone();
             sender_inner.null_encryption = self.null_encryption;
             let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
+            // Share writers with both the per-handler sender and this server instance so lookups/registrations are consistent.
             sender_inner.server_writers = Some(writers.clone());
+            self.server_writers = Some(writers.clone());
             let sender = std::sync::Arc::new(sender_inner);
 
             // Initialize stop flag and spawn the DTLS accept thread
@@ -326,9 +381,21 @@ pub mod non_ios {
                         };
                         // If this peer already has a registered writer/stream, do not consume this packet here;
                         // let the per-client worker's reader handle it.
-                        if let Ok(map) = writers.lock() {
-                            if map.contains_key(&from) {
-                                // Brief nap to avoid a tight spin while the per-client thread drains data.
+                        match writers.lock() {
+                            Ok(map) => {
+                                let present = map.contains_key(&from);
+                                eprintln!("[server][writers] contains_key({}) = {}", from, present);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[server][writers] contains_key({}) = {}", from, present)); }
+                                if present {
+                                    // Brief nap to avoid a tight spin while the per-client thread drains data.
+                                    std::thread::sleep(Duration::from_millis(1));
+                                    continue;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[server][writers] ERROR: failed to acquire lock in contains_key for {}: {}", from, e);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[server][writers] ERROR: failed to acquire lock in contains_key for {}: {}", from, e)); }
+                                // Backoff to avoid tight spin if lock is poisoned
                                 std::thread::sleep(Duration::from_millis(1));
                                 continue;
                             }
@@ -340,20 +407,31 @@ pub mod non_ios {
                             Err(_) => continue,
                         };
                         eprintln!("[server] probe from {} ({} bytes)", from, n);
+                        #[allow(unused)] { crate::util::logging::log_line(&format!("[server] probe from {} ({} bytes)", from, n)); }
                         #[cfg(debug_assertions)]
                         {
                             if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&probe[..n]) {
                                 eprintln!("[dtls][recv][server {}] {}", from, json);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls][recv][server {}] {}", from, json)); }
                             } else {
                                 eprintln!("[dtls][recv][server {}] <parse error> ({} bytes)", from, n);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls][recv][server {}] <parse error> ({} bytes)", from, n)); }
                             }
                         }
 
                         // Pre-register a placeholder writer to mark this peer as in-progress to avoid racing consumption.
                         {
-                            if let Ok(mut map) = writers.lock() {
-                                let placeholder: ServerWriter = std::sync::Arc::new(|_payload: &[u8]| -> Result<()> { Err("writer not ready".to_string()) });
-                                map.insert(from, placeholder);
+                            match writers.lock() {
+                                Ok(mut map) => {
+                                    let placeholder: ServerWriter = std::sync::Arc::new(|_payload: &[u8]| -> Result<()> { Err("writer not ready".to_string()) });
+                                    let replaced = map.insert(from, placeholder).is_some();
+                                    eprintln!("[server][writers] insert placeholder for {} (replaced={})", from, replaced);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[server][writers] insert placeholder for {} (replaced={})", from, replaced)); }
+                                }
+                                Err(e) => {
+                                    eprintln!("[server][writers] ERROR: failed to acquire lock in insert placeholder for {}: {}", from, e);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[server][writers] ERROR: failed to acquire lock in insert placeholder for {}: {}", from, e)); }
+                                }
                             }
                         }
 
@@ -402,21 +480,28 @@ pub mod non_ios {
 
                             // Register writer for this peer so handler can call sender.send(to, data)
                             {
-                                if let Ok(mut map) = writers_clone.lock() {
-                                    let stream_arc = shared.clone();
-                                    let ep_map = endpoint_issuers2.clone();
-                                    let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
-                                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(e) => return Err(format!("stream lock poisoned: {}", e)) };
-                                        use std::io::Write;
-                                        if let Err(e) = s.write_all(payload) {
-                                            if let Some(ep) = &ep_map { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
-                                            return Err(format!("dtls writer write_all failed: {}", e));
-                                        }
-                                        let _ = s.flush();
-                                        Ok(())
-                                    });
-                                    eprintln!("[server] writer registered for {}", from);
-                                    map.insert(from, writer);
+                                match writers_clone.lock() {
+                                    Ok(mut map) => {
+                                        let stream_arc = shared.clone();
+                                        let ep_map = endpoint_issuers2.clone();
+                                        let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
+                                            let mut s = match stream_arc.lock() { Ok(g) => g, Err(e) => return Err(format!("stream lock poisoned: {}", e)) };
+                                            use std::io::Write;
+                                            if let Err(e) = s.write_all(payload) {
+                                                if let Some(ep) = &ep_map { if let Ok(mut m) = ep.lock() { let _ = m.remove(&from); } }
+                                                return Err(format!("dtls writer write_all failed: {}", e));
+                                            }
+                                            let _ = s.flush();
+                                            Ok(())
+                                        });
+                                        let replaced = map.insert(from, writer).is_some();
+                                        eprintln!("[server][writers] writer registered for {} (replaced={})", from, replaced);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[server][writers] writer registered for {} (replaced={})", from, replaced)); }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[server][writers] ERROR: failed to acquire lock in insert writer for {}: {}", from, e);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[server][writers] ERROR: failed to acquire lock in insert writer for {}: {}", from, e)); }
+                                    }
                                 }
                             }
 
@@ -438,6 +523,7 @@ pub mod non_ios {
                                     };
                                     if n == 0 { break; }
                                     eprintln!("[server] application data from {} ({} bytes)", from, n);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[server] application data from {} ({} bytes)", from, n)); }
                                     let issuer_str = if let Some(ep) = &endpoint_issuers2 {
                                         match ep.lock() {
                                             Ok(m) => m.get(&from).cloned().unwrap_or_default(),
@@ -459,6 +545,7 @@ pub mod non_ios {
                 }
 
                 eprintln!("[server] starting accept loop");
+                #[allow(unused)] { crate::util::logging::log_line("[server] starting accept loop"); }
                 let _ = run_dtls_accept_loop(mux, acceptor, handler, sender, writers, stop_clone, endpoint_issuers, peer_cert_handler, ca_bytes_for_handler);
                 // No plaintext UDP fallback; server thread exits after DTLS accept loop completes or fails.
             });
@@ -488,12 +575,36 @@ pub mod non_ios {
             use std::io::{Read, Write};
             use std::time::Duration;
 
-            // If this instance has server-side writers (sender in server thread), use them first.
+            eprintln!("[dtls send] send to {} ({} bytes)", to, data.len());
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[client] send to {} ({} bytes)", to, data.len())) };
+
+            // If this instance has writers, we may reuse them.
+            // Server instances (acceptor.is_some()) always reuse. Client instances reuse only after a successful handshake
+            // has recorded an issuer for this peer (to avoid hitting a placeholder during initial send).
             if let Some(writers) = &self.server_writers {
-                if let Ok(map) = writers.lock() {
-                    if let Some(writer) = map.get(&to) {
-                        return writer(data);
+                let mut reuse_ok = false;
+                if self.acceptor.is_some() {
+                    reuse_ok = true; // server side
+                } else if let Some(ep) = &self.endpoint_issuers {
+                    if let Ok(m) = ep.lock() { reuse_ok = m.contains_key(&to); }
+                }
+                if reuse_ok {
+                    match writers.lock() {
+                        Ok(map) => {
+                            if let Some(writer) = map.get(&to) {
+                                eprintln!("[dtls send][writers] Got writer for {}", to);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] Got writer for {}", to)) };
+                                return writer(data);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[dtls send][writers] ERROR: failed to acquire lock in get writer for {}: {}", to, e);
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] ERROR: failed to acquire lock in get writer for {}: {}", to, e)); }
+                        }
                     }
+                } else {
+                    eprintln!("[dtls send][writers] Client path: not reusing writer for {} (no issuer yet)", to);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] Client path: not reusing writer for {} (no issuer yet)", to)); }
                 }
             }
 
@@ -513,9 +624,11 @@ pub mod non_ios {
                                 #[cfg(debug_assertions)]
                                 {
                                     if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n2]) {
-                                        eprintln!("[dtls][recv][client {}] {}", self.peer, json);
+                                        eprintln!("[dtls send][recv][client {}] {}", self.peer, json);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls send][recv][client {}] {}", self.peer, json)); }
                                     } else {
-                                        eprintln!("[dtls][recv][client {}] <parse error> ({} bytes)", self.peer, n2);
+                                        eprintln!("[dtls send][recv][client {}] <parse error> ({} bytes)", self.peer, n2);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls send][recv][client {}] <parse error> ({} bytes)", self.peer, n2)); }
                                     }
                                 }
                                 return Ok(n2);
@@ -537,8 +650,10 @@ pub mod non_ios {
                     {
                         if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
                             eprintln!("[dtls][send][client {}] {}", self.peer, json);
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls][send][client {}] {}", self.peer, json)); }
                         } else {
                             eprintln!("[dtls][send][client {}] <parse error> ({} bytes)", self.peer, buf.len());
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls][send][client {}] <parse error> ({} bytes)", self.peer, buf.len())); }
                         }
                     }
                     match self.mux.write(self.peer, buf) { Ok(()) => Ok(buf.len()), Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e))) }
@@ -550,19 +665,63 @@ pub mod non_ios {
             let mux = match &self.client_mux { Some(m) => m.clone(), None => { return Err("DTLS send requires start(mux) to be called before send".to_string()); } };
             let _ = mux.set_read_timeout(Some(Duration::from_millis(1500)));
 
+            // Pre-register a placeholder writer for this peer so that server responses to our first handshake
+            // packet are considered part of the handshake, not a new-connection probe by any accept loop sharing
+            // the same writers map.
+            let mut inserted_placeholder = false;
+            if let Some(writers) = &self.server_writers {
+                match writers.lock() {
+                    Ok(mut map) => {
+                        if !map.contains_key(&to) {
+                            let placeholder: ServerWriter = std::sync::Arc::new(|_payload: &[u8]| -> Result<()> { Err("writer not ready".to_string()) });
+                            let _prev = map.insert(to, placeholder);
+                            inserted_placeholder = true;
+                            eprintln!("[client][writers] insert placeholder for {} (replaced=false)", to);
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] insert placeholder for {} (replaced=false)", to)); }
+                        } else {
+                            eprintln!("[client][writers] contains_key({}) = true (no placeholder inserted)", to);
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] contains_key({}) = true (no placeholder inserted)", to)); }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[client][writers] ERROR: failed to acquire lock in insert placeholder for {}: {}", to, e);
+                        #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] ERROR: failed to acquire lock in insert placeholder for {}: {}", to, e)); }
+                    }
+                }
+            }
+
             // Perform client DTLS handshake using configuration with hostname verification disabled
             eprintln!("[client] connecting DTLS to {}", to);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[client] connecting DTLS to {}", to)); }
             let mut conf = connector.configure().map_err(|e| format!("client: connector configure failed: {}", e))?;
             conf.set_verify_hostname(false);
             let stream = match conf.connect("ignored-host", NetworkMuxConn { mux: mux.clone(), peer: to }) {
                 Ok(s) => {
                     eprintln!("[client] handshake ok to {}", to);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[client] handshake ok to {}", to)); }
                     s
                 }
                 Err(e) => {
                     eprintln!("[client] handshake failed to {}", to);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[client] handshake failed to {}", to)); }
+                    // Cleanup placeholder on failure so future attempts are not blocked/misleading
+                    if inserted_placeholder {
+                        if let Some(writers) = &self.server_writers {
+                            match writers.lock() {
+                                Ok(mut map) => {
+                                    let _ = map.remove(&to);
+                                    eprintln!("[client][writers] removed placeholder for {} after handshake failure", to);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] removed placeholder for {} after handshake failure", to)); }
+                                }
+                                Err(e2) => {
+                                    eprintln!("[client][writers] ERROR: failed to acquire lock to remove placeholder for {}: {}", to, e2);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] ERROR: failed to acquire lock to remove placeholder for {}: {}", to, e2)); }
+                                }
+                            }
+                        }
+                    }
                     // Stop mux before returning
-                    mux.stop();
+                    // mux.stop();
                     return Err(format!("client handshake failed to {}", to));
                 }
             };
@@ -583,45 +742,58 @@ pub mod non_ios {
 
             // Register a writer for this peer so handler can call self.send(to, data) and reuse the stream.
             if let Some(writers) = &self.server_writers {
-                if let Ok(mut map) = writers.lock() {
-                    let stream_arc = shared.clone();
-                    let endpoint_issuers = self.endpoint_issuers.as_ref().cloned();
-                    let to_addr = to.clone();
-                    let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
-                        let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
-                        use std::io::Write;
-                        if let Err(e) = s.write_all(payload) {
-                            if let Some(ep) = &endpoint_issuers { if let Ok(mut m) = ep.lock() { let _ = m.remove(&to_addr); } }
-                            return Err(format!("dtls writer write_all failed: {}", e));
-                        }
-                        let _ = s.flush();
-                        Ok(())
-                    });
-                    map.insert(to, writer);
+                match writers.lock() {
+                    Ok(mut map) => {
+                        let stream_arc = shared.clone();
+                        let endpoint_issuers = self.endpoint_issuers.as_ref().cloned();
+                        let to_addr = to.clone();
+                        let writer: ServerWriter = std::sync::Arc::new(move |payload: &[u8]| -> Result<()> {
+                            let mut s = match stream_arc.lock() { Ok(g) => g, Err(_) => return Err("stream lock poisoned".to_string()) };
+                            use std::io::Write;
+                            if let Err(e) = s.write_all(payload) {
+                                if let Some(ep) = &endpoint_issuers { if let Ok(mut m) = ep.lock() { let _ = m.remove(&to_addr); } }
+                                return Err(format!("dtls writer write_all failed: {}", e));
+                            }
+                            let _ = s.flush();
+                            Ok(())
+                        });
+                        let replaced = map.insert(to, writer).is_some();
+                        eprintln!("[client][writers] writer cached for {} (replaced={})", to_addr, replaced);
+                        #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] writer cached for {} (replaced={})", to_addr, replaced)); }
+                    }
+                    Err(e) => {
+                        eprintln!("[client][writers] ERROR: failed to acquire lock in insert writer for {}: {}", to, e);
+                        #[allow(unused)] { crate::util::logging::log_line(&format!("[client][writers] ERROR: failed to acquire lock in insert writer for {}: {}", to, e)); }
+                    }
                 }
             }
+            
+            // Send payload using the established stream; keep stream open via writers map.
+            let mut s = shared.lock().map_err(|_| "client: stream lock poisoned".to_string())?;
+            let _ = s.write_all(data);
+            let _ = s.flush();
 
-            // Send payload, read one response, and deliver to handler if present
-            let response: Option<Vec<u8>> = {
-                let mut s = shared.lock().map_err(|_| "client: stream lock poisoned".to_string())?;
-                let _ = s.write_all(data);
-                let _ = s.flush();
+            // After sending, perform a single best-effort read to deliver immediate application data (e.g., server Ping).
+            // This avoids needing a dedicated background reader while still enabling request/response style flows.
+            if let Some(h) = &self.handle_message {
+                use std::io::Read;
                 let mut buf = [0u8; 2048];
                 match s.read(&mut buf) {
-                    Ok(n) if n > 0 => Some(buf[..n].to_vec()),
-                    _ => None,
+                    Ok(n) if n > 0 => {
+                        let issuer_str = if let Some(ep) = &self.endpoint_issuers {
+                            match ep.lock() { Ok(m) => m.get(&to).cloned().unwrap_or_default(), Err(_) => String::new() }
+                        } else { String::new() };
+                        if let Some(wm) = &self.server_writers {
+                            let adapter = WriterAdapter(wm.clone());
+                            // Drop the lock on the stream before invoking the handler to allow re-entrant send.
+                            drop(s);
+                            h(&adapter, &to, &issuer_str, &buf[..n]);
+                        }
+                    }
+                    _ => {}
                 }
-            };
-
-            if let (Some(h), Some(bytes)) = (self.handle_message.clone(), response) {
-                let issuer_str = if let Some(ep) = &self.endpoint_issuers {
-                    match ep.lock() { Ok(m) => m.get(&to).cloned().unwrap_or_default(), Err(_) => String::new() }
-                } else { String::new() };
-                h(self, &to, &issuer_str, &bytes);
             }
 
-            // Stop the temporary mux before returning
-            mux.stop();
             Ok(())
         }
 

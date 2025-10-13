@@ -10,6 +10,10 @@ use std::time::{Duration, Instant};
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 mod pki;
 
+fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
+    Ok("MOCK-ISSUER".to_string())
+}
+
 static CLIENT_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
 
 #[test]
@@ -25,8 +29,9 @@ fn dtls_openssl_external_s_server_client_send() {
 
     // Generate server cert and key (and CA, though we won't require mutual auth)
     let certs = pki::generate_ed25519_test_certs();
+    let ca_pem: Vec<u8> = certs.ca_crt.clone();
     // Touch unused fields to avoid dead_code warnings in this test binary
-    let _ = (certs.ca_crt.len(), certs.client_crt.len(), certs.client_key.len());
+    let _ = (certs.client_crt.len(), certs.client_key.len());
 
     // Write server cert and key to temporary files for s_server
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -142,7 +147,14 @@ fn dtls_openssl_external_s_server_client_send() {
     let deadline = Instant::now() + Duration::from_secs(8);
     let mut attempt_ok = false;
     while CLIENT_SEEN.get().is_none() && Instant::now() < deadline {
-        let mut client = DtlsOpenSsl::new().with_null_encryption().with_handle_message(std::sync::Arc::new(capture_handler));
+        let certs_b = pki::generate_ed25519_test_certs();
+        let mut client = DtlsOpenSsl::new()
+            .with_null_encryption()
+            .with_handle_message(std::sync::Arc::new(capture_handler))
+            .with_server_signing_cert(certs_b.server_crt.clone())
+            .with_server_signing_private_key(certs_b.server_key.clone())
+            .with_ca_cert(ca_pem.clone())
+                        .with_handle_peer_certificate(mock_peer_cert_handler);
         // Start client mux and DTLS before sending
         let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
         let cmux = std::sync::Arc::new(cmux0);

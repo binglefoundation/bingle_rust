@@ -20,6 +20,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 stun-rs = "0.1.11"
 uuid = { version = "1", features = ["v4"] }
+libc = "0.2"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 algonaut = "0.4.2"
@@ -103,6 +104,10 @@ name = "dtls_start_with_network_mux"
 path = "tests/dtls/dtls_start_with_network_mux.rs"
 
 [[test]]
+name = "dtls_client_keeps_stream_open"
+path = "tests/dtls/dtls_client_keeps_stream_open.rs"
+
+[[test]]
 name = "dtls_stun_interleave_handshake"
 path = "tests/dtls/dtls_stun_interleave_handshake.rs"
 
@@ -155,3 +160,7 @@ path = "tests/stun/simple_server_consistent.rs"
 [[test]]
 name = "api_bingle_api_start_fail"
 path = "tests/api/bingle_api_start_fail.rs"
+
+[[test]]
+name = "engine_dtls_send_no_lazy_start"
+path = "tests/engine/dtls_send_no_lazy_start.rs"

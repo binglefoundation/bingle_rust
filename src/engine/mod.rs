@@ -239,13 +239,9 @@ impl Engine {
             println!("[Engine] sending TriangleTest1 to {} ({} bytes)", to_addr, json.len());
             let _ = dtls.send(to_addr, json.as_bytes());
             // For current test scope, consider endpoint available without waiting for TriangleTest3
-            println!("[Engine] TriangleTest1 sent; setting state -> EndpointAvailable (test mode)");
-            self.state = EngineState::EndpointAvailable;
         } else {
             println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
         }
-        // For current test scope, consider endpoint available once TrianglePing is initiated
-        self.state = EngineState::EndpointAvailable;
     }
 
     fn on_stun_inconsistent(&mut self) {

@@ -6,6 +6,7 @@ pub mod stun;
 pub mod messages;
 pub mod engine;
 pub mod protocol;
+pub mod util;
 
 #[cfg(not(target_os = "ios"))]
 pub use blockchain::algo_ops;

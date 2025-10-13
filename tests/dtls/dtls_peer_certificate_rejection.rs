@@ -38,11 +38,14 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
-    // Build client with valid certs
+    // Build client with valid certs and provide server credentials for its accept loop
+    let certs_b = pki::generate_ed25519_test_certs();
     let mut client = DtlsOpenSsl::new()
         .with_null_encryption()
-        .with_client_cert(client_cert_pem.clone())
-        .with_client_private_key(client_key_pem.clone())
+        .with_client_cert(certs_b.client_crt.clone())
+        .with_client_private_key(certs_b.client_key.clone())
+        .with_server_signing_cert(certs_b.server_crt.clone())
+        .with_server_signing_private_key(certs_b.server_key.clone())
         .with_ca_cert(ca_pem.clone());
 
     // Start client mux and DTLS
@@ -83,10 +86,13 @@ fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
     server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
-    // Build client with a rejecting peer certificate handler
+    // Build client with a rejecting peer certificate handler, and provide server credentials for its accept loop
+    let certs_b = pki::generate_ed25519_test_certs();
     let mut client = DtlsOpenSsl::new()
         .with_null_encryption()
         .with_handle_peer_certificate(reject_handler)
+        .with_server_signing_cert(certs_b.server_crt.clone())
+        .with_server_signing_private_key(certs_b.server_key.clone())
         .with_ca_cert(ca_pem.clone());
 
     // Start client mux and DTLS

@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 mod pki;
 
+fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
+    Ok("MOCK-ISSUER".to_string())
+}
+
 // Record client-received echoes to verify ordering
 static CLIENT_ECHO_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CLIENT_ECHOS: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
@@ -46,23 +50,32 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_handle_message(std::sync::Arc::new(server_echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(ca_pem.clone())
+        .with_handle_peer_certificate(mock_peer_cert_handler);
     mux.start().expect("mux start");
     server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(150));
 
     // Build two DTLS clients with a handler to record echoes
+    let certs_b = pki::generate_ed25519_test_certs();
     let mut client1 = DtlsOpenSsl::new()
-        .with_client_cert(client_cert_pem.clone())
-        .with_client_private_key(client_key_pem.clone())
+        .with_client_cert(certs_b.client_crt.clone())
+        .with_client_private_key(certs_b.client_key.clone())
+        .with_server_signing_cert(certs_b.server_crt.clone())
+        .with_server_signing_private_key(certs_b.server_key.clone())
         .with_ca_cert(ca_pem.clone())
-        .with_handle_message(std::sync::Arc::new(client_handler));
+        .with_handle_message(std::sync::Arc::new(client_handler))
+        .with_handle_peer_certificate(mock_peer_cert_handler);
 
+    let certs_c = pki::generate_ed25519_test_certs();
     let mut client2 = DtlsOpenSsl::new()
-        .with_client_cert(client_cert_pem.clone())
-        .with_client_private_key(client_key_pem.clone())
+        .with_client_cert(certs_c.client_crt.clone())
+        .with_client_private_key(certs_c.client_key.clone())
+        .with_server_signing_cert(certs_c.server_crt.clone())
+        .with_server_signing_private_key(certs_c.server_key.clone())
         .with_ca_cert(ca_pem.clone())
-        .with_handle_message(std::sync::Arc::new(client_handler));
+        .with_handle_message(std::sync::Arc::new(client_handler))
+        .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start muxes and initialize both clients
     let cmux1_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
