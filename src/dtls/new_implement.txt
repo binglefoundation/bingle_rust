@@ -1,0 +1,30 @@
+Reimplement DTLS using the openssl::ssl module in a packet oriented style
+
+- In start_accept_with_mux we:
+
+ - Start a new thread to handle incoming packets
+  - Receive new DTLS packets by setting NetworkMux::handle_dtls to our handler function
+
+In the handler function
+- maintain a map of endpoint address to SSL instance and state
+- lookup the endpoint address of each received packet
+ - if it is not found,
+ -  create a new mapping and a new ssl context for that connection
+ -  initiate a server side handshake and maintain state for this
+ - if it is found
+ -  write the packet into the SSL context
+
+ - as required, call the handle_peer_certificate to validate the certificate and maintain the issuer
+ - map connected endpoints to their known issuer
+ - when application data is available, call handle_message with the data, endpoint and issuer
+
+ - In `send`
+
+ - Lookup the endpoint address to see if we have an existing channel
+ -  if it is found, write the application data into the SSL context
+ -  when SSL has data to send, send it through the network mux
+ - if we have no existing channel
+ -  create a new mapping and a new ssl context for that connection
+ -  initiate a client side handshake and maintain state for this
+
+ Get to correct syntax but ignore test failures until I have reviewed
