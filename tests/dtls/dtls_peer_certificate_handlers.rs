@@ -127,8 +127,10 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     expected.extend_from_slice(payload);
     assert_eq!(echoed.as_slice(), expected.as_slice(), "echo mismatch");
 
-    // Validate that server saw the client's certificate at least once
-    let client_norm = normalize_pem_body(&client_cert_pem);
+    // Validate that server saw the client's certificate at least once.
+    // Compare against the actual client certificate used by the client instance
+    // (certs_b.client_crt), not the unrelated client_cert_pem generated earlier.
+    let client_norm = normalize_pem_body(&certs_b.client_crt);
     let server_saw_client = SERVER_CERTS_SEEN
         .get()
         .and_then(|m| m.lock().ok())
