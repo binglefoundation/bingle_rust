@@ -542,6 +542,11 @@ pub mod non_ios {
                                 match guard.read(&mut buf) {
                                     Ok(0) => break,
                                     Ok(n) => n,
+                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        // No datagram available yet; avoid tearing down the stream.
+                                        std::thread::sleep(std::time::Duration::from_millis(10));
+                                        continue;
+                                    }
                                     Err(_) => { break },
                                 }
                             };
@@ -761,6 +766,11 @@ pub mod non_ios {
                             match guard.read(&mut buf) {
                                 Ok(0) => break,
                                 Ok(n) => n,
+                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                    // No datagram yet for outbound stream; keep waiting.
+                                    std::thread::sleep(std::time::Duration::from_millis(10));
+                                    continue;
+                                }
                                 Err(_) => { break }
                             }
                         };

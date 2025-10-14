@@ -62,6 +62,7 @@ fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &
     let _ = CLIENT_ECHOED.set(data.to_vec());
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     // Generate test certificates

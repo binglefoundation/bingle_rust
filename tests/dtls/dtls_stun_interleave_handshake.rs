@@ -26,6 +26,7 @@ fn server_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data
     let _ = server.send(*from, data);
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn stun_response_does_not_interfere_with_dtls_flow() {
     // Reset global state

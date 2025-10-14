@@ -42,6 +42,7 @@ fn wait_for_records<F: Fn() -> bool>(timeout_ms: u64, predicate: F) -> bool {
     predicate()
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dispatches_stun_dtls_turn() {
     let _g = TEST_GUARD.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -78,6 +79,7 @@ fn dispatches_stun_dtls_turn() {
     assert!(ok, "expected at least one record in each handler");
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn ignores_zrtp_rtp_unknown() {
     let _g = TEST_GUARD.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -113,6 +115,7 @@ fn ignores_zrtp_rtp_unknown() {
     assert_eq!(t, 0, "no TURN handler should be invoked");
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn write_sends_payload() {
     // Receiver socket to capture payload

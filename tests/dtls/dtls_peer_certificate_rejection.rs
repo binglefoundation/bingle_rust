@@ -11,6 +11,7 @@ fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     // Generate test certificates
@@ -63,6 +64,7 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     assert!(!any_ok, "handshake unexpectedly succeeded when server rejected peer certificate");
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
     // Generate test certificates

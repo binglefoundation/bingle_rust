@@ -22,8 +22,8 @@ fn server_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &
     }
 }
 
+#[ntest::timeout(30_000)]
 #[test]
-#[ignore]
 fn dtls_client_keeps_stream_open_across_sends() {
     #[allow(unused)]
     {

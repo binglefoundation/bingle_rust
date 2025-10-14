@@ -20,6 +20,7 @@ fn handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
     }
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_start_accepts_external_network_mux_udp() {
     // Generate test certs

@@ -20,6 +20,7 @@ fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &
 }
 
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_end_to_end_loopback_echo() {
     use std::time::Instant;

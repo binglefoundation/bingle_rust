@@ -22,6 +22,7 @@ fn handler(_server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
     }
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_udp_listener_invokes_handler() {
     #[allow(unused)]

@@ -42,6 +42,7 @@ fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &SocketAddr, _iss
     }
 }
 
+#[ntest::timeout(30_000)]
 #[test]
 fn dtls_client_echo_roundtrip() {
     use std::time::Instant;
