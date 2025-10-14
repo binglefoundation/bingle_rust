@@ -88,23 +88,83 @@ pub mod non_ios {
     #[inline]
     fn set_verify_with_handler_for_connector(
         builder: &mut SslConnectorBuilder,
-        _handler: Option<HandlePeerCertificate>,
-        _ca_bytes: Vec<u8>,
+        handler: Option<HandlePeerCertificate>,
+        ca_bytes: Vec<u8>,
     ) {
-        // For tests we disable certificate verification entirely to avoid hostname/chain issues.
-        builder.set_verify(SslVerifyMode::NONE);
+        // Use a verify callback to delegate acceptance to the provided handler.
+        // We ignore built-in chain/hostname checks and only fail if the handler returns Err.
+        if let Some(h) = handler {
+            let ca = ca_bytes.clone();
+            builder.set_verify_callback(SslVerifyMode::PEER, move |_preverify_ok, x509_ctx| {
+                // Only evaluate the leaf certificate (depth 0)
+                if x509_ctx.error_depth() != 0 {
+                    return true;
+                }
+                if let Some(cert) = x509_ctx.current_cert() {
+                    match cert.to_pem() {
+                        Ok(pem) => match h(&pem, ca.as_slice()) {
+                            Ok(_issuer) => true,
+                            Err(e) => {
+                                println!("[DtlsOpenSsl][verify][client] handler rejected server cert: {}", e);
+                                false
+                            }
+                        },
+                        Err(e) => {
+                            println!("[DtlsOpenSsl][verify][client] to_pem failed: {}", e);
+                            false
+                        }
+                    }
+                } else {
+                    // No certificate presented by server; reject.
+                    println!("[DtlsOpenSsl][verify][client] no server certificate presented");
+                    false
+                }
+            });
+        } else {
+            // No handler: accept any server certificate to keep tests stable.
+            builder.set_verify_callback(SslVerifyMode::PEER, |_preverify_ok, _| true);
+        }
     }
 
     #[inline]
     fn set_verify_with_handler_for_acceptor(
         builder: &mut SslAcceptorBuilder,
-        _handler: Option<HandlePeerCertificate>,
-        _ca_bytes: Vec<u8>,
+        handler: Option<HandlePeerCertificate>,
+        ca_bytes: Vec<u8>,
     ) {
-        // For test environment stability, do not request a client certificate at the TLS layer.
-        // We will deliver the client's certificate to the server via an out-of-band announcement
-        // after the handshake, and invoke the handler manually.
-        builder.set_verify(SslVerifyMode::NONE);
+        // Use a verify callback driven by the provided handler to decide whether to accept the client.
+        // Request a client certificate; fail the handshake if the handler returns Err.
+        if let Some(h) = handler {
+            let ca = ca_bytes.clone();
+            builder.set_verify_callback(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT, move |_preverify_ok, x509_ctx| {
+                // Only evaluate the leaf certificate (depth 0)
+                if x509_ctx.error_depth() != 0 {
+                    return true;
+                }
+                if let Some(cert) = x509_ctx.current_cert() {
+                    match cert.to_pem() {
+                        Ok(pem) => match h(&pem, ca.as_slice()) {
+                            Ok(_issuer) => true,
+                            Err(e) => {
+                                println!("[DtlsOpenSsl][verify][server] handler rejected client cert: {}", e);
+                                false
+                            }
+                        },
+                        Err(e) => {
+                            println!("[DtlsOpenSsl][verify][server] to_pem failed: {}", e);
+                            false
+                        }
+                    }
+                } else {
+                    // No certificate from client (but we required one): reject.
+                    println!("[DtlsOpenSsl][verify][server] no client certificate presented");
+                    false
+                }
+            });
+        } else {
+            // No handler: accept clients regardless of cert validity.
+            builder.set_verify_callback(SslVerifyMode::PEER, |_preverify_ok, _| true);
+        }
     }
 
     // Per-peer datagram queue and blocking mechanism.
@@ -138,7 +198,12 @@ pub mod non_ios {
                 if self.closed.load(AtomicOrdering::SeqCst) {
                     return Ok(0);
                 }
-                q = self.cv.wait(q).map_err(|_| Error::new(ErrorKind::Other, "cv poisoned"))?;
+                // Wait with timeout to allow outer layers to treat lack of data as WouldBlock
+                let (guard, timeout_res) = self.cv.wait_timeout(q, std::time::Duration::from_millis(50)).map_err(|_| Error::new(ErrorKind::Other, "cv poisoned"))?;
+                q = guard;
+                if timeout_res.timed_out() {
+                    return Err(Error::from(ErrorKind::WouldBlock));
+                }
             }
         }
         fn close(&self) { self.closed.store(true, AtomicOrdering::SeqCst); self.cv.notify_all(); }
@@ -604,15 +669,33 @@ pub mod non_ios {
             let mut stream = match connector.connect("localhost", conn) {
                 Ok(s) => s,
                 Err(HandshakeError::WouldBlock(mut mid)) => {
+                    use std::time::{Instant, Duration};
+                    let start = Instant::now();
+                    let deadline = Duration::from_millis(1200);
                     loop {
                         match mid.handshake() {
                             Ok(s) => break s,
-                            Err(HandshakeError::WouldBlock(m)) => { mid = m; continue; }
-                            Err(_e) => {
+                            Err(HandshakeError::WouldBlock(m)) => {
+                                if start.elapsed() > deadline {
+                                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
+                                    println!("[DtlsOpenSsl::send] connect() timeout to {}", to);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() timeout to {}", to)); }
+                                    return Err("dtls client connect timeout".to_string());
+                                }
+                                mid = m; continue;
+                            }
+                            Err(HandshakeError::Failure(mid2)) => {
                                 if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
-                                println!("[DtlsOpenSsl::send] connect() fatal error to {}", to);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() fatal error to {}", to)); }
-                                return Err("dtls client connect failed".to_string());
+                                let err = mid2.error();
+                                println!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err)); }
+                                return Err(format!("dtls client connect failed: {}", err));
+                            }
+                            Err(HandshakeError::SetupFailure(err)) => {
+                                if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
+                                println!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err)); }
+                                return Err(format!("dtls client connect failed: {}", err));
                             }
                         }
                     }
