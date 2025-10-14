@@ -46,9 +46,9 @@ pub fn mux_type_for(data: &[u8]) -> MuxType {
 /// UDP-based NetworkMux implementation
 pub struct UdpNetworkMux {
     socket: UdpSocket,
-    handle_dtls: Option<HandleDtls>,
-    handle_stun: Option<HandleStun>,
-    handle_turn: Option<HandleTurn>,
+    handle_dtls: Mutex<Option<HandleDtls>>,
+    handle_stun: Mutex<Option<HandleStun>>,
+    handle_turn: Mutex<Option<HandleTurn>>,
     running: AtomicBool,
     rx_thread: Mutex<Option<JoinHandle<()>>>,
     dtls_queue: Mutex<VecDeque<(SocketAddr, Vec<u8>)>>,
@@ -68,9 +68,9 @@ impl UdpNetworkMux {
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         Ok(Self {
             socket,
-            handle_dtls: None,
-            handle_stun: None,
-            handle_turn: None,
+            handle_dtls: std::sync::Mutex::new(None),
+            handle_stun: std::sync::Mutex::new(None),
+            handle_turn: std::sync::Mutex::new(None),
             running: AtomicBool::new(false),
             rx_thread: Mutex::new(None),
             dtls_queue: Mutex::new(VecDeque::new()),
@@ -158,20 +158,20 @@ impl UdpNetworkMux {
                                 if let Ok(mut q) = this.dtls_queue.lock() {
                                     q.push_back((from, data.to_vec()));
                                 }
-                                if let Some(h) = this.handle_dtls.clone() {
+                                if let Some(h) = this.handle_dtls.lock().ok().and_then(|g| g.clone()) {
                                     // Pass `&this` as &dyn NetworkMux
                                     let source: &dyn NetworkMux = &*this;
                                     (h)(source, &from, data);
                                 }
                             }
                             MuxType::Stun => {
-                                if let Some(h) = this.handle_stun.clone() {
+                                if let Some(h) = this.handle_stun.lock().ok().and_then(|g| g.clone()) {
                                     let source: &dyn NetworkMux = &*this;
                                     (h)(source, &from, data);
                                 }
                             }
                             MuxType::TurnChannelData => {
-                                if let Some(h) = this.handle_turn.clone() {
+                                if let Some(h) = this.handle_turn.lock().ok().and_then(|g| g.clone()) {
                                     let source: &dyn NetworkMux = &*this;
                                     (h)(source, &from, data);
                                 }
@@ -249,30 +249,30 @@ impl NetworkMux for UdpNetworkMux {
         }
     }
 
-    fn get_handle_dtls(&self) -> Option<HandleDtls> { self.handle_dtls.clone() }
+    fn get_handle_dtls(&self) -> Option<HandleDtls> { self.handle_dtls.lock().ok().and_then(|g| g.clone()) }
 
-    fn set_handle_dtls(&mut self, handler: Option<HandleDtls>) { self.handle_dtls = handler; }
+    fn set_handle_dtls(&mut self, handler: Option<HandleDtls>) { if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; } }
 
     fn with_handle_dtls(mut self, handler: HandleDtls) -> Self where Self: Sized {
-        self.handle_dtls = Some(handler);
+        if let Ok(mut g) = self.handle_dtls.lock() { *g = Some(handler); }
         self
     }
 
-    fn get_handle_stun(&self) -> Option<HandleStun> { self.handle_stun.clone() }
+    fn get_handle_stun(&self) -> Option<HandleStun> { self.handle_stun.lock().ok().and_then(|g| g.clone()) }
 
-    fn set_handle_stun(&mut self, handler: Option<HandleStun>) { self.handle_stun = handler; }
+    fn set_handle_stun(&mut self, handler: Option<HandleStun>) { if let Ok(mut g) = self.handle_stun.lock() { *g = handler; } }
 
     fn with_handle_stun(mut self, handler: HandleStun) -> Self where Self: Sized {
-        self.handle_stun = Some(handler);
+        if let Ok(mut g) = self.handle_stun.lock() { *g = Some(handler); }
         self
     }
 
-    fn get_handle_turn(&self) -> Option<HandleTurn> { self.handle_turn.clone() }
+    fn get_handle_turn(&self) -> Option<HandleTurn> { self.handle_turn.lock().ok().and_then(|g| g.clone()) }
 
-    fn set_handle_turn(&mut self, handler: Option<HandleTurn>) { self.handle_turn = handler; }
+    fn set_handle_turn(&mut self, handler: Option<HandleTurn>) { if let Ok(mut g) = self.handle_turn.lock() { *g = handler; } }
 
     fn with_handle_turn(mut self, handler: HandleTurn) -> Self where Self: Sized {
-        self.handle_turn = Some(handler);
+        if let Ok(mut g) = self.handle_turn.lock() { *g = Some(handler); }
         self
     }
 
@@ -327,5 +327,13 @@ mod tests {
     #[test]
     fn mux_type_unknown_outside_ranges() {
         assert_eq!(mux_type_for(&[255]), MuxType::Unknown);
+    }
+}
+
+
+impl UdpNetworkMux {
+    /// Arc-friendly setter for DTLS handler to allow installing from Arc<UdpNetworkMux>.
+    pub fn set_handle_dtls_arc(self: &std::sync::Arc<Self>, handler: Option<HandleDtls>) {
+        if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; }
     }
 }
