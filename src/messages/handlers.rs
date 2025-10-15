@@ -2,8 +2,12 @@ use crate::messages::types::*;
 
 pub trait MessageHandler {
     // Plain text
-    fn on_plain_text(&self, _from_id: &str, msg: &PlainTextMessage) {
-        self.on_unimplemented(&Message::PlainText(msg.clone()));
+    fn on_plain_text(&self, from_id: &str, msg: &PlainTextMessage) {
+        // Delegate to the Bingle API's on_message handler if one is installed.
+        // We pass an empty sender id and use from_id (issuer) as the sender_handle to be consistent
+        // with the API's DTLS handler behavior.
+        let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
+        crate::api::bingle_api_impl::global_on_message_call("".to_string(), from_id.to_string(), json);
     }
 
     // Relay messages

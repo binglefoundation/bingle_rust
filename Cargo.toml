@@ -173,3 +173,11 @@ path = "tests/api/bingle_api_start_fail.rs"
 [[test]]
 name = "engine_dtls_send_no_lazy_start"
 path = "tests/engine/dtls_send_no_lazy_start.rs"
+
+[[test]]
+name = "engine_bingle_dtls_basic"
+path = "tests/engine/engine_bingle_dtls_basic.rs"
+
+[[test]]
+name = "messages_on_plain_text_delegate"
+path = "tests/messages/on_plain_text_delegate.rs"

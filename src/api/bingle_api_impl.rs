@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Condvar};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value as JsonValue, Map as JsonMap};
@@ -29,6 +30,24 @@ pub struct BingleApiImpl {
     issuer: Option<String>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle
     engine: Option<Engine>,
+}
+
+// Global on_message dispatcher storage; used by MessageHandler::on_plain_text to delegate to API.
+static GLOBAL_ON_MESSAGE: OnceLock<Mutex<Option<Arc<OnMessageHandler>>>> = OnceLock::new();
+
+/// Set the global on_message handler (used by plain-text router fallback).
+pub fn global_on_message_set(handler: Option<Arc<OnMessageHandler>>) {
+    let slot = GLOBAL_ON_MESSAGE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut g) = slot.lock() { *g = handler; }
+}
+
+/// Invoke the global on_message handler, if set.
+pub fn global_on_message_call(sender: String, sender_handle: String, msg: JsonValue) {
+    if let Some(slot) = GLOBAL_ON_MESSAGE.get() {
+        if let Ok(g) = slot.lock() {
+            if let Some(cb) = g.as_ref() { cb(sender, sender_handle, msg); }
+        }
+    }
 }
 
 impl Default for BingleApiImpl {
@@ -61,30 +80,73 @@ impl Default for Pending {
 #[cfg(not(target_os = "ios"))]
 
 impl BingleApiImpl {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        println!("[BingleApiImpl::new][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new][enter]"); }
+        let s = Self::default();
+        println!("[BingleApiImpl::new][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new][exit]"); }
+        s
+    }
 }
 
 impl BingleApiImpl {
     /// Test-oriented constructor to inject a custom DTLS implementation.
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Self {
-        Self { dtls: Some(dtls), ..Default::default() }
+        println!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true"); }
+        let s = Self { dtls: Some(dtls), ..Default::default() };
+        println!("[BingleApiImpl::new_with_dtls][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new_with_dtls][exit]"); }
+        s
     }
 
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
-    pub fn set_issuer_for_tests(&mut self, issuer: String) { self.issuer = Some(issuer); }
+    pub fn set_issuer_for_tests(&mut self, issuer: String) {
+        println!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len())); }
+        self.issuer = Some(issuer);
+        println!("[BingleApiImpl::set_issuer_for_tests][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_issuer_for_tests][exit]"); }
+    }
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
-    pub fn engine_state_for_tests(&self) -> Option<EngineState> { self.engine.as_ref().map(|e| e.state()) }
-    pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> { self.engine.as_ref().and_then(|e| e.last_public_addr()) }
+    pub fn engine_state_for_tests(&self) -> Option<EngineState> {
+        println!("[BingleApiImpl::engine_state_for_tests][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::engine_state_for_tests][enter]"); }
+        let s = self.engine.as_ref().map(|e| e.state());
+        println!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s)); }
+        s
+    }
+    pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
+        println!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::engine_last_public_addr_for_tests][enter]"); }
+        let a = self.engine.as_ref().and_then(|e| e.last_public_addr());
+        println!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a)); }
+        a
+    }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
+        println!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr)); }
         if let Some(e) = self.engine.as_mut() {
          e.test_force_stun_consistent(addr);
         }
+        println!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]"); }
     }
-
+    
     /// Exposed for integration tests: whether a DTLS instance has been created.
-    pub fn has_dtls(&self) -> bool { self.dtls.is_some() }
+    pub fn has_dtls(&self) -> bool {
+        println!("[BingleApiImpl::has_dtls][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::has_dtls][enter]"); }
+        let b = self.dtls.is_some();
+        println!("[BingleApiImpl::has_dtls][exit] return={}", b);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::has_dtls][exit] return={}", b)); }
+        b
+    }
 
     fn ensure_dtls(&mut self) {
         if self.dtls.is_none() {
@@ -230,6 +292,8 @@ fn generate_pki_from_ops(ops: &AlgoOps, issuer_cn: &str) -> Result<(Vec<u8>, Vec
 
 impl BingleApi for BingleApiImpl {
     fn start(&mut self, options: StartOptions) -> Result<(), String> {
+        println!("[BingleApiImpl::start][enter] options={:?}", options);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::start][enter] options={:?}", options)); }
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
         self.started_options = Some(options.clone());
         self.ensure_dtls();
@@ -358,39 +422,61 @@ impl BingleApi for BingleApiImpl {
             eng.start(options.clone())?;
         }
 
+        println!("[BingleApiImpl::start][exit] Ok(())");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::start][exit] Ok(())"); }
         Ok(())
     }
 
     fn stop(&mut self) {
+        println!("[BingleApiImpl::stop][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::stop][enter]"); }
         // Stop Engine if running
         if let Some(e) = &mut self.engine {
             e.stop();
         }
         // For now, simply drop the DTLS instance; more graceful shutdown can be added later.
         self.dtls = None;
+        println!("[BingleApiImpl::stop][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::stop][exit]"); }
     }
 
     fn network_change(&mut self) {
+        println!("[BingleApiImpl::network_change][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::network_change][enter]"); }
         // Placeholder: in a full implementation, we would rescan STUN/static IP and update listeners.
+        println!("[BingleApiImpl::network_change][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::network_change][exit]"); }
     }
 
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool {
+        println!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some())); }
         // Not implemented yet
-        false
+        let __ret = false;
+        println!("[BingleApiImpl::send_message_to_id][exit] return={}", __ret);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_id][exit] return={}", __ret)); }
+        __ret
     }
 
     fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool {
+        println!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", _handle, _message, _progress.is_some());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", _handle, _message, _progress.is_some())); }
         // Not implemented yet
-        false
+        let __ret = false;
+        println!("[BingleApiImpl::send_message_to_handle][exit] return={}", __ret);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_handle][exit] return={}", __ret)); }
+        __ret
     }
 
     fn send_message_to_network(
         &self,
         network_source_key: &NetworkSourceKey,
-        _user_id: &UserId,
+        user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> bool {
+        println!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some())); }
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
         // Only direct socket address path is implemented at this stage.
         if let Some(addr) = network_source_key.inet_socket_address {
@@ -425,7 +511,10 @@ impl BingleApi for BingleApiImpl {
 
             if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
             // For RelayCheck, treat send as successful even if DTLS send failed (we synthesized response)
-            if is_check { true } else { ok }
+            let __ret = if is_check { true } else { ok };
+            println!("[BingleApiImpl::send_message_to_network][exit] return={}", __ret);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network][exit] return={}", __ret)); }
+            __ret
         } else {
             if let Some(cb) = progress.as_ref() { cb(100, "Relay send not yet implemented".to_string()); }
             false
@@ -433,11 +522,21 @@ impl BingleApi for BingleApiImpl {
     }
 
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        Err("not implemented".to_string())
+        println!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some())); }
+        let err = "not implemented".to_string();
+        println!("[BingleApiImpl::send_message_to_id_with_response][exit] Err({})", err);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_id_with_response][exit] Err({})", err)); }
+        Err(err)
     }
 
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        Err("not implemented".to_string())
+        println!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", _handle, _message, _progress.is_some());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", _handle, _message, _progress.is_some())); }
+        let err = "not implemented".to_string();
+        println!("[BingleApiImpl::send_message_to_handle_with_response][exit] Err({})", err);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_handle_with_response][exit] Err({})", err)); }
+        Err(err)
     }
 
     fn send_message_to_network_with_response(
@@ -447,6 +546,8 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<JsonValue, String> {
+        println!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some())); }
         // Create a unique tag and register a pending waiter
         let tag = Uuid::new_v4();
         let pair: Arc<(Mutex<Pending>, Condvar)> = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
@@ -502,29 +603,57 @@ impl BingleApi for BingleApiImpl {
                 let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
                 map.remove(&tag);
                 if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
-                resp.ok_or_else(|| "no response payload".to_string())
+                let __res: Result<serde_json::Value, String> = resp.ok_or_else(|| "no response payload".to_string());
+                match &__res {
+                    Ok(_) => {
+                        println!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
+                        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)"); }
+                    }
+                    Err(e) => {
+                        println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e);
+                        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e)); }
+                    }
+                }
+                __res
             } else {
                 drop(guard);
                 let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
                 map.remove(&tag);
                 if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
-                Err("timeout waiting for response".to_string())
+                let err = "timeout waiting for response".to_string();
+                println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
+                #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err)); }
+                Err(err)
             }
         })
     }
 
     fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>) {
+            println!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some());
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some())); }
             self.on_message = handler.clone();
-            if let Ok(mut g) = self.shared_on_message.lock() { *g = handler; }
+            if let Ok(mut g) = self.shared_on_message.lock() { *g = handler.clone(); }
+            // Update global dispatcher so plain-text routing can delegate here
+            crate::api::bingle_api_impl::global_on_message_set(handler);
+            println!("[BingleApiImpl::set_on_message][exit]");
+            #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_on_message][exit]"); }
         }
 
-    fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>) { self.on_connect = handler; }
+    fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>) { 
+            println!("[BingleApiImpl::set_on_connect][enter] handler_is_some={}", handler.is_some());
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_on_connect][enter] handler_is_some={}", handler.is_some())); }
+            self.on_connect = handler; 
+            println!("[BingleApiImpl::set_on_connect][exit]");
+            #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_on_connect][exit]"); }
+        }
 }
 
 impl BingleApiImpl {
     /// Public entry from the networking layer for inbound messages.
     /// If message contains a responseTag, it is treated as a response and routed to waiter; otherwise it is dispatched to on_message.
     pub fn handle_incoming_network_message(&self, sender: UserId, sender_handle: Handle, message: JsonValue) {
+        println!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message)); }
         // Check for responseTag
         let tag_opt = message.get("responseTag").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok());
         if let Some(tag) = tag_opt {
@@ -548,6 +677,8 @@ impl BingleApiImpl {
             if let Some(cb) = &self.on_message {
                 cb(sender, sender_handle, message);
             }
+            println!("[BingleApiImpl::handle_incoming_network_message][exit]");
+            #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::handle_incoming_network_message][exit]"); }
         }
     }
 }
