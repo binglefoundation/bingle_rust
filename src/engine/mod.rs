@@ -232,15 +232,25 @@ impl Engine {
             self.relay_finder = Some(Arc::new(finder));
         }
 
-        // Send TriangleTest1 either to the discovered relay
+        // Send TriangleTest1  to the discovered relay
         if let (Some(dtls), Some(to_addr)) = (self.dtls.as_ref(), relay_target) {
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: to_addr }));
             let json = to_json_string(&msg);
             println!("[Engine] sending TriangleTest1 to {} ({} bytes)", to_addr, json.len());
-            let _ = dtls.send(to_addr, json.as_bytes());
-            // For current test scope, consider endpoint available without waiting for TriangleTest3
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] sending TriangleTest1 to {} ({} bytes)", to_addr, json.len())); }
+            match dtls.send(to_addr, json.as_bytes()) {
+                Ok(()) => {
+                    // For current test scope, consider endpoint available without waiting for TriangleTest3
+                }
+                Err(e) => {
+                    println!("[Engine][ERROR] TriangleTest1 send to {} failed: {}", to_addr, e);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][ERROR] TriangleTest1 send to {} failed: {}", to_addr, e)); }
+                    panic!("[Engine] cannot continue triangle test without relay connection: {}", e);
+                }
+            }
         } else {
             println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
+            panic!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
         }
     }
 

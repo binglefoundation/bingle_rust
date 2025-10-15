@@ -68,7 +68,7 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
 
     client1.start(c1_opts).expect("client1 start() failed");
 
-    // Wait up to 10 seconds for both client engines to enter EndpointAvailable
+    // Wait up to 10 seconds for client engine to enter EndpointAvailable
     let wait_start = Instant::now();
     while wait_start.elapsed() < Duration::from_secs(10) {
         if client1.engine_state_for_tests() == Some(EngineState::EndpointAvailable) {
@@ -77,8 +77,9 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
         std::thread::sleep(Duration::from_millis(25));
     }
 
+    // State *MUST* be EndpointAvailable
     let s1_state = client1.engine_state_for_tests();
-    assert!(matches!(s1_state, Some(EngineState::EndpointAvailable) | Some(EngineState::TrianglePing)), "unexpected client1 state: {:?}", s1_state);
+    assert!(matches!(s1_state, Some(EngineState::EndpointAvailable) ), "unexpected client1 state: {:?}", s1_state);
 
     // Stop instances and STUN servers
     relay1.stop();
