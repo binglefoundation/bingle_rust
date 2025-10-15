@@ -48,8 +48,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None };
 
     // Start relays (no assertions about DTLS; we use them only as placeholders)
-    let _ = relay1.start(r1_opts);
-    let _ = relay2.start(r2_opts);
+    let _ = relay1.start(r1_opts).expect("relay1 start() failed");
+    let _ = relay2.start(r2_opts).expect("relay2 start() failed");
 
     // Start two local STUN servers we will use for consistency resolution
     let p1 = find_unused_loopback_port();
@@ -71,15 +71,16 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     // Wait up to 10 seconds for client engine to enter EndpointAvailable
     let wait_start = Instant::now();
     while wait_start.elapsed() < Duration::from_secs(10) {
-        if client1.engine_state_for_tests() == Some(EngineState::EndpointAvailable) {
-            break;
+        match client1.engine_state_for_tests() {
+            Some(EngineState::EndpointAvailable) => break,
+            _ => {}
         }
         std::thread::sleep(Duration::from_millis(25));
     }
 
-    // State *MUST* be EndpointAvailable
+    // State is expected to be EndpointAvailable - do not change this!
     let s1_state = client1.engine_state_for_tests();
-    assert!(matches!(s1_state, Some(EngineState::EndpointAvailable) ), "unexpected client1 state: {:?}", s1_state);
+    assert!(matches!(s1_state, Some(EngineState::EndpointAvailable)  ), "unexpected client1 state: {:?}", s1_state);
 
     // Stop instances and STUN servers
     relay1.stop();

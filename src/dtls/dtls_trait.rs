@@ -115,4 +115,8 @@ pub trait Dtls {
     fn with_server_signing_private_key(self, pem: Vec<u8>) -> Self
     where
         Self: Sized;
+
+    // Verification mode: if true, do not enforce TLS verification during handshake; validate at application layer only.
+    fn set_app_layer_only_verification(&mut self, enabled: bool) { let _ = enabled; }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
 }

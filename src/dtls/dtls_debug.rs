@@ -7,6 +7,9 @@ use base64::{engine::general_purpose, Engine as _};
 pub struct DtlsRecordJson {
     /// ContentType (e.g., 22=Handshake, 23=ApplicationData, etc.)
     pub content_type: u8,
+    /// Human-readable ContentType name (e.g., "handshake", "alert"). Optional for backward compatibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type_name: Option<String>,
     /// ProtocolVersion bytes [major, minor] (e.g., [254, 253] for DTLS 1.2)
     pub version: [u8; 2],
     /// Epoch from the DTLS record header (big-endian)
@@ -17,6 +20,9 @@ pub struct DtlsRecordJson {
     pub length: u16,
     /// Base64 of the payload bytes
     pub payload_b64: String,
+    /// Optional parsed DTLS handshake header/body summary (present when content_type==22 and parsing succeeds).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake: Option<HandshakeJson>,
 }
 
 /// JSON representation of a UDP datagram containing one or more DTLS records.
@@ -24,6 +30,101 @@ pub struct DtlsRecordJson {
 pub struct DtlsUdpPacketJson {
     pub records: Vec<DtlsRecordJson>,
 }
+
+/// Summary of a DTLS handshake message, including header fields and a minimal decode of extensions
+/// for ClientHello and ServerHello.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HandshakeJson {
+    pub handshake_type: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake_type_name: Option<String>,
+    /// 24-bit body length promoted to u32
+    pub length: u32,
+    pub message_seq: u16,
+    /// 24-bit promoted to u32
+    pub fragment_offset: u32,
+    /// 24-bit promoted to u32
+    pub fragment_length: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_hello: Option<ClientHelloSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_hello: Option<ServerHelloSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClientHelloSummary {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<ExtensionJson>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerHelloSummary {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<ExtensionJson>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExtensionJson {
+    pub id: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Map DTLS ContentType byte to a human-readable name.
+fn content_type_name(ct: u8) -> &'static str {
+    match ct {
+        20 => "change_cipher_spec",
+        21 => "alert",
+        22 => "handshake",
+        23 => "application_data",
+        24 => "heartbeat",
+        _ => "unknown",
+    }
+}
+
+/// Map DTLS HandshakeType to a human-readable name.
+fn handshake_type_name(ht: u8) -> &'static str {
+    match ht {
+        0 => "hello_request",
+        1 => "client_hello",
+        2 => "server_hello",
+        3 => "hello_verify_request",
+        11 => "certificate",
+        12 => "server_key_exchange",
+        13 => "certificate_request",
+        14 => "server_hello_done",
+        15 => "certificate_verify",
+        16 => "client_key_exchange",
+        20 => "finished",
+        _ => "unknown",
+    }
+}
+
+/// Common TLS/DTLS extension type IDs → names (subset).
+fn extension_type_name(id: u16) -> &'static str {
+    match id {
+        0x0000 => "server_name",
+        0x0005 => "status_request",
+        0x000a => "supported_groups",
+        0x000b => "ec_point_formats",
+        0x000d => "signature_algorithms",
+        0x000f => "heartbeat",
+        0x0010 => "application_layer_protocol_negotiation",
+        0x0012 => "signed_certificate_timestamp",
+        0x0015 => "padding",
+        0x0017 => "extended_master_secret",
+        0x0023 => "session_ticket",
+        0x002b => "supported_versions",
+        0x002d => "psk_key_exchange_modes",
+        0x0031 => "early_data",
+        0x0033 => "key_share",
+        0xFF01 => "renegotiation_info",
+        _ => "unknown",
+    }
+}
+
+#[inline]
+fn read_u24(be3: &[u8]) -> u32 { ((be3[0] as u32) << 16) | ((be3[1] as u32) << 8) | (be3[2] as u32) }
 
 /// Convert a raw UDP datagram containing DTLS records into a pretty-printed JSON string.
 /// Returns Err(String) if the datagram is malformed.
@@ -52,19 +153,129 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
         }
         let payload = &datagram[i + 13..i + needed];
         let payload_b64 = general_purpose::STANDARD.encode(payload);
+
+        // Attempt to parse DTLS Handshake layer if content_type == 22
+        let handshake = if content_type == 22 && payload.len() >= 12 {
+            // DTLS Handshake header: type(1), length(3), message_seq(2), fragment_offset(3), fragment_length(3)
+            let htype = payload[0];
+            let hlen = read_u24(&payload[1..4]);
+            let hseq = u16::from_be_bytes([payload[4], payload[5]]);
+            let hoff = read_u24(&payload[6..9]);
+            let hfrag_len = read_u24(&payload[9..12]);
+            let mut hs = HandshakeJson {
+                handshake_type: htype,
+                handshake_type_name: Some(handshake_type_name(htype).to_string()),
+                length: hlen,
+                message_seq: hseq,
+                fragment_offset: hoff,
+                fragment_length: hfrag_len,
+                client_hello: None,
+                server_hello: None,
+            };
+
+            // Only attempt body parsing if we have the full first fragment
+            if hoff == 0 && (12usize) < payload.len() {
+                let body = &payload[12..payload.len().min(12 + hlen as usize)];
+                match htype {
+                    1 => { // ClientHello
+                        if let Some(exts) = parse_client_hello_extensions(body) {
+                            hs.client_hello = Some(ClientHelloSummary { extensions: exts });
+                        }
+                    }
+                    2 => { // ServerHello
+                        if let Some(exts) = parse_server_hello_extensions(body) {
+                            hs.server_hello = Some(ServerHelloSummary { extensions: exts });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Some(hs)
+        } else { None };
+
         records.push(DtlsRecordJson {
             content_type,
+            content_type_name: Some(content_type_name(content_type).to_string()),
             version,
             epoch,
             sequence_number: seq,
             length,
             payload_b64,
+            handshake,
         });
         i += needed;
     }
 
     let packet = DtlsUdpPacketJson { records };
     serde_json::to_string_pretty(&packet).map_err(|e| e.to_string())
+}
+
+fn parse_client_hello_extensions(body: &[u8]) -> Option<Vec<ExtensionJson>> {
+    // Structure (DTLS 1.2):
+    // version(2) + random(32) + session_id_len(1) + session_id + cookie_len(1) + cookie +
+    // cipher_suites_len(2) + cipher_suites + compression_methods_len(1) + compression_methods +
+    // [extensions_len(2) + extensions]
+    let mut p = 0usize;
+    if body.len() < p + 2 { return None; }
+    p += 2; // version
+    if body.len() < p + 32 { return None; }
+    p += 32; // random
+    if body.len() < p + 1 { return None; }
+    let sid_len = body[p] as usize; p += 1;
+    if body.len() < p + sid_len { return None; }
+    p += sid_len; // session_id
+    if body.len() < p + 1 { return None; }
+    let cookie_len = body[p] as usize; p += 1;
+    if body.len() < p + cookie_len { return None; }
+    p += cookie_len; // cookie
+    if body.len() < p + 2 { return None; }
+    let cs_len = u16::from_be_bytes([body[p], body[p+1]]) as usize; p += 2;
+    if body.len() < p + cs_len { return None; }
+    p += cs_len; // cipher suites
+    if body.len() < p + 1 { return None; }
+    let cm_len = body[p] as usize; p += 1;
+    if body.len() < p + cm_len { return None; }
+    p += cm_len; // compression methods
+    if body.len() < p + 2 { return Some(Vec::new()); }
+    let ext_total = u16::from_be_bytes([body[p], body[p+1]]) as usize; p += 2;
+    if body.len() < p + ext_total { return None; }
+    parse_extensions(&body[p..p+ext_total])
+}
+
+fn parse_server_hello_extensions(body: &[u8]) -> Option<Vec<ExtensionJson>> {
+    // Structure (TLS 1.2 style):
+    // version(2) + random(32) + session_id_len(1) + session_id + cipher_suite(2) + compression_method(1) +
+    // [extensions_len(2) + extensions]
+    let mut p = 0usize;
+    if body.len() < p + 2 { return None; }
+    p += 2; // version
+    if body.len() < p + 32 { return None; }
+    p += 32; // random
+    if body.len() < p + 1 { return None; }
+    let sid_len = body[p] as usize; p += 1;
+    if body.len() < p + sid_len { return None; }
+    p += sid_len; // session_id
+    if body.len() < p + 2 { return None; }
+    p += 2; // cipher_suite
+    if body.len() < p + 1 { return None; }
+    p += 1; // compression_method
+    if body.len() < p + 2 { return Some(Vec::new()); }
+    let ext_total = u16::from_be_bytes([body[p], body[p+1]]) as usize; p += 2;
+    if body.len() < p + ext_total { return None; }
+    parse_extensions(&body[p..p+ext_total])
+}
+
+fn parse_extensions(mut data: &[u8]) -> Option<Vec<ExtensionJson>> {
+    let mut out = Vec::new();
+    while data.len() >= 4 {
+        let id = u16::from_be_bytes([data[0], data[1]]);
+        let len = u16::from_be_bytes([data[2], data[3]]) as usize;
+        let name = extension_type_name(id);
+        out.push(ExtensionJson { id, name: Some(name.to_string()) });
+        if data.len() < 4 + len { return None; }
+        data = &data[4 + len..];
+    }
+    Some(out)
 }
 
 /// Convert a JSON string produced by `dtls_udp_to_json` back into raw UDP datagram bytes.

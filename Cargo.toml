@@ -121,6 +121,14 @@ name = "pki"
 path = "tests/dtls/pki.rs"
 
 [[test]]
+name = "dtls_debug_handshake"
+path = "tests/dtls/dtls_debug_handshake.rs"
+
+[[test]]
+name = "dtls_app_layer_verification"
+path = "tests/dtls/dtls_app_layer_verification.rs"
+
+[[test]]
 name = "algo_bingle_unit"
 path = "tests/blockchain/algo_bingle_unit.rs"
 

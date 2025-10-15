@@ -188,7 +188,10 @@ impl Engine {
         let prev = self.state;
         self.state = EngineState::TrianglePing;
         println!("[Engine] state change: {:?} -> TrianglePing", prev);
-        // If DTLS isn't started (e.g., in tests), this is an error: we cannot proceed with triangle ping
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] state change: {:?} -> TrianglePing", prev)); }
+
+        // Do NOT mark EndpointAvailable here; proceed with the triangle process and only
+        // transition to EndpointAvailable once TriangleTest3 is observed.
         if self.dtls.is_none() {
             panic!("DTLS not started: cannot proceed with triangle ping after STUN consistent");
         }
@@ -240,7 +243,10 @@ impl Engine {
             #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] sending TriangleTest1 to {} ({} bytes)", to_addr, json.len())); }
             match dtls.send(to_addr, json.as_bytes()) {
                 Ok(()) => {
-                    // For current test scope, consider endpoint available without waiting for TriangleTest3
+                    // Do not mark EndpointAvailable here; wait for TriangleTest3 observation.
+                    println!("[Engine] TriangleTest1 sent successfully; awaiting TriangleTest3 to mark EndpointAvailable");
+                    #[allow(unused)] { crate::util::logging::log_line("[Engine] TriangleTest1 sent successfully; awaiting TriangleTest3 to mark EndpointAvailable"); }
+                    // Optionally, we could block here waiting for the condvar signal; for now, remain in TrianglePing.
                 }
                 Err(e) => {
                     println!("[Engine][ERROR] TriangleTest1 send to {} failed: {}", to_addr, e);
@@ -281,7 +287,18 @@ impl Engine {
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) { self.on_stun_consistent(Some(addr)); }
 
     /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.
-    fn handle_dtls_message(_server: &dyn Dtls, _from: &SocketAddr, issuer: &str, data: &[u8]) {
+    fn handle_dtls_message(_server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {
+        // Debug: log inbound DTLS application message (best-effort UTF-8 preview)
+        let preview = match std::str::from_utf8(data) {
+            Ok(s) => {
+                let trimmed = if s.len() > 120 { &s[..120] } else { s };
+                format!("utf8:{} bytes: {}", s.len(), trimmed)
+            }
+            Err(_) => format!("non-utf8:{} bytes", data.len()),
+        };
+        println!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview)); }
+
         // Best-effort decode; print unimplemented on failure via default handler
         let handler = DefaultPrintingHandler;
         match std::str::from_utf8(data) {

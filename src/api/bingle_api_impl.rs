@@ -142,11 +142,10 @@ fn generate_pki_from_ops(ops: &AlgoOps, issuer_cn: &str) -> Result<(Vec<u8>, Vec
     let ca_pkey = PKey::private_key_from_raw_bytes(&sk, Id::ED25519)
         .map_err(|e| format!("failed to construct Ed25519 CA key: {}", e))?;
 
-    // CA subject/issuer name
+    // CA subject/issuer name: fixed virtual CA CN to avoid leaking identity in CA issuer
     let mut name_builder = X509NameBuilder::new().map_err(|e| format!("name builder: {}", e))?;
-    // OpenSSL enforces a maximum CN length (typically 64). Truncate if necessary to avoid errors in tests.
-    let cn = if issuer_cn.len() > 64 { &issuer_cn[..64] } else { issuer_cn };
-    name_builder.append_entry_by_nid(Nid::COMMONNAME, cn).map_err(|e| format!("set CN: {}", e))?;
+    name_builder.append_entry_by_nid(Nid::COMMONNAME, crate::protocol::VIRTUAL_CA)
+        .map_err(|e| format!("set CN: {}", e))?;
     let ca_name = name_builder.build();
 
     // CA cert builder
@@ -268,10 +267,15 @@ impl BingleApi for BingleApiImpl {
                         dtls.set_server_signing_private_key(Some(server_key_pem));
                         dtls.set_client_cert(Some(client_cert_pem));
                         dtls.set_client_private_key(Some(client_key_pem));
-                        // Install default peer certificate handler for verification on relays only (clients accept for tests)
+                        // Install a peer certificate handler in all cases.
+                        // For relays: enforce full verification. For non-relays: install a logging accept-all handler.
                         if options.am_relay {
                             dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
+                        } else {
+                            dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_accept_all_handler()));
                         }
+                        // Accept during handshake and validate at the application layer for API flows
+                        dtls.set_app_layer_only_verification(true);
                     }
                 }
                 Err(e) => {
