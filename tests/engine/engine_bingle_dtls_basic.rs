@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use rust_comms::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use base64::Engine as _;
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -77,7 +78,8 @@ fn engine_basic_bingle_dtls_layer() {
     });
 
     println!("[test] client sending message to {}", server_addr);
-    let ok = client.send_message_to_network(&dest, &test_util::ADDRESS_RECEIVE.to_string(), payload, Some(progress));
+    let uid = base64::engine::general_purpose::STANDARD.encode([2u8; 36]);
+    let ok = client.send_message_to_network(&dest, &uid, payload, Some(progress));
     assert!(ok, "client send_message_to_network should return true");
 
     // Wait for on_message to be called on the server

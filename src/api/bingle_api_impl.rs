@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use base64::Engine as _;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::OnceLock;
@@ -35,7 +36,7 @@ pub struct BingleApiImpl {
 // Global on_message dispatcher storage; used by MessageHandler::on_plain_text to delegate to API.
 static GLOBAL_ON_MESSAGE: OnceLock<Mutex<Option<Arc<OnMessageHandler>>>> = OnceLock::new();
 
-/// Set the global on_message handler (used by plain-text router fallback).
+/// Set or clear the global on_message handler (used by plain-text router fallback).
 pub fn global_on_message_set(handler: Option<Arc<OnMessageHandler>>) {
     let slot = GLOBAL_ON_MESSAGE.get_or_init(|| Mutex::new(None));
     if let Ok(mut g) = slot.lock() { *g = handler; }
@@ -48,6 +49,26 @@ pub fn global_on_message_call(sender: String, sender_handle: String, msg: JsonVa
             if let Some(cb) = g.as_ref() { cb(sender, sender_handle, msg); }
         }
     }
+}
+
+// Global send-to-network dispatcher used by Engine to invoke the Bingle API send path
+// without holding a direct reference to the API instance. We store the API instance
+// pointer in an AtomicUsize for thread-safe publication.
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+static GLOBAL_SEND_API_PTR: AtomicUsize = AtomicUsize::new(0);
+
+/// Install or clear the global API pointer for send_message_to_network
+pub fn global_send_to_network_set(ptr: Option<*const BingleApiImpl>) {
+    let v = ptr.map_or(0usize, |p| p as usize);
+    GLOBAL_SEND_API_PTR.store(v, AtomicOrdering::SeqCst);
+}
+
+/// Invoke the global send_to_network. Returns false if not installed.
+pub fn global_send_to_network_call(nsk: &NetworkSourceKey, user_id: &UserId, msg: JsonValue) -> bool {
+    let addr = GLOBAL_SEND_API_PTR.load(AtomicOrdering::SeqCst);
+    if addr == 0 { return false; }
+    let api: &BingleApiImpl = unsafe { &*(addr as *const BingleApiImpl) };
+    api.send_message_to_network(nsk, user_id, msg, None)
 }
 
 impl Default for BingleApiImpl {
@@ -415,7 +436,13 @@ impl BingleApi for BingleApiImpl {
         if self.engine.is_none() {
             self.engine = Some(Engine::new());
         }
+        // Install Engine callback to send via Bingle protocol (avoid direct DTLS from Engine)
+        // Publish the API instance pointer in a global atomic used by the callback.
+        crate::api::bingle_api_impl::global_send_to_network_set(Some(self as *const _));
         if let Some(eng) = self.engine.as_mut() {
+            eng.set_send_via_bingle(Some(Arc::new(|nsk, user_id, message| {
+                crate::api::bingle_api_impl::global_send_to_network_call(nsk, user_id, message)
+            })));
             if let Some(dtls) = self.dtls.take() {
                 eng.set_dtls(dtls);
             }
@@ -434,6 +461,8 @@ impl BingleApi for BingleApiImpl {
         if let Some(e) = &mut self.engine {
             e.stop();
         }
+        // Clear global send pointer so no further sends are attempted via this instance
+        crate::api::bingle_api_impl::global_send_to_network_set(None);
         // For now, simply drop the DTLS instance; more graceful shutdown can be added later.
         self.dtls = None;
         println!("[BingleApiImpl::stop][exit]");
@@ -489,7 +518,14 @@ impl BingleApi for BingleApiImpl {
                     && map.get("app").map(|v| v.is_null()).unwrap_or(true);
             }
 
-            let ok = self.send_over_dtls(addr, message);
+            // Validate user_id is base64 and decodes to exactly 36 bytes (Algorand address bytes)
+            let user_id_valid = match base64::engine::general_purpose::STANDARD.decode(user_id.as_bytes()) {
+                Ok(bytes) if bytes.len() == 36 => true,
+                Ok(bytes) => { eprintln!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base64 decoded length {} (expected 36)", bytes.len()); false },
+                Err(e) => { eprintln!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base64 decode failed: {}", e); false },
+            };
+
+            let ok = if user_id_valid { self.send_over_dtls(addr, message) } else { false };
 
             // Special-case: if this was a RelayCheck (app == null, type == "Check"), synthesize a local
             // CheckResponse to on_message to make tests deterministic even if send fails or response is dropped.

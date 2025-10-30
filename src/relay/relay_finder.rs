@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::api::bingle_api::{BingleApi, NetworkSourceKey};
+use base64::Engine as _;
 
 #[derive(Debug, Clone)]
 pub struct RootRelayInfo {
@@ -65,8 +66,8 @@ impl RelayFinder {
     }
 
     /// Find any relay suitable for us. Currently identical to finding the preferred root relay.
-    pub fn find_relay(&self, my_id: &str) -> Result<SocketAddr, String> {
-        self.find_root_relay(my_id).map(|info| info.address)
+    pub fn find_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
+        self.find_root_relay(my_id)
     }
 
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
@@ -132,15 +133,39 @@ impl RelayFinder {
     }
 
     fn relay_check(&self, id: &str, addr: SocketAddr) -> bool {
+        // Ensure user_id is a base64 string that decodes to exactly 36 bytes (Algorand address bytes)
+        let user_id_b64 = match Self::base64_36_or_convert_from_base32(id) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[RelayFinder][relay_check] invalid relay id '{}': {}", id, e);
+                return false;
+            }
+        };
         let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
         let req = json!({ "app": null, "type": "Check" });
-        match self.api.send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {
+        match self.api.send_message_to_network_with_response(&nsk, &user_id_b64, req, None) {
             Ok(resp) => {
                 let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
                     && resp.get("available").and_then(|v| v.as_bool()).unwrap_or(false);
                 is_ok
             }
             Err(_) => false,
+        }
+    }
+
+    /// Helper: accept base64(36) as-is; otherwise, try to decode Algorand base32 address to 36 bytes and re-encode base64.
+    fn base64_36_or_convert_from_base32(id: &str) -> Result<String, String> {
+        // Try base64 decode first
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(id.as_bytes()) {
+            if bytes.len() == 36 { return Ok(id.to_string()); }
+        }
+        // Fallback: try base32 (Algorand) decode to bytes (should be 36)
+        match data_encoding::BASE32_NOPAD.decode(id.as_bytes()) {
+            Ok(bytes) => {
+                if bytes.len() != 36 { return Err(format!("base32 decoded len {} != 36", bytes.len())); }
+                Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+            }
+            Err(e) => Err(format!("base32 decode failed: {}", e)),
         }
     }
 }

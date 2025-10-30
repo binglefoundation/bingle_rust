@@ -1,6 +1,7 @@
 use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkSourceKey, BingleApi};
 use std::net::SocketAddr;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use base64::Engine as _;
 
 #[test]
 fn start_creates_dtls_instance() {
@@ -24,7 +25,8 @@ fn start_creates_dtls_instance() {
 fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new();
     let nsk = NetworkSourceKey { inet_socket_address: None, relay_channel: None, relay_address: None };
-    let ok = api.send_message_to_network(&nsk, &"user1".to_string(), serde_json::json!({"hi": 1}), None);
+    let uid = base64::engine::general_purpose::STANDARD.encode([0u8; 36]);
+    let ok = api.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None);
     assert!(!ok, "Should return false when no direct address is provided");
 }
 
@@ -109,7 +111,8 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let req_tag = Uuid::new_v4().to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check", "responseTag": req_tag });
 
-    let ok = api.send_message_to_network(&nsk, &"srv".to_string(), payload, None);
+    let uid2 = base64::engine::general_purpose::STANDARD.encode([1u8; 36]);
+    let ok = api.send_message_to_network(&nsk, &uid2, payload, None);
     assert!(ok, "client send failed");
 
     // Wait for the response to be observed via on_message
