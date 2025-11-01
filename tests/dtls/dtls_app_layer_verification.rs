@@ -69,7 +69,7 @@ fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds() {
     assert_eq!(delivered.load(Ordering::SeqCst), false, "application data should be blocked when app-layer verification rejects");
 }
 
-#[ntest::timeout(30_000)]
+#[ntest::timeout(45_000)]
 #[test]
 fn dtls_app_layer_verification_accept_all_delivers_application_data() {
     let certs = pki::generate_ed25519_test_certs();

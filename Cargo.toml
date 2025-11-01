@@ -73,6 +73,10 @@ name = "bingle_api_impl_unit"
 path = "tests/api/bingle_api_impl_unit.rs"
 
 [[test]]
+name = "pki_generate_pki_from_ops"
+path = "tests/api/pki_generate_pki_from_ops.rs"
+
+[[test]]
 name = "dtls_client_echo_roundtrip"
 path = "tests/dtls/dtls_client_echo_roundtrip.rs"
 
@@ -181,3 +185,7 @@ path = "tests/engine/engine_bingle_dtls_basic.rs"
 [[test]]
 name = "messages_on_plain_text_delegate"
 path = "tests/messages/on_plain_text_delegate.rs"
+
+[[test]]
+name = "protocol_cert_verify_dump"
+path = "tests/protocol/cert_verify_dump.rs"

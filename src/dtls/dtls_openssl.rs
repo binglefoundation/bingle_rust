@@ -100,26 +100,54 @@ pub mod non_ios {
     fn set_verify_with_handler_for_connector(
         builder: &mut SslConnectorBuilder,
         handler: Option<HandlePeerCertificate>,
-        ca_bytes: Vec<u8>,
+        _ca_bytes: Vec<u8>,
     ) {
         // Use a verify callback to delegate acceptance to the provided handler.
         // We ignore built-in chain/hostname checks and only fail if the handler returns Err.
         if let Some(h) = handler {
-            let ca = ca_bytes.clone();
-            builder.set_verify_callback(SslVerifyMode::PEER, move |_preverify_ok, x509_ctx| {
+            builder.set_verify_callback(SslVerifyMode::PEER, move |preverify_ok, x509_ctx| {
+                // Debug: print parameters received by the verify callback (client)
+                println!(
+                    "[DtlsOpenSsl][verify][client] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
+                    preverify_ok,
+                    x509_ctx.error_depth(),
+                    x509_ctx.error(),
+                    x509_ctx.current_cert().is_some(),
+                    x509_ctx.chain().map(|c| c.len()).unwrap_or(0)
+                );
                 // Only evaluate the leaf certificate (depth 0)
                 if x509_ctx.error_depth() != 0 {
                     return true;
                 }
+                // Determine peer CA certificate to pass to handler:
+                // Extract the issuer from the presented chain (prefer last element when len>=2).
+                // Never fall back to locally configured CA; if absent, reject the handshake per policy.
+                let mut peer_ca_pem: Option<Vec<u8>> = None;
+                if let Some(chain) = x509_ctx.chain() {
+                    let len = chain.len();
+                    if len >= 2 {
+                        // Prefer the last certificate in the presented chain as the issuing CA
+                        if let Some(last) = chain.get(len - 1) {
+                            if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
+                        }
+                    }
+                }
+                if peer_ca_pem.is_none() {
+                    println!("[DtlsOpenSsl][verify][client] no peer CA certificate in presented chain; rejecting per policy");
+                    return false;
+                }
                 if let Some(cert) = x509_ctx.current_cert() {
                     match cert.to_pem() {
-                        Ok(pem) => match h(&pem, ca.as_slice()) {
-                            Ok(_issuer) => true,
-                            Err(e) => {
-                                println!("[DtlsOpenSsl][verify][client] handler rejected server cert: {}", e);
-                                false
+                        Ok(pem) => {
+                            let ca_vec = peer_ca_pem.unwrap();
+                            match h(&pem, &ca_vec) {
+                                Ok(_issuer) => true,
+                                Err(e) => {
+                                    println!("[DtlsOpenSsl][verify][client] handler rejected server cert: {}", e);
+                                    false
+                                }
                             }
-                        },
+                        }
                         Err(e) => {
                             println!("[DtlsOpenSsl][verify][client] to_pem failed: {}", e);
                             false
@@ -141,26 +169,51 @@ pub mod non_ios {
     fn set_verify_with_handler_for_acceptor(
         builder: &mut SslAcceptorBuilder,
         handler: Option<HandlePeerCertificate>,
-        ca_bytes: Vec<u8>,
+        _ca_bytes: Vec<u8>,
     ) {
         // Use a verify callback driven by the provided handler to decide whether to accept the client.
         // Request a client certificate; fail the handshake if the handler returns Err.
         if let Some(h) = handler {
-            let ca = ca_bytes.clone();
-            builder.set_verify_callback(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT, move |_preverify_ok, x509_ctx| {
+            builder.set_verify_callback(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT, move |preverify_ok, x509_ctx| {
+                // Debug: print parameters received by the verify callback (server)
+                println!(
+                    "[DtlsOpenSsl][verify][server] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
+                    preverify_ok,
+                    x509_ctx.error_depth(),
+                    x509_ctx.error(),
+                    x509_ctx.current_cert().is_some(),
+                    x509_ctx.chain().map(|c| c.len()).unwrap_or(0)
+                );
                 // Only evaluate the leaf certificate (depth 0)
                 if x509_ctx.error_depth() != 0 {
                     return true;
                 }
+                // Try to extract peer CA cert from the presented chain (prefer last element if len>=2)
+                let mut peer_ca_pem: Option<Vec<u8>> = None;
+                if let Some(chain) = x509_ctx.chain() {
+                    let len = chain.len();
+                    if len >= 2 {
+                        if let Some(last) = chain.get(len - 1) {
+                            if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
+                        }
+                    }
+                }
+                if peer_ca_pem.is_none() {
+                    println!("[DtlsOpenSsl][verify][server] no peer CA certificate in presented chain; rejecting per policy");
+                    return false;
+                }
                 if let Some(cert) = x509_ctx.current_cert() {
                     match cert.to_pem() {
-                        Ok(pem) => match h(&pem, ca.as_slice()) {
-                            Ok(_issuer) => true,
-                            Err(e) => {
-                                println!("[DtlsOpenSsl][verify][server] handler rejected client cert: {}", e);
-                                false
+                        Ok(pem) => {
+                            let ca_vec = peer_ca_pem.unwrap();
+                            match h(&pem, &ca_vec) {
+                                Ok(_issuer) => true,
+                                Err(e) => {
+                                    println!("[DtlsOpenSsl][verify][server] handler rejected client cert: {}", e);
+                                    false
+                                }
                             }
-                        },
+                        }
                         Err(e) => {
                             println!("[DtlsOpenSsl][verify][server] to_pem failed: {}", e);
                             false
@@ -389,6 +442,14 @@ pub mod non_ios {
                 builder.set_private_key(&client_key).map_err(|e| format!("set client private key failed: {}", e))?;
                 builder.check_private_key().map_err(|e| format!("client private key check failed: {}", e))?;
 
+                // Include our CA certificate in the client certificate chain so the server can extract it.
+                if let Some(ca_pem) = self.ca_cert.as_deref() {
+                    if let Ok(ca_x509) = X509::from_pem(ca_pem) {
+                        // Best effort; ignore error to avoid panics
+                        let _ = builder.add_extra_chain_cert(ca_x509);
+                    }
+                }
+
                 // Note: openssl crate version in this repo does not expose a client cert selection callback.
                 // We ensure the client certificate is always installed on the connection via the connector context
                 // and also directly on the Ssl instance before handshake (see send()).
@@ -426,6 +487,12 @@ pub mod non_ios {
             builder.set_certificate(&server_x509).map_err(|e| format!("server: set certificate failed: {}", e))?;
             builder.set_private_key(&server_key).map_err(|e| format!("server: set private key failed: {}", e))?;
             builder.check_private_key().map_err(|e| format!("server: private key check failed: {}", e))?;
+
+            // Include our CA certificate in the server's certificate chain so clients can extract it
+            if let Ok(ca_x509) = X509::from_pem(ca_pem) {
+                // Best-effort; ignore errors
+                let _ = builder.add_extra_chain_cert(ca_x509);
+            }
 
             // Install verify cert store on the server and advertise acceptable CA list so clients
             // know which certificate to present. The acceptable CA is our virtual CA (VIRTUAL_CA).
@@ -630,23 +697,54 @@ pub mod non_ios {
                             if n == 0 { break; }
                             // Intercept internal certificate announcement messages
                             if n >= CERT_ANNOUNCE_PREFIX.len() && &buf[..CERT_ANNOUNCE_PREFIX.len()] == CERT_ANNOUNCE_PREFIX {
-                                let cert_bytes = &buf[CERT_ANNOUNCE_PREFIX.len()..n];
-                                if let Some(h) = peer_cert_handler2 {
-                                    println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={}", from2, cert_bytes.len());
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={}", from2, cert_bytes.len())); }
-                                    match h(cert_bytes, ca_bytes2.as_slice()) {
-                                        Ok(s) if !s.is_empty() => {
-                                            if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, s); }
-                                        }
-                                        _ => {
-                                            println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2);
-                                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2)); }
+                                let payload = &buf[CERT_ANNOUNCE_PREFIX.len()..n];
+                                // The announce payload contains the peer's leaf certificate PEM, optionally followed by the peer CA certificate PEM.
+                                // We must extract the CA from the message and must not use the local CA.
+                                const END_MARK: &str = "-----END CERTIFICATE-----";
+                                let payload_str = String::from_utf8_lossy(payload);
+                                let mut cert_end_idx: Option<usize> = None;
+                                if let Some(pos) = payload_str.find(END_MARK) {
+                                    // Include the end marker in the certificate slice
+                                    cert_end_idx = Some(pos + END_MARK.len());
+                                }
+                                if let Some(end_idx) = cert_end_idx {
+                                    // Convert end_idx in str space to bytes offset by re-encoding prefix length
+                                    // payload_str[..end_idx] and payload[(..)] should align as payload is utf8 PEM
+                                    let cert_pem = &payload[..end_idx];
+                                    // Skip an optional trailing newline after the cert block
+                                    let mut ca_start = end_idx;
+                                    if ca_start < payload.len() && (payload[ca_start] == b'\n' || payload[ca_start] == b'\r') {
+                                        ca_start += 1;
+                                    }
+                                    // Remaining bytes, if any, are the CA PEM
+                                    let ca_pem = &payload[ca_start..];
+                                    if let Some(h) = peer_cert_handler2 {
+                                        let ca_len = ca_pem.len();
+                                        println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={} ca_len={} (from message)", from2, cert_pem.len(), ca_len);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={} ca_len={} (from message)", from2, cert_pem.len(), ca_len)); }
+                                        if ca_len == 0 {
+                                            println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] no CA in message; rejecting per policy", from2);
+                                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] no CA in message; rejecting per policy", from2)); }
                                             break;
                                         }
+                                        match h(cert_pem, ca_pem) {
+                                            Ok(s) if !s.is_empty() => {
+                                                if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, s); }
+                                            }
+                                            _ => {
+                                                println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2);
+                                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2)); }
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        // No handler provided: accept but record empty issuer
+                                        if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, String::new()); }
                                     }
                                 } else {
-                                    // No handler provided: accept but record empty issuer
-                                    if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, String::new()); }
+                                    println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] malformed announce payload (no END CERTIFICATE)", from2);
+                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] malformed announce payload (no END CERTIFICATE)", from2)); }
+                                    break;
                                 }
                                 // Do not pass this control message to application handler
                                 continue;
@@ -854,23 +952,38 @@ pub mod non_ios {
                 if let Some(cert) = stream.ssl().peer_certificate() {
                     match cert.to_pem() {
                         Ok(cert_pem) => {
-                            let ca = self.ca_cert.as_deref().unwrap_or(&[]);
-                            println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] cert_len={} ca_len={}", to, cert_pem.len(), ca.len());
-                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] cert_len={} ca_len={}", to, cert_pem.len(), ca.len())); }
-                            match h(&cert_pem, ca) {
-                                Ok(issuer) if !issuer.is_empty() => {
-                                    if let Some(issuers_arc) = &self.endpoint_issuers {
-                                        let _ = issuers_arc.lock().map(|mut m| { m.insert(to, issuer); });
+                            // Extract peer CA from the presented chain (prefer last element)
+                            let mut peer_ca_pem: Option<Vec<u8>> = None;
+                            if let Some(chain) = stream.ssl().peer_cert_chain() {
+                                let len = chain.len();
+                                if len >= 1 {
+                                    if let Some(last) = chain.get(len - 1) {
+                                        if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
                                     }
                                 }
-                                Ok(_) => {
-                                    println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to)); }
+                            }
+                            let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
+                            println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] cert_len={} ca_len={} (from peer chain)", to, cert_pem.len(), ca_len);
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] cert_len={} ca_len={} (from peer chain)", to, cert_pem.len(), ca_len)); }
+                            if let Some(ca) = peer_ca_pem.as_ref() {
+                                match h(&cert_pem, ca) {
+                                    Ok(issuer) if !issuer.is_empty() => {
+                                        if let Some(issuers_arc) = &self.endpoint_issuers {
+                                            let _ = issuers_arc.lock().map(|mut m| { m.insert(to, issuer); });
+                                        }
+                                    }
+                                    Ok(_) => {
+                                        println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to)); }
+                                    }
+                                    Err(e) => {
+                                        println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e);
+                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e)); }
+                                    }
                                 }
-                                Err(e) => {
-                                    println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e)); }
-                                }
+                            } else {
+                                println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to)); }
                             }
                         }
                         Err(e) => {
@@ -881,6 +994,7 @@ pub mod non_ios {
                 } else {
                     println!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no server certificate available", to);
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no server certificate available", to)); }
+                    return Err("no peer certificate presented".to_string());
                 }
             }
 
@@ -953,15 +1067,31 @@ pub mod non_ios {
                                         if let Some(cert) = guard.ssl().peer_certificate() {
                                             if let Ok(cert_pem) = cert.to_pem() {
                                                 if let Some(h) = peer_cert_handler2 {
-                                                    println!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={}", from2, cert_pem.len());
-                                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={}", from2, cert_pem.len())); }
-                                                    match h(&cert_pem, ca_bytes2.as_slice()) {
-                                                        Ok(s) if !s.is_empty() => { let _ = imap.insert(from2, s); }
-                                                        _ => {
-                                                            println!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2);
-                                                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2)); }
-                                                            break;
+                                                    // Extract peer CA from the presented chain (prefer last element)
+                                                    let mut peer_ca_pem: Option<Vec<u8>> = None;
+                                                    if let Some(chain) = guard.ssl().peer_cert_chain() {
+                                                        let len = chain.len();
+                                                        if len >= 1 {
+                                                            if let Some(last) = chain.get(len - 1) {
+                                                                if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
+                                                            }
                                                         }
+                                                    }
+                                                    let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
+                                                    println!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={} ca_len={} (from peer chain)", from2, cert_pem.len(), ca_len);
+                                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={} ca_len={} (from peer chain)", from2, cert_pem.len(), ca_len)); }
+                                                    if let Some(ca) = peer_ca_pem.as_ref() {
+                                                        match h(&cert_pem, ca) {
+                                                            Ok(s) if !s.is_empty() => { let _ = imap.insert(from2, s); }
+                                                            _ => {
+                                                                println!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2);
+                                                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2)); }
+                                                                break;
+                                                            }
+                                                        }
+                                                    } else {
+                                                        println!("[DtlsOpenSsl][peer_cert_handler][client][{}] no peer CA certificate in chain; skipping handler invocation", from2);
+                                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] no peer CA certificate in chain; skipping handler invocation", from2)); }
                                                     }
                                                 } else {
                                                     let _ = imap.insert(from2, String::from_utf8_lossy(&cert_pem).into());
@@ -1009,11 +1139,16 @@ pub mod non_ios {
             if let (Some(cert_pem), Some(sent_arc)) = (self.client_cert.as_ref(), &self.announced_client_cert_peers) {
                 if let Ok(mut sent) = sent_arc.lock() {
                     if !sent.contains(&to) {
-                        let mut msg = Vec::with_capacity(CERT_ANNOUNCE_PREFIX.len() + cert_pem.len());
+                        // Include the peer CA certificate in the announcement payload to avoid relying on local CA
+                        let ca_pem = self.ca_cert.as_deref().unwrap_or(&[]);
+                        let mut msg = Vec::with_capacity(CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len());
                         msg.extend_from_slice(CERT_ANNOUNCE_PREFIX);
                         msg.extend_from_slice(cert_pem);
-                        println!("[DtlsOpenSsl::send] announcing client cert to {} ({} bytes)", to, cert_pem.len());
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] announcing client cert to {} ({} bytes)", to, cert_pem.len())); }
+                        // Separate with a newline if the cert block doesn't already end with one
+                        if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) { msg.push(b'\n'); }
+                        msg.extend_from_slice(ca_pem);
+                        println!("[DtlsOpenSsl::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
+                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len())); }
                         let _ = guard.write_all(&msg);
                         sent.insert(to);
                     }

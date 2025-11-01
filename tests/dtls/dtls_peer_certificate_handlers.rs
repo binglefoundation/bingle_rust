@@ -148,7 +148,11 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
         .unwrap_or(false);
     assert!(client_saw_server, "client did not observe server's certificate in handler");
 
-    // Validate CA bytes passed to handlers match the configured CA PEM
-    if let Some(ca) = SERVER_CA_SEEN.get() { assert_eq!(ca.as_slice(), ca_pem.as_slice(), "server CA bytes mismatch"); }
-    if let Some(ca) = CLIENT_CA_SEEN.get() { assert_eq!(ca.as_slice(), ca_pem.as_slice(), "client CA bytes mismatch"); }
+    // Validate CA bytes passed to handlers match the configured CA PEM (normalize to account for formatting)
+    if let Some(ca) = SERVER_CA_SEEN.get() {
+        assert_eq!(normalize_pem_body(ca.as_slice()), normalize_pem_body(&ca_pem), "server CA bytes mismatch");
+    }
+    if let Some(ca) = CLIENT_CA_SEEN.get() {
+        assert_eq!(normalize_pem_body(ca.as_slice()), normalize_pem_body(&ca_pem), "client CA bytes mismatch");
+    }
 }
