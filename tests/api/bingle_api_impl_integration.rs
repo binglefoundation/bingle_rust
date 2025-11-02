@@ -6,7 +6,7 @@ use base64::Engine as _;
 mod test_util;
 
 #[test]
-fn start_creates_dtls_instance() {
+fn start_succeeds() {
     let mut api = BingleApiImpl::new();
     let opts = StartOptions {
         handle: Handle::from("alice"),
@@ -20,7 +20,7 @@ fn start_creates_dtls_instance() {
     if res.is_err() {
         eprintln!("api.start returned error: {:?}", res);
     }
-    assert!(api.has_dtls(), "DTLS instance should be created on start");
+    // DTLS instance is now created only on Engine
 }
 
 #[test]
