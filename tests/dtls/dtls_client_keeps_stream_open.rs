@@ -9,9 +9,11 @@ use std::time::{Duration, Instant};
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 
 mod pki;
+#[path = "../test_util.rs"]
+mod test_util;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
-    Ok("MOCK-ISSUER".to_string())
+    Ok(test_util::ADDRESS_SPEND.to_string())
 }
 
 static MSG_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -57,7 +59,7 @@ fn dtls_client_keeps_stream_open_across_sends() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
+        .with_ca_cert(certs_b.ca_crt.clone())
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     let cmux0 = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");

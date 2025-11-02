@@ -71,7 +71,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let client_cert_pem: Vec<u8> = certs.client_crt.clone();
     let client_key_pem: Vec<u8> = certs.client_key.clone();
-    let ca_pem: Vec<u8> = certs.ca_crt.clone();
+    let server_ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Create and start a UDP mux for the server and determine its bound address.
     let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
@@ -85,7 +85,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
         .with_handle_message(std::sync::Arc::new(echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(server_ca_pem.clone());
 
     mux.start().expect("mux start");
     server.start(mux.clone()).expect("server start");
@@ -93,6 +93,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
 
     // Build client with peer certificate handler; also provide server credentials for its accept loop
     let certs_b = pki::generate_ed25519_test_certs();
+    let client_ca_pem = certs_b.ca_crt.clone();
     let mut client = DtlsOpenSsl::new()
         .with_null_encryption()
         .with_handle_peer_certificate(client_peer_cert_handler)
@@ -101,7 +102,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_b.ca_crt.clone());
 
     // Start client mux and DTLS
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
@@ -150,9 +151,9 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
 
     // Validate CA bytes passed to handlers match the configured CA PEM (normalize to account for formatting)
     if let Some(ca) = SERVER_CA_SEEN.get() {
-        assert_eq!(normalize_pem_body(ca.as_slice()), normalize_pem_body(&ca_pem), "server CA bytes mismatch");
+        assert_eq!(normalize_pem_body(ca.as_slice()), normalize_pem_body(&client_ca_pem), "server CA bytes mismatch");
     }
     if let Some(ca) = CLIENT_CA_SEEN.get() {
-        assert_eq!(normalize_pem_body(ca.as_slice()), normalize_pem_body(&ca_pem), "client CA bytes mismatch");
+        assert_eq!(normalize_pem_body(ca.as_slice()), normalize_pem_body(&server_ca_pem), "client CA bytes mismatch");
     }
 }

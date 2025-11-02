@@ -912,13 +912,13 @@ pub mod non_ios {
                                 let err = mid2.error();
                                 println!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                                 #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err)); }
-                                return Err(format!("dtls client connect failed: {}", err));
+                                return Err(format!("dtls client connect failed after retries - HandshakeError::Failure: {}", err));
                             }
                             Err(HandshakeError::SetupFailure(err)) => {
                                 if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                                 println!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                                 #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err)); }
-                                return Err(format!("dtls client connect failed: {}", err));
+                                return Err(format!("dtls client connect failed after retries - HandshakeError::SetupFailure: {}", err));
                             }
                         }
                     }
@@ -928,19 +928,19 @@ pub mod non_ios {
                     let err = mid.error();
                     println!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err)); }
-                    return Err(format!("dtls client connect failed: {}", err));
+                    return Err(format!("dtls client connect failed - HandshakeError::Failure: {}", err));
                 }
                 Err(HandshakeError::SetupFailure(err)) => {
                     if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                     println!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err)); }
-                    return Err(format!("dtls client connect failed: {}", err));
+                    return Err(format!("dtls client connect failed - HandshakeError::SetupFailure: {}", err));
                 }
                 Err(_e) => {
                     if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                     println!("[DtlsOpenSsl::send] connect() error to {}", to);
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() error to {}", to)); }
-                    return Err("dtls client connect failed".to_string());
+                    return Err("dtls client connect failed - Err".to_string());
                 }
             };
             // Connected new DTLS stream

@@ -64,7 +64,7 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
+        .with_ca_cert(certs_b.ca_crt.clone())
         .with_handle_message(std::sync::Arc::new(client_handler))
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
@@ -74,7 +74,7 @@ fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_client_private_key(certs_c.client_key.clone())
         .with_server_signing_cert(certs_c.server_crt.clone())
         .with_server_signing_private_key(certs_c.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
+        .with_ca_cert(certs_c.ca_crt.clone())
         .with_handle_message(std::sync::Arc::new(client_handler))
         .with_handle_peer_certificate(mock_peer_cert_handler);
 

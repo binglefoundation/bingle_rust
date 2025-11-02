@@ -258,7 +258,7 @@ impl BingleApi for BingleApiImpl {
                         // Always verifies the peer certificate
                         dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
                         // Accept during handshake and validate at the application layer for API flows
-                        dtls.set_app_layer_only_verification(true);
+                        dtls.set_app_layer_only_verification(false);
                     }
                 }
                 Err(e) => {
@@ -278,24 +278,6 @@ impl BingleApi for BingleApiImpl {
                     Err(_) => None,
                 };
                 if let Some(msg) = json_opt {
-                    // Special-case: RelayCheck handler (app == null, type == "Check")
-                    let is_relay_check = msg
-                        .get("type").and_then(|v| v.as_str()) == Some("Check") &&
-                        msg.get("app").map(|v| v.is_null()).unwrap_or(true);
-                    if is_relay_check {
-                        // Build RelayCheckResponse, echoing any responseTag into a `tag` field.
-                        let mut resp_obj = serde_json::Map::new();
-                        resp_obj.insert("app".to_string(), JsonValue::Null);
-                        resp_obj.insert("type".to_string(), JsonValue::String("CheckResponse".to_string()));
-                        resp_obj.insert("available".to_string(), JsonValue::Bool(true));
-                        if let Some(tag_str) = msg.get("responseTag").and_then(|v| v.as_str()) {
-                            resp_obj.insert("tag".to_string(), JsonValue::String(tag_str.to_string()));
-                        }
-                        let resp = JsonValue::Object(resp_obj);
-                        let bytes = serde_json::to_vec(&resp).expect("Failed to serialize RelayCheckResponse");
-                        server.send(*from_address, &bytes).expect("DTLS send failed for RelayCheckResponse");
-                        return; // Do not route further
-                    }
 
                     // Extract optional sender fields from message if present
                     let sender = msg.get("sender").and_then(|v| v.as_str()).unwrap_or_default().to_string();
@@ -409,12 +391,14 @@ impl BingleApi for BingleApiImpl {
         if let Some(addr) = network_source_key.inet_socket_address {
             // Keep a copy of message for potential local synthetic response handling in tests
             let msg_clone = message.clone();
+
+            // JUNIE: do not reinstate the below hack
             // Determine if this is a RelayCheck before sending so we can synthesize a response if needed
-            let mut is_check = false;
-            if let serde_json::Value::Object(map) = &msg_clone {
-                is_check = map.get("type").and_then(|v| v.as_str()) == Some("Check")
-                    && map.get("app").map(|v| v.is_null()).unwrap_or(true);
-            }
+            // let mut is_check = false;
+            // if let serde_json::Value::Object(map) = &msg_clone {
+            //     is_check = map.get("type").and_then(|v| v.as_str()) == Some("Check")
+            //         && map.get("app").map(|v| v.is_null()).unwrap_or(true);
+            // }
 
             // Validate user_id is base64 and decodes to exactly 36 bytes (Algorand address bytes)
             let user_id_valid = match base64::engine::general_purpose::STANDARD.decode(user_id.as_bytes()) {
@@ -425,30 +409,34 @@ impl BingleApi for BingleApiImpl {
 
             let ok = if user_id_valid { self.send_over_dtls(addr, message) } else { false };
 
+            // JUNIE: do not reinstate the below hack
             // Special-case: if this was a RelayCheck (app == null, type == "Check"), synthesize a local
             // CheckResponse to on_message to make tests deterministic even if send fails or response is dropped.
-            if is_check {
-                let map = if let serde_json::Value::Object(m) = &msg_clone { m } else { &serde_json::Map::new() };
-                let mut resp = serde_json::Map::new();
-                resp.insert("app".to_string(), serde_json::Value::Null);
-                resp.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
-                resp.insert("available".to_string(), serde_json::Value::Bool(true));
-                if let Some(tag) = map.get("responseTag").and_then(|v| v.as_str()) {
-                    resp.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
-                }
-                if let Ok(g) = self.shared_on_message.lock() {
-                    if let Some(cb) = g.as_ref() {
-                        cb("".to_string(), addr.to_string(), serde_json::Value::Object(resp));
-                    }
-                }
-            }
+            // if is_check {
+            //     let map = if let serde_json::Value::Object(m) = &msg_clone { m } else { &serde_json::Map::new() };
+            //     let mut resp = serde_json::Map::new();
+            //     resp.insert("app".to_string(), serde_json::Value::Null);
+            //     resp.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
+            //     resp.insert("available".to_string(), serde_json::Value::Bool(true));
+            //     if let Some(tag) = map.get("responseTag").and_then(|v| v.as_str()) {
+            //         resp.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
+            //     }
+            //     if let Ok(g) = self.shared_on_message.lock() {
+            //         if let Some(cb) = g.as_ref() {
+            //             cb("".to_string(), addr.to_string(), serde_json::Value::Object(resp));
+            //         }
+            //     }
+            // }
 
             if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
+
+            // JUNIE: do not reinstate the below hack
             // For RelayCheck, treat send as successful even if DTLS send failed (we synthesized response)
-            let __ret = if is_check { true } else { ok };
-            println!("[BingleApiImpl::send_message_to_network][exit] return={}", __ret);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network][exit] return={}", __ret)); }
-            __ret
+            // let __ret = if is_check { true } else { ok };
+
+            println!("[BingleApiImpl::send_message_to_network][exit] return={}", ok);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network][exit] return={}", ok)); }
+            ok
         } else {
             if let Some(cb) = progress.as_ref() { cb(100, "Relay send not yet implemented".to_string()); }
             false

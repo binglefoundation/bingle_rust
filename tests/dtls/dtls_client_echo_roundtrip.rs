@@ -7,9 +7,11 @@ use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 mod pki;
+#[path = "../test_util.rs"]
+mod test_util;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
-    Ok("MOCK-ISSUER".to_string())
+    Ok(test_util::ADDRESS_SPEND.to_string())
 }
 
 static SERVER_HELLO: OnceLock<Vec<u8>> = OnceLock::new();
@@ -85,7 +87,7 @@ fn dtls_client_echo_roundtrip() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
+        .with_ca_cert(certs_b.ca_crt.clone())
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start client mux and DTLS

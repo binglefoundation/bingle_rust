@@ -37,8 +37,10 @@ fn dtls_openssl_external_s_server_client_send() {
     // Write server cert and key to temporary files for s_server
     let tmp = tempfile::tempdir().expect("tempdir");
     let server_crt_path = tmp.path().join("server.crt");
+    let ca_crt_path = tmp.path().join("ca.crt");
     let server_key_path = tmp.path().join("server.key");
     std::fs::write(&server_crt_path, &certs.server_crt).expect("write server cert");
+    std::fs::write(&ca_crt_path, &certs.ca_crt).expect("write ca cert");
     std::fs::write(&server_key_path, &certs.server_key).expect("write server key");
 
     // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
@@ -54,6 +56,7 @@ fn dtls_openssl_external_s_server_client_send() {
         .arg("-dtls1_2")
         .arg("-accept").arg(format!("{}:{}", addr.ip(), addr.port()))
         .arg("-cert").arg(server_crt_path.to_string_lossy().to_string())
+        .arg("-cert_chain").arg(ca_crt_path.to_string_lossy().to_string())
         .arg("-key").arg(server_key_path.to_string_lossy().to_string())
         .arg("-verify").arg("0")
         .arg("-cipher").arg("eNULL:@SECLEVEL=0")
@@ -154,8 +157,8 @@ fn dtls_openssl_external_s_server_client_send() {
             .with_handle_message(std::sync::Arc::new(capture_handler))
             .with_server_signing_cert(certs_b.server_crt.clone())
             .with_server_signing_private_key(certs_b.server_key.clone())
-            .with_ca_cert(ca_pem.clone())
-                        .with_handle_peer_certificate(mock_peer_cert_handler);
+            .with_ca_cert(certs_b.ca_crt.clone())
+            .with_handle_peer_certificate(mock_peer_cert_handler);
         // Start client mux and DTLS before sending
         let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
         let cmux = std::sync::Arc::new(cmux0);

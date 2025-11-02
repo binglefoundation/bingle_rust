@@ -85,7 +85,7 @@ fn issuer_mapping_basic_send_and_reply() {
         .with_client_private_key(certs.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_b.ca_crt.clone());
 
     // Start client mux and DTLS
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
@@ -198,7 +198,7 @@ fn multiple_clients_to_server_have_correct_issuers() {
         .with_client_private_key(a_key.clone())
         .with_server_signing_cert(certs_a_srv.server_crt.clone())
         .with_server_signing_private_key(certs_a_srv.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_b.ca_crt.clone());
     let certs_b_srv = pki::generate_ed25519_test_certs();
     let mut client_b = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
@@ -206,7 +206,7 @@ fn multiple_clients_to_server_have_correct_issuers() {
         .with_client_private_key(b_key.clone())
         .with_server_signing_cert(certs_b_srv.server_crt.clone())
         .with_server_signing_private_key(certs_b_srv.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_b_srv.ca_crt.clone());
     let certs_c_srv = pki::generate_ed25519_test_certs();
     let mut client_c = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
@@ -214,7 +214,7 @@ fn multiple_clients_to_server_have_correct_issuers() {
         .with_client_private_key(c_key.clone())
         .with_server_signing_cert(certs_c_srv.server_crt.clone())
         .with_server_signing_private_key(certs_c_srv.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_c_srv.ca_crt.clone());
 
     // Start muxes for each client and initialize DTLS
     let cmux_a0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client_a mux");

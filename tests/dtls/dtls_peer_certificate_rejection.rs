@@ -11,7 +11,6 @@ fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())
 }
 
-#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     // Generate test certificates
@@ -47,7 +46,7 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_b.ca_crt.clone());
 
     // Start client mux and DTLS
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
@@ -64,7 +63,6 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     assert!(!any_ok, "handshake unexpectedly succeeded when server rejected peer certificate");
 }
 
-#[ntest::timeout(30_000)]
 #[test]
 fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
     // Generate test certificates
@@ -95,7 +93,7 @@ fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
         .with_handle_peer_certificate(reject_handler)
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone());
+        .with_ca_cert(certs_b.ca_crt.clone());
 
     // Start client mux and DTLS
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");

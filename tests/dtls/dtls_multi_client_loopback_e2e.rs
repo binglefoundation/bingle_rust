@@ -81,7 +81,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
+        .with_ca_cert(certs_b.ca_crt.clone())
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     let certs_c = pki::generate_ed25519_test_certs();
@@ -91,7 +91,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
         .with_client_private_key(certs_c.client_key.clone())
         .with_server_signing_cert(certs_c.server_crt.clone())
         .with_server_signing_private_key(certs_c.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
+        .with_ca_cert(certs_c.ca_crt.clone())
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start separate muxes for each client and initialize DTLS

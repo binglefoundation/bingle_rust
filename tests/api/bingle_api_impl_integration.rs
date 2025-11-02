@@ -2,13 +2,15 @@ use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkSourceKey, Bingle
 use std::net::SocketAddr;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use base64::Engine as _;
+#[path = "../test_util.rs"]
+mod test_util;
 
 #[test]
 fn start_creates_dtls_instance() {
     let mut api = BingleApiImpl::new();
     let opts = StartOptions {
         handle: Handle::from("alice"),
-        algo_passphrase: Some("test passphrase".to_string()),
+        algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
         static_ip: None,
         am_relay: false,
         stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]),
@@ -44,7 +46,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     mod pki;
 
     fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
-        Ok("MOCK-ISSUER".to_string())
+        Ok(test_util::ADDRESS_SPEND.to_string())
     }
 
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
@@ -98,8 +100,9 @@ fn relay_check_end_to_end_on_message_receives_response() {
 
     // Build BingleApiImpl client and install on_message to capture the RelayCheckResponse
     let mut api = BingleApiImpl::new();
-    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some("pass".to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]) };
-    let _ = api.start(opts);
+    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]) };
+    let start_result = api.start(opts);
+    assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 
     api.set_on_message(Some(Arc::new(|_sender, _handle, msg| {
         let _ = CLIENT_SEEN.set(msg);

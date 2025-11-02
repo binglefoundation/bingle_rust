@@ -43,7 +43,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     ]));
     run(Command::new("openssl").args([
         "req", "-x509", "-key", path_str(&ca_key), "-out", path_str(&ca_crt),
-        "-days", "2", "-subj", "/CN=Test CA"
+        "-days", "2", "-subj", "/CN=virtual.bingle.home.arpa/O=OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A"
     ]));
 
     // Server key (ECDSA P-256), CSR, and cert signed by Ed25519 CA
@@ -53,7 +53,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     ]));
     run(Command::new("openssl").args([
         "req", "-new", "-key", path_str(&server_key), "-out", path_str(&server_csr),
-        "-subj", "/CN=localhost"
+        "-subj", "/CN=OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A."
     ]));
     run(Command::new("openssl").args([
         "x509", "-req", "-in", path_str(&server_csr), "-CA", path_str(&ca_crt), "-CAkey",
@@ -67,7 +67,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     ]));
     run(Command::new("openssl").args([
         "req", "-new", "-key", path_str(&client_key), "-out", path_str(&client_csr),
-        "-subj", "/CN=client"
+        "-subj", "/CN=4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE"
     ]));
     run(Command::new("openssl").args([
         "x509", "-req", "-in", path_str(&client_csr), "-CA", path_str(&ca_crt), "-CAkey",

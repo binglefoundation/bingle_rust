@@ -58,8 +58,8 @@ fn dtls_start_accepts_external_network_mux_udp() {
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(ca_pem.clone())
-                .with_handle_peer_certificate(mock_peer_cert_handler);
+        .with_ca_cert(certs_b.ca_crt.clone())
+        .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start client mux and DTLS
     let cmux0 = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
