@@ -104,7 +104,8 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let start_result = api.start(opts);
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 
-    api.set_on_message(Some(Arc::new(|_sender, _handle, msg| {
+    api.set_on_message(Some(Arc::new(|sender, handle, msg| {
+        println!("[test][on_message] sender={} handle={} msg={}", sender, handle, msg);
         let _ = CLIENT_SEEN.set(msg);
     })));
 

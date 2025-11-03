@@ -517,8 +517,11 @@ impl BingleApi for BingleApiImpl {
     fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>) {
             println!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some());
             #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some())); }
+
+            // Revert: store the handler directly without additional debug wrapping
             self.on_message = handler.clone();
-            if let Ok(mut g) = self.shared_on_message.lock() { *g = handler.clone(); }
+            if let Ok(mut g) = self.shared_on_message.lock() { *g = handler; }
+
             println!("[BingleApiImpl::set_on_message][exit]");
             #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_on_message][exit]"); }
         }

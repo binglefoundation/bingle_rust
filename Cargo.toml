@@ -193,3 +193,7 @@ path = "tests/protocol/cert_verify_dump.rs"
 [[test]]
 name = "engine_connections"
 path = "tests/engine/engine_connections.rs"
+
+[[test]]
+name = "bingle_api_relay_check_two_nodes"
+path = "tests/api/bingle_api_relay_check_two_nodes.rs"
