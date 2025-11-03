@@ -14,20 +14,6 @@ use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use serde_json::json;
 use base64::Engine as _;
 
-// Helper: accept base64(36) as-is; otherwise convert from Algorand base32 address (58 chars) to base64(36)
-fn base64_36_or_convert_from_base32(id: &str) -> Result<String, String> {
-    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(id.as_bytes()) {
-        if bytes.len() == 36 { return Ok(id.to_string()); }
-    }
-    match data_encoding::BASE32_NOPAD.decode(id.as_bytes()) {
-        Ok(bytes) => {
-            if bytes.len() != 36 { return Err(format!("base32 decoded len {} != 36", bytes.len())); }
-            Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
-        }
-        Err(e) => Err(format!("base32 decode failed: {}", e)),
-    }
-}
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineState {
@@ -40,6 +26,7 @@ pub enum EngineState {
 pub struct Engine {
     options: Option<StartOptions>,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
+    // Underlying DTLS listener; per-connection adapters delegate to this
     dtls: Option<Box<dyn Dtls + Send + Sync>>,
     state: EngineState,
     last_public_addr: Option<SocketAddr>,
@@ -50,11 +37,81 @@ pub struct Engine {
     send_via_bingle: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
+    // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
+    connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<SocketAddr, ConnectionEntry>>>,
 }
+
+// Per-connection state holding a DTLS adapter bound to a specific peer
+struct ConnectionEntry {
+    last_seen: Instant,
+    dtls: std::sync::Arc<PeerDtlsAdapter>,
+}
+
+// Lightweight per-connection DTLS adapter that delegates to a shared listener but fixes the peer address
+struct PeerDtlsAdapter {
+    engine_ptr: std::sync::atomic::AtomicPtr<Engine>,
+    peer: SocketAddr,
+}
+
+impl PeerDtlsAdapter {
+    fn new(engine_ptr: std::sync::atomic::AtomicPtr<Engine>, peer: SocketAddr) -> Self {
+        Self { engine_ptr, peer }
+    }
+}
+
+impl Dtls for PeerDtlsAdapter {
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> crate::dtls::Result<()> { Ok(()) }
+    fn stop(&mut self) -> crate::dtls::Result<()> { Ok(()) }
+    fn send(&self, _to: SocketAddr, data: &[u8]) -> crate::dtls::Result<()> {
+        use std::sync::atomic::Ordering;
+        let p = self.engine_ptr.load(Ordering::SeqCst);
+        if p.is_null() { return Err("engine ptr null".to_string()); }
+        unsafe {
+            let eng = &*p;
+            if let Some(dtls) = &eng.dtls { dtls.send(self.peer, data) } else { Err("DTLS instance not provided".to_string()) }
+        }
+    }
+    fn get_handle_message(&self) -> Option<crate::dtls::HandleMessage> { None }
+    fn set_handle_message(&mut self, _handler: Option<crate::dtls::HandleMessage>) { }
+    fn with_handle_message(self, _handler: crate::dtls::HandleMessage) -> Self where Self: Sized { self }
+    fn get_handle_peer_certificate(&self) -> Option<crate::dtls::HandlePeerCertificate> { None }
+    fn set_handle_peer_certificate(&mut self, _handler: Option<crate::dtls::HandlePeerCertificate>) { }
+    fn with_handle_peer_certificate(self, _handler: crate::dtls::HandlePeerCertificate) -> Self where Self: Sized { self }
+    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) { }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) { }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) { }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) { }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) { }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn set_app_layer_only_verification(&mut self, _enabled: bool) { }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+}
+
 
 impl Engine {
     pub fn new() -> Self {
-        Self { options: None, mux: None, dtls: None, state: EngineState::StunIdentify, last_public_addr: None, stun: None, relay_finder: None, triangle_wait: None, send_via_bingle: None, endpoint_ready: std::sync::atomic::AtomicBool::new(false) }
+        Self {
+            options: None,
+            mux: None,
+            dtls: None,
+            state: EngineState::StunIdentify,
+            last_public_addr: None,
+            stun: None,
+            relay_finder: None,
+            triangle_wait: None,
+            send_via_bingle: None,
+            endpoint_ready: std::sync::atomic::AtomicBool::new(false),
+            connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        }
     }
 
     /// Provide a pre-configured DTLS instance (with server certificate material) from the API layer.
@@ -62,17 +119,63 @@ impl Engine {
         self.dtls = Some(dtls);
     }
 
+    /// Access the configured DTLS instance, if any (read-only).
+    pub fn dtls(&self) -> Option<&(dyn Dtls + Send + Sync)> {
+        self.dtls.as_deref()
+    }
+
     /// Install a Bingle protocol sender callback for Engine-initiated messages.
     pub fn set_send_via_bingle(&mut self, cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>) {
         self.send_via_bingle = cb;
     }
 
-    /// Convenience for API to send over DTLS managed by the engine.
-    pub fn dtls_send(&self, to: SocketAddr, data: &[u8]) -> Result<(), String> {
-        match &self.dtls {
-            Some(d) => d.send(to, data),
-            None => Err("DTLS not started".to_string()),
+    /// Register a connection in the engine's per-connection registry.
+    fn register_connection(&mut self, addr: SocketAddr) {
+        if let Ok(mut m) = self.connections.lock() {
+            if let Some(entry) = m.get_mut(&addr) {
+                entry.last_seen = Instant::now();
+                return;
+            }
         }
+        // Create outside the lock to avoid double-borrowing self
+        let engine_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        let adapter = PeerDtlsAdapter::new(engine_ptr, addr);
+        if let Ok(mut m) = self.connections.lock() {
+            m.insert(addr, ConnectionEntry { last_seen: Instant::now(), dtls: Arc::new(adapter) });
+        }
+    }
+
+    /// Check whether the engine believes a connection to addr exists.
+    pub fn has_connection(&self, addr: &SocketAddr) -> bool {
+        self.connections.lock().map(|m| m.contains_key(addr)).unwrap_or(false)
+    }
+
+    /// Testing helper: number of tracked connections.
+    pub fn connections_len_for_tests(&self) -> usize {
+        self.connections.lock().map(|m| m.len()).unwrap_or(0)
+    }
+
+    /// Send bytes to a peer, creating the connection adapter if needed, and track it per-connection.
+    pub fn send_to_peer(&self, addr: SocketAddr, data: &[u8]) -> Result<(), String> {
+        // Lookup or create a per-connection DTLS adapter
+        let maybe_adapter = {
+            let mut map = self.connections.lock().map_err(|_| "connections lock poisoned".to_string())?;
+            if let Some(entry) = map.get(&addr) {
+                Some(entry.dtls.clone())
+            } else if self.dtls.is_some() {
+                // We only have &self here; create a const pointer then cast to mut for storage.
+                let engine_ptr = std::sync::atomic::AtomicPtr::new(self as *const Engine as *mut Engine);
+                let adapter = Arc::new(PeerDtlsAdapter::new(engine_ptr, addr));
+                map.insert(addr, ConnectionEntry { last_seen: Instant::now(), dtls: adapter.clone() });
+                Some(adapter)
+            } else { None }
+        };
+        let adapter = maybe_adapter.ok_or_else(|| "DTLS instance not provided".to_string())?;
+        let res = adapter.send(addr, data);
+        if res.is_ok() {
+            if let Ok(mut m) = self.connections.lock() { if let Some(e) = m.get_mut(&addr) { e.last_seen = Instant::now(); } }
+        }
+        res
     }
 
     /// Start the engine using the provided StartOptions.
@@ -88,9 +191,8 @@ impl Engine {
         // STUN path
         self.state = EngineState::StunIdentify;
 
-        // Bind UDP on 0.0.0.0:0 and create mux (we will install STUN handler before wrapping in Arc)
-        // TEMP: try 127.0.0.1:44444
-        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:44444").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+        // Bind UDP on 127.0.0.1:0 and create mux (OS assigns an ephemeral port)
+        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
@@ -102,7 +204,14 @@ impl Engine {
         let triangle_signal: Arc<(Mutex<bool>, Condvar)> = Arc::new((Mutex::new(false), Condvar::new()));
         let triangle_signal_clone = triangle_signal.clone();
         let existing = dtls.get_handle_message();
+        // Create another atomic pointer for use inside the closure
+        let self_ptr2 = std::sync::atomic::AtomicPtr::new(self_ptr.load(std::sync::atomic::Ordering::SeqCst));
         dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
+            // Register/refresh connection for this peer on any inbound data
+            let p = self_ptr2.load(std::sync::atomic::Ordering::SeqCst);
+            if !p.is_null() {
+                unsafe { (&mut *p).register_connection(*from); }
+            }
             // First try to detect TriangleTest3
             if let Ok(s) = std::str::from_utf8(data) {
                 if let Ok(msg) = from_json_str(s) {
@@ -185,10 +294,15 @@ impl Engine {
         // Determine the concrete local address after bind (handles port 0)
         let local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
+        // Create self pointer for registration from closure
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
         // Use pre-configured DTLS from API; install engine handler while preserving any existing API handler.
         let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
         let existing = dtls.get_handle_message();
         dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
+            // Register inbound connection
+            let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+            if !p.is_null() { unsafe { (&mut *p).register_connection(*from); } }
             Self::handle_dtls_message(server, from, issuer, data);
             if let Some(h) = &existing { h(server, from, issuer, data); }
         })));
@@ -260,66 +374,54 @@ impl Engine {
             self.relay_finder = Some(Arc::new(finder));
         }
 
-        // Send TriangleTest1 to the discovered relay using the Bingle protocol API
+        // Send TriangleTest1 to the discovered relay using the Bingle API callback if installed
         if let Some(target) = relay_target {
             let to_addr = target.address;
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: to_addr }));
-            let json_v = crate::messages::marshal::to_json_value(&msg);
             let nsk = NetworkSourceKey::new_direct(to_addr);
-            // Ensure user id is base64-36; accept provided id if already base64-36, otherwise convert from base32 address.
-            let user_id_b64 = match base64_36_or_convert_from_base32(&target.id) {
-                Ok(s) => s,
-                Err(e) => {
-                    println!("[Engine][WARN] invalid relay id '{}': {} -- proceeding with empty id", target.id, e);
-                    String::new()
-                }
-            };
-            println!("[Engine] sending TriangleTest1 to {} via BingleApi::send_message_to_network (id={})", to_addr, user_id_b64);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] sending TriangleTest1 to {} via BingleApi::send_message_to_network (id={})", to_addr, user_id_b64)); }
-            let ok = match &self.send_via_bingle {
-                Some(cb) => (cb)(&nsk, &user_id_b64, json_v),
-                None => {
-                    println!("[Engine][ERROR] send_via_bingle callback not installed; cannot send TriangleTest1 via API");
-                    #[allow(unused)] { crate::util::logging::log_line("[Engine][ERROR] send_via_bingle callback not installed; cannot send TriangleTest1 via API"); }
-                    false
-                }
-            };
-            if ok {
-                // Do not mark EndpointAvailable here; wait for TriangleTest3 observation.
-                println!("[Engine] TriangleTest1 sent successfully via BingleApi; awaiting TriangleTest3 to mark EndpointAvailable");
-                #[allow(unused)] { crate::util::logging::log_line("[Engine] TriangleTest1 sent successfully via BingleApi; awaiting TriangleTest3 to mark EndpointAvailable"); }
-                // Spawn a background waiter that promotes state to EndpointAvailable when TriangleTest3 is observed,
-                // or after a grace timeout if none arrives (keeps this test progressing deterministically).
-                if let Some((pair, _t0)) = &self.triangle_wait {
-                    let pair = pair.clone();
-                    let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
-                    std::thread::spawn(move || {
-                        use std::time::Duration;
-                        let (lock, cvar) = (&pair.0, &pair.1);
-                        let mut guard = lock.lock().unwrap();
-                        let timeout = Duration::from_secs(8);
-                        let (g, res) = cvar.wait_timeout(guard, timeout).unwrap();
-                        guard = g;
-                        // Regardless of signal or timeout, promote to EndpointAvailable for now.
-                        let got = *guard;
-                        drop(guard);
-                        unsafe {
-                            let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-                            eng.state = EngineState::EndpointAvailable;
-                        }
-                        if got {
-                            println!("[Engine] TriangleTest3 observed; state -> EndpointAvailable");
-                            #[allow(unused)] { crate::util::logging::log_line("[Engine] TriangleTest3 observed; state -> EndpointAvailable"); }
-                        } else {
-                            println!("[Engine][WARN] TriangleTest3 not observed within timeout; proceeding to EndpointAvailable for test");
-                            #[allow(unused)] { crate::util::logging::log_line("[Engine][WARN] TriangleTest3 not observed within timeout; proceeding to EndpointAvailable for test"); }
-                        }
-                    });
-                }
+            // Build JSON value for the message
+            let json_val = crate::messages::marshal::to_json_value(&msg);
+            if let Some(cb) = &self.send_via_bingle {
+                // Use the relay's actual id as the user id. Convert Algorand base32 address to base64(36) for API validation.
+                let uid = match data_encoding::BASE32_NOPAD.decode(target.id.as_bytes()) {
+                    Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
+                    Ok(bytes) => {
+                        println!("[Engine][WARN] relay id base32 decoded to {} bytes (expected 36); using raw id which may fail validation", bytes.len());
+                        target.id.clone()
+                    }
+                    Err(e) => {
+                        println!("[Engine][WARN] failed to decode relay id as base32: {}; using raw id which may fail validation", e);
+                        target.id.clone()
+                    }
+                };
+                let ok = cb(&nsk, &uid, json_val);
+                println!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok);
+                #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok)); }
             } else {
-                println!("[Engine][ERROR] TriangleTest1 send to {} via BingleApi failed", to_addr);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][ERROR] TriangleTest1 send to {} via BingleApi failed", to_addr)); }
-                panic!("[Engine] cannot continue triangle test without relay connection (Bingle send failed)");
+                println!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
+                #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr)); }
+            }
+            // Wait for TriangleTest3 completion before marking EndpointAvailable.
+            if let Some((pair, _t0)) = &self.triangle_wait {
+                let pair = pair.clone();
+                let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+                std::thread::spawn(move || {
+                    let (lock, cvar) = (&pair.0, &pair.1);
+                    let mut guard = lock.lock().unwrap();
+                    while !*guard {
+                        guard = cvar.wait(guard).unwrap();
+                    }
+                    // Signal received: promote to EndpointAvailable
+                    drop(guard);
+                    unsafe {
+                        use std::sync::atomic::Ordering;
+                        let eng = &mut *self_ptr.load(Ordering::SeqCst);
+                        eng.state = EngineState::EndpointAvailable;
+                        eng.endpoint_ready.store(true, Ordering::SeqCst);
+                    }
+                    println!("[Engine] TriangleTest3 observed; state -> EndpointAvailable");
+                    #[allow(unused)] { crate::util::logging::log_line("[Engine] TriangleTest3 observed; state -> EndpointAvailable"); }
+                });
             }
         } else {
             println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");

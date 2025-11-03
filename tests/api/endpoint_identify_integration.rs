@@ -45,11 +45,11 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut relay2 = BingleApiImpl::new();
 
     let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None };
-    let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None };
+   // let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None };
 
     // Start relays (no assertions about DTLS; we use them only as placeholders)
     let _ = relay1.start(r1_opts).expect("relay1 start() failed");
-    let _ = relay2.start(r2_opts).expect("relay2 start() failed");
+   // let _ = relay2.start(r2_opts).expect("relay2 start() failed");
 
     // Start two local STUN servers we will use for consistency resolution
     let p1 = find_unused_loopback_port();
@@ -84,7 +84,7 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
 
     // Stop instances and STUN servers
     relay1.stop();
-    relay2.stop();
+   // relay2.stop();
     client1.stop();
     s1.stop();
     s2.stop();

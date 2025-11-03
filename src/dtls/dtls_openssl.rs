@@ -99,136 +99,128 @@ pub mod non_ios {
     #[inline]
     fn set_verify_with_handler_for_connector(
         builder: &mut SslConnectorBuilder,
-        handler: Option<HandlePeerCertificate>,
+        handler: HandlePeerCertificate,
         _ca_bytes: Vec<u8>,
     ) {
         // Use a verify callback to delegate acceptance to the provided handler.
         // We ignore built-in chain/hostname checks and only fail if the handler returns Err.
-        if let Some(h) = handler {
-            builder.set_verify_callback(SslVerifyMode::PEER, move |preverify_ok, x509_ctx| {
-                // Debug: print parameters received by the verify callback (client)
-                println!(
-                    "[DtlsOpenSsl][verify][client] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
-                    preverify_ok,
-                    x509_ctx.error_depth(),
-                    x509_ctx.error(),
-                    x509_ctx.current_cert().is_some(),
-                    x509_ctx.chain().map(|c| c.len()).unwrap_or(0)
-                );
-                // Only evaluate the leaf certificate (depth 0)
-                if x509_ctx.error_depth() != 0 {
-                    return true;
-                }
-                // Determine peer CA certificate to pass to handler:
-                // Extract the issuer from the presented chain (prefer last element when len>=2).
-                // Never fall back to locally configured CA; if absent, reject the handshake per policy.
-                let mut peer_ca_pem: Option<Vec<u8>> = None;
-                if let Some(chain) = x509_ctx.chain() {
-                    let len = chain.len();
-                    if len >= 2 {
-                        // Prefer the last certificate in the presented chain as the issuing CA
-                        if let Some(last) = chain.get(len - 1) {
-                            if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
-                        }
+        let h = handler;
+        builder.set_verify_callback(SslVerifyMode::PEER, move |preverify_ok, x509_ctx| {
+            // Debug: print parameters received by the verify callback (client)
+            println!(
+                "[DtlsOpenSsl][verify][client] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
+                preverify_ok,
+                x509_ctx.error_depth(),
+                x509_ctx.error(),
+                x509_ctx.current_cert().is_some(),
+                x509_ctx.chain().map(|c| c.len()).unwrap_or(0)
+            );
+            // Only evaluate the leaf certificate (depth 0)
+            if x509_ctx.error_depth() != 0 {
+                return true;
+            }
+            // Determine peer CA certificate to pass to handler:
+            // Extract the issuer from the presented chain (prefer last element when len>=2).
+            // Never fall back to locally configured CA; if absent, reject the handshake per policy.
+            let mut peer_ca_pem: Option<Vec<u8>> = None;
+            if let Some(chain) = x509_ctx.chain() {
+                let len = chain.len();
+                if len >= 2 {
+                    // Prefer the last certificate in the presented chain as the issuing CA
+                    if let Some(last) = chain.get(len - 1) {
+                        if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
                     }
                 }
-                if peer_ca_pem.is_none() {
-                    println!("[DtlsOpenSsl][verify][client] no peer CA certificate in presented chain; rejecting per policy");
-                    return false;
-                }
-                if let Some(cert) = x509_ctx.current_cert() {
-                    match cert.to_pem() {
-                        Ok(pem) => {
-                            let ca_vec = peer_ca_pem.unwrap();
-                            match h(&pem, &ca_vec) {
-                                Ok(_issuer) => true,
-                                Err(e) => {
-                                    println!("[DtlsOpenSsl][verify][client] handler rejected server cert: {}", e);
-                                    false
-                                }
+            }
+            if peer_ca_pem.is_none() {
+                println!("[DtlsOpenSsl][verify][client] no peer CA certificate in presented chain; rejecting per policy");
+                return false;
+            }
+            if let Some(cert) = x509_ctx.current_cert() {
+                match cert.to_pem() {
+                    Ok(pem) => {
+                        let ca_vec = peer_ca_pem.unwrap();
+                        match h(&pem, &ca_vec) {
+                            Ok(_issuer) => true,
+                            Err(e) => {
+                                println!("[DtlsOpenSsl][verify][client] handler rejected server cert: {}", e);
+                                false
                             }
                         }
-                        Err(e) => {
-                            println!("[DtlsOpenSsl][verify][client] to_pem failed: {}", e);
-                            false
-                        }
                     }
-                } else {
-                    // No certificate presented by server; reject.
-                    println!("[DtlsOpenSsl][verify][client] no server certificate presented");
-                    false
+                    Err(e) => {
+                        println!("[DtlsOpenSsl][verify][client] to_pem failed: {}", e);
+                        false
+                    }
                 }
-            });
-        } else {
-            // No handler: accept any server certificate to keep tests stable.
-            builder.set_verify_callback(SslVerifyMode::PEER, |_preverify_ok, _| true);
-        }
+            } else {
+                // No certificate presented by server; reject.
+                println!("[DtlsOpenSsl][verify][client] no server certificate presented");
+                false
+            }
+        });
     }
 
     #[inline]
     fn set_verify_with_handler_for_acceptor(
         builder: &mut SslAcceptorBuilder,
-        handler: Option<HandlePeerCertificate>,
+        handler: HandlePeerCertificate,
         _ca_bytes: Vec<u8>,
     ) {
         // Use a verify callback driven by the provided handler to decide whether to accept the client.
         // Request a client certificate; fail the handshake if the handler returns Err.
-        if let Some(h) = handler {
-            builder.set_verify_callback(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT, move |preverify_ok, x509_ctx| {
-                // Debug: print parameters received by the verify callback (server)
-                println!(
-                    "[DtlsOpenSsl][verify][server] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
-                    preverify_ok,
-                    x509_ctx.error_depth(),
-                    x509_ctx.error(),
-                    x509_ctx.current_cert().is_some(),
-                    x509_ctx.chain().map(|c| c.len()).unwrap_or(0)
-                );
-                // Only evaluate the leaf certificate (depth 0)
-                if x509_ctx.error_depth() != 0 {
-                    return true;
-                }
-                // Try to extract peer CA cert from the presented chain (prefer last element if len>=2)
-                let mut peer_ca_pem: Option<Vec<u8>> = None;
-                if let Some(chain) = x509_ctx.chain() {
-                    let len = chain.len();
-                    if len >= 2 {
-                        if let Some(last) = chain.get(len - 1) {
-                            if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
-                        }
+        let h = handler;
+        builder.set_verify_callback(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT, move |preverify_ok, x509_ctx| {
+            // Debug: print parameters received by the verify callback (server)
+            println!(
+                "[DtlsOpenSsl][verify][server] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
+                preverify_ok,
+                x509_ctx.error_depth(),
+                x509_ctx.error(),
+                x509_ctx.current_cert().is_some(),
+                x509_ctx.chain().map(|c| c.len()).unwrap_or(0)
+            );
+            // Only evaluate the leaf certificate (depth 0)
+            if x509_ctx.error_depth() != 0 {
+                return true;
+            }
+            // Try to extract peer CA cert from the presented chain (prefer last element if len>=2)
+            let mut peer_ca_pem: Option<Vec<u8>> = None;
+            if let Some(chain) = x509_ctx.chain() {
+                let len = chain.len();
+                if len >= 2 {
+                    if let Some(last) = chain.get(len - 1) {
+                        if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
                     }
                 }
-                if peer_ca_pem.is_none() {
-                    println!("[DtlsOpenSsl][verify][server] no peer CA certificate in presented chain; rejecting per policy");
-                    return false;
-                }
-                if let Some(cert) = x509_ctx.current_cert() {
-                    match cert.to_pem() {
-                        Ok(pem) => {
-                            let ca_vec = peer_ca_pem.unwrap();
-                            match h(&pem, &ca_vec) {
-                                Ok(_issuer) => true,
-                                Err(e) => {
-                                    println!("[DtlsOpenSsl][verify][server] handler rejected client cert: {}", e);
-                                    false
-                                }
+            }
+            if peer_ca_pem.is_none() {
+                println!("[DtlsOpenSsl][verify][server] no peer CA certificate in presented chain; rejecting per policy");
+                return false;
+            }
+            if let Some(cert) = x509_ctx.current_cert() {
+                match cert.to_pem() {
+                    Ok(pem) => {
+                        let ca_vec = peer_ca_pem.unwrap();
+                        match h(&pem, &ca_vec) {
+                            Ok(_issuer) => true,
+                            Err(e) => {
+                                println!("[DtlsOpenSsl][verify][server] handler rejected client cert: {}", e);
+                                false
                             }
                         }
-                        Err(e) => {
-                            println!("[DtlsOpenSsl][verify][server] to_pem failed: {}", e);
-                            false
-                        }
                     }
-                } else {
-                    // No certificate from client (but we required one): reject.
-                    println!("[DtlsOpenSsl][verify][server] no client certificate presented");
-                    false
+                    Err(e) => {
+                        println!("[DtlsOpenSsl][verify][server] to_pem failed: {}", e);
+                        false
+                    }
                 }
-            });
-        } else {
-            // No handler: accept clients regardless of cert validity.
-            builder.set_verify_callback(SslVerifyMode::PEER, |_preverify_ok, _| true);
-        }
+            } else {
+                // No certificate from client (but we required one): reject.
+                println!("[DtlsOpenSsl][verify][server] no client certificate presented");
+                false
+            }
+        });
     }
 
     // Per-peer datagram queue and blocking mechanism.
@@ -285,10 +277,11 @@ pub mod non_ios {
             #[cfg(debug_assertions)]
             {
                 if n > 0 {
+                    let to_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n]) {
-                        eprintln!("[dtls muxconn][recv][{}] {}", self.peer, json);
+                        eprintln!("[dtls muxconn][recv from queue][{} -> {}] {}", self.peer, to_ip, json);
                     } else {
-                        eprintln!("[dtls muxconn][recv][{}] <parse error> ({} bytes)", self.peer, n);
+                        eprintln!("[dtls muxconn][recv from queue][{} -> {}] <parse error> ({} bytes)", self.peer, to_ip, n);
                     }
                 }
             }
@@ -299,13 +292,22 @@ pub mod non_ios {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             #[cfg(debug_assertions)]
             {
+                let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    eprintln!("[dtls muxconn][send][{}] {}", self.peer, json);
+                    eprintln!("[dtls muxconn][send][{} -> {}] {}", from_ip, self.peer, json);
                 } else {
-                    eprintln!("[dtls muxconn][send][{}] <parse error> ({} bytes)", self.peer, buf.len());
+                    eprintln!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, self.peer, buf.len());
                 }
             }
-            match self.mux.write(self.peer, buf) { Ok(()) => Ok(buf.len()), Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e))) }
+            match self.mux.write(self.peer, buf) {
+                Ok(()) => Ok(buf.len()),
+                Err(e) => {
+                    let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
+                    eprintln!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e)); }
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e)))
+                }
+            }
         }
         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
     }
@@ -460,9 +462,10 @@ pub mod non_ios {
                 // Disable built-in certificate verification; validate at application layer instead.
                 builder.set_verify(SslVerifyMode::NONE);
             } else {
-                // Enforce handshake-time verification via handler if provided
+                // Enforce handshake-time verification via handler; require a handler to be set.
                 let ca = self.ca_cert.clone().unwrap_or_default();
-                set_verify_with_handler_for_connector(&mut builder, self.handle_peer_certificate, ca);
+                let h = self.handle_peer_certificate.ok_or_else(|| "missing peer certificate handler for client handshake verification".to_string())?;
+                set_verify_with_handler_for_connector(&mut builder, h, ca);
             }
 
             // Build and return the configured connector
@@ -518,10 +521,11 @@ pub mod non_ios {
                 // Disable built-in certificate verification; validate at application layer instead.
                 builder.set_verify(SslVerifyMode::NONE);
             } else {
-                // Enforce handshake-time verification via handler if provided.
+                // Enforce handshake-time verification via handler; require a handler to be set.
                 let ca = self.ca_cert.clone().unwrap_or_default();
                 // Install verify callback that delegates to the handler and requires a client certificate
-                set_verify_with_handler_for_acceptor(&mut builder, self.handle_peer_certificate, ca.clone());
+                let h = self.handle_peer_certificate.ok_or_else(|| "missing peer certificate handler for server handshake verification".to_string())?;
+                set_verify_with_handler_for_acceptor(&mut builder, h, ca.clone());
                 // Also advertise an acceptable CA list and set verify store so clients know which cert to send
                 if let Ok(ca_x509) = openssl::x509::X509::from_pem(&ca) {
                     // Set verify cert store
@@ -603,20 +607,21 @@ pub mod non_ios {
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
             mux.clone().set_handle_dtls_arc(Some(Arc::new(move |_source, from, data| { 
                 // Debug log inbound DTLS packet at the DTLS layer
+                let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                    println!("[DtlsOpenSsl::accept][inbound][{}] {}", from, json);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][inbound][{}] {}", from, json)); }
+                    println!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json)); }
                 } else {
-                    println!("[DtlsOpenSsl::accept][inbound][{}] <parse error> ({} bytes)", from, data.len());
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][inbound][{}] <parse error> ({} bytes)", from, data.len())); }
+                    println!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len());
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len())); }
                 }
                 // Find or create the queue for this peer and push the datagram
                 let q_arc = {
                     let mut m = queues.lock().unwrap();
                     m.entry(*from).or_insert_with(|| Arc::new(PeerQueue::default())).clone()
                 };
-                println!("[DtlsOpenSsl::accept] enqueue datagram from {} ({} bytes)", from, data.len());
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] enqueue datagram from {} ({} bytes)", from, data.len())); }
+                println!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len());
+                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len())); }
                 q_arc.push(data.to_vec());
 
                 // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
@@ -630,8 +635,9 @@ pub mod non_ios {
                     !m.contains_key(from) && !suppressed
                 };
                 if create_stream {
-                    println!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for {}", from);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for {}", from)); }
+                    let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
+                    println!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str)); }
                     let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                     ssl.set_accept_state();
                     let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: *from, queue: q_arc.clone() };

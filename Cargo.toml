@@ -189,3 +189,7 @@ path = "tests/messages/on_plain_text_delegate.rs"
 [[test]]
 name = "protocol_cert_verify_dump"
 path = "tests/protocol/cert_verify_dump.rs"
+
+[[test]]
+name = "engine_connections"
+path = "tests/engine/engine_connections.rs"

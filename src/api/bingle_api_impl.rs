@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use base64::Engine as _;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Condvar};
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value as JsonValue, Map as JsonMap};
@@ -35,43 +34,6 @@ pub struct BingleApiImpl {
     engine: Option<Engine>,
 }
 
-// Global on_message dispatcher storage; used by MessageHandler::on_plain_text to delegate to API.
-static GLOBAL_ON_MESSAGE: OnceLock<Mutex<Option<Arc<OnMessageHandler>>>> = OnceLock::new();
-
-/// Set or clear the global on_message handler (used by plain-text router fallback).
-pub fn global_on_message_set(handler: Option<Arc<OnMessageHandler>>) {
-    let slot = GLOBAL_ON_MESSAGE.get_or_init(|| Mutex::new(None));
-    if let Ok(mut g) = slot.lock() { *g = handler; }
-}
-
-/// Invoke the global on_message handler, if set.
-pub fn global_on_message_call(sender: String, sender_handle: String, msg: JsonValue) {
-    if let Some(slot) = GLOBAL_ON_MESSAGE.get() {
-        if let Ok(g) = slot.lock() {
-            if let Some(cb) = g.as_ref() { cb(sender, sender_handle, msg); }
-        }
-    }
-}
-
-// Global send-to-network dispatcher used by Engine to invoke the Bingle API send path
-// without holding a direct reference to the API instance. We store the API instance
-// pointer in an AtomicUsize for thread-safe publication.
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
-static GLOBAL_SEND_API_PTR: AtomicUsize = AtomicUsize::new(0);
-
-/// Install or clear the global API pointer for send_message_to_network
-pub fn global_send_to_network_set(ptr: Option<*const BingleApiImpl>) {
-    let v = ptr.map_or(0usize, |p| p as usize);
-    GLOBAL_SEND_API_PTR.store(v, AtomicOrdering::SeqCst);
-}
-
-/// Invoke the global send_to_network. Returns false if not installed.
-pub fn global_send_to_network_call(nsk: &NetworkSourceKey, user_id: &UserId, msg: JsonValue) -> bool {
-    let addr = GLOBAL_SEND_API_PTR.load(AtomicOrdering::SeqCst);
-    if addr == 0 { return false; }
-    let api: &BingleApiImpl = unsafe { &*(addr as *const BingleApiImpl) };
-    api.send_message_to_network(nsk, user_id, msg, None)
-}
 
 impl Default for BingleApiImpl {
     fn default() -> Self {
@@ -190,10 +152,10 @@ impl BingleApiImpl {
     fn send_over_dtls(&self, addr: SocketAddr, message: JsonValue) -> bool {
         let bytes = serde_json::to_vec(&message).expect("Failed to serialize message to JSON bytes");
         if let Some(e) = &self.engine {
-            match e.dtls_send(addr, &bytes) {
+            match e.send_to_peer(addr, &bytes) {
                 Ok(_) => true,
                 Err(err) => {
-                    eprintln!("[BingleApiImpl] DTLS send via Engine failed: {}", err);
+                    eprintln!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
                     false
                 }
             }
@@ -316,16 +278,20 @@ impl BingleApi for BingleApiImpl {
         if self.engine.is_none() {
             self.engine = Some(Engine::new());
         }
-        // Install Engine callback to send via Bingle protocol (avoid direct DTLS from Engine)
-        // Publish the API instance pointer in a global atomic used by the callback.
-        crate::api::bingle_api_impl::global_send_to_network_set(Some(self as *const _));
+        // Prepare a self pointer for the Engine callback before borrowing engine mutably
+        let self_ptr_for_cb = std::sync::atomic::AtomicPtr::new(self as *mut BingleApiImpl);
+        // Install Engine callback to send via Bingle protocol capturing this API instance pointer (no globals)
         if let Some(eng) = self.engine.as_mut() {
-            eng.set_send_via_bingle(Some(Arc::new(|nsk, user_id, message| {
-                crate::api::bingle_api_impl::global_send_to_network_call(nsk, user_id, message)
-            })));
             if let Some(dtls) = self.dtls.take() {
                 eng.set_dtls(dtls);
             }
+            // Install a callback so the Engine can send messages using this API instance
+            eng.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
+                use std::sync::atomic::Ordering;
+                let p = self_ptr_for_cb.load(Ordering::SeqCst);
+                if p.is_null() { return false; }
+                unsafe { (*p).send_message_to_network(nsk, uid, msg, None) }
+            })));
             eng.start(options.clone())?;
         }
 
@@ -341,8 +307,6 @@ impl BingleApi for BingleApiImpl {
         if let Some(e) = &mut self.engine {
             e.stop();
         }
-        // Clear global send pointer so no further sends are attempted via this instance
-        crate::api::bingle_api_impl::global_send_to_network_set(None);
         // For now, simply drop the DTLS instance; more graceful shutdown can be added later.
         self.dtls = None;
         println!("[BingleApiImpl::stop][exit]");
@@ -555,8 +519,6 @@ impl BingleApi for BingleApiImpl {
             #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some())); }
             self.on_message = handler.clone();
             if let Ok(mut g) = self.shared_on_message.lock() { *g = handler.clone(); }
-            // Update global dispatcher so plain-text routing can delegate here
-            crate::api::bingle_api_impl::global_on_message_set(handler);
             println!("[BingleApiImpl::set_on_message][exit]");
             #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_on_message][exit]"); }
         }

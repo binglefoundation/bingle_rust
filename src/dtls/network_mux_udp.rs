@@ -82,6 +82,11 @@ impl UdpNetworkMux {
         self.socket.local_addr()
     }
 
+    /// Get only the bound IP address (for debug printing)
+    pub fn bound_ip(&self) -> std::io::Result<std::net::IpAddr> {
+        self.socket.local_addr().map(|a| a.ip())
+    }
+
     /// Set read timeout on the underlying socket
     pub fn set_read_timeout(&self, dur: Option<Duration>) -> std::io::Result<()> {
         self.socket.set_read_timeout(dur)
@@ -139,6 +144,10 @@ impl UdpNetworkMux {
         let to = self.local_addr().unwrap();
         let handle = thread::spawn(move || {
             let mut buf = [0u8; 2048];
+
+            eprintln!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][loop on {:?}] starts", to)); }
+
             while this.running.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
                     Ok((n, from)) => {
@@ -186,11 +195,17 @@ impl UdpNetworkMux {
                             continue;
                         } else {
                             // If socket error, stop running
+                            eprintln!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e);
+                            #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e)); }
+
                             this.running.store(false, Ordering::SeqCst);
                         }
                     }
                 }
             }
+            eprintln!("[UdpNetworkMux][receive][loop on {:?}] done", to);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][loop on {:?}] done", to)); }
+
         });
         let mut slot = self.rx_thread.lock().unwrap();
         *slot = Some(handle);
