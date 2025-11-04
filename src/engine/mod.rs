@@ -192,7 +192,7 @@ impl Engine {
         self.state = EngineState::StunIdentify;
 
         // Bind UDP on 127.0.0.1:0 and create mux (OS assigns an ephemeral port)
-        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:44444").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
@@ -242,37 +242,6 @@ impl Engine {
         // Now wrap mux in Arc
         let mux = Arc::new(mux0);
 
-        // Configure the send_packet handler to use mux.write and set state change handler
-        if let Ok(mut f) = finder.lock() {
-            let mux_clone = mux.clone();
-            f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
-                mux_clone.write((host, port), payload).expect("UDP mux write failed in STUN send_packet_handler");
-            })));
-            // Wire STUN state changes into Engine handlers. We use a small, contained unsafe block to
-            // call back into the Engine instance from the STUN worker thread.
-            f.set_state_change_handler(Some(Arc::new(move |st, ep| {
-                // Only act on meaningful terminal states for now.
-                let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-                if p.is_null() { return; }
-                unsafe {
-                    if st == crate::stun::endpoint_finder::StunState::Consistent {
-                        let eng = &mut *p;
-                        eng.on_stun_consistent(ep);
-                    } else if st == crate::stun::endpoint_finder::StunState::Inconsistent {
-                        let eng = &mut *p;
-                        eng.on_stun_inconsistent();
-                    }
-                }
-            })));
-
-            // Kick off STUN polling using provided servers
-            let servers = options.stun_servers.clone().unwrap_or_default();
-            if servers.is_empty() {
-                return Err("No STUN servers provided".into());
-            }
-            f.start(servers, 2_000, 60_000);
-        }
-
         // Start mux thread first so DTLS accept loop can receive
         mux.start().map_err(|e| format!("Failed to start UDP mux: {}", e))?;
 
@@ -280,10 +249,14 @@ impl Engine {
         dtls.start(mux.clone())
             .map_err(|e| format!("Failed to start DTLS: {}", e))?;
 
-        self.mux = Some(mux);
-        self.stun = Some(finder);
+        // Persist mux, STUN finder, and triangle wait handle before initializing STUN
+        self.mux = Some(mux.clone());
+        self.stun = Some(finder.clone());
         // Store triangle wait handle for later awaits
         self.triangle_wait = Some((triangle_signal, Instant::now()));
+
+        // After DTLS and mux are running, configure and start STUN finder logic
+        self.start_stun_find(&options, &finder, &mux)?;
         Ok(())
     }
 
@@ -319,6 +292,17 @@ impl Engine {
     }
 
     fn on_stun_consistent(&mut self, public_addr: Option<SocketAddr>) {
+        // Spawn a worker thread to process STUN-consistent follow-up to avoid blocking inbound packet path
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        std::thread::spawn(move || {
+            unsafe {
+                let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+                eng.stun_consistent_process(public_addr);
+            }
+        });
+    }
+
+    fn stun_consistent_process(&mut self, public_addr: Option<SocketAddr>) {
         println!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
         self.last_public_addr = public_addr;
@@ -431,6 +415,47 @@ impl Engine {
 
     fn on_stun_inconsistent(&mut self) {
         panic!("NotImplemented: STUN reported Inconsistent public endpoint");
+    }
+
+    /// Configure STUN send/state handlers and start the finder after DTLS and mux are running.
+    fn start_stun_find(
+        &mut self,
+        options: &StartOptions,
+        finder: &Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>,
+        mux: &Arc<UdpNetworkMux>,
+    ) -> Result<(), String> {
+        // Create a self pointer for callbacks invoked from STUN worker thread
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        if let Ok(mut f) = finder.lock() {
+            // Route STUN outbound packets through the UDP mux
+            let mux_clone = mux.clone();
+            f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
+                mux_clone
+                    .write((host, port), payload)
+                    .expect("UDP mux write failed in STUN send_packet_handler");
+            })));
+
+            // Wire STUN state changes into Engine handlers.
+            f.set_state_change_handler(Some(Arc::new(move |st, ep| {
+                let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+                if p.is_null() { return; }
+                unsafe {
+                    if st == crate::stun::endpoint_finder::StunState::Consistent {
+                        (&mut *p).on_stun_consistent(ep);
+                    } else if st == crate::stun::endpoint_finder::StunState::Inconsistent {
+                        (&mut *p).on_stun_inconsistent();
+                    }
+                }
+            })));
+
+            // Kick off STUN polling using provided servers
+            let servers = options.stun_servers.clone().unwrap_or_default();
+            if servers.is_empty() {
+                return Err("No STUN servers provided".into());
+            }
+            f.start(servers, 2_000, 60_000);
+        }
+        Ok(())
     }
 
     /// Stop the engine and background tasks if started.
