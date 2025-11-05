@@ -278,17 +278,31 @@ impl BingleApi for BingleApiImpl {
         if self.engine.is_none() {
             self.engine = Some(Engine::new());
         }
-        // Prepare a self pointer for the Engine callback before borrowing engine mutably
-        let self_ptr_for_cb = std::sync::atomic::AtomicPtr::new(self as *mut BingleApiImpl);
+        // Shared atomic pointer to this API instance for thread-safe callbacks
+        let self_ptr_arc = Arc::new(std::sync::atomic::AtomicPtr::new(self as *mut BingleApiImpl));
+
+        // Expose a sending closure to message handlers via router so they can send replies
+        {
+            let ptr = self_ptr_arc.clone();
+            let sender_cb: Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync> = Arc::new(move |nsk, uid, msg| {
+                use std::sync::atomic::Ordering;
+                let p = ptr.load(Ordering::SeqCst);
+                if p.is_null() { return false; }
+                unsafe { (*p).send_message_to_network(nsk, uid, msg, None) }
+            });
+            crate::messages::router::set_sender(Some(sender_cb));
+        }
+
         // Install Engine callback to send via Bingle protocol capturing this API instance pointer (no globals)
         if let Some(eng) = self.engine.as_mut() {
             if let Some(dtls) = self.dtls.take() {
                 eng.set_dtls(dtls);
             }
             // Install a callback so the Engine can send messages using this API instance
+            let ptr = self_ptr_arc.clone();
             eng.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
                 use std::sync::atomic::Ordering;
-                let p = self_ptr_for_cb.load(Ordering::SeqCst);
+                let p = ptr.load(Ordering::SeqCst);
                 if p.is_null() { return false; }
                 unsafe { (*p).send_message_to_network(nsk, uid, msg, None) }
             })));

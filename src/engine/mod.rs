@@ -192,7 +192,7 @@ impl Engine {
         self.state = EngineState::StunIdentify;
 
         // Bind UDP on 127.0.0.1:0 and create mux (OS assigns an ephemeral port)
-        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:44444").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
@@ -207,10 +207,18 @@ impl Engine {
         // Create another atomic pointer for use inside the closure
         let self_ptr2 = std::sync::atomic::AtomicPtr::new(self_ptr.load(std::sync::atomic::Ordering::SeqCst));
         dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
-            // Register/refresh connection for this peer on any inbound data
-            let p = self_ptr2.load(std::sync::atomic::Ordering::SeqCst);
+            use std::sync::atomic::Ordering;
+            // Register/refresh connection for this peer on any inbound data and refresh message sender binding
+            let p = self_ptr2.load(Ordering::SeqCst);
             if !p.is_null() {
-                unsafe { (&mut *p).register_connection(*from); }
+                unsafe {
+                    let eng = &mut *p;
+                    eng.register_connection(*from);
+                    // Bind per-message sender so handlers send via the correct API/engine instance
+                    if let Some(cb) = &eng.send_via_bingle {
+                        crate::messages::router::set_sender(Some(cb.clone()));
+                    }
+                }
             }
             // First try to detect TriangleTest3
             if let Ok(s) = std::str::from_utf8(data) {
@@ -273,9 +281,19 @@ impl Engine {
         let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
         let existing = dtls.get_handle_message();
         dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
+            use std::sync::atomic::Ordering;
             // Register inbound connection
-            let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-            if !p.is_null() { unsafe { (&mut *p).register_connection(*from); } }
+            let p = self_ptr.load(Ordering::SeqCst);
+            if !p.is_null() {
+                unsafe {
+                    let eng = &mut *p;
+                    eng.register_connection(*from);
+                    // Bind per-message sender for this engine instance
+                    if let Some(cb) = &eng.send_via_bingle {
+                        crate::messages::router::set_sender(Some(cb.clone()));
+                    }
+                }
+            }
             Self::handle_dtls_message(server, from, issuer, data);
             if let Some(h) = &existing { h(server, from, issuer, data); }
         })));
@@ -361,7 +379,8 @@ impl Engine {
         // Send TriangleTest1 to the discovered relay using the Bingle API callback if installed
         if let Some(target) = relay_target {
             let to_addr = target.address;
-            let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: to_addr }));
+            let checking_ep = public_addr.unwrap_or(to_addr);
+            let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: checking_ep }));
             let nsk = NetworkSourceKey::new_direct(to_addr);
             // Build JSON value for the message
             let json_val = crate::messages::marshal::to_json_value(&msg);

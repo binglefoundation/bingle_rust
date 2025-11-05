@@ -1,6 +1,22 @@
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::*;
 
+// Global sender factory used by handlers to send replies without tight coupling to API implementation.
+use std::sync::{Arc, OnceLock, Mutex};
+use crate::api::bingle_api::{NetworkSourceKey, UserId};
+
+static SENDER_GLOBAL: OnceLock<Mutex<Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>> = OnceLock::new();
+
+pub fn set_sender(cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>) {
+    let cell = SENDER_GLOBAL.get_or_init(|| Mutex::new(None));
+    if let Ok(mut g) = cell.lock() { *g = cb; }
+}
+
+pub fn get_sender() -> Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>> {
+    let cell = SENDER_GLOBAL.get_or_init(|| Mutex::new(None));
+    match cell.lock() { Ok(g) => g.clone(), Err(_) => None }
+}
+
 pub fn route<H: MessageHandler + ?Sized>(handler: &H, msg: &Message, from_id: &str) {
     match msg {
         Message::PlainText(pt) => handler.on_plain_text(from_id, pt),

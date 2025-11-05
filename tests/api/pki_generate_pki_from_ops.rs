@@ -69,5 +69,5 @@ fn generate_pki_from_ops_produces_valid_chain_and_expected_cns() {
     let handler = rust_comms::protocol::cert_verify::peer_certificate_handler();
     let res = handler(&server_cert_pem, &ca_pem);
     assert!(res.is_ok(), "peer_certificate_handler rejected generated chain: {:?}", res.err());
-    assert_eq!(res.unwrap(), VIRTUAL_CA.to_string());
+    assert_eq!(res.unwrap(), sc_subj.to_string());
 }

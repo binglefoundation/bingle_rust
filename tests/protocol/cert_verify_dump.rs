@@ -98,9 +98,9 @@ fn peer_certificate_handler_generates_dump_and_verifies() {
     let ee_cert = ee_builder.build();
     let ee_pem = ee_cert.to_pem().expect("ee pem");
 
-    // 3) Call the handler and ensure it returns the CA CN (VIRTUAL_CA)
+    // 3) Call the handler and ensure it returns the EE subject CN (ends with ISSUER_SUFFIX)
     let handler = rust_comms::protocol::cert_verify::peer_certificate_handler();
     let res = handler(&ee_pem, &ca_pem);
     assert!(res.is_ok(), "handler returned error: {:?}", res.err());
-    assert_eq!(res.unwrap(), VIRTUAL_CA.to_string());
+    assert_eq!(res.unwrap(), ee_cn.to_string());
 }

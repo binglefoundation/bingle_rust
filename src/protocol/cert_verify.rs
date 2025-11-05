@@ -234,10 +234,10 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             #[allow(unused)] { crate::util::logging::log_line("[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match"); }
         }
 
-        // All checks passed: return the issuer (full CN)
-        println!("[cert_verify][ok] peer_certificate_handler success: issuer={}", ca_cn);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][ok] peer_certificate_handler success: issuer={}", ca_cn)); }
-        Ok(ca_cn)
+        // All checks passed: return the end-entity subject CN (ee_subj_cn), not the CA's CN
+        println!("[cert_verify][ok] peer_certificate_handler success: subjectCN={}", ee_subj_cn);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][ok] peer_certificate_handler success: subjectCN={}", ee_subj_cn)); }
+        Ok(ee_subj_cn)
     }
     handler
 }

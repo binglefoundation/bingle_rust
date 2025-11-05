@@ -521,11 +521,15 @@ pub mod non_ios {
                 // Disable built-in certificate verification; validate at application layer instead.
                 builder.set_verify(SslVerifyMode::NONE);
             } else {
-                // Enforce handshake-time verification via handler; require a handler to be set.
+                // Prefer handshake-time verification via handler when provided; otherwise, do not require it.
                 let ca = self.ca_cert.clone().unwrap_or_default();
-                // Install verify callback that delegates to the handler and requires a client certificate
-                let h = self.handle_peer_certificate.ok_or_else(|| "missing peer certificate handler for server handshake verification".to_string())?;
-                set_verify_with_handler_for_acceptor(&mut builder, h, ca.clone());
+                if let Some(h) = self.handle_peer_certificate {
+                    // Install verify callback that delegates to the handler and requires a client certificate
+                    set_verify_with_handler_for_acceptor(&mut builder, h, ca.clone());
+                } else {
+                    // No handler provided: do not enforce handshake-time verification on the server side.
+                    builder.set_verify(SslVerifyMode::NONE);
+                }
                 // Also advertise an acceptable CA list and set verify store so clients know which cert to send
                 if let Ok(ca_x509) = openssl::x509::X509::from_pem(&ca) {
                     // Set verify cert store
@@ -735,7 +739,9 @@ pub mod non_ios {
                                         }
                                         match h(cert_pem, ca_pem) {
                                             Ok(s) if !s.is_empty() => {
-                                                if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, s); }
+                                                // Convert issuer (subject CN) to id by trimming the trailing ISSUER_SUFFIX
+                                                let id = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                                                if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, id); }
                                             }
                                             _ => {
                                                 println!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2);
@@ -764,7 +770,10 @@ pub mod non_ios {
                                                 println!("[DtlsOpenSsl][peer_cert_handler][server][{}] cert_len={}", from2, cert_pem.len());
                                                 #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server][{}] cert_len={}", from2, cert_pem.len())); }
                                                 match h(&cert_pem, ca_bytes2.as_slice()) {
-                                                    Ok(s) if !s.is_empty() => { let _ = imap.insert(from2, s); }
+                                                    Ok(s) if !s.is_empty() => {
+                                                        let id = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                                                        let _ = imap.insert(from2, id);
+                                                    }
                                                     _ => {
                                                         println!("[DtlsOpenSsl][peer_cert_handler][server][{}] validation failed (empty issuer or error)", from2);
                                                         #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server][{}] validation failed (empty issuer or error)", from2)); }
@@ -974,8 +983,10 @@ pub mod non_ios {
                             if let Some(ca) = peer_ca_pem.as_ref() {
                                 match h(&cert_pem, ca) {
                                     Ok(issuer) if !issuer.is_empty() => {
+                                        // Convert issuer (subject CN) to id by trimming the trailing ISSUER_SUFFIX
+                                        let id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
                                         if let Some(issuers_arc) = &self.endpoint_issuers {
-                                            let _ = issuers_arc.lock().map(|mut m| { m.insert(to, issuer); });
+                                            let _ = issuers_arc.lock().map(|mut m| { m.insert(to, id); });
                                         }
                                     }
                                     Ok(_) => {
