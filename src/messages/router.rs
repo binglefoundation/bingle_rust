@@ -3,9 +3,13 @@ use crate::messages::types::*;
 
 // Global sender factory used by handlers to send replies without tight coupling to API implementation.
 use std::sync::{Arc, OnceLock, Mutex};
-use crate::api::bingle_api::{NetworkSourceKey, UserId};
+use std::net::SocketAddr;
+use crate::api::bingle_api::{NetworkSourceKey, UserId, BingleApi};
 
 static SENDER_GLOBAL: OnceLock<Mutex<Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>> = OnceLock::new();
+static API_GLOBAL: OnceLock<Mutex<Option<Arc<dyn BingleApi>>>> = OnceLock::new();
+static LAST_FROM_GLOBAL: OnceLock<Mutex<Option<SocketAddr>>> = OnceLock::new();
+static LAST_RESPONSE_TAG: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 pub fn set_sender(cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>) {
     let cell = SENDER_GLOBAL.get_or_init(|| Mutex::new(None));
@@ -14,6 +18,36 @@ pub fn set_sender(cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::
 
 pub fn get_sender() -> Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>> {
     let cell = SENDER_GLOBAL.get_or_init(|| Mutex::new(None));
+    match cell.lock() { Ok(g) => g.clone(), Err(_) => None }
+}
+
+pub fn set_bingle_api(api: Option<Arc<dyn BingleApi>>) {
+    let cell = API_GLOBAL.get_or_init(|| Mutex::new(None));
+    if let Ok(mut g) = cell.lock() { *g = api; }
+}
+
+pub fn get_bingle_api() -> Option<Arc<dyn BingleApi>> {
+    let cell = API_GLOBAL.get_or_init(|| Mutex::new(None));
+    match cell.lock() { Ok(g) => g.clone(), Err(_) => None }
+}
+
+pub fn set_last_from(addr: Option<SocketAddr>) {
+    let cell = LAST_FROM_GLOBAL.get_or_init(|| Mutex::new(None));
+    if let Ok(mut g) = cell.lock() { *g = addr; }
+}
+
+pub fn get_last_from() -> Option<SocketAddr> {
+    let cell = LAST_FROM_GLOBAL.get_or_init(|| Mutex::new(None));
+    match cell.lock() { Ok(g) => *g, Err(_) => None }
+}
+
+pub fn set_last_response_tag(tag: Option<String>) {
+    let cell = LAST_RESPONSE_TAG.get_or_init(|| Mutex::new(None));
+    if let Ok(mut g) = cell.lock() { *g = tag; }
+}
+
+pub fn get_last_response_tag() -> Option<String> {
+    let cell = LAST_RESPONSE_TAG.get_or_init(|| Mutex::new(None));
     match cell.lock() { Ok(g) => g.clone(), Err(_) => None }
 }
 

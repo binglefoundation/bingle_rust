@@ -18,7 +18,39 @@ pub trait MessageHandler {
     fn on_triangle_test2(&self, _from_id: &str, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
     fn on_triangle_test3(&self, _from_id: &str, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
     fn on_relay_listen(&self, _from_id: &str, _msg: &RelayListen) { self.on_unimplemented(&Message::Relay(RelayMessage::Listen(_msg.clone()))); }
-    fn on_relay_check(&self, _from_id: &str, _msg: &RelayCheck) { self.on_unimplemented(&Message::Relay(RelayMessage::Check(_msg.clone()))); }
+    fn on_relay_check(&self, from_id: &str, _msg: &RelayCheck) {
+        // Send CheckResponse available=true back to the last sender address using the real Bingle API sender
+        let sender_opt = crate::messages::router::get_sender();
+        if sender_opt.is_none() { eprintln!("[handlers::on_relay_check] No sender available"); return; }
+        let sender = sender_opt.unwrap();
+        let last_from = crate::messages::router::get_last_from();
+        if last_from.is_none() { eprintln!("[handlers::on_relay_check] No last_from address recorded"); return; }
+        let to = last_from.unwrap();
+        // Compose JSON manually to include responseTag if present
+        let mut json_obj = serde_json::Map::new();
+        json_obj.insert("app".to_string(), serde_json::Value::Null);
+        json_obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
+        json_obj.insert("available".to_string(), serde_json::Value::Bool(true));
+        if let Some(tag) = crate::messages::router::get_last_response_tag() {
+            json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+        }
+        let json_val = serde_json::Value::Object(json_obj);
+        let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(to);
+        // Convert from_id (issuer) to raw address and base64(36)
+        let raw_id = from_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        let user_id_b64 = match data_encoding::BASE32_NOPAD.decode(raw_id.as_bytes()) {
+            Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
+            Ok(bytes) => {
+                eprintln!("[handlers::on_relay_check] from_id decoded to {} bytes (expected 36)", bytes.len());
+                return; // do not send invalid id
+            }
+            Err(e) => {
+                eprintln!("[handlers::on_relay_check] base32 decode failed for from_id: {}", e);
+                return; // do not send invalid id
+            }
+        };
+        let _ok = sender(&nsk, &user_id_b64, json_val);
+    }
     fn on_relay_listen_response(&self, _from_id: &str, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
     fn on_relay_check_response(&self, _from_id: &str, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
     fn on_relay_call_response(&self, _from_id: &str, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
@@ -58,26 +90,10 @@ impl MessageHandler for DefaultPrintingHandler {
                     RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
                 ]
             });
-            // For finding a peer relay, RelayFinder only needs a BingleApi for RelayCheck with response.
-            // We can leverage the same sender closure by wrapping it into a tiny BingleApi impl.
-            struct SenderApi(Arc<dyn Fn(&crate::api::bingle_api::NetworkSourceKey, &crate::api::bingle_api::UserId, serde_json::Value) -> bool + Send + Sync>);
-            impl crate::api::bingle_api::BingleApi for SenderApi {
-                fn start(&mut self, _options: crate::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }
-                fn stop(&mut self) {}
-                fn network_change(&mut self) {}
-                fn send_message_to_id(&self, _user_id: &crate::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-                fn send_message_to_handle(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-                fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkSourceKey, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { (self.0)(nsk, user_id, message) }
-                fn send_message_to_id_with_response(&self, _user_id: &crate::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
-                fn send_message_to_handle_with_response(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
-                fn send_message_to_network_with_response(&self, _nsk: &crate::api::bingle_api::NetworkSourceKey, _user_id: &crate::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> {
-                    // For our tests, RelayFinder::relay_check uses ...with_response; emulate success
-                    Ok(serde_json::json!({"app": null, "type": "CheckResponse", "available": true}))
-                }
-                fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
-                fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
-            }
-            let finder = RelayFinder::new(Arc::new(SenderApi(sender.clone())), Duration::from_secs(60), discover);
+            // Use a real BingleApi instance provided via the router
+            let api_opt = crate::messages::router::get_bingle_api();
+            if api_opt.is_none() { eprintln!("[handlers::on_triangle_test1] No BingleApi available"); return; }
+            let finder = RelayFinder::new(api_opt.unwrap(), Duration::from_secs(60), discover);
 
             // Derive our id without issuer suffix if present (addresses used by RelayFinder expect raw address)
             let my_id = from.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
@@ -94,7 +110,7 @@ impl MessageHandler for DefaultPrintingHandler {
             let json_val = crate::messages::marshal::to_json_value(&msg_out);
 
             // Build NetworkSourceKey and user id base64(36) as required by API
-            use crate::api::bingle_api::{NetworkSourceKey, UserId};
+            use crate::api::bingle_api::{NetworkSourceKey, UserId, BingleApi};
             let nsk = NetworkSourceKey::new_direct(target.address);
             let user_id: UserId = match data_encoding::BASE32_NOPAD.decode(target.id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -107,8 +123,13 @@ impl MessageHandler for DefaultPrintingHandler {
                     target.id.clone()
                 }
             };
-            let ok = sender(&nsk, &user_id, json_val);
-            println!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", target.address, ok);
+            // Use real BingleApi for sending
+            if let Some(api) = crate::messages::router::get_bingle_api() {
+                let ok = api.send_message_to_network(&nsk, &user_id, json_val, None);
+                println!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", target.address, ok);
+            } else {
+                eprintln!("[handlers::on_triangle_test1] No BingleApi available to send TriangleTest2");
+            }
         });
     }
 
@@ -117,9 +138,9 @@ impl MessageHandler for DefaultPrintingHandler {
         use crate::api::bingle_api::NetworkSourceKey;
         use base64::Engine as _;
         let endpoint = msg.checkingEndpoint;
-        let sender_opt = crate::messages::router::get_sender();
-        if sender_opt.is_none() { eprintln!("[handlers::on_triangle_test2] No sender available"); return; }
-        let sender = sender_opt.unwrap();
+        let api_opt = crate::messages::router::get_bingle_api();
+        if api_opt.is_none() { eprintln!("[handlers::on_triangle_test2] No BingleApi available"); return; }
+        let api = api_opt.unwrap();
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);
@@ -139,7 +160,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 base64::engine::general_purpose::STANDARD.encode([0u8; 36])
             }
         };
-        let ok = sender(&nsk, &user_id_b64, json_val);
+        let ok = api.send_message_to_network(&nsk, &user_id_b64, json_val, None);
         println!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
     }
 }

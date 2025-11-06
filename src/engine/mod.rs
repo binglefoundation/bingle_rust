@@ -35,6 +35,8 @@ pub struct Engine {
     triangle_wait: Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>, // wait for TriangleTest3
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>,
+    // BingleApi handle for handlers (e.g., RelayFinder) to use a real API bound to this engine instance
+    bingle_api_for_handlers: Option<Arc<dyn BingleApi>>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
@@ -109,6 +111,7 @@ impl Engine {
             relay_finder: None,
             triangle_wait: None,
             send_via_bingle: None,
+            bingle_api_for_handlers: None,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
@@ -127,6 +130,11 @@ impl Engine {
     /// Install a Bingle protocol sender callback for Engine-initiated messages.
     pub fn set_send_via_bingle(&mut self, cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>) {
         self.send_via_bingle = cb;
+    }
+
+    /// Provide a BingleApi handle to be used by handlers and relay discovery bound to this Engine instance.
+    pub fn set_bingle_api_for_handlers(&mut self, api: Arc<dyn BingleApi>) {
+        self.bingle_api_for_handlers = Some(api);
     }
 
     /// Register a connection in the engine's per-connection registry.
@@ -218,6 +226,10 @@ impl Engine {
                     if let Some(cb) = &eng.send_via_bingle {
                         crate::messages::router::set_sender(Some(cb.clone()));
                     }
+                    // Bind the per-engine BingleApi to the router for this message context
+                    if let Some(api) = &eng.bingle_api_for_handlers {
+                        crate::messages::router::set_bingle_api(Some(api.clone()));
+                    }
                 }
             }
             // First try to detect TriangleTest3
@@ -292,6 +304,10 @@ impl Engine {
                     if let Some(cb) = &eng.send_via_bingle {
                         crate::messages::router::set_sender(Some(cb.clone()));
                     }
+                    // Bind per-engine api
+                    if let Some(api) = &eng.bingle_api_for_handlers {
+                        crate::messages::router::set_bingle_api(Some(api.clone()));
+                    }
                 }
             }
             Self::handle_dtls_message(server, from, issuer, data);
@@ -341,30 +357,16 @@ impl Engine {
         // For now, discovery is stubbed to the provided public_addr (if any) and RelayCheck always returns available.
         let mut relay_target: Option<RootRelayInfo> = None;
         if let Some(addr) = public_addr {
-            struct MockFinderApi;
-            impl BingleApi for MockFinderApi {
-                fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
-                fn stop(&mut self) {}
-                fn network_change(&mut self) {}
-                fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-                fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-                fn send_message_to_network(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { true }
-                fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".to_string()) }
-                fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".to_string()) }
-                fn send_message_to_network_with_response(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> {
-                    Ok(json!({"app": null, "type": "CheckResponse", "available": true}))
-                }
-                fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
-                fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
-            }
-            let api: Arc<dyn BingleApi> = Arc::new(MockFinderApi);
-            let a2 = addr.clone();
+            let _a2 = addr.clone();
+            // Use the real BingleApi provided via router
+            let api_opt = self.bingle_api_for_handlers.clone().or_else(|| crate::messages::router::get_bingle_api());
+            if api_opt.is_none() { panic!("[Engine] No BingleApi available for relay check"); }
 
             // TODO: use a real discovery function
             const ADDRESS_SPEND: &str = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE";
             let discover = Arc::new(move || vec![RootRelayInfo { id: ADDRESS_SPEND.parse().unwrap(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]);
 
-            let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
+            let finder = RelayFinder::new(api_opt.unwrap(), Duration::from_secs(60), discover);
             let relay = finder.find_relay(&self.options.as_ref().unwrap().handle);
             if let Ok(r) = relay {
                 relay_target = Some(r.clone());
@@ -512,10 +514,22 @@ impl Engine {
         println!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview)); }
 
+        // Record last sender address for handlers that need to reply directly
+        crate::messages::router::set_last_from(Some(*from));
         // Best-effort decode; print unimplemented on failure via default handler
         let handler = DefaultPrintingHandler;
         match std::str::from_utf8(data) {
             Ok(s) => {
+                // Capture responseTag from raw JSON if present for handlers that need to echo it
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                    if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
+                        crate::messages::router::set_last_response_tag(Some(tag.to_string()));
+                    } else {
+                        crate::messages::router::set_last_response_tag(None);
+                    }
+                } else {
+                    crate::messages::router::set_last_response_tag(None);
+                }
                 match from_json_str(s) {
                     Ok(msg) => route(&handler, &msg, issuer),
                     Err(_) => {

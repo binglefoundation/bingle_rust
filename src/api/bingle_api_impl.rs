@@ -258,6 +258,8 @@ impl BingleApi for BingleApiImpl {
                         match pair_opt {
                             None => { eprintln!("Received tagged response for unknown tag {}. Discarding.", tag); }
                             Some(pair) => {
+                                println!("[BingleApiImpl][pending_responses] received matched tag={}", tag);
+                                #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] received matched tag={}", tag)); }
                                 let (lock, cvar) = (&pair.0, &pair.1);
                                 let mut guard = match lock.lock() { Ok(g) => g, Err(_) => { eprintln!("pending lock poisoned"); return; } };
                                 guard.responded = true;
@@ -292,6 +294,25 @@ impl BingleApi for BingleApiImpl {
             });
             crate::messages::router::set_sender(Some(sender_cb));
         }
+        // Expose a BingleApi handle to handlers via router so components like RelayFinder can use a real API
+        {
+            struct DelegatingApi(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
+            impl crate::api::bingle_api::BingleApi for DelegatingApi {
+                fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
+                fn stop(&mut self) { /* not supported */ }
+                fn network_change(&mut self) { /* not supported */ }
+                fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_id(user_id, message, progress)).unwrap_or(false) } }
+                fn send_message_to_handle(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_handle(handle, message, progress)).unwrap_or(false) } }
+                fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_network(nsk, user_id, message, progress)).unwrap_or(false) } }
+                fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_id_with_response(user_id, message, progress)) } }
+                fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_handle_with_response(handle, message, progress)) } }
+                fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_network_with_response(nsk, user_id, message, progress)) } }
+                fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) { /* not supported */ }
+                fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) { /* not supported */ }
+            }
+            let delegator = DelegatingApi(self_ptr_arc.clone());
+            crate::messages::router::set_bingle_api(Some(std::sync::Arc::new(delegator)));
+        }
 
         // Install Engine callback to send via Bingle protocol capturing this API instance pointer (no globals)
         if let Some(eng) = self.engine.as_mut() {
@@ -306,6 +327,25 @@ impl BingleApi for BingleApiImpl {
                 if p.is_null() { return false; }
                 unsafe { (*p).send_message_to_network(nsk, uid, msg, None) }
             })));
+            // Provide the BingleApi handle to Engine for handlers
+            let delegator = {
+                struct DelegatingApi2(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
+                impl crate::api::bingle_api::BingleApi for DelegatingApi2 {
+                    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
+                    fn stop(&mut self) { }
+                    fn network_change(&mut self) { }
+                    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_id(user_id, message, progress)).unwrap_or(false) } }
+                    fn send_message_to_handle(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_handle(handle, message, progress)).unwrap_or(false) } }
+                    fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_network(nsk, user_id, message, progress)).unwrap_or(false) } }
+                    fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_id_with_response(user_id, message, progress)) } }
+                    fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_handle_with_response(handle, message, progress)) } }
+                    fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_network_with_response(nsk, user_id, message, progress)) } }
+                    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) { }
+                    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) { }
+                }
+                std::sync::Arc::new(DelegatingApi2(self_ptr_arc.clone())) as std::sync::Arc<dyn crate::api::bingle_api::BingleApi>
+            };
+            eng.set_bingle_api_for_handlers(delegator);
             eng.start(options.clone())?;
         }
 
@@ -453,6 +493,8 @@ impl BingleApi for BingleApiImpl {
         let pair: Arc<(Mutex<Pending>, Condvar)> = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
         {
             let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
+            println!("[BingleApiImpl][pending_responses] add expected tag={}", tag);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] add expected tag={}", tag)); }
             map.insert(tag, Arc::clone(&pair));
         }
 
@@ -470,62 +512,56 @@ impl BingleApi for BingleApiImpl {
             }
         };
 
-        // Now spawn a scoped thread to send the message while the current thread waits
-        if let Some(cb) = progress.as_ref() { cb(5, "Queueing send".to_string()); }
-        let send_progress = progress.clone();
-        std::thread::scope(|s| {
-            // Sender thread
-            s.spawn(|| {
-                let ok = self.send_message_to_network(network_source_key, user_id, msg_with_tag.take(), send_progress.clone());
-                if let Some(cb) = send_progress.as_ref() {
-                    cb(20, if ok { "Sent request" } else { "Failed to send request" }.to_string());
-                }
-            });
+        // Send the request synchronously before waiting to avoid races and ensure handshake starts
+        if let Some(cb) = progress.as_ref() { cb(5, "Sending request".to_string()); }
+        let sent_ok = self.send_message_to_network(network_source_key, user_id, msg_with_tag, progress.clone());
+        if let Some(cb) = progress.as_ref() { cb(20, if sent_ok { "Request sent" } else { "Failed to send request" }.to_string()); }
 
-            // Waiting in the current thread
-            let timeout = Duration::from_secs(10);
-            let start = Instant::now();
-            let (lock, cvar) = (&pair.0, &pair.1);
-            let mut guard = lock.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-            while !guard.responded {
-                let remaining = timeout.saturating_sub(start.elapsed());
-                if remaining.is_zero() {
-                    break;
+        // Now wait for a response tagged with our UUID
+        let timeout = Duration::from_secs(10);
+        let start = Instant::now();
+        let (lock, cvar) = (&pair.0, &pair.1);
+        let mut guard = lock.lock().map_err(|e| format!("lock poisoned: {}", e))?;
+        while !guard.responded {
+            let remaining = timeout.saturating_sub(start.elapsed());
+            if remaining.is_zero() { break; }
+            let (g, res) = cvar.wait_timeout(guard, remaining).map_err(|e| format!("condvar wait failed: {}", e))?;
+            guard = g;
+            if res.timed_out() && !guard.responded { break; }
+        }
+        if guard.responded {
+            let resp = guard.response.take();
+            drop(guard);
+            // Clean up the map
+            let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
+            let existed = map.remove(&tag).is_some();
+            println!("[BingleApiImpl][pending_responses] remove tag={} (matched) existed={}", tag, existed);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] remove tag={} (matched) existed={}", tag, existed)); }
+            if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
+            let __res: Result<serde_json::Value, String> = resp.ok_or_else(|| "no response payload".to_string());
+            match &__res {
+                Ok(_) => {
+                    println!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
+                    #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)"); }
                 }
-                let (g, res) = cvar.wait_timeout(guard, remaining).map_err(|e| format!("condvar wait failed: {}", e))?;
-                guard = g;
-                if res.timed_out() && !guard.responded { break; }
-            }
-            if guard.responded {
-                let resp = guard.response.take();
-                drop(guard);
-                // Clean up the map
-                let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-                map.remove(&tag);
-                if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
-                let __res: Result<serde_json::Value, String> = resp.ok_or_else(|| "no response payload".to_string());
-                match &__res {
-                    Ok(_) => {
-                        println!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
-                        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)"); }
-                    }
-                    Err(e) => {
-                        println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e);
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e)); }
-                    }
+                Err(e) => {
+                    println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e);
+                    #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e)); }
                 }
-                __res
-            } else {
-                drop(guard);
-                let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-                map.remove(&tag);
-                if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
-                let err = "timeout waiting for response".to_string();
-                println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err)); }
-                Err(err)
             }
-        })
+            __res
+        } else {
+            drop(guard);
+            let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
+            let existed = map.remove(&tag).is_some();
+            println!("[BingleApiImpl][pending_responses] remove tag={} (timeout) existed={}", tag, existed);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] remove tag={} (timeout) existed={}", tag, existed)); }
+            if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
+            let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
+            println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
+            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err)); }
+            Err(err)
+        }
     }
 
     fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>) {
