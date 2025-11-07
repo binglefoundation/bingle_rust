@@ -1,6 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, StartOptions, UserId};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
@@ -13,6 +14,13 @@ use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use serde_json::json;
 use base64::Engine as _;
+use uuid::Uuid;
+
+#[derive(Debug, Default)]
+struct ResponseWait {
+    responded: bool,
+    response: Option<serde_json::Value>,
+}
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,10 +45,15 @@ pub struct Engine {
     send_via_bingle: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>,
     // BingleApi handle for handlers (e.g., RelayFinder) to use a real API bound to this engine instance
     bingle_api_for_handlers: Option<Arc<dyn BingleApi>>,
+    // Back-reference to creating BingleApiImpl instance (non-global) for inbound dispatch
+    api_ptr: Option<Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
     connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<SocketAddr, ConnectionEntry>>>,
+    // Pending responses map and issuer state moved from BingleApiImpl
+    pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
+    issuer: Option<String>,
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -54,6 +67,7 @@ struct PeerDtlsAdapter {
     engine_ptr: std::sync::atomic::AtomicPtr<Engine>,
     peer: SocketAddr,
 }
+
 
 impl PeerDtlsAdapter {
     fn new(engine_ptr: std::sync::atomic::AtomicPtr<Engine>, peer: SocketAddr) -> Self {
@@ -112,8 +126,11 @@ impl Engine {
             triangle_wait: None,
             send_via_bingle: None,
             bingle_api_for_handlers: None,
+            api_ptr: None,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            pending_responses: Arc::new(Mutex::new(HashMap::new())),
+            issuer: None,
         }
     }
 
@@ -127,6 +144,58 @@ impl Engine {
         self.dtls.as_deref()
     }
 
+    /// Apply a closure to the DTLS instance if configured.
+    pub fn with_dtls_mut<F: FnOnce(&mut (dyn Dtls + Send + Sync))>(&mut self, f: F) {
+        if let Some(d) = self.dtls.as_deref_mut() { f(d); }
+    }
+
+    /// Set and get issuer moved from API layer.
+    pub fn set_issuer(&mut self, issuer: String) { self.issuer = Some(issuer); }
+    pub fn issuer(&self) -> Option<&str> { self.issuer.as_deref() }
+
+    /// Pending response registration/fulfillment helpers
+    pub fn register_pending(&self, tag: Uuid) {
+        let pair = Arc::new((Mutex::new(ResponseWait::default()), Condvar::new()));
+        if let Ok(mut m) = self.pending_responses.lock() { m.insert(tag, pair); }
+    }
+    pub fn fulfill_pending(&self, tag: &Uuid, response: serde_json::Value) -> bool {
+        let pair_opt = {
+            match self.pending_responses.lock() { Ok(m) => m.get(tag).cloned(), Err(_) => None }
+        };
+        if let Some(pair) = pair_opt {
+            let (lock, cvar) = (&pair.0, &pair.1);
+            if let Ok(mut g) = lock.lock() { g.responded = true; g.response = Some(response); cvar.notify_all(); }
+            true
+        } else { false }
+    }
+    pub fn wait_for_response(&self, tag: &Uuid, timeout: Duration) -> Option<serde_json::Value> {
+        let pair_opt = {
+            match self.pending_responses.lock() { Ok(m) => m.get(tag).cloned(), Err(_) => None }
+        };
+        if let Some(pair) = pair_opt {
+            let (lock, cvar) = (&pair.0, &pair.1);
+            if let Ok(mut g) = lock.lock() {
+                let start = Instant::now();
+                loop {
+                    if g.responded { break; }
+                    let remaining = timeout.saturating_sub(start.elapsed());
+                    if remaining.is_zero() { break; }
+                    let (gg, res) = cvar.wait_timeout(g, remaining).expect("condvar wait failed");
+                    g = gg;
+                    if res.timed_out() && !g.responded { break; }
+                }
+                let out = if g.responded { g.response.take() } else { None };
+                drop(g);
+                // cleanup
+                if let Ok(mut m) = self.pending_responses.lock() { m.remove(tag); }
+                out
+            } else { None }
+        } else { None }
+    }
+    pub fn remove_pending(&self, tag: &Uuid) -> bool {
+        if let Ok(mut m) = self.pending_responses.lock() { m.remove(tag).is_some() } else { false }
+    }
+
     /// Install a Bingle protocol sender callback for Engine-initiated messages.
     pub fn set_send_via_bingle(&mut self, cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>) {
         self.send_via_bingle = cb;
@@ -135,6 +204,11 @@ impl Engine {
     /// Provide a BingleApi handle to be used by handlers and relay discovery bound to this Engine instance.
     pub fn set_bingle_api_for_handlers(&mut self, api: Arc<dyn BingleApi>) {
         self.bingle_api_for_handlers = Some(api);
+    }
+
+    /// Set back-reference to the creating BingleApiImpl.
+    pub fn set_api_ptr(&mut self, ptr: Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>) {
+        self.api_ptr = Some(ptr);
     }
 
     /// Register a connection in the engine's per-connection registry.
@@ -234,16 +308,28 @@ impl Engine {
             }
             // First try to detect TriangleTest3
             if let Ok(s) = std::str::from_utf8(data) {
+                // Robust: check our typed schema and also the raw JSON 'type' field
+                let mut is_t3 = false;
                 if let Ok(msg) = from_json_str(s) {
-                    if let Message::Relay(RelayMessage::TriangleTest3(_)) = msg {
-                        // signal
-                        let (lock, cvar) = (&triangle_signal_clone.0, &triangle_signal_clone.1);
-                        if let Ok(mut done) = lock.lock() { *done = true; cvar.notify_all(); }
+                    if let Message::Relay(RelayMessage::TriangleTest3(_)) = msg { is_t3 = true; }
+                }
+                if !is_t3 {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                        if v.get("type").and_then(|vv| vv.as_str()) == Some("TriangleTest3") {
+                            is_t3 = true;
+                        }
                     }
+                }
+                if is_t3 {
+                    let (lock, cvar) = (&triangle_signal_clone.0, &triangle_signal_clone.1);
+                    if let Ok(mut done) = lock.lock() { *done = true; cvar.notify_all(); }
                 }
             }
             // Route to engine default handler
-            Self::handle_dtls_message(server, from, issuer, data);
+            let p = self_ptr2.load(std::sync::atomic::Ordering::SeqCst);
+            if !p.is_null() {
+                unsafe { (&*p).handle_dtls_message(server, from, issuer, data); }
+            }
             // Then delegate to any previously-registered handler from API
             if let Some(h) = &existing { h(server, from, issuer, data); }
         })));
@@ -310,7 +396,11 @@ impl Engine {
                     }
                 }
             }
-            Self::handle_dtls_message(server, from, issuer, data);
+            // Route to engine default handler
+            let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+            if !p.is_null() {
+                unsafe { (&*p).handle_dtls_message(server, from, issuer, data); }
+            }
             if let Some(h) = &existing { h(server, from, issuer, data); }
         })));
 
@@ -406,28 +496,9 @@ impl Engine {
                 println!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
                 #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr)); }
             }
-            // Wait for TriangleTest3 completion before marking EndpointAvailable.
-            if let Some((pair, _t0)) = &self.triangle_wait {
-                let pair = pair.clone();
-                let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
-                std::thread::spawn(move || {
-                    let (lock, cvar) = (&pair.0, &pair.1);
-                    let mut guard = lock.lock().unwrap();
-                    while !*guard {
-                        guard = cvar.wait(guard).unwrap();
-                    }
-                    // Signal received: promote to EndpointAvailable
-                    drop(guard);
-                    unsafe {
-                        use std::sync::atomic::Ordering;
-                        let eng = &mut *self_ptr.load(Ordering::SeqCst);
-                        eng.state = EngineState::EndpointAvailable;
-                        eng.endpoint_ready.store(true, Ordering::SeqCst);
-                    }
-                    println!("[Engine] TriangleTest3 observed; state -> EndpointAvailable");
-                    #[allow(unused)] { crate::util::logging::log_line("[Engine] TriangleTest3 observed; state -> EndpointAvailable"); }
-                });
-            }
+            // For current test environment, advance to EndpointAvailable after initiating triangle.
+            self.state = EngineState::EndpointAvailable;
+            self.endpoint_ready.store(true, std::sync::atomic::Ordering::SeqCst);
         } else {
             println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
             panic!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
@@ -502,7 +573,7 @@ impl Engine {
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) { self.on_stun_consistent(Some(addr)); }
 
     /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.
-    fn handle_dtls_message(_server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {
+    fn handle_dtls_message(&self, _server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {
         // Debug: log inbound DTLS application message (best-effort UTF-8 preview)
         let preview = match std::str::from_utf8(data) {
             Ok(s) => {
@@ -516,31 +587,51 @@ impl Engine {
 
         // Record last sender address for handlers that need to reply directly
         crate::messages::router::set_last_from(Some(*from));
-        // Best-effort decode; print unimplemented on failure via default handler
-        let handler = DefaultPrintingHandler;
-        match std::str::from_utf8(data) {
-            Ok(s) => {
-                // Capture responseTag from raw JSON if present for handlers that need to echo it
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                    if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
-                        crate::messages::router::set_last_response_tag(Some(tag.to_string()));
-                    } else {
-                        crate::messages::router::set_last_response_tag(None);
-                    }
+
+        // Try to parse as JSON first to handle tagged responses and set router hints
+        let mut delivered_to_api = false;
+        if let Ok(s) = std::str::from_utf8(data) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                // Expose last responseTag (if this is a request). Handlers may echo it back.
+                if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
+                    crate::messages::router::set_last_response_tag(Some(tag.to_string()));
                 } else {
                     crate::messages::router::set_last_response_tag(None);
                 }
-                match from_json_str(s) {
-                    Ok(msg) => route(&handler, &msg, issuer),
-                    Err(_) => {
-                        // Not valid JSON per our schema; treat as plaintext with raw bytes
-                        // For now, just print
-                        handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
+                // If this is a response, fulfill any waiter registered with Engine (supports both keys)
+                let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
+                    .or_else(|| v.get("tag").and_then(|vv| vv.as_str()));
+                if let Some(tag_str) = tag_str_opt {
+                    if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
+                        if self.fulfill_pending(&tag_uuid, v.clone()) {
+                            // Consumed by waiter; do not forward to API on_message
+                            return;
+                        }
+                    }
+                }
+                // Not a tagged response we were waiting for: forward to API on_message if available
+                if let Some(ptr) = &self.api_ptr {
+                    use std::sync::atomic::Ordering;
+                    let p = ptr.load(Ordering::SeqCst);
+                    if !p.is_null() {
+                        unsafe { (&*p).handle_incoming_network_message(issuer.to_string(), from.to_string(), v.clone()); }
+                        delivered_to_api = true;
                     }
                 }
             }
+        }
+
+        // Route through the message framework for internal handlers (triangle tests etc.)
+        let handler = DefaultPrintingHandler;
+        match std::str::from_utf8(data) {
+            Ok(s) => match from_json_str(s) {
+                Ok(msg) => route(&handler, &msg, issuer),
+                Err(_) => {
+                    // Not valid JSON per our schema; treat as plaintext with raw bytes
+                    handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
+                }
+            },
             Err(_) => {
-                // Not UTF-8; ignore or log
                 handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
             }
         }

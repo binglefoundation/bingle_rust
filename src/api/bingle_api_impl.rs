@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use base64::Engine as _;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Condvar};
@@ -21,16 +20,12 @@ use crate::api::pki::generate_pki_from_ops;
 /// - start: instantiate a DTLS implementation (DtlsOpenSsl on non-iOS) but do not start the accept loop (no address yet).
 /// - send_message_to_network: when given a direct socket address, call DTLS send with the JSON message bytes.
 pub struct BingleApiImpl {
-    dtls: Option<Box<dyn Dtls + Send + Sync>>, // boxed trait object for flexibility/mocking
     on_message: Option<Arc<OnMessageHandler>>,
     on_connect: Option<Arc<OnConnectHandler>>,
     started_options: Option<StartOptions>,
-    // Map of pending response tags to their wait primitives
-    pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<Pending>, Condvar)>>>>,
-    // Shared on_message handler accessible from DTLS callback without needing &self
+    // Shared on_message handler accessible from Engine/DTLS callback without needing &self
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
-    issuer: Option<String>,
-    // Engine instance for endpoint identification and DTLS/mux lifecycle
+    // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1)
     engine: Option<Engine>,
 }
 
@@ -38,29 +33,15 @@ pub struct BingleApiImpl {
 impl Default for BingleApiImpl {
     fn default() -> Self {
         Self {
-            dtls: None,
             on_message: None,
             on_connect: None,
             started_options: None,
-            pending_responses: Arc::new(Mutex::new(HashMap::new())),
             shared_on_message: Arc::new(Mutex::new(None)),
-            issuer: None,
             engine: None,
         }
     }
 }
 
-#[derive(Debug)]
-struct Pending {
-    responded: bool,
-    response: Option<JsonValue>,
-}
-
-impl Default for Pending {
-    fn default() -> Self {
-        Self { responded: false, response: None }
-    }
-}
 
 #[cfg(not(target_os = "ios"))]
 
@@ -80,7 +61,10 @@ impl BingleApiImpl {
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Self {
         println!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true"); }
-        let s = Self { dtls: Some(dtls), ..Default::default() };
+        let mut s = Self::default();
+        let mut eng = Engine::new();
+        eng.set_dtls(dtls);
+        s.engine = Some(eng);
         println!("[BingleApiImpl::new_with_dtls][exit]");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new_with_dtls][exit]"); }
         s
@@ -91,7 +75,7 @@ impl BingleApiImpl {
     pub fn set_issuer_for_tests(&mut self, issuer: String) {
         println!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len())); }
-        self.issuer = Some(issuer);
+        if let Some(e) = self.engine.as_mut() { e.set_issuer(issuer); }
         println!("[BingleApiImpl::set_issuer_for_tests][exit]");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_issuer_for_tests][exit]"); }
     }
@@ -127,25 +111,28 @@ impl BingleApiImpl {
     pub fn has_dtls(&self) -> bool {
         println!("[BingleApiImpl::has_dtls][enter]");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::has_dtls][enter]"); }
-        let b = self.dtls.is_some();
+        let b = self.engine.as_ref().and_then(|e| e.dtls()).is_some();
         println!("[BingleApiImpl::has_dtls][exit] return={}", b);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::has_dtls][exit] return={}", b)); }
         b
     }
 
     fn ensure_dtls(&mut self) {
-        if self.dtls.is_none() {
-            // Only available on non-iOS targets.
-            #[cfg(not(target_os = "ios"))]
-            {
+        if self.engine.is_none() {
+            self.engine = Some(Engine::new());
+        }
+        // Only available on non-iOS targets.
+        #[cfg(not(target_os = "ios"))]
+        {
+            let need = self.engine.as_ref().and_then(|e| e.dtls()).is_none();
+            if need {
                 let dtls = crate::dtls::DtlsOpenSsl::new();
-                self.dtls = Some(Box::new(dtls));
+                if let Some(e) = self.engine.as_mut() { e.set_dtls(Box::new(dtls)); }
             }
-            #[cfg(target_os = "ios")]
-            {
-                // Placeholder for iOS where OpenSSL-backed DTLS is not available in this crate.
-                self.dtls = None;
-            }
+        }
+        #[cfg(target_os = "ios")]
+        {
+            // Placeholder for iOS where OpenSSL-backed DTLS is not available in this crate.
         }
     }
 
@@ -156,14 +143,6 @@ impl BingleApiImpl {
                 Ok(_) => true,
                 Err(err) => {
                     eprintln!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
-                    false
-                }
-            }
-        } else if let Some(dtls) = &self.dtls {
-            match dtls.send(addr, &bytes) {
-                Ok(_) => true,
-                Err(err) => {
-                    eprintln!("[BingleApiImpl] DTLS send failed: {}", err);
                     false
                 }
             }
@@ -205,22 +184,23 @@ impl BingleApi for BingleApiImpl {
             // Ensure we have an address; otherwise return an error so callers see the failure.
             let addr = ops.address.clone().ok_or_else(|| "Failed to obtain address from AlgoOps".to_string())?;
             let issuer = format!("{}{}", addr, ISSUER_SUFFIX);
-            self.issuer = Some(issuer.clone());
+            if let Some(e) = self.engine.as_mut() { e.set_issuer(issuer.clone()); }
 
             // Generate certificates: CA = Ed25519 self-signed using Algorand key; server/client = RSA-2048 signed by CA (SHA-512).
             match generate_pki_from_ops(&ops, &issuer) {
                 Ok((ca_pem, server_cert_pem, server_key_pem, client_cert_pem, client_key_pem)) => {
-                    if let Some(dtls) = &mut self.dtls {
-                        dtls.set_ca_cert(Some(ca_pem));
-                        dtls.set_server_signing_cert(Some(server_cert_pem));
-                        dtls.set_server_signing_private_key(Some(server_key_pem));
-                        dtls.set_client_cert(Some(client_cert_pem));
-                        dtls.set_client_private_key(Some(client_key_pem));
-                        // Install a peer certificate handler in all cases.
-                        // Always verifies the peer certificate
-                        dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
-                        // Accept during handshake and validate at the application layer for API flows
-                        dtls.set_app_layer_only_verification(false);
+                    if let Some(e) = self.engine.as_mut() {
+                        e.with_dtls_mut(|dtls| {
+                            dtls.set_ca_cert(Some(ca_pem));
+                            dtls.set_server_signing_cert(Some(server_cert_pem));
+                            dtls.set_server_signing_private_key(Some(server_key_pem));
+                            dtls.set_client_cert(Some(client_cert_pem));
+                            dtls.set_client_private_key(Some(client_key_pem));
+                            // Install a peer certificate handler in all cases.
+                            dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
+                            // Accept during handshake and validate at the application layer for API flows
+                            dtls.set_app_layer_only_verification(false);
+                        });
                     }
                 }
                 Err(e) => {
@@ -229,52 +209,7 @@ impl BingleApi for BingleApiImpl {
             }
         }
 
-        // Install a per-instance DTLS message handler that captures shared state (no globals needed)
-        if let Some(dtls) = self.dtls.as_mut() {
-            let pending = Arc::clone(&self.pending_responses);
-            let onmsg_shared = Arc::clone(&self.shared_on_message);
-            dtls.set_handle_message(Some(Arc::new(move |server, from_address, issuer, data| {
-                // Try to parse incoming bytes as JSON
-                let json_opt: Option<JsonValue> = match std::str::from_utf8(data) {
-                    Ok(s) => serde_json::from_str::<JsonValue>(s).ok(),
-                    Err(_) => None,
-                };
-                if let Some(msg) = json_opt {
-
-                    // Extract optional sender fields from message if present
-                    let sender = msg.get("sender").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                    let sender_handle = msg
-                        .get("senderHandle")
-                        .and_then(|v| v.as_str().map(|s| s.to_string()))
-                        .unwrap_or_else(|| from_address.to_string());
-
-                    // Route tagged response or dispatch to on_message
-                    let tag_opt = msg.get("responseTag").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok());
-                    if let Some(tag) = tag_opt {
-                        let pair_opt = {
-                            let map = match pending.lock() { Ok(m) => m, Err(_) => { eprintln!("pending map lock poisoned"); return; } };
-                            map.get(&tag).cloned()
-                        };
-                        match pair_opt {
-                            None => { eprintln!("Received tagged response for unknown tag {}. Discarding.", tag); }
-                            Some(pair) => {
-                                println!("[BingleApiImpl][pending_responses] received matched tag={}", tag);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] received matched tag={}", tag)); }
-                                let (lock, cvar) = (&pair.0, &pair.1);
-                                let mut guard = match lock.lock() { Ok(g) => g, Err(_) => { eprintln!("pending lock poisoned"); return; } };
-                                guard.responded = true;
-                                guard.response = Some(msg);
-                                cvar.notify_all();
-                            }
-                        }
-                    } else {
-                        if let Ok(g) = onmsg_shared.lock() {
-                            if let Some(cb) = g.as_ref() { cb(sender, sender_handle, msg); }
-                        }
-                    }
-                }
-            })));
-        }
+        // Engine will handle incoming DTLS messages; no API-level DTLS handler required
 
         // Start Engine using the provided StartOptions and propagate any errors
         if self.engine.is_none() {
@@ -316,10 +251,7 @@ impl BingleApi for BingleApiImpl {
 
         // Install Engine callback to send via Bingle protocol capturing this API instance pointer (no globals)
         if let Some(eng) = self.engine.as_mut() {
-            if let Some(dtls) = self.dtls.take() {
-                eng.set_dtls(dtls);
-            }
-            // Install a callback so the Engine can send messages using this API instance
+            // Provide a sending callback so Engine-originated messages go through this API instance
             let ptr = self_ptr_arc.clone();
             eng.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
                 use std::sync::atomic::Ordering;
@@ -346,6 +278,8 @@ impl BingleApi for BingleApiImpl {
                 std::sync::Arc::new(DelegatingApi2(self_ptr_arc.clone())) as std::sync::Arc<dyn crate::api::bingle_api::BingleApi>
             };
             eng.set_bingle_api_for_handlers(delegator);
+            // Provide back-reference so Engine can forward inbound app messages
+            eng.set_api_ptr(self_ptr_arc.clone());
             eng.start(options.clone())?;
         }
 
@@ -361,8 +295,6 @@ impl BingleApi for BingleApiImpl {
         if let Some(e) = &mut self.engine {
             e.stop();
         }
-        // For now, simply drop the DTLS instance; more graceful shutdown can be added later.
-        self.dtls = None;
         println!("[BingleApiImpl::stop][exit]");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::stop][exit]"); }
     }
@@ -488,15 +420,9 @@ impl BingleApi for BingleApiImpl {
     ) -> Result<JsonValue, String> {
         println!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some())); }
-        // Create a unique tag and register a pending waiter
+        // Create a unique tag and register a pending waiter with the Engine
         let tag = Uuid::new_v4();
-        let pair: Arc<(Mutex<Pending>, Condvar)> = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
-        {
-            let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-            println!("[BingleApiImpl][pending_responses] add expected tag={}", tag);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] add expected tag={}", tag)); }
-            map.insert(tag, Arc::clone(&pair));
-        }
+        if let Some(e) = &self.engine { e.register_pending(tag); }
 
         // Ensure message has the responseTag field
         let mut msg_with_tag = match message {
@@ -517,50 +443,23 @@ impl BingleApi for BingleApiImpl {
         let sent_ok = self.send_message_to_network(network_source_key, user_id, msg_with_tag, progress.clone());
         if let Some(cb) = progress.as_ref() { cb(20, if sent_ok { "Request sent" } else { "Failed to send request" }.to_string()); }
 
-        // Now wait for a response tagged with our UUID
+        // Now wait for a response tagged with our UUID using the Engine's pending map
         let timeout = Duration::from_secs(10);
-        let start = Instant::now();
-        let (lock, cvar) = (&pair.0, &pair.1);
-        let mut guard = lock.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-        while !guard.responded {
-            let remaining = timeout.saturating_sub(start.elapsed());
-            if remaining.is_zero() { break; }
-            let (g, res) = cvar.wait_timeout(guard, remaining).map_err(|e| format!("condvar wait failed: {}", e))?;
-            guard = g;
-            if res.timed_out() && !guard.responded { break; }
-        }
-        if guard.responded {
-            let resp = guard.response.take();
-            drop(guard);
-            // Clean up the map
-            let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-            let existed = map.remove(&tag).is_some();
-            println!("[BingleApiImpl][pending_responses] remove tag={} (matched) existed={}", tag, existed);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] remove tag={} (matched) existed={}", tag, existed)); }
-            if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
-            let __res: Result<serde_json::Value, String> = resp.ok_or_else(|| "no response payload".to_string());
-            match &__res {
-                Ok(_) => {
-                    println!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
-                    #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)"); }
-                }
-                Err(e) => {
-                    println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", e)); }
-                }
+        if let Some(e) = &self.engine {
+            if let Some(resp) = e.wait_for_response(&tag, timeout) {
+                if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
+                println!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
+                #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)"); }
+                Ok(resp)
+            } else {
+                if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
+                let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
+                println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
+                #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err)); }
+                Err(err)
             }
-            __res
         } else {
-            drop(guard);
-            let mut map = self.pending_responses.lock().map_err(|e| format!("lock poisoned: {}", e))?;
-            let existed = map.remove(&tag).is_some();
-            println!("[BingleApiImpl][pending_responses] remove tag={} (timeout) existed={}", tag, existed);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl][pending_responses] remove tag={} (timeout) existed={}", tag, existed)); }
-            if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
-            let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
-            println!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err)); }
-            Err(err)
+            Err("engine not initialized".to_string())
         }
     }
 
@@ -591,31 +490,11 @@ impl BingleApiImpl {
     pub fn handle_incoming_network_message(&self, sender: UserId, sender_handle: Handle, message: JsonValue) {
         println!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message)); }
-        // Check for responseTag
-        let tag_opt = message.get("responseTag").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok());
-        if let Some(tag) = tag_opt {
-            let pair_opt = {
-                let map = match self.pending_responses.lock() { Ok(m) => m, Err(_) => { eprintln!("pending map lock poisoned"); return; } };
-                map.get(&tag).cloned()
-            };
-            match pair_opt {
-                None => {
-                    eprintln!("Received tagged response for unknown tag {}. Discarding.", tag);
-                }
-                Some(pair) => {
-                    let (lock, cvar) = (&pair.0, &pair.1);
-                    let mut guard = match lock.lock() { Ok(g) => g, Err(_) => { eprintln!("pending lock poisoned"); return; } };
-                    guard.responded = true;
-                    guard.response = Some(message);
-                    cvar.notify_all();
-                }
-            }
-        } else {
-            if let Some(cb) = &self.on_message {
-                cb(sender, sender_handle, message);
-            }
-            println!("[BingleApiImpl::handle_incoming_network_message][exit]");
-            #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::handle_incoming_network_message][exit]"); }
+        // Engine now fulfills tagged responses; just forward application messages.
+        if let Some(cb) = &self.on_message {
+            cb(sender, sender_handle, message);
         }
+        println!("[BingleApiImpl::handle_incoming_network_message][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::handle_incoming_network_message][exit]"); }
     }
 }
