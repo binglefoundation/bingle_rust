@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
-use rust_comms::dtls::{Dtls, Result, UdpNetworkMux, HandleMessage, HandlePeerCertificate};
+use rust_comms::dtls::{Dtls, Result as DtlsResult, UdpNetworkMux, HandleMessage, HandlePeerCertificate};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::relay_ping_handler::RelayPingHandler;
 use rust_comms::messages::types::{Message, RelayMessage, RelayTriangleTest1};
@@ -15,9 +15,9 @@ struct MockDtls {
 }
 impl MockDtls { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let v = Arc::new(Mutex::new(vec![])); (Self { sends: v.clone() }, v) } }
 impl Dtls for MockDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> Result<()> { Ok(()) }
-    fn stop(&mut self) -> Result<()> { Ok(()) }
-    fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> { self.sends.lock().unwrap().push((to, data.to_vec())); Ok(()) }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
+    fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
+    fn send(&self, to: SocketAddr, data: &[u8]) -> DtlsResult<()> { self.sends.lock().unwrap().push((to, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }

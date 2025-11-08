@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::api::bingle_api::StartOptions;
+use rust_comms::api::bingle_api::{StartOptions, BingleApi};
 use rust_comms::engine::EngineState;
 use rust_comms::dtls::{Dtls, Result, UdpNetworkMux, HandleMessage, HandlePeerCertificate};
 

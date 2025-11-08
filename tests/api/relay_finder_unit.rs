@@ -15,7 +15,9 @@ struct MockApi {
 
 impl MockApi {
     fn new() -> (Self, Arc<Mutex<usize>>) {
-        (Self { availability: Arc::new(Mutex::new(vec![])), calls: Arc::new(Mutex::new(0)) }, Arc::new(Mutex::new(0)))
+        let calls = Arc::new(Mutex::new(0));
+        let api = Self { availability: Arc::new(Mutex::new(vec![])), calls: calls.clone() };
+        (api, calls)
     }
     fn with_availability(mut self, pairs: Vec<(SocketAddr, bool)>) -> Self {
         if let Ok(mut v) = self.availability.lock() { *v = pairs; }
@@ -61,7 +63,8 @@ fn relay_finder_caches_successful_root_relay() {
     let a1: SocketAddr = "127.0.0.1:40001".parse().unwrap();
     let a2: SocketAddr = "127.0.0.1:40002".parse().unwrap();
 
-    let api = MockApi::new().0.with_availability(vec![(a1, false), (a2, true)]);
+    let (api_raw, calls_counter) = MockApi::new();
+    let api = api_raw.with_availability(vec![(a1, false), (a2, true)]);
     let api_arc: Arc<dyn BingleApi + Send + Sync> = Arc::new(api);
 
     // Discovery closure
@@ -77,14 +80,14 @@ fn relay_finder_caches_successful_root_relay() {
     assert!(picked.address == a1 || picked.address == a2);
 
     // Second call within TTL should return cached without new RelayCheck
-    let calls_before = *api_arc.as_any().downcast_ref::<MockApi>().unwrap().calls.lock().unwrap();
+    let calls_before = *calls_counter.lock().unwrap();
     let _ = finder.find_root_relay("SOME-ID").expect("cached");
-    let calls_after = *api_arc.as_any().downcast_ref::<MockApi>().unwrap().calls.lock().unwrap();
+    let calls_after = *calls_counter.lock().unwrap();
     assert_eq!(calls_before, calls_after, "should not perform a second RelayCheck within TTL");
 
     // After TTL expires, a new RelayCheck should be attempted
     std::thread::sleep(Duration::from_millis(220));
     let _ = finder.find_root_relay("SOME-ID").expect("rechecked and cached again");
-    let calls_final = *api_arc.as_any().downcast_ref::<MockApi>().unwrap().calls.lock().unwrap();
+    let calls_final = *calls_counter.lock().unwrap();
     assert!(calls_final > calls_after, "should perform RelayCheck again after TTL");
 }
