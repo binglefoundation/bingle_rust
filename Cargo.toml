@@ -182,9 +182,6 @@ path = "tests/engine/dtls_send_no_lazy_start.rs"
 name = "engine_bingle_dtls_basic"
 path = "tests/engine/engine_bingle_dtls_basic.rs"
 
-[[test]]
-name = "messages_on_plain_text_delegate"
-path = "tests/messages/on_plain_text_delegate.rs"
 
 [[test]]
 name = "protocol_cert_verify_dump"
@@ -197,3 +194,16 @@ path = "tests/engine/engine_connections.rs"
 [[test]]
 name = "bingle_api_relay_check_two_nodes"
 path = "tests/api/bingle_api_relay_check_two_nodes.rs"
+
+[[test]]
+name = "relay_finder_unit"
+path = "tests/relay/relay_finder_unit.rs"
+
+
+[[test]]
+name = "relay_ping_handler_unit"
+path = "tests/messages/relay_ping_handler_unit.rs"
+
+[[test]]
+name = "triangle_test3_sets_state"
+path = "tests/messages/triangle_test3_sets_state.rs"

@@ -3,8 +3,9 @@
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::messages::router::route;
+use rust_comms::messages::router::{route, set_bingle_api};
 use rust_comms::messages::types::{Message, PlainTextMessage};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler {
     called: &'static AtomicBool,
@@ -12,7 +13,7 @@ struct CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_plain_text(&self, from_id: &str, msg: &PlainTextMessage) {
+    fn on_plain_text(&self, _api: Arc<dyn BingleApi>, from_id: &str, msg: &PlainTextMessage) {
         assert_eq!(from_id, "from-handle");
         let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text.clone()}));
         self.called.store(true, Ordering::SeqCst);
@@ -20,10 +21,30 @@ impl MessageHandler for CapturingHandler {
     }
 }
 
+// Minimal API impl to satisfy router requirements
+struct MockApi;
+impl BingleApi for MockApi {
+    fn get_my_id(&self) -> Option<String> { None }
+    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+    fn stop(&mut self) {}
+    fn network_change(&mut self) {}
+    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_network_with_response(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
+}
+
 #[test]
 fn on_plain_text_calls_handler_implementation() {
     static CALLED: AtomicBool = AtomicBool::new(false);
     let received = Arc::new(Mutex::new(None::<serde_json::Value>));
+
+    // Provide a minimal API to the router so it can pass into handler
+    set_bingle_api(Some(Arc::new(MockApi)));
 
     // Build a PlainText message and route it through a custom handler implementation
     let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };

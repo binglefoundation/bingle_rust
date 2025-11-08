@@ -72,9 +72,13 @@ impl RelayFinder {
 
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     pub fn find_root_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
-        // 1) Return cached if valid
+        println!("[RelayFinder] find_root_relay: my_id={}", my_id);
+        // Normalize our id: if an issuer suffix is present, trim it so we compare raw addresses
+        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+
+        // 1) Return cached if valid AND not ourselves
         if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
-            if Instant::now() < c.expires_at {
+            if Instant::now() < c.expires_at && c.id != my_id_norm {
                 println!("find_root_relay: using cached root relay: {} {}", c.id, c.address);
                 return Ok(RootRelayInfo { id: c.id.clone(), address: c.address });
             }
@@ -85,22 +89,32 @@ impl RelayFinder {
         if relays.is_empty() {
             return Err("no root relays discovered".to_string());
         }
+        // Reject ourselves from the candidate list
+        relays.retain(|r| r.id != my_id_norm);
+        if relays.is_empty() {
+            return Err("no root relays discovered (after excluding self)".to_string());
+        }
         // Sort by id lexicographically (spec)
         relays.sort_by(|a, b| a.id.cmp(&b.id));
+        println!("[RelayFinder] find_root_relay: discovered candidates (post-filter) = {:?}", relays);
 
         // 3) Choose preferred and alternate per partitioning rule
-        let (pref_idx, alt_idx) = self.select_indices(&relays, my_id);
+        let (pref_idx, alt_idx) = self.select_indices(&relays, my_id_norm);
 
         // 4) Try preferred then alternate via RelayCheck
         let order = [pref_idx, alt_idx];
         for &idx in &order {
             let cand = &relays[idx];
             if self.relay_check(&*cand.id, cand.address) {
+                println!("[RelayFinder] find_root_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
                 let info = RootRelayInfo { id: cand.id.clone(), address: cand.address };
                 // Cache
                 let expires = Instant::now() + self.cache_ttl;
                 *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
                 return Ok(info);
+            }
+            else {
+                println!("[RelayFinder] find_root_relay: relay {} failed RelayCheck: {} {}", idx, cand.id, cand.address);
             }
         }
 
@@ -143,6 +157,7 @@ impl RelayFinder {
         };
         let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
         let req = json!({ "app": null, "type": "Check" });
+        println!("[RelayFinder] relay_check: sending request via API -> nsk={} user_id_b64={} raw_id={} req={}", nsk, user_id_b64, id, req);
         match self.api.send_message_to_network_with_response(&nsk, &user_id_b64, req, None) {
             Ok(resp) => {
                 let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")

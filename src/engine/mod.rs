@@ -59,58 +59,8 @@ pub struct Engine {
 // Per-connection state holding a DTLS adapter bound to a specific peer
 struct ConnectionEntry {
     last_seen: Instant,
-    dtls: std::sync::Arc<PeerDtlsAdapter>,
 }
 
-// Lightweight per-connection DTLS adapter that delegates to a shared listener but fixes the peer address
-struct PeerDtlsAdapter {
-    engine_ptr: std::sync::atomic::AtomicPtr<Engine>,
-    peer: SocketAddr,
-}
-
-
-impl PeerDtlsAdapter {
-    fn new(engine_ptr: std::sync::atomic::AtomicPtr<Engine>, peer: SocketAddr) -> Self {
-        Self { engine_ptr, peer }
-    }
-}
-
-impl Dtls for PeerDtlsAdapter {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> crate::dtls::Result<()> { Ok(()) }
-    fn stop(&mut self) -> crate::dtls::Result<()> { Ok(()) }
-    fn send(&self, _to: SocketAddr, data: &[u8]) -> crate::dtls::Result<()> {
-        use std::sync::atomic::Ordering;
-        let p = self.engine_ptr.load(Ordering::SeqCst);
-        if p.is_null() { return Err("engine ptr null".to_string()); }
-        unsafe {
-            let eng = &*p;
-            if let Some(dtls) = &eng.dtls { dtls.send(self.peer, data) } else { Err("DTLS instance not provided".to_string()) }
-        }
-    }
-    fn get_handle_message(&self) -> Option<crate::dtls::HandleMessage> { None }
-    fn set_handle_message(&mut self, _handler: Option<crate::dtls::HandleMessage>) { }
-    fn with_handle_message(self, _handler: crate::dtls::HandleMessage) -> Self where Self: Sized { self }
-    fn get_handle_peer_certificate(&self) -> Option<crate::dtls::HandlePeerCertificate> { None }
-    fn set_handle_peer_certificate(&mut self, _handler: Option<crate::dtls::HandlePeerCertificate>) { }
-    fn with_handle_peer_certificate(self, _handler: crate::dtls::HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) { }
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) { }
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) { }
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) { }
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) { }
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) { }
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
-}
 
 
 impl Engine {
@@ -216,14 +166,9 @@ impl Engine {
         if let Ok(mut m) = self.connections.lock() {
             if let Some(entry) = m.get_mut(&addr) {
                 entry.last_seen = Instant::now();
-                return;
+            } else {
+                m.insert(addr, ConnectionEntry { last_seen: Instant::now() });
             }
-        }
-        // Create outside the lock to avoid double-borrowing self
-        let engine_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
-        let adapter = PeerDtlsAdapter::new(engine_ptr, addr);
-        if let Ok(mut m) = self.connections.lock() {
-            m.insert(addr, ConnectionEntry { last_seen: Instant::now(), dtls: Arc::new(adapter) });
         }
     }
 
@@ -237,23 +182,19 @@ impl Engine {
         self.connections.lock().map(|m| m.len()).unwrap_or(0)
     }
 
-    /// Send bytes to a peer, creating the connection adapter if needed, and track it per-connection.
+    /// Send bytes to a peer and track the connection's last_seen. Avoid per-connection DTLS adapters to prevent dangling pointers.
     pub fn send_to_peer(&self, addr: SocketAddr, data: &[u8]) -> Result<(), String> {
-        // Lookup or create a per-connection DTLS adapter
-        let maybe_adapter = {
+        // Update or insert connection entry
+        {
             let mut map = self.connections.lock().map_err(|_| "connections lock poisoned".to_string())?;
-            if let Some(entry) = map.get(&addr) {
-                Some(entry.dtls.clone())
-            } else if self.dtls.is_some() {
-                // We only have &self here; create a const pointer then cast to mut for storage.
-                let engine_ptr = std::sync::atomic::AtomicPtr::new(self as *const Engine as *mut Engine);
-                let adapter = Arc::new(PeerDtlsAdapter::new(engine_ptr, addr));
-                map.insert(addr, ConnectionEntry { last_seen: Instant::now(), dtls: adapter.clone() });
-                Some(adapter)
-            } else { None }
-        };
-        let adapter = maybe_adapter.ok_or_else(|| "DTLS instance not provided".to_string())?;
-        let res = adapter.send(addr, data);
+            if let Some(entry) = map.get_mut(&addr) {
+                entry.last_seen = Instant::now();
+            } else {
+                map.insert(addr, ConnectionEntry { last_seen: Instant::now() });
+            }
+        }
+        let dtls = self.dtls.as_ref().ok_or_else(|| "DTLS instance not provided".to_string())?;
+        let res = dtls.send(addr, data);
         if res.is_ok() {
             if let Ok(mut m) = self.connections.lock() { if let Some(e) = m.get_mut(&addr) { e.last_seen = Instant::now(); } }
         }
@@ -304,25 +245,6 @@ impl Engine {
                     if let Some(api) = &eng.bingle_api_for_handlers {
                         crate::messages::router::set_bingle_api(Some(api.clone()));
                     }
-                }
-            }
-            // First try to detect TriangleTest3
-            if let Ok(s) = std::str::from_utf8(data) {
-                // Robust: check our typed schema and also the raw JSON 'type' field
-                let mut is_t3 = false;
-                if let Ok(msg) = from_json_str(s) {
-                    if let Message::Relay(RelayMessage::TriangleTest3(_)) = msg { is_t3 = true; }
-                }
-                if !is_t3 {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                        if v.get("type").and_then(|vv| vv.as_str()) == Some("TriangleTest3") {
-                            is_t3 = true;
-                        }
-                    }
-                }
-                if is_t3 {
-                    let (lock, cvar) = (&triangle_signal_clone.0, &triangle_signal_clone.1);
-                    if let Ok(mut done) = lock.lock() { *done = true; cvar.notify_all(); }
                 }
             }
             // Route to engine default handler
@@ -457,7 +379,15 @@ impl Engine {
             let discover = Arc::new(move || vec![RootRelayInfo { id: ADDRESS_SPEND.parse().unwrap(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]);
 
             let finder = RelayFinder::new(api_opt.unwrap(), Duration::from_secs(60), discover);
-            let relay = finder.find_relay(&self.options.as_ref().unwrap().handle);
+            // Use our id (Algorand address) for relay selection, not the user-visible handle.
+            // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
+            let my_id: String = if let Some(iss) = self.issuer.as_deref() {
+                iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
+            } else {
+                // Fallback: if issuer is not set, use the handle (best-effort; may yield suboptimal selection).
+                self.options.as_ref().map(|o| o.handle.clone()).unwrap_or_default()
+            };
+            let relay = finder.find_relay(&my_id);
             if let Ok(r) = relay {
                 relay_target = Some(r.clone());
                 println!("[Engine] chosen relay {} (id={})", r.address, r.id);
@@ -496,9 +426,6 @@ impl Engine {
                 println!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
                 #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr)); }
             }
-            // For current test environment, advance to EndpointAvailable after initiating triangle.
-            self.state = EngineState::EndpointAvailable;
-            self.endpoint_ready.store(true, std::sync::atomic::Ordering::SeqCst);
         } else {
             println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
             panic!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
@@ -568,9 +495,30 @@ impl Engine {
         self.stun = None;
     }
 
-    pub fn state(&self) -> EngineState { self.state }
+    pub fn state(&self) -> EngineState {
+        if self.endpoint_ready.load(std::sync::atomic::Ordering::SeqCst) {
+            EngineState::EndpointAvailable
+        } else {
+            self.state
+        }
+    }
     pub fn last_public_addr(&self) -> Option<SocketAddr> { self.last_public_addr }
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) { self.on_stun_consistent(Some(addr)); }
+
+    /// Internal setter used by BingleApiInternal to update engine state in a thread-safe way.
+    /// Currently supports transitioning to EndpointAvailable.
+    pub fn set_state_internal(&self, new_state: EngineState) -> bool {
+        match new_state {
+            EngineState::EndpointAvailable => {
+                self.endpoint_ready.store(true, std::sync::atomic::Ordering::SeqCst);
+                true
+            }
+            _ => {
+                // For other states we currently do not support concurrent mutation
+                false
+            }
+        }
+    }
 
     /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.
     fn handle_dtls_message(&self, _server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {

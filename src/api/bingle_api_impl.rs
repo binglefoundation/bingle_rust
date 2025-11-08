@@ -7,6 +7,7 @@ use serde_json::{Value as JsonValue, Map as JsonMap};
 use uuid::Uuid;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::api::bingle_api::BingleApiInternal;
 use crate::dtls::Dtls;
 use crate::protocol::ISSUER_SUFFIX;
 use crate::blockchain::algo_ops::{AlgoOps, byte_key_to_address};
@@ -155,6 +156,13 @@ impl BingleApiImpl {
 
 
 impl BingleApi for BingleApiImpl {
+    fn get_my_id(&self) -> Option<String> {
+        // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
+        self.engine
+            .as_ref()
+            .and_then(|e| e.issuer())
+            .map(|iss| iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string())
+    }
     fn start(&mut self, options: StartOptions) -> Result<(), String> {
         println!("[BingleApiImpl::start][enter] options={:?}", options);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::start][enter] options={:?}", options)); }
@@ -233,6 +241,7 @@ impl BingleApi for BingleApiImpl {
         {
             struct DelegatingApi(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
             impl crate::api::bingle_api::BingleApi for DelegatingApi {
+                            fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
                 fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
                 fn stop(&mut self) { /* not supported */ }
                 fn network_change(&mut self) { /* not supported */ }
@@ -247,6 +256,20 @@ impl BingleApi for BingleApiImpl {
             }
             let delegator = DelegatingApi(self_ptr_arc.clone());
             crate::messages::router::set_bingle_api(Some(std::sync::Arc::new(delegator)));
+        }
+        // Expose an internal API handle for engine control (state changes) via router
+        {
+            struct DelegatingInternal(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
+            impl crate::api::bingle_api::BingleApiInternal for DelegatingInternal {
+                fn set_state(&self, state: EngineState) {
+                    use std::sync::atomic::Ordering;
+                    let p = self.0.load(Ordering::SeqCst);
+                    if p.is_null() { return; }
+                    unsafe { (*p).set_state(state); }
+                }
+            }
+            let delegator_int = DelegatingInternal(self_ptr_arc.clone());
+            crate::messages::router::set_bingle_api_internal(Some(std::sync::Arc::new(delegator_int)));
         }
 
         // Install Engine callback to send via Bingle protocol capturing this API instance pointer (no globals)
@@ -263,6 +286,7 @@ impl BingleApi for BingleApiImpl {
             let delegator = {
                 struct DelegatingApi2(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
                 impl crate::api::bingle_api::BingleApi for DelegatingApi2 {
+                                    fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
                     fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
                     fn stop(&mut self) { }
                     fn network_change(&mut self) { }
@@ -496,5 +520,20 @@ impl BingleApiImpl {
         }
         println!("[BingleApiImpl::handle_incoming_network_message][exit]");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::handle_incoming_network_message][exit]"); }
+    }
+}
+
+
+impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
+    fn set_state(&self, state: EngineState) {
+        println!("[BingleApiImpl::set_state][enter] state={:?}", state);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::set_state][enter] state={:?}", state)); }
+        if let Some(e) = &self.engine {
+            let _ = e.set_state_internal(state);
+        } else {
+            eprintln!("[BingleApiImpl::set_state] engine not initialized");
+        }
+        println!("[BingleApiImpl::set_state][exit]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_state][exit]"); }
     }
 }

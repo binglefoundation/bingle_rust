@@ -10,6 +10,15 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+/// Internal-only API for engine control from message handlers and router context.
+/// Not part of the public BingleApi surface. Intended for in-process coordination only.
+pub trait BingleApiInternal: Send + Sync {
+    /// Request the engine state to be set to the provided value. Implementations should
+    /// delegate to the underlying Engine instance. Implementations may be best-effort
+    /// and can ignore unsupported transitions.
+    fn set_state(&self, state: crate::engine::EngineState);
+}
+
 /// Convenience type aliases used by the Bingle API.
 pub type UserId = String; // Algorand address (id)
 pub type Handle = String; // User handle string
@@ -97,6 +106,9 @@ pub struct StartOptions {
 /// The Bingle API trait surface.
 /// This describes the minimal shape expected by the Bingle client per spec.
 pub trait BingleApi: Send + Sync {
+    /// Returns this node's id (Algorand address), if known.
+    /// Implementations should derive this from the engine issuer (issuer without suffix).
+    fn get_my_id(&self) -> Option<String>;
     /// Start the node using the provided options. Implementations may spawn background tasks.
     fn start(&mut self, options: StartOptions) -> Result<(), String>;
 
