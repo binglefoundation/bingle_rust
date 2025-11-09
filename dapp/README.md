@@ -2,6 +2,8 @@
 
 This project has been generated using AlgoKit. See below for default getting started instructions.
 
+NOTE: This now uses Poetry as the dependency manager, not venv.
+
 # Setup
 
 ### Pre-requisites
