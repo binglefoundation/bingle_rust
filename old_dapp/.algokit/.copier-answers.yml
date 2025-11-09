@@ -9,7 +9,7 @@ deployment_language: python
 ide_jetbrains: true
 ide_vscode: false
 preset_name: custom
-project_name: dapp
+project_name: old_dapp
 python_linter: none
 use_dispenser: true
 use_github_actions: false
