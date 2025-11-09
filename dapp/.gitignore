@@ -168,3 +168,4 @@ cython_debug/
 # NPM
 node_modules
 
+/projects/dapp/smart_contracts/artifacts/bingle_dapp/

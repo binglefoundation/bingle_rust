@@ -8,8 +8,7 @@ logger = logging.getLogger(__name__)
 # define deployment behaviour based on supplied app spec
 def deploy() -> None:
     from smart_contracts.artifacts.bingle_dapp.bingle_dapp_client import (
-        HelloArgs,
-        BingleDappFactory,
+        BingleDappFactory
     )
 
     algorand = algokit_utils.AlgorandClient.from_environment()
@@ -36,9 +35,3 @@ def deploy() -> None:
             )
         )
 
-    name = "world"
-    response = app_client.send.hello(args=HelloArgs(name=name))
-    logger.info(
-        f"Called hello on {app_client.app_name} ({app_client.app_id}) "
-        f"with name={name}, received: {response.abi_return}"
-    )

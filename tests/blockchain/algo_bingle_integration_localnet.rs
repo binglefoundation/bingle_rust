@@ -38,8 +38,8 @@ fn bingle_end_to_end_calls() {
         Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
         Err(e) => eprintln!("Failed to get current working directory: {}", e),
     }
-    let approval_src = fs::read_to_string("dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
+    let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
+    let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
     let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval teal");
     let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear teal");
     // Pass asset_id to deploy so the app account is auto opted-in to the ASA
