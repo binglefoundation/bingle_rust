@@ -7,7 +7,10 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
 use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState, SimpleStunServer, SimpleStunStartOptions};
+use rust_comms::blockchain::algo_bingle::AlgoBingle;
 
+#[path = "../setup_localnet.rs"]
+mod setup_localnet;
 #[path = "../test_util.rs"]
 mod test_util;
 
@@ -40,6 +43,46 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     // Print relay addresses for debugging
     println!("[Test] relay1_addr = {}", relay1_addr);
     println!("[Test] relay2_addr = {}", relay2_addr);
+
+    // If a localnet + indexer is available, deploy the dApp and register relay endpoints on-chain.
+    if test_util::should_run_localnet() {
+        use rust_comms::algo_ops::AppArg;
+        use std::fs;
+        let cfg = test_util::localnet_config();
+        // Ensure relay accounts are funded
+        setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE])
+            .expect("Failed to fund localnet accounts");
+        // Build AlgoOps for two relay accounts and one creator (use SPEND as creator)
+        let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+        let ops_relay1 = ops_creator.clone();
+        let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+        let ab_creator = AlgoBingle::new(ops_creator.clone());
+        let ab_r1 = AlgoBingle::new(ops_relay1.clone());
+        let ab_r2 = AlgoBingle::new(ops_relay2.clone());
+
+        // Deploy the BingleDapp from artifacts
+        let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
+        let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
+        let approval = ops_creator.compile_teal(&approval_src).expect("compile approval teal");
+        let clear = ops_creator.compile_teal(&clear_src).expect("compile clear teal");
+        let app_id = ops_creator.deploy_app(&approval, &clear, None).expect("deploy app").expect("app id");
+
+        // Set Bingle price to 1 (not strictly required for endpoint registration)
+        let _ = ops_creator.call_app(app_id, test_util::ADDRESS_SPEND, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]);
+
+        // Opt relays into the app and allow static endpoints
+        ops_relay1.opt_in_app(app_id).expect("relay1 opt-in app");
+        ops_relay2.opt_in_app(app_id).expect("relay2 opt-in app");
+        ab_r1.set_allow_static(app_id, true).expect("set_allow_static r1");
+        ab_r2.set_allow_static(app_id, true).expect("set_allow_static r2");
+
+        // Register endpoints for both relays
+        ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
+        ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+
+        // Tell Engine/handlers to use indexer-based discovery for this app id
+        unsafe { std::env::set_var("BINGLE_APP_ID", app_id.to_string()); }
+    }
 
     let mut relay1 = BingleApiImpl::new();
     let mut relay2 = BingleApiImpl::new();
@@ -88,4 +131,9 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     client1.stop();
     s1.stop();
     s2.stop();
+
+    // Clean up env var if we set it
+    if test_util::should_run_localnet() {
+        unsafe { std::env::remove_var("BINGLE_APP_ID"); }
+    }
 }

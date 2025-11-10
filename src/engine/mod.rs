@@ -374,9 +374,44 @@ impl Engine {
             let api_opt = self.bingle_api_for_handlers.clone().or_else(|| crate::messages::router::get_bingle_api());
             if api_opt.is_none() { panic!("[Engine] No BingleApi available for relay check"); }
 
-            // TODO: use a real discovery function
-            const ADDRESS_SPEND: &str = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE";
-            let discover = Arc::new(move || vec![RootRelayInfo { id: ADDRESS_SPEND.parse().unwrap(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]);
+            // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
+            // App id is taken from env var BINGLE_APP_ID to avoid API surface changes.
+            let discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+                #[cfg(not(target_os = "ios"))]
+                {
+                    let app_id_opt = std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
+                    if let Some(app_id) = app_id_opt {
+                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, None));
+                        Arc::new(move || {
+                            match ab.list_static_endpoints_via_indexer(app_id) {
+                                Ok(list) => {
+                                    let mut out: Vec<RootRelayInfo> = Vec::new();
+                                    for (id, ep) in list {
+                                        if let Some(addr) = crate::blockchain::algo_bingle::AlgoBingle::parse_relay_ip(&ep) {
+                                            out.push(RootRelayInfo { id, address: addr });
+                                        }
+                                    }
+                                    if out.is_empty() {
+                                        // Fallback to local defaults if indexer returns nothing
+                                        vec![RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]
+                                    } else { out }
+                                }
+                                Err(e) => {
+                                    eprintln!("[Engine] indexer discovery failed: {}", e);
+                                    vec![RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]
+                                }
+                            }
+                        })
+                    } else {
+                        // No app id set; fallback to built-in localhost relays for tests
+                        Arc::new(|| vec![RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                    }
+                }
+                #[cfg(target_os = "ios")]
+                {
+                    Arc::new(|| vec![RootRelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                }
+            };
 
             let finder = RelayFinder::new(api_opt.unwrap(), Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
