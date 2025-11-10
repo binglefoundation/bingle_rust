@@ -40,10 +40,162 @@ pub struct AlgoBingle {
 impl AlgoBingle {
     pub fn new(ops: AlgoOps) -> Self { Self { ops } }
 
+    #[cfg(not(target_os = "ios"))]
+    fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
+        use base64::Engine as _;
+        let mut kvs: Vec<(String, String)> = Vec::new();
+        for entry in entries {
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+            let key = match base64::engine::general_purpose::STANDARD.decode(key_b64) {
+                Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| key_b64.to_string()),
+                Err(_) => key_b64.to_string(),
+            };
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+            let vtype = val_obj.get("type").and_then(|x| x.as_u64()).unwrap_or(0);
+            let val = if vtype == 1 {
+                // bytes can be an array of numbers or a base64 string
+                let bytes_opt = if let Some(arr) = val_obj.get("bytes").and_then(|x| x.as_array()) {
+                    let mut buf: Vec<u8> = Vec::with_capacity(arr.len());
+                    for n in arr {
+                        if let Some(u) = n.as_u64() { buf.push((u & 0xFF) as u8); }
+                        else if let Some(i) = n.as_i64() { if i >= 0 { buf.push(((i as u64) & 0xFF) as u8); } }
+                    }
+                    Some(buf)
+                } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
+                    match base64::engine::general_purpose::STANDARD.decode(b64) { Ok(b) => Some(b), Err(_) => None }
+                } else { None };
+                if let Some(bytes) = bytes_opt {
+                    match String::from_utf8(bytes.clone()) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            let mut hex = String::from("0x");
+                            for byte in bytes { hex.push_str(&format!("{:02x}", byte)); }
+                            hex
+                        }
+                    }
+                } else { String::new() }
+            } else {
+                val_obj.get("uint").and_then(|x| x.as_u64()).map(|u| u.to_string()).unwrap_or_else(|| "0".to_string())
+            };
+            kvs.push((key, val));
+        }
+        kvs
+    }
+
+    /// Call set_allow_static(uint64)void for the caller.
+
+    /// Call set_allow_static(uint64)void for the caller.
+    /// Returns the submitted transaction id on success.
+    pub fn set_allow_static(&self, app_id: u64, allow: bool) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let sender_addr = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("This operation needs an address"))?
+            .clone();
+        let (txid, _logs) = self
+            .ops
+            .call_app(app_id, &sender_addr, None, Some("set_allow_static(uint64)void"), &[AppArg::Uint(if allow { 1 } else { 0 })])?;
+        Ok(txid)
+    }
+
+    /// Call register_endpoint(string)void for the caller.
+    /// Passing an empty string clears the local state key.
+    /// Returns the submitted transaction id on success.
+    pub fn register_endpoint(&self, app_id: u64, endpoint: &str) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        // Build ARC-4 arguments manually to ensure correct string encoding (2-byte length prefix)
+        let client = self.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        let mut app_args: Vec<Vec<u8>> = Vec::new();
+        app_args.push(Self::arc4_selector("register_endpoint(string)void").to_vec());
+        let ep_bytes = endpoint.as_bytes();
+        if ep_bytes.len() > u16::MAX as usize { bail!("endpoint too long"); }
+        let mut arg = Vec::with_capacity(2 + ep_bytes.len());
+        arg.extend_from_slice(&(ep_bytes.len() as u16).to_be_bytes());
+        arg.extend_from_slice(ep_bytes);
+        app_args.push(arg);
+        let call = CallApplication::new(sender, app_id)
+            .app_arguments(app_args)
+            .build();
+        let tx = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
+        let signed = account
+            .sign_transaction(tx)
+            .map_err(|e| anyhow!("sign app call: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app call: {e}"))?;
+        self.broadcast_group(&client, vec![signed])
+    }
+
+    /// List accounts from the provided slice that have non-empty local state key "static_endpoint" set for this app.
+    /// Returns Vec of (account_address, static_endpoint_value).
+    pub fn list_static_endpoints_for_accounts(&self, app_id: u64, accounts: &[String]) -> Result<Vec<(String, String)>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let mut out: Vec<(String, String)> = Vec::new();
+        for acct in accounts {
+            if let Ok(Some(entries)) = self.ops.local_state_for_account(app_id, acct) {
+                if let Some((_, val)) = entries.into_iter().find(|(k, _)| k == "static_endpoint") {
+                    if !val.is_empty() {
+                        out.push((acct.clone(), val));
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Parse a RelayIP string into a SocketAddr. Accepts forms like "host:port" or "ip:port".
     /// Returns None if parsing fails.
     pub fn parse_relay_ip(ip: &str) -> Option<std::net::SocketAddr> {
         ip.parse::<std::net::SocketAddr>().ok()
+    }
+
+    /// Use the Indexer API to list accounts that have a non-empty "static_endpoint" in local state for the given app_id.
+    /// Returns Vec of (account_address, static_endpoint_value).
+    #[cfg(not(target_os = "ios"))]
+    pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
+        let client = reqwest::blocking::Client::new();
+        let mut next: Option<String> = None;
+        let mut results: Vec<(String, String)> = Vec::new();
+        loop {
+            let mut req = client.get(&base)
+                .query(&[("application-id", app_id.to_string()), ("limit", "1000".to_string())]);
+            if let Some(n) = &next { req = req.query(&[("next", n)]); }
+            // Add both indexer and algod token headers for compatibility
+            if let Some(tok) = &self.ops.config.token {
+                req = req.header("X-Indexer-API-Token", tok.clone())
+                         .header(self.ops.config.token_key.clone().unwrap_or_else(|| "X-Algo-API-Token".to_string()), tok.clone());
+            }
+            let resp = req.send().map_err(|e| anyhow!("indexer request failed: {e}"))?;
+            if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
+            let v: serde_json::Value = resp.json().map_err(|e| anyhow!("indexer json parse failed: {e}"))?;
+            let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            for acct in accounts {
+                let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                // find local state for this app id
+                if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
+                    for st in als {
+                        let id = st.get("id").and_then(|x| x.as_u64());
+                        if id == Some(app_id) {
+                            let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                            let kvs = Self::decode_state_entries(&keyvals);
+                            if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
+                                if !val.is_empty() {
+                                    results.push((addr.clone(), val));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            next = v.get("next-token").and_then(|x| x.as_str()).map(|s| s.to_string());
+            if next.is_none() { break; }
+        }
+        Ok(results)
     }
 
     /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "RelayIP".

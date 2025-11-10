@@ -10,6 +10,10 @@ class BingleDapp(ARC4Contract):
         # Local state for registration
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
+        # Local state flag: whether caller is allowed to set a static endpoint (1 == true)
+        self.allow_static = LocalState(UInt64, key="allow_static")
+        # Local state value: caller's registered static endpoint (if any)
+        self.static_endpoint = LocalState(String, key="static_endpoint")
 
     @baremethod(allow_actions=["OptIn"])
     def optin(self) -> None:
@@ -168,3 +172,32 @@ class BingleDapp(ARC4Contract):
         if not exists or current == String():
             self.handle[Txn.sender] = handle
             self.handle_time[Txn.sender] = Global.latest_timestamp
+
+    @abimethod()
+    def set_allow_static(self, allow: UInt64) -> None:
+        """Enable or disable permission for the caller to register a static endpoint.
+
+        Caller must be opted-in to the app. A non-zero value of `allow` sets allow_static=1; zero sets it to 0.
+        """
+        # Normalize to 0/1
+        val = UInt64(1) if allow != UInt64(0) else UInt64(0)
+        self.allow_static[Txn.sender] = val
+
+    @abimethod()
+    def register_endpoint(self, endpoint: String) -> None:
+        """Register or clear a caller's static endpoint.
+
+        Requirements:
+        - Caller must have local state key "allow_static" set to true (1).
+        - If `endpoint` is non-empty, store it under "static_endpoint" in local state.
+        - If `endpoint` is empty (""), delete the local state key "static_endpoint".
+        """
+        # Ensure the caller is allowed to set a static endpoint
+        allow_val, allow_exists = self.allow_static.maybe(Txn.sender)
+        assert allow_exists and allow_val == UInt64(1)
+
+        # Non-empty endpoint => set; empty => delete
+        if endpoint != String():
+            self.static_endpoint[Txn.sender] = endpoint
+        else:
+            del self.static_endpoint[Txn.sender]
