@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 stun-rs = "0.1.11"
 uuid = { version = "1", features = ["v4"] }
 libc = "0.2"
+ctrlc = "3"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 algonaut = "0.4.2"
@@ -207,3 +208,7 @@ path = "tests/messages/relay_ping_handler_unit.rs"
 [[test]]
 name = "triangle_test3_sets_state"
 path = "tests/messages/triangle_test3_sets_state.rs"
+
+[[test]]
+name = "util_cli_parse_test"
+path = "tests/util/cli_parse_test.rs"

@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Tests in 'tests' (2)" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+    <option name="command" value="test --package rust_comms --test algo_bingle_integration_localnet --test algo_bingle_unit --test algo_ops_integration_localnet --test algo_ops_more_test --test algo_ops_test --test asset_ops_test --test bingle_api_impl_integration --test bingle_api_impl_unit --test dapp_app_integration --test dtls_client_echo_roundtrip --test dtls_external_openssl_server --test dtls_loopback_e2e --test dtls_multi_client_loopback_e2e --test dtls_openssl_smoke --test dtls_peer_certificate_handlers --test dtls_peer_certificate_rejection --test dtls_start_with_network_mux --test dtls_stun_interleave_handshake --test network_mux_udp_tests" />
+    <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+    <envs />
+    <option name="emulateTerminal" value="true" />
+    <option name="channel" value="DEFAULT" />
+    <option name="requiredFeatures" value="true" />
+    <option name="allFeatures" value="false" />
+    <option name="withSudo" value="false" />
+    <option name="buildTarget" value="REMOTE" />
+    <option name="backtrace" value="SHORT" />
+    <option name="isRedirectInput" value="false" />
+    <option name="redirectInputPath" value="" />
+    <method v="2">
+      <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+    </method>
+  </configuration>
+</component>
