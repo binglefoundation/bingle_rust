@@ -81,16 +81,53 @@ impl MessageHandler for DefaultPrintingHandler {
             if sender_opt.is_none() { eprintln!("[handlers::on_triangle_test1] No sender available"); return; }
             let _sender = sender_opt.unwrap();
 
-            // Construct a RelayFinder like in stun_consistent_process, with simple discovery of two loopback relays
+            // Construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use std::net::{IpAddr, Ipv4Addr, SocketAddr};
             use std::time::Duration;
             use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
-            let discover = std::sync::Arc::new(|| -> Vec<RootRelayInfo> {
-                vec![
-                    RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
-                    RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
-                ]
-            });
+            let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+                #[cfg(not(target_os = "ios"))]
+                {
+                    let app_id_opt = std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
+                    if let Some(app_id) = app_id_opt {
+                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, None));
+                        std::sync::Arc::new(move || {
+                            match ab.list_static_endpoints_via_indexer(app_id) {
+                                Ok(list) => {
+                                    let mut out: Vec<RootRelayInfo> = Vec::new();
+                                    for (id, ep) in list {
+                                        if let Some(addr) = crate::blockchain::algo_bingle::AlgoBingle::parse_relay_ip(&ep) {
+                                            out.push(RootRelayInfo { id, address: addr });
+                                        }
+                                    }
+                                    if out.is_empty() {
+                                        vec![
+                                            RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
+                                            RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
+                                        ]
+                                    } else { out }
+                                }
+                                Err(e) => {
+                                    eprintln!("[DefaultPrintingHandler] indexer discovery failed: {}", e);
+                                    vec![
+                                        RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
+                                        RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
+                                    ]
+                                }
+                            }
+                        })
+                    } else {
+                        std::sync::Arc::new(|| vec![
+                            RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
+                            RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
+                        ])
+                    }
+                }
+                #[cfg(target_os = "ios")]
+                {
+                    std::sync::Arc::new(|| vec![RootRelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                }
+            };
             // Use the BingleApi instance passed to the handler
             let finder = RelayFinder::new(api_for_thread.clone(), Duration::from_secs(60), discover);
 

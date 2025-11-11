@@ -2,7 +2,7 @@
 <module type="EMPTY_MODULE" version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
-      <configuration sdkName="Python 3.13 virtualenv at ~/dev/rust_comms/dapp/.venv" />
+      <configuration sdkName="Python 3.12" />
     </facet>
   </component>
   <component name="NewModuleRootManager">
@@ -11,10 +11,6 @@
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/bingle_test/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/TestResults.xcresult" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/.algokit/sources" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/.venv" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/debug_traces" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/smart_contracts/artifacts" />
       <excludeFolder url="file://$MODULE_DIR$/generated" />
       <excludeFolder url="file://$MODULE_DIR$/ios/BingleTestFFI.xcframework" />
       <excludeFolder url="file://$MODULE_DIR$/ios/TestResults.xcresult" />
@@ -24,9 +20,13 @@
       <excludeFolder url="file://$MODULE_DIR$/tests/dapp/venv/bin" />
       <excludeFolder url="file://$MODULE_DIR$/tests/dapp/venv/include" />
       <excludeFolder url="file://$MODULE_DIR$/tests/dapp/venv/lib" />
+      <excludeFolder url="file://$MODULE_DIR$/old_dapp/.algokit/sources" />
+      <excludeFolder url="file://$MODULE_DIR$/old_dapp/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/old_dapp/debug_traces" />
+      <excludeFolder url="file://$MODULE_DIR$/old_dapp/smart_contracts/artifacts" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="Python 3.13 virtualenv at ~/dev/rust_comms/dapp/.venv interpreter library" level="application" />
+    <orderEntry type="library" name="Python 3.12 interpreter library" level="application" />
   </component>
 </module>
