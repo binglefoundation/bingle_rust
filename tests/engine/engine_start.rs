@@ -8,10 +8,12 @@ fn engine_start_without_static_ip_errors() {
     let mut engine = Engine::new();
     let opts = StartOptions {
         handle: "tester".into(),
-        passphrase: "pass".into(),
+        algo_passphrase: Some("pass".into()),
         static_ip: None,
         am_relay: false,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
     let res = engine.start(opts);
     assert!(res.is_err());
@@ -25,10 +27,12 @@ fn engine_start_with_static_ip_localhost_ok() {
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
     let opts = StartOptions {
         handle: "tester".into(),
-        passphrase: "pass".into(),
+        algo_passphrase: Some("pass".into()),
         static_ip: Some(addr),
         am_relay: false,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
     let res = engine.start(opts);
     // Engine may fail to start DTLS due to lack of certificates; however, our DTLS implementation only

@@ -47,6 +47,7 @@ members = [
 bingle_test = { path = "bingle_test" }
 tempfile = "3"
 ntest = "0.9"
+serial_test = "3"
 
 
 
@@ -217,3 +218,7 @@ path = "tests/messages/triangle_test3_sets_state.rs"
 [[test]]
 name = "util_cli_parse_test"
 path = "tests/util/cli_parse_test.rs"
+
+[[test]]
+name = "util_cli_node_file_override"
+path = "tests/util/cli/node_file_override.rs"

@@ -173,7 +173,7 @@ impl BingleApi for BingleApiImpl {
          // Initialize AlgoOps from provided algoPassphrase if available.
         if let Some(pass) = options.algo_passphrase.clone() {
             // Build AlgoOps with passphrase and derive our address from it.
-            let mut ops = AlgoOps::new(Some(pass), None, None);
+            let mut ops = AlgoOps::new(Some(pass), None, options.algo_provider_config.clone());
             // Derive address from the private key bytes and ensure errors propagate (e.g., incorrect passphrase).
             let sk_bytes = ops
                 .private_key_bytes()

@@ -19,6 +19,8 @@ fn start_returns_err_on_invalid_passphrase() {
         static_ip: Some(addr),
         am_relay: false,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
 
     let err = api.start(opts).expect_err("start should fail for invalid passphrase");

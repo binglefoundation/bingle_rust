@@ -40,6 +40,8 @@ fn bingle_api_relay_check_two_nodes() {
         static_ip: Some(relay_addr),
         am_relay: true,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
     relay.start(relay_opts).expect("relay start");
 
@@ -82,6 +84,8 @@ fn bingle_api_relay_check_two_nodes() {
         static_ip: Some(client_addr),
         am_relay: false,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
     client.start(client_opts).expect("client start");
 

@@ -14,6 +14,8 @@ fn bingle_api_start_propagates_engine_error() {
         static_ip: None,
         am_relay: false,
         stun_servers: Some(vec![]),
+        algo_provider_config: None,
+        algo_network: None,
     };
 
     let res = api.start(opts);

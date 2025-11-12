@@ -8,12 +8,14 @@ mod test_util;
 #[test]
 fn start_succeeds() {
     let mut api = BingleApiImpl::new();
-    let opts = StartOptions {
+    let opts = StartOptions { 
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
         static_ip: None,
         am_relay: false,
         stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]),
+        algo_provider_config: None,
+        algo_network: None,
     };
     let res = api.start(opts);
     // Engine may fail to start depending on DTLS/PKI availability; we only require DTLS instance creation here.
@@ -100,7 +102,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
 
     // Build BingleApiImpl client and install on_message to capture the RelayCheckResponse
     let mut api = BingleApiImpl::new();
-    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]) };
+    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None };
     let start_result = api.start(opts);
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 

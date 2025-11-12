@@ -101,6 +101,12 @@ pub struct StartOptions {
     pub am_relay: bool,
     /// Optional array of STUN servers (IP:port) to determine our IP address.
     pub stun_servers: Option<Vec<SocketAddr>>,
+    /// Optional Algorand provider configuration loaded from --node-file.
+    #[serde(default)]
+    pub algo_provider_config: Option<crate::blockchain::algo_ops::AlgoProviderConfig>,
+    /// Optional human-readable network name from the node file (e.g., mainnet, testnet).
+    #[serde(default)]
+    pub algo_network: Option<String>,
 }
 
 /// The Bingle API trait surface.

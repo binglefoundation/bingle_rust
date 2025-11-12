@@ -1,0 +1,9 @@
+{
+  "network": "mainnet",
+  "client_api_url": "https://mainnet-api.nodely.io",
+  "client_api_port": 443,
+  "indexer_api_url": "https://mainnet-idx.nodely.io",
+  "indexer_api_port": 443,
+  "token": null,
+  "token_key": "X-API-Key"
+}

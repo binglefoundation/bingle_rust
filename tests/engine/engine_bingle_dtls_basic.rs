@@ -52,6 +52,8 @@ fn engine_basic_bingle_dtls_layer() {
         static_ip: Some(server_addr),
         am_relay: false,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -59,6 +61,8 @@ fn engine_basic_bingle_dtls_layer() {
         static_ip: Some(client_addr),
         am_relay: false,
         stun_servers: None,
+        algo_provider_config: None,
+        algo_network: None,
     };
 
     // Start both nodes

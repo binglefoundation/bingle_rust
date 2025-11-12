@@ -64,7 +64,7 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     loop {
         list = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list");
         if list.iter().any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == endpoint) { break; }
-        if start.elapsed() > Duration::from_secs(10) { break; }
+        if start.elapsed() > Duration::from_secs(45) { break; }
         thread::sleep(Duration::from_millis(250));
     }
     let mut found = false;

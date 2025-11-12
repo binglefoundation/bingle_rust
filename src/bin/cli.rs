@@ -3,7 +3,7 @@ use std::sync::mpsc::{channel, Sender};
 
 use rust_comms::api::bingle_api::{BingleApi, OnConnectHandler, OnMessageHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::util::cli::parse_start_options_from_args;
+use rust_comms::util::cli_utils::parse_start_options_from_args;
 
 fn main() {
     // Parse CLI args into StartOptions
@@ -11,7 +11,7 @@ fn main() {
     let opts = match parse_start_options_from_args(args.clone()) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("Error: {}\nUsage: cli [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>]", e);
+            eprintln!("Error: {}\nUsage: cli [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]", e);
             std::process::exit(2);
         }
     };

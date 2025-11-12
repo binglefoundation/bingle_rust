@@ -10,7 +10,7 @@ use algonaut::core::ToMsgPack;
 use algonaut as _algonaut;
 
 /// Configuration for Algod and Indexer endpoints.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AlgoProviderConfig {
     pub client_api_url: String,
     pub client_api_port: u16,
@@ -51,6 +51,7 @@ pub struct AlgoOps {
 
 impl AlgoOps {
     pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoProviderConfig>) -> Self {
+        // Use explicit config if provided; else Default (localnet)
         let config = config.unwrap_or_default();
         let ops = Self {
             passphrase,
