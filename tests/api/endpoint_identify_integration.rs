@@ -73,8 +73,9 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
         // Opt relays into the app and allow static endpoints
         ops_relay1.opt_in_app(app_id).expect("relay1 opt-in app");
         ops_relay2.opt_in_app(app_id).expect("relay2 opt-in app");
-        ab_r1.set_allow_static(app_id, true).expect("set_allow_static r1");
-        ab_r2.set_allow_static(app_id, true).expect("set_allow_static r2");
+        // Grant allow_static for relay accounts via creator
+        ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
+        ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
 
         // Register endpoints for both relays
         ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");

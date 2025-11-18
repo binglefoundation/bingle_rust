@@ -3,7 +3,7 @@ use sha2::{Digest, Sha512_256};
 use std::future::Future;
 use std::str::FromStr;
 
-use crate::blockchain::algo_ops::{AlgoOps, AppArg};
+use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 #[cfg(not(target_os = "ios"))]
 use algonaut::{
@@ -82,21 +82,18 @@ impl AlgoBingle {
         kvs
     }
 
-    /// Call set_allow_static(uint64)void for the caller.
-
-    /// Call set_allow_static(uint64)void for the caller.
+    /// Grant or revoke permission for a specific address to register a static endpoint.
+    ///
+    /// Calls set_allow_static on-chain for the provided target address. The caller must be the
+    /// app creator (enforced by the contract). The target address must be opted-in to the app.
     /// Returns the submitted transaction id on success.
-    pub fn set_allow_static(&self, app_id: u64, allow: bool) -> Result<String> {
+    pub fn set_allow_static(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let sender_addr = self
-            .ops
-            .address
-            .as_ref()
-            .ok_or_else(|| anyhow!("This operation needs an address"))?
-            .clone();
+        // We pass the target address in the foreign accounts array so the contract can write
+        // local state for that account. The contract enforces that Txn.sender == creator.
         let (txid, _logs) = self
             .ops
-            .call_app(app_id, &sender_addr, None, Some("set_allow_static(uint64)void"), &[AppArg::Uint(if allow { 1 } else { 0 })])?;
+            .call_app(app_id, target_address, None, Some("set_allow_static(uint64)void"), &[AppArg::Uint(if allow { 1 } else { 0 })])?;
         Ok(txid)
     }
 

@@ -175,13 +175,17 @@ class BingleDapp(ARC4Contract):
 
     @abimethod()
     def set_allow_static(self, allow: UInt64) -> None:
-        """Enable or disable permission for the caller to register a static endpoint.
+        """Enable or disable permission for a target address to register a static endpoint.
 
-        Caller must be opted-in to the app. A non-zero value of `allow` sets allow_static=1; zero sets it to 0.
+        The target address must be provided in Txn.Accounts[0]. For now, only the application
+        creator may call this method. The target account must be opted-in to the application.
         """
+        # Only app creator may grant/revoke
+        assert Txn.sender == Global.creator_address
         # Normalize to 0/1
         val = UInt64(1) if allow != UInt64(0) else UInt64(0)
-        self.allow_static[Txn.sender] = val
+        # Target from foreign accounts (first account)
+        self.allow_static[Txn.accounts(0)] = val
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:

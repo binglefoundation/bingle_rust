@@ -51,16 +51,18 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     // User opts in to the app to enable local state
     user.opt_in_app(app_id).expect("user opt-in app");
 
-    // Wrap user in AlgoBingle and set allow_static then register a static endpoint
-    let ab = AlgoBingle::new(user.clone());
-    let _ = ab.set_allow_static(app_id, true).expect("set_allow_static call");
+    // Grant static permission for the user via the app creator, then user registers a static endpoint
+    let ab_creator = AlgoBingle::new(creator.clone());
+    let _ = ab_creator.set_allow_static(app_id, ADDRESS_RECEIVE, true).expect("set_allow_static call");
+    let ab_user = AlgoBingle::new(user.clone());
     let endpoint = "127.0.0.1:54321";
-    let _ = ab.register_endpoint(app_id, endpoint).expect("register_endpoint call");
+    let _ = ab_user.register_endpoint(app_id, endpoint).expect("register_endpoint call");
 
     // Query via Indexer and validate our account appears with the endpoint.
     // Indexer is eventually consistent; poll for up to ~10 seconds.
     let start = Instant::now();
     let mut list = Vec::new();
+    let ab = AlgoBingle::new(user.clone());
     loop {
         list = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list");
         if list.iter().any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == endpoint) { break; }
@@ -77,7 +79,7 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     assert!(found, "user ADDRESS_RECEIVE not found in static_endpoint indexer list: {:?}", list);
 
     // Clear the endpoint and verify removal (also with polling to account for indexer lag)
-    let _ = ab.register_endpoint(app_id, "").expect("clear endpoint call");
+    let _ = ab_user.register_endpoint(app_id, "").expect("clear endpoint call");
     let start2 = Instant::now();
     let mut list2;
     loop {
