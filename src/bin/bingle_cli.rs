@@ -298,6 +298,7 @@ fn parse_u64(v: String, name: &str) -> u64 {
     }
 }
 
+#[allow(dead_code)]
 fn write_text_file(path: &str, content: &str) -> std::io::Result<()> {
     let mut f = fs::File::create(path)?;
     f.write_all(content.as_bytes())

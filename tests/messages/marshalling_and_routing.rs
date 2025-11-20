@@ -17,7 +17,7 @@ fn integration_decode_plain_text() {
 fn integration_decode_relay_call() {
     let msg = decode("{\"app\":null,\"type\":\"Call\",\"calledId\":\"abc\"}");
     match msg {
-        Message::Relay(RelayMessage::Call(m)) => assert_eq!(m.calledId, "abc"),
+        Message::Relay(RelayMessage::Call(m)) => assert_eq!(m.called_id, "abc"),
         _ => panic!("expected Relay Call"),
     }
 }
@@ -35,7 +35,7 @@ fn integration_decode_relay_response() {
 fn integration_decode_triangle_test1() {
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":\"127.0.0.1:3456\"}");
     match msg {
-        Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checkingEndpoint.to_string(), "127.0.0.1:3456"),
+        Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456"),
         _ => panic!("expected TriangleTest1"),
     }
 }
@@ -45,8 +45,8 @@ fn integration_decode_triangle_test2() {
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest2\",\"checkingId\":\"id1\",\"checkingEndpoint\":\"10.0.0.1:1111\"}");
     match msg {
         Message::Relay(RelayMessage::TriangleTest2(m)) => {
-            assert_eq!(m.checkingId, "id1");
-            assert_eq!(m.checkingEndpoint.to_string(), "10.0.0.1:1111");
+            assert_eq!(m.checking_id, "id1");
+            assert_eq!(m.checking_endpoint.to_string(), "10.0.0.1:1111");
         }
         _ => panic!("expected TriangleTest2"),
     }
@@ -102,7 +102,7 @@ fn integration_decode_call_response() {
     let msg = decode("{\"app\":null,\"type\":\"CallResponse\",\"calledId\":\"x\",\"channel\":42}");
     match msg {
         Message::Relay(RelayMessage::CallResponse(m)) => {
-            assert_eq!(m.calledId, "x");
+            assert_eq!(m.called_id, "x");
             assert_eq!(m.channel, 42);
         }
         _ => panic!("expected CallResponse"),

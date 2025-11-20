@@ -47,7 +47,7 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
     let handler = RelayPingHandler::new(mock.clone(), Some(peer));
 
-    let t1 = RelayTriangleTest1 { app: None, checkingEndpoint: "127.0.0.1:12345".parse().unwrap() };
+    let t1 = RelayTriangleTest1 { app: None, checking_endpoint: "127.0.0.1:12345".parse().unwrap() };
     handler.on_triangle_test1(&t1);
 
     let records = mock.sent.lock().unwrap().clone();
@@ -59,7 +59,7 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let msg = from_json_str(text).expect("decode");
     match msg {
         Message::Relay(RelayMessage::TriangleTest2(m)) => {
-            assert_eq!(m.checkingEndpoint.to_string(), "127.0.0.1:12345");
+            assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:12345");
         }
         other => panic!("expected TriangleTest2, got {:?}", other),
     }
@@ -71,7 +71,7 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     let handler = RelayPingHandler::new(mock.clone(), None);
 
     let endpoint: SocketAddr = "127.0.0.1:33333".parse().unwrap();
-    let t2 = RelayTriangleTest2 { app: None, checkingId: "id-abc".into(), checkingEndpoint: endpoint };
+    let t2 = RelayTriangleTest2 { app: None, checking_id: "id-abc".into(), checking_endpoint: endpoint };
     handler.on_triangle_test2(&t2);
 
     let records = mock.sent.lock().unwrap().clone();

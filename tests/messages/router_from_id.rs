@@ -45,7 +45,7 @@ fn route_passes_from_id_into_handler() {
     // Provide API to router so it can be passed into handler per new signature
     set_bingle_api(Some(Arc::new(MockApi)));
 
-    let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checkingEndpoint: "127.0.0.1:5000".parse().unwrap() }));
+    let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checking_endpoint: "127.0.0.1:5000".parse().unwrap() }));
     route(&handler, &msg, "ALGOADDR123");
     let got = store.lock().unwrap().clone();
     assert_eq!(got.as_deref(), Some("ALGOADDR123"));

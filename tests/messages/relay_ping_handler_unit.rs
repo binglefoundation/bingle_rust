@@ -64,7 +64,7 @@ fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     let (mock_dtls, sends) = MockDtls::new();
     let handler = RelayPingHandler::new(Arc::new(mock_dtls), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 34567)));
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
-    let t1 = RelayTriangleTest1 { app: None, checkingEndpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) };
+    let t1 = RelayTriangleTest1 { app: None, checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) };
 
     // Act: invoke handler directly
     handler.on_triangle_test1(api, "FROM-OTHER-ID", &t1);

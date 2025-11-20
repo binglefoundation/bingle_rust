@@ -36,16 +36,16 @@ fn dtls_openssl_udp_listener_invokes_handler() {
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
     let server_key_pem: Vec<u8> = certs.server_key.clone();
-    let client_cert_pem: Vec<u8> = certs.client_crt.clone();
-    let client_key_pem: Vec<u8> = certs.client_key.clone();
-    let ca_pem: Vec<u8> = certs.ca_crt.clone();
+    let _client_cert_pem: Vec<u8> = certs.client_crt.clone();
+    let _client_key_pem: Vec<u8> = certs.client_key.clone();
+    let _ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
     let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");
     let port = probe.local_addr().unwrap().port();
     drop(probe); // free the port for the server
 
-    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    let _addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
     // Build and configure the server instance.
     let mut server = DtlsOpenSsl::new()

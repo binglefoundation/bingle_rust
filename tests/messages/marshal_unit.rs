@@ -17,7 +17,7 @@ fn unit_triangle_test1_from_json() {
     let msg = from_json_str(json).expect("decode");
     match msg {
         Message::Relay(RelayMessage::TriangleTest1(m)) => {
-            assert_eq!(m.checkingEndpoint.to_string(), "127.0.0.1:12345");
+            assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:12345");
         }
         _ => panic!("expected Relay TriangleTest1"),
     }

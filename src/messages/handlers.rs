@@ -73,7 +73,7 @@ pub struct DefaultPrintingHandler;
 impl MessageHandler for DefaultPrintingHandler {
     fn on_triangle_test1(&self, api: Arc<dyn BingleApi>, _from_id: &str, msg: &RelayTriangleTest1) {
         // Run in a thread per requirements
-        let checking = msg.checkingEndpoint;
+        let checking = msg.checking_endpoint;
         let api_for_thread = api.clone();
         std::thread::spawn(move || {
             // Obtain sender closure injected via router
@@ -141,8 +141,8 @@ impl MessageHandler for DefaultPrintingHandler {
                 Err(e) => { eprintln!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
             };
 
-            // Build TriangleTest2 with checkingEndpoint from TriangleTest1 and checkingId as our id (no issuer suffix)
-            let t2 = RelayTriangleTest2 { app: None, checkingId: my_id.clone(), checkingEndpoint: checking };
+            // Build TriangleTest2 with checking_endpoint from TriangleTest1 and checking_id as our id (no issuer suffix)
+            let t2 = RelayTriangleTest2 { app: None, checking_id: my_id.clone(), checking_endpoint: checking };
             let msg_out = Message::Relay(RelayMessage::TriangleTest2(t2));
             let json_val = crate::messages::marshal::to_json_value(&msg_out);
 
@@ -167,25 +167,25 @@ impl MessageHandler for DefaultPrintingHandler {
     }
 
     fn on_triangle_test2(&self, api: Arc<dyn BingleApi>, _from_id: &str, msg: &RelayTriangleTest2) {
-        // On T2: send T3 to checkingEndpoint (acts as peer relay behavior).
+        // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkSourceKey;
         use base64::Engine as _;
-        let endpoint = msg.checkingEndpoint;
+        let endpoint = msg.checking_endpoint;
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);
         let nsk = NetworkSourceKey::new_direct(endpoint);
-        // Convert checkingId (issuer) to raw address by trimming issuer suffix, then base32->base64(36)
-        let raw_id = msg.checkingId.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        // Convert checking_id (issuer) to raw address by trimming issuer suffix, then base32->base64(36)
+        let raw_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let user_id_b64 = match data_encoding::BASE32_NOPAD.decode(raw_id.as_bytes()) {
             Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
             Ok(bytes) => {
-                eprintln!("[handlers::on_triangle_test2] checkingId decoded to {} bytes (expected 36)", bytes.len());
+                eprintln!("[handlers::on_triangle_test2] checking_id decoded to {} bytes (expected 36)", bytes.len());
                 // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
                 base64::engine::general_purpose::STANDARD.encode([0u8; 36])
             }
             Err(e) => {
-                eprintln!("[handlers::on_triangle_test2] base32 decode failed for checkingId: {}", e);
+                eprintln!("[handlers::on_triangle_test2] base32 decode failed for checking_id: {}", e);
                 // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
                 base64::engine::general_purpose::STANDARD.encode([0u8; 36])
             }

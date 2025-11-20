@@ -228,7 +228,7 @@ pub mod non_ios {
     use std::sync::Condvar;
 
     #[derive(Default)]
-    struct PeerQueue {
+    pub(crate) struct PeerQueue {
         q: Mutex<VecDeque<Vec<u8>>>,
         cv: Condvar,
         closed: AtomicBool,
@@ -261,11 +261,12 @@ pub mod non_ios {
                 }
             }
         }
+        #[allow(dead_code)]
         fn close(&self) { self.closed.store(true, AtomicOrdering::SeqCst); self.cv.notify_all(); }
     }
 
     // Shared NetworkMux-backed Read/Write adapter using a per-peer queue provided by the DTLS layer.
-    struct CommonNetworkMuxConn {
+    pub(crate) struct CommonNetworkMuxConn {
         mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
         peer: std::net::SocketAddr,
         queue: Arc<PeerQueue>,
@@ -354,6 +355,7 @@ pub mod non_ios {
     #[derive(Default)]
     pub struct DtlsOpenSsl {
         // Optional NetworkMux used for STUN/TURN or raw UDP writes
+        #[allow(dead_code)]
         pub(crate) network_mux: Option<std::sync::Arc<dyn crate::dtls::NetworkMux + Send + Sync>>,
         // If we created a UDP mux internally on start(None), keep a typed handle to manage its lifecycle
         pub(crate) owned_udp_mux: Option<std::sync::Arc<crate::dtls::UdpNetworkMux>>,

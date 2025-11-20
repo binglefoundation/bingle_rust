@@ -53,6 +53,7 @@ pub enum RelayMessage {
 mod nullable_app {
     use serde::{Deserialize, Deserializer, Serializer};
 
+    #[allow(dead_code)]
     pub fn as_app_null<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -81,7 +82,8 @@ mod nullable_app {
 pub struct RelayCall {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
-    pub calledId: String,
+    #[serde(rename = "calledId")]
+    pub called_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -96,15 +98,18 @@ pub struct RelayResponse {
 pub struct RelayTriangleTest1 {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
-    pub checkingEndpoint: SocketAddr,
+    #[serde(rename = "checkingEndpoint")]
+    pub checking_endpoint: SocketAddr,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelayTriangleTest2 {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
-    pub checkingId: String,
-    pub checkingEndpoint: SocketAddr,
+    #[serde(rename = "checkingId")]
+    pub checking_id: String,
+    #[serde(rename = "checkingEndpoint")]
+    pub checking_endpoint: SocketAddr,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -142,7 +147,8 @@ pub struct RelayCheckResponse {
 pub struct RelayCallResponse {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
-    pub calledId: String,
+    #[serde(rename = "calledId")]
+    pub called_id: String,
     pub channel: u16,
 }
 

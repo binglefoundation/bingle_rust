@@ -39,8 +39,8 @@ impl MessageHandler for RelayPingHandler {
                     return;
                 }
             };
-            // Compose TriangleTest2 to the peer relay, echoing the checkingEndpoint and using our own id
-            let t2 = RelayTriangleTest2 { app: None, checkingId: my_id, checkingEndpoint: msg.checkingEndpoint };
+            // Compose TriangleTest2 to the peer relay, echoing the checking_endpoint and using our own id
+            let t2 = RelayTriangleTest2 { app: None, checking_id: my_id, checking_endpoint: msg.checking_endpoint };
             let out = Message::Relay(RelayMessage::TriangleTest2(t2));
             self.send_json_to(to_peer, &out);
         } else {
@@ -50,9 +50,9 @@ impl MessageHandler for RelayPingHandler {
     }
 
     fn on_triangle_test2(&self, _api: Arc<dyn crate::api::bingle_api::BingleApi>, _from_id: &str, msg: &RelayTriangleTest2) {
-        // Send TriangleTest3 to the node at checkingEndpoint
+        // Send TriangleTest3 to the node at checking_endpoint
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
-        self.send_json_to(msg.checkingEndpoint, &out);
+        self.send_json_to(msg.checking_endpoint, &out);
     }
 }
