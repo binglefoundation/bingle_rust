@@ -1,18 +1,16 @@
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 
-use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
-use crate::messages::marshal::to_json_string;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{from_json_str, route, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
-use serde_json::json;
 use base64::Engine as _;
 use uuid::Uuid;
 

@@ -6,21 +6,20 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 pub mod non_ios {
     use super::*;
     use crate::dtls::network_mux_trait::NetworkMux;
-    use std::thread;
-    use std::sync::{Arc, Mutex};
-    use std::collections::{HashMap, HashSet};
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]
-    use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode, SslStream, HandshakeError};
+    use openssl::ssl::{HandshakeError, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslStream, SslVerifyMode};
+    use std::collections::{HashMap, HashSet};
+    use std::sync::{Arc, Mutex};
 
     type ServerWriter = Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync>;
     type ServerWriters = Arc<Mutex<HashMap<SocketAddr, ServerWriter>>>;
     #[allow(unused_imports)]
-    use openssl::x509::X509;
+    use openssl::pkey::PKey;
     #[allow(unused_imports)]
     use openssl::x509::store::X509StoreBuilder;
     #[allow(unused_imports)]
-    use openssl::pkey::PKey;
+    use openssl::x509::X509;
 
     type EndpointIssuers = Arc<Mutex<HashMap<SocketAddr, String>>>;
 
@@ -225,8 +224,8 @@ pub mod non_ios {
 
     // Per-peer datagram queue and blocking mechanism.
     use std::collections::VecDeque;
-    use std::sync::Condvar;
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+    use std::sync::Condvar;
 
     #[derive(Default)]
     struct PeerQueue {
@@ -893,7 +892,7 @@ pub mod non_ios {
             let mut stream = match connector.connect("localhost", conn) {
                 Ok(s) => s,
                 Err(HandshakeError::WouldBlock(mut mid)) => {
-                    use std::time::{Instant, Duration};
+                    use std::time::{Duration, Instant};
                     let start = Instant::now();
                     let deadline = Duration::from_millis(15000);
                     let mut iter: u32 = 0;

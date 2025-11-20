@@ -1,19 +1,19 @@
 use base64::Engine as _;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Condvar};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use serde_json::{Value as JsonValue, Map as JsonMap};
+use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
-use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use crate::api::bingle_api::BingleApiInternal;
-use crate::dtls::Dtls;
-use crate::protocol::ISSUER_SUFFIX;
-use crate::blockchain::algo_ops::{AlgoOps, byte_key_to_address};
-use crate::engine::{Engine, EngineState};
+use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
+use crate::blockchain::algo_ops::{byte_key_to_address, AlgoOps};
+use crate::dtls::Dtls;
+use crate::engine::{Engine, EngineState};
+use crate::protocol::ISSUER_SUFFIX;
 
 /// Concrete implementation of the BingleApi trait.
 ///

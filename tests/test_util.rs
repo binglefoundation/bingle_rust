@@ -1,6 +1,4 @@
 use rust_comms::algo_ops::{AlgoOps, AlgoProviderConfig};
-use base64::{engine::general_purpose, Engine as _};
-use algonaut::crypto::mnemonic;
 use std::env;
 
 // Localnet token from Algorand docs / Algokit localnet

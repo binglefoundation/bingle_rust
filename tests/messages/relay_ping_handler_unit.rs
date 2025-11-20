@@ -4,10 +4,10 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
-use rust_comms::dtls::{Dtls, Result as DtlsResult, UdpNetworkMux, HandleMessage, HandlePeerCertificate};
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult, UdpNetworkMux};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::relay_ping_handler::RelayPingHandler;
-use rust_comms::messages::types::{Message, RelayMessage, RelayTriangleTest1};
+use rust_comms::messages::types::RelayTriangleTest1;
 
 #[derive(Clone)]
 struct MockDtls {
