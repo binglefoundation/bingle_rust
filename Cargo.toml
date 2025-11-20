@@ -60,6 +60,10 @@ name = "asset_ops_test"
 path = "tests/blockchain/asset_ops_test.rs"
 
 [[test]]
+name = "algo_change_reserve_unit"
+path = "tests/blockchain/algo_change_reserve_unit.rs"
+
+[[test]]
 name = "dapp_app_integration"
 path = "tests/blockchain/dapp_app_integration.rs"
 
@@ -149,6 +153,14 @@ name = "algo_bingle_integration_localnet"
 path = "tests/blockchain/algo_bingle_integration_localnet.rs"
 
 [[test]]
+name = "algo_bingle_buy_flow_localnet"
+path = "tests/blockchain/algo_bingle_buy_flow_localnet.rs"
+
+[[test]]
+name = "algo_bingle_register_opt_in_app_localnet"
+path = "tests/blockchain/algo_bingle_register_opt_in_app_localnet.rs"
+
+[[test]]
 name = "algo_bingle_static_endpoint_integration"
 path = "tests/blockchain/algo_bingle_static_endpoint_integration.rs"
 
@@ -212,6 +224,10 @@ name = "relay_ping_handler_unit"
 path = "tests/messages/relay_ping_handler_unit.rs"
 
 [[test]]
+name = "cli_run_args"
+path = "tests/cli/run_args.rs"
+
+[[test]]
 name = "triangle_test3_sets_state"
 path = "tests/messages/triangle_test3_sets_state.rs"
 
@@ -222,3 +238,29 @@ path = "tests/util/cli_parse_test.rs"
 [[test]]
 name = "util_cli_node_file_override"
 path = "tests/util/cli/node_file_override.rs"
+
+[[test]]
+name = "util_cli_debug_flag"
+path = "tests/util/cli/debug_flag.rs"
+
+
+[[test]]
+name = "algo_ops_address_derivation_test"
+path = "tests/blockchain/algo_ops_address_derivation_test.rs"
+
+
+[[test]]
+name = "util_cli_node_file_null_and_missing"
+path = "tests/util/cli/node_file_null_and_missing.rs"
+
+[[test]]
+name = "util_price_parse"
+path = "tests/util/price_parse.rs"
+
+[[test]]
+name = "asset_manager_creator_localnet"
+path = "tests/blockchain/asset_manager_creator_localnet.rs"
+
+[[test]]
+name = "asset_clawback_creator_localnet"
+path = "tests/blockchain/asset_clawback_creator_localnet.rs"

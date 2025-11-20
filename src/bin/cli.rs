@@ -8,13 +8,19 @@ use rust_comms::util::cli_utils::parse_start_options_from_args;
 fn main() {
     // Parse CLI args into StartOptions
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let debug = args.iter().any(|a| a == "--debug");
     let opts = match parse_start_options_from_args(args.clone()) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("Error: {}\nUsage: cli [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]", e);
+            eprintln!("Error: {}\nUsage: cli [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--debug]", e);
             std::process::exit(2);
         }
     };
+
+    if debug {
+        println!("Debug mode enabled");
+        println!("Parsed StartOptions: {:?}", opts);
+    }
 
     // Initialize API
     let mut api = BingleApiImpl::new();

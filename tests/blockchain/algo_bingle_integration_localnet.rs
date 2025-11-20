@@ -28,12 +28,7 @@ fn bingle_end_to_end_calls() {
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
     let receiver = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
 
-    // Create an ASA to act as Bingle$
-    let total_units = 1_000_000u64;
-    let asset_id = creator.create_asset("BINGLE", total_units).expect("asset create").expect("asset id");
-
-    // Deploy the dapp from TEAL artifacts
-    // Print current working directory to help diagnose path issues
+    // Deploy the dapp from TEAL artifacts first so we know the app address
     match std::env::current_dir() {
         Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
         Err(e) => eprintln!("Failed to get current working directory: {}", e),
@@ -42,8 +37,19 @@ fn bingle_end_to_end_calls() {
     let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
     let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval teal");
     let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear teal");
-    // Pass asset_id to deploy so the app account is auto opted-in to the ASA
-    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, Some(asset_id)).expect("deploy app call").expect("app id");
+    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, None).expect("deploy app call").expect("app id");
+
+    // Create an ASA to act as Bingle$ with the reserve set to the app address
+    let total_units = 1_000_000u64;
+    let asset_id = creator.create_asset_with_reserve_app("BINGLE", total_units, app_id).expect("asset create").expect("asset id");
+
+    // Ensure the app can clawback by setting clawback to the app address and opt-in app to ASA
+    creator.set_asset_clawback_to_app(app_id, asset_id).expect("set clawback to app");
+    let _ = AlgoBingle::new(creator.clone()).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
+
+    // Stock the app with some units to sell
+    let app_addr = creator.contract_address(app_id).expect("app address");
+    creator.send_asset(asset_id, 100, &app_addr).expect("fund app with ASA");
 
     // Set price = 1 (microAlgo and unit) using creator (must be app creator)
     let _ = creator.call_app(app_id, ADDRESS_SPEND, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]).expect("set_bingle_price call");

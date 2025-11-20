@@ -15,6 +15,14 @@ class BingleDapp(ARC4Contract):
         # Local state value: caller's registered static endpoint (if any)
         self.static_endpoint = LocalState(String, key="static_endpoint")
 
+    @baremethod(allow_actions=["UpdateApplication"])
+    def update_application(self) -> None:
+        return
+
+    @baremethod(allow_actions=["DeleteApplication"])
+    def delete_application(self) -> None:
+        return
+
     @baremethod(allow_actions=["OptIn"])
     def optin(self) -> None:
         return
@@ -55,12 +63,10 @@ class BingleDapp(ARC4Contract):
           as the Bingle$ ASA to credit.
         - There must be a payment in the group to the application address for exactly the
           current Bingle$ price held in global state.
-        - There must be an asset transfer in the group that transfers exactly 1 unit of
-          the referenced asset to the caller (Txn.sender).
 
-        Note: The contract does not perform an inner transfer; instead it validates an
-        accompanying asset transfer and payment in the same group. This allows flexible
-        funding sources (creator, reserve, distributor) without specific ASA roles.
+        After verifying the payment, the contract performs an inner transaction that
+        clawbacks 1 unit of the Bingle$ ASA from the creator-held reserve to the caller.
+        This requires the ASA's clawback address to be the application address.
         """
         # Ensure a foreign asset is supplied to identify Bingle$ ASA
         asset_id = Txn.assets(0)
@@ -70,26 +76,25 @@ class BingleDapp(ARC4Contract):
         buyer = Txn.sender
 
         saw_payment = False
-        saw_axfer = False
 
-        # Scan the current transaction group for required payment and asset transfer
+        # Scan the current transaction group for required payment
         for i in urange(Global.group_size):
             t = gtxn.Transaction(i)
             # Payment check: receiver is app and amount equals current price
             if t.receiver == app_addr and t.amount == price:
                 saw_payment = True
 
-            # Asset transfer check: correct asset, receiver is buyer, amount == 1
-            if (
-                t.xfer_asset == asset_id
-                and t.asset_receiver == buyer
-                and t.asset_amount == UInt64(1)
-            ):
-                saw_axfer = True
-
-        # Require both conditions
+        # Require payment
         assert saw_payment
-        assert saw_axfer
+
+        # Inner clawback of 1 unit from the creator reserve to the buyer
+        itxn.AssetTransfer(
+            xfer_asset=asset_id,
+            asset_sender=Global.current_application_address,
+            asset_receiver=buyer,
+            asset_amount=UInt64(1),
+            fee=Global.min_txn_fee,
+        ).submit()
 
     @abimethod()
     def sell_bingle(self, amount: UInt64) -> None:
@@ -143,8 +148,8 @@ class BingleDapp(ARC4Contract):
         - Caller must be opted-in to the ASA (enforced off-chain; this method validates
           the presence of an ASA transfer proving the holding exists).
         - Caller must be opted-in to the app to write local state (Algorand enforces this).
-        - A one-time payment in Bingle$ equal to the current price is required; enforced
-          by validating an asset transfer of exactly `price` units of the referenced ASA
+        - A one-time payment of one Bingle$  is required; enforced
+          by validating an asset transfer of exactly 1 of the referenced ASA
           from the caller to the application address in the same group.
         - Stores the handle in local storage under key "Handle" and the timestamp under
           key "HandleTime" set to Global.latest_timestamp(). If a handle is already set,
@@ -153,7 +158,6 @@ class BingleDapp(ARC4Contract):
         asset_id = Txn.assets(0)
         app_addr = Global.current_application_address
         sender = Txn.sender
-        price = self.bingle_price.value
 
         saw_fee = False
         for i in urange(Global.group_size):
@@ -162,7 +166,7 @@ class BingleDapp(ARC4Contract):
                 t.xfer_asset == asset_id
                 and t.sender == sender
                 and t.asset_receiver == app_addr
-                and t.asset_amount == price
+                and t.asset_amount == 1
             ):
                 saw_fee = True
         assert saw_fee

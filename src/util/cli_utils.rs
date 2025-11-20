@@ -123,6 +123,10 @@ where
                 algo_network = net;
                 algo_provider_config = Some(cfg);
             }
+            "--debug" => {
+                // Accept a --debug flag. The binary may use this to enable verbose output.
+                // Intentionally no-op here to keep StartOptions stable for existing tests.
+            }
             s if s.starts_with('-') => {
                 return Err(format!("Unknown option: {}", s));
             }
@@ -148,6 +152,49 @@ where
         algo_provider_config,
         algo_network,
     })
+}
+
+/// Parse a decimal ALGOs string into microAlgos (u64).
+/// Accepts forms like "1", "0.5", "1.234567"; up to 6 fractional digits.
+/// Returns an error on negative numbers, more than 6 fractional digits, or overflow.
+pub fn parse_algos_decimal_to_microalgos(s: &str) -> Result<u64, String> {
+    let t = s.trim();
+    if t.is_empty() {
+        return Err("price must not be empty".to_string());
+    }
+    if t.starts_with('-') {
+        return Err("price must be non-negative".to_string());
+    }
+    // Split on decimal point
+    let parts: Vec<&str> = t.split('.').collect();
+    if parts.len() > 2 {
+        return Err(format!("invalid price '{}': too many decimal points", s));
+    }
+    let whole_str = parts[0];
+    let frac_str = if parts.len() == 2 { parts[1] } else { "" };
+    if frac_str.len() > 6 {
+        return Err(format!("invalid price '{}': more than 6 fractional digits", s));
+    }
+    // Parse digits only
+    if !whole_str.chars().all(|c| c.is_ascii_digit()) {
+        return Err(format!("invalid price '{}': non-digit characters", s));
+    }
+    if !frac_str.chars().all(|c| c.is_ascii_digit()) {
+        return Err(format!("invalid price '{}': non-digit characters", s));
+    }
+    let whole: u128 = if whole_str.is_empty() { 0 } else { whole_str.parse().map_err(|e| format!("invalid price '{}': {}", s, e))? };
+    // Pad fractional to 6 digits
+    let mut frac_padded = String::from(frac_str);
+    while frac_padded.len() < 6 { frac_padded.push('0'); }
+    let frac: u128 = if frac_padded.is_empty() { 0 } else { frac_padded[..6].parse().map_err(|e| format!("invalid price '{}': {}", s, e))? };
+    let micro: u128 = whole
+        .checked_mul(1_000_000u128)
+        .and_then(|v| v.checked_add(frac))
+        .ok_or_else(|| format!("invalid price '{}': overflow", s))?;
+    if micro > u64::MAX as u128 {
+        return Err(format!("invalid price '{}': overflow", s));
+    }
+    Ok(micro as u64)
 }
 
 #[cfg(test)]

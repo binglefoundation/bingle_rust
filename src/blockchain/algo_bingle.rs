@@ -3,7 +3,7 @@ use sha2::{Digest, Sha512_256};
 use std::future::Future;
 use std::str::FromStr;
 
-use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
+use crate::blockchain::algo_ops::{AlgoOps, AppArg};
 
 #[cfg(not(target_os = "ios"))]
 use algonaut::{
@@ -359,20 +359,19 @@ impl AlgoBingle {
     pub fn buy_bingle(&self, app_id: u64, asset_id: u64, price_microalgos: u64) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
+        // Ensure the caller (sender) is opted in to receive the asset from the app's inner tx
+        let _ = self.opt_in_sender_to_asset(asset_id)?;
         let client = self.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
 
-        // 1) Payment: sender -> app address for price
+        // 1) Payment: sender -> app address for price. The app will verify this and perform
+        //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
         let pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos)).build();
         let tx_pay = TxnBuilder::with(&params, pay).build().map_err(|e| anyhow!("build pay: {e}"))?;
 
-        // 2) Asset xfer: sender -> sender of 1 unit (satisfies on-chain axfer check)
-        let ax = TransferAsset::new(sender, asset_id, 1, sender).build();
-        let tx_ax = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build axfer: {e}"))?;
-
-        // 3) App call: buy_bingle()void with foreign asset
+        // 2) App call: buy_bingle()void with foreign asset
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(Self::arc4_selector("buy_bingle()void").to_vec());
         let call = CallApplication::new(sender, app_id)
@@ -382,14 +381,13 @@ impl AlgoBingle {
         let tx_app = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
 
         // Group, sign, and send
-        let mut txs = vec![tx_pay, tx_ax, tx_app];
+        let mut txs = vec![tx_pay, tx_app];
         Self::assign_group_id(&mut txs)?;
 
         let s1 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign pay: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s2 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign axfer: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s3 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
+        let s2 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
 
-        self.broadcast_group(&client, vec![s1, s2, s3])
+        self.broadcast_group(&client, vec![s1, s2])
     }
 
     /// Call sell_bingle. Requires:
@@ -447,6 +445,11 @@ impl AlgoBingle {
         if handle.is_empty() { bail!("handle must not be empty"); }
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
         self.opt_in_app_to_asset(app_id, asset_id)?;
+        
+        // Ensure the caller (sender) is opted-in to the ASA so the axfer succeeds
+        let _ = self.opt_in_sender_to_asset(asset_id)?;
+        // Ensure the caller is opted-in to the application local state to avoid logic eval error
+        self.ops.opt_in_app(app_id)?;
         let client = self.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
@@ -455,6 +458,8 @@ impl AlgoBingle {
         // 1) ASA fee: sender -> app address amount = price_units
         let ax = TransferAsset::new(sender, asset_id, price_units, app_addr).build();
         let tx_ax = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build axfer: {e}"))?;
+        // Print the full asset transfer transaction (tx_ax) with all fields for visibility
+        println!("tx_ax: {:#?}", tx_ax);
 
         // 2) App call: register(string)void with handle arg
         // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
@@ -503,5 +508,33 @@ impl AlgoBingle {
             .call_app(app_id, creator_addr, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
         // Return tx id to signal a call occurred; fetch from tuple index 0
         Ok(_tx_id)
+    }
+
+    /// Ensure the sender account is opted-in to the given ASA. If already opted-in, returns Ok("").
+    /// Otherwise, sends an asset transfer of 0 units from the sender to themselves to perform opt-in.
+    pub fn opt_in_sender_to_asset(&self, asset_id: u64) -> Result<String> {
+        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        let sender_str = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("This operation needs an address"))?;
+        if self.ops.is_account_opted_in_to_asset(sender_str, asset_id)? {
+            return Ok(String::new());
+        }
+        let client = self.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        // Opt-in by sending 0 units to self
+        let ax = TransferAsset::new(sender, asset_id, 0, sender).build();
+        let tx = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build asset opt-in tx: {e}"))?;
+        let signed = account
+            .sign_transaction(tx)
+            .map_err(|e| anyhow!("sign asset opt-in: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed asset opt-in: {e}"))?;
+        let tx_id = match self.rt_block_on(client.broadcast_raw_transaction(&signed))? { Ok(r) => r.tx_id, Err(e) => return Err(anyhow!("broadcast_raw_transaction failed: {e}")) };
+        self.ops.wait_for_confirmation(&tx_id, 10)?;
+        Ok(tx_id)
     }
 }
