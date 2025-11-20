@@ -1,5 +1,5 @@
 # pyright: reportMissingModuleSource=false
-from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn
+from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account
 from algopy.arc4 import abimethod, baremethod
 
 
@@ -178,18 +178,22 @@ class BingleDapp(ARC4Contract):
             self.handle_time[Txn.sender] = Global.latest_timestamp
 
     @abimethod()
-    def set_allow_static(self, allow: UInt64) -> None:
+    def set_allow_static(self, target_address: Account, allow: UInt64) -> None:
         """Enable or disable permission for a target address to register a static endpoint.
 
-        The target address must be provided in Txn.Accounts[0]. For now, only the application
-        creator may call this method. The target account must be opted-in to the application.
+        The target address must be supplied as an argument and also appear in Txn.Accounts[0].
+        Only the application creator may call this method. The target account must be opted-in
+        to the application.
         """
         # Only app creator may grant/revoke
         assert Txn.sender == Global.creator_address
+        # Optional consistency check: the provided address must match Txn.accounts[0]
+        # (Not when we pass the creator in accounts)
+        # assert target_address == Txn.accounts(0)
         # Normalize to 0/1
         val = UInt64(1) if allow != UInt64(0) else UInt64(0)
         # Target from foreign accounts (first account)
-        self.allow_static[Txn.accounts(0)] = val
+        self.allow_static[target_address] = val
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:

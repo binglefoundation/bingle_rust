@@ -89,11 +89,17 @@ impl AlgoBingle {
     /// Returns the submitted transaction id on success.
     pub fn set_allow_static(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        // We pass the target address in the foreign accounts array so the contract can write
-        // local state for that account. The contract enforces that Txn.sender == creator.
+        // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
+        let pk = crate::blockchain::algo_ops::address_to_byte_key(target_address)
+            .map_err(|e| anyhow!("invalid target address: {e}"))?;
         let (txid, _logs) = self
             .ops
-            .call_app(app_id, target_address, None, Some("set_allow_static(uint64)void"), &[AppArg::Uint(if allow { 1 } else { 0 })])?;
+            .call_app(
+                app_id,
+                None,
+                Some("set_allow_static(address,uint64)void"),
+                &[crate::blockchain::algo_ops::AppArg::Bytes(pk.to_vec()), crate::blockchain::algo_ops::AppArg::Uint(if allow { 1 } else { 0 })],
+            )?;
         Ok(txid)
     }
 
@@ -118,6 +124,7 @@ impl AlgoBingle {
             .app_arguments(app_args)
             .build();
         let tx = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
+        println!("register_endpoint tx: {:?}", tx);
         let signed = account
             .sign_transaction(tx)
             .map_err(|e| anyhow!("sign app call: {e}"))?
@@ -365,20 +372,18 @@ impl AlgoBingle {
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
+        println!("app_addr: {:#?}", app_addr);
 
         // 1) Payment: sender -> app address for price. The app will verify this and perform
         //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
         let pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos)).build();
         let tx_pay = TxnBuilder::with(&params, pay).build().map_err(|e| anyhow!("build pay: {e}"))?;
+        println!("tx_pay: {:#?}", tx_pay);
 
-        // 2) App call: buy_bingle()void with foreign asset
-        let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(Self::arc4_selector("buy_bingle()void").to_vec());
-        let call = CallApplication::new(sender, app_id)
-            .app_arguments(app_args)
-            .foreign_assets(vec![asset_id])
-            .build();
-        let tx_app = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
+        // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
+        let tx_app = self
+            .ops
+            .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
 
         // Group, sign, and send
         let mut txs = vec![tx_pay, tx_app];
@@ -498,14 +503,9 @@ impl AlgoBingle {
         let app_addr_str = self.ops.contract_address(app_id)?;
         if self.ops.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
         // Call the admin method on the contract; this must be signed by the creator
-        let creator_addr = self
-            .ops
-            .address
-            .as_ref()
-            .ok_or_else(|| anyhow!("This operation needs an address"))?;
         let (_tx_id, _logs) = self
             .ops
-            .call_app(app_id, creator_addr, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
+            .call_app(app_id, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
         // Return tx id to signal a call occurred; fetch from tuple index 0
         Ok(_tx_id)
     }

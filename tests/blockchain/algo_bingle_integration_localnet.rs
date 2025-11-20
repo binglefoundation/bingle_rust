@@ -41,25 +41,26 @@ fn bingle_end_to_end_calls() {
 
     // Create an ASA to act as Bingle$ with the reserve set to the app address
     let total_units = 1_000_000u64;
-    let asset_id = creator.create_asset_with_reserve_app("BINGLE", total_units, app_id).expect("asset create").expect("asset id");
+    let asset_id = creator.create_asset("BINGLE", total_units).expect("asset create").expect("asset id");
 
     // Ensure the app can clawback by setting clawback to the app address and opt-in app to ASA
-    creator.set_asset_clawback_to_app(app_id, asset_id).expect("set clawback to app");
     let _ = AlgoBingle::new(creator.clone()).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
+
+    creator.set_asset_clawback_to_app(app_id, asset_id).expect("set clawback to app");
 
     // Stock the app with some units to sell
     let app_addr = creator.contract_address(app_id).expect("app address");
     creator.send_asset(asset_id, 100, &app_addr).expect("fund app with ASA");
 
     // Set price = 1 (microAlgo and unit) using creator (must be app creator)
-    let _ = creator.call_app(app_id, ADDRESS_SPEND, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]).expect("set_bingle_price call");
+    let _ = creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]).expect("set_bingle_price call");
 
     // Receiver opts in to ASA and receives 10 units
     receiver.opt_in_to_asset(asset_id).expect("receiver opt-in ASA");
     creator.send_asset(asset_id, 10, ADDRESS_RECEIVE).expect("transfer ASA to receiver");
 
     // Receiver opts in to app to allow local state updates
-    receiver.opt_in_app(app_id).expect("receiver opt-in app");
+    // receiver.opt_in_app(app_id).expect("receiver opt-in app");
 
     // Wrap receiver in AlgoBingle
     let ab = AlgoBingle::new(receiver.clone());

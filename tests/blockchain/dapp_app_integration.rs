@@ -42,7 +42,7 @@ fn deploy_call_validate_and_delete_teal_app() {
     // Call app via AlgoOps and validate initial behavior x*2+1
     let x: u64 = 15;
     let (_tx_id, logs) = ops
-        .call_app(app_id, test_util::ADDRESS_SPEND, None, Some("fn(uint64)uint64"), &[AppArg::Uint(x)])
+        .call_app(app_id, None, Some("fn(uint64)uint64"), &[AppArg::Uint(x)])
         .expect("call app");
     assert!(!logs.is_empty(), "app call should emit at least one log");
     let log_bytes = &logs[0];
@@ -64,7 +64,7 @@ fn deploy_call_validate_and_delete_teal_app() {
 
     // Call again and validate the new behavior using AlgoOps::call_app
     let (_tx2, logs2) = ops
-        .call_app(app_id, test_util::ADDRESS_SPEND, None, Some("fn(uint64)uint64"), &[AppArg::Uint(x)])
+        .call_app(app_id, None, Some("fn(uint64)uint64"), &[AppArg::Uint(x)])
         .expect("call app after update");
     assert!(!logs2.is_empty(), "app call after update should emit at least one log");
     let log_bytes2 = &logs2[0];

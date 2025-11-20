@@ -48,8 +48,9 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear teal");
     let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, None).expect("deploy app call").expect("app id");
 
-    // User opts in to the app to enable local state
+    // User & creator opts in to the app to enable local state
     user.opt_in_app(app_id).expect("user opt-in app");
+    creator.opt_in_app(app_id).expect("user opt-in app");
 
     // Grant static permission for the user via the app creator, then user registers a static endpoint
     let ab_creator = AlgoBingle::new(creator.clone());
