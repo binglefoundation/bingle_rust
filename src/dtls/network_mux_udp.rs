@@ -268,7 +268,7 @@ impl NetworkMux for UdpNetworkMux {
 
     fn set_handle_dtls(&mut self, handler: Option<HandleDtls>) { if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; } }
 
-    fn with_handle_dtls(mut self, handler: HandleDtls) -> Self where Self: Sized {
+    fn with_handle_dtls(self, handler: HandleDtls) -> Self where Self: Sized {
         if let Ok(mut g) = self.handle_dtls.lock() { *g = Some(handler); }
         self
     }
@@ -277,7 +277,7 @@ impl NetworkMux for UdpNetworkMux {
 
     fn set_handle_stun(&mut self, handler: Option<HandleStun>) { if let Ok(mut g) = self.handle_stun.lock() { *g = handler; } }
 
-    fn with_handle_stun(mut self, handler: HandleStun) -> Self where Self: Sized {
+    fn with_handle_stun(self, handler: HandleStun) -> Self where Self: Sized {
         if let Ok(mut g) = self.handle_stun.lock() { *g = Some(handler); }
         self
     }
@@ -286,7 +286,7 @@ impl NetworkMux for UdpNetworkMux {
 
     fn set_handle_turn(&mut self, handler: Option<HandleTurn>) { if let Ok(mut g) = self.handle_turn.lock() { *g = handler; } }
 
-    fn with_handle_turn(mut self, handler: HandleTurn) -> Self where Self: Sized {
+    fn with_handle_turn(self, handler: HandleTurn) -> Self where Self: Sized {
         if let Ok(mut g) = self.handle_turn.lock() { *g = Some(handler); }
         self
     }

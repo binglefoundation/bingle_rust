@@ -889,7 +889,7 @@ pub mod non_ios {
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
             println!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
             #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to)); }
-            let mut stream = match connector.connect("localhost", conn) {
+            let stream = match connector.connect("localhost", conn) {
                 Ok(s) => s,
                 Err(HandshakeError::WouldBlock(mut mid)) => {
                     use std::time::{Duration, Instant};

@@ -445,7 +445,7 @@ impl BingleApi for BingleApiImpl {
         if let Some(e) = &self.engine { e.register_pending(tag); }
 
         // Ensure message has the responseTag field
-        let mut msg_with_tag = match message {
+        let msg_with_tag = match message {
             JsonValue::Object(mut m) => {
                 m.insert("responseTag".to_string(), JsonValue::String(tag.to_string()));
                 JsonValue::Object(m)

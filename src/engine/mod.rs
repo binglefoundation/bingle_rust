@@ -570,7 +570,6 @@ impl Engine {
         crate::messages::router::set_last_from(Some(*from));
 
         // Try to parse as JSON first to handle tagged responses and set router hints
-        let mut delivered_to_api = false;
         if let Ok(s) = std::str::from_utf8(data) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
                 // Expose last responseTag (if this is a request). Handlers may echo it back.
@@ -596,7 +595,6 @@ impl Engine {
                     let p = ptr.load(Ordering::SeqCst);
                     if !p.is_null() {
                         unsafe { (&*p).handle_incoming_network_message(issuer.to_string(), from.to_string(), v.clone()); }
-                        delivered_to_api = true;
                     }
                 }
             }

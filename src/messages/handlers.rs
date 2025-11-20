@@ -136,7 +136,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 Some(id) => id,
                 None => { eprintln!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
             };
-            let mut associated_relay = match finder.find_relay(&my_id) {
+            let associated_relay = match finder.find_relay(&my_id) {
                 Ok(info) => info,
                 Err(e) => { eprintln!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
             };
