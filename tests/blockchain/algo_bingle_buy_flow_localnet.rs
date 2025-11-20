@@ -44,7 +44,7 @@ fn buy_bingle_transfers_from_reserve_inner_tx() {
     creator.send_asset(asset_id, 100, &app_addr).expect("fund app with ASA");
 
     // Set global BinglePrice to 1 microAlgo
-    let _ = creator.call_app(app_id, ADDRESS_SPEND, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])
+    let _ = creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])
         .expect("set_bingle_price call");
 
     // Buyer: ensure opted-in to ASA (required to receive inner tx)

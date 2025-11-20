@@ -66,7 +66,7 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
         let app_id = ops_creator.deploy_app(&approval, &clear, None).expect("deploy app").expect("app id");
 
         // Set Bingle price to 1 (not strictly required for endpoint registration)
-        let _ = ops_creator.call_app(app_id, test_util::ADDRESS_SPEND, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]);
+        let _ = ops_creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]);
 
         // Opt relays into the app and allow static endpoints
         ops_relay1.opt_in_app(app_id).expect("relay1 opt-in app");

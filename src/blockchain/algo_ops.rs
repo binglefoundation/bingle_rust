@@ -537,6 +537,8 @@ impl AlgoOps {
         let params_res = self.rt_block_on(client.suggested_transaction_params())?;
         let params = match params_res { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
 
+        println!("Setting clawback to app address: {:?}", clawback);
+
         // Build asset reconfiguration: explicitly keep manager and reserve; set clawback to app address
         let cfg = algonaut::transaction::builder::UpdateAsset::new(manager, asset_id)
             .manager(manager)
@@ -869,11 +871,44 @@ impl AlgoOps {
         Ok(Some(app_id))
     }
 
-    pub fn call_app(&self, app_id: u64, creator_address: &str, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
+    pub fn call_app(&self, app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let creator = Self::parse_address(creator_address)?;
-        let sender = self.require_address()?;
+        // Build tx
+        let tx = self.build_call_app_tx(app_id, asset_id, method, args)?;
+        eprintln!("[call_app] method={:?} app_id={} asset_id={:?} args_len={} tx={:#?}", method, app_id, asset_id, args.len(), tx);
         let sk = self.private_key_bytes()?;
+        let client = self.algod_client()?;
+        // Sign, submit, wait
+        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let account = algonaut::transaction::account::Account::from_seed(seed);
+        let signed_tx = account.sign_transaction(tx).map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
+        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = match self.rt_block_on(client.broadcast_raw_transaction(&signed))? { Ok(r) => r.tx_id, Err(e) => return Err(anyhow!("broadcast_raw_transaction failed: {e}")) };
+        self.wait_for_confirmation(&tx_id, 10)?;
+        // Fetch logs
+        let p = match self.rt_block_on(client.pending_transaction_with_id(&tx_id))? { Ok(v) => v, Err(e) => return Err(anyhow!("failed to fetch pending transaction info: {e}")) };
+        let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
+        let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        let mut logs: Vec<Vec<u8>> = Vec::new();
+        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        Ok((tx_id, logs))
+    }
+
+    pub fn build_call_app_tx(&self, app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        // Lookup application information to determine the creator address (to include in foreign accounts)
+        let client = self.algod_client()?;
+        let app_info = match self.rt_block_on(client.application_information(app_id))? {
+            Ok(info) => info,
+            Err(e) => return Err(anyhow!("failed to fetch application information: {e}")),
+        };
+        let app_info_v = serde_json::to_value(&app_info).map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
+        let creator_str = app_info_v
+            .get("params").and_then(|p| p.get("creator").and_then(|x| x.as_str()))
+            .or_else(|| app_info_v.get("creator").and_then(|x| x.as_str()))
+            .ok_or_else(|| anyhow!("application info did not contain creator field"))?;
+        let creator = Self::parse_address(creator_str)?;
+        let sender = self.require_address()?;
 
         // Prepare args (prepend ARC-4 selector if method provided)
         let mut app_args: Vec<Vec<u8>> = Vec::new();
@@ -886,12 +921,31 @@ impl AlgoOps {
         }
         app_args.extend(args.iter().map(|a| a.to_bytes()));
 
-        let client = self.algod_client()?;
         let params = match self.rt_block_on(client.suggested_transaction_params())? { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
 
         // Build application call (NoOp)
+        // Always include creator in accounts for compatibility; for set_allow_static we also include the target address as Accounts[0]
+        let mut accounts: Vec<algonaut::core::Address> = vec![creator];
+        if let Some(sig) = method {
+            if sig == "set_allow_static(address,uint64)void" {
+                if let Some(first) = args.get(0) {
+                    if let AppArg::Bytes(b) = first {
+                        if b.len() == 32 {
+                            let mut pk = [0u8; 32];
+                            pk.copy_from_slice(&b[..32]);
+                            if let Ok(addr_str) = crate::blockchain::algo_ops::byte_key_to_address(&pk) {
+                                if let Ok(target) = Self::parse_address(&addr_str) {
+                                    // Insert target at index 0 so Txn.Accounts[0] == target
+                                    accounts.insert(0, target);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let mut builder = algonaut::transaction::builder::CallApplication::new(sender, app_id)
-            .accounts(vec![creator])
+            .accounts(accounts)
             .app_arguments(app_args);
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![aid]); }
         let call = builder.build();
@@ -920,28 +974,7 @@ impl AlgoOps {
         )
         .build()
         .map_err(|e| anyhow!("failed to build app call transaction: {e}"))?;
-
-        // Sign, submit, wait
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
-        let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign_transaction(tx).map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = match self.rt_block_on(client.broadcast_raw_transaction(&signed))? { Ok(r) => r.tx_id, Err(e) => return Err(anyhow!("broadcast_raw_transaction failed: {e}")) };
-        self.wait_for_confirmation(&tx_id, 10)?;
-
-        // Fetch logs from pending tx info and decode base64
-        let p = match self.rt_block_on(client.pending_transaction_with_id(&tx_id))? { Ok(v) => v, Err(e) => return Err(anyhow!("failed to fetch pending transaction info: {e}")) };
-        let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
-        let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
-        let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr {
-            if let Some(s) = l.as_str() {
-                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) {
-                    logs.push(bytes);
-                }
-            }
-        }
-        Ok((tx_id, logs))
+        Ok(tx)
     }
 
     pub fn opt_in_app(&self, app_id: u64) -> Result<()> {
