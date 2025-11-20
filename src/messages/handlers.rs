@@ -147,7 +147,7 @@ impl MessageHandler for DefaultPrintingHandler {
             let json_val = crate::messages::marshal::to_json_value(&msg_out);
 
             // Build NetworkSourceKey and user id base64(36) as required by API
-            use crate::api::bingle_api::{BingleApi, NetworkSourceKey, UserId};
+            use crate::api::bingle_api::{NetworkSourceKey, UserId};
             let nsk = NetworkSourceKey::new_direct(associated_relay.address);
             let user_id: UserId = match data_encoding::BASE32_NOPAD.decode(associated_relay.id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),

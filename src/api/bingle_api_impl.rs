@@ -6,7 +6,6 @@ use std::time::Duration;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
-use crate::api::bingle_api::BingleApiInternal;
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
@@ -363,9 +362,6 @@ impl BingleApi for BingleApiImpl {
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
         // Only direct socket address path is implemented at this stage.
         if let Some(addr) = network_source_key.inet_socket_address {
-            // Keep a copy of message for potential local synthetic response handling in tests
-            let msg_clone = message.clone();
-
             // JUNIE: do not reinstate the below hack
             // Determine if this is a RelayCheck before sending so we can synthesize a response if needed
             // let mut is_check = false;

@@ -950,12 +950,6 @@ pub mod non_ios {
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err)); }
                     return Err(format!("dtls client connect failed - HandshakeError::SetupFailure: {}", err));
                 }
-                Err(_e) => {
-                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
-                    println!("[DtlsOpenSsl::send] connect() error to {}", to);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() error to {}", to)); }
-                    return Err("dtls client connect failed - Err".to_string());
-                }
             };
             // Connected new DTLS stream
             println!("[DtlsOpenSsl::send] connected new DTLS stream to {}", to);
@@ -1044,7 +1038,7 @@ pub mod non_ios {
                 std::thread::spawn(move || {
                     use std::io::Read;
                     let peer_cert_handler2 = peer_cert_handler;
-                    let ca_bytes2 = ca_bytes_for_thread;
+                    let _ca_bytes2 = ca_bytes_for_thread;
                     let mut buf = [0u8; 2048];
                     let mut logged_wouldblock = false;
                     loop {

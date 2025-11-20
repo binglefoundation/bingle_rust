@@ -214,7 +214,7 @@ impl Engine {
 
         // Bind UDP on 127.0.0.1:0 and create mux (OS assigns an ephemeral port)
         let mut mux0 = UdpNetworkMux::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
-        let local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
+        let _local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
         let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
@@ -223,7 +223,7 @@ impl Engine {
         let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
         // We'll detect RelayTriangleTest3 to unblock waiters while still routing to default
         let triangle_signal: Arc<(Mutex<bool>, Condvar)> = Arc::new((Mutex::new(false), Condvar::new()));
-        let triangle_signal_clone = triangle_signal.clone();
+        let _triangle_signal_clone = triangle_signal.clone();
         let existing = dtls.get_handle_message();
         // Create another atomic pointer for use inside the closure
         let self_ptr2 = std::sync::atomic::AtomicPtr::new(self_ptr.load(std::sync::atomic::Ordering::SeqCst));
@@ -291,7 +291,7 @@ impl Engine {
         eprintln!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
         let mux = Arc::new(UdpNetworkMux::bind(bind_addr).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
         // Determine the concrete local address after bind (handles port 0)
-        let local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
+        let _local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create self pointer for registration from closure
         let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
