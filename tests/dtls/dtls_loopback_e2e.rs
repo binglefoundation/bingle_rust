@@ -1,6 +1,6 @@
 #![cfg(not(target_os = "ios"))]
 
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
@@ -28,8 +28,6 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
     let server_key_pem: Vec<u8> = certs.server_key.clone();
-    let client_cert_pem: Vec<u8> = certs.client_crt.clone();
-    let client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Create and start a UDP mux for the server and determine its bound address.

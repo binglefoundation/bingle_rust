@@ -61,7 +61,7 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     // Query via Indexer and validate our account appears with the endpoint.
     // Indexer is eventually consistent; poll for up to ~10 seconds.
     let start = Instant::now();
-    let mut list = Vec::new();
+    let mut list: Vec<(String, String)>;
     let ab = AlgoBingle::new(user.clone());
     loop {
         list = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list");

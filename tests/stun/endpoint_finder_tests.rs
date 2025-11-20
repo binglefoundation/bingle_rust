@@ -6,27 +6,6 @@ use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
 // Bring in the public trait and types from the crate under test
 use rust_comms::stun::{StunEndpointFinder, StunState, StunEndpointFinderImpl};
 
-#[derive(Clone)]
-struct ServerStatus {
-    addr: SocketAddr,
-    failures: u8,
-    responded: bool,
-    endpoint: Option<SocketAddr>,
-    last_polled: Option<Instant>,
-}
-
-impl ServerStatus {
-    fn new(addr: SocketAddr) -> Self {
-        Self { addr, failures: 0, responded: false, endpoint: None, last_polled: None }
-    }
-}
-
-
-
-
-
-
-
 fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
     // Build a minimal STUN success with XOR-MAPPED-ADDRESS for IPv4
     let mut pkt = vec![0u8; 20];

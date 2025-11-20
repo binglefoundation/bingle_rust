@@ -1,6 +1,6 @@
 #![cfg(not(target_os = "ios"))]
 
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 
@@ -17,8 +17,8 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
     let server_key_pem: Vec<u8> = certs.server_key.clone();
-    let client_cert_pem: Vec<u8> = certs.client_crt.clone();
-    let client_key_pem: Vec<u8> = certs.client_key.clone();
+    let _client_cert_pem: Vec<u8> = certs.client_crt.clone();
+    let _client_key_pem: Vec<u8> = certs.client_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Create and start a UDP mux for the server and determine its bound address.

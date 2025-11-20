@@ -2,6 +2,7 @@ use rust_comms::algo_ops::{AlgoOps, AlgoProviderConfig};
 use std::env;
 
 // Localnet token from Algorand docs / Algokit localnet
+#[allow(dead_code)]
 pub const LOCALNET_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 // Provided accounts and mnemonics (mnemonics are used here via algonaut to derive the seed)
@@ -9,7 +10,7 @@ pub const LOCALNET_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 pub const PASSPHRASE_10MIL: &str = "provide protect forest couch shaft buyer tenant language almost response chief roast spider scorpion injury they good ecology super east domain thunder shrimp absent output";
 #[allow(dead_code)]
 pub const ADDRESS_10MIL: &str = "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA";
-
+#[allow(dead_code)]
 pub const ADDRESS_SPEND: &str = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE";
 #[allow(dead_code)]
 pub const PASSPHRASE_SPEND: &str = "theme term glow reflect essence artefact tired bicycle february demand vacuum tent faculty arch elevator rent already anchor rough cry sketch nurse mom able inquiry";
@@ -19,6 +20,7 @@ pub const ADDRESS_RECEIVE: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDC
 #[allow(dead_code)]
 pub const PASSPHRASE_RECEIVE: &str = "earth idle country misery matrix wolf tired cabin craft roof quantum comfort answer praise second scout title napkin crop trial industry glue kid absorb midnight";
 
+#[allow(dead_code)]
 pub fn localnet_config() -> AlgoProviderConfig {
     AlgoProviderConfig {
         client_api_url: "http://localhost".to_string(),
@@ -30,6 +32,7 @@ pub fn localnet_config() -> AlgoProviderConfig {
     }
 }
 
+#[allow(dead_code)]
 pub fn should_run_localnet() -> bool {
     // Allow overriding via env var for CI / IDE Run Configuration
     if let Ok(val) = env::var("RUST_COMMS_RUN_LOCALNET") {

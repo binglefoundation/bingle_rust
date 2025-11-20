@@ -37,7 +37,7 @@ fn send_message_to_network_without_addr_fails_gracefully() {
 #[cfg(not(target_os = "ios"))]
 #[test]
 fn relay_check_end_to_end_on_message_receives_response() {
-    use std::net::{SocketAddr, UdpSocket};
+    use std::net::SocketAddr;
     use std::sync::{OnceLock, Arc};
     use std::thread;
     use std::time::{Duration, Instant};

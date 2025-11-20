@@ -38,7 +38,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let _client_cert_pem: Vec<u8> = certs.client_crt.clone();
     let _client_key_pem: Vec<u8> = certs.client_key.clone();
-    let _ca_pem: Vec<u8> = certs.ca_crt.clone();
+    let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Choose a free UDP port by binding to 127.0.0.1:0 and taking the assigned port.
     let probe = UdpSocket::bind(("127.0.0.1", 0)).expect("bind probe");

@@ -30,9 +30,6 @@ fn dtls_openssl_external_s_server_client_send() {
 
     // Generate server cert and key (and CA, though we won't require mutual auth)
     let certs = pki::generate_ed25519_test_certs();
-    let ca_pem: Vec<u8> = certs.ca_crt.clone();
-    // Touch unused fields to avoid dead_code warnings in this test binary
-    let _ = (certs.client_crt.len(), certs.client_key.len());
 
     // Write server cert and key to temporary files for s_server
     let tmp = tempfile::tempdir().expect("tempdir");

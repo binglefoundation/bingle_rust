@@ -6,7 +6,9 @@ pub struct TestCerts {
     pub ca_crt: Vec<u8>,
     pub server_crt: Vec<u8>,
     pub server_key: Vec<u8>,
+    #[allow(dead_code)]
     pub client_crt: Vec<u8>,
+    #[allow(dead_code)]
     pub client_key: Vec<u8>,
 }
 

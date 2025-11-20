@@ -67,7 +67,7 @@ fn simple_stun_two_servers_consistent() {
         if start.elapsed() > Duration::from_secs(3) { break false; }
         {
             let rec = seen.lock().unwrap();
-            if let Some((st, ep)) = rec.iter().rev().find(|(s, _)| *s == StunState::Consistent) {
+            if let Some((_st, ep)) = rec.iter().rev().find(|(s, _)| *s == StunState::Consistent) {
                 assert!(ep.is_some(), "CONSISTENT should have endpoint");
                 break true;
             }

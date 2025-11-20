@@ -2,7 +2,6 @@ use std::fs;
 use std::path::PathBuf;
 
 use rust_comms::util::cli_utils::parse_start_options_from_args;
-use rust_comms::blockchain::algo_ops::AlgoProviderConfig; // ensure type is accessible for assertions
 
 fn write_temp_nodefile(content: &str) -> PathBuf {
     let mut p = std::env::temp_dir();

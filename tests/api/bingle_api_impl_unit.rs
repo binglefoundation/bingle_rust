@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use rust_comms::api::bingle_api::{NetworkSourceKey, BingleApi};
 use base64::Engine as _;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result, UdpNetworkMux};
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use rust_comms::blockchain::algo_ops::byte_key_to_address;
 
 #[derive(Clone)]
