@@ -5,10 +5,9 @@ use std::sync::mpsc::{channel, Sender};
 
 use rust_comms::api::bingle_api::{BingleApi, OnConnectHandler, OnMessageHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos};
+use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoProviderConfig};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use serde::Deserialize;
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -124,17 +123,21 @@ fn cmd_register(args: Vec<String>) {
 
     let handle = match handle { Some(h) => h, None => { eprintln!("register requires --handle <handle>"); std::process::exit(2); } };
     let passphrase = match passphrase { Some(p) => p, None => { eprintln!("register requires --passphrase <text>"); std::process::exit(2); } };
-    let app_id = match app_id { Some(v) => v, None => { eprintln!("register requires --app-id <id>"); std::process::exit(2); } };
-    let asset_id = match asset_id { Some(v) => v, None => { eprintln!("register requires --asset-id <id>"); std::process::exit(2); } };
     let price_units = match price_units { Some(v) => v, None => { eprintln!("register requires --price-units <n>"); std::process::exit(2); } };
 
-    // Configure AlgoOps: from --node-file if provided, else default
-    let cfg: AlgoProviderConfig = match node_file {
-        Some(path) => match parse_node_file(&path) {
-            Ok((_net, cfg)) => cfg,
+    // Load node file (may also contain app_id/asset_id) and build config
+    let (cfg, node_app_id, node_asset_id) : (AlgoProviderConfig, Option<u64>, Option<u64>) = match node_file {
+        Some(path) => match parse_node_file_with_ids(&path) {
+            Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
             Err(e) => { eprintln!("{}", e); std::process::exit(2); }
         },
-        None => AlgoProviderConfig::default(),
+        None => (AlgoProviderConfig::default(), None, None),
+    };
+
+    // Resolve IDs with precedence: node file > CLI > env; error if node+CLI both set
+    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
+        Ok(v) => v,
+        Err(e) => { eprintln!("{}", e); std::process::exit(2); }
     };
 
     // Build AlgoOps with provided passphrase; address is derived immediately in AlgoOps::new
@@ -206,14 +209,15 @@ fn cmd_buybingle(args: Vec<String>) {
     }
 
     let passphrase = match passphrase { Some(p) => p, None => { eprintln!("buybingle requires --passphrase <text>"); std::process::exit(2); } };
-    let app_id = match app_id { Some(v) => v, None => { eprintln!("buybingle requires --app-id <id>"); std::process::exit(2); } };
-    let asset_id = match asset_id { Some(v) => v, None => { eprintln!("buybingle requires --asset-id <id>"); std::process::exit(2); } };
 
-    // Config
-    let cfg: AlgoProviderConfig = match node_file {
-        Some(path) => match parse_node_file(&path) { Ok((_net, cfg)) => cfg, Err(e) => { eprintln!("{}", e); std::process::exit(2); } },
-        None => AlgoProviderConfig::default(),
+    // Load node file (may also contain app_id/asset_id)
+    let (cfg, node_app_id, node_asset_id) : (AlgoProviderConfig, Option<u64>, Option<u64>) = match node_file {
+        Some(path) => match parse_node_file_with_ids(&path) { Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset), Err(e) => { eprintln!("{}", e); std::process::exit(2); } },
+        None => (AlgoProviderConfig::default(), None, None),
     };
+
+    // Resolve IDs with precedence
+    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) { Ok(v) => v, Err(e) => { eprintln!("{}", e); std::process::exit(2); } };
 
     // Ops
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
@@ -258,14 +262,15 @@ fn cmd_sellbingle(args: Vec<String>) {
     }
 
     let passphrase = match passphrase { Some(p) => p, None => { eprintln!("sellbingle requires --passphrase <text>"); std::process::exit(2); } };
-    let app_id = match app_id { Some(v) => v, None => { eprintln!("sellbingle requires --app-id <id>"); std::process::exit(2); } };
-    let asset_id = match asset_id { Some(v) => v, None => { eprintln!("sellbingle requires --asset-id <id>"); std::process::exit(2); } };
 
-    // Config
-    let cfg: AlgoProviderConfig = match node_file {
-        Some(path) => match parse_node_file(&path) { Ok((_net, cfg)) => cfg, Err(e) => { eprintln!("{}", e); std::process::exit(2); } },
-        None => AlgoProviderConfig::default(),
+    // Load node file (may also contain app_id/asset_id)
+    let (cfg, node_app_id, node_asset_id) : (AlgoProviderConfig, Option<u64>, Option<u64>) = match node_file {
+        Some(path) => match parse_node_file_with_ids(&path) { Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset), Err(e) => { eprintln!("{}", e); std::process::exit(2); } },
+        None => (AlgoProviderConfig::default(), None, None),
     };
+
+    // Resolve IDs with precedence
+    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) { Ok(v) => v, Err(e) => { eprintln!("{}", e); std::process::exit(2); } };
 
     // Ops
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
@@ -312,35 +317,3 @@ fn install_ctrlc_handler(tx: Sender<()>) {
     }
 }
 
-#[derive(Deserialize)]
-struct NodeFileCfg {
-    network: Option<String>,
-    client_api_url: String,
-    client_api_port: u16,
-    indexer_api_url: String,
-    indexer_api_port: u16,
-    token: Option<String>,
-    token_key: Option<String>,
-}
-
-fn parse_node_file(path: &str) -> Result<(Option<String>, AlgoProviderConfig), String> {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => return Err(format!("Failed to read node file '{}': {}", path, e)),
-    };
-    let nf: NodeFileCfg = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => return Err(format!("Failed to parse node file '{}': {}", path, e)),
-    };
-    Ok((
-        nf.network,
-        AlgoProviderConfig {
-            client_api_url: nf.client_api_url,
-            client_api_port: nf.client_api_port,
-            indexer_api_url: nf.indexer_api_url,
-            indexer_api_port: nf.indexer_api_port,
-            token: nf.token,
-            token_key: nf.token_key,
-        },
-    ))
-}

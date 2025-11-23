@@ -40,6 +40,42 @@ pub struct AlgoBingle {
 impl AlgoBingle {
     pub fn new(ops: AlgoOps) -> Self { Self { ops } }
 
+    /// Extract the BinglePrice value from already-decoded global state entries.
+    /// Returns Some(price) if found and parsed as u64; otherwise None.
+    pub fn extract_bingle_price(entries: &[(String, String)]) -> Option<u64> {
+        entries
+            .iter()
+            .find(|(k, _)| k == "BinglePrice")
+            .and_then(|(_, v)| v.parse::<u64>().ok())
+    }
+
+    /// Fetch the current Bingle price from the application's global state under key "BinglePrice".
+    /// The price is stored as a uint in global state (microAlgos per Bingle unit).
+    /// Errors if the key is not set or the application cannot be queried.
+    #[cfg(not(target_os = "ios"))]
+    pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let client = self.algod_client()?;
+        let app_info = match self.rt_block_on(client.application_information(app_id))? {
+            Ok(info) => info,
+            Err(e) => return Err(anyhow!("failed to fetch application information: {e}")),
+        };
+        let v = serde_json::to_value(&app_info)
+            .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
+        // Navigate to params.global-state (or global_state depending on casing)
+        let gs_vec: Vec<serde_json::Value> = v
+            .get("params")
+            .and_then(|p| p.get("global-state").or_else(|| p.get("global_state")))
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let entries = Self::decode_state_entries(&gs_vec);
+        match Self::extract_bingle_price(&entries) {
+            Some(p) => Ok(p),
+            None => Err(anyhow!("BinglePrice not set in global state for app_id {app_id}")),
+        }
+    }
+
     #[cfg(not(target_os = "ios"))]
     fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
         use base64::Engine as _;
@@ -372,18 +408,19 @@ impl AlgoBingle {
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
-        println!("app_addr: {:#?}", app_addr);
+        println!("[buy_bingle] app_addr: {:#?}", app_addr);
 
         // 1) Payment: sender -> app address for price. The app will verify this and perform
         //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
         let pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos)).build();
         let tx_pay = TxnBuilder::with(&params, pay).build().map_err(|e| anyhow!("build pay: {e}"))?;
-        println!("tx_pay: {:#?}", tx_pay);
+        println!("[buy_bingle] tx_pay: {:#?}", tx_pay);
 
         // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
         let tx_app = self
             .ops
             .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
+        println!("[buy_bingle] tx_app: {:#?}", tx_app);
 
         // Group, sign, and send
         let mut txs = vec![tx_pay, tx_app];

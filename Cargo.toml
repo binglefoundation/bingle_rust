@@ -33,7 +33,7 @@ serde_json = "1"
 sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = "0.6"
-openssl = { version = "0.10" }
+openssl = { version = "0.10", features = ["vendored"] }
 openssl-sys = { version = "0.9" }
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
@@ -78,6 +78,10 @@ path = "tests/api/bingle_api_impl_integration.rs"
 [[test]]
 name = "bingle_api_impl_unit"
 path = "tests/api/bingle_api_impl_unit.rs"
+
+[[test]]
+name = "algo_bingle_get_bingle_price"
+path = "tests/blockchain/algo_bingle/get_bingle_price.rs"
 
 [[test]]
 name = "pki_generate_pki_from_ops"
@@ -254,8 +258,20 @@ name = "util_cli_node_file_null_and_missing"
 path = "tests/util/cli/node_file_null_and_missing.rs"
 
 [[test]]
+name = "util_cli_node_file_ids"
+path = "tests/util/cli/node_file_ids.rs"
+
+[[test]]
 name = "util_price_parse"
 path = "tests/util/price_parse.rs"
+
+[[test]]
+name = "util_printing_enable"
+path = "tests/util/printing_enable.rs"
+
+[[test]]
+name = "util_stun_comments"
+path = "tests/util/stun/comments.rs"
 
 [[test]]
 name = "asset_manager_creator_localnet"
@@ -264,3 +280,7 @@ path = "tests/blockchain/asset_manager_creator_localnet.rs"
 [[test]]
 name = "asset_clawback_creator_localnet"
 path = "tests/blockchain/asset_clawback_creator_localnet.rs"
+
+[[test]]
+name = "algo_ops_reserve_helpers"
+path = "tests/blockchain/algo_ops_reserve_helpers.rs"

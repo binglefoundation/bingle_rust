@@ -610,6 +610,7 @@ impl AlgoOps {
         let tx = algonaut::transaction::TxnBuilder::with(&params, cfg)
             .build()
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
+        println!("[change_asset_reserve_address] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -636,6 +637,7 @@ impl AlgoOps {
             }
         }
         if creator_amount == 0 {
+            println!("[change_asset_reserve_address] creator has no balance of asset {}", asset_id);
             return Ok(()); // nothing to move
         }
 
@@ -666,6 +668,8 @@ impl AlgoOps {
         let tx = algonaut::transaction::TxnBuilder::with(&params, xfer)
             .build()
             .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
+
+        println!("[send_asset] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -706,6 +710,65 @@ impl AlgoOps {
         self.wait_for_confirmation(&tx_id, 10)
     }
 
+    /// Extract (creator, reserve) addresses from an asset_information JSON value. Returns None if fields missing.
+    pub fn parse_creator_reserve_from_asset_info_value(v: &serde_json::Value) -> Option<(String, String)> {
+        let params = v.get("params");
+        let creator = params.and_then(|p| p.get("creator").and_then(|x| x.as_str()))
+            .or_else(|| v.get("creator").and_then(|x| x.as_str()))?;
+        let reserve = params
+            .and_then(|p| p.get("reserve").and_then(|x| x.as_str())
+                .or_else(|| p.get("reserve-address").or_else(|| p.get("reserve_address")).and_then(|x| x.as_str())))?;
+        Some((creator.to_string(), reserve.to_string()))
+    }
+
+    /// From an account_information JSON value, find the holding amount for the given asset id.
+    pub fn parse_holding_amount_from_account_value(v: &serde_json::Value, asset_id: u64) -> u64 {
+        if let Some(arr) = v.get("assets").and_then(|x| x.as_array()) {
+            for holding in arr {
+                let id = holding.get("asset-id").and_then(|x| x.as_u64())
+                    .or_else(|| holding.get("asset_id").and_then(|x| x.as_u64()))
+                    .unwrap_or(0);
+                if id == asset_id {
+                    return holding.get("amount").and_then(|x| x.as_u64()).unwrap_or(0);
+                }
+            }
+        }
+        0
+    }
+
+    /// Transfer the entire reserve balance of an ASA to the creator. The caller must control the reserve address.
+    pub fn recover_reserve_balance(&self, asset_id: u64) -> Result<()> {
+        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        let client = self.algod_client()?;
+        // Fetch asset info
+        let asset_info = match self.rt_block_on(client.asset_information(asset_id))? { Ok(i) => i, Err(e) => return Err(anyhow!("failed to fetch asset information: {e}")) };
+        let v = serde_json::to_value(&asset_info).map_err(|e| anyhow!("failed to serialize asset info: {e}"))?;
+        let (creator_str, reserve_str) = match Self::parse_creator_reserve_from_asset_info_value(&v) {
+            Some(t) => t,
+            None => return Err(anyhow!("asset information did not contain creator/reserve fields")),
+        };
+        // Ensure we are the reserve account
+        let caller_addr = self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?.clone();
+        if caller_addr != reserve_str {
+            bail!("caller must be the current reserve address to recover the reserve balance");
+        }
+        // Ensure creator is opted-in to receive the asset
+        if !self.is_account_opted_in_to_asset(&creator_str, asset_id)? {
+            bail!("creator address is not opted-in to asset {asset_id}");
+        }
+        // Get reserve account holdings
+        let reserve_addr = Self::parse_address(&reserve_str)?;
+        let acct_info = match self.rt_block_on(client.account_information(&reserve_addr))? { Ok(v) => v, Err(e) => return Err(anyhow!("failed to fetch reserve account information: {e}")) };
+        let va = serde_json::to_value(&acct_info).map_err(|e| anyhow!("failed to serialize reserve account info: {e}"))?;
+        let amount = Self::parse_holding_amount_from_account_value(&va, asset_id);
+        if amount == 0 {
+            println!("[recover_reserve_balance] reserve has zero balance for asset {asset_id}");
+            return Ok(());
+        }
+        // Transfer to creator
+        self.send_asset(asset_id, amount, &creator_str)
+    }
+
     pub fn compile_teal(&self, source: &str) -> Result<Vec<u8>> {
         if source.is_empty() {
             bail!("source must not be empty");
@@ -738,7 +801,7 @@ impl AlgoOps {
         // Schema: Global needs at least 1 integer (e.g., BinglePrice).
         // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime).
         let gs = algonaut::transaction::transaction::StateSchema { number_ints: 1, number_byteslices: 0 };
-        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 1, number_byteslices: 1 };
+        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
 
         let client = self.algod_client()?;
         let params = match self.rt_block_on(client.suggested_transaction_params())? { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
@@ -854,6 +917,10 @@ impl AlgoOps {
             est_fee.0
         );
 
+        // Note: Application state schemas (global/local) are immutable after creation on Algorand.
+        // Do NOT attempt to change schemas in an update; only approval/clear programs (and other updatable
+        // fields supported by the protocol) can be changed. Therefore, we build a plain UpdateApplication
+        // with the new programs and do not set schemas here.
         let mut builder = algonaut::transaction::builder::UpdateApplication::new(sender, app_id, approval, clear);
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![aid]); }
         let update = builder.build();

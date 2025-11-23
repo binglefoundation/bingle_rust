@@ -8,8 +8,19 @@ use serde::Deserialize;
 /// Parse a comma or whitespace separated list of socket addresses or hostnames with ports.
 /// Accepts entries like "1.2.3.4:3478" or "stun.example.com:3478".
 fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
+    // First, strip out line comments: anything after '#' on a line is ignored.
+    let mut cleaned = String::with_capacity(s.len());
+    for line in s.lines() {
+        let line_no_comment = match line.find('#') {
+            Some(idx) => &line[..idx],
+            None => line,
+        };
+        cleaned.push_str(line_no_comment);
+        cleaned.push('\n');
+    }
+
     let mut addrs = Vec::new();
-    for part in s.split(|c: char| c == ',' || c.is_whitespace()) {
+    for part in cleaned.split(|c: char| c == ',' || c.is_whitespace()) {
         let p = part.trim();
         if p.is_empty() { continue; }
         // Try direct SocketAddr parse first
@@ -45,6 +56,8 @@ struct NodeFile {
     indexer_api_port: u16,
     token: Option<String>,
     token_key: Option<String>,
+    app_id: Option<u64>,
+    asset_id: Option<u64>,
 }
 
 fn parse_node_file(path: &str) -> Result<(Option<String>, AlgoProviderConfig), String> {
@@ -63,6 +76,50 @@ fn parse_node_file(path: &str) -> Result<(Option<String>, AlgoProviderConfig), S
             token_key: nf.token_key,
         },
     ))
+}
+
+pub fn parse_node_file_with_ids(path: &str) -> Result<(Option<String>, AlgoProviderConfig, Option<u64>, Option<u64>), String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read node file '{}': {}", path, e))?;
+    let nf: NodeFile = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse node file '{}': {}", path, e))?;
+    Ok((
+        nf.network,
+        AlgoProviderConfig {
+            client_api_url: nf.client_api_url,
+            client_api_port: nf.client_api_port,
+            indexer_api_url: nf.indexer_api_url,
+            indexer_api_port: nf.indexer_api_port,
+            token: nf.token,
+            token_key: nf.token_key,
+        },
+        nf.app_id,
+        nf.asset_id,
+    ))
+}
+
+pub fn resolve_app_asset_ids(
+    node_app_id: Option<u64>,
+    node_asset_id: Option<u64>,
+    cli_app_id: Option<u64>,
+    cli_asset_id: Option<u64>,
+) -> Result<(u64, u64), String> {
+    if node_app_id.is_some() && cli_app_id.is_some() {
+        return Err("--app-id provided but node file also contains app_id; remove one".to_string());
+    }
+    if node_asset_id.is_some() && cli_asset_id.is_some() {
+        return Err("--asset-id provided but node file also contains asset_id; remove one".to_string());
+    }
+
+    let env_app = std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
+    let env_asset = std::env::var("ASSET_ID").ok().and_then(|s| s.parse::<u64>().ok());
+
+    let final_app = node_app_id.or(cli_app_id).or(env_app)
+        .ok_or_else(|| "Missing app_id: provide in node file, via --app-id, or set APP_ID".to_string())?;
+    let final_asset = node_asset_id.or(cli_asset_id).or(env_asset)
+        .ok_or_else(|| "Missing asset_id: provide in node file, via --asset-id, or set ASSET_ID".to_string())?;
+
+    Ok((final_app, final_asset))
 }
 
 /// Parse CLI arguments into StartOptions.

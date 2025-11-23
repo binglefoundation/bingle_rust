@@ -1,9 +1,0 @@
-{
-  "network": "testnet",
-  "client_api_url": "https://testnet-api.4160.nodely.dev",
-  "client_api_port": 443,
-  "indexer_api_url": "https://testnet-idx.4160.nodely.dev",
-  "indexer_api_port": 443,
-  "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "token_key": null
-}

@@ -14,6 +14,7 @@ pub fn enable_immediate_prints() {
             // Safety: setvbuf is process-global and intended to be called early; we call it once.
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
+                // On Apple platforms the FILE* globals are named __stdoutp/__stderrp
                 unsafe extern "C" {
                     static mut __stdoutp: *mut libc::FILE;
                     static mut __stderrp: *mut libc::FILE;
@@ -23,8 +24,13 @@ pub fn enable_immediate_prints() {
             }
             #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
             {
-                let _ = libc::setvbuf(libc::stdout, std::ptr::null_mut(), libc::_IONBF, 0);
-                let _ = libc::setvbuf(libc::stderr, std::ptr::null_mut(), libc::_IONBF, 0);
+                // On other Unix (glibc, musl), the symbols are stdout/stderr.
+                unsafe extern "C" {
+                    static mut stdout: *mut libc::FILE;
+                    static mut stderr: *mut libc::FILE;
+                }
+                let _ = libc::setvbuf(stdout, std::ptr::null_mut(), libc::_IONBF, 0);
+                let _ = libc::setvbuf(stderr, std::ptr::null_mut(), libc::_IONBF, 0);
             }
         }
         // On non-Unix targets, there is no portable way to change buffering for Rust stdio.
