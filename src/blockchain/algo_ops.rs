@@ -1046,6 +1046,16 @@ impl AlgoOps {
 
     pub fn opt_in_app(&self, app_id: u64) -> Result<()> {
         if app_id == 0 { bail!("app_id must be > 0"); }
+        // If already opted-in to local state for this app, nothing to do.
+        // Always validate that Option succeeds per guidelines.
+        let addr_str = self
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("This operation needs an address"))?;
+        if let Some(_entries) = self.local_state_for_account(app_id, addr_str)? {
+            return Ok(());
+        }
+
         let sender = self.require_address()?;
         let sk = self.private_key_bytes()?;
 

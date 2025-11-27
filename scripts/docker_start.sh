@@ -7,6 +7,7 @@ set -euo pipefail
 #   PASSPHRASE  - passphrase to unlock identity
 #   EXTERNAL_IP - externally reachable IP or DNS name
 #   PORT        - UDP/TCP port to bind/expose
+#   HANDLE      - User handle
 # Optional env vars:
 #   EXTRA_ARGS  - any extra args to pass to the CLI
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
@@ -15,6 +16,7 @@ set -euo pipefail
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${EXTERNAL_IP:?Environment variable EXTERNAL_IP must be set}"
 : "${PORT:?Environment variable PORT must be set}"
+: "${HANDLE:?Environment variable HANDLE must be set}"
 
 STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
 NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
@@ -31,6 +33,7 @@ fi
 
 CMD=("/app/bingle_cli" \
   "run" \
+  "--handle" "$HANDLE" \
   "--passphrase" "$PASSPHRASE" \
   "--relay" \
   "--static-ip" "${EXTERNAL_IP}:${PORT}" \

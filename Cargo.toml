@@ -284,3 +284,7 @@ path = "tests/blockchain/asset_clawback_creator_localnet.rs"
 [[test]]
 name = "algo_ops_reserve_helpers"
 path = "tests/blockchain/algo_ops_reserve_helpers.rs"
+
+[[test]]
+name = "api_testnet_endpoint_available"
+path = "tests/api/testnet/endpoint_available.rs"
