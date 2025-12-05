@@ -56,6 +56,35 @@ fn cmd_run(args: Vec<String>) {
         }
     };
 
+    // If a static IP was provided, attempt to register it on-chain for discovery BEFORE starting the protocol
+    if let Some(static_addr) = opts.static_ip {
+        // Resolve app_id from StartOptions or APP_ID env
+        eprintln!("Registering static IP {} for on-chain discovery, opts={:?}", static_addr, opts);
+        let app_id_opt = opts.app_id.or_else(|| std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+        match app_id_opt {
+            Some(app_id) => {
+                // Require a passphrase to sign the transaction
+                if opts.algo_passphrase.is_none() {
+                    eprintln!("--static-ip was provided but no Algorand passphrase (--passphrase) was set; skipping on-chain register_endpoint");
+                } else {
+                    let ops = AlgoOps::new(opts.algo_passphrase.clone(), None, opts.algo_provider_config.clone());
+                    let bingle = AlgoBingle::new(ops);
+                    match bingle.register_endpoint(app_id, &static_addr.to_string()) {
+                        Ok(txid) => {
+                            println!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to register static endpoint '{}': {}", static_addr, e);
+                        }
+                    }
+                }
+            }
+            None => {
+                eprintln!("--static-ip was provided but app_id is missing; set --node-file with app_id or APP_ID env to enable on-chain register_endpoint");
+            }
+        }
+    }
+
     // Initialize API
     let mut api = BingleApiImpl::new();
 

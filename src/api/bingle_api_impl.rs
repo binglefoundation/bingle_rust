@@ -22,7 +22,7 @@ use crate::protocol::ISSUER_SUFFIX;
 pub struct BingleApiImpl {
     on_message: Option<Arc<OnMessageHandler>>,
     on_connect: Option<Arc<OnConnectHandler>>,
-    started_options: Option<StartOptions>,
+    started_options: StartOptions,
     // Shared on_message handler accessible from Engine/DTLS callback without needing &self
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1)
@@ -35,7 +35,7 @@ impl Default for BingleApiImpl {
         Self {
             on_message: None,
             on_connect: None,
-            started_options: None,
+            started_options: StartOptions::default(),
             shared_on_message: Arc::new(Mutex::new(None)),
             engine: None,
         }
@@ -62,7 +62,7 @@ impl BingleApiImpl {
         println!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true"); }
         let mut s = Self::default();
-        let mut eng = Engine::new();
+        let mut eng = Engine::new(StartOptions::default());
         eng.set_dtls(dtls);
         s.engine = Some(eng);
         println!("[BingleApiImpl::new_with_dtls][exit]");
@@ -97,6 +97,14 @@ impl BingleApiImpl {
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a)); }
         a
     }
+    pub fn engine_local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
+        println!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
+        #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]"); }
+        let a = self.engine.as_ref().and_then(|e| e.local_bind_addr_for_tests());
+        println!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a)); }
+        a
+    }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         println!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr)); }
@@ -119,7 +127,7 @@ impl BingleApiImpl {
 
     fn ensure_dtls(&mut self) {
         if self.engine.is_none() {
-            self.engine = Some(Engine::new());
+            self.engine = Some(Engine::new(self.started_options.clone()));
         }
         // Only available on non-iOS targets.
         #[cfg(not(target_os = "ios"))]
@@ -155,6 +163,10 @@ impl BingleApiImpl {
 
 
 impl BingleApi for BingleApiImpl {
+    fn debug_print_options(&self) {
+        println!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options)); }
+    }
     fn get_my_id(&self) -> Option<String> {
         // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
         self.engine
@@ -162,11 +174,17 @@ impl BingleApi for BingleApiImpl {
             .and_then(|e| e.issuer())
             .map(|iss| iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string())
     }
+    fn get_app_id(&self) -> Option<u64> {
+        self.started_options.app_id
+    }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> {
+        self.started_options.algo_provider_config.clone()
+    }
     fn start(&mut self, options: StartOptions) -> Result<(), String> {
         println!("[BingleApiImpl::start][enter] options={:?}", options);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::start][enter] options={:?}", options)); }
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
-        self.started_options = Some(options.clone());
+        self.started_options = options.clone();
         self.ensure_dtls();
 
          // Initialize AlgoOps from provided algoPassphrase if available.
@@ -220,7 +238,7 @@ impl BingleApi for BingleApiImpl {
 
         // Start Engine using the provided StartOptions and propagate any errors
         if self.engine.is_none() {
-            self.engine = Some(Engine::new());
+            self.engine = Some(Engine::new(self.started_options.clone()));
         }
         // Shared atomic pointer to this API instance for thread-safe callbacks
         let self_ptr_arc = Arc::new(std::sync::atomic::AtomicPtr::new(self as *mut BingleApiImpl));
@@ -240,7 +258,10 @@ impl BingleApi for BingleApiImpl {
         {
             struct DelegatingApi(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
             impl crate::api::bingle_api::BingleApi for DelegatingApi {
+                            fn debug_print_options(&self) { unsafe { if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() { p.debug_print_options(); } } }
                             fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
+                fn get_app_id(&self) -> Option<u64> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) } }
+                fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
                 fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
                 fn stop(&mut self) { /* not supported */ }
                 fn network_change(&mut self) { /* not supported */ }
@@ -285,7 +306,10 @@ impl BingleApi for BingleApiImpl {
             let delegator = {
                 struct DelegatingApi2(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
                 impl crate::api::bingle_api::BingleApi for DelegatingApi2 {
+                                    fn debug_print_options(&self) { unsafe { if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() { p.debug_print_options(); } } }
                                     fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
+                    fn get_app_id(&self) -> Option<u64> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) } }
+                    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
                     fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
                     fn stop(&mut self) { }
                     fn network_change(&mut self) { }

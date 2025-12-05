@@ -194,6 +194,11 @@ class BingleDapp(ARC4Contract):
         val = UInt64(1) if allow != UInt64(0) else UInt64(0)
         # Target from foreign accounts (first account)
         self.allow_static[target_address] = val
+        # If disabling permission, also clear any existing static_endpoint for the target
+        if val == UInt64(0):
+            _cur, exists = self.static_endpoint.maybe(target_address)
+            if exists:
+                del self.static_endpoint[target_address]
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:

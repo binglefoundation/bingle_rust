@@ -38,7 +38,12 @@ pub struct AlgoBingle {
 }
 
 impl AlgoBingle {
-    pub fn new(ops: AlgoOps) -> Self { Self { ops } }
+    pub fn new(ops: AlgoOps) -> Self {
+        // Debug-print the AlgoOps configuration for visibility
+        println!("[AlgoBingle::new] ops.config={:?}", ops.config);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::new] ops.config={:?}", ops.config)); }
+        Self { ops }
+    }
 
     /// Extract the BinglePrice value from already-decoded global state entries.
     /// Returns Some(price) if found and parsed as u64; otherwise None.
@@ -196,6 +201,9 @@ impl AlgoBingle {
     /// Returns Vec of (account_address, static_endpoint_value).
     #[cfg(not(target_os = "ios"))]
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+        // Debug: print the current ops.config for visibility in discovery
+        println!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config)); }
         if app_id == 0 { bail!("app_id must be > 0"); }
         let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
         let client = reqwest::blocking::Client::new();
@@ -213,6 +221,8 @@ impl AlgoBingle {
             let resp = req.send().map_err(|e| anyhow!("indexer request failed: {e}"))?;
             if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
             let v: serde_json::Value = resp.json().map_err(|e| anyhow!("indexer json parse failed: {e}"))?;
+            // Debug: dump the full JSON returned from /v2/accounts for visibility
+            eprintln!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
             let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
             for acct in accounts {
                 let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();

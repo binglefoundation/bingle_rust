@@ -30,7 +30,7 @@ pub enum EngineState {
 
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
-    options: Option<StartOptions>,
+    options: StartOptions,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
     // Underlying DTLS listener; per-connection adapters delegate to this
     dtls: Option<Box<dyn Dtls + Send + Sync>>,
@@ -62,9 +62,11 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new() -> Self {
+    pub fn new(options: StartOptions) -> Self {
+        println!("[Engine::new] options={:?}", options);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::new] options={:?}", options)); }
         Self {
-            options: None,
+            options: options.clone(),
             mux: None,
             dtls: None,
             state: EngineState::StunIdentify,
@@ -90,6 +92,11 @@ impl Engine {
     /// Access the configured DTLS instance, if any (read-only).
     pub fn dtls(&self) -> Option<&(dyn Dtls + Send + Sync)> {
         self.dtls.as_deref()
+    }
+
+    /// Test helper: get the local UDP bind address of the mux, if started.
+    pub fn local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
+        if let Some(m) = &self.mux { m.local_addr().ok() } else { None }
     }
 
     /// Apply a closure to the DTLS instance if configured.
@@ -203,7 +210,7 @@ impl Engine {
     /// Implements static endpoint path or STUN-based discovery when not provided.
     pub fn start(&mut self, options: StartOptions) -> Result<(), String> {
         // Keep a copy of options
-        self.options = Some(options.clone());
+        self.options = options.clone();
 
         if let Some(static_addr) = options.static_ip {
             return self.start_with_addr(options, static_addr);
@@ -212,8 +219,8 @@ impl Engine {
         // STUN path
         self.state = EngineState::StunIdentify;
 
-        // Bind UDP on 127.0.0.1:0 and create mux (OS assigns an ephemeral port)
-        let mut mux0 = UdpNetworkMux::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+        // Bind UDP on 0.0.0.0:0 and create mux (OS assigns an ephemeral port)
+        let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let _local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
@@ -287,9 +294,12 @@ impl Engine {
     }
 
     fn start_with_addr(&mut self, _options: StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
-        // Create a UDP NetworkMux bound to the requested address (port may be 0 for OS-assigned)
-        eprintln!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
-        let mux = Arc::new(UdpNetworkMux::bind(bind_addr).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
+        // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
+        // The static address is used for signaling and routing outside any firewall, not for local bind.
+        let port = bind_addr.port();
+        let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+        eprintln!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
+        let mux = Arc::new(UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
@@ -373,13 +383,20 @@ impl Engine {
             if api_opt.is_none() { panic!("[Engine] No BingleApi available for relay check"); }
 
             // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
-            // App id is taken from env var BINGLE_APP_ID to avoid API surface changes.
+            // Prefer app_id from StartOptions; fallback to env var for legacy tests; else use built-in localhost relays.
             let discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
                 #[cfg(not(target_os = "ios"))]
                 {
-                    let app_id_opt = std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
+                    // Capture app_id and provider config from options
+                    let opt_app_id = self.options.app_id;
+                    let opt_cfg = self.options.algo_provider_config.clone();
+                    let app_id_opt = opt_app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                    println!("[Engine] indexer discovery app_id={:?}", app_id_opt);
                     if let Some(app_id) = app_id_opt {
-                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, None));
+                        let ab = {
+                            let ops = crate::blockchain::algo_ops::AlgoOps::new(None, None, opt_cfg);
+                            crate::blockchain::algo_bingle::AlgoBingle::new(ops)
+                        };
                         Arc::new(move || {
                             match ab.list_static_endpoints_via_indexer(app_id) {
                                 Ok(list) => {
@@ -390,13 +407,11 @@ impl Engine {
                                         }
                                     }
                                     if out.is_empty() {
-                                        // Fallback to local defaults if indexer returns nothing
-                                        vec![RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]
+                                        panic!("[Engine] indexer discovery returned empty static endpoints list");
                                     } else { out }
                                 }
                                 Err(e) => {
-                                    eprintln!("[Engine] indexer discovery failed: {}", e);
-                                    vec![RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }]
+                                    panic!("[Engine] indexer discovery failed: {}", e);
                                 }
                             }
                         })
@@ -418,7 +433,7 @@ impl Engine {
                 iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
             } else {
                 // Fallback: if issuer is not set, use the handle (best-effort; may yield suboptimal selection).
-                self.options.as_ref().map(|o| o.handle.clone()).unwrap_or_default()
+                self.options.handle.clone()
             };
             let relay = finder.find_relay(&my_id);
             if let Ok(r) = relay {

@@ -145,6 +145,10 @@ where
     let mut stun_servers: Option<Vec<SocketAddr>> = None;
     let mut algo_provider_config: Option<AlgoProviderConfig> = None;
     let mut algo_network: Option<String> = None;
+    let mut cli_app_id: Option<u64> = None;
+    let mut cli_asset_id: Option<u64> = None;
+    let mut node_app_id: Option<u64> = None;
+    let mut node_asset_id: Option<u64> = None;
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -176,9 +180,19 @@ where
             }
             "--node-file" => {
                 let v = it.next().ok_or("--node-file requires a <file> value")?;
-                let (net, cfg) = parse_node_file(&v)?;
+                let (net, cfg, nid_app, nid_asset) = parse_node_file_with_ids(&v)?;
                 algo_network = net;
                 algo_provider_config = Some(cfg);
+                node_app_id = nid_app;
+                node_asset_id = nid_asset;
+            }
+            "--app-id" => {
+                let v = it.next().ok_or("--app-id requires a value")?;
+                cli_app_id = Some(v.parse::<u64>().map_err(|e| format!("Invalid --app-id '{}': {}", v, e))?);
+            }
+            "--asset-id" => {
+                let v = it.next().ok_or("--asset-id requires a value")?;
+                cli_asset_id = Some(v.parse::<u64>().map_err(|e| format!("Invalid --asset-id '{}': {}", v, e))?);
             }
             "--debug" => {
                 // Accept a --debug flag. The binary may use this to enable verbose output.
@@ -200,6 +214,12 @@ where
 
     let handle = handle.ok_or("Missing handle: provide --handle <handle> or a positional <handle>")?;
 
+    // Try to resolve IDs; if none provided anywhere, leave as None to keep start flexible for tests.
+    let (app_id_opt, asset_id_opt) = match resolve_app_asset_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id) {
+        Ok((a, b)) => (Some(a), Some(b)),
+        Err(_) => (None, None),
+    };
+
     Ok(StartOptions {
         handle,
         algo_passphrase,
@@ -208,6 +228,8 @@ where
         stun_servers,
         algo_provider_config,
         algo_network,
+        app_id: app_id_opt,
+        asset_id: asset_id_opt,
     })
 }
 

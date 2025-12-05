@@ -1,0 +1,691 @@
+[runner] Starting test binary: /app/test_bin
+[runner] Filter: testnet_user_reaches_endpoint_available
+[runner] Writing results to: /out/test_results.txt
+[runner] Date: 2025-12-05T01:43:02+00:00
+
+running 1 test
+[AlgoBingle::new] ops.config=AlgoProviderConfig { client_api_url: "https://testnet-api.4160.nodely.dev", client_api_port: 443, indexer_api_url: "https://testnet-idx.4160.nodely.dev", indexer_api_port: 443, token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), token_key: None }
+[AlgoBingle::list_static_endpoints_via_indexer] ops.config=AlgoProviderConfig { client_api_url: "https://testnet-api.4160.nodely.dev", client_api_port: 443, indexer_api_url: "https://testnet-idx.4160.nodely.dev", indexer_api_port: 443, token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), token_key: None }
+[AlgoBingle][indexer /v2/accounts] page: {"accounts":[{"address":"J3GHIF4QBJT7PEQHJ7YNJXP64RY7Q27GRB6HEFJ7O5E6JULGNSPVP546N4","amount":486000,"amount-without-pending-rewards":486000,"apps-local-state":[{"deleted":false,"id":750066911,"key-value":[{"key":"SGFuZGxlVGltZQ==","value":{"bytes":"","type":2,"uint":1764277630}},{"key":"YWxsb3dfc3RhdGlj","value":{"bytes":"","type":2,"uint":1}},{"key":"c3RhdGljX2VuZHBvaW50","value":{"bytes":"MTcyLjE3LjAuMjoyMDAyMA==","type":1,"uint":0}},{"key":"SGFuZGxl","value":{"bytes":"cmVsYXkyMA==","type":1,"uint":0}}],"opted-in-at-round":57941947,"schema":{"num-byte-slice":2,"num-uint":3}}],"apps-total-schema":{"num-byte-slice":2,"num-uint":3},"assets":[{"amount":0,"asset-id":750066910,"deleted":false,"is-frozen":false,"opted-in-at-round":57941943}],"created-at-round":57941941,"deleted":false,"min-balance":485500,"pending-rewards":0,"reward-base":27521,"rewards":0,"round":58174288,"sig-type":"sig","status":"Offline","total-apps-opted-in":1,"total-assets-opted-in":1,"total-box-bytes":0,"total-boxes":0,"total-created-apps":0,"total-created-assets":0},{"address":"LXVVDOAN43ICU6C5LQABGJIS7HQFRV54AIQWT7QU5EPYB4TOSCT6PT25IQ","amount":1498000,"amount-without-pending-rewards":1498000,"apps-local-state":[{"deleted":false,"id":750066911,"key-value":[{"key":"YWxsb3dfc3RhdGlj","value":{"bytes":"","type":2,"uint":0}},{"key":"SGFuZGxl","value":{"bytes":"bmV3dXNlcjEw","type":1,"uint":0}},{"key":"SGFuZGxlVGltZQ==","value":{"bytes":"","type":2,"uint":1763869626}}],"opted-in-at-round":57789570,"schema":{"num-byte-slice":2,"num-uint":3}}],"apps-total-schema":{"num-byte-slice":2,"num-uint":3},"assets":[{"amount":0,"asset-id":750066910,"deleted":false,"is-frozen":false,"opted-in-at-round":57789566}],"created-at-round":57789564,"deleted":false,"min-balance":485500,"pending-rewards":0,"reward-base":27521,"rewards":0,"round":58174288,"sig-type":"sig","status":"Offline","total-apps-opted-in":1,"total-assets-opted-in":1,"total-box-bytes":0,"total-boxes":0,"total-created-apps":0,"total-created-assets":0},{"address":"SRIDWL763LIECMBL5N4WRJE6TGBBJL6SKJ6OZOMEQSGAOKW5JEBVUUH3QU","amount":496000,"amount-without-pending-rewards":496000,"apps-local-state":[{"deleted":false,"id":750066911,"key-value":[{"key":"SGFuZGxl","value":{"bytes":"dGVzdHVzZXIxMA==","type":1,"uint":0}},{"key":"SGFuZGxlVGltZQ==","value":{"bytes":"","type":2,"uint":1764278115}}],"opted-in-at-round":57942129,"schema":{"num-byte-slice":2,"num-uint":3}}],"apps-total-schema":{"num-byte-slice":2,"num-uint":3},"assets":[{"amount":0,"asset-id":750066910,"deleted":false,"is-frozen":false,"opted-in-at-round":57942125}],"created-at-round":57942123,"deleted":false,"min-balance":485500,"pending-rewards":0,"reward-base":27521,"rewards":0,"round":58174288,"sig-type":"sig","status":"Offline","total-apps-opted-in":1,"total-assets-opted-in":1,"total-box-bytes":0,"total-boxes":0,"total-created-apps":0,"total-created-assets":0},{"address":"VOO2232GQSXBF5KZ626UY4YQ5DFYL2GX4WIGRDAYMKXPITZX47WSVXYMRM","amount":493000,"amount-without-pending-rewards":493000,"apps-local-state":[{"deleted":false,"id":750066911,"key-value":[{"key":"SGFuZGxlVGltZQ==","value":{"bytes":"","type":2,"uint":1763868986}},{"key":"YWxsb3dfc3RhdGlj","value":{"bytes":"","type":2,"uint":0}},{"key":"SGFuZGxl","value":{"bytes":"bmV3dXNlcjEw","type":1,"uint":0}}],"opted-in-at-round":57789331,"schema":{"num-byte-slice":2,"num-uint":3}}],"apps-total-schema":{"num-byte-slice":2,"num-uint":3},"assets":[{"amount":0,"asset-id":750066910,"deleted":false,"is-frozen":false,"opted-in-at-round":57789327}],"created-at-round":57789325,"deleted":false,"min-balance":485500,"pending-rewards":0,"reward-base":27521,"rewards":0,"round":58174288,"sig-type":"sig","status":"Offline","total-apps-opted-in":1,"total-assets-opted-in":1,"total-box-bytes":0,"total-boxes":0,"total-created-apps":0,"total-created-assets":0},{"address":"ZEBF7TPP3ZKVPBUSXDRZE2XIRLBRBYFQF6PFEXXLTFMOP6ETX3HFKG7D6Y","amount":486000,"amount-without-pending-rewards":486000,"apps-local-state":[{"deleted":false,"id":750066911,"key-value":[{"key":"SGFuZGxl","value":{"bytes":"cmVsYXkyMQ==","type":1,"uint":0}},{"key":"SGFuZGxlVGltZQ==","value":{"bytes":"","type":2,"uint":1764277774}},{"key":"YWxsb3dfc3RhdGlj","value":{"bytes":"","type":2,"uint":1}},{"key":"c3RhdGljX2VuZHBvaW50","value":{"bytes":"MTcyLjE3LjAuMzoyMDAyMQ==","type":1,"uint":0}}],"opted-in-at-round":57942001,"schema":{"num-byte-slice":2,"num-uint":3}}],"apps-total-schema":{"num-byte-slice":2,"num-uint":3},"assets":[{"amount":0,"asset-id":750066910,"deleted":false,"is-frozen":false,"opted-in-at-round":57941997}],"created-at-round":57941995,"deleted":false,"min-balance":485500,"pending-rewards":0,"reward-base":27521,"rewards":0,"round":58174288,"sig-type":"sig","status":"Offline","total-apps-opted-in":1,"total-assets-opted-in":1,"total-box-bytes":0,"total-boxes":0,"total-created-apps":0,"total-created-assets":0}],"current-round":58174288,"next-token":"ZEBF7TPP3ZKVPBUSXDRZE2XIRLBRBYFQF6PFEXXLTFMOP6ETX3HFKG7D6Y"}
+[AlgoBingle][indexer /v2/accounts] page: {"accounts":[],"current-round":58174289}
+[BingleApiImpl::new][enter]
+[BingleApiImpl::new][exit]
+[BingleApiImpl::start][enter] options=StartOptions { handle: "testuser10", algo_passphrase: Some("sand fantasy youth fix suggest immense stem awful piano pyramid garment wear butter setup cake finger hawk game language demise company surprise rule about during"), static_ip: None, am_relay: false, stun_servers: Some([74.125.250.129:19302, 147.182.188.245:3478, 27.111.14.93:3478]), algo_provider_config: Some(AlgoProviderConfig { client_api_url: "https://testnet-api.4160.nodely.dev", client_api_port: 443, indexer_api_url: "https://testnet-idx.4160.nodely.dev", indexer_api_port: 443, token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), token_key: None }), algo_network: Some("testnet"), app_id: Some(750066911), asset_id: Some(750066910) }
+[Engine::new] options=StartOptions { handle: "testuser10", algo_passphrase: Some("sand fantasy youth fix suggest immense stem awful piano pyramid garment wear butter setup cake finger hawk game language demise company surprise rule about during"), static_ip: None, am_relay: false, stun_servers: Some([74.125.250.129:19302, 147.182.188.245:3478, 27.111.14.93:3478]), algo_provider_config: Some(AlgoProviderConfig { client_api_url: "https://testnet-api.4160.nodely.dev", client_api_port: 443, indexer_api_url: "https://testnet-idx.4160.nodely.dev", indexer_api_port: 443, token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), token_key: None }), algo_network: Some("testnet"), app_id: Some(750066911), asset_id: Some(750066910) }
+[UdpNetworkMux] bind "0.0.0.0:0"
+[UdpNetworkMux][receive][loop on 0.0.0.0:33765] starts
+[BingleApiImpl::start][exit] Ok(())
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[STUN] sending Binding Request to 74.125.250.129:19302
+[UdpNetworkMux][write other][Some(0.0.0.0:33765) -> 74.125.250.129:19302] Stun (20 bytes)
+[STUN] sending Binding Request to 147.182.188.245:3478
+[UdpNetworkMux][write other][Some(0.0.0.0:33765) -> 147.182.188.245:3478] Stun (20 bytes)
+[STUN] sending Binding Request to 27.111.14.93:3478
+[UdpNetworkMux][write other][Some(0.0.0.0:33765) -> 27.111.14.93:3478] Stun (20 bytes)
+[STUN] received response from 74.125.250.129:19302 mapped=Some(219.88.235.207:62757)
+[STUN] state change: Single endpoint=None
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[STUN] received response from 147.182.188.245:3478 mapped=Some(219.88.235.207:64180)
+[STUN] state change: Inconsistent endpoint=None
+
+thread '<unnamed>' (17) panicked at src/engine/mod.rs:484:9:
+NotImplemented: STUN reported Inconsistent public endpoint
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/std/src/panicking.rs:698:5
+   1: core::panicking::panic_fmt
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/panicking.rs:75:14
+   2: rust_comms::engine::Engine::on_stun_inconsistent
+             at /Users/dev/dev/bingle_rust_branches/master/src/engine/mod.rs:484:9
+   3: rust_comms::engine::Engine::start_stun_find::{{closure}}
+             at /Users/dev/dev/bingle_rust_branches/master/src/engine/mod.rs:513:35
+   4: rust_comms::stun::endpoint_finder_impl::Inner::recompute_state_and_notify
+             at /Users/dev/dev/bingle_rust_branches/master/src/stun/endpoint_finder_impl.rs:73:52
+   5: <rust_comms::stun::endpoint_finder_impl::StunEndpointFinderImpl as rust_comms::stun::endpoint_finder::StunEndpointFinder>::process_packet
+             at /Users/dev/dev/bingle_rust_branches/master/src/stun/endpoint_finder_impl.rs:252:15
+   6: rust_comms::engine::Engine::start::{{closure}}
+             at /Users/dev/dev/bingle_rust_branches/master/src/engine/mod.rs:271:23
+   7: rust_comms::dtls::network_mux_udp::UdpNetworkMux::start::{{closure}}
+             at /Users/dev/dev/bingle_rust_branches/master/src/dtls/network_mux_udp.rs:179:37
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+
+thread '<unnamed>' (18) panicked at src/stun/endpoint_finder_impl.rs:182:46:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/std/src/panicking.rs:698:5
+   1: core::panicking::panic_fmt
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/panicking.rs:75:14
+   2: core::result::unwrap_failed
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/result.rs:1855:5
+   3: core::result::Result<T,E>::unwrap
+             at /Users/dev/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/result.rs:1226:23
+   4: <rust_comms::stun::endpoint_finder_impl::StunEndpointFinderImpl as rust_comms::stun::endpoint_finder::StunEndpointFinder>::start::{{closure}}
+             at /Users/dev/dev/bingle_rust_branches/master/src/stun/endpoint_finder_impl.rs:182:46
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+test testnet_user_reaches_endpoint_available has been running for over 60 seconds
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+[BingleApiImpl::engine_state_for_tests][enter]
+[BingleApiImpl::engine_state_for_tests][exit] state=Some(StunIdentify)
+
+thread 'testnet_user_reaches_endpoint_available' (14) panicked at tests/api/testnet/endpoint_available.rs:125:13:
+Timed out waiting for EndpointAvailable; last state: Some(StunIdentify)
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/std/src/panicking.rs:698:5
+   1: core::panicking::panic_fmt
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/panicking.rs:75:14
+   2: endpoint_available::testnet_user_reaches_endpoint_available
+             at /Users/dev/dev/bingle_rust_branches/master/tests/api/testnet/endpoint_available.rs:125:13
+   3: endpoint_available::testnet_user_reaches_endpoint_available::{{closure}}
+             at /Users/dev/dev/bingle_rust_branches/master/tests/api/testnet/endpoint_available.rs:66:45
+   4: core::ops::function::FnOnce::call_once
+             at /Users/dev/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+   5: core::ops::function::FnOnce::call_once
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test testnet_user_reaches_endpoint_available ... FAILED
+
+failures:
+
+failures:
+    testnet_user_reaches_endpoint_available
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 61.71s
+
+[runner] Test FAILED with exit code 101

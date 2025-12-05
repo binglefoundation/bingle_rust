@@ -42,6 +42,8 @@ fn bingle_api_relay_check_two_nodes() {
         stun_servers: None,
         algo_provider_config: None,
         algo_network: None,
+        app_id: None,
+        asset_id: None,
     };
     relay.start(relay_opts).expect("relay start");
 
@@ -86,6 +88,8 @@ fn bingle_api_relay_check_two_nodes() {
         stun_servers: None,
         algo_provider_config: None,
         algo_network: None,
+        app_id: None,
+        asset_id: None,
     };
     client.start(client_opts).expect("client start");
 

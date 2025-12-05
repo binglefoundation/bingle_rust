@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-
+use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::engine::Engine;
 use rust_comms::dtls::{Dtls, HandleMessage};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
@@ -54,7 +54,7 @@ impl Dtls for FakeDtls {
 
 #[test]
 fn engine_send_to_peer_tracks_connections_and_reuses() {
-    let mut engine = Engine::new();
+    let mut engine = Engine::new(StartOptions::default());
     engine.set_dtls(Box::new(FakeDtls::new()));
 
     let a1: SocketAddr = "127.0.0.1:12345".parse().unwrap();

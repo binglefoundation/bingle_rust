@@ -286,5 +286,5 @@ name = "algo_ops_reserve_helpers"
 path = "tests/blockchain/algo_ops_reserve_helpers.rs"
 
 [[test]]
-name = "api_testnet_endpoint_available"
+name = "endpoint_available"
 path = "tests/api/testnet/endpoint_available.rs"

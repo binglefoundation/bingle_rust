@@ -54,6 +54,8 @@ fn engine_basic_bingle_dtls_layer() {
         stun_servers: None,
         algo_provider_config: None,
         algo_network: None,
+        app_id: None,
+        asset_id: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -63,6 +65,8 @@ fn engine_basic_bingle_dtls_layer() {
         stun_servers: None,
         algo_provider_config: None,
         algo_network: None,
+        app_id: None,
+        asset_id: None,
     };
 
     // Start both nodes

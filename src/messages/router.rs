@@ -64,6 +64,8 @@ pub fn get_last_response_tag() -> Option<String> {
 }
 
 pub fn route<H: MessageHandler + ?Sized>(handler: &H, msg: &Message, from_id: &str) {
+    // Debug: print options via API if available
+    if let Some(api) = get_bingle_api() { api.debug_print_options(); }
     let api_opt = get_bingle_api();
     if api_opt.is_none() { eprintln!("[router::route] No BingleApi available to pass to handler"); return; }
     let api = api_opt.unwrap();

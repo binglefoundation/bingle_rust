@@ -24,6 +24,7 @@ impl MessageHandler for CapturingHandler {
 struct MockApi;
 impl BingleApi for MockApi {
     fn get_my_id(&self) -> Option<String> { None }
+    fn get_app_id(&self) -> Option<u64> { None }
     fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}

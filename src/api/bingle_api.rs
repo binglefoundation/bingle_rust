@@ -107,14 +107,42 @@ pub struct StartOptions {
     /// Optional human-readable network name from the node file (e.g., mainnet, testnet).
     #[serde(default)]
     pub algo_network: Option<String>,
+    /// Optional Algorand application id for the Bingle dApp (used for indexer discovery).
+    #[serde(default)]
+    pub app_id: Option<u64>,
+    /// Optional Algorand asset id associated with the dApp (carried for completeness).
+    #[serde(default)]
+    pub asset_id: Option<u64>,
+}
+
+impl Default for StartOptions {
+    fn default() -> Self {
+        Self {
+            handle: String::new(),
+            algo_passphrase: None,
+            static_ip: None,
+            am_relay: false,
+            stun_servers: None,
+            algo_provider_config: None,
+            algo_network: None,
+            app_id: None,
+            asset_id: None,
+        }
+    }
 }
 
 /// The Bingle API trait surface.
 /// This describes the minimal shape expected by the Bingle client per spec.
 pub trait BingleApi: Send + Sync {
+    /// Debug helper: print internal start options if available. Default no-op.
+    fn debug_print_options(&self) { /* default no-op for mocks */ }
     /// Returns this node's id (Algorand address), if known.
     /// Implementations should derive this from the engine issuer (issuer without suffix).
     fn get_my_id(&self) -> Option<String>;
+    /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
+    fn get_app_id(&self) -> Option<u64>;
+    /// Returns the configured Algorand provider config from StartOptions, if any. Default: None.
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> { None }
     /// Start the node using the provided options. Implementations may spawn background tasks.
     fn start(&mut self, options: StartOptions) -> Result<(), String>;
 

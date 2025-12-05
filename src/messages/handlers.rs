@@ -72,6 +72,8 @@ pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
     fn on_triangle_test1(&self, api: Arc<dyn BingleApi>, _from_id: &str, msg: &RelayTriangleTest1) {
+        // Print options via API for debugging
+        api.debug_print_options();
         // Run in a thread per requirements
         let checking = msg.checking_endpoint;
         let api_for_thread = api.clone();
@@ -88,44 +90,35 @@ impl MessageHandler for DefaultPrintingHandler {
             let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
                 #[cfg(not(target_os = "ios"))]
                 {
-                    let app_id_opt = std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
-                    if let Some(app_id) = app_id_opt {
-                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, None));
-                        std::sync::Arc::new(move || {
-                            match ab.list_static_endpoints_via_indexer(app_id) {
-                                Ok(list) => {
-                                    let mut out: Vec<RootRelayInfo> = Vec::new();
-                                    for (id, ep) in list {
-                                        if let Some(addr) = crate::blockchain::algo_bingle::AlgoBingle::parse_relay_ip(&ep) {
-                                            out.push(RootRelayInfo { id, address: addr });
-                                        }
+                    // Prefer app_id from API options; fallback to env var for legacy
+                    let app_id_opt = api_for_thread.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                    let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
+                    let ab = {
+                                            let cfg = api_for_thread.get_algo_provider_config();
+                                            crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, cfg))
+                                        };
+                    std::sync::Arc::new(move || {
+                        match ab.list_static_endpoints_via_indexer(app_id) {
+                            Ok(list) => {
+                                let mut out: Vec<RootRelayInfo> = Vec::new();
+                                for (id, ep) in list {
+                                    if let Some(addr) = crate::blockchain::algo_bingle::AlgoBingle::parse_relay_ip(&ep) {
+                                        out.push(RootRelayInfo { id, address: addr });
                                     }
-                                    if out.is_empty() {
-                                        vec![
-                                            RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
-                                            RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
-                                        ]
-                                    } else { out }
                                 }
-                                Err(e) => {
-                                    eprintln!("[DefaultPrintingHandler] indexer discovery failed: {}", e);
-                                    vec![
-                                        RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
-                                        RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
-                                    ]
-                                }
+                                if out.is_empty() { panic!("on_triangle_test1: no relays discovered via indexer"); } else { out }
                             }
-                        })
-                    } else {
-                        std::sync::Arc::new(|| vec![
-                            RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
-                            RootRelayInfo { id: "KXE77Y7XB4P7D4PJB5J5CHY2MURMGHZXNOU6RAOWDJDNWP2XUSAOZK42L4".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
-                        ])
-                    }
+                            Err(e) => {
+                                panic!("on_triangle_test1: indexer discovery failed: {}", e);
+                            }
+                        }
+                    })
                 }
                 #[cfg(target_os = "ios")]
                 {
-                    std::sync::Arc::new(|| vec![RootRelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                    // On iOS we also require proper discovery via indexer; panic if not configured
+                    let _ = api_for_thread.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok())).expect("on_triangle_test1 (iOS): app_id is required");
+                    std::sync::Arc::new(|| panic!("on_triangle_test1 (iOS): discovery not supported without indexer"))
                 }
             };
             // Use the BingleApi instance passed to the handler

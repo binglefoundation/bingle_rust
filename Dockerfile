@@ -12,12 +12,13 @@ ARG TARGETPLATFORM=linux/arm64
 FROM --platform=$TARGETPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2023 AS base
 
 # Install minimal runtime dependencies (bash for scripts, CA certs, OpenSSL if dynamically linked)
+# Include iproute for IP autodiscovery in docker_start.sh when EXTERNAL_IP is not provided
 RUN dnf install -y \
     bash \
-    coreutils \
     ca-certificates \
     openssl \
     tzdata \
+    iproute \
   && dnf clean all \
   && update-ca-trust
 
@@ -39,7 +40,7 @@ FROM base AS cli
 
 # Path to the prebuilt binary within the build context
 # Default matches typical cross/zigbuild path; override with --build-arg BIN_PATH=...
-ARG BIN_PATH=target/aarch64-unknown-linux-musl/release/bingle_cli
+ARG BIN_PATH=target/aarch64-unknown-linux-musl/debug/bingle_cli
 
 # Copy the prebuilt binary and startup script
 COPY ${BIN_PATH} /app/bingle_cli

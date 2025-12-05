@@ -47,7 +47,7 @@ fn triangle_test3_sets_engine_state_via_internal_api() {
     let mut api = BingleApiImpl::new_with_dtls(Box::new(mock.clone()));
 
     // Start with static IP so Engine installs DTLS handler without STUN
-    let opts = StartOptions { handle: "client".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None };
+    let opts = StartOptions { handle: "client".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None };
     let _ = api.start(opts);
 
     // Ensure handler was installed
