@@ -68,7 +68,8 @@ fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     let t1 = RelayTriangleTest1 { app: None, checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) };
 
     // Act: invoke handler directly
-    handler.on_triangle_test1(api, "FROM-OTHER-ID", &t1);
+    let from = rust_comms::messages::handlers::FromStruct { id: "FROM-OTHER-ID".to_string(), network_source_key: rust_comms::api::bingle_api::NetworkSourceKey::new_direct("127.0.0.1:1".parse().unwrap()) };
+    handler.on_triangle_test1(api, &from, &t1);
 
     // Assert: one send to the configured peer, and TriangleTest2 has checkingId == "MYID"
     let locked = sends.lock().unwrap();

@@ -26,6 +26,7 @@ pub enum EngineState {
     StunIdentify,
     TrianglePing,
     EndpointAvailable,
+    NATRestricted
 }
 
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
@@ -47,6 +48,8 @@ pub struct Engine {
     api_ptr: Option<Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
+    // Flag indicating NAT restricted state when endpoint is not yet available
+    nat_restricted: std::sync::atomic::AtomicBool,
     // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
     connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<SocketAddr, ConnectionEntry>>>,
     // Pending responses map and issuer state moved from BingleApiImpl
@@ -78,6 +81,7 @@ impl Engine {
             bingle_api_for_handlers: None,
             api_ptr: None,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
+            nat_restricted: std::sync::atomic::AtomicBool::new(false),
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
@@ -416,8 +420,8 @@ impl Engine {
                             }
                         })
                     } else {
-                        // No app id set; fallback to built-in localhost relays for tests
-                        Arc::new(|| vec![RootRelayInfo { id: "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                        // No app id set
+                        panic!("[Engine] indexer discovery has no app id");
                     }
                 }
                 #[cfg(target_os = "ios")]
@@ -544,8 +548,11 @@ impl Engine {
     }
 
     pub fn state(&self) -> EngineState {
-        if self.endpoint_ready.load(std::sync::atomic::Ordering::SeqCst) {
+        use std::sync::atomic::Ordering;
+        if self.endpoint_ready.load(Ordering::SeqCst) {
             EngineState::EndpointAvailable
+        } else if self.nat_restricted.load(Ordering::SeqCst) {
+            EngineState::NATRestricted
         } else {
             self.state
         }
@@ -556,13 +563,22 @@ impl Engine {
     /// Internal setter used by BingleApiInternal to update engine state in a thread-safe way.
     /// Currently supports transitioning to EndpointAvailable.
     pub fn set_state_internal(&self, new_state: EngineState) -> bool {
+        use std::sync::atomic::Ordering;
         match new_state {
             EngineState::EndpointAvailable => {
-                self.endpoint_ready.store(true, std::sync::atomic::Ordering::SeqCst);
+                self.endpoint_ready.store(true, Ordering::SeqCst);
                 true
             }
+            EngineState::NATRestricted => {
+                // Only meaningful if endpoint is not yet available
+                if !self.endpoint_ready.load(Ordering::SeqCst) {
+                    self.nat_restricted.store(true, Ordering::SeqCst);
+                    return true;
+                }
+                false
+            }
             _ => {
-                // For other states we currently do not support concurrent mutation
+                // Other transitions not supported concurrently
                 false
             }
         }

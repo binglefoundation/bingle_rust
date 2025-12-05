@@ -33,6 +33,8 @@ pub enum RelayMessage {
     TriangleTest2(RelayTriangleTest2),
     #[serde(rename = "TriangleTest3")]
     TriangleTest3(RelayTriangleTest3),
+    #[serde(rename = "TriangleTest1Response")]
+    TriangleTest1Response(RelayTriangleTest1Response),
     #[serde(rename = "Listen")]
     Listen(RelayListen),
     #[serde(rename = "Check")]
@@ -114,6 +116,12 @@ pub struct RelayTriangleTest2 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelayTriangleTest3 {
+    #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
+    pub app: Option<String>, // must be None (null)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayTriangleTest1Response {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
 }

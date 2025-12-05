@@ -29,7 +29,7 @@ impl RelayPingHandler {
 }
 
 impl MessageHandler for RelayPingHandler {
-    fn on_triangle_test1(&self, api: Arc<dyn crate::api::bingle_api::BingleApi>, _from_id: &str, msg: &RelayTriangleTest1) {
+    fn on_triangle_test1(&self, api: Arc<dyn crate::api::bingle_api::BingleApi>, _from: &crate::messages::handlers::FromStruct, msg: &RelayTriangleTest1) {
         if let Some(to_peer) = self.peer_relay {
             // Obtain our id from the BingleApi (derived from engine issuer). Validate Option success per guidelines.
             let my_id = match api.get_my_id() {
@@ -49,7 +49,7 @@ impl MessageHandler for RelayPingHandler {
         }
     }
 
-    fn on_triangle_test2(&self, _api: Arc<dyn crate::api::bingle_api::BingleApi>, _from_id: &str, msg: &RelayTriangleTest2) {
+    fn on_triangle_test2(&self, _api: Arc<dyn crate::api::bingle_api::BingleApi>, _from: &crate::messages::handlers::FromStruct, msg: &RelayTriangleTest2) {
         // Send TriangleTest3 to the node at checking_endpoint
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));

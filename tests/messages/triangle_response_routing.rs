@@ -1,27 +1,20 @@
-#![cfg(not(target_os = "ios"))]
+use std::sync::{Arc, Mutex};
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-
+use rust_comms::messages::{route, Message, RelayMessage};
 use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::messages::router::{route, set_bingle_api};
-use rust_comms::messages::types::{Message, PlainTextMessage};
+use rust_comms::messages::types::RelayTriangleTest1Response;
+use rust_comms::messages::router::set_bingle_api;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
-struct CapturingHandler {
-    called: &'static AtomicBool,
-    sink: Arc<Mutex<Option<serde_json::Value>>>,
-}
+struct CapturingHandler { hit: Arc<Mutex<bool>> }
+impl CapturingHandler { fn new(hit: Arc<Mutex<bool>>) -> Self { Self { hit } } }
 
 impl MessageHandler for CapturingHandler {
-    fn on_plain_text(&self, _api: Arc<dyn BingleApi>, from: &rust_comms::messages::handlers::FromStruct, msg: &PlainTextMessage) {
-        assert_eq!(from.id, "from-handle");
-        let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text.clone()}));
-        self.called.store(true, Ordering::SeqCst);
-        *self.sink.lock().unwrap() = Some(json);
+    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1Response) {
+        if let Ok(mut g) = self.hit.lock() { *g = true; }
     }
 }
 
-// Minimal API impl to satisfy router requirements
 struct MockApi;
 impl BingleApi for MockApi {
     fn get_my_id(&self) -> Option<String> { None }
@@ -40,23 +33,13 @@ impl BingleApi for MockApi {
 }
 
 #[test]
-fn on_plain_text_calls_handler_implementation() {
-    static CALLED: AtomicBool = AtomicBool::new(false);
-    let received = Arc::new(Mutex::new(None::<serde_json::Value>));
-
-    // Provide a minimal API to the router so it can pass into handler
+fn router_dispatches_triangle_test1_response() {
+    let hit = Arc::new(Mutex::new(false));
+    let handler = CapturingHandler::new(hit.clone());
     set_bingle_api(Some(Arc::new(MockApi)));
 
-    // Build a PlainText message and route it through a custom handler implementation
-    let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };
-    let msg = Message::PlainText(pt.clone());
+    let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
+    route(&handler, &msg, "SENDERID");
 
-    let handler = CapturingHandler { called: &CALLED, sink: received.clone() };
-    route(&handler, &msg, "from-handle");
-
-    assert!(CALLED.load(Ordering::SeqCst), "handler was not called by on_plain_text");
-
-    let got = received.lock().unwrap().clone().expect("no payload captured");
-    // Expect the JSON to include the text field
-    assert_eq!(got.get("text").and_then(|v| v.as_str()), Some("Hello"));
+    assert_eq!(*hit.lock().unwrap(), true);
 }

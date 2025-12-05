@@ -10,6 +10,8 @@
 #   TEST_FILTER   (optional): libtest filter string (default: testnet_user_reaches_endpoint_available)
 #   TESTNET_USER, TESTNET_PASSPHRASE: Credentials required by the integration test
 #   NODE_FILE     (optional): Path to node file; default /app/nodely_testnet_node.json
+#   NAT_MODE      (optional): Direct|Full|Restricted|All (default: All if not set by outer script)
+#   EXPECT_FINAL_STATE (optional): Overrides expected final engine state for single-run mode
 #
 # Notes:
 # - The container image is built to include /app/nodely_testnet_node.json and /app/stunservers.txt.
@@ -21,7 +23,7 @@ TEST_BIN=${TEST_BIN_PATH:-/app/test_bin}
 OUT_FILE=${OUT_FILE:-/out/test_results.txt}
 FILTER=${TEST_FILTER:-testnet_user_reaches_endpoint_available}
 NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
-NAT_MODE=${NAT_MODE:-Direct}
+NAT_MODE=${NAT_MODE:-All}
 
 # Configure NAT/iptables if requested via NAT_MODE
 configure_nat() {
@@ -84,7 +86,41 @@ configure_nat() {
   esac
 }
 
-configure_nat "$NAT_MODE"
+# Derive EXPECT_FINAL_STATE from a given mode
+expected_for_mode() {
+  case "$1" in
+    Restricted) echo "NATRestricted" ;;
+    Direct|Full) echo "EndpointAvailable" ;;
+    *) echo "EndpointAvailable" ;;
+  esac
+}
+
+# Run the test once for a given mode; returns exit code
+run_one_mode() {
+  local mode="$1"
+  local expect
+  expect=$(expected_for_mode "$mode")
+  export NAT_MODE="$mode"
+  export EXPECT_FINAL_STATE="$expect"
+
+  echo "[runner]==================================================" | tee -a "$OUT_FILE"
+  echo "[runner] Running mode: $mode (EXPECT_FINAL_STATE=$expect)" | tee -a "$OUT_FILE"
+
+  configure_nat "$mode"
+
+  # Execute the test; pass the filter as a positional arg followed by --nocapture to show logs
+  set +e
+  "$TEST_BIN" "$FILTER" --nocapture 2>&1 | tee -a "$OUT_FILE"
+  local rc=${PIPESTATUS[0]}
+  set -e
+
+  if [[ $rc -eq 0 ]]; then
+    echo "[runner][$mode] Test PASSED" | tee -a "$OUT_FILE"
+  else
+    echo "[runner][$mode] Test FAILED with exit code $rc" | tee -a "$OUT_FILE"
+  fi
+  return $rc
+}
 
 # Basic validation
 if [[ ! -x "$TEST_BIN" ]]; then
@@ -106,25 +142,50 @@ fi
 export BINGLE_RUN_TESTNET=1
 export RUST_BACKTRACE=1
 
-# Print basic context
+# Print basic context (truncate OUT_FILE)
 {
   echo "[runner] Starting test binary: $TEST_BIN"
   echo "[runner] Filter: $FILTER"
   echo "[runner] Writing results to: $OUT_FILE"
   echo "[runner] Date: $(date -Iseconds)"
+  echo "[runner] NAT_MODE requested: ${NAT_MODE}"
 } | tee "$OUT_FILE"
 
-# Execute the test; pass the filter as a positional arg followed by --nocapture to show logs
-# Capture the exit code of the test process while tee-ing the output to OUT_FILE
-set +e
-"$TEST_BIN" "$FILTER" --nocapture 2>&1 | tee -a "$OUT_FILE"
-rc=${PIPESTATUS[0]}
-set -e
+# Multi-mode default when NAT_MODE is All (or case-insensitive all)
+if [[ "$NAT_MODE" == "All" || "$NAT_MODE" == "all" ]]; then
+  modes=(Direct Full Restricted)
+  declare -A results
+  overall_rc=0
+  for m in "${modes[@]}"; do
+    if run_one_mode "$m"; then
+      results[$m]=0
+    else
+      results[$m]=1
+      overall_rc=1
+    fi
+  done
 
-# Summarize and exit with test's exit code
-if [[ $rc -eq 0 ]]; then
-  echo "[runner] Test PASSED" | tee -a "$OUT_FILE"
-else
-  echo "[runner] Test FAILED with exit code $rc" | tee -a "$OUT_FILE"
+  echo "[runner]==================================================" | tee -a "$OUT_FILE"
+  echo "[runner] Summary:" | tee -a "$OUT_FILE"
+  for m in "${modes[@]}"; do
+    if [[ ${results[$m]} -eq 0 ]]; then
+      echo "[runner][summary] $m: PASSED" | tee -a "$OUT_FILE"
+    else
+      echo "[runner][summary] $m: FAILED" | tee -a "$OUT_FILE"
+    fi
+  done
+  exit $overall_rc
 fi
-exit $rc
+
+# Single-mode execution when NAT_MODE is one of Direct|Full|Restricted
+# If EXPECT_FINAL_STATE not set, derive it from NAT_MODE
+if [[ -z "${EXPECT_FINAL_STATE:-}" ]]; then
+  export EXPECT_FINAL_STATE="$(expected_for_mode "$NAT_MODE")"
+fi
+
+# Run once in the requested mode
+if run_one_mode "$NAT_MODE"; then
+  exit 0
+else
+  exit 1
+fi

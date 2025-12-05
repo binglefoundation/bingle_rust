@@ -15,8 +15,8 @@ impl CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_triangle_test1(&self, _api: Arc<dyn BingleApi>, from_id: &str, _msg: &RelayTriangleTest1) {
-        if let Ok(mut g) = self.last_from_id.lock() { *g = Some(from_id.to_string()); }
+    fn on_triangle_test1(&self, _api: Arc<dyn BingleApi>, from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1) {
+        if let Ok(mut g) = self.last_from_id.lock() { *g = Some(from.id.to_string()); }
     }
 }
 

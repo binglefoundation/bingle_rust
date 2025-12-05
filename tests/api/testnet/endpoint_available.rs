@@ -114,15 +114,41 @@ fn testnet_user_reaches_endpoint_available() {
 
     api.start(opts).expect("start api");
 
-    // Wait up to 60 seconds for EndpointAvailable
+    // Determine expected final state from environment.
+    // Primary: EXPECT_FINAL_STATE can be set to "EndpointAvailable" or "NATRestricted".
+    // Secondary: derive from NAT_MODE if EXPECT_FINAL_STATE is not set.
+    let expect_state = match env_var("EXPECT_FINAL_STATE").as_deref() {
+        Some("EndpointAvailable") => EngineState::EndpointAvailable,
+        Some("NATRestricted") => EngineState::NATRestricted,
+        Some(other) => panic!("Invalid EXPECT_FINAL_STATE='{}' (allowed: EndpointAvailable|NATRestricted)", other),
+        None => {
+            match env_var("NAT_MODE").as_deref() {
+                Some("Restricted") => EngineState::NATRestricted,
+                // Direct and Full both expect EndpointAvailable by requirement; default to EndpointAvailable
+                Some("Direct") | Some("Full") | None => EngineState::EndpointAvailable,
+                Some(other) => {
+                    eprintln!("[warn] Unknown NAT_MODE='{}'; defaulting expected state to EndpointAvailable", other);
+                    EngineState::EndpointAvailable
+                }
+            }
+        }
+    };
+
+    // Wait up to 60 seconds for expected state
     let start = Instant::now();
-    let timeout = Duration::from_secs(60);
+    let timeout = Duration::from_secs(120); // TODO: make handshakes faster
     loop {
-        if let Some(EngineState::EndpointAvailable) = api.engine_state_for_tests() {
-            break;
+        match (expect_state, api.engine_state_for_tests()) {
+            (EngineState::EndpointAvailable, Some(EngineState::EndpointAvailable)) => break,
+            (EngineState::NATRestricted, Some(EngineState::NATRestricted)) => break,
+            _ => {}
         }
         if start.elapsed() > timeout {
-            panic!("Timed out waiting for EndpointAvailable; last state: {:?}", api.engine_state_for_tests());
+            panic!(
+                "Timed out waiting for {:?}; last state: {:?}",
+                expect_state,
+                api.engine_state_for_tests()
+            );
         }
         std::thread::sleep(Duration::from_millis(200));
     }

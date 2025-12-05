@@ -1,4 +1,4 @@
-use crate::messages::handlers::MessageHandler;
+use crate::messages::handlers::{MessageHandler, FromStruct};
 use crate::messages::types::*;
 
 // Global sender factory used by handlers to send replies without tight coupling to API implementation.
@@ -69,20 +69,31 @@ pub fn route<H: MessageHandler + ?Sized>(handler: &H, msg: &Message, from_id: &s
     let api_opt = get_bingle_api();
     if api_opt.is_none() { eprintln!("[router::route] No BingleApi available to pass to handler"); return; }
     let api = api_opt.unwrap();
+
+    // Build FromStruct with id and network source key (direct from last_from if available)
+    let nsk = if let Some(addr) = get_last_from() {
+        NetworkSourceKey::new_direct(addr)
+    } else {
+        // Fallback to unspecified address (0.0.0.0:0)
+        NetworkSourceKey::new_direct("0.0.0.0:0".parse().unwrap())
+    };
+    let from = FromStruct { id: from_id.to_string(), network_source_key: nsk };
+
     match msg {
-        Message::PlainText(pt) => handler.on_plain_text(api.clone(), from_id, pt),
+        Message::PlainText(pt) => handler.on_plain_text(api.clone(), &from, pt),
         Message::Relay(r) => match r {
-            RelayMessage::Call(m) => handler.on_relay_call(api.clone(), from_id, m),
-            RelayMessage::RelayResponse(m) => handler.on_relay_response(api.clone(), from_id, m),
-            RelayMessage::TriangleTest1(m) => handler.on_triangle_test1(api.clone(), from_id, m),
-            RelayMessage::TriangleTest2(m) => handler.on_triangle_test2(api.clone(), from_id, m),
-            RelayMessage::TriangleTest3(m) => handler.on_triangle_test3(api.clone(), from_id, m),
-            RelayMessage::Listen(m) => handler.on_relay_listen(api.clone(), from_id, m),
-            RelayMessage::Check(m) => handler.on_relay_check(api.clone(), from_id, m),
-            RelayMessage::ListenResponse(m) => handler.on_relay_listen_response(api.clone(), from_id, m),
-            RelayMessage::CheckResponse(m) => handler.on_relay_check_response(api.clone(), from_id, m),
-            RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), from_id, m),
-            RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), from_id, m),
+            RelayMessage::Call(m) => handler.on_relay_call(api.clone(), &from, m),
+            RelayMessage::RelayResponse(m) => handler.on_relay_response(api.clone(), &from, m),
+            RelayMessage::TriangleTest1(m) => handler.on_triangle_test1(api.clone(), &from, m),
+            RelayMessage::TriangleTest2(m) => handler.on_triangle_test2(api.clone(), &from, m),
+            RelayMessage::TriangleTest3(m) => handler.on_triangle_test3(api.clone(), &from, m),
+            RelayMessage::TriangleTest1Response(m) => handler.on_triangle_test1_response(api.clone(), &from, m),
+            RelayMessage::Listen(m) => handler.on_relay_listen(api.clone(), &from, m),
+            RelayMessage::Check(m) => handler.on_relay_check(api.clone(), &from, m),
+            RelayMessage::ListenResponse(m) => handler.on_relay_listen_response(api.clone(), &from, m),
+            RelayMessage::CheckResponse(m) => handler.on_relay_check_response(api.clone(), &from, m),
+            RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), &from, m),
+            RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), &from, m),
         },
         Message::Unknown(v) => handler.on_unknown(api.clone(), v),
     }
