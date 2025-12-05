@@ -112,9 +112,14 @@ scripts/build_tests_image.sh --tag bingle-tests:local
 mkdir -p tmp/test_out
 
 # Run the prebuilt test inside the dedicated tests image (streams output and waits for completion)
+# NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted
+NAT_MODE=${NAT_MODE:-Direct}
+
 docker run --platform linux/arm64 --rm \
   --name bingle_test_runner \
   --network bingle_testnet \
+  --cap-add NET_ADMIN \
+  -e NAT_MODE="$NAT_MODE" \
   -e TESTNET_USER="$TESTNET_USER" \
   -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
   -v "$PWD/tmp/test_out":/out \

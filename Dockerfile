@@ -19,6 +19,8 @@ RUN dnf install -y \
     openssl \
     tzdata \
     iproute \
+    iptables \
+    iptables-nft \
   && dnf clean all \
   && update-ca-trust
 
