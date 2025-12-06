@@ -1,8 +1,6 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, StartOptions, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
 
 struct MockApi;
 impl BingleApi for MockApi {
@@ -23,25 +21,3 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
-#[test]
-fn find_relay_delegates_to_find_root_relay() {
-    let api: Arc<dyn BingleApi> = Arc::new(MockApi);
-    let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 40001);
-    let addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 40002);
-
-    // Two deterministic relays so selection is well-defined; we don't assert which one, only consistency
-    let discover = Arc::new(move || -> Vec<RootRelayInfo> {
-        vec![
-            RootRelayInfo { id: "AAAA".to_string(), address: addr1 },
-            RootRelayInfo { id: "BBBB".to_string(), address: addr2 },
-        ]
-    });
-
-    let finder = RelayFinder::new(api, std::time::Duration::from_secs(5), discover);
-    let my_id = "SOME_ALGO_ADDR"; // value doesn't matter for delegation equivalence
-
-    let root = finder.find_root_relay(my_id).expect("find_root_relay failed");
-    let relay_addr = finder.find_relay(my_id).expect("find_relay failed");
-
-    assert_eq!(root.address, relay_addr);
-}

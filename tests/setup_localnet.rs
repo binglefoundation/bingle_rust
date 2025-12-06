@@ -49,7 +49,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoProviderConfig, target_addrs: &
     for &addr in target_addrs {
         let ops = AlgoOps::new(None, Some(addr.to_string()), Some(cfg.clone()));
         let bal_opt = ops.account_balance().map_err(|e| format!("balance check failed: {e}"))?;
-        let mut needs_fund = match bal_opt { Some(b) => b < 1.0, None => true };
+        let mut needs_fund = match bal_opt { Some(b) => b < 900.0, None => true };
         if needs_fund {
             // Send 900_000_000 microalgos (~900 ALGO) as per Kotlin SetupLocalnet
             let amount = "900000000";
@@ -59,7 +59,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoProviderConfig, target_addrs: &
             while Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(500));
                 if let Ok(b) = AlgoOps::new(None, Some(addr.to_string()), Some(cfg.clone())).account_balance() {
-                    if let Some(v) = b { if v > 0.0 { needs_fund = false; break; } }
+                    if let Some(v) = b { if v > 900.0 { needs_fund = false; break; } }
                 }
             }
         }
