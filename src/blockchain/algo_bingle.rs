@@ -224,7 +224,7 @@ impl AlgoBingle {
             if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
             let v: serde_json::Value = resp.json().map_err(|e| anyhow!("indexer json parse failed: {e}"))?;
             // Debug: dump the full JSON returned from /v2/accounts for visibility
-            eprintln!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
+            log::warn!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
             let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
             for acct in accounts {
                 let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();

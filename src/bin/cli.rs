@@ -12,7 +12,7 @@ fn main() {
     let opts = match parse_start_options_from_args(args.clone()) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("Error: {}\nUsage: cli [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--debug]", e);
+            log::warn!("Error: {}\nUsage: cli [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--debug]", e);
             std::process::exit(2);
         }
     };
@@ -38,7 +38,7 @@ fn main() {
 
     // Start API
     if let Err(e) = api.start(opts) {
-        eprintln!("Failed to start: {}", e);
+        log::warn!("Failed to start: {}", e);
         std::process::exit(1);
     }
 
@@ -59,6 +59,6 @@ fn install_ctrlc_handler(tx: Sender<()>) {
     if let Err(e) = ctrlc::set_handler(move || {
         let _ = tx.send(());
     }) {
-        eprintln!("Failed to install Ctrl-C handler: {}", e);
+        log::warn!("Failed to install Ctrl-C handler: {}", e);
     }
 }

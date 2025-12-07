@@ -279,9 +279,9 @@ pub mod non_ios {
                 if n > 0 {
                     let to_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n]) {
-                        eprintln!("[dtls muxconn][recv from queue][{} -> {}] {}", self.peer, to_ip, json);
+                        log::warn!("[dtls muxconn][recv from queue][{} -> {}] {}", self.peer, to_ip, json);
                     } else {
-                        eprintln!("[dtls muxconn][recv from queue][{} -> {}] <parse error> ({} bytes)", self.peer, to_ip, n);
+                        log::warn!("[dtls muxconn][recv from queue][{} -> {}] <parse error> ({} bytes)", self.peer, to_ip, n);
                     }
                 }
             }
@@ -294,16 +294,16 @@ pub mod non_ios {
             {
                 let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    eprintln!("[dtls muxconn][send][{} -> {}] {}", from_ip, self.peer, json);
+                    log::warn!("[dtls muxconn][send][{} -> {}] {}", from_ip, self.peer, json);
                 } else {
-                    eprintln!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, self.peer, buf.len());
+                    log::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, self.peer, buf.len());
                 }
             }
             match self.mux.write(self.peer, buf) {
                 Ok(()) => Ok(buf.len()),
                 Err(e) => {
                     let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                    eprintln!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e);
+                    log::warn!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e);
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e)); }
                     Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e)))
                 }

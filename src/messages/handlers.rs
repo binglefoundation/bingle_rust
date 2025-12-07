@@ -2,6 +2,7 @@ use crate::api::bingle_api::BingleApi;
 use crate::messages::types::*;
 use base64::Engine as _;
 use std::sync::Arc;
+use log::warn;
 
 #[derive(Debug, Clone)]
 pub struct FromStruct {
@@ -29,7 +30,7 @@ pub trait MessageHandler {
     fn on_relay_check(&self, _api: Arc<dyn BingleApi>, from: &FromStruct, _msg: &RelayCheck) {
         // Send CheckResponse available=true back to the last sender address using the real Bingle API sender
         let sender_opt = crate::messages::router::get_sender();
-        if sender_opt.is_none() { eprintln!("[handlers::on_relay_check] No sender available"); return; }
+        if sender_opt.is_none() { warn!("[handlers::on_relay_check] No sender available"); return; }
         let sender = sender_opt.unwrap();
         // Compose JSON manually to include responseTag if present
         let mut json_obj = serde_json::Map::new();
@@ -46,11 +47,11 @@ pub trait MessageHandler {
         let user_id_b64 = match data_encoding::BASE32_NOPAD.decode(raw_id.as_bytes()) {
             Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
             Ok(bytes) => {
-                eprintln!("[handlers::on_relay_check] from.id decoded to {} bytes (expected 36)", bytes.len());
+                warn!("[handlers::on_relay_check] from.id decoded to {} bytes (expected 36)", bytes.len());
                 return; // do not send invalid id
             }
             Err(e) => {
-                eprintln!("[handlers::on_relay_check] base32 decode failed for from.id: {}", e);
+                warn!("[handlers::on_relay_check] base32 decode failed for from.id: {}", e);
                 return; // do not send invalid id
             }
         };
@@ -89,12 +90,12 @@ impl MessageHandler for DefaultPrintingHandler {
             match data_encoding::BASE32_NOPAD.decode(raw.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
                 Ok(bytes) => {
-                    eprintln!("[handlers::on_triangle_test1] from.id decoded to {} bytes (expected 36)", bytes.len());
+                    warn!("[handlers::on_triangle_test1] from.id decoded to {} bytes (expected 36)", bytes.len());
                     // Do not attempt to send with an invalid id
                     String::new()
                 }
                 Err(e) => {
-                    eprintln!("[handlers::on_triangle_test1] base32 decode failed for from.id: {}", e);
+                    warn!("[handlers::on_triangle_test1] base32 decode failed for from.id: {}", e);
                     // Do not attempt to send with an invalid id
                     String::new()
                 }
@@ -103,7 +104,7 @@ impl MessageHandler for DefaultPrintingHandler {
         std::thread::spawn(move || {
             // Obtain sender closure injected via router
             let sender_opt = crate::messages::router::get_sender();
-            if sender_opt.is_none() { eprintln!("[handlers::on_triangle_test1] No sender available"); return; }
+            if sender_opt.is_none() { warn!("[handlers::on_triangle_test1] No sender available"); return; }
             let _sender = sender_opt.unwrap();
 
             // Construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
@@ -149,11 +150,11 @@ impl MessageHandler for DefaultPrintingHandler {
             // Obtain our id from API (derived from engine issuer)
             let my_id = match api_for_thread.get_my_id() {
                 Some(id) => id,
-                None => { eprintln!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
+                None => { warn!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
             };
             let associated_relay = match finder.find_relay(&my_id) {
                 Ok(info) => info,
-                Err(e) => { eprintln!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
+                Err(e) => { warn!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
             };
 
             // Build TriangleTest2 with checking_endpoint from TriangleTest1 and checking_id as our id (no issuer suffix)
@@ -167,11 +168,11 @@ impl MessageHandler for DefaultPrintingHandler {
             let user_id: UserId = match data_encoding::BASE32_NOPAD.decode(associated_relay.id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
                 Ok(bytes) => {
-                    eprintln!("[handlers::on_triangle_test1] relay id decoded to {} bytes (expected 36)", bytes.len());
+                    warn!("[handlers::on_triangle_test1] relay id decoded to {} bytes (expected 36)", bytes.len());
                     associated_relay.id.clone()
                 }
                 Err(e) => {
-                    eprintln!("[handlers::on_triangle_test1] base32 decode failed for relay id: {}", e);
+                    warn!("[handlers::on_triangle_test1] base32 decode failed for relay id: {}", e);
                     associated_relay.id.clone()
                 }
             };
@@ -185,7 +186,7 @@ impl MessageHandler for DefaultPrintingHandler {
             let resp_json = crate::messages::marshal::to_json_value(&resp);
 
             if from_user_id_b64.is_empty() {
-                eprintln!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
+                warn!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
             } else {
                 let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id_b64, resp_json, None);
                 println!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
@@ -207,12 +208,12 @@ impl MessageHandler for DefaultPrintingHandler {
         let user_id_b64 = match data_encoding::BASE32_NOPAD.decode(raw_id.as_bytes()) {
             Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
             Ok(bytes) => {
-                eprintln!("[handlers::on_triangle_test2] checking_id decoded to {} bytes (expected 36)", bytes.len());
+                warn!("[handlers::on_triangle_test2] checking_id decoded to {} bytes (expected 36)", bytes.len());
                 // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
                 base64::engine::general_purpose::STANDARD.encode([0u8; 36])
             }
             Err(e) => {
-                eprintln!("[handlers::on_triangle_test2] base32 decode failed for checking_id: {}", e);
+                warn!("[handlers::on_triangle_test2] base32 decode failed for checking_id: {}", e);
                 // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
                 base64::engine::general_purpose::STANDARD.encode([0u8; 36])
             }
@@ -226,7 +227,7 @@ impl MessageHandler for DefaultPrintingHandler {
         if let Some(internal) = crate::messages::router::get_bingle_api_internal() {
             internal.set_state(crate::engine::EngineState::EndpointAvailable);
         } else {
-            eprintln!("[handlers::on_triangle_test3] No internal API available; cannot set state");
+            warn!("[handlers::on_triangle_test3] No internal API available; cannot set state");
         }
     }
 
@@ -239,7 +240,7 @@ impl MessageHandler for DefaultPrintingHandler {
             // Engine::set_state_internal will ignore NATRestricted if EndpointAvailable flag is set.
             let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
         } else {
-            eprintln!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
+            warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
         }
     }
 }

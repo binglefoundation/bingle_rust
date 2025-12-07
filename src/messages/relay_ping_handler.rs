@@ -35,7 +35,7 @@ impl MessageHandler for RelayPingHandler {
             let my_id = match api.get_my_id() {
                 Some(id) => id,
                 None => {
-                    eprintln!("[RelayPingHandler::on_triangle_test1] get_my_id returned None; aborting send");
+                    log::warn!("[RelayPingHandler::on_triangle_test1] get_my_id returned None; aborting send");
                     return;
                 }
             };

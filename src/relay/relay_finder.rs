@@ -151,7 +151,7 @@ impl RelayFinder {
         let user_id_b64 = match Self::base64_36_or_convert_from_base32(id) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[RelayFinder][relay_check] invalid relay id '{}': {}", id, e);
+                log::warn!("[RelayFinder][relay_check] invalid relay id '{}': {}", id, e);
                 return false;
             }
         };

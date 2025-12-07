@@ -41,8 +41,8 @@ pub fn log_line<S: AsRef<str>>(msg: S) {
     }
 }
 
-/// Write to stderr and also append the same message to the debug log.
+/// Write a warning via the log facade and also append the same message to the debug log.
 pub fn tee_stderr<S: AsRef<str>>(msg: S) {
-    eprintln!("{}", msg.as_ref());
+    log::warn!("{}", msg.as_ref());
     log_line(msg);
 }

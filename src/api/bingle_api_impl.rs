@@ -420,8 +420,8 @@ impl BingleApi for BingleApiImpl {
             // Validate user_id is base64 and decodes to exactly 36 bytes (Algorand address bytes)
             let user_id_valid = match base64::engine::general_purpose::STANDARD.decode(user_id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => true,
-                Ok(bytes) => { eprintln!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base64 decoded length {} (expected 36)", bytes.len()); false },
-                Err(e) => { eprintln!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base64 decode failed: {}", e); false },
+                Ok(bytes) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base64 decoded length {} (expected 36)", bytes.len()); false },
+                Err(e) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base64 decode failed: {}", e); false },
             };
 
             let ok = if user_id_valid { self.send_over_dtls(addr, message) } else { false };
@@ -574,7 +574,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         if let Some(e) = &self.engine {
             let _ = e.set_state_internal(state);
         } else {
-            eprintln!("[BingleApiImpl::set_state] engine not initialized");
+            warn!("[BingleApiImpl::set_state] engine not initialized");
         }
         println!("[BingleApiImpl::set_state][exit]");
         #[allow(unused)] { crate::util::logging::log_line("[BingleApiImpl::set_state][exit]"); }

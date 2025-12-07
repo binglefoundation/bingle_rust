@@ -946,7 +946,7 @@ impl AlgoOps {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Build tx
         let tx = self.build_call_app_tx(app_id, asset_id, method, args)?;
-        eprintln!("[call_app] method={:?} app_id={} asset_id={:?} args_len={} tx={:#?}", method, app_id, asset_id, args.len(), tx);
+        log::warn!("[call_app] method={:?} app_id={} asset_id={:?} args_len={} tx={:#?}", method, app_id, asset_id, args.len(), tx);
         let sk = self.private_key_bytes()?;
         let client = self.algod_client()?;
         // Sign, submit, wait

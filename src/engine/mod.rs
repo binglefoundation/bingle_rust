@@ -302,7 +302,8 @@ impl Engine {
         // The static address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();
         let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-        eprintln!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
+        println!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
+        log::warn!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
         let mux = Arc::new(UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;

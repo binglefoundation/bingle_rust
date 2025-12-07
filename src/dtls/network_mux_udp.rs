@@ -6,6 +6,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
+use log::warn;
 
 /// Mux classification types translated from the provided Kotlin function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +63,7 @@ impl UdpNetworkMux {
         {
             crate::util::printing::enable_immediate_prints();
         }
-        eprintln!("[UdpNetworkMux] bind {:?}", addr);
+        warn!("[UdpNetworkMux] bind {:?}", addr);
         let socket = UdpSocket::bind(&addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
@@ -145,7 +146,7 @@ impl UdpNetworkMux {
         let handle = thread::spawn(move || {
             let mut buf = [0u8; 2048];
 
-            eprintln!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
+            warn!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
             #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][loop on {:?}] starts", to)); }
 
             while this.running.load(Ordering::SeqCst) {
@@ -157,10 +158,10 @@ impl UdpNetworkMux {
                             MuxType::Dtls => {
                                 // Enqueue DTLS datagram for consumers
                                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                                    eprintln!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
+                                    warn!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
                                     #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json)); }
                                 } else {
-                                    eprintln!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len());
+                                    warn!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len());
                                     #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len())); }
                                 }
 
@@ -195,7 +196,7 @@ impl UdpNetworkMux {
                             continue;
                         } else {
                             // If socket error, stop running
-                            eprintln!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e);
+                            warn!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e);
                             #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e)); }
 
                             this.running.store(false, Ordering::SeqCst);
@@ -203,7 +204,7 @@ impl UdpNetworkMux {
                     }
                 }
             }
-            eprintln!("[UdpNetworkMux][receive][loop on {:?}] done", to);
+            warn!("[UdpNetworkMux][receive][loop on {:?}] done", to);
             #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][receive][loop on {:?}] done", to)); }
 
         });
@@ -246,15 +247,15 @@ impl NetworkMux for UdpNetworkMux {
         match mux_type_for(buf) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    eprintln!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json);
+                    warn!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json);
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json)); }
                 } else {
-                    eprintln!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len());
+                    warn!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len());
                     #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len())); }
                 }
             }
             other => {
-                eprintln!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len());
+                warn!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len());
                 #[allow(unused)] { crate::util::logging::log_line(&format!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len())); }
             }
         }

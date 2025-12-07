@@ -8,6 +8,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use log::warn;
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -28,7 +29,7 @@ fn main() {
         "sellbingle" => cmd_sellbingle(args),
         "--help" | "-h" => print_usage_and_exit(0),
         other => {
-            eprintln!("Unknown subcommand: {}", other);
+            warn!("Unknown subcommand: {}", other);
             std::process::exit(2);
         }
     }
@@ -36,14 +37,14 @@ fn main() {
 
 fn print_usage_and_exit(code: i32) {
     let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
-    if code == 0 { println!("{}", usage); } else { eprintln!("{}", usage); }
+    if code == 0 { println!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
 
 fn cmd_run(args: Vec<String>) {
     // Support subcommand help
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
-        eprintln!("Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]");
+        warn!("Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]");
         std::process::exit(0);
     }
 
@@ -51,7 +52,7 @@ fn cmd_run(args: Vec<String>) {
     let opts = match parse_start_options_from_args(args.clone()) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]", e);
+            warn!("Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]", e);
             std::process::exit(2);
         }
     };
@@ -59,13 +60,13 @@ fn cmd_run(args: Vec<String>) {
     // If a static IP was provided, attempt to register it on-chain for discovery BEFORE starting the protocol
     if let Some(static_addr) = opts.static_ip {
         // Resolve app_id from StartOptions or APP_ID env
-        eprintln!("Registering static IP {} for on-chain discovery, opts={:?}", static_addr, opts);
+        warn!("Registering static IP {} for on-chain discovery, opts={:?}", static_addr, opts);
         let app_id_opt = opts.app_id.or_else(|| std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
         match app_id_opt {
             Some(app_id) => {
                 // Require a passphrase to sign the transaction
                 if opts.algo_passphrase.is_none() {
-                    eprintln!("--static-ip was provided but no Algorand passphrase (--passphrase) was set; skipping on-chain register_endpoint");
+                    warn!("--static-ip was provided but no Algorand passphrase (--passphrase) was set; skipping on-chain register_endpoint");
                 } else {
                     let ops = AlgoOps::new(opts.algo_passphrase.clone(), None, opts.algo_provider_config.clone());
                     let asset_id_for_ctor = opts.asset_id.or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id)).unwrap_or(0);
@@ -75,13 +76,13 @@ fn cmd_run(args: Vec<String>) {
                             println!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
                         }
                         Err(e) => {
-                            eprintln!("Failed to register static endpoint '{}': {}", static_addr, e);
+                            warn!("Failed to register static endpoint '{}': {}", static_addr, e);
                         }
                     }
                 }
             }
             None => {
-                eprintln!("--static-ip was provided but app_id is missing; set --node-file with app_id or APP_ID env to enable on-chain register_endpoint");
+                warn!("--static-ip was provided but app_id is missing; set --node-file with app_id or APP_ID env to enable on-chain register_endpoint");
             }
         }
     }
@@ -102,7 +103,7 @@ fn cmd_run(args: Vec<String>) {
 
     // Start API
     if let Err(e) = api.start(opts) {
-        eprintln!("Failed to start: {}", e);
+        warn!("Failed to start: {}", e);
         std::process::exit(1);
     }
 
@@ -131,7 +132,7 @@ fn cmd_register(args: Vec<String>) {
 
     if let Some(arg) = it.clone().next() {
         if arg == "--help" || arg == "-h" {
-            eprintln!("Usage: bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]");
+            warn!("Usage: bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]");
             std::process::exit(0);
         }
     }
@@ -145,21 +146,21 @@ fn cmd_register(args: Vec<String>) {
             "--price-units" => { price_units = Some(parse_u64(req_value(&mut it, "--price-units"), "--price-units")); }
             "--node-file" => { node_file = Some(req_value(&mut it, "--node-file")); }
             s => {
-                eprintln!("Unknown option for register: {}", s);
+                warn!("Unknown option for register: {}", s);
                 std::process::exit(2);
             }
         }
     }
 
-    let handle = match handle { Some(h) => h, None => { eprintln!("register requires --handle <handle>"); std::process::exit(2); } };
-    let passphrase = match passphrase { Some(p) => p, None => { eprintln!("register requires --passphrase <text>"); std::process::exit(2); } };
-    let price_units = match price_units { Some(v) => v, None => { eprintln!("register requires --price-units <n>"); std::process::exit(2); } };
+    let handle = match handle { Some(h) => h, None => { warn!("register requires --handle <handle>"); std::process::exit(2); } };
+    let passphrase = match passphrase { Some(p) => p, None => { warn!("register requires --passphrase <text>"); std::process::exit(2); } };
+    let price_units = match price_units { Some(v) => v, None => { warn!("register requires --price-units <n>"); std::process::exit(2); } };
 
     // Load node file (may also contain app_id/asset_id) and build config
     let (cfg, node_app_id, node_asset_id) : (AlgoChainConfig, Option<u64>, Option<u64>) = match node_file {
         Some(path) => match parse_node_file_with_ids(&path) {
             Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset),
-            Err(e) => { eprintln!("{}", e); std::process::exit(2); }
+            Err(e) => { warn!("{}", e); std::process::exit(2); }
         },
         None => (AlgoChainConfig::default(), None, None),
     };
@@ -167,7 +168,7 @@ fn cmd_register(args: Vec<String>) {
     // Resolve IDs with precedence: node file > CLI > env; error if node+CLI both set
     let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) {
         Ok(v) => v,
-        Err(e) => { eprintln!("{}", e); std::process::exit(2); }
+        Err(e) => { warn!("{}", e); std::process::exit(2); }
     };
 
     // Build AlgoOps with provided passphrase; address is derived immediately in AlgoOps::new
@@ -175,7 +176,7 @@ fn cmd_register(args: Vec<String>) {
     let address = match ops.address.as_ref() {
         Some(a) => a.clone(),
         None => {
-            eprintln!("Invalid passphrase: unable to derive address. Provide a valid Algorand mnemonic or supported secret format.");
+            warn!("Invalid passphrase: unable to derive address. Provide a valid Algorand mnemonic or supported secret format.");
             std::process::exit(2);
         }
     };
@@ -184,16 +185,16 @@ fn cmd_register(args: Vec<String>) {
     let bal_algos = match ops.account_balance() {
         Ok(Some(b)) => b,
         Ok(None) => {
-            eprintln!("Account {} not found or balance unavailable. Please ensure the account exists and is funded.", address);
+            warn!("Account {} not found or balance unavailable. Please ensure the account exists and is funded.", address);
             std::process::exit(2);
         }
         Err(e) => {
-            eprintln!("Failed to query account balance: {}", e);
+            warn!("Failed to query account balance: {}", e);
             std::process::exit(2);
         }
     };
     if bal_algos <= 0.0 {
-        eprintln!("Account {} has zero balance. Please fund it and retry.", address);
+        warn!("Account {} has zero balance. Please fund it and retry.", address);
         std::process::exit(2);
     }
     println!("Using funded account {} (balance {:.6} ALGO)", address, bal_algos);
@@ -205,7 +206,7 @@ fn cmd_register(args: Vec<String>) {
             println!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
         }
         Err(e) => {
-            eprintln!("Failed to register handle: {}", e);
+            warn!("Failed to register handle: {}", e);
             std::process::exit(1);
         }
     }
@@ -214,14 +215,14 @@ fn cmd_register(args: Vec<String>) {
 fn cmd_buybingle(args: Vec<String>) {
     // Usage help
     if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]");
+        warn!("Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]");
         std::process::exit(if args.is_empty() { 2 } else { 0 });
     }
 
     let mut it = args.into_iter();
     // First positional: price in ALGOs (decimal), convert to microAlgos
     let price_str = it.next().expect("checked non-empty");
-    let price_micro = match parse_algos_decimal_to_microalgos(&price_str) { Ok(v) => v, Err(e) => { eprintln!("Invalid <price_algos> '{}': {}", price_str, e); std::process::exit(2); } };
+    let price_micro = match parse_algos_decimal_to_microalgos(&price_str) { Ok(v) => v, Err(e) => { warn!("Invalid <price_algos> '{}': {}", price_str, e); std::process::exit(2); } };
 
     let mut app_id: Option<u64> = None;
     let mut asset_id: Option<u64> = None;
@@ -234,47 +235,47 @@ fn cmd_buybingle(args: Vec<String>) {
             "--asset-id" => { asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id")); }
             "--node-file" => { node_file = Some(req_value(&mut it, "--node-file")); }
             "--passphrase" => { passphrase = Some(req_value(&mut it, "--passphrase")); }
-            other => { eprintln!("Unknown option for buybingle: {}", other); std::process::exit(2); }
+            other => { warn!("Unknown option for buybingle: {}", other); std::process::exit(2); }
         }
     }
 
-    let passphrase = match passphrase { Some(p) => p, None => { eprintln!("buybingle requires --passphrase <text>"); std::process::exit(2); } };
+    let passphrase = match passphrase { Some(p) => p, None => { warn!("buybingle requires --passphrase <text>"); std::process::exit(2); } };
 
     // Load node file (may also contain app_id/asset_id)
     let (cfg, node_app_id, node_asset_id) : (AlgoChainConfig, Option<u64>, Option<u64>) = match node_file {
-        Some(path) => match parse_node_file_with_ids(&path) { Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset), Err(e) => { eprintln!("{}", e); std::process::exit(2); } },
+        Some(path) => match parse_node_file_with_ids(&path) { Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset), Err(e) => { warn!("{}", e); std::process::exit(2); } },
         None => (AlgoChainConfig::default(), None, None),
     };
 
     // Resolve IDs with precedence
-    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) { Ok(v) => v, Err(e) => { eprintln!("{}", e); std::process::exit(2); } };
+    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) { Ok(v) => v, Err(e) => { warn!("{}", e); std::process::exit(2); } };
 
     // Ops
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
-    let address = ops.address.as_ref().cloned().unwrap_or_else(|| { eprintln!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
+    let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
     let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
-    if bal_algos <= 0.0 { eprintln!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
+    if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
     println!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.buy_bingle(app_id, asset_id, price_micro) {
         Ok(txid) => { println!("buybingle submitted (tx: {})", txid); }
-        Err(e) => { eprintln!("buybingle failed: {}", e); std::process::exit(1); }
+        Err(e) => { warn!("buybingle failed: {}", e); std::process::exit(1); }
     }
 }
 
 fn cmd_sellbingle(args: Vec<String>) {
     // Usage help
     if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("Usage: bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]");
+        warn!("Usage: bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]");
         std::process::exit(if args.is_empty() { 2 } else { 0 });
     }
 
     let mut it = args.into_iter();
     let amount_str = it.next().expect("checked non-empty");
-    let amount_units = match amount_str.parse::<u64>() { Ok(v) => v, Err(e) => { eprintln!("Invalid <amount_units> '{}': {}", amount_str, e); std::process::exit(2); } };
-    let price_str = match it.next() { Some(s) => s, None => { eprintln!("sellbingle requires <price_algos> positional argument"); std::process::exit(2); } };
-    let price_micro = match parse_algos_decimal_to_microalgos(&price_str) { Ok(v) => v, Err(e) => { eprintln!("Invalid <price_algos> '{}': {}", price_str, e); std::process::exit(2); } };
+    let amount_units = match amount_str.parse::<u64>() { Ok(v) => v, Err(e) => { warn!("Invalid <amount_units> '{}': {}", amount_str, e); std::process::exit(2); } };
+    let price_str = match it.next() { Some(s) => s, None => { warn!("sellbingle requires <price_algos> positional argument"); std::process::exit(2); } };
+    let price_micro = match parse_algos_decimal_to_microalgos(&price_str) { Ok(v) => v, Err(e) => { warn!("Invalid <price_algos> '{}': {}", price_str, e); std::process::exit(2); } };
 
     let mut app_id: Option<u64> = None;
     let mut asset_id: Option<u64> = None;
@@ -287,32 +288,32 @@ fn cmd_sellbingle(args: Vec<String>) {
             "--asset-id" => { asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id")); }
             "--node-file" => { node_file = Some(req_value(&mut it, "--node-file")); }
             "--passphrase" => { passphrase = Some(req_value(&mut it, "--passphrase")); }
-            other => { eprintln!("Unknown option for sellbingle: {}", other); std::process::exit(2); }
+            other => { warn!("Unknown option for sellbingle: {}", other); std::process::exit(2); }
         }
     }
 
-    let passphrase = match passphrase { Some(p) => p, None => { eprintln!("sellbingle requires --passphrase <text>"); std::process::exit(2); } };
+    let passphrase = match passphrase { Some(p) => p, None => { warn!("sellbingle requires --passphrase <text>"); std::process::exit(2); } };
 
     // Load node file (may also contain app_id/asset_id)
     let (cfg, node_app_id, node_asset_id) : (AlgoChainConfig, Option<u64>, Option<u64>) = match node_file {
-        Some(path) => match parse_node_file_with_ids(&path) { Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset), Err(e) => { eprintln!("{}", e); std::process::exit(2); } },
+        Some(path) => match parse_node_file_with_ids(&path) { Ok((_net, cfg, nid_app, nid_asset)) => (cfg, nid_app, nid_asset), Err(e) => { warn!("{}", e); std::process::exit(2); } },
         None => (AlgoChainConfig::default(), None, None),
     };
 
     // Resolve IDs with precedence
-    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) { Ok(v) => v, Err(e) => { eprintln!("{}", e); std::process::exit(2); } };
+    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, app_id, asset_id) { Ok(v) => v, Err(e) => { warn!("{}", e); std::process::exit(2); } };
 
     // Ops
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
-    let address = ops.address.as_ref().cloned().unwrap_or_else(|| { eprintln!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
+    let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
     let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
-    if bal_algos <= 0.0 { eprintln!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
+    if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
     println!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.sell_bingle(app_id, asset_id, amount_units, price_micro) {
         Ok(txid) => { println!("sellbingle submitted (tx: {})", txid); }
-        Err(e) => { eprintln!("sellbingle failed: {}", e); std::process::exit(1); }
+        Err(e) => { warn!("sellbingle failed: {}", e); std::process::exit(1); }
     }
 }
 
@@ -320,7 +321,7 @@ fn req_value(it: &mut impl Iterator<Item = String>, name: &str) -> String {
     match it.next() {
         Some(v) => v,
         None => {
-            eprintln!("{} requires a value", name);
+            warn!("{} requires a value", name);
             std::process::exit(2);
         }
     }
@@ -329,7 +330,7 @@ fn req_value(it: &mut impl Iterator<Item = String>, name: &str) -> String {
 fn parse_u64(v: String, name: &str) -> u64 {
     match v.parse::<u64>() {
         Ok(n) => n,
-        Err(e) => { eprintln!("Invalid value for {} '{}': {}", name, v, e); std::process::exit(2); }
+        Err(e) => { warn!("Invalid value for {} '{}': {}", name, v, e); std::process::exit(2); }
     }
 }
 
@@ -343,7 +344,7 @@ fn install_ctrlc_handler(tx: Sender<()>) {
     if let Err(e) = ctrlc::set_handler(move || {
         let _ = tx.send(());
     }) {
-        eprintln!("Failed to install Ctrl-C handler: {}", e);
+        warn!("Failed to install Ctrl-C handler: {}", e);
     }
 }
 
