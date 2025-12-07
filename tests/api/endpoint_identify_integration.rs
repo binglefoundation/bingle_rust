@@ -40,8 +40,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
 
     // Print relay addresses for debugging
-    println!("[Test] relay1_addr = {}", relay1_addr);
-    println!("[Test] relay2_addr = {}", relay2_addr);
+    log::info!("[Test] relay1_addr = {}", relay1_addr);
+    log::info!("[Test] relay2_addr = {}", relay2_addr);
 
     // If a localnet + indexer is available, deploy the dApp and register relay endpoints on-chain.
     if test_util::should_run_localnet() {

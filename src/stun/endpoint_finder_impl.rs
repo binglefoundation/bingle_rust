@@ -69,7 +69,7 @@ impl Inner {
         }
         if new_state != self.state {
             self.state = new_state;
-            println!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
+            log::info!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
             if let Some(cb) = &self.state_change { cb(self.state, self.endpoint); }
         }
     }
@@ -207,7 +207,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             if let Some(h) = handler.as_ref() {
                                 let host = target.ip().to_string();
                                 let port = target.port();
-                                println!("[STUN] sending Binding Request to {}:{}", host, port);
+                                log::info!("[STUN] sending Binding Request to {}:{}", host, port);
                                 h(&host, port, &pkt);
                             }
                         }
@@ -240,7 +240,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
 
     fn process_packet(&mut self, from: SocketAddr, data: &[u8]) {
         let endpoint = StunEndpointFinderImpl::parse_xor_mapped_address(data);
-        println!("[STUN] received response from {} mapped={:?}", from, endpoint);
+        log::info!("[STUN] received response from {} mapped={:?}", from, endpoint);
         let mut inner = self.inner.lock().unwrap();
         // Find server by source address
         if let Some(s) = inner.servers.iter_mut().find(|s| s.addr == from) {

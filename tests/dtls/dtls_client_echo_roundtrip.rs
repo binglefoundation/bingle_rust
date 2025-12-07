@@ -19,7 +19,7 @@ static SERVER_CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT_PING_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
 
 fn client_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
-    println!("client_echo_handler: {:?}", data);
+    log::info!("client_echo_handler: {:?}", data);
     // Record that client received the Ping
     if data == b"Ping" {
         let _ = CLIENT_PING_SEEN.set(data.to_vec());
@@ -31,7 +31,7 @@ fn client_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data
 }
 
 fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
-    println!("server_capture_and_trigger_handler: {:?}", data);
+    log::info!("server_capture_and_trigger_handler: {:?}", data);
     // Capture the initial Hello and immediately send Ping to the client
     if data == b"Hello" {
         let _ = SERVER_HELLO.set(data.to_vec());

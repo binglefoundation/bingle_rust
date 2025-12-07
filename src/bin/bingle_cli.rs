@@ -37,7 +37,7 @@ fn main() {
 
 fn print_usage_and_exit(code: i32) {
     let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
-    if code == 0 { println!("{}", usage); } else { warn!("{}", usage); }
+    if code == 0 { log::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
 
@@ -73,7 +73,7 @@ fn cmd_run(args: Vec<String>) {
                                         let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
                     match bingle.register_endpoint(app_id, &static_addr.to_string()) {
                         Ok(txid) => {
-                            println!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
+                            log::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
                         }
                         Err(e) => {
                             warn!("Failed to register static endpoint '{}': {}", static_addr, e);
@@ -92,12 +92,12 @@ fn cmd_run(args: Vec<String>) {
 
     // Install handlers that print args
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-        println!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
+        log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
     });
     api.set_on_message(Some(on_message));
 
     let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
-        println!("on_connect: sender={} sender_handle={}", sender, sender_handle);
+        log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
     });
     api.set_on_connect(Some(on_connect));
 
@@ -110,14 +110,14 @@ fn cmd_run(args: Vec<String>) {
     // Install Ctrl-C handler
     let (tx, rx) = channel::<()>();
     install_ctrlc_handler(tx);
-    println!("Started. Press Ctrl-C to stop.");
+    log::info!("Started. Press Ctrl-C to stop.");
 
     // Wait until Ctrl-C
     let _ = rx.recv();
 
     // Stop API
     api.stop();
-    println!("Stopped.");
+    log::info!("Stopped.");
 }
 
 fn cmd_register(args: Vec<String>) {
@@ -197,13 +197,13 @@ fn cmd_register(args: Vec<String>) {
         warn!("Account {} has zero balance. Please fund it and retry.", address);
         std::process::exit(2);
     }
-    println!("Using funded account {} (balance {:.6} ALGO)", address, bal_algos);
+    log::info!("Using funded account {} (balance {:.6} ALGO)", address, bal_algos);
 
     // Register the handle on-chain
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.register(app_id, asset_id, &handle, price_units) {
         Ok(txid) => {
-            println!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
+            log::info!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
         }
         Err(e) => {
             warn!("Failed to register handle: {}", e);
@@ -255,11 +255,11 @@ fn cmd_buybingle(args: Vec<String>) {
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
     let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
     if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
-    println!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
+    log::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.buy_bingle(app_id, asset_id, price_micro) {
-        Ok(txid) => { println!("buybingle submitted (tx: {})", txid); }
+        Ok(txid) => { log::info!("buybingle submitted (tx: {})", txid); }
         Err(e) => { warn!("buybingle failed: {}", e); std::process::exit(1); }
     }
 }
@@ -308,11 +308,11 @@ fn cmd_sellbingle(args: Vec<String>) {
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
     let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
     if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
-    println!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
+    log::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.sell_bingle(app_id, asset_id, amount_units, price_micro) {
-        Ok(txid) => { println!("sellbingle submitted (tx: {})", txid); }
+        Ok(txid) => { log::info!("sellbingle submitted (tx: {})", txid); }
         Err(e) => { warn!("sellbingle failed: {}", e); std::process::exit(1); }
     }
 }

@@ -18,8 +18,8 @@ fn main() {
     };
 
     if debug {
-        println!("Debug mode enabled");
-        println!("Parsed StartOptions: {:?}", opts);
+        log::info!("Debug mode enabled");
+        log::info!("Parsed StartOptions: {:?}", opts);
     }
 
     // Initialize API
@@ -27,12 +27,12 @@ fn main() {
 
     // Install handlers that print args
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-        println!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
+        log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
     });
     api.set_on_message(Some(on_message));
 
     let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
-        println!("on_connect: sender={} sender_handle={}", sender, sender_handle);
+        log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
     });
     api.set_on_connect(Some(on_connect));
 
@@ -45,14 +45,14 @@ fn main() {
     // Install Ctrl-C handler
     let (tx, rx) = channel::<()>();
     install_ctrlc_handler(tx);
-    println!("Started. Press Ctrl-C to stop.");
+    log::info!("Started. Press Ctrl-C to stop.");
 
     // Wait until Ctrl-C
     let _ = rx.recv();
 
     // Stop API
     api.stop();
-    println!("Stopped.");
+    log::info!("Stopped.");
 }
 
 fn install_ctrlc_handler(tx: Sender<()>) {

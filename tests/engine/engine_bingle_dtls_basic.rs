@@ -38,10 +38,10 @@ fn engine_basic_bingle_dtls_layer() {
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_flag = delivered.clone();
     server.set_on_connect(Some(Arc::new(|sender, handle| {
-        println!("[server][on_connect] sender={} handle={}", sender, handle);
+        log::info!("[server][on_connect] sender={} handle={}", sender, handle);
     })));
     server.set_on_message(Some(Arc::new(move |sender, handle, msg| {
-        println!("[server][on_message] sender={} handle={} msg={}", sender, handle, msg);
+        log::info!("[server][on_message] sender={} handle={} msg={}", sender, handle, msg);
         delivered_flag.store(true, Ordering::SeqCst);
     })));
 
@@ -72,9 +72,9 @@ fn engine_basic_bingle_dtls_layer() {
     };
 
     // Start both nodes
-    println!("[test] starting server at {}", server_addr);
+    log::info!("[test] starting server at {}", server_addr);
     server.start(server_opts).expect("server start() should succeed");
-    println!("[test] starting client at {}", client_addr);
+    log::info!("[test] starting client at {}", client_addr);
     client.start(client_opts).expect("client start() should succeed");
 
     // Build direct network destination to server and send a simple plaintext JSON message.
@@ -84,10 +84,10 @@ fn engine_basic_bingle_dtls_layer() {
     });
 
     let progress: Arc<rust_comms::api::bingle_api::ProgressCallback> = Arc::new(|pct, msg| {
-        println!("[client][progress] {}% {}", pct, msg);
+        log::info!("[client][progress] {}% {}", pct, msg);
     });
 
-    println!("[test] client sending message to {}", server_addr);
+    log::info!("[test] client sending message to {}", server_addr);
     let uid = base64::engine::general_purpose::STANDARD.encode([2u8; 36]);
     let ok = client.send_message_to_network(&dest, &uid, payload, Some(progress));
     assert!(ok, "client send_message_to_network should return true");

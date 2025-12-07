@@ -66,7 +66,7 @@ struct ConnectionEntry {
 
 impl Engine {
     pub fn new(options: StartOptions) -> Self {
-        println!("[Engine::new] options={:?}", options);
+        log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::new] options={:?}", options)); }
         Self {
             options: options.clone(),
@@ -302,7 +302,7 @@ impl Engine {
         // The static address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();
         let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-        println!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
+        log::info!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
         log::warn!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
         let mux = Arc::new(UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
         // Determine the concrete local address after bind (handles port 0)
@@ -362,14 +362,14 @@ impl Engine {
     }
 
     fn stun_consistent_process(&mut self, public_addr: Option<SocketAddr>) {
-        println!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
+        log::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
         self.last_public_addr = public_addr;
 
         // Transition to TrianglePing and perform relay triangle test
         let prev = self.state;
         self.state = EngineState::TrianglePing;
-        println!("[Engine] state change: {:?} -> TrianglePing", prev);
+        log::info!("[Engine] state change: {:?} -> TrianglePing", prev);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] state change: {:?} -> TrianglePing", prev)); }
 
         // Do NOT mark EndpointAvailable here; proceed with the triangle process and only
@@ -396,7 +396,7 @@ impl Engine {
                     let opt_app_id = self.options.app_id;
                     let opt_cfg = self.options.algo_provider_config.clone();
                     let app_id_opt = opt_app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                    println!("[Engine] indexer discovery app_id={:?}", app_id_opt);
+                    log::info!("[Engine] indexer discovery app_id={:?}", app_id_opt);
                     if let Some(app_id) = app_id_opt {
                         let ab = {
                             let ops = crate::blockchain::algo_ops::AlgoOps::new(None, None, opt_cfg);
@@ -443,7 +443,7 @@ impl Engine {
             let relay = finder.find_relay(&my_id);
             if let Ok(r) = relay {
                 relay_target = Some(r.clone());
-                println!("[Engine] chosen relay {} (id={})", r.address, r.id);
+                log::info!("[Engine] chosen relay {} (id={})", r.address, r.id);
             }
             else {
                 panic!("[Engine] no relay found");
@@ -464,23 +464,23 @@ impl Engine {
                 let uid = match data_encoding::BASE32_NOPAD.decode(target.id.as_bytes()) {
                     Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
                     Ok(bytes) => {
-                        println!("[Engine][WARN] relay id base32 decoded to {} bytes (expected 36); using raw id which may fail validation", bytes.len());
+                        log::info!("[Engine][WARN] relay id base32 decoded to {} bytes (expected 36); using raw id which may fail validation", bytes.len());
                         target.id.clone()
                     }
                     Err(e) => {
-                        println!("[Engine][WARN] failed to decode relay id as base32: {}; using raw id which may fail validation", e);
+                        log::info!("[Engine][WARN] failed to decode relay id as base32: {}; using raw id which may fail validation", e);
                         target.id.clone()
                     }
                 };
                 let ok = cb(&nsk, &uid, json_val);
-                println!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok);
+                log::info!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok);
                 #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok)); }
             } else {
-                println!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
+                log::info!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
                 #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr)); }
             }
         } else {
-            println!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
+            log::info!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
             panic!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
         }
     }
@@ -595,7 +595,7 @@ impl Engine {
             }
             Err(_) => format!("non-utf8:{} bytes", data.len()),
         };
-        println!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview);
+        log::info!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview)); }
 
         // Record last sender address for handlers that need to reply directly

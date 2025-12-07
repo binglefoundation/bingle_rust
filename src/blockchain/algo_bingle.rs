@@ -42,7 +42,7 @@ pub struct AlgoBingle {
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
-        println!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
+        log::info!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id)); }
         Self { ops, app_id, asset_id }
     }
@@ -167,7 +167,7 @@ impl AlgoBingle {
             .app_arguments(app_args)
             .build();
         let tx = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
-        println!("register_endpoint tx: {:?}", tx);
+        log::info!("register_endpoint tx: {:?}", tx);
         let signed = account
             .sign_transaction(tx)
             .map_err(|e| anyhow!("sign app call: {e}"))?
@@ -204,7 +204,7 @@ impl AlgoBingle {
     #[cfg(not(target_os = "ios"))]
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
-        println!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
+        log::info!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config)); }
         if app_id == 0 { bail!("app_id must be > 0"); }
         let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
@@ -420,19 +420,19 @@ impl AlgoBingle {
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
-        println!("[buy_bingle] app_addr: {:#?}", app_addr);
+        log::info!("[buy_bingle] app_addr: {:#?}", app_addr);
 
         // 1) Payment: sender -> app address for price. The app will verify this and perform
         //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
         let pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos)).build();
         let tx_pay = TxnBuilder::with(&params, pay).build().map_err(|e| anyhow!("build pay: {e}"))?;
-        println!("[buy_bingle] tx_pay: {:#?}", tx_pay);
+        log::info!("[buy_bingle] tx_pay: {:#?}", tx_pay);
 
         // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
         let tx_app = self
             .ops
             .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
-        println!("[buy_bingle] tx_app: {:#?}", tx_app);
+        log::info!("[buy_bingle] tx_app: {:#?}", tx_app);
 
         // Group, sign, and send
         let mut txs = vec![tx_pay, tx_app];
@@ -513,7 +513,7 @@ impl AlgoBingle {
         let ax = TransferAsset::new(sender, asset_id, price_units, app_addr).build();
         let tx_ax = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build axfer: {e}"))?;
         // Print the full asset transfer transaction (tx_ax) with all fields for visibility
-        println!("tx_ax: {:#?}", tx_ax);
+        log::info!("tx_ax: {:#?}", tx_ax);
 
         // 2) App call: register(string)void with handle arg
         // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes

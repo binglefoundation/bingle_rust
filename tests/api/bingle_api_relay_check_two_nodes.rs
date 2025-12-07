@@ -57,7 +57,7 @@ fn bingle_api_relay_check_two_nodes() {
     {
         let mut guard = relay_arc.lock().unwrap();
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
-            println!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
+            log::info!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
             // sender_handle is the peer socket address (string). Parse to SocketAddr. Fail fast if malformed.
             let addr: SocketAddr = sender_handle.parse().expect("sender_handle must parse to SocketAddr");
             let is_check = msg.get("type").and_then(|v| v.as_str()) == Some("Check")
@@ -98,7 +98,7 @@ fn bingle_api_relay_check_two_nodes() {
     // Capture RelayCheckResponse on the client
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
     client.set_on_message(Some(Arc::new(|sender, handle, msg| {
-        println!("[test][client on_message] sender={} handle={} msg={}", sender, handle, msg);
+        log::info!("[test][client on_message] sender={} handle={} msg={}", sender, handle, msg);
         let _ = CLIENT_SEEN.set(msg.clone());
     })));
 

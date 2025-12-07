@@ -541,7 +541,7 @@ impl AlgoOps {
         let params_res = self.rt_block_on(client.suggested_transaction_params())?;
         let params = match params_res { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
 
-        println!("Setting clawback to app address: {:?}", clawback);
+        log::info!("Setting clawback to app address: {:?}", clawback);
 
         // Build asset reconfiguration: explicitly keep manager and reserve; set clawback to app address
         let cfg = algonaut::transaction::builder::UpdateAsset::new(manager, asset_id)
@@ -614,7 +614,7 @@ impl AlgoOps {
         let tx = algonaut::transaction::TxnBuilder::with(&params, cfg)
             .build()
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
-        println!("[change_asset_reserve_address] tx: {:#?}", tx);
+        log::info!("[change_asset_reserve_address] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -641,7 +641,7 @@ impl AlgoOps {
             }
         }
         if creator_amount == 0 {
-            println!("[change_asset_reserve_address] creator has no balance of asset {}", asset_id);
+            log::info!("[change_asset_reserve_address] creator has no balance of asset {}", asset_id);
             return Ok(()); // nothing to move
         }
 
@@ -673,7 +673,7 @@ impl AlgoOps {
             .build()
             .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
 
-        println!("[send_asset] tx: {:#?}", tx);
+        log::info!("[send_asset] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -766,7 +766,7 @@ impl AlgoOps {
         let va = serde_json::to_value(&acct_info).map_err(|e| anyhow!("failed to serialize reserve account info: {e}"))?;
         let amount = Self::parse_holding_amount_from_account_value(&va, asset_id);
         if amount == 0 {
-            println!("[recover_reserve_balance] reserve has zero balance for asset {asset_id}");
+            log::info!("[recover_reserve_balance] reserve has zero balance for asset {asset_id}");
             return Ok(());
         }
         // Transfer to creator
@@ -834,7 +834,7 @@ impl AlgoOps {
         }
 
         // Print estimated fee components and current balance for visibility
-        println!(
+        log::info!(
             "Preflight: min_fee={} µAlgos, fee_per_byte={} µAlgos/byte, est_prog_size={} bytes, estimated fee: {:.6} ALGO ({} µAlgos); current balance: {:.6} ALGO ({} µAlgos)",
             min_fee.0,
             per_byte.0,
@@ -912,7 +912,7 @@ impl AlgoOps {
             let sized = per_byte * (est_prog_size as u64);
             if sized > min_fee { sized } else { min_fee }
         };
-        println!(
+        log::info!(
             "Update preflight: min_fee={} µAlgos, fee_per_byte={} µAlgos/byte, est_prog_size={} bytes, estimated fee: {:.6} ALGO ({} µAlgos)",
             min_fee.0,
             per_byte.0,

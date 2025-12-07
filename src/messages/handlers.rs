@@ -16,7 +16,7 @@ pub trait MessageHandler {
         // Default implementation: print payload; frameworks may provide their own handler that
         // forwards to an API instance without using globals.
         let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
-        println!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
+        log::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
     }
 
     // Relay messages
@@ -64,12 +64,12 @@ pub trait MessageHandler {
 
     // Unknown
     fn on_unknown(&self, _api: Arc<dyn BingleApi>, _raw: &serde_json::Value) {
-        println!("[UNIMPLEMENTED] Unknown message: {}", _raw);
+        log::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
     }
 
     // Default unimplemented handler: prints the message JSON
     fn on_unimplemented(&self, msg: &Message) {
-        println!("[UNIMPLEMENTED] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
+        log::info!("[UNIMPLEMENTED] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
     }
 }
 
@@ -178,7 +178,7 @@ impl MessageHandler for DefaultPrintingHandler {
             };
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
-            println!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", associated_relay.address, ok);
+            log::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", associated_relay.address, ok);
 
             // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
 
@@ -189,7 +189,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 warn!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
             } else {
                 let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id_b64, resp_json, None);
-                println!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
+                log::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
             }
         });
     }
@@ -219,7 +219,7 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         };
         let ok = api.send_message_to_network(&nsk, &user_id_b64, json_val, None);
-        println!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
+        log::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
     }
 
     fn on_triangle_test3(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
@@ -232,7 +232,7 @@ impl MessageHandler for DefaultPrintingHandler {
     }
 
     fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
-        println!("[DefaultPrintingHandler] TriangleTest1Response received");
+        log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
         // Per requirement: if Engine state is not EndpointAvailable, set it to NATRestricted
         // We don't have direct state query here; rely on Engine's internal setter semantics.
         if let Some(internal) = crate::messages::router::get_bingle_api_internal() {
