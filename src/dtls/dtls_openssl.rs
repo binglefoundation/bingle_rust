@@ -45,7 +45,7 @@ pub mod non_ios {
             // Print and append to target/sslkeylog.log
             let s = format!("[OpenSSL][keylog][client] {}", line);
             log::info!("{}", s);
-            #[allow(unused)] { crate::util::logging::log_line(&s); }
+            #[allow(unused)] {  }
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("target/sslkeylog.log") {
                 use std::io::Write as _;
                 let _ = writeln!(f, "{}", line);
@@ -304,7 +304,7 @@ pub mod non_ios {
                 Err(e) => {
                     let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     log::warn!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e)); }
+                    #[allow(unused)] {  }
                     Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e)))
                 }
             }
@@ -552,7 +552,7 @@ pub mod non_ios {
             builder.set_keylog_callback(|_ssl, line| {
                 let s = format!("[OpenSSL][keylog][server] {}", line);
                 log::info!("{}", s);
-                #[allow(unused)] { crate::util::logging::log_line(&s); }
+                #[allow(unused)] {  }
                 if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("target/sslkeylog.log") {
                     use std::io::Write as _;
                     let _ = writeln!(f, "{}", line);
@@ -615,10 +615,10 @@ pub mod non_ios {
                 let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
                     log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json)); }
+                    #[allow(unused)] {  }
                 } else {
                     log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len());
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len())); }
+                    #[allow(unused)] {  }
                 }
                 // Find or create the queue for this peer and push the datagram
                 let q_arc = {
@@ -626,14 +626,14 @@ pub mod non_ios {
                     m.entry(*from).or_insert_with(|| Arc::new(PeerQueue::default())).clone()
                 };
                 log::info!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len());
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len())); }
+                #[allow(unused)] {  }
                 q_arc.push(data.to_vec());
 
                 // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
                 let suppressed = connecting.lock().ok().map(|s| s.contains(from)).unwrap_or(false);
                 if suppressed {
                     log::info!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from)); }
+                    #[allow(unused)] {  }
                 }
                 let create_stream = {
                     let m = streams.lock().unwrap();
@@ -642,7 +642,7 @@ pub mod non_ios {
                 if create_stream {
                     let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     log::info!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str)); }
+                    #[allow(unused)] {  }
                     let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                     ssl.set_accept_state();
                     let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: *from, queue: q_arc.clone() };
@@ -663,7 +663,7 @@ pub mod non_ios {
                     if let Ok(mut map) = writers.lock() { 
                         map.insert(*from, writer_fn.clone()); 
                         log::info!("[DtlsOpenSsl::accept] installed writer for {}", from);
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept] installed writer for {}", from)); }
+                        #[allow(unused)] {  }
                     }
 
                     // Spawn a per-peer reader loop to deliver application data
@@ -684,14 +684,14 @@ pub mod non_ios {
                                 match guard.read(&mut buf) {
                                     Ok(0) => { 
                                         log::info!("[DtlsOpenSsl::accept][read-loop {}] EOF/peer closed", from2);
-                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][read-loop {}] EOF/peer closed", from2)); }
+                                        #[allow(unused)] {  }
                                         break 
                                     },
                                     Ok(n) => n,
                                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                                         if !logged_wouldblock {
                                             log::info!("[DtlsOpenSsl::accept][read-loop {}] WouldBlock (no datagram yet)", from2);
-                                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][read-loop {}] WouldBlock (no datagram yet)", from2)); }
+                                            #[allow(unused)] {  }
                                             logged_wouldblock = true;
                                         }
                                         // No datagram available yet; avoid tearing down the stream.
@@ -700,7 +700,7 @@ pub mod non_ios {
                                     }
                                     Err(e) => { 
                                         log::info!("[DtlsOpenSsl::accept][read-loop {}] read error: {}", from2, e);
-                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][read-loop {}] read error: {}", from2, e)); }
+                                        #[allow(unused)] {  }
                                         break 
                                     },
                                 }
@@ -732,10 +732,10 @@ pub mod non_ios {
                                     if let Some(h) = peer_cert_handler2 {
                                         let ca_len = ca_pem.len();
                                         log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={} ca_len={} (from message)", from2, cert_pem.len(), ca_len);
-                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={} ca_len={} (from message)", from2, cert_pem.len(), ca_len)); }
+                                        #[allow(unused)] {  }
                                         if ca_len == 0 {
                                             log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] no CA in message; rejecting per policy", from2);
-                                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] no CA in message; rejecting per policy", from2)); }
+                                            #[allow(unused)] {  }
                                             break;
                                         }
                                         match h(cert_pem, ca_pem) {
@@ -746,7 +746,7 @@ pub mod non_ios {
                                             }
                                             _ => {
                                                 log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2);
-                                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2)); }
+                                                #[allow(unused)] {  }
                                                 break;
                                             }
                                         }
@@ -756,7 +756,7 @@ pub mod non_ios {
                                     }
                                 } else {
                                     log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] malformed announce payload (no END CERTIFICATE)", from2);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] malformed announce payload (no END CERTIFICATE)", from2)); }
+                                    #[allow(unused)] {  }
                                     break;
                                 }
                                 // Do not pass this control message to application handler
@@ -769,7 +769,7 @@ pub mod non_ios {
                                         if let Ok(cert_pem) = cert.to_pem() {
                                             if let Some(h) = peer_cert_handler2 {
                                                 log::info!("[DtlsOpenSsl][peer_cert_handler][server][{}] cert_len={}", from2, cert_pem.len());
-                                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server][{}] cert_len={}", from2, cert_pem.len())); }
+                                                #[allow(unused)] {  }
                                                 match h(&cert_pem, ca_bytes2.as_slice()) {
                                                     Ok(s) if !s.is_empty() => {
                                                         let id = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
@@ -777,7 +777,7 @@ pub mod non_ios {
                                                     }
                                                     _ => {
                                                         log::info!("[DtlsOpenSsl][peer_cert_handler][server][{}] validation failed (empty issuer or error)", from2);
-                                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][server][{}] validation failed (empty issuer or error)", from2)); }
+                                                        #[allow(unused)] {  }
                                                         break;
                                                     }
                                                 }
@@ -792,11 +792,11 @@ pub mod non_ios {
                             let issuer_opt = issuers2.lock().ok().and_then(|m| m.get(&from2).cloned());
                             if peer_cert_handler2.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
                                 log::info!("[DtlsOpenSsl::accept][read-loop {}] dropping application data until peer certificate validated", from2);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][read-loop {}] dropping application data until peer certificate validated", from2)); }
+                                #[allow(unused)] {  }
                                 continue;
                             }
                             log::info!("[DtlsOpenSsl::accept][read-loop {}] application data {} bytes", from2, n);
-                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][read-loop {}] application data {} bytes", from2, n)); }
+                            #[allow(unused)] {  }
                             if let Some(h) = &handle_message2 {
                                 let issuer = issuer_opt.unwrap_or_default();
                                 let adapter = WriterAdapter(writers2.clone());
@@ -807,7 +807,7 @@ pub mod non_ios {
                         if let Ok(mut m) = writers2.lock() { m.remove(&from2); }
                         if let Ok(mut m) = issuers2.lock() { m.remove(&from2); }
                         log::info!("[DtlsOpenSsl::accept][read-loop {}] exit and cleanup", from2);
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::accept][read-loop {}] exit and cleanup", from2)); }
+                        #[allow(unused)] {  }
                     });
                 }
             })));
@@ -843,7 +843,7 @@ pub mod non_ios {
                 if let Ok(map) = writers.lock() {
                     if let Some(writer) = map.get(&to) {
                         log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to, data.len());
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to, data.len())); }
+                        #[allow(unused)] {  }
                         return writer(data);
                     }
                 }
@@ -855,7 +855,7 @@ pub mod non_ios {
                     if let Some(stream_arc) = map.get(&to) {
                         if let Ok(mut guard) = stream_arc.lock() {
                             log::info!("[DtlsOpenSsl::send] using existing outbound stream to {} ({} bytes)", to, data.len());
-                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] using existing outbound stream to {} ({} bytes)", to, data.len())); }
+                            #[allow(unused)] {  }
                             return guard.write_all(data).map_err(|e| format!("dtls write failed: {}", e));
                         }
                     }
@@ -864,7 +864,7 @@ pub mod non_ios {
 
             // 3) Otherwise, create a new outbound DTLS connection and persist it for reuse.
             log::info!("[DtlsOpenSsl::send] creating new outbound DTLS connection to {}", to);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] creating new outbound DTLS connection to {}", to)); }
+            #[allow(unused)] {  }
             // Build DTLSv1.2 client connector
             let connector = self.prepare_client_context()?;
             // Ensure a per-peer queue exists so incoming handshake/application data is delivered via the handler
@@ -882,7 +882,7 @@ pub mod non_ios {
             if let Some(set_arc) = &self.connecting_peers {
                 if let Ok(mut set) = set_arc.lock() { 
                     log::info!("[DtlsOpenSsl::send] mark {} as connecting (suppress server accept)", to);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] mark {} as connecting (suppress server accept)", to)); }
+                    #[allow(unused)] {  }
                     set.insert(to); 
                 }
             }
@@ -890,7 +890,7 @@ pub mod non_ios {
             let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: to, queue: q_arc };
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
             log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to)); }
+            #[allow(unused)] {  }
             let stream = match connector.connect("localhost", conn) {
                 Ok(s) => s,
                 Err(HandshakeError::WouldBlock(mut mid)) => {
@@ -903,7 +903,7 @@ pub mod non_ios {
                             Ok(s) => {
                                 let ms = start.elapsed().as_millis();
                                 log::info!("[DtlsOpenSsl::send] handshake completed to {} in {}ms after {} iterations", to, ms, iter);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] handshake completed to {} in {}ms after {} iterations", to, ms, iter)); }
+                                #[allow(unused)] {  }
                                 break s
                             },
                             Err(HandshakeError::WouldBlock(m)) => {
@@ -912,14 +912,14 @@ pub mod non_ios {
                                 if elapsed > deadline {
                                     if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                                     log::info!("[DtlsOpenSsl::send] connect() timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter)); }
+                                    #[allow(unused)] {  }
                                     return Err("dtls client connect timeout".to_string());
                                 }
                                 if iter % 10 == 1 {
                                     // Log periodically to avoid spam
                                     let remaining = (deadline - elapsed).as_millis();
                                     log::info!("[DtlsOpenSsl::send] handshake WouldBlock to {} (elapsed={}ms, remaining={}ms, iter={})", to, elapsed.as_millis(), remaining, iter);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] handshake WouldBlock to {} (elapsed={}ms, remaining={}ms, iter={})", to, elapsed.as_millis(), remaining, iter)); }
+                                    #[allow(unused)] {  }
                                 }
                                 mid = m; continue;
                             }
@@ -927,13 +927,13 @@ pub mod non_ios {
                                 if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                                 let err = mid2.error();
                                 log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err)); }
+                                #[allow(unused)] {  }
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::Failure: {}", err));
                             }
                             Err(HandshakeError::SetupFailure(err)) => {
                                 if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                                 log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err)); }
+                                #[allow(unused)] {  }
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::SetupFailure: {}", err));
                             }
                         }
@@ -943,19 +943,19 @@ pub mod non_ios {
                     if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                     let err = mid.error();
                     log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err)); }
+                    #[allow(unused)] {  }
                     return Err(format!("dtls client connect failed - HandshakeError::Failure: {}", err));
                 }
                 Err(HandshakeError::SetupFailure(err)) => {
                     if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&to); }); }
                     log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err)); }
+                    #[allow(unused)] {  }
                     return Err(format!("dtls client connect failed - HandshakeError::SetupFailure: {}", err));
                 }
             };
             // Connected new DTLS stream
             log::info!("[DtlsOpenSsl::send] connected new DTLS stream to {}", to);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] connected new DTLS stream to {}", to)); }
+            #[allow(unused)] {  }
 
             // Immediately invoke peer certificate handler on the client side with the server's certificate
             if let Some(h) = self.handle_peer_certificate {
@@ -974,7 +974,7 @@ pub mod non_ios {
                             }
                             let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
                             log::info!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] cert_len={} ca_len={} (from peer chain)", to, cert_pem.len(), ca_len);
-                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] cert_len={} ca_len={} (from peer chain)", to, cert_pem.len(), ca_len)); }
+                            #[allow(unused)] {  }
                             if let Some(ca) = peer_ca_pem.as_ref() {
                                 match h(&cert_pem, ca) {
                                     Ok(issuer) if !issuer.is_empty() => {
@@ -986,26 +986,26 @@ pub mod non_ios {
                                     }
                                     Ok(_) => {
                                         log::info!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to);
-                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to)); }
+                                        #[allow(unused)] {  }
                                     }
                                     Err(e) => {
                                         log::info!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e);
-                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e)); }
+                                        #[allow(unused)] {  }
                                     }
                                 }
                             } else {
                                 log::info!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to);
-                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to)); }
+                                #[allow(unused)] {  }
                             }
                         }
                         Err(e) => {
                             log::info!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] to_pem failed: {}", to, e);
-                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] to_pem failed: {}", to, e)); }
+                            #[allow(unused)] {  }
                         }
                     }
                 } else {
                     log::info!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no server certificate available", to);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client/post-connect][{}] no server certificate available", to)); }
+                    #[allow(unused)] {  }
                     return Err("no peer certificate presented".to_string());
                 }
             }
@@ -1049,14 +1049,14 @@ pub mod non_ios {
                             match guard.read(&mut buf) {
                                 Ok(0) => { 
                                     log::info!("[DtlsOpenSsl::send][read-loop {}] EOF/peer closed", from2);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send][read-loop {}] EOF/peer closed", from2)); }
+                                    #[allow(unused)] {  }
                                     break 
                                 },
                                 Ok(n) => n,
                                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                                     if !logged_wouldblock {
                                         log::info!("[DtlsOpenSsl::send][read-loop {}] WouldBlock (no datagram yet)", from2);
-                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send][read-loop {}] WouldBlock (no datagram yet)", from2)); }
+                                        #[allow(unused)] {  }
                                         logged_wouldblock = true;
                                     }
                                     // No datagram yet for outbound stream; keep waiting.
@@ -1065,7 +1065,7 @@ pub mod non_ios {
                                 }
                                 Err(e) => { 
                                     log::info!("[DtlsOpenSsl::send][read-loop {}] read error: {}", from2, e);
-                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send][read-loop {}] read error: {}", from2, e)); }
+                                    #[allow(unused)] {  }
                                     break 
                                 }
                             }
@@ -1091,19 +1091,19 @@ pub mod non_ios {
                                                     }
                                                     let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
                                                     log::info!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={} ca_len={} (from peer chain)", from2, cert_pem.len(), ca_len);
-                                                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={} ca_len={} (from peer chain)", from2, cert_pem.len(), ca_len)); }
+                                                    #[allow(unused)] {  }
                                                     if let Some(ca) = peer_ca_pem.as_ref() {
                                                         match h(&cert_pem, ca) {
                                                             Ok(s) if !s.is_empty() => { let _ = imap.insert(from2, s); }
                                                             _ => {
                                                                 log::info!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2);
-                                                                #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2)); }
+                                                                #[allow(unused)] {  }
                                                                 break;
                                                             }
                                                         }
                                                     } else {
                                                         log::info!("[DtlsOpenSsl][peer_cert_handler][client][{}] no peer CA certificate in chain; skipping handler invocation", from2);
-                                                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl][peer_cert_handler][client][{}] no peer CA certificate in chain; skipping handler invocation", from2)); }
+                                                        #[allow(unused)] {  }
                                                     }
                                                 } else {
                                                     let _ = imap.insert(from2, String::from_utf8_lossy(&cert_pem).into());
@@ -1118,11 +1118,11 @@ pub mod non_ios {
                         let issuer_opt = issuers2_opt.as_ref().and_then(|m| m.lock().ok().and_then(|mm| mm.get(&from2).cloned()));
                         if peer_cert_handler2.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
                             log::info!("[DtlsOpenSsl::send][read-loop {}] dropping application data until peer certificate validated", from2);
-                            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send][read-loop {}] dropping application data until peer certificate validated", from2)); }
+                            #[allow(unused)] {  }
                             continue;
                         }
                         log::info!("[DtlsOpenSsl::send][read-loop {}] application data {} bytes", from2, n);
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send][read-loop {}] application data {} bytes", from2, n)); }
+                        #[allow(unused)] {  }
                         if let (Some(h), Some(writers2)) = (&handle_message2, &writers2_opt) {
                             let issuer = issuer_opt.unwrap_or_default();
                             let adapter = WriterAdapter(writers2.clone());
@@ -1133,7 +1133,7 @@ pub mod non_ios {
                     if let Some(writers2) = &writers2_opt { let _ = writers2.lock().map(|mut m| { m.remove(&from2); }); }
                     if let Some(issuers2) = &issuers2_opt { let _ = issuers2.lock().map(|mut m| { m.remove(&from2); }); }
                     log::info!("[DtlsOpenSsl::send][read-loop {}] exit and cleanup", from2);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send][read-loop {}] exit and cleanup", from2)); }
+                    #[allow(unused)] {  }
                 });
             }
             // Now that the stream is registered, remove from in-progress set
@@ -1141,7 +1141,7 @@ pub mod non_ios {
                 let _ = set_arc.lock().map(|mut set| { 
                     let removed = set.remove(&to); 
                     log::info!("[DtlsOpenSsl::send] unmark {} as connecting (registered stream; removed={})", to, removed);
-                    #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] unmark {} as connecting (registered stream; removed={})", to, removed)); }
+                    #[allow(unused)] {  }
                 }); 
             }
 
@@ -1160,14 +1160,14 @@ pub mod non_ios {
                         if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) { msg.push(b'\n'); }
                         msg.extend_from_slice(ca_pem);
                         log::info!("[DtlsOpenSsl::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
-                        #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len())); }
+                        #[allow(unused)] {  }
                         let _ = guard.write_all(&msg);
                         sent.insert(to);
                     }
                 }
             }
             log::info!("[DtlsOpenSsl::send] writing {} bytes on new DTLS stream to {}", data.len(), to);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[DtlsOpenSsl::send] writing {} bytes on new DTLS stream to {}", data.len(), to)); }
+            #[allow(unused)] {  }
             guard.write_all(data).map_err(|e| format!("client dtls write failed: {}", e))?;
             Ok(())
         }

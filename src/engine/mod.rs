@@ -67,7 +67,7 @@ struct ConnectionEntry {
 impl Engine {
     pub fn new(options: StartOptions) -> Self {
         log::info!("[Engine::new] options={:?}", options);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::new] options={:?}", options)); }
+        #[allow(unused)] {  }
         Self {
             options: options.clone(),
             mux: None,
@@ -370,7 +370,7 @@ impl Engine {
         let prev = self.state;
         self.state = EngineState::TrianglePing;
         log::info!("[Engine] state change: {:?} -> TrianglePing", prev);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] state change: {:?} -> TrianglePing", prev)); }
+        #[allow(unused)] {  }
 
         // Do NOT mark EndpointAvailable here; proceed with the triangle process and only
         // transition to EndpointAvailable once TriangleTest3 is observed.
@@ -474,10 +474,10 @@ impl Engine {
                 };
                 let ok = cb(&nsk, &uid, json_val);
                 log::info!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok)); }
+                #[allow(unused)] {  }
             } else {
                 log::info!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr)); }
+                #[allow(unused)] {  }
             }
         } else {
             log::info!("[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1");
@@ -596,7 +596,7 @@ impl Engine {
             Err(_) => format!("non-utf8:{} bytes", data.len()),
         };
         log::info!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview)); }
+        #[allow(unused)] {  }
 
         // Record last sender address for handlers that need to reply directly
         crate::messages::router::set_last_from(Some(*from));

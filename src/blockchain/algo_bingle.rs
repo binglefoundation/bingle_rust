@@ -43,7 +43,7 @@ impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
         log::info!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id)); }
+        #[allow(unused)] {  }
         Self { ops, app_id, asset_id }
     }
 
@@ -205,7 +205,7 @@ impl AlgoBingle {
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
         log::info!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config)); }
+        #[allow(unused)] {  }
         if app_id == 0 { bail!("app_id must be > 0"); }
         let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
         let client = reqwest::blocking::Client::new();

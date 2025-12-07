@@ -129,85 +129,126 @@ fn read_u24(be3: &[u8]) -> u32 { ((be3[0] as u32) << 16) | ((be3[1] as u32) << 8
 /// Convert a raw UDP datagram containing DTLS records into a pretty-printed JSON string.
 /// Returns Err(String) if the datagram is malformed.
 pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
-    let mut i: usize = 0;
-    let mut records: Vec<DtlsRecordJson> = Vec::new();
+    // Behavior depends on current log level:
+    // - Trace: full JSON (pretty) with handshake introspection (existing behavior)
+    // - Debug: single-line summary for quick inspection
+    // - Below Debug: return an empty string
+    if log::log_enabled!(log::Level::Trace) {
+        // Full decode path (existing behavior)
+        let mut i: usize = 0;
+        let mut records: Vec<DtlsRecordJson> = Vec::new();
 
-    // DTLS record header is 13 bytes: 1 + 2 + 2 + 6 + 2
-    while i < datagram.len() {
-        if datagram.len() - i < 13 {
-            return Err("truncated DTLS record header".to_string());
-        }
-        let content_type = datagram[i];
-        let version = [datagram[i + 1], datagram[i + 2]];
-        let epoch = u16::from_be_bytes([datagram[i + 3], datagram[i + 4]]);
-        let seq = ((datagram[i + 5] as u64) << 40)
-            | ((datagram[i + 6] as u64) << 32)
-            | ((datagram[i + 7] as u64) << 24)
-            | ((datagram[i + 8] as u64) << 16)
-            | ((datagram[i + 9] as u64) << 8)
-            | (datagram[i + 10] as u64);
-        let length = u16::from_be_bytes([datagram[i + 11], datagram[i + 12]]);
-        let needed = 13 + length as usize;
-        if datagram.len() - i < needed {
-            return Err("truncated DTLS record payload".to_string());
-        }
-        let payload = &datagram[i + 13..i + needed];
-        let payload_b64 = general_purpose::STANDARD.encode(payload);
+        // DTLS record header is 13 bytes: 1 + 2 + 2 + 6 + 2
+        while i < datagram.len() {
+            if datagram.len() - i < 13 {
+                return Err("truncated DTLS record header".to_string());
+            }
+            let content_type = datagram[i];
+            let version = [datagram[i + 1], datagram[i + 2]];
+            let epoch = u16::from_be_bytes([datagram[i + 3], datagram[i + 4]]);
+            let seq = ((datagram[i + 5] as u64) << 40)
+                | ((datagram[i + 6] as u64) << 32)
+                | ((datagram[i + 7] as u64) << 24)
+                | ((datagram[i + 8] as u64) << 16)
+                | ((datagram[i + 9] as u64) << 8)
+                | (datagram[i + 10] as u64);
+            let length = u16::from_be_bytes([datagram[i + 11], datagram[i + 12]]);
+            let needed = 13 + length as usize;
+            if datagram.len() - i < needed {
+                return Err("truncated DTLS record payload".to_string());
+            }
+            let payload = &datagram[i + 13..i + needed];
+            let payload_b64 = general_purpose::STANDARD.encode(payload);
 
-        // Attempt to parse DTLS Handshake layer if content_type == 22
-        let handshake = if content_type == 22 && payload.len() >= 12 {
-            // DTLS Handshake header: type(1), length(3), message_seq(2), fragment_offset(3), fragment_length(3)
-            let htype = payload[0];
-            let hlen = read_u24(&payload[1..4]);
-            let hseq = u16::from_be_bytes([payload[4], payload[5]]);
-            let hoff = read_u24(&payload[6..9]);
-            let hfrag_len = read_u24(&payload[9..12]);
-            let mut hs = HandshakeJson {
-                handshake_type: htype,
-                handshake_type_name: Some(handshake_type_name(htype).to_string()),
-                length: hlen,
-                message_seq: hseq,
-                fragment_offset: hoff,
-                fragment_length: hfrag_len,
-                client_hello: None,
-                server_hello: None,
-            };
+            // Attempt to parse DTLS Handshake layer if content_type == 22
+            let handshake = if content_type == 22 && payload.len() >= 12 {
+                // DTLS Handshake header: type(1), length(3), message_seq(2), fragment_offset(3), fragment_length(3)
+                let htype = payload[0];
+                let hlen = read_u24(&payload[1..4]);
+                let hseq = u16::from_be_bytes([payload[4], payload[5]]);
+                let hoff = read_u24(&payload[6..9]);
+                let hfrag_len = read_u24(&payload[9..12]);
+                let mut hs = HandshakeJson {
+                    handshake_type: htype,
+                    handshake_type_name: Some(handshake_type_name(htype).to_string()),
+                    length: hlen,
+                    message_seq: hseq,
+                    fragment_offset: hoff,
+                    fragment_length: hfrag_len,
+                    client_hello: None,
+                    server_hello: None,
+                };
 
-            // Only attempt body parsing if we have the full first fragment
-            if hoff == 0 && (12usize) < payload.len() {
-                let body = &payload[12..payload.len().min(12 + hlen as usize)];
-                match htype {
-                    1 => { // ClientHello
-                        if let Some(exts) = parse_client_hello_extensions(body) {
-                            hs.client_hello = Some(ClientHelloSummary { extensions: exts });
+                // Only attempt body parsing if we have the full first fragment
+                if hoff == 0 && (12usize) < payload.len() {
+                    let body = &payload[12..payload.len().min(12 + hlen as usize)];
+                    match htype {
+                        1 => { // ClientHello
+                            if let Some(exts) = parse_client_hello_extensions(body) {
+                                hs.client_hello = Some(ClientHelloSummary { extensions: exts });
+                            }
                         }
-                    }
-                    2 => { // ServerHello
-                        if let Some(exts) = parse_server_hello_extensions(body) {
-                            hs.server_hello = Some(ServerHelloSummary { extensions: exts });
+                        2 => { // ServerHello
+                            if let Some(exts) = parse_server_hello_extensions(body) {
+                                hs.server_hello = Some(ServerHelloSummary { extensions: exts });
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
+                }
+                Some(hs)
+            } else { None };
+
+            records.push(DtlsRecordJson {
+                content_type,
+                content_type_name: Some(content_type_name(content_type).to_string()),
+                version,
+                epoch,
+                sequence_number: seq,
+                length,
+                payload_b64,
+                handshake,
+            });
+            i += needed;
+        }
+
+        let packet = DtlsUdpPacketJson { records };
+        return serde_json::to_string_pretty(&packet).map_err(|e| e.to_string());
+    } else if log::log_enabled!(log::Level::Debug) {
+        // Produce a terse single-line summary without heavy parsing
+        let mut i: usize = 0;
+        let mut parts: Vec<String> = Vec::new();
+        while i < datagram.len() {
+            if datagram.len() - i < 13 {
+                return Err("truncated DTLS record header".to_string());
+            }
+            let ct = datagram[i];
+            let ct_name = content_type_name(ct);
+            let len = u16::from_be_bytes([datagram[i + 11], datagram[i + 12]]) as usize;
+            // Default: no handshake type
+            let mut hs_name: Option<&'static str> = None;
+            if ct == 22 {
+                // Handshake content: best-effort read first byte as type if present
+                if datagram.len() - i >= 14 { // ensure at least one payload byte
+                    let htype = datagram[i + 13];
+                    hs_name = Some(handshake_type_name(htype));
                 }
             }
-            Some(hs)
-        } else { None };
-
-        records.push(DtlsRecordJson {
-            content_type,
-            content_type_name: Some(content_type_name(content_type).to_string()),
-            version,
-            epoch,
-            sequence_number: seq,
-            length,
-            payload_b64,
-            handshake,
-        });
-        i += needed;
+            if let Some(hn) = hs_name {
+                parts.push(format!("len={} ct={} hs={}", len, ct_name, hn));
+            } else {
+                parts.push(format!("len={} ct={}", len, ct_name));
+            }
+            let needed = 13 + len;
+            if datagram.len() - i < needed { return Err("truncated DTLS record payload".to_string()); }
+            i += needed;
+        }
+        let summary = format!("DTLS {} bytes [{}]", datagram.len(), parts.join("; "));
+        Ok(summary)
+    } else {
+        // Below Debug: suppress output
+        Ok(String::new())
     }
-
-    let packet = DtlsUdpPacketJson { records };
-    serde_json::to_string_pretty(&packet).map_err(|e| e.to_string())
 }
 
 fn parse_client_hello_extensions(body: &[u8]) -> Option<Vec<ExtensionJson>> {
@@ -321,9 +362,16 @@ pub fn json_to_dtls_udp(json: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Once;
+    static INIT_LOG: Once = Once::new();
 
     #[test]
     fn roundtrip_single_record() {
+        INIT_LOG.call_once(|| {
+            let _ = simple_logger::SimpleLogger::new()
+                .with_level(log::LevelFilter::Trace)
+                .init();
+        });
         // Construct a simple DTLS record: content_type=23 (AppData), version=DTLS1.2 (0xFEFD)
         let payload = b"hello-dtls";
         let mut datagram: Vec<u8> = Vec::new();
@@ -343,6 +391,12 @@ mod tests {
 
     #[test]
     fn parse_multiple_records() {
+        // Ensure logging is initialized at TRACE so dtls_udp_to_json performs full decode
+        INIT_LOG.call_once(|| {
+            let _ = simple_logger::SimpleLogger::new()
+                .with_level(log::LevelFilter::Trace)
+                .init();
+        });
         // Two small records concatenated
         let mut d: Vec<u8> = Vec::new();
         for seq in 1u64..=2 {

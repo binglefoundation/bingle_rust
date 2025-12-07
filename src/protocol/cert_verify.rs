@@ -69,24 +69,6 @@ pub fn dump_ca_public_key_debug(ca_pub: &openssl::pkey::PKey<openssl::pkey::Publ
         "[cert_verify][dump][ca_pub] BEGIN PUBLIC KEY\n{}[cert_verify][dump][ca_pub] END PUBLIC KEY",
         ca_pub_pem
     );
-    #[allow(unused)] {
-        crate::util::logging::log_line(&format!(
-            "[cert_verify][dump][ca_pub] sha256(spki)={} len_der={} bytes",
-            ca_pub_der_fp,
-            ca_pub_der.len()
-        ));
-        crate::util::logging::log_line(&format!(
-            "[cert_verify][dump][ca_pub] RAW PUBLIC KEY (len={}):",
-            raw_len
-        ));
-        crate::util::logging::log_line("[cert_verify][dump][ca_pub] pub:");
-        for l in &raw_hex_lines {
-            crate::util::logging::log_line(&format!("[cert_verify][dump][ca_pub]     {}", l));
-        }
-        crate::util::logging::log_line("[cert_verify][dump][ca_pub] BEGIN PUBLIC KEY");
-        crate::util::logging::log_line(&ca_pub_pem);
-        crate::util::logging::log_line("[cert_verify][dump][ca_pub] END PUBLIC KEY");
-    }
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -98,14 +80,14 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 
         // Entry log
         log::info!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len());
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len())); }
+        #[allow(unused)] {  }
 
         // Parse certificates with explicit error logging
         let cert = match X509::from_pem(cert_pem) {
             Ok(c) => c,
             Err(e) => {
                 log::info!("[cert_verify][fail] invalid peer certificate PEM: {}", e);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] invalid peer certificate PEM: {}", e)); }
+                #[allow(unused)] {  }
                 return Err(format!("invalid peer certificate PEM: {}", e));
             }
         };
@@ -113,7 +95,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             Ok(c) => c,
             Err(e) => {
                 log::info!("[cert_verify][fail] invalid CA certificate PEM: {}", e);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] invalid CA certificate PEM: {}", e)); }
+                #[allow(unused)] {  }
                 return Err(format!("invalid CA certificate PEM: {}", e));
             }
         };
@@ -133,14 +115,14 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             Some(s) => s,
             None => {
                 log::info!("[cert_verify][fail] CA certificate missing CN");
-                #[allow(unused)] { crate::util::logging::log_line("[cert_verify][fail] CA certificate missing CN"); }
+                #[allow(unused)] {  }
                 return Err("CA certificate missing CN".to_string());
             }
         };
         // CA CN must be our virtual CA value
         if ca_cn != VIRTUAL_CA {
             log::info!("[cert_verify][fail] unexpected CA CN: '{}' (expected '{}')", ca_cn, VIRTUAL_CA);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] unexpected CA CN: '{}' (expected '{}')", ca_cn, VIRTUAL_CA)); }
+            #[allow(unused)] {  }
             return Err("unexpected CA CN".to_string());
         }
 
@@ -149,13 +131,13 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             Ok(p) => p,
             Err(e) => {
                 log::info!("[cert_verify][fail] extract CA public key failed: {}", e);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] extract CA public key failed: {}", e)); }
+                #[allow(unused)] {  }
                 return Err(format!("extract CA public key failed: {}", e));
             }
         };
         if ca_pub.id() != Id::ED25519 {
             log::info!("[cert_verify][fail] CA public key is not Ed25519 (found {:?})", ca_pub.id());
-            #[allow(unused)] { crate::util::logging::log_line("[cert_verify][fail] CA public key is not Ed25519"); }
+            #[allow(unused)] {  }
             return Err("CA public key is not Ed25519".to_string());
         }
 
@@ -164,7 +146,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 
         if !ca.verify(&ca_pub).unwrap_or(false) {
             log::info!("[cert_verify][fail] CA self-signature verification failed");
-            #[allow(unused)] { crate::util::logging::log_line("[cert_verify][fail] CA self-signature verification failed"); }
+            #[allow(unused)] {  }
             return Err("CA self-signature verification failed".to_string());
         }
 
@@ -179,18 +161,18 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             Some(s) => s,
             None => {
                 log::info!("[cert_verify][fail] end-entity certificate missing issuer CN");
-                #[allow(unused)] { crate::util::logging::log_line("[cert_verify][fail] end-entity certificate missing issuer CN"); }
+                #[allow(unused)] {  }
                 return Err("end-entity certificate missing issuer CN".to_string());
             }
         };
         if ee_issuer_cn != VIRTUAL_CA {
             log::info!("[cert_verify][fail] end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA);
-            #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA)); }
+            #[allow(unused)] {  }
             return Err("end-entity issuer CN mismatch".to_string());
         }
         if !cert.verify(&ca_pub).unwrap_or(false) {
             log::info!("[cert_verify][fail] end-entity certificate signature verification failed");
-            #[allow(unused)] { crate::util::logging::log_line("[cert_verify][fail] end-entity certificate signature verification failed"); }
+            #[allow(unused)] {  }
             return Err("end-entity certificate signature verification failed".to_string());
         }
 
@@ -204,13 +186,13 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         {
             if !ee_subj_cn.ends_with(ISSUER_SUFFIX) {
                 log::info!("[cert_verify][fail] end-entity CN missing issuer suffix: {}", ee_subj_cn);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] end-entity CN missing issuer suffix: {}", ee_subj_cn)); }
+                #[allow(unused)] {  }
                 return Err("end-entity CN missing issuer suffix".to_string());
             }
             ee_subj_cn
         } else {
             log::info!("[cert_verify][fail] end-entity certificate missing subject CN");
-            #[allow(unused)] { crate::util::logging::log_line("[cert_verify][fail] end-entity certificate missing subject CN"); }
+            #[allow(unused)] {  }
             return Err("end-entity certificate missing subject CN".to_string());
         };
 
@@ -225,18 +207,18 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         if let Some(ca_org) = ca_org_opt {
             if ca_org != expected_addr {
                 log::info!("[cert_verify][fail] CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'", ca_org, expected_addr);
-                #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][fail] CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'", ca_org, expected_addr)); }
+                #[allow(unused)] {  }
                 return Err("CA organization does not match end-entity subject".to_string());
             }
         } else {
             // Tolerate missing O for backward compatibility; log for diagnostics
             log::info!("[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match");
-            #[allow(unused)] { crate::util::logging::log_line("[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match"); }
+            #[allow(unused)] {  }
         }
 
         // All checks passed: return the end-entity subject CN (ee_subj_cn), not the CA's CN
         log::info!("[cert_verify][ok] peer_certificate_handler success: subjectCN={}", ee_subj_cn);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify][ok] peer_certificate_handler success: subjectCN={}", ee_subj_cn)); }
+        #[allow(unused)] {  }
         Ok(ee_subj_cn)
     }
     handler
@@ -246,7 +228,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
     fn handler(cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> {
         log::info!("[cert_verify] accept_all handler called: cert_len={}", cert_pem.len());
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[cert_verify] accept_all handler called: cert_len={}", cert_pem.len())); }
+        #[allow(unused)] {  }
         Ok("accept-all".to_string())
     }
     handler
@@ -282,17 +264,8 @@ pub fn dump_cert_debug(tag: &str, cert: &openssl::x509::X509) {
         "[cert_verify][dump][{}] sha256={} len={} bytes",
         tag, cert_fp, der_len
     );
-    log::info!(
+    log::debug!(
         "[cert_verify][dump][{}] BEGIN CERT\n{}\n[cert_verify][dump][{}] END CERT",
         tag, cert_text, tag
     );
-    #[allow(unused)] {
-        crate::util::logging::log_line(&format!(
-            "[cert_verify][dump][{}] sha256={} len={} bytes",
-            tag, cert_fp, der_len
-        ));
-        crate::util::logging::log_line(&format!("[cert_verify][dump][{}] BEGIN CERT", tag));
-        crate::util::logging::log_line(&cert_text);
-        crate::util::logging::log_line(&format!("[cert_verify][dump][{}] END CERT", tag));
-    }
 }
