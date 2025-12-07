@@ -2,6 +2,7 @@
 name = "rust_comms"
 version = "0.1.0"
 edition = "2024"
+autotests = false
 
 [lib]
 name = "rust_comms"

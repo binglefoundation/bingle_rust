@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::fs;
 
+#[allow(dead_code)]
 pub struct TestCerts {
     pub ca_crt: Vec<u8>,
     pub server_crt: Vec<u8>,
@@ -12,6 +13,7 @@ pub struct TestCerts {
     pub client_key: Vec<u8>,
 }
 
+#[allow(dead_code)]
 fn run(cmd: &mut Command) {
     let out = cmd.output().expect("failed to spawn openssl");
     if !out.status.success() {
@@ -24,6 +26,7 @@ fn run(cmd: &mut Command) {
     }
 }
 
+#[allow(dead_code)]
 pub fn generate_ed25519_test_certs() -> TestCerts {
     // Use a temporary directory and read PEMs into memory
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -87,6 +90,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     }
 }
 
+#[allow(dead_code)]
 fn path_str(p: &PathBuf) -> &str {
     // Safe unwrap: temp dir path is valid UTF-8 on supported platforms.
     p.to_str().expect("utf8 path")

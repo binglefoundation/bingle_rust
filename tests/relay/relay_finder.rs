@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, StartOptions, UserId};
 
+#[allow(dead_code)]
 struct MockApi;
 impl BingleApi for MockApi {
     fn get_my_id(&self) -> Option<String> { None }

@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
 use rust_comms::messages::{route, Message, RelayMessage};
-use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{RelayTriangleTest1Response, RelayTriangleTest3};
-use rust_comms::messages::router::{set_bingle_api, set_bingle_api_internal};
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler, BingleApiInternal};
+use rust_comms::messages::router::set_bingle_api_internal;
 use rust_comms::engine::EngineState;
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-
-struct NoopHandler;
-impl MessageHandler for NoopHandler {}
 
 // Mock internal API to capture and enforce state transitions for tests without starting DTLS/Engine.
 struct MockInternal {

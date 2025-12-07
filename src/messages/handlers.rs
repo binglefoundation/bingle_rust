@@ -230,7 +230,7 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
-    fn on_triangle_test1_response(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
+    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
         println!("[DefaultPrintingHandler] TriangleTest1Response received");
         // Per requirement: if Engine state is not EndpointAvailable, set it to NATRestricted
         // We don't have direct state query here; rely on Engine's internal setter semantics.
