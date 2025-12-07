@@ -11,16 +11,18 @@ use algonaut as _algonaut;
 
 /// Configuration for Algod and Indexer endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AlgoProviderConfig {
+pub struct AlgoChainConfig {
     pub client_api_url: String,
     pub client_api_port: u16,
     pub indexer_api_url: String,
     pub indexer_api_port: u16,
     pub token: Option<String>,
     pub token_key: Option<String>,
+    pub app_id: Option<u64>,
+    pub asset_id: Option<u64>,
 }
 
-impl Default for AlgoProviderConfig {
+impl Default for AlgoChainConfig {
     fn default() -> Self {
         // Defaults to localnet configuration matching the Kotlin implementation
         Self {
@@ -30,6 +32,8 @@ impl Default for AlgoProviderConfig {
             indexer_api_port: 8980,
             token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
             token_key: Some("X-Algo-API-Token".to_string()),
+            app_id: None,
+            asset_id: None,
         }
     }
 }
@@ -46,11 +50,11 @@ pub trait KeyProvider: Send + Sync {
 pub struct AlgoOps {
     pub passphrase: Option<String>,
     pub address: Option<String>,
-    pub config: AlgoProviderConfig,
+    pub config: AlgoChainConfig,
 }
 
 impl AlgoOps {
-    pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoProviderConfig>) -> Self {
+    pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoChainConfig>) -> Self {
         // Use explicit config if provided; else Default (localnet)
         let config = config.unwrap_or_default();
         let mut ops = Self {
@@ -876,7 +880,7 @@ impl AlgoOps {
                     // If an asset id was provided, opt the app address in via the dApp admin method
                     if let Some(aid) = asset_id {
                         // Use AlgoBingle helper to call the admin method
-                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone());
+                        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone(), app_id, aid);
                         // Propagate any error from the admin call; ignore returned tx id
                         let _ = ab.opt_in_app_to_asset(app_id, aid)?;
                     }

@@ -35,14 +35,16 @@ use algonaut::{
 #[derive(Debug, Clone)]
 pub struct AlgoBingle {
     pub ops: AlgoOps,
+    pub app_id: u64,
+    pub asset_id: u64,
 }
 
 impl AlgoBingle {
-    pub fn new(ops: AlgoOps) -> Self {
+    pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
-        println!("[AlgoBingle::new] ops.config={:?}", ops.config);
-        #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::new] ops.config={:?}", ops.config)); }
-        Self { ops }
+        println!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
+        #[allow(unused)] { crate::util::logging::log_line(&format!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id)); }
+        Self { ops, app_id, asset_id }
     }
 
     /// Extract the BinglePrice value from already-decoded global state entries.

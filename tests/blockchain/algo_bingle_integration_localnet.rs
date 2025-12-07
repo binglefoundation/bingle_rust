@@ -1,5 +1,5 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use rust_comms::algo_ops::{AlgoProviderConfig, AppArg};
+use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -22,7 +22,7 @@ fn bingle_end_to_end_calls() {
         return;
     }
     fund_test_accounts_or_panic();
-    let cfg: AlgoProviderConfig = localnet_config();
+    let cfg: AlgoChainConfig = localnet_config();
 
     // Creator/sender and receiver accounts
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
@@ -44,7 +44,7 @@ fn bingle_end_to_end_calls() {
     let asset_id = creator.create_asset("BINGLE", total_units).expect("asset create").expect("asset id");
 
     // Ensure the app can clawback by setting clawback to the app address and opt-in app to ASA
-    let _ = AlgoBingle::new(creator.clone()).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
+    let _ = AlgoBingle::new(creator.clone(), app_id, asset_id).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
 
     creator.set_asset_clawback_to_app(app_id, asset_id).expect("set clawback to app");
 

@@ -399,7 +399,7 @@ impl Engine {
                     if let Some(app_id) = app_id_opt {
                         let ab = {
                             let ops = crate::blockchain::algo_ops::AlgoOps::new(None, None, opt_cfg);
-                            crate::blockchain::algo_bingle::AlgoBingle::new(ops)
+                            crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0)
                         };
                         Arc::new(move || {
                             match ab.list_static_endpoints_via_indexer(app_id) {

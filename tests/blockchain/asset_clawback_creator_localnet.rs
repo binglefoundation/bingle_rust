@@ -1,4 +1,4 @@
-use rust_comms::algo_ops::AlgoProviderConfig;
+use rust_comms::algo_ops::AlgoChainConfig;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -14,7 +14,7 @@ fn asset_creation_sets_clawback_to_creator() {
     }
 
     // Ensure funding for the creator test account
-    let cfg: AlgoProviderConfig = localnet_config();
+    let cfg: AlgoChainConfig = localnet_config();
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[ADDRESS_SPEND])
         .expect("Failed to ensure localnet test account funded; install algokit and start localnet");
 

@@ -55,9 +55,6 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
         let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
         let ops_relay1 = ops_creator.clone();
         let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
-        let ab_creator = AlgoBingle::new(ops_creator.clone());
-        let ab_r1 = AlgoBingle::new(ops_relay1.clone());
-        let ab_r2 = AlgoBingle::new(ops_relay2.clone());
 
         // Deploy the BingleDapp from artifacts
         let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
@@ -68,6 +65,11 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
 
         // Set Bingle price to 1 (not strictly required for endpoint registration)
         let _ = ops_creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]);
+
+        // Create helpers bound to this app
+        let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
+        let ab_r1 = AlgoBingle::new(ops_relay1.clone(), app_id, 0);
+        let ab_r2 = AlgoBingle::new(ops_relay2.clone(), app_id, 0);
 
         // Opt relays into the app and allow static endpoints
         ops_relay1.opt_in_app(app_id).expect("relay1 opt-in app");

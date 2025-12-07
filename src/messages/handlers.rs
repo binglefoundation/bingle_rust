@@ -117,7 +117,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
                     let ab = {
                                             let cfg = api_for_thread.get_algo_provider_config();
-                                            crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, cfg))
+                                            crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, cfg), app_id, 0)
                                         };
                     std::sync::Arc::new(move || {
                         match ab.list_static_endpoints_via_indexer(app_id) {

@@ -1,4 +1,4 @@
-use rust_comms::algo_ops::{AlgoOps, AlgoProviderConfig};
+use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -40,7 +40,7 @@ fn parse_funded_account(list_output: &str) -> Option<String> {
     best_addr
 }
 
-pub fn ensure_localnet_accounts_funded(cfg: &AlgoProviderConfig, target_addrs: &[&str]) -> Result<(), String> {
+pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&str]) -> Result<(), String> {
     // Ensure algokit CLI is available and get a funding source account
     let list = run_cmd("algokit", &["goal", "account", "list", "-w", "unencrypted-default-wallet"]) ?;
     let funded = parse_funded_account(&list).ok_or_else(|| "Could not determine a funded localnet account from `algokit goal account list` output".to_string())?;

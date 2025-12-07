@@ -1,5 +1,5 @@
 use std::fs;
-use rust_comms::algo_ops::{AlgoProviderConfig, AppArg};
+use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -16,7 +16,7 @@ fn register_ensures_sender_opted_in_to_app() {
         return;
     }
 
-    let cfg: AlgoProviderConfig = localnet_config();
+    let cfg: AlgoChainConfig = localnet_config();
     // Ensure our test account is funded
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[ADDRESS_SPEND])
         .expect("ensure funded");
@@ -41,7 +41,7 @@ fn register_ensures_sender_opted_in_to_app() {
         .expect("asset id");
 
     // 3) Fund app with ASA so it can receive registration fees (opt-in app to asset via wrapper)
-    let ab = rust_comms::blockchain::algo_bingle::AlgoBingle::new(creator.clone());
+    let ab = rust_comms::blockchain::algo_bingle::AlgoBingle::new(creator.clone(), app_id, asset_id);
     let _ = ab.opt_in_app_to_asset(app_id, asset_id).expect("opt in app to asset");
 
     // 3a) Set price = 1 (microAlgo and unit) using creator (must be app creator)

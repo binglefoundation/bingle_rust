@@ -88,7 +88,7 @@ fn testnet_user_reaches_endpoint_available() {
     // The struct provides a public constructor via AlgoOps { config, .. } pattern with helpers.
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(provider_cfg.clone()));
 
-    let ab = AlgoBingle::new(ops.clone());
+    let ab = AlgoBingle::new(ops.clone(), app_id, 0);
     let list = ab
         .list_static_endpoints_via_indexer(app_id)
         .expect("indexer query for static endpoints");

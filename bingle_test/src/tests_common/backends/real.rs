@@ -12,13 +12,15 @@ pub struct RealBackend {
 impl TestAlgo for RealBackend {
     fn new(passphrase: Option<String>, address: Option<String>, use_dummy_config: bool) -> Self {
         let cfg = if use_dummy_config {
-            Some(algo_ops::AlgoProviderConfig {
+            Some(algo_ops::AlgoChainConfig {
                 client_api_url: "http://nowhere.not".to_string(),
                 client_api_port: 666,
                 indexer_api_url: "http://nowhere.not".to_string(),
                 indexer_api_port: 666,
                 token: Some("a".repeat(64)),
                 token_key: Some("X-API-Key".to_string()),
+                app_id: None,
+                asset_id: None, 
             })
         } else {
             None

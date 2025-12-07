@@ -1,5 +1,5 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use rust_comms::algo_ops::{AlgoProviderConfig};
+use rust_comms::algo_ops::AlgoChainConfig;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -18,7 +18,7 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
         return;
     }
     // Ensure test accounts are funded
-    let cfg: AlgoProviderConfig = localnet_config();
+    let cfg: AlgoChainConfig = localnet_config();
 
     // Extra guard: ensure Indexer is reachable; otherwise skip to avoid false negatives when only algod is up.
     let health_url = format!("{}:{}/health", cfg.indexer_api_url, cfg.indexer_api_port);
@@ -53,9 +53,9 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     creator.opt_in_app(app_id).expect("user opt-in app");
 
     // Grant static permission for the user via the app creator, then user registers a static endpoint
-    let ab_creator = AlgoBingle::new(creator.clone());
+    let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
     let _ = ab_creator.set_allow_static(app_id, ADDRESS_RECEIVE, true).expect("set_allow_static call");
-    let ab_user = AlgoBingle::new(user.clone());
+    let ab_user = AlgoBingle::new(user.clone(), app_id, 0);
     let endpoint = "127.0.0.1:54321";
     let _ = ab_user.register_endpoint(app_id, endpoint).expect("register_endpoint call");
 
@@ -63,7 +63,7 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     // Indexer is eventually consistent; poll for up to ~10 seconds.
     let start = Instant::now();
     let mut list: Vec<(String, String)>;
-    let ab = AlgoBingle::new(user.clone());
+    let ab = AlgoBingle::new(user.clone(), app_id, 0);
     loop {
         list = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list");
         if list.iter().any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == endpoint) { break; }

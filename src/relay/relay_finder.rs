@@ -55,7 +55,7 @@ impl RelayFinder {
         app_id: u64,
         accounts: Vec<String>,
     ) -> Self {
-        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops);
+        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
         let discover = Arc::new(move || {
             match ab.discover_root_relays(app_id, &accounts) {
                 Ok(pairs) => pairs.into_iter().map(|(id, address)| RootRelayInfo { id, address }).collect(),

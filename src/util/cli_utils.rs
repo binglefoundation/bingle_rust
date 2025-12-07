@@ -2,7 +2,7 @@ use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 use crate::api::bingle_api::StartOptions;
-use crate::blockchain::algo_ops::AlgoProviderConfig;
+use crate::blockchain::algo_ops::AlgoChainConfig;
 use serde::Deserialize;
 
 /// Parse a comma or whitespace separated list of socket addresses or hostnames with ports.
@@ -60,20 +60,22 @@ struct NodeFile {
     asset_id: Option<u64>,
 }
 
-pub fn parse_node_file_with_ids(path: &str) -> Result<(Option<String>, AlgoProviderConfig, Option<u64>, Option<u64>), String> {
+pub fn parse_node_file_with_ids(path: &str) -> Result<(Option<String>, AlgoChainConfig, Option<u64>, Option<u64>), String> {
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read node file '{}': {}", path, e))?;
     let nf: NodeFile = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse node file '{}': {}", path, e))?;
     Ok((
         nf.network,
-        AlgoProviderConfig {
+        AlgoChainConfig {
             client_api_url: nf.client_api_url,
             client_api_port: nf.client_api_port,
             indexer_api_url: nf.indexer_api_url,
             indexer_api_port: nf.indexer_api_port,
             token: nf.token,
             token_key: nf.token_key,
+            app_id: nf.app_id,
+            asset_id: nf.asset_id,
         },
         nf.app_id,
         nf.asset_id,
@@ -125,7 +127,7 @@ where
     let mut am_relay = false;
     let mut static_ip: Option<SocketAddr> = None;
     let mut stun_servers: Option<Vec<SocketAddr>> = None;
-    let mut algo_provider_config: Option<AlgoProviderConfig> = None;
+    let mut algo_provider_config: Option<AlgoChainConfig> = None;
     let mut algo_network: Option<String> = None;
     let mut cli_app_id: Option<u64> = None;
     let mut cli_asset_id: Option<u64> = None;

@@ -103,7 +103,7 @@ pub struct StartOptions {
     pub stun_servers: Option<Vec<SocketAddr>>,
     /// Optional Algorand provider configuration loaded from --node-file.
     #[serde(default)]
-    pub algo_provider_config: Option<crate::blockchain::algo_ops::AlgoProviderConfig>,
+    pub algo_provider_config: Option<crate::blockchain::algo_ops::AlgoChainConfig>,
     /// Optional human-readable network name from the node file (e.g., mainnet, testnet).
     #[serde(default)]
     pub algo_network: Option<String>,
@@ -142,7 +142,7 @@ pub trait BingleApi: Send + Sync {
     /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
     fn get_app_id(&self) -> Option<u64>;
     /// Returns the configured Algorand provider config from StartOptions, if any. Default: None.
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> { None }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
     /// Start the node using the provided options. Implementations may spawn background tasks.
     fn start(&mut self, options: StartOptions) -> Result<(), String>;
 

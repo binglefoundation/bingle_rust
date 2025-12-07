@@ -1,5 +1,5 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use rust_comms::algo_ops::{AlgoProviderConfig, AppArg};
+use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -17,7 +17,7 @@ fn buy_bingle_transfers_from_reserve_inner_tx() {
     }
 
     // Ensure accounts are funded
-    let cfg: AlgoProviderConfig = localnet_config();
+    let cfg: AlgoChainConfig = localnet_config();
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[ADDRESS_SPEND, ADDRESS_RECEIVE])
         .expect("Failed to ensure localnet test accounts funded; install algokit and start localnet");
 
@@ -37,7 +37,7 @@ fn buy_bingle_transfers_from_reserve_inner_tx() {
 
     // Configure ASA: set clawback address to the application address so inner clawback can succeed and opt-in app to ASA
     creator.set_asset_clawback_to_app(app_id, asset_id).expect("set ASA clawback to app address");
-    let _ = AlgoBingle::new(creator.clone()).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
+    let _ = AlgoBingle::new(creator.clone(), app_id, asset_id).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
 
     // Stock the app account with supply to sell
     let app_addr = creator.contract_address(app_id).expect("app address");
@@ -59,7 +59,7 @@ fn buy_bingle_transfers_from_reserve_inner_tx() {
     // There is no direct balance getter; do a simple send of 0 (already done by opt-in) and rely on contract behavior
 
     // Execute buy_bingle: pay 1 microAlgo; app should transfer 1 unit from reserve to buyer via inner tx
-    let ab_buyer = AlgoBingle::new(buyer.clone());
+    let ab_buyer = AlgoBingle::new(buyer.clone(), app_id, asset_id);
     ab_buyer.buy_bingle(app_id, asset_id, 1).expect("buy_bingle call");
 
     // Validate buyer now holds the asset: query again and ensure opted-in still, and creator can transfer back 1 unit to verify balance > 0

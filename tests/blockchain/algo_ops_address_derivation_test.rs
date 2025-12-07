@@ -1,9 +1,9 @@
-use rust_comms::algo_ops::{AlgoOps, AlgoProviderConfig, byte_key_to_address};
+use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig, byte_key_to_address};
 use base64::{engine::general_purpose, Engine as _};
 
-fn default_cfg() -> AlgoProviderConfig {
+fn default_cfg() -> AlgoChainConfig {
     // No network calls are made in these tests, but AlgoOps requires a config
-    AlgoProviderConfig::default()
+    AlgoChainConfig::default()
 }
 
 #[test]

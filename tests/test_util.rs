@@ -1,4 +1,4 @@
-use rust_comms::algo_ops::{AlgoOps, AlgoProviderConfig};
+use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
 use std::env;
 
 // Localnet token from Algorand docs / Algokit localnet
@@ -21,14 +21,16 @@ pub const ADDRESS_RECEIVE: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDC
 pub const PASSPHRASE_RECEIVE: &str = "earth idle country misery matrix wolf tired cabin craft roof quantum comfort answer praise second scout title napkin crop trial industry glue kid absorb midnight";
 
 #[allow(dead_code)]
-pub fn localnet_config() -> AlgoProviderConfig {
-    AlgoProviderConfig {
+pub fn localnet_config() -> AlgoChainConfig {
+    AlgoChainConfig {
         client_api_url: "http://localhost".to_string(),
         client_api_port: 4001,
         indexer_api_url: "http://localhost".to_string(),
         indexer_api_port: 8980,
         token: Some(LOCALNET_TOKEN.to_string()),
         token_key: Some("X-Algo-API-Token".to_string()),
+        app_id: None,
+        asset_id: None,
     }
 }
 
@@ -58,7 +60,7 @@ pub fn should_run_localnet() -> bool {
 }
 
 #[allow(dead_code)]
-pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoProviderConfig) -> AlgoOps {
+pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoChainConfig) -> AlgoOps {
     // Pass the mnemonic directly as the passphrase (ASCII string)
     let pass = mnem.to_string();
     AlgoOps::new(Some(pass), Some(addr.to_string()), Some(cfg))

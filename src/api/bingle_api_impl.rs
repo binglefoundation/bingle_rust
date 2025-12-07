@@ -177,7 +177,7 @@ impl BingleApi for BingleApiImpl {
     fn get_app_id(&self) -> Option<u64> {
         self.started_options.app_id
     }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> {
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
         self.started_options.algo_provider_config.clone()
     }
     fn start(&mut self, options: StartOptions) -> Result<(), String> {
@@ -261,7 +261,7 @@ impl BingleApi for BingleApiImpl {
                             fn debug_print_options(&self) { unsafe { if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() { p.debug_print_options(); } } }
                             fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
                 fn get_app_id(&self) -> Option<u64> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) } }
-                fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
+                fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
                 fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
                 fn stop(&mut self) { /* not supported */ }
                 fn network_change(&mut self) { /* not supported */ }
@@ -309,7 +309,7 @@ impl BingleApi for BingleApiImpl {
                                     fn debug_print_options(&self) { unsafe { if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() { p.debug_print_options(); } } }
                                     fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
                     fn get_app_id(&self) -> Option<u64> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) } }
-                    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoProviderConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
+                    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
                     fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
                     fn stop(&mut self) { }
                     fn network_change(&mut self) { }
