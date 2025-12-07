@@ -89,8 +89,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut relay1 = BingleApiImpl::new();
     let mut relay2 = BingleApiImpl::new();
 
-    let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None };
-    let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None };
+    let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
+    let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
 
     // Start relays (no assertions about DTLS; we use them only as placeholders)
     let _ = relay1.start(r1_opts).expect("relay1 start() failed");
@@ -109,7 +109,7 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut client1 = BingleApiImpl::new();
 
     let stun_list = vec![a1, a2];
-    let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some(test_util::PASSPHRASE_10MIL.parse().unwrap()), static_ip: None, am_relay: false, stun_servers: Some(stun_list.clone()), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None };
+    let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some(test_util::PASSPHRASE_10MIL.parse().unwrap()), static_ip: None, am_relay: false, stun_servers: Some(stun_list.clone()), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
 
     client1.start(c1_opts).expect("client1 start() failed");
 

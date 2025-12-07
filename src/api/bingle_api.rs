@@ -113,6 +113,9 @@ pub struct StartOptions {
     /// Optional Algorand asset id associated with the dApp (carried for completeness).
     #[serde(default)]
     pub asset_id: Option<u64>,
+    /// Optional log level override (trace|debug|info|warn|error). If None, defaults to debug on debug builds and warn on release.
+    #[serde(default)]
+    pub log_level: Option<String>,
 }
 
 impl Default for StartOptions {
@@ -127,6 +130,7 @@ impl Default for StartOptions {
             algo_network: None,
             app_id: None,
             asset_id: None,
+            log_level: None,
         }
     }
 }

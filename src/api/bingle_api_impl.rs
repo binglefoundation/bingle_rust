@@ -5,6 +5,9 @@ use std::time::Duration;
 
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
+use log::{info, warn, error, LevelFilter};
+use simple_logger::SimpleLogger;
+use std::sync::Once;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
@@ -150,12 +153,12 @@ impl BingleApiImpl {
             match e.send_to_peer(addr, &bytes) {
                 Ok(_) => true,
                 Err(err) => {
-                    eprintln!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
+                    warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
                     false
                 }
             }
         } else {
-            eprintln!("[BingleApiImpl] DTLS/Engine not initialized");
+            warn!("[BingleApiImpl] DTLS/Engine not initialized");
             false
         }
     }
@@ -181,7 +184,27 @@ impl BingleApi for BingleApiImpl {
         self.started_options.algo_provider_config.clone()
     }
     fn start(&mut self, options: StartOptions) -> Result<(), String> {
-        println!("[BingleApiImpl::start][enter] options={:?}", options);
+        // Initialize logging once (stderr + timestamps), respect options.log_level if provided.
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let default_level = if cfg!(debug_assertions) { LevelFilter::Debug } else { LevelFilter::Warn };
+            let level = options.log_level.as_deref().map(|s| match s.to_ascii_lowercase().as_str() {
+                "trace" => LevelFilter::Trace,
+                "debug" => LevelFilter::Debug,
+                "info" => LevelFilter::Info,
+                "warn" | "warning" => LevelFilter::Warn,
+                "error" => LevelFilter::Error,
+                _ => default_level,
+            }).unwrap_or(default_level);
+            let _ = SimpleLogger::new().with_level(level).init();
+            // Panic hook that logs at error! and then defers to default behavior
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |pi| {
+                error!("panic: {}", pi);
+                default_hook(pi);
+            }));
+        });
+        info!("[BingleApiImpl::start][enter] options={:?}", options);
         #[allow(unused)] { crate::util::logging::log_line(&format!("[BingleApiImpl::start][enter] options={:?}", options)); }
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
         self.started_options = options.clone();

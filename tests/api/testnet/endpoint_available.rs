@@ -110,6 +110,7 @@ fn testnet_user_reaches_endpoint_available() {
         algo_network: network_name.clone(),
         app_id: Some(app_id),
         asset_id: node_asset_id,
+        log_level: None,
     };
 
     api.start(opts).expect("start api");

@@ -18,6 +18,7 @@ fn bingle_api_start_propagates_engine_error() {
         algo_network: None,
         app_id: None,
         asset_id: None,
+        log_level: None,
     };
 
     let res = api.start(opts);

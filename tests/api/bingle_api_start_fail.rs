@@ -23,6 +23,7 @@ fn start_returns_err_on_invalid_passphrase() {
         algo_network: None,
         app_id: None,
         asset_id: None,
+        log_level: None,
     };
 
     let err = api.start(opts).expect_err("start should fail for invalid passphrase");

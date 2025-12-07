@@ -44,6 +44,7 @@ fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
+        log_level: None,
     };
     relay.start(relay_opts).expect("relay start");
 
@@ -90,6 +91,7 @@ fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
+        log_level: None,
     };
     client.start(client_opts).expect("client start");
 

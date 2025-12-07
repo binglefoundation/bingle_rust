@@ -23,6 +23,8 @@ stun-rs = "0.1.11"
 uuid = { version = "1", features = ["v4"] }
 libc = "0.2"
 ctrlc = "3"
+log = "0.4"
+simple_logger = "4"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 algonaut = "0.4.2"

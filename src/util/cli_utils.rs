@@ -133,6 +133,7 @@ where
     let mut cli_asset_id: Option<u64> = None;
     let mut node_app_id: Option<u64> = None;
     let mut node_asset_id: Option<u64> = None;
+    let mut log_level: Option<String> = None;
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -169,6 +170,10 @@ where
                 algo_provider_config = Some(cfg);
                 node_app_id = nid_app;
                 node_asset_id = nid_asset;
+            }
+            "--log-level" => {
+                let v = it.next().ok_or("--log-level requires a value (trace|debug|info|warn|error)")?;
+                log_level = Some(v);
             }
             "--app-id" => {
                 let v = it.next().ok_or("--app-id requires a value")?;
@@ -214,6 +219,7 @@ where
         algo_network,
         app_id: app_id_opt,
         asset_id: asset_id_opt,
+        log_level,
     })
 }
 
