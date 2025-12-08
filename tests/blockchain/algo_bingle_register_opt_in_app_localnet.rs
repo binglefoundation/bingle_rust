@@ -3,18 +3,16 @@ use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
+#[macro_use]
 #[path = "../test_util.rs"]
 mod test_util;
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, should_run_localnet};
+use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
 
 // This test validates that register ensures the caller is opted-in to the app local state.
 // It uses localnet and will be skipped when localnet is unavailable.
 #[test]
 fn register_ensures_sender_opted_in_to_app() {
-    if !should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
 
     let cfg: AlgoChainConfig = localnet_config();
     // Ensure our test account is funded

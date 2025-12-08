@@ -3,18 +3,16 @@ use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
+#[macro_use]
 #[path = "../test_util.rs"]
 mod test_util;
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, should_run_localnet};
+use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
 
 use std::fs;
 
 #[test]
 fn buy_bingle_transfers_from_reserve_inner_tx() {
-    if !should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
 
     // Ensure accounts are funded
     let cfg: AlgoChainConfig = localnet_config();

@@ -2,16 +2,14 @@ use rust_comms::algo_ops::AlgoChainConfig;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
+#[macro_use]
 #[path = "../test_util.rs"]
 mod test_util;
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, should_run_localnet};
+use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
 
 #[test]
 fn asset_creation_sets_clawback_to_creator() {
-    if !should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
 
     // Ensure funding for the creator test account
     let cfg: AlgoChainConfig = localnet_config();

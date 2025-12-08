@@ -3,9 +3,10 @@ use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
+#[macro_use]
 #[path = "../test_util.rs"]
 mod test_util;
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, should_run_localnet};
+use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
 
 use std::fs;
 
@@ -17,10 +18,7 @@ fn fund_test_accounts_or_panic() {
 
 #[test]
 fn bingle_end_to_end_calls() {
-    if !should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
     fund_test_accounts_or_panic();
     let cfg: AlgoChainConfig = localnet_config();
 

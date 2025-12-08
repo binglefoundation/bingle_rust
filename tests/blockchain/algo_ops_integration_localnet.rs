@@ -2,6 +2,7 @@ use rust_comms::algo_ops::AlgoOps;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
+#[macro_use]
 #[path = "../test_util.rs"]
 mod test_util;
 use test_util::{localnet_config, ADDRESS_10MIL};
@@ -18,14 +19,10 @@ fn fund_test_accounts_or_panic() {
 //   with token aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; or
 // - Set the environment variable RUST_COMMS_RUN_LOCALNET=true in your Run Configuration.
 // The tests will auto-skip if localnet isn’t available and the env var isn’t set.
-fn should_run_localnet() -> bool { test_util::should_run_localnet() }
 
 #[test]
 fn account_balance_for_address10mil_returns_some() {
-    if !should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
     fund_test_accounts_or_panic();
     let cfg = localnet_config();
     let ops = AlgoOps::new(None, Some(ADDRESS_10MIL.to_string()), Some(cfg));
@@ -36,10 +33,7 @@ fn account_balance_for_address10mil_returns_some() {
 
 #[test]
 fn global_state_for_address10mil_returns_some_vec() {
-    if !should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
     fund_test_accounts_or_panic();
     let cfg = localnet_config();
     let ops = AlgoOps::new(None, Some(ADDRESS_10MIL.to_string()), Some(cfg));
@@ -53,10 +47,7 @@ fn global_state_for_address10mil_returns_some_vec() {
 
 #[test]
 fn algo_ops_integration_localnet_placeholder() {
-    if !test_util::should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    skip_if_no_localnet!();
     // Localnet is available; keep placeholder light to avoid duplicating other tests.
     // Future: could delegate to a more comprehensive integration suite here.
     assert!(true, "localnet detected; placeholder passing");

@@ -1,6 +1,17 @@
 use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
 use std::env;
 
+// Macro to skip localnet-dependent tests with a standard message.
+// Usage: skip_if_no_localnet!();
+macro_rules! skip_if_no_localnet {
+    () => {
+        if !test_util::should_run_localnet() {
+            eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
+            return;
+        }
+    };
+}
+
 // Localnet token from Algorand docs / Algokit localnet
 #[allow(dead_code)]
 pub const LOCALNET_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
