@@ -1,6 +1,6 @@
 #![cfg(not(target_os = "ios"))]
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 
@@ -11,19 +11,13 @@ use base64::Engine as _;
 #[path = "../test_util.rs"]
 mod test_util;
 
-fn find_unused_loopback_port() -> u16 {
-    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-    let port = sock.local_addr().expect("local addr").port();
-    drop(sock);
-    port
-}
 
 #[ntest::timeout(30_000)]
 #[test]
 fn engine_basic_bingle_dtls_layer() {
     // Allocate two free loopback ports for server and client static endpoints.
-    let server_port = find_unused_loopback_port();
-    let client_port = find_unused_loopback_port();
+    let server_port = test_util::find_unused_loopback_port();
+    let client_port = test_util::find_unused_loopback_port();
     assert_ne!(server_port, 0);
     assert_ne!(client_port, 0);
 

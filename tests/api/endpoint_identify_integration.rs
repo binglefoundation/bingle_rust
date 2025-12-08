@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
@@ -12,14 +12,6 @@ mod setup_localnet;
 #[path = "../test_util.rs"]
 mod test_util;
 
-fn find_unused_loopback_port() -> u16 {
-    // Bind to 127.0.0.1:0 to let OS choose a free port, then return that port.
-    // Drop the socket to free it for the test process to rebind shortly after.
-    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-    let port = sock.local_addr().expect("local addr").port();
-    drop(sock);
-    port
-}
 
 // Option B integration test: use BingleApiImpl as the entry point, but mock out
 // the discovery by forcing STUN consistent on the underlying Engine. We avoid
@@ -97,8 +89,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let _ = relay2.start(r2_opts).expect("relay2 start() failed");
 
     // Start two local STUN servers we will use for consistency resolution
-    let p1 = find_unused_loopback_port();
-    let p2 = find_unused_loopback_port();
+    let p1 = test_util::find_unused_loopback_port();
+    let p2 = test_util::find_unused_loopback_port();
     let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
     let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
 

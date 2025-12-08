@@ -21,17 +21,9 @@ fn bingle_api_relay_check_two_nodes() {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
-    // Helper to allocate a free loopback port to avoid cross-test collisions.
-    fn find_unused_loopback_port() -> u16 {
-        use std::net::{IpAddr, Ipv4Addr, UdpSocket};
-        let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-        let port = sock.local_addr().expect("local addr").port();
-        drop(sock);
-        port
-    }
 
     // 1) Start relay node on an unused port with PASSPHRASE_RECEIVE and id ADDRESS_RECEIVE
-    let relay_port = find_unused_loopback_port();
+    let relay_port = test_util::find_unused_loopback_port();
     let relay_addr = SocketAddr::from(([127, 0, 0, 1], relay_port));
     let mut relay = BingleApiImpl::new();
     let relay_opts = StartOptions {

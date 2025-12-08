@@ -65,3 +65,13 @@ pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoChainConfig) -> AlgoOp
     let pass = mnem.to_string();
     AlgoOps::new(Some(pass), Some(addr.to_string()), Some(cfg))
 }
+
+// Shared helper for tests: allocate a free UDP port on loopback.
+#[allow(dead_code)]
+pub fn find_unused_loopback_port() -> u16 {
+    use std::net::{IpAddr, Ipv4Addr, UdpSocket};
+    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
+    let port = sock.local_addr().expect("local addr").port();
+    drop(sock);
+    port
+}
