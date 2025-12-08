@@ -63,7 +63,7 @@ fn bingle_end_to_end_calls() {
     // receiver.opt_in_app(app_id).expect("receiver opt-in app");
 
     // Wrap receiver in AlgoBingle
-    let ab = AlgoBingle::new(receiver.clone());
+    let ab = AlgoBingle::new(receiver.clone(), app_id, asset_id);
 
     // buy_bingle: pay 1 microAlgo to app and do self->self ASA xfer of 1 to satisfy checks
     ab.buy_bingle(app_id, asset_id, 1).expect("buy_bingle group call");

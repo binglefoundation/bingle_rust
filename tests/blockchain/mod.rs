@@ -27,7 +27,7 @@ mod algo_ops_address_derivation_test;
 
 #[path = "algo_ops_reserve_helpers.rs"]
 mod algo_ops_reserve_helpers;
-
+mod algo_bingle_integration_localnet;
 // Localnet-heavy tests are intentionally excluded from the consolidated crate to keep CI green:
 // - algo_ops_integration_localnet.rs
 // - algo_bingle_integration_localnet.rs

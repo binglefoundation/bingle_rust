@@ -9,9 +9,38 @@ use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_dec
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use log::warn;
+use log::LevelFilter;
+use simple_logger::SimpleLogger;
+
+fn init_logger_from_args(args: &mut Vec<String>) {
+    // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
+    let mut chosen: Option<LevelFilter> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = args[i].as_str();
+        let matched = match a {
+            "--log-warn" | "-q" => { chosen = Some(LevelFilter::Warn); true }
+            "--log-info" => { chosen = Some(LevelFilter::Info); true }
+            "--log-debug" | "-v" => { chosen = Some(LevelFilter::Debug); true }
+            "--log-trace" | "--vv" | "-vv" => { chosen = Some(LevelFilter::Trace); true }
+            _ => false,
+        };
+        if matched {
+            args.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+    let level = chosen.unwrap_or(LevelFilter::Info);
+    let _ = SimpleLogger::new().with_level(level).init();
+    // Ensure the global max level reflects our choice (SimpleLogger::init sets it too; this is a no-op if already set)
+    log::set_max_level(level);
+}
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Initialize logger from global flags and strip them from args (default Info)
+    init_logger_from_args(&mut args);
     if args.is_empty() {
         print_usage_and_exit(2);
     }
@@ -36,7 +65,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  Global logging: --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
     if code == 0 { log::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }

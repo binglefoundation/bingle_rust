@@ -13,7 +13,7 @@
 use std::time::{Duration, Instant};
 use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};
-
+use log::LevelFilter;
 use rust_comms::AlgoBingle;
 use rust_comms::AlgoOps;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
@@ -69,6 +69,8 @@ fn testnet_user_reaches_endpoint_available() {
         eprintln!("[skipped] Set BINGLE_RUN_TESTNET=1 to run testnet integration test");
         return;
     }
+
+    log::set_max_level(LevelFilter::Info);
 
     // Load testnet node configuration and IDs from the bundled file.
     let node_path = "nodely_testnet_node.json";
