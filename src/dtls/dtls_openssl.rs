@@ -178,18 +178,21 @@ pub mod non_ios {
     }
 
     #[inline]
-    fn configure_dtls12_connector(builder: &mut SslConnectorBuilder) -> Result<()> {
-        // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
-        builder.set_keylog_callback(|_ssl, line| {
-            // Print and append to target/sslkeylog.log
-            let s = format!("[OpenSSL][keylog][client] {}", line);
+    fn keylog_callback(role: &'static str) -> impl Fn(&openssl::ssl::SslRef, &str) + 'static {
+        move |_ssl, line| {
+            let s = format!("[OpenSSL][keylog][{}] {}", role, line);
             log::info!("{}", s);
-            #[allow(unused)] {  }
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("target/sslkeylog.log") {
                 use std::io::Write as _;
                 let _ = writeln!(f, "{}", line);
             }
-        });
+        }
+    }
+
+    #[inline]
+    fn configure_dtls12_connector(builder: &mut SslConnectorBuilder) -> Result<()> {
+        // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
+        builder.set_keylog_callback(keylog_callback("client"));
         builder.set_options(SslOptions::NO_DTLSV1);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
@@ -688,15 +691,7 @@ pub mod non_ios {
             }
 
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
-            builder.set_keylog_callback(|_ssl, line| {
-                let s = format!("[OpenSSL][keylog][server] {}", line);
-                log::info!("{}", s);
-                #[allow(unused)] {  }
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("target/sslkeylog.log") {
-                    use std::io::Write as _;
-                    let _ = writeln!(f, "{}", line);
-                }
-            });
+            builder.set_keylog_callback(keylog_callback("server"));
 
             // Add DTLS cookie callbacks (basic allow-all for now; can be hardened later).
             builder.set_cookie_generate_cb(|_ssl, cookie| {
