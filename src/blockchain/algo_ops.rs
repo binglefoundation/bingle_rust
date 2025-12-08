@@ -55,6 +55,10 @@ pub struct AlgoOps {
 
 impl AlgoOps {
     pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoChainConfig>) -> Self {
+        // Enforce that a source of address is provided (either explicit address or a passphrase/seed)
+        if passphrase.is_none() && address.is_none() {
+            panic!("AlgoOps::new requires either a passphrase or an address");
+        }
         // Use explicit config if provided; else Default (localnet)
         let config = config.unwrap_or_default();
         let mut ops = Self {
@@ -792,6 +796,32 @@ impl AlgoOps {
         Ok(resp.0)
     }
 
+    // Compute 4-byte ARC-4 method selector from a signature string.
+    pub fn arc4_selector(sig: &str) -> [u8; 4] {
+        use sha2::{Digest, Sha512_256};
+        let mut hasher = Sha512_256::new();
+        hasher.update(sig.as_bytes());
+        let digest: [u8; 32] = hasher.finalize().into();
+        [digest[0], digest[1], digest[2], digest[3]]
+    }
+
+    #[inline]
+    fn estimate_fee_for_programs(params: &algonaut::core::SuggestedTransactionParams, sizes: &[usize]) -> algonaut::core::MicroAlgos {
+        let total_size: usize = sizes.iter().copied().sum();
+        let per_byte = params.fee_per_byte; // MicroAlgos per byte
+        let min_fee = params.min_fee; // MicroAlgos
+        let sized = per_byte * (total_size as u64);
+        if sized > min_fee { sized } else { min_fee }
+    }
+
+    #[inline]
+    fn estimate_fee_for_signed_size(params: &algonaut::core::SuggestedTransactionParams, est_size: u64) -> algonaut::core::MicroAlgos {
+        let per_byte = params.fee_per_byte; // MicroAlgos
+        let min_fee = params.min_fee; // MicroAlgos
+        let sized = per_byte * est_size;
+        if sized > min_fee { sized } else { min_fee }
+    }
+
     pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
@@ -813,12 +843,7 @@ impl AlgoOps {
         // Before building/sending, estimate the cost of the CreateApplication and ensure we have funds
         // Estimate bytes using CompiledTeal.bytes_to_sign per requirement
         let est_prog_size: usize = approval.bytes_to_sign().len() + clear.bytes_to_sign().len();
-        let per_byte = params.fee_per_byte; // MicroAlgos per byte
-        let min_fee = params.min_fee; // MicroAlgos
-        let est_fee = {
-            let sized = per_byte * (est_prog_size as u64);
-            if sized > min_fee { sized } else { min_fee }
-        };
+        let est_fee = Self::estimate_fee_for_programs(&params, &[est_prog_size]);
         let est_fee_micro: u64 = est_fee.0; // microAlgos
 
         let balance_algos = self
@@ -834,6 +859,8 @@ impl AlgoOps {
         }
 
         // Print estimated fee components and current balance for visibility
+        let per_byte = params.fee_per_byte;
+        let min_fee = params.min_fee;
         log::info!(
             "Preflight: min_fee={} µAlgos, fee_per_byte={} µAlgos/byte, est_prog_size={} bytes, estimated fee: {:.6} ALGO ({} µAlgos); current balance: {:.6} ALGO ({} µAlgos)",
             min_fee.0,
@@ -904,14 +931,11 @@ impl AlgoOps {
         let client = self.algod_client()?;
         let params = match self.rt_block_on(client.suggested_transaction_params())? { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
 
-        // Estimate fee using params.min_fee and params.fee_per_byte; size from CompiledTeal.bytes_to_sign
+        // Estimate fee using helper and params
         let est_prog_size: usize = approval.bytes_to_sign().len() + clear.bytes_to_sign().len();
+        let est_fee = Self::estimate_fee_for_programs(&params, &[est_prog_size]);
         let per_byte = params.fee_per_byte;
         let min_fee = params.min_fee;
-        let est_fee = {
-            let sized = per_byte * (est_prog_size as u64);
-            if sized > min_fee { sized } else { min_fee }
-        };
         log::info!(
             "Update preflight: min_fee={} µAlgos, fee_per_byte={} µAlgos/byte, est_prog_size={} bytes, estimated fee: {:.6} ALGO ({} µAlgos)",
             min_fee.0,
@@ -984,11 +1008,8 @@ impl AlgoOps {
         // Prepare args (prepend ARC-4 selector if method provided)
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         if let Some(sig) = method {
-            use sha2::{Digest, Sha512_256};
-            let mut hasher = Sha512_256::new();
-            hasher.update(sig.as_bytes());
-            let digest: [u8; 32] = hasher.finalize().into();
-            app_args.push(vec![digest[0], digest[1], digest[2], digest[3]]);
+            let sel = Self::arc4_selector(sig);
+            app_args.push(sel.to_vec());
         }
         app_args.extend(args.iter().map(|a| a.to_bytes()));
 
@@ -1021,7 +1042,7 @@ impl AlgoOps {
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![aid]); }
         let call = builder.build();
         // Explicitly estimate and set a fee for this transaction. Build a zero-fee txn to estimate size,
-        // then compute fee = max(min_fee, fee_per_byte * estimated_signed_tx_size).
+        // then compute fee using helper = max(min_fee, fee_per_byte * estimated_signed_tx_size).
         let tx_zero_fee = algonaut::transaction::TxnBuilder::with_fee(
             &params,
             algonaut::transaction::builder::TxnFee::zero(),
@@ -1032,12 +1053,7 @@ impl AlgoOps {
         let est_size = tx_zero_fee
             .estimate_basic_sig_size()
             .map_err(|e| anyhow!("failed to estimate signed tx size: {e}"))?;
-        let est_fee = {
-            let per_byte = params.fee_per_byte; // MicroAlgos
-            let min_fee = params.min_fee; // MicroAlgos
-            let sized = per_byte * est_size;
-            if sized > min_fee { sized } else { min_fee }
-        };
+        let est_fee = Self::estimate_fee_for_signed_size(&params, est_size);
         let tx = algonaut::transaction::TxnBuilder::with_fee(
             &params,
             algonaut::transaction::builder::TxnFee::Fixed(est_fee),

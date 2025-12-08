@@ -12,7 +12,7 @@ use std::sync::Once;
 use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
-use crate::blockchain::algo_ops::{byte_key_to_address, AlgoOps};
+use crate::blockchain::algo_ops::AlgoOps;
 use crate::dtls::Dtls;
 use crate::engine::{Engine, EngineState};
 use crate::protocol::ISSUER_SUFFIX;
@@ -212,25 +212,16 @@ impl BingleApi for BingleApiImpl {
 
          // Initialize AlgoOps from provided algoPassphrase if available.
         if let Some(pass) = options.algo_passphrase.clone() {
-            // Build AlgoOps with passphrase and derive our address from it.
-            let mut ops = AlgoOps::new(Some(pass), None, options.algo_provider_config.clone());
-            // Derive address from the private key bytes and ensure errors propagate (e.g., incorrect passphrase).
-            let sk_bytes = ops
-                .private_key_bytes()
-                .map_err(|e| format!("Failed to get private key bytes from passphrase: {}", e))?;
-            if sk_bytes.len() != 32 {
-                return Err(format!("Secret key must be 32 bytes, got {}", sk_bytes.len()));
-            }
-            let arr: [u8; 32] = <[u8; 32]>::try_from(sk_bytes.as_slice())
-                .map_err(|_| "Secret key must be 32 bytes".to_string())?;
-            let signing = ed25519_dalek::SigningKey::from_bytes(&arr);
-            let pk: [u8; 32] = signing.verifying_key().to_bytes();
-            let addr = byte_key_to_address(&pk)
-                .map_err(|e| format!("Failed to derive Algorand address from key: {}", e))?;
-            ops.address = Some(addr.clone());
-
-            // Ensure we have an address; otherwise return an error so callers see the failure.
-            let addr = ops.address.clone().ok_or_else(|| "Failed to obtain address from AlgoOps".to_string())?;
+            // Build AlgoOps with passphrase; it will derive and populate the address.
+            let ops = AlgoOps::new(Some(pass), None, options.algo_provider_config.clone());
+            // Ensure we have an address; if not, force an early error consistent with private_key_bytes failure.
+            let addr = match ops.address.clone() {
+                Some(a) => a,
+                None => {
+                    let err = ops.private_key_bytes().err().map(|e| e.to_string()).unwrap_or_else(|| "unknown error".to_string());
+                    return Err(format!("Failed to get private key bytes from passphrase: {}", err));
+                }
+            };
             let issuer = format!("{}{}", addr, ISSUER_SUFFIX);
             if let Some(e) = self.engine.as_mut() { e.set_issuer(issuer.clone()); }
 

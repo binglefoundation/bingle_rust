@@ -18,7 +18,9 @@ pub fn indexer_discover_closure(
     app_id: u64,
     cfg: Option<AlgoChainConfig>,
 ) -> Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> {
-    let ops = AlgoOps::new(None, None, cfg);
+    // Provide a placeholder address to satisfy AlgoOps constructor requirement (read-only ops)
+    let placeholder_addr = "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string();
+    let ops = AlgoOps::new(None, Some(placeholder_addr), cfg);
     let ab = AlgoBingle::new(ops, app_id, 0);
     Arc::new(move || {
         match ab.list_static_endpoints_via_indexer(app_id) {

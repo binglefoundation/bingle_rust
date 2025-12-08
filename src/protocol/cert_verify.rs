@@ -81,22 +81,26 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         // Entry log
         log::info!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len());
         #[allow(unused)] {  }
-
+        
+        // Small helper to log a failure reason and return Err(msg) consistently.
+        #[inline]
+        fn log_fail<M: Into<String>>(msg: M) -> Result<String> {
+            let s = msg.into();
+            log::info!("[cert_verify][fail] {}", s);
+            Err(s)
+        }
+        
         // Parse certificates with explicit error logging
         let cert = match X509::from_pem(cert_pem) {
             Ok(c) => c,
             Err(e) => {
-                log::info!("[cert_verify][fail] invalid peer certificate PEM: {}", e);
-                #[allow(unused)] {  }
-                return Err(format!("invalid peer certificate PEM: {}", e));
+                return log_fail(format!("invalid peer certificate PEM: {}", e));
             }
         };
         let ca = match X509::from_pem(ca_pem) {
             Ok(c) => c,
             Err(e) => {
-                log::info!("[cert_verify][fail] invalid CA certificate PEM: {}", e);
-                #[allow(unused)] {  }
-                return Err(format!("invalid CA certificate PEM: {}", e));
+                return log_fail(format!("invalid CA certificate PEM: {}", e));
             }
         };
 
@@ -114,40 +118,30 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         {
             Some(s) => s,
             None => {
-                log::info!("[cert_verify][fail] CA certificate missing CN");
-                #[allow(unused)] {  }
-                return Err("CA certificate missing CN".to_string());
+                return log_fail("CA certificate missing CN");
             }
         };
         // CA CN must be our virtual CA value
         if ca_cn != VIRTUAL_CA {
-            log::info!("[cert_verify][fail] unexpected CA CN: '{}' (expected '{}')", ca_cn, VIRTUAL_CA);
-            #[allow(unused)] {  }
-            return Err("unexpected CA CN".to_string());
+            return log_fail(format!("unexpected CA CN: '{}' (expected '{}')", ca_cn, VIRTUAL_CA));
         }
 
         // Validate the CA public key exists and is Ed25519, and CA is self-signed
         let ca_pub = match ca.public_key() {
             Ok(p) => p,
             Err(e) => {
-                log::info!("[cert_verify][fail] extract CA public key failed: {}", e);
-                #[allow(unused)] {  }
-                return Err(format!("extract CA public key failed: {}", e));
+                return log_fail(format!("extract CA public key failed: {}", e));
             }
         };
         if ca_pub.id() != Id::ED25519 {
-            log::info!("[cert_verify][fail] CA public key is not Ed25519 (found {:?})", ca_pub.id());
-            #[allow(unused)] {  }
-            return Err("CA public key is not Ed25519".to_string());
+            return log_fail(format!("CA public key is not Ed25519 (found {:?})", ca_pub.id()));
         }
 
         // Human-readable dump of the CA public key for diagnostics
         dump_ca_public_key_debug(&ca_pub);
 
         if !ca.verify(&ca_pub).unwrap_or(false) {
-            log::info!("[cert_verify][fail] CA self-signature verification failed");
-            #[allow(unused)] {  }
-            return Err("CA self-signature verification failed".to_string());
+            return log_fail("CA self-signature verification failed".to_string());
         }
 
         // Validate that end-entity certificate is issued by CA and signature verifies
@@ -160,20 +154,14 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         {
             Some(s) => s,
             None => {
-                log::info!("[cert_verify][fail] end-entity certificate missing issuer CN");
-                #[allow(unused)] {  }
-                return Err("end-entity certificate missing issuer CN".to_string());
+                return log_fail("end-entity certificate missing issuer CN");
             }
         };
         if ee_issuer_cn != VIRTUAL_CA {
-            log::info!("[cert_verify][fail] end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA);
-            #[allow(unused)] {  }
-            return Err("end-entity issuer CN mismatch".to_string());
+            return log_fail(format!("end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA));
         }
         if !cert.verify(&ca_pub).unwrap_or(false) {
-            log::info!("[cert_verify][fail] end-entity certificate signature verification failed");
-            #[allow(unused)] {  }
-            return Err("end-entity certificate signature verification failed".to_string());
+            return log_fail("end-entity certificate signature verification failed".to_string());
         }
 
         // Ensure the end-entity's subject CN is consistent (ends with issuer suffix)
@@ -185,15 +173,11 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .map(|s| s.to_string())
         {
             if !ee_subj_cn.ends_with(ISSUER_SUFFIX) {
-                log::info!("[cert_verify][fail] end-entity CN missing issuer suffix: {}", ee_subj_cn);
-                #[allow(unused)] {  }
-                return Err("end-entity CN missing issuer suffix".to_string());
+                return log_fail(format!("end-entity CN missing issuer suffix: {}", ee_subj_cn));
             }
             ee_subj_cn
         } else {
-            log::info!("[cert_verify][fail] end-entity certificate missing subject CN");
-            #[allow(unused)] {  }
-            return Err("end-entity certificate missing subject CN".to_string());
+            return log_fail("end-entity certificate missing subject CN".to_string());
         };
 
         // If the CA includes an OrganizationName (O), validate it matches the end-entity subject CN with the issuer suffix removed.
@@ -206,14 +190,11 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .map(|s| s.to_string());
         if let Some(ca_org) = ca_org_opt {
             if ca_org != expected_addr {
-                log::info!("[cert_verify][fail] CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'", ca_org, expected_addr);
-                #[allow(unused)] {  }
-                return Err("CA organization does not match end-entity subject".to_string());
+                return log_fail(format!("CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'", ca_org, expected_addr));
             }
         } else {
             // Tolerate missing O for backward compatibility; log for diagnostics
             log::info!("[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match");
-            #[allow(unused)] {  }
         }
 
         // All checks passed: return the end-entity subject CN (ee_subj_cn), not the CA's CN

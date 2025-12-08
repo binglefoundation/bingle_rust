@@ -156,7 +156,7 @@ impl AlgoBingle {
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(Self::arc4_selector("register_endpoint(string)void").to_vec());
+        app_args.push(AlgoOps::arc4_selector("register_endpoint(string)void").to_vec());
         let ep_bytes = endpoint.as_bytes();
         if ep_bytes.len() > u16::MAX as usize { bail!("endpoint too long"); }
         let mut arg = Vec::with_capacity(2 + ep_bytes.len());
@@ -286,13 +286,6 @@ impl AlgoBingle {
         Ok(res)
     }
 
-    /// Compute 4-byte ARC-4 method selector from a signature string.
-    fn arc4_selector(sig: &str) -> [u8; 4] {
-        let mut h = Sha512_256::new();
-        h.update(sig.as_bytes());
-        let digest: [u8; 32] = h.finalize().into();
-        [digest[0], digest[1], digest[2], digest[3]]
-    }
 
     fn algod_client(&self) -> Result<Algod> {
         // Build base URL including port, e.g., http://localhost:4001
@@ -471,7 +464,7 @@ impl AlgoBingle {
 
         // 3) App call: sell_bingle(uint64)void
         let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(Self::arc4_selector("sell_bingle(uint64)void").to_vec());
+        app_args.push(AlgoOps::arc4_selector("sell_bingle(uint64)void").to_vec());
         // ARC-4 uint64 as 8-byte big endian
         app_args.push((amount as u64).to_be_bytes().to_vec());
         let call = CallApplication::new(sender, app_id)
@@ -518,7 +511,7 @@ impl AlgoBingle {
         // 2) App call: register(string)void with handle arg
         // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
         let mut app_args: Vec<Vec<u8>> = Vec::new();
-        app_args.push(Self::arc4_selector("register(string)void").to_vec());
+        app_args.push(AlgoOps::arc4_selector("register(string)void").to_vec());
         let handle_bytes = handle.as_bytes();
         let len = handle_bytes.len();
         if len > u16::MAX as usize { bail!("handle too long"); }
