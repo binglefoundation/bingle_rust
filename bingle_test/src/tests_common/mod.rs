@@ -41,7 +41,7 @@ pub trait TestAlgo: Sized {
 
 // ===== Test suites (generic) =====
 
-pub fn algo_ops_basic<T: TestAlgo>() -> bool {
+pub fn algo_ops_basic<T: TestAlgo>(passphrase: &str) -> bool {
     // Roundtrip pk <-> address
     let mut pk = [0u8; 32];
     for i in 0..32 {
@@ -59,8 +59,8 @@ pub fn algo_ops_basic<T: TestAlgo>() -> bool {
         return false;
     }
 
-    // public_key_bytes requires address
-    let ops = T::new(None, None, false);
+    // public_key_bytes requires address (use non-derivable passphrase so Real backend doesn't auto-set address)
+    let ops = T::new(Some("invalid-passphrase".to_string()), None, false);
     let err = ops.public_key_bytes().err().unwrap_or_default();
     if !err.contains("needs an address") {
         return false;
@@ -76,7 +76,7 @@ pub fn algo_ops_basic<T: TestAlgo>() -> bool {
         Ok(a) => a,
         Err(_) => return false,
     };
-    let ops2 = T::new(None, Some(addr2), false);
+    let ops2 = T::new(Some(passphrase.to_string()), Some(addr2), false);
     let extracted = match ops2.public_key_bytes() {
         Ok(p) => p,
         Err(_) => return false,
@@ -87,8 +87,8 @@ pub fn algo_ops_basic<T: TestAlgo>() -> bool {
     true
 }
 
-pub fn algo_ops_more<T: TestAlgo>() -> bool {
-    let mut ops = T::new(None, None, false);
+pub fn algo_ops_more<T: TestAlgo>(passphrase: &str) -> bool {
+    let mut ops = T::new(Some(passphrase.to_string()), None, false);
     let addr = match ops.create_address(false, false) {
         Ok(a) => a,
         Err(_) => return false,
@@ -120,7 +120,7 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
         Ok(s) => s,
         Err(_) => return false,
     };
-    let verifier = T::new(None, Some(addr.clone()), false);
+    let verifier = T::new(Some(passphrase.to_string()), Some(addr.clone()), false);
     if !verifier.verify(text, &sig).unwrap_or(false) {
         return false;
     }
@@ -129,7 +129,7 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
         s[0] ^= 0x01;
     }
     let tampered = String::from_utf8(s).unwrap_or_default();
-    let ok2 = T::new(None, Some(addr), false)
+    let ok2 = T::new(Some(passphrase.to_string()), Some(addr), false)
         .verify(text, &tampered)
         .unwrap_or(true);
     if ok2 {
@@ -137,7 +137,7 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
     }
 
     // contract address spec
-    let ops3 = T::new(None, None, false);
+    let ops3 = T::new(Some(passphrase.to_string()), None, false);
     let app_id = 42u64;
     let addr = match ops3.contract_address(app_id) {
         Ok(a) => a,
@@ -156,8 +156,8 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
         return false;
     }
 
-    // global state: missing address -> error
-    let ops4 = T::new(None, None, false);
+    // global state: missing address -> error (use non-derivable passphrase to avoid auto address)
+    let ops4 = T::new(Some("invalid-passphrase".to_string()), None, false);
     if ops4.global_state(None).is_ok() {
         return false;
     }
@@ -171,11 +171,11 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
         Ok(a) => a,
         Err(_) => return false,
     };
-    let ops5 = T::new(None, Some(addr3.clone()), true);
+    let ops5 = T::new(Some(passphrase.to_string()), Some(addr3.clone()), true);
     if ops5.global_state(None).ok().flatten().is_some() {
         return false;
     }
-    let ops6 = T::new(None, None, true);
+    let ops6 = T::new(Some(passphrase.to_string()), None, true);
     if ops6
         .local_state_for_account(1, &addr3)
         .ok()
@@ -186,7 +186,8 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
     }
 
     // send_algo validations
-    let ops7 = T::new(None, None, false);
+    // Construct without passphrase but with a valid address to trigger "account access" error
+    let ops7 = T::new(None, Some(addr3.clone()), false);
     if !ops7
         .send_algo("SOMEADDR", 1.0)
         .err()
@@ -196,7 +197,7 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
         return false;
     }
 
-    let mut ops8 = T::new(None, None, false);
+    let mut ops8 = T::new(Some(passphrase.to_string()), None, false);
     let a = match ops8.create_address(false, false) {
         Ok(x) => x,
         Err(_) => return false,
@@ -218,7 +219,7 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
         return false;
     }
 
-    let mut ops9 = T::new(None, None, true);
+    let mut ops9 = T::new(Some(passphrase.to_string()), None, true);
     let a2 = match ops9.create_address(false, false) {
         Ok(x) => x,
         Err(_) => return false,
@@ -233,8 +234,8 @@ pub fn algo_ops_more<T: TestAlgo>() -> bool {
     true
 }
 
-pub fn asset_ops<T: TestAlgo>() -> bool {
-    let mut ops = T::new(None, None, false);
+pub fn asset_ops<T: TestAlgo>(passphrase: &str) -> bool {
+    let mut ops = T::new(Some(passphrase.to_string()), None, false);
     let _ = match ops.create_address(false, false) {
         Ok(a) => a,
         Err(_) => return false,
