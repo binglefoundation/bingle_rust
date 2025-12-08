@@ -461,14 +461,10 @@ impl Engine {
             let json_val = crate::messages::marshal::to_json_value(&msg);
             if let Some(cb) = &self.send_via_bingle {
                 // Use the relay's actual id as the user id. Convert Algorand base32 address to base64(36) for API validation.
-                let uid = match data_encoding::BASE32_NOPAD.decode(target.id.as_bytes()) {
-                    Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
-                    Ok(bytes) => {
-                        log::info!("[Engine][WARN] relay id base32 decoded to {} bytes (expected 36); using raw id which may fail validation", bytes.len());
-                        target.id.clone()
-                    }
+                let uid = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&target.id) {
+                    Ok(s) => s,
                     Err(e) => {
-                        log::info!("[Engine][WARN] failed to decode relay id as base32: {}; using raw id which may fail validation", e);
+                        log::info!("[Engine][WARN] invalid relay id '{}': {}; using raw id which may fail validation", target.id, e);
                         target.id.clone()
                     }
                 };

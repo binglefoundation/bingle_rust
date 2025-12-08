@@ -44,14 +44,10 @@ pub trait MessageHandler {
         let nsk = from.network_source_key.clone();
         // Convert from.id (issuer) to raw address and base64(36)
         let raw_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-        let user_id_b64 = match data_encoding::BASE32_NOPAD.decode(raw_id.as_bytes()) {
-            Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
-            Ok(bytes) => {
-                warn!("[handlers::on_relay_check] from.id decoded to {} bytes (expected 36)", bytes.len());
-                return; // do not send invalid id
-            }
+        let user_id_b64 = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw_id) {
+            Ok(s) => s,
             Err(e) => {
-                warn!("[handlers::on_relay_check] base32 decode failed for from.id: {}", e);
+                warn!("[handlers::on_relay_check] invalid from.id '{}': {}", raw_id, e);
                 return; // do not send invalid id
             }
         };
@@ -87,16 +83,10 @@ impl MessageHandler for DefaultPrintingHandler {
         // Convert issuer-form id to base64(36) user id for network send
         let from_user_id_b64 = {
             let raw = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            match data_encoding::BASE32_NOPAD.decode(raw.as_bytes()) {
-                Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
-                Ok(bytes) => {
-                    warn!("[handlers::on_triangle_test1] from.id decoded to {} bytes (expected 36)", bytes.len());
-                    // Do not attempt to send with an invalid id
-                    String::new()
-                }
+            match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw) {
+                Ok(s) => s,
                 Err(e) => {
-                    warn!("[handlers::on_triangle_test1] base32 decode failed for from.id: {}", e);
-                    // Do not attempt to send with an invalid id
+                    warn!("[handlers::on_triangle_test1] invalid from.id '{}': {}", raw, e);
                     String::new()
                 }
             }
@@ -165,14 +155,10 @@ impl MessageHandler for DefaultPrintingHandler {
             // Build NetworkSourceKey and user id base64(36) as required by API
             use crate::api::bingle_api::{NetworkSourceKey, UserId};
             let nsk = NetworkSourceKey::new_direct(associated_relay.address);
-            let user_id: UserId = match data_encoding::BASE32_NOPAD.decode(associated_relay.id.as_bytes()) {
-                Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
-                Ok(bytes) => {
-                    warn!("[handlers::on_triangle_test1] relay id decoded to {} bytes (expected 36)", bytes.len());
-                    associated_relay.id.clone()
-                }
+            let user_id: UserId = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&associated_relay.id) {
+                Ok(s) => s,
                 Err(e) => {
-                    warn!("[handlers::on_triangle_test1] base32 decode failed for relay id: {}", e);
+                    warn!("[handlers::on_triangle_test1] invalid relay id '{}': {}", associated_relay.id, e);
                     associated_relay.id.clone()
                 }
             };
@@ -204,16 +190,11 @@ impl MessageHandler for DefaultPrintingHandler {
         let json_val = crate::messages::marshal::to_json_value(&out);
         let nsk = NetworkSourceKey::new_direct(endpoint);
         // Convert checking_id (issuer) to raw address by trimming issuer suffix, then base32->base64(36)
-        let raw_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        let user_id_b64 = match data_encoding::BASE32_NOPAD.decode(raw_id.as_bytes()) {
-            Ok(bytes) if bytes.len() == 36 => base64::engine::general_purpose::STANDARD.encode(bytes),
-            Ok(bytes) => {
-                warn!("[handlers::on_triangle_test2] checking_id decoded to {} bytes (expected 36)", bytes.len());
-                // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
-                base64::engine::general_purpose::STANDARD.encode([0u8; 36])
-            }
+        let raw_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let user_id_b64 = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw_id) {
+            Ok(s) => s,
             Err(e) => {
-                warn!("[handlers::on_triangle_test2] base32 decode failed for checking_id: {}", e);
+                warn!("[handlers::on_triangle_test2] invalid checking_id '{}': {}", raw_id, e);
                 // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
                 base64::engine::general_purpose::STANDARD.encode([0u8; 36])
             }

@@ -174,13 +174,7 @@ impl RelayFinder {
         if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(id.as_bytes()) {
             if bytes.len() == 36 { return Ok(id.to_string()); }
         }
-        // Fallback: try base32 (Algorand) decode to bytes (should be 36)
-        match data_encoding::BASE32_NOPAD.decode(id.as_bytes()) {
-            Ok(bytes) => {
-                if bytes.len() != 36 { return Err(format!("base32 decoded len {} != 36", bytes.len())); }
-                Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
-            }
-            Err(e) => Err(format!("base32 decode failed: {}", e)),
-        }
+        // Delegate Algorand base32 address conversion to shared helper
+        crate::blockchain::algo_ops::id_b64_from_algorand_addr(id)
     }
 }
