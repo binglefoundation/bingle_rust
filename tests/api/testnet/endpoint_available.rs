@@ -10,57 +10,19 @@
 // To keep CI green in environments without testnet credentials, this test only
 // runs when BINGLE_RUN_TESTNET=1 is set in the environment. Otherwise it exits early.
 
-use std::time::{Duration, Instant};
-use std::fs;
-use std::net::{SocketAddr, ToSocketAddrs};
 use log::LevelFilter;
-use rust_comms::AlgoBingle;
-use rust_comms::AlgoOps;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
-use rust_comms::util::cli_utils::parse_node_file_with_ids;
+use rust_comms::util::cli_utils::{parse_node_file_with_ids, parse_stun_file};
+use rust_comms::AlgoBingle;
+use rust_comms::AlgoOps;
+use std::time::{Duration, Instant};
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-// Local STUN parser for tests: supports comma/whitespace separated values and '#' comments.
-fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
-    let mut cleaned = String::with_capacity(s.len());
-    for line in s.lines() {
-        let line_no_comment = match line.find('#') {
-            Some(idx) => &line[..idx],
-            None => line,
-        };
-        cleaned.push_str(line_no_comment);
-        cleaned.push('\n');
-    }
-
-    let mut addrs = Vec::new();
-    for part in cleaned.split(|c: char| c == ',' || c.is_whitespace()) {
-        let p = part.trim();
-        if p.is_empty() { continue; }
-        let parsed = p.parse::<SocketAddr>().ok()
-            .or_else(|| p.to_socket_addrs().ok().and_then(|mut it| it.next()));
-        if let Some(addr) = parsed {
-            addrs.push(addr);
-        } else {
-            return Err(format!("Invalid STUN server entry '{}': must be <host:port> or <ip:port>", p));
-        }
-    }
-    if addrs.is_empty() {
-        Err("No valid STUN servers provided".to_string())
-    } else {
-        Ok(addrs)
-    }
-}
-
-fn parse_stun_file(path: &str) -> Result<Vec<SocketAddr>, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read STUN servers file '{}': {}", path, e))?;
-    parse_stun_list(&content)
-}
 
 #[test]
 fn testnet_user_reaches_endpoint_available() {

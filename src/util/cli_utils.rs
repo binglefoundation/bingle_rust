@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 /// Parse a comma or whitespace separated list of socket addresses or hostnames with ports.
 /// Accepts entries like "1.2.3.4:3478" or "stun.example.com:3478".
-fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
+pub fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
     // First, strip out line comments: anything after '#' on a line is ignored.
     let mut cleaned = String::with_capacity(s.len());
     for line in s.lines() {
@@ -41,7 +41,7 @@ fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
 }
 
 /// Read a file and parse a list of socket addresses (one per line or comma/space separated).
-fn parse_stun_file(path: &str) -> Result<Vec<SocketAddr>, String> {
+pub fn parse_stun_file(path: &str) -> Result<Vec<SocketAddr>, String> {
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read STUN servers file '{}': {}", path, e))?;
     parse_stun_list(&content)
