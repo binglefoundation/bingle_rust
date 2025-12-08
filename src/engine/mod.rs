@@ -210,6 +210,52 @@ impl Engine {
         res
     }
 
+    /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
+    /// This avoids duplicating the same closure in different Engine start paths.
+    fn install_dtls_handler(&mut self) -> Result<(), String> {
+        // Capture any existing handler without taking a mutable borrow to self.dtls
+        let existing = {
+            let dref = self
+                .dtls
+                .as_ref()
+                .ok_or_else(|| "DTLS instance not provided".to_string())?;
+            dref.get_handle_message()
+        };
+        // Prepare a raw pointer to this Engine for use inside the handler closure
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        // Now obtain a mutable reference to dtls only for installing the new handler
+        if let Some(d) = self.dtls.as_mut() {
+            d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
+                use std::sync::atomic::Ordering;
+                // Register/refresh connection for this peer on any inbound data and refresh message sender binding
+                let p = self_ptr.load(Ordering::SeqCst);
+                if !p.is_null() {
+                    unsafe {
+                        let eng = &mut *p;
+                        eng.register_connection(*from);
+                        // Bind per-message sender so handlers send via the correct API/engine instance
+                        if let Some(cb) = &eng.send_via_bingle {
+                            crate::messages::router::set_sender(Some(cb.clone()));
+                        }
+                        // Bind the per-engine BingleApi to the router for this message context
+                        if let Some(api) = &eng.bingle_api_for_handlers {
+                            crate::messages::router::set_bingle_api(Some(api.clone()));
+                        }
+                        // Route to engine default handler
+                        eng.handle_dtls_message(server, from, issuer, data);
+                    }
+                }
+                // Then delegate to any previously-registered handler from API
+                if let Some(h) = &existing {
+                    h(server, from, issuer, data);
+                }
+            })));
+            Ok(())
+        } else {
+            Err("DTLS instance not provided".to_string())
+        }
+    }
+
     /// Start the engine using the provided StartOptions.
     /// Implements static endpoint path or STUN-based discovery when not provided.
     pub fn start(&mut self, options: StartOptions) -> Result<(), String> {
@@ -227,43 +273,12 @@ impl Engine {
         let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0").map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         let _local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
-        // Create an AtomicPtr to this Engine for cross-thread STUN callbacks (see handler below)
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
-
         // Use the pre-configured DTLS instance provided by the API and install message handler
-        let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
         // We'll detect RelayTriangleTest3 to unblock waiters while still routing to default
         let triangle_signal: Arc<(Mutex<bool>, Condvar)> = Arc::new((Mutex::new(false), Condvar::new()));
         let _triangle_signal_clone = triangle_signal.clone();
-        let existing = dtls.get_handle_message();
-        // Create another atomic pointer for use inside the closure
-        let self_ptr2 = std::sync::atomic::AtomicPtr::new(self_ptr.load(std::sync::atomic::Ordering::SeqCst));
-        dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
-            use std::sync::atomic::Ordering;
-            // Register/refresh connection for this peer on any inbound data and refresh message sender binding
-            let p = self_ptr2.load(Ordering::SeqCst);
-            if !p.is_null() {
-                unsafe {
-                    let eng = &mut *p;
-                    eng.register_connection(*from);
-                    // Bind per-message sender so handlers send via the correct API/engine instance
-                    if let Some(cb) = &eng.send_via_bingle {
-                        crate::messages::router::set_sender(Some(cb.clone()));
-                    }
-                    // Bind the per-engine BingleApi to the router for this message context
-                    if let Some(api) = &eng.bingle_api_for_handlers {
-                        crate::messages::router::set_bingle_api(Some(api.clone()));
-                    }
-                }
-            }
-            // Route to engine default handler
-            let p = self_ptr2.load(std::sync::atomic::Ordering::SeqCst);
-            if !p.is_null() {
-                unsafe { (&*p).handle_dtls_message(server, from, issuer, data); }
-            }
-            // Then delegate to any previously-registered handler from API
-            if let Some(h) = &existing { h(server, from, issuer, data); }
-        })));
+        // Install the common DTLS handler wrapper
+        self.install_dtls_handler()?;
 
         // Install STUN endpoint finder and hook into mux STUN handler
         let finder: Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>> = Arc::new(Mutex::new(Box::new(StunEndpointFinderImpl::new())));
@@ -283,8 +298,11 @@ impl Engine {
         mux.start().map_err(|e| format!("Failed to start UDP mux: {}", e))?;
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
-        dtls.start(mux.clone())
-            .map_err(|e| format!("Failed to start DTLS: {}", e))?;
+        if let Some(d) = self.dtls.as_mut() {
+            d.start(mux.clone()).map_err(|e| format!("Failed to start DTLS: {}", e))?;
+        } else {
+            return Err("DTLS instance not provided".to_string());
+        }
 
         // Persist mux, STUN finder, and triangle wait handle before initializing STUN
         self.mux = Some(mux.clone());
@@ -308,43 +326,18 @@ impl Engine {
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
-        // Create self pointer for registration from closure
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
-        // Use pre-configured DTLS from API; install engine handler while preserving any existing API handler.
-        let dtls = self.dtls.as_mut().ok_or_else(|| "DTLS instance not provided".to_string())?;
-        let existing = dtls.get_handle_message();
-        dtls.set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
-            use std::sync::atomic::Ordering;
-            // Register inbound connection
-            let p = self_ptr.load(Ordering::SeqCst);
-            if !p.is_null() {
-                unsafe {
-                    let eng = &mut *p;
-                    eng.register_connection(*from);
-                    // Bind per-message sender for this engine instance
-                    if let Some(cb) = &eng.send_via_bingle {
-                        crate::messages::router::set_sender(Some(cb.clone()));
-                    }
-                    // Bind per-engine api
-                    if let Some(api) = &eng.bingle_api_for_handlers {
-                        crate::messages::router::set_bingle_api(Some(api.clone()));
-                    }
-                }
-            }
-            // Route to engine default handler
-            let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-            if !p.is_null() {
-                unsafe { (&*p).handle_dtls_message(server, from, issuer, data); }
-            }
-            if let Some(h) = &existing { h(server, from, issuer, data); }
-        })));
+        // Install the common DTLS handler wrapper
+        self.install_dtls_handler()?;
 
         // Start the UDP mux background loop first
         mux.start().map_err(|_| "Failed to start UDP mux")?;
 
         // Start DTLS accept loop with the mux
-        dtls.start(mux.clone())
-            .map_err(|e| format!("Failed to start DTLS: {}", e))?;
+        if let Some(d) = self.dtls.as_mut() {
+            d.start(mux.clone()).map_err(|e| format!("Failed to start DTLS: {}", e))?;
+        } else {
+            return Err("DTLS instance not provided".to_string());
+        }
 
         self.mux = Some(mux);
         Ok(())
