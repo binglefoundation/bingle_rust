@@ -279,25 +279,7 @@ impl BingleApi for BingleApiImpl {
         }
         // Expose a BingleApi handle to handlers via router so components like RelayFinder can use a real API
         {
-            struct DelegatingApi(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
-            impl crate::api::bingle_api::BingleApi for DelegatingApi {
-                            fn debug_print_options(&self) { unsafe { if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() { p.debug_print_options(); } } }
-                            fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
-                fn get_app_id(&self) -> Option<u64> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) } }
-                fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
-                fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
-                fn stop(&mut self) { /* not supported */ }
-                fn network_change(&mut self) { /* not supported */ }
-                fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_id(user_id, message, progress)).unwrap_or(false) } }
-                fn send_message_to_handle(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_handle(handle, message, progress)).unwrap_or(false) } }
-                fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_network(nsk, user_id, message, progress)).unwrap_or(false) } }
-                fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_id_with_response(user_id, message, progress)) } }
-                fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_handle_with_response(handle, message, progress)) } }
-                fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_network_with_response(nsk, user_id, message, progress)) } }
-                fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) { /* not supported */ }
-                fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) { /* not supported */ }
-            }
-            let delegator = DelegatingApi(self_ptr_arc.clone());
+            let delegator = DelegatingBingleApi(self_ptr_arc.clone());
             crate::messages::router::set_bingle_api(Some(std::sync::Arc::new(delegator)));
         }
         // Expose an internal API handle for engine control (state changes) via router
@@ -325,28 +307,8 @@ impl BingleApi for BingleApiImpl {
                 if p.is_null() { return false; }
                 unsafe { (*p).send_message_to_network(nsk, uid, msg, None) }
             })));
-            // Provide the BingleApi handle to Engine for handlers
-            let delegator = {
-                struct DelegatingApi2(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
-                impl crate::api::bingle_api::BingleApi for DelegatingApi2 {
-                                    fn debug_print_options(&self) { unsafe { if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() { p.debug_print_options(); } } }
-                                    fn get_my_id(&self) -> Option<String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) } }
-                    fn get_app_id(&self) -> Option<u64> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) } }
-                    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) } }
-                    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
-                    fn stop(&mut self) { }
-                    fn network_change(&mut self) { }
-                    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_id(user_id, message, progress)).unwrap_or(false) } }
-                    fn send_message_to_handle(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_handle(handle, message, progress)).unwrap_or(false) } }
-                    fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> bool { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_network(nsk, user_id, message, progress)).unwrap_or(false) } }
-                    fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_id_with_response(user_id, message, progress)) } }
-                    fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_handle_with_response(handle, message, progress)) } }
-                    fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_network_with_response(nsk, user_id, message, progress)) } }
-                    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) { }
-                    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) { }
-                }
-                std::sync::Arc::new(DelegatingApi2(self_ptr_arc.clone())) as std::sync::Arc<dyn crate::api::bingle_api::BingleApi>
-            };
+            // Provide the BingleApi handle to Engine for handlers using the unified delegator
+            let delegator: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(DelegatingBingleApi(self_ptr_arc.clone()));
             eng.set_bingle_api_for_handlers(delegator);
             // Provide back-reference so Engine can forward inbound app messages
             eng.set_api_ptr(self_ptr_arc.clone());
@@ -579,4 +541,49 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         log::info!("[BingleApiImpl::set_state][exit]");
         #[allow(unused)] {  }
     }
+}
+
+
+// Unified delegator: single wrapper that forwards BingleApi calls to the owning BingleApiImpl via AtomicPtr.
+struct DelegatingBingleApi(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
+impl crate::api::bingle_api::BingleApi for DelegatingBingleApi {
+    fn debug_print_options(&self) {
+        unsafe {
+            if let Some(p) = self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref() {
+                p.debug_print_options();
+            }
+        }
+    }
+    fn get_my_id(&self) -> Option<String> {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_my_id()) }
+    }
+    fn get_app_id(&self) -> Option<u64> {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_app_id()) }
+    }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().and_then(|p| p.get_algo_provider_config()) }
+    }
+    fn start(&mut self, _options: crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported".to_string()) }
+    fn stop(&mut self) { }
+    fn network_change(&mut self) { }
+    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<std::sync::Arc<crate::api::bingle_api::ProgressCallback>>) -> bool {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_id(user_id, message, progress)).unwrap_or(false) }
+    }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<std::sync::Arc<crate::api::bingle_api::ProgressCallback>>) -> bool {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_handle(handle, message, progress)).unwrap_or(false) }
+    }
+    fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkSourceKey, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<std::sync::Arc<crate::api::bingle_api::ProgressCallback>>) -> bool {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().map(|p| p.send_message_to_network(nsk, user_id, message, progress)).unwrap_or(false) }
+    }
+    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<std::sync::Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_id_with_response(user_id, message, progress)) }
+    }
+    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<std::sync::Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_handle_with_response(handle, message, progress)) }
+    }
+    fn send_message_to_network_with_response(&self, nsk: &crate::api::bingle_api::NetworkSourceKey, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<std::sync::Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> {
+        unsafe { self.0.load(std::sync::atomic::Ordering::SeqCst).as_ref().ok_or("null".to_string()).and_then(|p| p.send_message_to_network_with_response(nsk, user_id, message, progress)) }
+    }
+    fn set_on_message(&mut self, _handler: Option<std::sync::Arc<crate::api::bingle_api::OnMessageHandler>>) { }
+    fn set_on_connect(&mut self, _handler: Option<std::sync::Arc<crate::api::bingle_api::OnConnectHandler>>) { }
 }

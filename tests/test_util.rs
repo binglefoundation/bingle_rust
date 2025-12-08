@@ -86,3 +86,12 @@ pub fn find_unused_loopback_port() -> u16 {
     drop(sock);
     port
 }
+
+// Helper: print current working directory for debugging path issues in tests
+#[allow(dead_code)]
+pub fn print_cwd_for_debug() {
+    match std::env::current_dir() {
+        Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
+        Err(e) => eprintln!("Failed to get current working directory: {}", e),
+    }
+}

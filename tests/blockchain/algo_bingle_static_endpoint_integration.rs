@@ -36,10 +36,7 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     let user = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
 
     // Deploy the dapp from TEAL artifacts
-    match std::env::current_dir() {
-        Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
-        Err(e) => eprintln!("Failed to get current working directory: {}", e),
-    }
+    test_util::print_cwd_for_debug();
     let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
     let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
     let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval teal");
