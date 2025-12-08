@@ -30,6 +30,145 @@ pub mod non_ios {
     const CERT_ANNOUNCE_PREFIX: &[u8] = b"DTLS-CERT-ANNOUNCE:";
 
     // Common helpers and adapters shared by client/server paths to reduce duplication.
+    #[derive(Clone)]
+    enum CaMode {
+        UseLocal(std::sync::Arc<Vec<u8>>),
+        PeerChain,
+        None,
+    }
+
+    fn run_read_loop(
+        stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>>,
+        from: SocketAddr,
+        writers_opt: Option<ServerWriters>,
+        issuers_opt: Option<EndpointIssuers>,
+        handle_message: Option<HandleMessage>,
+        peer_cert_handler: Option<HandlePeerCertificate>,
+        ca_mode: CaMode,
+        support_cert_announce: bool,
+        trim_issuer_suffix: bool,
+        log_tag: &str,
+    ) {
+        use std::io::{Read, ErrorKind};
+        // Helper to query issuer string already recorded
+        let get_issuer = || -> Option<String> {
+            issuers_opt.as_ref().and_then(|m| m.lock().ok()).and_then(|mm| mm.get(&from).cloned())
+        };
+
+        let mut buf = [0u8; 2048];
+        let mut logged_wouldblock = false;
+        loop {
+            let n = {
+                let mut guard = match stream_arc.lock() { Ok(g) => g, Err(_) => break };
+                match guard.read(&mut buf) {
+                    Ok(0) => { log::info!("[DtlsOpenSsl{}][read-loop {}] EOF/peer closed", log_tag, from); break },
+                    Ok(n) => n,
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        if !logged_wouldblock { log::info!("[DtlsOpenSsl{}][read-loop {}] WouldBlock (no datagram yet)", log_tag, from); logged_wouldblock = true; }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(e) => { log::info!("[DtlsOpenSsl{}][read-loop {}] read error: {}", log_tag, from, e); break }
+                }
+            };
+            if n == 0 { break; }
+
+            // Server path: intercept client cert announce control message
+            if support_cert_announce && n >= CERT_ANNOUNCE_PREFIX.len() && &buf[..CERT_ANNOUNCE_PREFIX.len()] == CERT_ANNOUNCE_PREFIX {
+                const END_MARK: &str = "-----END CERTIFICATE-----";
+                let payload = &buf[CERT_ANNOUNCE_PREFIX.len()..n];
+                let payload_str = String::from_utf8_lossy(payload);
+                let mut cert_end_idx: Option<usize> = None;
+                if let Some(pos) = payload_str.find(END_MARK) { cert_end_idx = Some(pos + END_MARK.len()); }
+                if let Some(end_idx) = cert_end_idx {
+                    let cert_pem = &payload[..end_idx];
+                    // Skip optional newline
+                    let mut ca_start = end_idx;
+                    if ca_start < payload.len() && (payload[ca_start] == b'\n' || payload[ca_start] == b'\r') { ca_start += 1; }
+                    let ca_pem = &payload[ca_start..];
+                    if let Some(h) = peer_cert_handler {
+                        let ca_len = ca_pem.len();
+                        log::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] cert_len={} ca_len={}", log_tag, from, cert_pem.len(), ca_len);
+                        if ca_len == 0 { log::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] no CA in message; rejecting per policy", log_tag, from); break; }
+                        match h(cert_pem, ca_pem) {
+                            Ok(mut s) if !s.is_empty() => {
+                                if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
+                                if let Some(map) = &issuers_opt { let _ = map.lock().map(|mut m| { m.insert(from, s); }); }
+                            }
+                            _ => { log::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] validation failed (empty issuer or error)", log_tag, from); break; }
+                        }
+                    } else {
+                        if let Some(map) = &issuers_opt { let _ = map.lock().map(|mut m| { m.insert(from, String::new()); }); }
+                    }
+                } else {
+                    log::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] malformed announce payload (no END CERTIFICATE)", log_tag, from);
+                    break;
+                }
+                continue; // do not deliver control message to application
+            }
+
+            // On first data: evaluate peer certificate and record issuer
+            if let Some(issuers_arc) = &issuers_opt {
+                if let Ok(mut imap) = issuers_arc.lock() {
+                    if !imap.contains_key(&from) {
+                        // Extract cert
+                        if let Ok(guard) = stream_arc.lock() {
+                            if let Some(cert) = guard.ssl().peer_certificate() {
+                                if let Ok(cert_pem) = cert.to_pem() {
+                                    if let Some(h) = peer_cert_handler {
+                                        // Determine CA per mode
+                                        let ca_bytes_opt: Option<Vec<u8>> = match &ca_mode {
+                                            CaMode::UseLocal(v) => Some((**v).clone()),
+                                            CaMode::PeerChain => {
+                                                if let Some(chain) = guard.ssl().peer_cert_chain() {
+                                                    let len = chain.len();
+                                                    if len >= 1 { chain.get(len - 1).and_then(|last| last.to_pem().ok()) } else { None }
+                                                } else { None }
+                                            }
+                                            CaMode::None => None,
+                                        };
+                                        if let Some(ca_vec) = ca_bytes_opt.as_ref() {
+                                            log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] cert_len={} ca_len={}", log_tag, from, cert_pem.len(), ca_vec.len());
+                                            match h(&cert_pem, ca_vec) {
+                                                Ok(mut s) if !s.is_empty() => {
+                                                    if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
+                                                    let _ = imap.insert(from, s);
+                                                }
+                                                _ => { log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] validation failed (empty issuer or error)", log_tag, from); break; }
+                                            }
+                                        } else {
+                                            log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] no CA available; skipping handler invocation", log_tag, from);
+                                        }
+                                    } else {
+                                        let _ = imap.insert(from, String::from_utf8_lossy(&cert_pem).into());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Gate application delivery on issuer
+            let issuer_opt = get_issuer();
+            if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
+                log::info!("[DtlsOpenSsl{}][read-loop {}] dropping application data until peer certificate validated", log_tag, from);
+                continue;
+            }
+            log::info!("[DtlsOpenSsl{}][read-loop {}] application data {} bytes", log_tag, from, n);
+            if let Some(h) = &handle_message {
+                let issuer = issuer_opt.unwrap_or_default();
+                let adapter = if let Some(w) = &writers_opt { WriterAdapter(w.clone()) } else {
+                    use std::collections::HashMap; let empty: ServerWriters = Arc::new(Mutex::new(HashMap::new())); WriterAdapter(empty)
+                };
+                (h)(&adapter as &dyn Dtls, &from, &issuer, &buf[..n]);
+            }
+        }
+        // Cleanup
+        if let Some(w) = &writers_opt { let _ = w.lock().map(|mut m| { m.remove(&from); }); }
+        if let Some(i) = &issuers_opt { let _ = i.lock().map(|mut m| { m.remove(&from); }); }
+        log::info!("[DtlsOpenSsl{}][read-loop {}] exit and cleanup", log_tag, from);
+    }
     #[inline]
     fn build_ca_store(ca_pem: &[u8]) -> Result<openssl::x509::store::X509Store> {
         let ca_x509 = X509::from_pem(ca_pem).map_err(|e| format!("CA PEM parse failed: {}", e))?;
@@ -673,141 +812,18 @@ pub mod non_ios {
                     let from2 = *from;
                     let ca_bytes_for_thread = ca_bytes.clone();
                     std::thread::spawn(move || {
-                        // Capture peer certificate handler and CA bytes for this reader
-                        let peer_cert_handler2 = peer_cert_handler;
-                        let ca_bytes2 = ca_bytes_for_thread;
-                        let mut buf = [0u8; 2048];
-                        let mut logged_wouldblock = false;
-                        loop {
-                            let n = {
-                                let mut guard = match stream_arc.lock() { Ok(g) => g, Err(_) => break };
-                                match guard.read(&mut buf) {
-                                    Ok(0) => { 
-                                        log::info!("[DtlsOpenSsl::accept][read-loop {}] EOF/peer closed", from2);
-                                        #[allow(unused)] {  }
-                                        break 
-                                    },
-                                    Ok(n) => n,
-                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                        if !logged_wouldblock {
-                                            log::info!("[DtlsOpenSsl::accept][read-loop {}] WouldBlock (no datagram yet)", from2);
-                                            #[allow(unused)] {  }
-                                            logged_wouldblock = true;
-                                        }
-                                        // No datagram available yet; avoid tearing down the stream.
-                                        std::thread::sleep(std::time::Duration::from_millis(10));
-                                        continue;
-                                    }
-                                    Err(e) => { 
-                                        log::info!("[DtlsOpenSsl::accept][read-loop {}] read error: {}", from2, e);
-                                        #[allow(unused)] {  }
-                                        break 
-                                    },
-                                }
-                            };
-                            if n == 0 { break; }
-                            // Intercept internal certificate announcement messages
-                            if n >= CERT_ANNOUNCE_PREFIX.len() && &buf[..CERT_ANNOUNCE_PREFIX.len()] == CERT_ANNOUNCE_PREFIX {
-                                let payload = &buf[CERT_ANNOUNCE_PREFIX.len()..n];
-                                // The announce payload contains the peer's leaf certificate PEM, optionally followed by the peer CA certificate PEM.
-                                // We must extract the CA from the message and must not use the local CA.
-                                const END_MARK: &str = "-----END CERTIFICATE-----";
-                                let payload_str = String::from_utf8_lossy(payload);
-                                let mut cert_end_idx: Option<usize> = None;
-                                if let Some(pos) = payload_str.find(END_MARK) {
-                                    // Include the end marker in the certificate slice
-                                    cert_end_idx = Some(pos + END_MARK.len());
-                                }
-                                if let Some(end_idx) = cert_end_idx {
-                                    // Convert end_idx in str space to bytes offset by re-encoding prefix length
-                                    // payload_str[..end_idx] and payload[(..)] should align as payload is utf8 PEM
-                                    let cert_pem = &payload[..end_idx];
-                                    // Skip an optional trailing newline after the cert block
-                                    let mut ca_start = end_idx;
-                                    if ca_start < payload.len() && (payload[ca_start] == b'\n' || payload[ca_start] == b'\r') {
-                                        ca_start += 1;
-                                    }
-                                    // Remaining bytes, if any, are the CA PEM
-                                    let ca_pem = &payload[ca_start..];
-                                    if let Some(h) = peer_cert_handler2 {
-                                        let ca_len = ca_pem.len();
-                                        log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] cert_len={} ca_len={} (from message)", from2, cert_pem.len(), ca_len);
-                                        #[allow(unused)] {  }
-                                        if ca_len == 0 {
-                                            log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] no CA in message; rejecting per policy", from2);
-                                            #[allow(unused)] {  }
-                                            break;
-                                        }
-                                        match h(cert_pem, ca_pem) {
-                                            Ok(s) if !s.is_empty() => {
-                                                // Convert issuer (subject CN) to id by trimming the trailing ISSUER_SUFFIX
-                                                let id = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                                                if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, id); }
-                                            }
-                                            _ => {
-                                                log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] validation failed (empty issuer or error)", from2);
-                                                #[allow(unused)] {  }
-                                                break;
-                                            }
-                                        }
-                                    } else {
-                                        // No handler provided: accept but record empty issuer
-                                        if let Ok(mut imap) = issuers2.lock() { let _ = imap.insert(from2, String::new()); }
-                                    }
-                                } else {
-                                    log::info!("[DtlsOpenSsl][peer_cert_handler][server/announce][{}] malformed announce payload (no END CERTIFICATE)", from2);
-                                    #[allow(unused)] {  }
-                                    break;
-                                }
-                                // Do not pass this control message to application handler
-                                continue;
-                            }
-                            // Update issuer on first data if available and invoke optional peer-cert handler
-                            if let Ok(mut imap) = issuers2.lock() {
-                                if !imap.contains_key(&from2) {
-                                    if let Some(cert) = stream_arc.lock().ok().and_then(|g| g.ssl().peer_certificate()) {
-                                        if let Ok(cert_pem) = cert.to_pem() {
-                                            if let Some(h) = peer_cert_handler2 {
-                                                log::info!("[DtlsOpenSsl][peer_cert_handler][server][{}] cert_len={}", from2, cert_pem.len());
-                                                #[allow(unused)] {  }
-                                                match h(&cert_pem, ca_bytes2.as_slice()) {
-                                                    Ok(s) if !s.is_empty() => {
-                                                        let id = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                                                        let _ = imap.insert(from2, id);
-                                                    }
-                                                    _ => {
-                                                        log::info!("[DtlsOpenSsl][peer_cert_handler][server][{}] validation failed (empty issuer or error)", from2);
-                                                        #[allow(unused)] {  }
-                                                        break;
-                                                    }
-                                                }
-                                            } else {
-                                                let _ = imap.insert(from2, String::from_utf8_lossy(&cert_pem).into());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // Enforce application-layer certificate validation: only deliver if issuer is present when a handler is configured
-                            let issuer_opt = issuers2.lock().ok().and_then(|m| m.get(&from2).cloned());
-                            if peer_cert_handler2.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
-                                log::info!("[DtlsOpenSsl::accept][read-loop {}] dropping application data until peer certificate validated", from2);
-                                #[allow(unused)] {  }
-                                continue;
-                            }
-                            log::info!("[DtlsOpenSsl::accept][read-loop {}] application data {} bytes", from2, n);
-                            #[allow(unused)] {  }
-                            if let Some(h) = &handle_message2 {
-                                let issuer = issuer_opt.unwrap_or_default();
-                                let adapter = WriterAdapter(writers2.clone());
-                                (h)(&adapter as &dyn Dtls, &from2, &issuer, &buf[..n]);
-                            }
-                        }
-                        // Cleanup mappings on exit
-                        if let Ok(mut m) = writers2.lock() { m.remove(&from2); }
-                        if let Ok(mut m) = issuers2.lock() { m.remove(&from2); }
-                        log::info!("[DtlsOpenSsl::accept][read-loop {}] exit and cleanup", from2);
-                        #[allow(unused)] {  }
+                        run_read_loop(
+                            stream_arc.clone(),
+                            from2,
+                            Some(writers2.clone()),
+                            Some(issuers2.clone()),
+                            handle_message2.clone(),
+                            peer_cert_handler,
+                            CaMode::UseLocal(ca_bytes_for_thread.clone()),
+                            true,   // support_cert_announce (server)
+                            true,   // trim_issuer_suffix (record ids)
+                            "::accept",
+                        );
                     });
                 }
             })));
@@ -1033,107 +1049,21 @@ pub mod non_ios {
                 let issuers2_opt = self.endpoint_issuers.as_ref().cloned();
                 let handle_message2 = self.handle_message.clone();
                 let peer_cert_handler = self.handle_peer_certificate;
-                let ca_bytes = std::sync::Arc::new(self.ca_cert.clone().unwrap_or_default());
                 let stream_arc_for_reader = stream_arc.clone();
                 let from2 = to;
-                let ca_bytes_for_thread = ca_bytes.clone();
                 std::thread::spawn(move || {
-                    use std::io::Read;
-                    let peer_cert_handler2 = peer_cert_handler;
-                    let _ca_bytes2 = ca_bytes_for_thread;
-                    let mut buf = [0u8; 2048];
-                    let mut logged_wouldblock = false;
-                    loop {
-                        let n = {
-                            let mut guard = match stream_arc_for_reader.lock() { Ok(g) => g, Err(_) => break };
-                            match guard.read(&mut buf) {
-                                Ok(0) => { 
-                                    log::info!("[DtlsOpenSsl::send][read-loop {}] EOF/peer closed", from2);
-                                    #[allow(unused)] {  }
-                                    break 
-                                },
-                                Ok(n) => n,
-                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                    if !logged_wouldblock {
-                                        log::info!("[DtlsOpenSsl::send][read-loop {}] WouldBlock (no datagram yet)", from2);
-                                        #[allow(unused)] {  }
-                                        logged_wouldblock = true;
-                                    }
-                                    // No datagram yet for outbound stream; keep waiting.
-                                    std::thread::sleep(std::time::Duration::from_millis(10));
-                                    continue;
-                                }
-                                Err(e) => { 
-                                    log::info!("[DtlsOpenSsl::send][read-loop {}] read error: {}", from2, e);
-                                    #[allow(unused)] {  }
-                                    break 
-                                }
-                            }
-                        };
-                        if n == 0 { break; }
-                        // Update issuer on first data if available and invoke optional peer-cert handler
-                        if let Some(issuers2) = &issuers2_opt {
-                            if let Ok(mut imap) = issuers2.lock() {
-                                if !imap.contains_key(&from2) {
-                                    if let Ok(guard) = stream_arc_for_reader.lock() {
-                                        if let Some(cert) = guard.ssl().peer_certificate() {
-                                            if let Ok(cert_pem) = cert.to_pem() {
-                                                if let Some(h) = peer_cert_handler2 {
-                                                    // Extract peer CA from the presented chain (prefer last element)
-                                                    let mut peer_ca_pem: Option<Vec<u8>> = None;
-                                                    if let Some(chain) = guard.ssl().peer_cert_chain() {
-                                                        let len = chain.len();
-                                                        if len >= 1 {
-                                                            if let Some(last) = chain.get(len - 1) {
-                                                                if let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
-                                                            }
-                                                        }
-                                                    }
-                                                    let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
-                                                    log::info!("[DtlsOpenSsl][peer_cert_handler][client][{}] cert_len={} ca_len={} (from peer chain)", from2, cert_pem.len(), ca_len);
-                                                    #[allow(unused)] {  }
-                                                    if let Some(ca) = peer_ca_pem.as_ref() {
-                                                        match h(&cert_pem, ca) {
-                                                            Ok(s) if !s.is_empty() => { let _ = imap.insert(from2, s); }
-                                                            _ => {
-                                                                log::info!("[DtlsOpenSsl][peer_cert_handler][client][{}] validation failed (empty issuer or error)", from2);
-                                                                #[allow(unused)] {  }
-                                                                break;
-                                                            }
-                                                        }
-                                                    } else {
-                                                        log::info!("[DtlsOpenSsl][peer_cert_handler][client][{}] no peer CA certificate in chain; skipping handler invocation", from2);
-                                                        #[allow(unused)] {  }
-                                                    }
-                                                } else {
-                                                    let _ = imap.insert(from2, String::from_utf8_lossy(&cert_pem).into());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Enforce application-layer certificate validation: only deliver if issuer is present when a handler is configured
-                        let issuer_opt = issuers2_opt.as_ref().and_then(|m| m.lock().ok().and_then(|mm| mm.get(&from2).cloned()));
-                        if peer_cert_handler2.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
-                            log::info!("[DtlsOpenSsl::send][read-loop {}] dropping application data until peer certificate validated", from2);
-                            #[allow(unused)] {  }
-                            continue;
-                        }
-                        log::info!("[DtlsOpenSsl::send][read-loop {}] application data {} bytes", from2, n);
-                        #[allow(unused)] {  }
-                        if let (Some(h), Some(writers2)) = (&handle_message2, &writers2_opt) {
-                            let issuer = issuer_opt.unwrap_or_default();
-                            let adapter = WriterAdapter(writers2.clone());
-                            (h)(&adapter as &dyn Dtls, &from2, &issuer, &buf[..n]);
-                        }
-                    }
-                    // Cleanup mappings on exit
-                    if let Some(writers2) = &writers2_opt { let _ = writers2.lock().map(|mut m| { m.remove(&from2); }); }
-                    if let Some(issuers2) = &issuers2_opt { let _ = issuers2.lock().map(|mut m| { m.remove(&from2); }); }
-                    log::info!("[DtlsOpenSsl::send][read-loop {}] exit and cleanup", from2);
-                    #[allow(unused)] {  }
+                    run_read_loop(
+                        stream_arc_for_reader.clone(),
+                        from2,
+                        writers2_opt.clone(),
+                        issuers2_opt.clone(),
+                        handle_message2.clone(),
+                        peer_cert_handler,
+                        CaMode::PeerChain,
+                        false,  // no cert announce on client
+                        false,  // don't trim suffix; server path records trimmed ids
+                        "::send",
+                    );
                 });
             }
             // Now that the stream is registered, remove from in-progress set
@@ -1210,3 +1140,5 @@ pub mod non_ios {
 mod ios_placeholder {
     // Empty module to keep file compiling when conditionally included elsewhere.
 }
+
+
