@@ -391,28 +391,7 @@ impl Engine {
                     let app_id_opt = opt_app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
                     log::info!("[Engine] indexer discovery app_id={:?}", app_id_opt);
                     if let Some(app_id) = app_id_opt {
-                        let ab = {
-                            let ops = crate::blockchain::algo_ops::AlgoOps::new(None, None, opt_cfg);
-                            crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0)
-                        };
-                        Arc::new(move || {
-                            match ab.list_static_endpoints_via_indexer(app_id) {
-                                Ok(list) => {
-                                    let mut out: Vec<RootRelayInfo> = Vec::new();
-                                    for (id, ep) in list {
-                                        if let Some(addr) = crate::blockchain::algo_bingle::AlgoBingle::parse_relay_ip(&ep) {
-                                            out.push(RootRelayInfo { id, address: addr });
-                                        }
-                                    }
-                                    if out.is_empty() {
-                                        panic!("[Engine] indexer discovery returned empty static endpoints list");
-                                    } else { out }
-                                }
-                                Err(e) => {
-                                    panic!("[Engine] indexer discovery failed: {}", e);
-                                }
-                            }
-                        })
+                        crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg)
                     } else {
                         // No app id set
                         panic!("[Engine] indexer discovery has no app id");

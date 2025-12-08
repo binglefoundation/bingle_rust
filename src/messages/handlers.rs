@@ -104,33 +104,20 @@ impl MessageHandler for DefaultPrintingHandler {
                 #[cfg(not(target_os = "ios"))]
                 {
                     // Prefer app_id from API options; fallback to env var for legacy
-                    let app_id_opt = api_for_thread.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                    let app_id_opt = api_for_thread
+                        .get_app_id()
+                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
                     let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
-                    let ab = {
-                                            let cfg = api_for_thread.get_algo_provider_config();
-                                            crate::blockchain::algo_bingle::AlgoBingle::new(crate::blockchain::algo_ops::AlgoOps::new(None, None, cfg), app_id, 0)
-                                        };
-                    std::sync::Arc::new(move || {
-                        match ab.list_static_endpoints_via_indexer(app_id) {
-                            Ok(list) => {
-                                let mut out: Vec<RootRelayInfo> = Vec::new();
-                                for (id, ep) in list {
-                                    if let Some(addr) = crate::blockchain::algo_bingle::AlgoBingle::parse_relay_ip(&ep) {
-                                        out.push(RootRelayInfo { id, address: addr });
-                                    }
-                                }
-                                if out.is_empty() { panic!("on_triangle_test1: no relays discovered via indexer"); } else { out }
-                            }
-                            Err(e) => {
-                                panic!("on_triangle_test1: indexer discovery failed: {}", e);
-                            }
-                        }
-                    })
+                    let cfg = api_for_thread.get_algo_provider_config();
+                    crate::relay::discovery::indexer_discover_closure(app_id, cfg)
                 }
                 #[cfg(target_os = "ios")]
                 {
                     // On iOS we also require proper discovery via indexer; panic if not configured
-                    let _ = api_for_thread.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok())).expect("on_triangle_test1 (iOS): app_id is required");
+                    let _ = api_for_thread
+                        .get_app_id()
+                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
+                        .expect("on_triangle_test1 (iOS): app_id is required");
                     std::sync::Arc::new(|| panic!("on_triangle_test1 (iOS): discovery not supported without indexer"))
                 }
             };
