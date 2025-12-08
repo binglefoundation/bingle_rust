@@ -1,6 +1,5 @@
 use crate::api::bingle_api::BingleApi;
 use crate::messages::types::*;
-use base64::Engine as _;
 use std::sync::Arc;
 use log::warn;
 

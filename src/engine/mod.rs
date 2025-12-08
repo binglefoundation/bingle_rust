@@ -11,7 +11,6 @@ use crate::messages::{from_json_str, route, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
-use base64::Engine as _;
 use uuid::Uuid;
 
 #[derive(Debug, Default)]

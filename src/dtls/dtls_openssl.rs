@@ -34,6 +34,7 @@ pub mod non_ios {
     enum CaMode {
         UseLocal(std::sync::Arc<Vec<u8>>),
         PeerChain,
+        #[allow(dead_code)]
         None,
     }
 
@@ -49,7 +50,7 @@ pub mod non_ios {
         trim_issuer_suffix: bool,
         log_tag: &str,
     ) {
-        use std::io::{Read, ErrorKind};
+        use std::io::{ErrorKind, Read};
         // Helper to query issuer string already recorded
         let get_issuer = || -> Option<String> {
             issuers_opt.as_ref().and_then(|m| m.lock().ok()).and_then(|mm| mm.get(&from).cloned())
@@ -716,7 +717,6 @@ pub mod non_ios {
         pub fn start_accept_with_mux(&mut self, mux: std::sync::Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
             use std::sync::{Arc, Mutex};
             use std::collections::HashMap;
-            use std::io::Read;
             // Validate server creds
             if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
                 return Err("missing server credentials or CA".to_string());
