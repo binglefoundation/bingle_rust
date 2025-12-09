@@ -96,5 +96,6 @@ pub fn route<H: MessageHandler + ?Sized>(handler: &H, msg: &Message, from_id: &s
             RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), &from, m),
         },
         Message::Unknown(v) => handler.on_unknown(api.clone(), v),
+        Message::Ddb(_) => handler.on_unimplemented(msg),
     }
 }

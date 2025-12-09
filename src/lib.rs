@@ -4,6 +4,7 @@ pub mod api;
 pub mod relay;
 pub mod stun;
 pub mod messages;
+pub mod ddb;
 pub mod engine;
 pub mod protocol;
 pub mod util;
