@@ -7,6 +7,7 @@ pub mod messages;
 pub mod engine;
 pub mod protocol;
 pub mod util;
+pub mod turn;
 
 // Backward-compatible module re-exports
 #[cfg(not(target_os = "ios"))]

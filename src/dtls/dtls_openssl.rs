@@ -713,6 +713,98 @@ pub mod non_ios {
         }
 
         // Start DTLS accept loop using a pre-bound NetworkMux (no internal bind)
+        fn handle_dtls_accept_packet(
+            mux: Arc<crate::dtls::UdpNetworkMux>,
+            acceptor: Arc<SslAcceptor>,
+            queues: Arc<Mutex<HashMap<SocketAddr, Arc<PeerQueue>>>>,
+            streams: Arc<Mutex<HashMap<SocketAddr, Arc<Mutex<SslStream<CommonNetworkMuxConn>>>>>>,
+            writers: ServerWriters,
+            issuers: EndpointIssuers,
+            handle_message: Option<HandleMessage>,
+            peer_cert_handler: Option<HandlePeerCertificate>,
+            ca_bytes: Arc<Vec<u8>>,
+            connecting: Arc<Mutex<HashSet<SocketAddr>>>,
+            from: SocketAddr,
+            data: &[u8],
+        ) {
+            // Debug log inbound DTLS packet at the DTLS layer
+            let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
+            if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
+                log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json);
+                #[allow(unused)] {  }
+            } else {
+                log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len());
+                #[allow(unused)] {  }
+            }
+            // Find or create the queue for this peer and push the datagram
+            let q_arc = {
+                let mut m = queues.lock().unwrap();
+                m.entry(from).or_insert_with(|| Arc::new(PeerQueue::default())).clone()
+            };
+            log::info!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len());
+            #[allow(unused)] {  }
+            q_arc.push(data.to_vec());
+
+            // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
+            let suppressed = connecting.lock().ok().map(|s| s.contains(&from)).unwrap_or(false);
+            if suppressed {
+                log::info!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
+                #[allow(unused)] {  }
+            }
+            let create_stream = {
+                let m = streams.lock().unwrap();
+                !m.contains_key(&from) && !suppressed
+            };
+            if create_stream {
+                let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
+                log::info!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str);
+                #[allow(unused)] {  }
+                let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
+                ssl.set_accept_state();
+                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: from, queue: q_arc.clone() };
+                let ssl_stream = SslStream::new(ssl, conn).expect("ssl stream new");
+                let stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
+                {
+                    let mut m = streams.lock().unwrap();
+                    m.insert(from, stream_arc.clone());
+                }
+
+                // Install writer for this peer
+                let writer_stream = stream_arc.clone();
+                let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
+                    let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
+                    use std::io::Write;
+                    guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
+                });
+                if let Ok(mut map) = writers.lock() { 
+                    map.insert(from, writer_fn.clone()); 
+                    log::info!("[DtlsOpenSsl::accept] installed writer for {}", from);
+                    #[allow(unused)] {  }
+                }
+
+                // Spawn a per-peer reader loop to deliver application data
+                let writers2 = writers.clone();
+                let issuers2 = issuers.clone();
+                let handle_message2 = handle_message.clone();
+                let from2 = from;
+                let ca_bytes_for_thread = ca_bytes.clone();
+                std::thread::spawn(move || {
+                    run_read_loop(
+                        stream_arc.clone(),
+                        from2,
+                        Some(writers2.clone()),
+                        Some(issuers2.clone()),
+                        handle_message2.clone(),
+                        peer_cert_handler,
+                        CaMode::UseLocal(ca_bytes_for_thread.clone()),
+                        true,   // support_cert_announce (server)
+                        true,   // trim_issuer_suffix (record ids)
+                        "::accept",
+                    );
+                });
+            }
+        }
+
         pub fn start_accept_with_mux(&mut self, mux: std::sync::Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
             use std::sync::{Arc, Mutex};
             use std::collections::HashMap;
@@ -745,82 +837,20 @@ pub mod non_ios {
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
             mux.clone().set_handle_dtls_arc(Some(Arc::new(move |_source, from, data| { 
-                // Debug log inbound DTLS packet at the DTLS layer
-                let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                    log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json);
-                    #[allow(unused)] {  }
-                } else {
-                    log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len());
-                    #[allow(unused)] {  }
-                }
-                // Find or create the queue for this peer and push the datagram
-                let q_arc = {
-                    let mut m = queues.lock().unwrap();
-                    m.entry(*from).or_insert_with(|| Arc::new(PeerQueue::default())).clone()
-                };
-                log::info!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len());
-                #[allow(unused)] {  }
-                q_arc.push(data.to_vec());
-
-                // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
-                let suppressed = connecting.lock().ok().map(|s| s.contains(from)).unwrap_or(false);
-                if suppressed {
-                    log::info!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
-                    #[allow(unused)] {  }
-                }
-                let create_stream = {
-                    let m = streams.lock().unwrap();
-                    !m.contains_key(from) && !suppressed
-                };
-                if create_stream {
-                    let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                    log::info!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str);
-                    #[allow(unused)] {  }
-                    let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
-                    ssl.set_accept_state();
-                    let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: *from, queue: q_arc.clone() };
-                    let ssl_stream = SslStream::new(ssl, conn).expect("ssl stream new");
-                    let stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
-                    {
-                        let mut m = streams.lock().unwrap();
-                        m.insert(*from, stream_arc.clone());
-                    }
-
-                    // Install writer for this peer
-                    let writer_stream = stream_arc.clone();
-                    let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
-                        let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                        use std::io::Write;
-                        guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
-                    });
-                    if let Ok(mut map) = writers.lock() { 
-                        map.insert(*from, writer_fn.clone()); 
-                        log::info!("[DtlsOpenSsl::accept] installed writer for {}", from);
-                        #[allow(unused)] {  }
-                    }
-
-                    // Spawn a per-peer reader loop to deliver application data
-                    let writers2 = writers.clone();
-                    let issuers2 = issuers.clone();
-                    let handle_message2 = handle_message.clone();
-                    let from2 = *from;
-                    let ca_bytes_for_thread = ca_bytes.clone();
-                    std::thread::spawn(move || {
-                        run_read_loop(
-                            stream_arc.clone(),
-                            from2,
-                            Some(writers2.clone()),
-                            Some(issuers2.clone()),
-                            handle_message2.clone(),
-                            peer_cert_handler,
-                            CaMode::UseLocal(ca_bytes_for_thread.clone()),
-                            true,   // support_cert_announce (server)
-                            true,   // trim_issuer_suffix (record ids)
-                            "::accept",
-                        );
-                    });
-                }
+                Self::handle_dtls_accept_packet(
+                    mux.clone(),
+                    acceptor.clone(),
+                    queues.clone(),
+                    streams.clone(),
+                    writers.clone(),
+                    issuers.clone(),
+                    handle_message.clone(),
+                    peer_cert_handler,
+                    ca_bytes.clone(),
+                    connecting.clone(),
+                    *from,
+                    data,
+                );
             })));
 
             Ok(())
