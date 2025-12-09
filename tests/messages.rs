@@ -27,6 +27,9 @@ mod relay_ping_handlers;
 #[path = "messages/triangle_test1_response_sets_state.rs"]
 mod triangle_test1_response_sets_state;
 
+#[path = "messages/marshal_relay_call.rs"]
+mod marshal_relay_call;
+
 // Some repositories include an additional test file for TriangleTest3 state setting.
 // If present in this repo, include it; otherwise harmless if missing when not referenced.
 // Note: We cannot conditionally include based on file existence in Rust at build time.

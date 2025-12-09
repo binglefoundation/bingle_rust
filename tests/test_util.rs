@@ -53,21 +53,33 @@ pub fn should_run_localnet() -> bool {
         if v == "1" || v == "true" || v == "yes" { return true; }
         if v == "0" || v == "false" || v == "no" { return false; }
     }
-    // Otherwise, probe localnet health/status quickly
+    // Otherwise, probe localnet health/status quickly AND ensure required TEAL artifacts exist
     let cfg = localnet_config();
     let url = format!("{}:{}", cfg.client_api_url, cfg.client_api_port);
     let token = cfg.token.clone().unwrap_or_default();
-    match algonaut::algod::v2::Algod::new(&url, &token) {
+    let network_ok = match algonaut::algod::v2::Algod::new(&url, &token) {
         Ok(client) => {
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build();
             if let Ok(rt) = rt {
-                if rt.block_on(client.health()).is_ok() { return true; }
-                if rt.block_on(client.status()).is_ok() { return true; }
-            }
-            false
+                if rt.block_on(client.health()).is_ok() { true }
+                else if rt.block_on(client.status()).is_ok() { true }
+                else { false }
+            } else { false }
         }
         Err(_) => false,
+    };
+    if !network_ok { return false; }
+
+    // Require local TEAL artifacts to be present unless explicitly overridden by env var above
+    use std::path::Path;
+    let approval = Path::new("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal");
+    let clear = Path::new("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal");
+    if !(approval.exists() && clear.exists()) {
+        eprintln!("SKIP: localnet detected but TEAL artifacts missing under dapp/.../artifacts/bingle_dapp");
+        return false;
     }
+
+    true
 }
 
 #[allow(dead_code)]
