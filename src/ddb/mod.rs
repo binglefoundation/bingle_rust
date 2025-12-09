@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// InetSocketAddress as defined in BINGLE_SPEC.md
 /// Hostname/IP and UDP port number.
@@ -31,4 +32,38 @@ pub struct AdvertRecord {
     /// Optional signature of this record by the node
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sig: Option<String>,
+}
+
+/// DDB backend trait: minimal CRUD required by issue
+pub trait DdbBackend {
+    /// Insert or update an AdvertRecord, using its id as the key
+    fn upsert(&mut self, record: AdvertRecord);
+    /// Delete a record by id (no-op if missing)
+    fn delete(&mut self, id: &str);
+    /// Lookup and return a copy of the record, if it exists
+    fn lookup(&self, id: &str) -> Option<AdvertRecord>;
+}
+
+/// Simple in-memory DDB backend backed by a HashMap
+#[derive(Default)]
+pub struct InMemoryDdbBackend {
+    map: HashMap<String, AdvertRecord>,
+}
+
+impl InMemoryDdbBackend {
+    pub fn new() -> Self { Self { map: HashMap::new() } }
+}
+
+impl DdbBackend for InMemoryDdbBackend {
+    fn upsert(&mut self, record: AdvertRecord) {
+        self.map.insert(record.id.clone(), record);
+    }
+
+    fn delete(&mut self, id: &str) {
+        let _ = self.map.remove(id);
+    }
+
+    fn lookup(&self, id: &str) -> Option<AdvertRecord> {
+        self.map.get(id).cloned()
+    }
 }

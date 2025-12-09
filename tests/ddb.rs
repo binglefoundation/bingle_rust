@@ -2,3 +2,6 @@
 
 #[path = "ddb/advert_record_json.rs"]
 mod advert_record_json;
+
+#[path = "ddb/backend.rs"]
+mod backend;
