@@ -7,6 +7,7 @@ use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
+use crate::turn::turn_handler::TurnHandler;
 use crate::messages::{from_json_str, route, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 use crate::stun::endpoint_finder::StunEndpointFinder;
@@ -55,6 +56,8 @@ pub struct Engine {
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<String>,
+    // TURN handler used for RelayListen and TURN ChannelData processing
+    turn_handler: std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>,
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -85,6 +88,7 @@ impl Engine {
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
+            turn_handler: std::sync::Arc::new(crate::turn::turn_handler::TurnHandlerImpl::new()),
         }
     }
 
@@ -596,6 +600,16 @@ impl Engine {
                     if !p.is_null() {
                         unsafe { (&*p).handle_incoming_network_message(issuer.to_string(), from.to_string(), v.clone()); }
                     }
+                }
+            }
+        }
+
+        // If this is a RelayListen, wire to TURN handler to authorize sender IP
+        if let Ok(s) = std::str::from_utf8(data) {
+            if let Ok(msg) = from_json_str(s) {
+                if let Message::Relay(RelayMessage::Listen(_)) = msg {
+                    let ok = self.turn_handler.handle_listen(from);
+                    log::info!("[Engine::handle_dtls_message] RelayListen from {} -> handle_listen ok={}", from, ok);
                 }
             }
         }

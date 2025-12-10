@@ -1,5 +1,13 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl};
+use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl, TurnRelayHandler};
+
+// Include additional TURN tests in this directory
+#[path = "handle_listen_validation.rs"]
+mod handle_listen_validation;
+
+// Client-side tests
+#[path = "client_impl.rs"]
+mod client_impl;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
@@ -8,24 +16,27 @@ fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     let handler = TurnHandlerImpl::new();
     let peer = addr(5000);
 
-    let ch1 = handler.handle_call(&peer);
+    let ch1 = TurnRelayHandler::handle_call(&handler, &peer, &peer);
     assert!(ch1 >= 0, "channel should be non-negative");
     let ch1u = ch1 as u16;
     assert!(ch1u >= 0x4000 && ch1u <= 0x7FFE, "channel in TURN range: {:#X}", ch1u);
 
-    let ch2 = handler.handle_call(&peer);
-    assert_eq!(ch1, ch2, "channel must be reused for same peer");
+    let ch2 = TurnRelayHandler::handle_call(&handler, &peer, &peer);
+    assert_eq!(ch1, ch2, "channel must be reused for same (source,dest)");
 }
 
 #[test]
 fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     let handler = TurnHandlerImpl::new();
-    let peer = addr(6000);
-    let ch = handler.handle_call(&peer);
+    let src = addr(6001);
+    let dst = addr(6000);
+    // Register listen for IP gating (source must be allowed)
+    assert!(handler.handle_listen(&src));
+    let ch = TurnRelayHandler::handle_call(&handler, &src, &dst);
     assert!(ch >= 0);
 
     let payload = b"abc"; // len 3 -> padding 1 byte
-    let wrapped = handler.send_turn_outgoing(&peer, payload);
+    let wrapped = handler.send_turn_outgoing(&src, &dst, payload);
     assert!(wrapped.is_some(), "expected wrapped message");
     let wrapped = wrapped.unwrap();
 
@@ -44,7 +55,7 @@ fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     let incoming = handler.handle_turn_incoming(&msg);
     assert!(incoming.is_some(), "expected incoming to parse");
     let incoming = incoming.unwrap();
-    assert_eq!(incoming.ipAddress, peer);
+    assert_eq!(incoming.ipAddress, src);
     assert_eq!(incoming.message, payload);
 }
 
