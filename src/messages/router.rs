@@ -24,6 +24,11 @@ pub struct Router {
     last_from: Mutex<Option<SocketAddr>>,
     last_response_tag: Mutex<Option<String>>,
     on_message: Mutex<Option<Arc<crate::api::bingle_api::OnMessageHandler>>>,
+    // DDB/relay context
+    am_relay: std::sync::atomic::AtomicBool,
+    ddb_backend: Mutex<Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>>,
+    // Outbound response produced by handlers during routing (consumed by Engine/DTLS layer)
+    outbound_response: Mutex<Option<serde_json::Value>>,
 }
 
 impl Router {
@@ -35,6 +40,9 @@ impl Router {
             last_from: Mutex::new(None),
             last_response_tag: Mutex::new(None),
             on_message: Mutex::new(None),
+            am_relay: std::sync::atomic::AtomicBool::new(false),
+            ddb_backend: Mutex::new(None),
+            outbound_response: Mutex::new(None),
         }
     }
 
@@ -71,6 +79,16 @@ impl Router {
     pub fn set_on_message(&self, cb: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { if let Ok(mut g) = self.on_message.lock() { *g = cb; } }
     pub fn get_on_message(&self) -> Option<Arc<crate::api::bingle_api::OnMessageHandler>> { match self.on_message.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
+    // DDB/relay context setters/getters
+    pub fn set_am_relay(&self, b: bool) { self.am_relay.store(b, std::sync::atomic::Ordering::SeqCst); }
+    pub fn get_am_relay(&self) -> bool { self.am_relay.load(std::sync::atomic::Ordering::SeqCst) }
+    pub fn set_ddb_backend(&self, backend: Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
+    pub fn get_ddb_backend(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
+
+    // Outbound response helpers
+    pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
+    pub fn take_outbound_response(&self) -> Option<serde_json::Value> { match self.outbound_response.lock() { Ok(mut g) => g.take(), Err(_) => None } }
+
     pub fn route<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str) {
         let api_opt = self.get_bingle_api();
         if api_opt.is_none() {
@@ -101,9 +119,14 @@ impl Router {
                 RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), &from, m),
                 RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), &from, m),
             },
+            Message::Ddb(d) => match d {
+                DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), &from, m),
+                DdbMessage::QueryResolve(m) => handler.on_ddb_query_resolve(api.clone(), &from, m),
+                _ => handler.on_unimplemented(msg),
+            },
             Message::Unknown(v) => handler.on_unknown(api.clone(), v),
-            Message::Ddb(_) => handler.on_unimplemented(msg),
         }
+        // Handlers may set an outbound_response to be sent by DTLS layer; no-op here.
     }
 
     /// Test helper to clear all stored state (used by Engine::clear_api_bindings)
@@ -114,6 +137,8 @@ impl Router {
         self.set_last_from(None);
         self.set_last_response_tag(None);
         self.set_on_message(None);
+        self.set_am_relay(false);
+        self.set_ddb_backend(None);
     }
 }
 

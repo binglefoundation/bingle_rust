@@ -1,5 +1,6 @@
 use crate::api::bingle_api::BingleApi;
 use crate::messages::types::*;
+use crate::ddb::DdbBackend;
 use std::sync::Arc;
 use log::warn;
 
@@ -57,6 +58,10 @@ pub trait MessageHandler {
     fn on_relay_call_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
     fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayKeepAlive) { self.on_unimplemented(&Message::Relay(RelayMessage::KeepAlive(_msg.clone()))); }
 
+    // DDB messages (default to unimplemented unless overridden)
+    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
+    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
+
     // Unknown
     fn on_unknown(&self, _api: Arc<dyn BingleApi>, _raw: &serde_json::Value) {
         log::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
@@ -71,6 +76,44 @@ pub trait MessageHandler {
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
+    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApi>, from: &FromStruct, up: &DdbUpsertResolve) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() { return; }
+            // Validate sender id
+            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+            if up.record.id != up.start_id || up.record.id != sender_id { return; }
+            // Upsert to backend
+            if let Some(backend) = router.get_ddb_backend() {
+                if let Ok(mut b) = backend.lock() { b.upsert(up.record.clone()); }
+            }
+            // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+            let resp = crate::messages::types::Message::Ddb(
+                crate::messages::types::DdbMessage::UpdateResponse(
+                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                )
+            );
+            let json = crate::messages::marshal::to_json_value(&resp);
+            router.set_outbound_response(Some(json));
+        }
+    }
+
+    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, q: &DdbQueryResolve) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() { return; }
+            // Lookup
+            let (found, advert_opt) = if let Some(backend) = router.get_ddb_backend() {
+                if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
+            } else { (false, None) };
+            let resp = crate::messages::types::Message::Ddb(
+                crate::messages::types::DdbMessage::QueryResponse(
+                    crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag: q.response_tag.clone(), text: None, data: None }
+                )
+            );
+            let json = crate::messages::marshal::to_json_value(&resp);
+            router.set_outbound_response(Some(json));
+        }
+    }
+
     fn on_triangle_test1(&self, api: Arc<dyn BingleApi>, from: &FromStruct, msg: &RelayTriangleTest1) {
         // Print options via API for debugging
         api.debug_print_options();
