@@ -17,6 +17,8 @@ pub trait BingleApiInternal: Send + Sync {
     /// delegate to the underlying Engine instance. Implementations may be best-effort
     /// and can ignore unsupported transitions.
     fn set_state(&self, state: crate::engine::EngineState);
+    /// Set the detected NAT type on the engine. Default no-op to keep older tests/mocks compiling.
+    fn set_nat_type(&self, _nat: crate::engine::NatType) { }
 }
 
 /// Convenience type aliases used by the Bingle API.

@@ -29,6 +29,15 @@ pub enum EngineState {
     NATRestricted
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NatType {
+    Unknown = 0,
+    NoConnection = 1,
+    Symmetric = 2,
+    Restricted = 3,
+    FullCone = 4,
+}
+
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
     options: StartOptions,
@@ -50,6 +59,8 @@ pub struct Engine {
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
     nat_restricted: std::sync::atomic::AtomicBool,
+    // Current NAT type classification
+    nat_type: std::sync::atomic::AtomicU8,
     // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
     connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<SocketAddr, ConnectionEntry>>>,
     // Pending responses map and issuer state moved from BingleApiImpl
@@ -88,6 +99,7 @@ impl Engine {
             api_ptr: None,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
+            nat_type: std::sync::atomic::AtomicU8::new(NatType::Unknown as u8),
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
@@ -680,6 +692,21 @@ impl Engine {
     }
     pub fn last_public_addr(&self) -> Option<SocketAddr> { self.last_public_addr }
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) { self.on_stun_consistent(Some(addr)); }
+
+    pub fn set_nat_type(&self, nat: NatType) {
+        use std::sync::atomic::Ordering;
+        self.nat_type.store(nat as u8, Ordering::SeqCst);
+    }
+    pub fn nat_type(&self) -> NatType {
+        use std::sync::atomic::Ordering;
+        match self.nat_type.load(Ordering::SeqCst) {
+            1 => NatType::NoConnection,
+            2 => NatType::Symmetric,
+            3 => NatType::Restricted,
+            4 => NatType::FullCone,
+            _ => NatType::Unknown,
+        }
+    }
 
     /// Internal setter used by BingleApiInternal to update engine state in a thread-safe way.
     /// Currently supports transitioning to EndpointAvailable.

@@ -18,7 +18,7 @@ use rust_comms::AlgoBingle;
 use rust_comms::AlgoOps;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::engine::EngineState;
+use rust_comms::engine::{EngineState, NatType};
 use rust_comms::util::cli_utils::{parse_node_file_with_ids, parse_stun_file};
 
 fn env_var(name: &str) -> Option<String> {
@@ -101,7 +101,26 @@ fn testnet_user_reaches_endpoint_available() {
         }
     };
 
-    // Wait up to 60 seconds for expected state
+    // Derive expected NAT type from environment
+    let expect_nat = match env_var("EXPECT_NAT_TYPE").as_deref() {
+        Some("Unknown") => NatType::Unknown,
+        Some("NoConnection") => NatType::NoConnection,
+        Some("Symmetric") => NatType::Symmetric,
+        Some("Restricted") => NatType::Restricted,
+        Some("FullCone") => NatType::FullCone,
+        Some(other) => panic!("Invalid EXPECT_NAT_TYPE='{}'", other),
+        None => {
+            match env_var("NAT_MODE").as_deref() {
+                Some("Restricted") => NatType::Restricted,
+                Some("Symmetric") => NatType::Symmetric,
+                // Direct and Full both indicate direct reachability
+                Some("Direct") | Some("Full") | None => NatType::FullCone,
+                Some(_) => NatType::FullCone,
+            }
+        }
+    };
+
+    // Wait up to 120 seconds for expected state
     let start = Instant::now();
     let timeout = Duration::from_secs(120); // TODO: make handshakes faster
     loop {
@@ -118,6 +137,18 @@ fn testnet_user_reaches_endpoint_available() {
             );
         }
         std::thread::sleep(Duration::from_millis(200));
+    }
+
+    // Validate NAT type once expected state is reached
+    let got_nat = api.engine_nat_type_for_tests().expect("nat type should be set");
+    match expect_state {
+        EngineState::EndpointAvailable => assert_eq!(got_nat, NatType::FullCone, "EndpointAvailable should imply FullCone"),
+        EngineState::NATRestricted => assert!(matches!(got_nat, NatType::Restricted | NatType::Symmetric), "NATRestricted should be Restricted or Symmetric (got {:?})", got_nat),
+        _ => {}
+    }
+    // If EXPECT_NAT_TYPE was provided, assert exact match
+    if env_var("EXPECT_NAT_TYPE").is_some() {
+        assert_eq!(got_nat, expect_nat, "expected NAT type {:?}, got {:?}", expect_nat, got_nat);
     }
 
     api.stop();

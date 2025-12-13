@@ -95,6 +95,12 @@ impl BingleApiImpl {
         #[allow(unused)] {  }
         s
     }
+    pub fn engine_nat_type_for_tests(&self) -> Option<crate::engine::NatType> {
+        log::info!("[BingleApiImpl::engine_nat_type_for_tests][enter]");
+        let t = self.engine.as_ref().map(|e| e.nat_type());
+        log::info!("[BingleApiImpl::engine_nat_type_for_tests][exit] nat_type={:?}", t);
+        t
+    }
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
         log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
         #[allow(unused)] {  }
@@ -288,6 +294,12 @@ impl BingleApi for BingleApiImpl {
                     let p = self.0.load(Ordering::SeqCst);
                     if p.is_null() { return; }
                     unsafe { (*p).set_state(state); }
+                }
+                fn set_nat_type(&self, nat: crate::engine::NatType) {
+                    use std::sync::atomic::Ordering;
+                    let p = self.0.load(Ordering::SeqCst);
+                    if p.is_null() { return; }
+                    unsafe { (*p).set_nat_type(nat); }
                 }
             }
             let delegator_int = DelegatingInternal(self_ptr_arc.clone());
@@ -544,6 +556,15 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         }
         log::info!("[BingleApiImpl::set_state][exit]");
         #[allow(unused)] {  }
+    }
+    fn set_nat_type(&self, nat: crate::engine::NatType) {
+        log::info!("[BingleApiImpl::set_nat_type][enter] nat_type={:?}", nat);
+        if let Some(e) = &self.engine {
+            e.set_nat_type(nat);
+        } else {
+            warn!("[BingleApiImpl::set_nat_type] engine not initialized");
+        }
+        log::info!("[BingleApiImpl::set_nat_type][exit]");
     }
 }
 

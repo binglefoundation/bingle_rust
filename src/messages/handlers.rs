@@ -228,9 +228,10 @@ impl MessageHandler for DefaultPrintingHandler {
     }
 
     fn on_triangle_test3(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
-        // Use internal API to set engine state to EndpointAvailable.
+        // Use internal API to set engine state to EndpointAvailable and NAT type to FullCone.
         if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
             internal.set_state(crate::engine::EngineState::EndpointAvailable);
+            internal.set_nat_type(crate::engine::NatType::FullCone);
         } else {
             warn!("[handlers::on_triangle_test3] No internal API available; cannot set state");
         }
@@ -238,12 +239,13 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
         log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
-        // Per requirement: if Engine state is not EndpointAvailable, set it to NATRestricted
+        // Per requirement: if Engine state is not EndpointAvailable, set it to NATRestricted and NAT type Restricted
         // We don't have direct state query here; rely on Engine's internal setter semantics.
         if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
             // Only set NATRestricted if we are not already EndpointAvailable.
             // Engine::set_state_internal will ignore NATRestricted if EndpointAvailable flag is set.
             let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
+            internal.set_nat_type(crate::engine::NatType::Restricted);
         } else {
             warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
         }
