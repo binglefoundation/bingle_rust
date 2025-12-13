@@ -56,9 +56,11 @@ pub struct Engine {
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<String>,
     // In-memory DDB backend used by relay nodes (and for tests)
-    ddb_backend: std::sync::Mutex<crate::ddb::InMemoryDdbBackend>,
+    ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend> >,
     // Per-API router instance used to avoid global mutable state
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
+    // DDB client bound to the API instance (created when API handle is set)
+    ddb_client: Option<std::sync::Arc<dyn crate::ddb::DdbClient>>, 
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -89,8 +91,9 @@ impl Engine {
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
-            ddb_backend: std::sync::Mutex::new(crate::ddb::InMemoryDdbBackend::new()),
+            ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
             router: None,
+            ddb_client: None, 
         }
     }
 
@@ -173,7 +176,20 @@ impl Engine {
 
     /// Provide a BingleApi handle to be used by handlers and relay discovery bound to this Engine instance.
     pub fn set_bingle_api_for_handlers(&mut self, api: Arc<dyn BingleApi>) {
-        self.bingle_api_for_handlers = Some(api);
+        self.bingle_api_for_handlers = Some(api.clone());
+        // Initialize a DDB client bound to this API instance when possible (non‑iOS)
+        #[cfg(not(target_os = "ios"))]
+        {
+            let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            if have_app.is_some() {
+                let client = crate::ddb::DdbClientImpl::new(api.clone());
+                let arc: std::sync::Arc<dyn crate::ddb::DdbClient> = std::sync::Arc::new(client);
+                self.ddb_client = Some(arc);
+            } else {
+                // Leave None if no discovery context available
+                self.ddb_client = None;
+            }
+        }
     }
 
     /// Set back-reference to the creating BingleApiImpl.
@@ -254,10 +270,12 @@ impl Engine {
         let pending_responses = self.pending_responses.clone();
         let send_via_bingle = self.send_via_bingle.clone();
         let bingle_api_for_handlers = self.bingle_api_for_handlers.clone();
-        let api_ptr = self.api_ptr.clone();
         let am_relay = self.options.am_relay;
+        let ddb_backend = self.ddb_backend.clone();
 
         // Now obtain a mutable reference to dtls only for installing the new handler
+        // Capture a self pointer for delegating to handle_dtls_message from the DTLS callback.
+        let self_ptr_opt = Some(std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(self as *mut Engine)));
         if let Some(d) = self.dtls.as_mut() {
             let router_arc = self.router.clone();
             d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
@@ -269,6 +287,48 @@ impl Engine {
                         match m.entry(*from) {
                             Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
                             Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+                        }
+                    }
+
+                    // Inline handling for DDB messages to avoid raw self pointer in callback
+                    if let Ok(s) = std::str::from_utf8(data) {
+                        if let Ok(parsed_msg) = crate::messages::marshal::from_json_str(s) {
+                            match parsed_msg {
+                                crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::UpsertResolve(up)) => {
+                                    if am_relay {
+                                        let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+                                        if up.record.id == up.start_id && up.record.id == sender_id {
+                                            if let Ok(mut b) = ddb_backend.lock() { b.upsert(up.record.clone()); }
+                                            let resp = crate::messages::types::Message::Ddb(
+                                                crate::messages::types::DdbMessage::UpdateResponse(
+                                                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                                                )
+                                            );
+                                            let json = crate::messages::marshal::to_json_value(&resp);
+                                            if let Err(e) = server.send(*from, serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec()).as_slice()) {
+                                                log::warn!("[Engine::install_dtls_handler][ddb] DTLS send failed: {}", e);
+                                            }
+                                        }
+                                    }
+                                    return; // consume DDB message
+                                }
+                                crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::QueryResolve(q)) => {
+                                    if am_relay {
+                                        let (found, advert_opt) = if let Ok(b) = ddb_backend.lock() { let rec = b.lookup(&q.id); (rec.is_some(), rec) } else { (false, None) };
+                                        let resp = crate::messages::types::Message::Ddb(
+                                            crate::messages::types::DdbMessage::QueryResponse(
+                                                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag: q.response_tag.clone(), text: None, data: None }
+                                            )
+                                        );
+                                        let json = crate::messages::marshal::to_json_value(&resp);
+                                        if let Err(e) = server.send(*from, serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec()).as_slice()) {
+                                            log::warn!("[Engine::install_dtls_handler][ddb] DTLS send failed: {}", e);
+                                        }
+                                    }
+                                    return; // consume DDB message
+                                }
+                                _ => {}
+                            }
                         }
                     }
 
@@ -313,40 +373,6 @@ impl Engine {
                         }
                     }
 
-                    // Intercept DDB UpsertResolve when acting as relay
-                    if let Ok(s) = std::str::from_utf8(data) {
-                        if let Ok(msg) = crate::messages::marshal::from_json_str(s) {
-                            log::info!("[Engine::install_dtls_handler] parsed message: {} am_relay={} from={} issuer={}", match &msg { crate::messages::types::Message::Ddb(_) => "ddb", crate::messages::types::Message::Relay(_) => "relay", crate::messages::types::Message::PlainText(_) => "plaintext", crate::messages::types::Message::Unknown(_) => "unknown" }, am_relay, from, issuer);
-                            if let crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::UpsertResolve(up)) = msg {
-                                if !am_relay {
-                                    log::info!("[Engine::install_dtls_handler][ddb] ignoring UpsertResolve: not a relay node");
-                                    return;
-                                }
-                                // Validate sender id matches record.id and startId matches record.id
-                                let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-                                if up.record.id != up.start_id || up.record.id != sender_id {
-                                    log::warn!(
-                                        "[Engine::install_dtls_handler][ddb] rejecting UpsertResolve: id mismatch (sender='{}' startId='{}' record.id='{}')",
-                                        sender_id, up.start_id, up.record.id
-                                    );
-                                    return;
-                                }
-                                // Send DdbUpdateResponse back to the sender directly over DTLS to avoid API callback lifetime issues
-                                let resp = crate::messages::types::Message::Ddb(
-                                    crate::messages::types::DdbMessage::UpdateResponse(
-                                        crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
-                                    )
-                                );
-                                let json = crate::messages::marshal::to_json_value(&resp);
-                                let bytes = serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec());
-                                log::info!("[Engine::install_dtls_handler][ddb] sending UpdateResponse directly to {}", from);
-                                if let Err(e) = server.send(*from, &bytes) {
-                                    log::warn!("[Engine::install_dtls_handler][ddb] DTLS send failed: {}", e);
-                                }
-                                return; // handled
-                            }
-                        }
-                    }
 
                     // Forward to API on_message for application-level handling (plaintext, relay pings, etc.) via global router handler
                     if let Ok(s) = std::str::from_utf8(data) {
@@ -729,40 +755,67 @@ impl Engine {
             }
         }
 
-        // Intercept DDB messages for relay processing (UpsertResolve only for now)
+        // Intercept DDB messages for relay processing
         if let Ok(s) = std::str::from_utf8(data) {
             if let Ok(msg) = crate::messages::marshal::from_json_str(s) {
-                if let crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::UpsertResolve(up)) = msg {
-                    // Only relay nodes process DDB messages
-                    if !self.options.am_relay {
-                        log::info!("[Engine::handle_dtls_message][ddb] ignoring UpsertResolve: not a relay node");
-                        return;
-                    }
-                    // Validate sender id matches record.id and startId matches record.id
-                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-                    if up.record.id != up.start_id || up.record.id != sender_id {
-                        log::warn!(
-                            "[Engine::handle_dtls_message][ddb] rejecting UpsertResolve: id mismatch (sender='{}' startId='{}' record.id='{}')",
-                            sender_id, up.start_id, up.record.id
+                match msg {
+                    crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::UpsertResolve(up)) => {
+                        // Only relay nodes process DDB messages
+                        if !self.options.am_relay {
+                            log::info!("[Engine::handle_dtls_message][ddb] ignoring UpsertResolve: not a relay node");
+                            return;
+                        }
+                        // Validate sender id matches record.id and startId matches record.id
+                        let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+                        if up.record.id != up.start_id || up.record.id != sender_id {
+                            log::warn!(
+                                "[Engine::handle_dtls_message][ddb] rejecting UpsertResolve: id mismatch (sender='{}' startId='{}' record.id='{}')",
+                                sender_id, up.start_id, up.record.id
+                            );
+                            return;
+                        }
+                        // Upsert into in-memory backend
+                        if let Ok(mut b) = self.ddb_backend.lock() {
+                            b.upsert(up.record.clone());
+                        } else {
+                            log::warn!("[Engine::handle_dtls_message][ddb] backend lock poisoned; skipping upsert");
+                        }
+                        // Send DdbUpdateResponse back to the sender directly over DTLS (avoid API callbacks)
+                        let resp = crate::messages::types::Message::Ddb(
+                            crate::messages::types::DdbMessage::UpdateResponse(
+                                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                            )
                         );
-                        return;
+                        let json = crate::messages::marshal::to_json_value(&resp);
+                        let bytes = serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec());
+                        if let Some(d) = &self.dtls { if let Err(e) = d.send(*from, &bytes) { log::warn!("[Engine::handle_dtls_message][ddb] DTLS send failed: {}", e); } }
+                        return; // handled
                     }
-                    // Upsert into in-memory backend
-                    if let Ok(mut b) = self.ddb_backend.lock() {
-                        b.upsert(up.record.clone());
-                    } else {
-                        log::warn!("[Engine::handle_dtls_message][ddb] backend lock poisoned; skipping upsert");
+                    crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::QueryResolve(q)) => {
+                        // Only relay nodes process DDB messages
+                        if !self.options.am_relay {
+                            log::info!("[Engine::handle_dtls_message][ddb] ignoring QueryResolve: not a relay node");
+                            return;
+                        }
+                        // Lookup the record by id
+                        let (found, advert_opt) = if let Ok(b) = self.ddb_backend.lock() {
+                            let rec = b.lookup(&q.id);
+                            (rec.is_some(), rec)
+                        } else {
+                            log::warn!("[Engine::handle_dtls_message][ddb] backend lock poisoned; responding found=false");
+                            (false, None)
+                        };
+                        let resp = crate::messages::types::Message::Ddb(
+                            crate::messages::types::DdbMessage::QueryResponse(
+                                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag: q.response_tag.clone(), text: None, data: None }
+                            )
+                        );
+                        let json = crate::messages::marshal::to_json_value(&resp);
+                        let bytes = serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec());
+                        if let Some(d) = &self.dtls { if let Err(e) = d.send(*from, &bytes) { log::warn!("[Engine::handle_dtls_message][ddb] DTLS send failed: {}", e); } }
+                        return; // handled
                     }
-                    // Send DdbUpdateResponse back to the sender directly over DTLS (avoid API callbacks)
-                    let resp = crate::messages::types::Message::Ddb(
-                        crate::messages::types::DdbMessage::UpdateResponse(
-                            crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
-                        )
-                    );
-                    let json = crate::messages::marshal::to_json_value(&resp);
-                    let bytes = serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec());
-                    if let Some(d) = &self.dtls { if let Err(e) = d.send(*from, &bytes) { log::warn!("[Engine::handle_dtls_message][ddb] DTLS send failed: {}", e); } }
-                    return; // handled
+                    _ => {}
                 }
             }
         }

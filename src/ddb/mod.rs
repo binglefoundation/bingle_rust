@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod client;
+
+pub use client::{DdbClient, DdbClientImpl};
+
 /// InetSocketAddress as defined in BINGLE_SPEC.md
 /// Hostname/IP and UDP port number.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
