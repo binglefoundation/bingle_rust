@@ -70,8 +70,9 @@ fn bingle_api_relay_check_two_nodes() {
         })));
     }
 
-    // 2) Start client node on port 12346 with PASSPHRASE_SPEND and id ADDRESS_SPEND
-    let client_addr = SocketAddr::from(([127, 0, 0, 1], 12346));
+    // 2) Start client node on an unused port with PASSPHRASE_SPEND and id ADDRESS_SPEND
+    let client_port = test_util::find_unused_loopback_port();
+    let client_addr = SocketAddr::from(([127, 0, 0, 1], client_port));
     let mut client = BingleApiImpl::new();
     let client_opts = StartOptions {
         handle: Handle::from("client"),

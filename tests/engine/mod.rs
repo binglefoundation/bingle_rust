@@ -11,3 +11,6 @@ mod engine_bingle_dtls_basic;
 
 #[path = "engine_connections.rs"]
 mod engine_connections;
+
+#[path = "ddb_upsert.rs"]
+mod ddb_upsert;

@@ -30,6 +30,8 @@ pub struct BingleApiImpl {
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1)
     engine: Option<Engine>,
+    // Per-API router to avoid global cross-talk
+    router: Option<std::sync::Arc<crate::messages::router::Router>>,
 }
 
 
@@ -41,6 +43,7 @@ impl Default for BingleApiImpl {
             started_options: StartOptions::default(),
             shared_on_message: Arc::new(Mutex::new(None)),
             engine: None,
+            router: None,
         }
     }
 }
@@ -165,6 +168,13 @@ impl BingleApiImpl {
 }
 
 
+impl Drop for BingleApiImpl {
+    fn drop(&mut self) {
+        // Ensure background threads and network mux are stopped to avoid use-after-free across tests
+        <BingleApiImpl as crate::api::bingle_api::BingleApi>::stop(self);
+    }
+}
+
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
         log::info!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
@@ -257,24 +267,20 @@ impl BingleApi for BingleApiImpl {
         // Shared atomic pointer to this API instance for thread-safe callbacks
         let self_ptr_arc = Arc::new(std::sync::atomic::AtomicPtr::new(self as *mut BingleApiImpl));
 
-        // Expose a sending closure to message handlers via router so they can send replies
-        {
+        // Create a per-API Router instance and bind delegating API, sender, and internal controls
+        let router_arc: std::sync::Arc<crate::messages::router::Router> = {
             let ptr = self_ptr_arc.clone();
+            let delegator_api: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(DelegatingBingleApi(self_ptr_arc.clone()));
+            let router = std::sync::Arc::new(crate::messages::router::Router::new(delegator_api.clone()));
+            // Sender closure routes through this API instance
             let sender_cb: Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync> = Arc::new(move |nsk, uid, msg| {
                 use std::sync::atomic::Ordering;
                 let p = ptr.load(Ordering::SeqCst);
                 if p.is_null() { return false; }
                 unsafe { (*p).send_message_to_network(nsk, uid, msg, None) }
             });
-            crate::messages::router::set_sender(Some(sender_cb));
-        }
-        // Expose a BingleApi handle to handlers via router so components like RelayFinder can use a real API
-        {
-            let delegator = DelegatingBingleApi(self_ptr_arc.clone());
-            crate::messages::router::set_bingle_api(Some(std::sync::Arc::new(delegator)));
-        }
-        // Expose an internal API handle for engine control (state changes) via router
-        {
+            router.set_sender(Some(sender_cb));
+            // Bind internal control delegator for engine state updates
             struct DelegatingInternal(std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>);
             impl crate::api::bingle_api::BingleApiInternal for DelegatingInternal {
                 fn set_state(&self, state: EngineState) {
@@ -285,8 +291,12 @@ impl BingleApi for BingleApiImpl {
                 }
             }
             let delegator_int = DelegatingInternal(self_ptr_arc.clone());
-            crate::messages::router::set_bingle_api_internal(Some(std::sync::Arc::new(delegator_int)));
-        }
+            router.set_bingle_api_internal(Some(std::sync::Arc::new(delegator_int)));
+            router
+        };
+        self.router = Some(router_arc.clone());
+        // If an on_message handler was set prior to start(), propagate it to the newly created router now
+        if let Some(h) = self.on_message.clone() { router_arc.set_on_message(Some(h)); }
 
         // Install Engine callback to send via Bingle protocol capturing this API instance pointer (no globals)
         if let Some(eng) = self.engine.as_mut() {
@@ -303,6 +313,8 @@ impl BingleApi for BingleApiImpl {
             eng.set_bingle_api_for_handlers(delegator);
             // Provide back-reference so Engine can forward inbound app messages
             eng.set_api_ptr(self_ptr_arc.clone());
+            // Provide per-API router to the Engine for routing context
+            eng.set_router(router_arc.clone());
             eng.start(options.clone())?;
         }
 
@@ -487,9 +499,10 @@ impl BingleApi for BingleApiImpl {
             log::info!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some());
             #[allow(unused)] {  }
 
-            // Revert: store the handler directly without additional debug wrapping
+            // Store the handler and register it with the per-API router and global fallback
             self.on_message = handler.clone();
-            if let Ok(mut g) = self.shared_on_message.lock() { *g = handler; }
+            if let Ok(mut g) = self.shared_on_message.lock() { *g = handler.clone(); }
+            if let Some(r) = &self.router { r.set_on_message(handler.clone()); }
 
             log::info!("[BingleApiImpl::set_on_message][exit]");
             #[allow(unused)] {  }

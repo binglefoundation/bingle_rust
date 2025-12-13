@@ -1,9 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use rust_comms::messages::{route, Message, RelayMessage};
+use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::RelayTriangleTest1Response;
-use rust_comms::messages::router::set_bingle_api;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler { hit: Arc<Mutex<bool>> }
@@ -36,10 +35,12 @@ impl BingleApi for MockApi {
 fn router_dispatches_triangle_test1_response() {
     let hit = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(hit.clone());
-    set_bingle_api(Some(Arc::new(MockApi)));
 
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
-    route(&handler, &msg, "SENDERID");
+    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &msg, "SENDERID");
+    });
 
     assert_eq!(*hit.lock().unwrap(), true);
 }

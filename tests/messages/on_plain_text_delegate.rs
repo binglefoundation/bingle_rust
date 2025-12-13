@@ -3,7 +3,6 @@
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::messages::router::{route, set_bingle_api};
 use rust_comms::messages::types::{Message, PlainTextMessage};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
@@ -44,15 +43,17 @@ fn on_plain_text_calls_handler_implementation() {
     static CALLED: AtomicBool = AtomicBool::new(false);
     let received = Arc::new(Mutex::new(None::<serde_json::Value>));
 
-    // Provide a minimal API to the router so it can pass into handler
-    set_bingle_api(Some(Arc::new(MockApi)));
+    // Provide a per-test Router with our MockApi and run the route within its context
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
 
     // Build a PlainText message and route it through a custom handler implementation
     let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };
     let msg = Message::PlainText(pt.clone());
 
     let handler = CapturingHandler { called: &CALLED, sink: received.clone() };
-    route(&handler, &msg, "from-handle");
+    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &msg, "from-handle");
+    });
 
     assert!(CALLED.load(Ordering::SeqCst), "handler was not called by on_plain_text");
 

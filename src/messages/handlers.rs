@@ -28,7 +28,7 @@ pub trait MessageHandler {
     fn on_relay_listen(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayListen) { self.on_unimplemented(&Message::Relay(RelayMessage::Listen(_msg.clone()))); }
     fn on_relay_check(&self, _api: Arc<dyn BingleApi>, from: &FromStruct, _msg: &RelayCheck) {
         // Send CheckResponse available=true back to the last sender address using the real Bingle API sender
-        let sender_opt = crate::messages::router::get_sender();
+        let sender_opt = crate::messages::router::Router::current().and_then(|r| r.get_sender());
         if sender_opt.is_none() { warn!("[handlers::on_relay_check] No sender available"); return; }
         let sender = sender_opt.unwrap();
         // Compose JSON manually to include responseTag if present
@@ -36,7 +36,7 @@ pub trait MessageHandler {
         json_obj.insert("app".to_string(), serde_json::Value::Null);
         json_obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
         json_obj.insert("available".to_string(), serde_json::Value::Bool(true));
-        if let Some(tag) = crate::messages::router::get_last_response_tag() {
+        if let Some(tag) = crate::messages::router::Router::current().and_then(|r| r.get_last_response_tag()) {
             json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }
         let json_val = serde_json::Value::Object(json_obj);
@@ -91,12 +91,7 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         };
         std::thread::spawn(move || {
-            // Obtain sender closure injected via router
-            let sender_opt = crate::messages::router::get_sender();
-            if sender_opt.is_none() { warn!("[handlers::on_triangle_test1] No sender available"); return; }
-            let _sender = sender_opt.unwrap();
-
-            // Construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
+            // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use std::time::Duration;
             use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
             let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
@@ -191,7 +186,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_triangle_test3(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
         // Use internal API to set engine state to EndpointAvailable.
-        if let Some(internal) = crate::messages::router::get_bingle_api_internal() {
+        if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
             internal.set_state(crate::engine::EngineState::EndpointAvailable);
         } else {
             warn!("[handlers::on_triangle_test3] No internal API available; cannot set state");
@@ -202,7 +197,7 @@ impl MessageHandler for DefaultPrintingHandler {
         log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
         // Per requirement: if Engine state is not EndpointAvailable, set it to NATRestricted
         // We don't have direct state query here; rely on Engine's internal setter semantics.
-        if let Some(internal) = crate::messages::router::get_bingle_api_internal() {
+        if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
             // Only set NATRestricted if we are not already EndpointAvailable.
             // Engine::set_state_internal will ignore NATRestricted if EndpointAvailable flag is set.
             let _ = internal.set_state(crate::engine::EngineState::NATRestricted);

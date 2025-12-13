@@ -120,10 +120,31 @@ fn integration_decode_keep_alive() {
 
 #[test]
 fn integration_unimplemented_handler_prints_without_panic() {
+    // Minimal MockApi so Router can pass an API into the handler
+    struct MockApi;
+    impl rust_comms::api::bingle_api::BingleApi for MockApi {
+        fn get_my_id(&self) -> Option<String> { None }
+        fn get_app_id(&self) -> Option<u64> { None }
+        fn start(&mut self, _options: rust_comms::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }
+        fn stop(&mut self) {}
+        fn network_change(&mut self) {}
+        fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+        fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+        fn send_message_to_network(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkSourceKey, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+        fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+        fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+        fn send_message_to_network_with_response(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkSourceKey, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+        fn set_on_message(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
+        fn set_on_connect(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
+    }
+
     // Marshal to JSON and route using DefaultPrintingHandler; ensure no panic
     let msg = Message::Relay(RelayMessage::Check(RelayCheck { app: None }));
     let _json = to_json_string(&msg);
     let handler = DefaultPrintingHandler;
     // Should simply print unimplemented message; we just ensure it runs
-    route(&handler, &msg);
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(std::sync::Arc::new(MockApi)));
+    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &msg, "FROMID");
+    });
 }

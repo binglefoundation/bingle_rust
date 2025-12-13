@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use crate::ddb::DdbBackend;
 
 use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
-use crate::messages::{from_json_str, route, DefaultPrintingHandler};
+use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
@@ -54,6 +55,10 @@ pub struct Engine {
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<String>,
+    // In-memory DDB backend used by relay nodes (and for tests)
+    ddb_backend: std::sync::Mutex<crate::ddb::InMemoryDdbBackend>,
+    // Per-API router instance used to avoid global mutable state
+    router: Option<std::sync::Arc<crate::messages::router::Router>>,
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -84,12 +89,19 @@ impl Engine {
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
+            ddb_backend: std::sync::Mutex::new(crate::ddb::InMemoryDdbBackend::new()),
+            router: None,
         }
     }
 
     /// Provide a pre-configured DTLS instance (with server certificate material) from the API layer.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
         self.dtls = Some(dtls);
+    }
+
+    /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
+    pub fn set_router(&mut self, router: std::sync::Arc<crate::messages::router::Router>) {
+        self.router = Some(router);
     }
 
     /// Access the configured DTLS instance, if any (read-only).
@@ -169,6 +181,20 @@ impl Engine {
         self.api_ptr = Some(ptr);
     }
 
+    /// Clear bindings to API instance and global router callbacks to avoid dangling pointers between tests.
+    pub fn clear_api_bindings(&mut self) {
+        use std::sync::atomic::Ordering;
+        // Null out back-reference pointer if present
+        if let Some(ptr) = &self.api_ptr {
+            ptr.store(std::ptr::null_mut(), Ordering::SeqCst);
+        }
+        // Clear per-API router instance only (no global fallbacks)
+        if let Some(r) = &self.router { r.clear_for_tests(); }
+        // Also drop local references
+        self.send_via_bingle = None;
+        self.bingle_api_for_handlers = None;
+    }
+
     /// Register a connection in the engine's per-connection registry.
     fn register_connection(&mut self, addr: SocketAddr) {
         if let Ok(mut m) = self.connections.lock() {
@@ -190,21 +216,23 @@ impl Engine {
         self.connections.lock().map(|m| m.len()).unwrap_or(0)
     }
 
-    /// Send bytes to a peer and track the connection's last_seen. Avoid per-connection DTLS adapters to prevent dangling pointers.
+    /// Send bytes to a peer and track the connection's last_seen.
+    /// If this is the first interaction with the peer, create a connection entry on successful send.
     pub fn send_to_peer(&self, addr: SocketAddr, data: &[u8]) -> Result<(), String> {
-        // Update or insert connection entry
-        {
-            let mut map = self.connections.lock().map_err(|_| "connections lock poisoned".to_string())?;
-            if let Some(entry) = map.get_mut(&addr) {
-                entry.last_seen = Instant::now();
-            } else {
-                map.insert(addr, ConnectionEntry { last_seen: Instant::now() });
-            }
-        }
+        // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
+        // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
+        // after a successful send.
         let dtls = self.dtls.as_ref().ok_or_else(|| "DTLS instance not provided".to_string())?;
         let res = dtls.send(addr, data);
         if res.is_ok() {
-            if let Ok(mut m) = self.connections.lock() { if let Some(e) = m.get_mut(&addr) { e.last_seen = Instant::now(); } }
+            // Ensure a connection entry exists after a successful send (insert if missing)
+            if let Ok(mut m) = self.connections.lock() {
+                use std::collections::hash_map::Entry;
+                match m.entry(addr) {
+                    Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
+                    Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+                }
+            }
         }
         res
     }
@@ -220,34 +248,141 @@ impl Engine {
                 .ok_or_else(|| "DTLS instance not provided".to_string())?;
             dref.get_handle_message()
         };
-        // Prepare a raw pointer to this Engine for use inside the handler closure
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+
+        // Capture safe, shareable state for the handler closure (avoid raw self pointers)
+        let connections = self.connections.clone();
+        let pending_responses = self.pending_responses.clone();
+        let send_via_bingle = self.send_via_bingle.clone();
+        let bingle_api_for_handlers = self.bingle_api_for_handlers.clone();
+        let api_ptr = self.api_ptr.clone();
+        let am_relay = self.options.am_relay;
+
         // Now obtain a mutable reference to dtls only for installing the new handler
         if let Some(d) = self.dtls.as_mut() {
+            let router_arc = self.router.clone();
             d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
-                use std::sync::atomic::Ordering;
-                // Register/refresh connection for this peer on any inbound data and refresh message sender binding
-                let p = self_ptr.load(Ordering::SeqCst);
-                if !p.is_null() {
-                    unsafe {
-                        let eng = &mut *p;
-                        eng.register_connection(*from);
-                        // Bind per-message sender so handlers send via the correct API/engine instance
-                        if let Some(cb) = &eng.send_via_bingle {
-                            crate::messages::router::set_sender(Some(cb.clone()));
+                log::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
+                let work = || {
+                    // 1) Track connection last_seen using captured connections map
+                    if let Ok(mut m) = connections.lock() {
+                        use std::collections::hash_map::Entry;
+                        match m.entry(*from) {
+                            Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
+                            Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
                         }
-                        // Bind the per-engine BingleApi to the router for this message context
-                        if let Some(api) = &eng.bingle_api_for_handlers {
-                            crate::messages::router::set_bingle_api(Some(api.clone()));
-                        }
-                        // Route to engine default handler
-                        eng.handle_dtls_message(server, from, issuer, data);
                     }
-                }
-                // Then delegate to any previously-registered handler from API
-                if let Some(h) = &existing {
-                    h(server, from, issuer, data);
-                }
+
+                    // 2) Provide per-message sender and API bindings to router
+                    if let Some(cb) = &send_via_bingle {
+                        if let Some(r) = &router_arc { r.set_sender(Some(cb.clone())); }
+                    }
+                    if let Some(api) = &bingle_api_for_handlers {
+                        if let Some(r) = &router_arc { r.set_bingle_api(Some(api.clone())); }
+                    }
+
+                    // 3) Engine routing logic (inline to avoid &self)
+                    // Record last sender for reply helpers
+                    if let Some(r) = &router_arc { r.set_last_from(Some(*from)); }
+
+                    // Try JSON parse to extract responseTag and fulfill waiters
+                    if let Ok(s) = std::str::from_utf8(data) {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                            // Expose last responseTag (if this is a request). Handlers may echo it back.
+                            if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
+                                if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
+                            } else {
+                                if let Some(r) = &router_arc { r.set_last_response_tag(None); }
+                            }
+                            // If this is a response, fulfill any waiter registered with Engine (supports both keys)
+                            let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
+                                .or_else(|| v.get("tag").and_then(|vv| vv.as_str()));
+                            if let Some(tag_str) = tag_str_opt {
+                                if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
+                                    if let Ok(map) = pending_responses.lock() {
+                                        if let Some(wait) = map.get(&tag_uuid) {
+                                            if let Ok(mut g) = wait.0.lock() {
+                                                g.responded = true;
+                                                g.response = Some(v.clone());
+                                                wait.1.notify_all();
+                                                return; // consumed by waiter; do not forward
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Intercept DDB UpsertResolve when acting as relay
+                    if let Ok(s) = std::str::from_utf8(data) {
+                        if let Ok(msg) = crate::messages::marshal::from_json_str(s) {
+                            log::info!("[Engine::install_dtls_handler] parsed message: {} am_relay={} from={} issuer={}", match &msg { crate::messages::types::Message::Ddb(_) => "ddb", crate::messages::types::Message::Relay(_) => "relay", crate::messages::types::Message::PlainText(_) => "plaintext", crate::messages::types::Message::Unknown(_) => "unknown" }, am_relay, from, issuer);
+                            if let crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::UpsertResolve(up)) = msg {
+                                if !am_relay {
+                                    log::info!("[Engine::install_dtls_handler][ddb] ignoring UpsertResolve: not a relay node");
+                                    return;
+                                }
+                                // Validate sender id matches record.id and startId matches record.id
+                                let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+                                if up.record.id != up.start_id || up.record.id != sender_id {
+                                    log::warn!(
+                                        "[Engine::install_dtls_handler][ddb] rejecting UpsertResolve: id mismatch (sender='{}' startId='{}' record.id='{}')",
+                                        sender_id, up.start_id, up.record.id
+                                    );
+                                    return;
+                                }
+                                // Send DdbUpdateResponse back to the sender directly over DTLS to avoid API callback lifetime issues
+                                let resp = crate::messages::types::Message::Ddb(
+                                    crate::messages::types::DdbMessage::UpdateResponse(
+                                        crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                                    )
+                                );
+                                let json = crate::messages::marshal::to_json_value(&resp);
+                                let bytes = serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec());
+                                log::info!("[Engine::install_dtls_handler][ddb] sending UpdateResponse directly to {}", from);
+                                if let Err(e) = server.send(*from, &bytes) {
+                                    log::warn!("[Engine::install_dtls_handler][ddb] DTLS send failed: {}", e);
+                                }
+                                return; // handled
+                            }
+                        }
+                    }
+
+                    // Forward to API on_message for application-level handling (plaintext, relay pings, etc.) via global router handler
+                    if let Ok(s) = std::str::from_utf8(data) {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                            if let Some(r) = &router_arc {
+                                if let Some(cb) = r.get_on_message() {
+                                    cb(issuer.to_string(), from.to_string(), v.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    // Route through the message framework for internal handlers (triangle tests etc.)
+                    let handler = DefaultPrintingHandler;
+                    match std::str::from_utf8(data) {
+                        Ok(s) => match from_json_str(s) {
+                            Ok(msg) => {
+                                if let Some(r) = &router_arc { r.route(&handler, &msg, issuer); }
+                            }
+                            Err(_) => {
+                                // Not valid JSON per our schema; treat as plaintext with raw bytes
+                                handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
+                            }
+                        },
+                        Err(_) => {
+                            handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
+                        }
+                    }
+
+                    // Then delegate to any previously-registered handler from API
+                    if let Some(h) = &existing {
+                        h(server, from, issuer, data);
+                    }
+                };
+
+                if let Some(r) = &router_arc { crate::messages::router::Router::with_current_router(r.clone(), || work()); } else { work(); }
             })));
             Ok(())
         } else {
@@ -376,7 +511,7 @@ impl Engine {
         if let Some(addr) = public_addr {
             let _a2 = addr.clone();
             // Use the real BingleApi provided via router
-            let api_opt = self.bingle_api_for_handlers.clone().or_else(|| crate::messages::router::get_bingle_api());
+            let api_opt = self.bingle_api_for_handlers.clone();
             if api_opt.is_none() { panic!("[Engine] No BingleApi available for relay check"); }
 
             // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
@@ -499,6 +634,8 @@ impl Engine {
 
     /// Stop the engine and background tasks if started.
     pub fn stop(&mut self) {
+        // First, clear any API pointers and global router callbacks to avoid dangling references across tests
+        self.clear_api_bindings();
         if let Some(dtls) = &mut self.dtls {
             dtls.stop().expect("DTLS stop failed in Engine::stop");
         }
@@ -554,6 +691,7 @@ impl Engine {
 
     /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.
     fn handle_dtls_message(&self, _server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {
+        let router_arc = self.router.clone();
         // Debug: log inbound DTLS application message (best-effort UTF-8 preview)
         let preview = match std::str::from_utf8(data) {
             Ok(s) => {
@@ -566,16 +704,16 @@ impl Engine {
         #[allow(unused)] {  }
 
         // Record last sender address for handlers that need to reply directly
-        crate::messages::router::set_last_from(Some(*from));
+        if let Some(r) = &router_arc { r.set_last_from(Some(*from)); }
 
         // Try to parse as JSON first to handle tagged responses and set router hints
         if let Ok(s) = std::str::from_utf8(data) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
                 // Expose last responseTag (if this is a request). Handlers may echo it back.
                 if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
-                    crate::messages::router::set_last_response_tag(Some(tag.to_string()));
+                    if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
                 } else {
-                    crate::messages::router::set_last_response_tag(None);
+                    if let Some(r) = &router_arc { r.set_last_response_tag(None); }
                 }
                 // If this is a response, fulfill any waiter registered with Engine (supports both keys)
                 let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
@@ -588,7 +726,50 @@ impl Engine {
                         }
                     }
                 }
-                // Not a tagged response we were waiting for: forward to API on_message if available
+            }
+        }
+
+        // Intercept DDB messages for relay processing (UpsertResolve only for now)
+        if let Ok(s) = std::str::from_utf8(data) {
+            if let Ok(msg) = crate::messages::marshal::from_json_str(s) {
+                if let crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::UpsertResolve(up)) = msg {
+                    // Only relay nodes process DDB messages
+                    if !self.options.am_relay {
+                        log::info!("[Engine::handle_dtls_message][ddb] ignoring UpsertResolve: not a relay node");
+                        return;
+                    }
+                    // Validate sender id matches record.id and startId matches record.id
+                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+                    if up.record.id != up.start_id || up.record.id != sender_id {
+                        log::warn!(
+                            "[Engine::handle_dtls_message][ddb] rejecting UpsertResolve: id mismatch (sender='{}' startId='{}' record.id='{}')",
+                            sender_id, up.start_id, up.record.id
+                        );
+                        return;
+                    }
+                    // Upsert into in-memory backend
+                    if let Ok(mut b) = self.ddb_backend.lock() {
+                        b.upsert(up.record.clone());
+                    } else {
+                        log::warn!("[Engine::handle_dtls_message][ddb] backend lock poisoned; skipping upsert");
+                    }
+                    // Send DdbUpdateResponse back to the sender directly over DTLS (avoid API callbacks)
+                    let resp = crate::messages::types::Message::Ddb(
+                        crate::messages::types::DdbMessage::UpdateResponse(
+                            crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                        )
+                    );
+                    let json = crate::messages::marshal::to_json_value(&resp);
+                    let bytes = serde_json::to_vec(&json).unwrap_or_else(|_| b"{}".to_vec());
+                    if let Some(d) = &self.dtls { if let Err(e) = d.send(*from, &bytes) { log::warn!("[Engine::handle_dtls_message][ddb] DTLS send failed: {}", e); } }
+                    return; // handled
+                }
+            }
+        }
+
+        // Forward to API on_message for application-level handling (plaintext, relay pings, etc.)
+        if let Ok(s) = std::str::from_utf8(data) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
                 if let Some(ptr) = &self.api_ptr {
                     use std::sync::atomic::Ordering;
                     let p = ptr.load(Ordering::SeqCst);
@@ -603,7 +784,13 @@ impl Engine {
         let handler = DefaultPrintingHandler;
         match std::str::from_utf8(data) {
             Ok(s) => match from_json_str(s) {
-                Ok(msg) => route(&handler, &msg, issuer),
+                Ok(msg) => {
+                    if let Some(r) = &router_arc {
+                        crate::messages::router::Router::with_current_router(r.clone(), || {
+                            r.route(&handler, &msg, issuer);
+                        });
+                    }
+                },
                 Err(_) => {
                     // Not valid JSON per our schema; treat as plaintext with raw bytes
                     handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
