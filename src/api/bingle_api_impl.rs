@@ -117,6 +117,20 @@ impl BingleApiImpl {
         #[allow(unused)] {  }
         a
     }
+    pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkSourceKey, String> {
+        log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);
+        if let Some(e) = &self.engine {
+            if let Some(cli) = e.ddb_client() {
+                let res = cli.lookup(id);
+                log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
+                res
+            } else {
+                Err("ddb client not available".to_string())
+            }
+        } else {
+            Err("engine not initialized".to_string())
+        }
+    }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
         #[allow(unused)] {  }
@@ -300,6 +314,18 @@ impl BingleApi for BingleApiImpl {
                     let p = self.0.load(Ordering::SeqCst);
                     if p.is_null() { return; }
                     unsafe { (*p).set_nat_type(nat); }
+                }
+                fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
+                    use std::sync::atomic::Ordering;
+                    let p = self.0.load(Ordering::SeqCst);
+                    if p.is_null() { return None; }
+                    unsafe { crate::api::bingle_api::BingleApiInternal::get_last_public_addr(&*p) }
+                }
+                fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
+                    use std::sync::atomic::Ordering;
+                    let p = self.0.load(Ordering::SeqCst);
+                    if p.is_null() { return Err("null api".to_string()); }
+                    unsafe { crate::api::bingle_api::BingleApiInternal::ddb_register_ip(&*p, endpoint) }
                 }
             }
             let delegator_int = DelegatingInternal(self_ptr_arc.clone());
@@ -565,6 +591,20 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             warn!("[BingleApiImpl::set_nat_type] engine not initialized");
         }
         log::info!("[BingleApiImpl::set_nat_type][exit]");
+    }
+    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
+        self.engine.as_ref().and_then(|e| e.last_public_addr())
+    }
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
+        if let Some(e) = &self.engine {
+            if let Some(cli) = e.ddb_client() {
+                cli.register_ip(endpoint)
+            } else {
+                Err("ddb client not available".to_string())
+            }
+        } else {
+            Err("engine not initialized".to_string())
+        }
     }
 }
 

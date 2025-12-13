@@ -120,35 +120,41 @@ fn testnet_user_reaches_endpoint_available() {
         }
     };
 
-    // Wait up to 120 seconds for expected state
+    // Wait up to 120 seconds for final state: Registered OR NATRestricted
     let start = Instant::now();
     let timeout = Duration::from_secs(120); // TODO: make handshakes faster
-    loop {
-        match (expect_state, api.engine_state_for_tests()) {
-            (EngineState::EndpointAvailable, Some(EngineState::EndpointAvailable)) => break,
-            (EngineState::NATRestricted, Some(EngineState::NATRestricted)) => break,
-            _ => {}
+    let final_state = loop {
+        if let Some(st) = api.engine_state_for_tests() {
+            if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
         }
         if start.elapsed() > timeout {
             panic!(
-                "Timed out waiting for {:?}; last state: {:?}",
-                expect_state,
+                "Timed out waiting for Registered or NATRestricted; last state: {:?}",
                 api.engine_state_for_tests()
             );
         }
         std::thread::sleep(Duration::from_millis(200));
-    }
+    };
 
-    // Validate NAT type once expected state is reached
+    // Validate NAT type once final state is reached
     let got_nat = api.engine_nat_type_for_tests().expect("nat type should be set");
-    match expect_state {
-        EngineState::EndpointAvailable => assert_eq!(got_nat, NatType::FullCone, "EndpointAvailable should imply FullCone"),
+    match final_state {
+        EngineState::Registered => assert_eq!(got_nat, NatType::FullCone, "Registered implies we reached EndpointAvailable with FullCone NAT"),
         EngineState::NATRestricted => assert!(matches!(got_nat, NatType::Restricted | NatType::Symmetric), "NATRestricted should be Restricted or Symmetric (got {:?})", got_nat),
         _ => {}
     }
     // If EXPECT_NAT_TYPE was provided, assert exact match
     if env_var("EXPECT_NAT_TYPE").is_some() {
         assert_eq!(got_nat, expect_nat, "expected NAT type {:?}, got {:?}", expect_nat, got_nat);
+    }
+
+    // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
+    if final_state == EngineState::Registered {
+        let my_id = api.get_my_id().expect("api.get_my_id Some");
+        let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
+        let looked = nsk.inet_socket_address.expect("lookup should return a direct endpoint");
+        let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
+        assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
     }
 
     api.stop();

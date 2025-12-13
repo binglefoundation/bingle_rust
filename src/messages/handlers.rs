@@ -232,6 +232,24 @@ impl MessageHandler for DefaultPrintingHandler {
         if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
             internal.set_state(crate::engine::EngineState::EndpointAvailable);
             internal.set_nat_type(crate::engine::NatType::FullCone);
+            // After setting NAT type, start a background thread to register our discovered public endpoint in DDB.
+            let internal_clone = internal.clone();
+            std::thread::spawn(move || {
+                // Obtain the discovered public address (including port)
+                if let Some(addr) = internal_clone.get_last_public_addr() {
+                    match internal_clone.ddb_register_ip(addr) {
+                        Ok(()) => {
+                            // On success, mark engine state as Registered
+                            internal_clone.set_state(crate::engine::EngineState::Registered);
+                        }
+                        Err(e) => {
+                            log::warn!("[handlers::on_triangle_test3] ddb_register_ip failed: {}", e);
+                        }
+                    }
+                } else {
+                    log::warn!("[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register");
+                }
+            });
         } else {
             warn!("[handlers::on_triangle_test3] No internal API available; cannot set state");
         }

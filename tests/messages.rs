@@ -27,6 +27,9 @@ mod relay_ping_handlers;
 #[path = "messages/triangle_test1_response_sets_state.rs"]
 mod triangle_test1_response_sets_state;
 
+#[path = "messages/triangle_test3_registers.rs"]
+mod triangle_test3_registers;
+
 #[path = "messages/ddb_messages_json.rs"]
 mod ddb_messages_json;
 

@@ -19,6 +19,10 @@ pub trait BingleApiInternal: Send + Sync {
     fn set_state(&self, state: crate::engine::EngineState);
     /// Set the detected NAT type on the engine. Default no-op to keep older tests/mocks compiling.
     fn set_nat_type(&self, _nat: crate::engine::NatType) { }
+    /// Retrieve the last discovered public address (IP:port) if available. Default None.
+    fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
+    /// Register an endpoint IP:port via the engine's DDB client. Default: not implemented.
+    fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
 }
 
 /// Convenience type aliases used by the Bingle API.

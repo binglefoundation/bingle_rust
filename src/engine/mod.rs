@@ -26,6 +26,7 @@ pub enum EngineState {
     StunIdentify,
     TrianglePing,
     EndpointAvailable,
+    Registered,
     NATRestricted
 }
 
@@ -59,6 +60,8 @@ pub struct Engine {
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
     nat_restricted: std::sync::atomic::AtomicBool,
+    // Flag indicating we have registered our endpoint in the DDB
+    registered: std::sync::atomic::AtomicBool,
     // Current NAT type classification
     nat_type: std::sync::atomic::AtomicU8,
     // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
@@ -72,6 +75,12 @@ pub struct Engine {
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // DDB client bound to the API instance (created when API handle is set)
     ddb_client: Option<std::sync::Arc<dyn crate::ddb::DdbClient>>, 
+}
+
+impl Engine {
+    pub fn ddb_client(&self) -> Option<std::sync::Arc<dyn crate::ddb::DdbClient>> {
+        self.ddb_client.clone()
+    }
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -99,6 +108,7 @@ impl Engine {
             api_ptr: None,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
+            registered: std::sync::atomic::AtomicBool::new(false),
             nat_type: std::sync::atomic::AtomicU8::new(NatType::Unknown as u8),
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
@@ -682,7 +692,9 @@ impl Engine {
 
     pub fn state(&self) -> EngineState {
         use std::sync::atomic::Ordering;
-        if self.endpoint_ready.load(Ordering::SeqCst) {
+        if self.registered.load(Ordering::SeqCst) {
+            EngineState::Registered
+        } else if self.endpoint_ready.load(Ordering::SeqCst) {
             EngineState::EndpointAvailable
         } else if self.nat_restricted.load(Ordering::SeqCst) {
             EngineState::NATRestricted
@@ -715,6 +727,10 @@ impl Engine {
         match new_state {
             EngineState::EndpointAvailable => {
                 self.endpoint_ready.store(true, Ordering::SeqCst);
+                true
+            }
+            EngineState::Registered => {
+                self.registered.store(true, Ordering::SeqCst);
                 true
             }
             EngineState::NATRestricted => {
