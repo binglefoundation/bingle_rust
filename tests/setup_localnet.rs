@@ -1,6 +1,7 @@
 use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
 use std::process::Command;
 use std::time::{Duration, Instant};
+use log::log;
 
 fn run_cmd(program: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(program).args(args).output().map_err(|e| format!("failed to run {program}: {e}"))?;
@@ -44,6 +45,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&s
     // Ensure algokit CLI is available and get a funding source account
     let list = run_cmd("algokit", &["goal", "account", "list", "-w", "unencrypted-default-wallet"]) ?;
     let funded = parse_funded_account(&list).ok_or_else(|| "Could not determine a funded localnet account from `algokit goal account list` output".to_string())?;
+    log::info!("Using account {} for localnet account funding", funded);
 
     // For each target, ensure it's funded with at least some ALGOs
     for &addr in target_addrs {
@@ -53,7 +55,8 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&s
         if needs_fund {
             // Send 900_000_000 microalgos (~900 ALGO) as per Kotlin SetupLocalnet
             let amount = "900000000";
-            let _ = run_cmd("algokit", &["goal", "clerk", "send", "-w", "unencrypted-default-wallet", "-a", amount, "-t", addr, "-f", &funded])?;
+            let transfer_res = run_cmd("algokit", &["goal", "clerk", "send", "-w", "unencrypted-default-wallet", "-a", amount, "-t", addr, "-f", &funded])?;
+            log::info!("algokit transfer result: {}", transfer_res);
             // Poll until balance appears
             let deadline = Instant::now() + Duration::from_secs(20);
             while Instant::now() < deadline {

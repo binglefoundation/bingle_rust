@@ -388,12 +388,42 @@ impl BingleApi for BingleApiImpl {
 
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool {
         log::info!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some());
-        #[allow(unused)] {  }
-        // Not implemented yet
-        let __ret = false;
-        log::info!("[BingleApiImpl::send_message_to_id][exit] return={}", __ret);
-        #[allow(unused)] {  }
-        __ret
+        if let Some(cb) = _progress.as_ref() { cb(5, "Starting DDB lookup".to_string()); }
+        // Validate engine is initialized and DDB client is available
+        let engine = match &self.engine {
+            Some(e) => e,
+            None => {
+                warn!("[BingleApiImpl::send_message_to_id] engine not initialized");
+                if let Some(cb) = _progress.as_ref() { cb(100, "Engine not initialized".to_string()); }
+                log::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
+                return false;
+            }
+        };
+        if let Some(cb) = _progress.as_ref() { cb(10, "Engine ready".to_string()); }
+        let ddb = match engine.ddb_client() {
+            Some(c) => c,
+            None => {
+                warn!("[BingleApiImpl::send_message_to_id] DDB client not available (did you call start with app_id?)");
+                if let Some(cb) = _progress.as_ref() { cb(100, "DDB client not available".to_string()); }
+                log::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
+                return false;
+            }
+        };
+        if let Some(cb) = _progress.as_ref() { cb(20, "Looking up recipient".to_string()); }
+        match ddb.lookup(_user_id) {
+            Ok(nsk) => {
+                if let Some(cb) = _progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
+                let ok = self.send_message_to_network(&nsk, _user_id, _message, _progress.clone());
+                log::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
+                ok
+            }
+            Err(err) => {
+                warn!("[BingleApiImpl::send_message_to_id] DDB lookup failed: {}", err);
+                if let Some(cb) = _progress.as_ref() { cb(100, format!("DDB lookup failed: {}", err)); }
+                log::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
+                false
+            }
+        }
     }
 
     fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool {
