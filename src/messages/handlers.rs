@@ -240,6 +240,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     match internal_clone.ddb_register_ip(addr) {
                         Ok(()) => {
                             // On success, mark engine state as Registered
+                            log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded");
                             internal_clone.set_state(crate::engine::EngineState::Registered);
                         }
                         Err(e) => {
@@ -257,13 +258,15 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
         log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
-        // Per requirement: if Engine state is not EndpointAvailable, set it to NATRestricted and NAT type Restricted
-        // We don't have direct state query here; rely on Engine's internal setter semantics.
         if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
-            // Only set NATRestricted if we are not already EndpointAvailable.
-            // Engine::set_state_internal will ignore NATRestricted if EndpointAvailable flag is set.
-            let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
-            internal.set_nat_type(crate::engine::NatType::Restricted);
+            // Only set state/nat_type if current state is neither EndpointAvailable nor Registered
+            let cur = internal.get_state();
+            if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
+                let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
+                internal.set_nat_type(crate::engine::NatType::Restricted);
+            } else {
+                log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+            }
         } else {
             warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
         }

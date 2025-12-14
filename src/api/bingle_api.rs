@@ -17,6 +17,8 @@ pub trait BingleApiInternal: Send + Sync {
     /// delegate to the underlying Engine instance. Implementations may be best-effort
     /// and can ignore unsupported transitions.
     fn set_state(&self, state: crate::engine::EngineState);
+    /// Get the current engine state. Default: StunIdentify for mocks that don't track state.
+    fn get_state(&self) -> crate::engine::EngineState { crate::engine::EngineState::StunIdentify }
     /// Set the detected NAT type on the engine. Default no-op to keep older tests/mocks compiling.
     fn set_nat_type(&self, _nat: crate::engine::NatType) { }
     /// Retrieve the last discovered public address (IP:port) if available. Default None.

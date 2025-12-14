@@ -90,10 +90,12 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&up);
 
         // 3) Send and wait for response; validate UpdateResponse
+        log::info!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
         let resp = self
             .api
             .send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)?;
-
+        log::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
+        
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
         if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }

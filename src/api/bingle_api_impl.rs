@@ -88,10 +88,10 @@ impl BingleApiImpl {
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
     pub fn engine_state_for_tests(&self) -> Option<EngineState> {
-        log::info!("[BingleApiImpl::engine_state_for_tests][enter]");
+        log::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
         #[allow(unused)] {  }
         let s = self.engine.as_ref().map(|e| e.state());
-        log::info!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
+        log::trace!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
         #[allow(unused)] {  }
         s
     }
@@ -308,6 +308,12 @@ impl BingleApi for BingleApiImpl {
                     let p = self.0.load(Ordering::SeqCst);
                     if p.is_null() { return; }
                     unsafe { (*p).set_state(state); }
+                }
+                fn get_state(&self) -> EngineState {
+                    use std::sync::atomic::Ordering;
+                    let p = self.0.load(Ordering::SeqCst);
+                    if p.is_null() { return EngineState::StunIdentify; }
+                    unsafe { crate::api::bingle_api::BingleApiInternal::get_state(&*p) }
                 }
                 fn set_nat_type(&self, nat: crate::engine::NatType) {
                     use std::sync::atomic::Ordering;
@@ -583,6 +589,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         log::info!("[BingleApiImpl::set_state][exit]");
         #[allow(unused)] {  }
     }
+    fn get_state(&self) -> EngineState {
+        if let Some(e) = &self.engine { e.state() } else { EngineState::StunIdentify }
+    }
     fn set_nat_type(&self, nat: crate::engine::NatType) {
         log::info!("[BingleApiImpl::set_nat_type][enter] nat_type={:?}", nat);
         if let Some(e) = &self.engine {
@@ -598,6 +607,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
         if let Some(e) = &self.engine {
             if let Some(cli) = e.ddb_client() {
+                log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}", endpoint);
                 cli.register_ip(endpoint)
             } else {
                 Err("ddb client not available".to_string())

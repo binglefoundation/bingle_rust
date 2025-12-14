@@ -22,6 +22,9 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
             *g = Some(state);
         }
     }
+    fn get_state(&self) -> EngineState {
+        self.state.lock().ok().and_then(|g| *g).unwrap_or(EngineState::StunIdentify)
+    }
 }
 
 #[derive(Clone)]
