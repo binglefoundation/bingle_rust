@@ -4,9 +4,9 @@ fn sample_record(id: &str) -> AdvertRecord {
     AdvertRecord {
         id: id.to_string(),
         endpoint: Some(InetSocketAddress { host: "127.0.0.1".to_string(), port: 4433 }),
-        amRelay: Some(false),
-        relayId: None,
-        relaySig: None,
+        am_relay: Some(false),
+        relay_id: None,
+        relay_sig: None,
         date: "2025-01-01T00:00:00Z".to_string(),
         sig: None,
     }
@@ -30,7 +30,7 @@ fn upsert_updates_existing() {
 
     // Update fields and upsert again
     rec.endpoint = Some(InetSocketAddress { host: "host".into(), port: 5555 });
-    rec.amRelay = Some(true);
+    rec.am_relay = Some(true);
     db.upsert(rec.clone());
 
     let got = db.lookup("ID2");

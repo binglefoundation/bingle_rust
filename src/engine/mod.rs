@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use crate::ddb::DdbBackend;
 
 use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
@@ -233,17 +232,6 @@ impl Engine {
         self.bingle_api_for_handlers = None;
     }
 
-    /// Register a connection in the engine's per-connection registry.
-    fn register_connection(&mut self, addr: SocketAddr) {
-        if let Ok(mut m) = self.connections.lock() {
-            if let Some(entry) = m.get_mut(&addr) {
-                entry.last_seen = Instant::now();
-            } else {
-                m.insert(addr, ConnectionEntry { last_seen: Instant::now() });
-            }
-        }
-    }
-
     /// Check whether the engine believes a connection to addr exists.
     pub fn has_connection(&self, addr: &SocketAddr) -> bool {
         self.connections.lock().map(|m| m.contains_key(addr)).unwrap_or(false)
@@ -290,7 +278,7 @@ impl Engine {
         // Capture safe, shareable state for the handler closure (avoid raw self pointers)
         let connections = self.connections.clone();
         let pending_responses = self.pending_responses.clone();
-        let send_via_bingle = self.send_via_bingle.clone();
+        let _ = self.send_via_bingle.clone();
         let bingle_api_for_handlers = self.bingle_api_for_handlers.clone();
         let am_relay = self.options.am_relay;
         let ddb_backend = self.ddb_backend.clone();
@@ -317,7 +305,7 @@ impl Engine {
                     // 2) Provide per-message sender and API bindings to router
                     // Install a direct DTLS sender for the duration of this callback to avoid API re-entry
                     if let Some(r) = &router_arc {
-                        let self_ptr = std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut::<Engine>()));
+                        let _self_ptr = std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut::<Engine>()));
                         // Store current self pointer for direct Engine::send_to_peer usage
                         // Note: we cannot access &mut self here; rely on AtomicPtr initialized once at install
                         // Use the DTLS handler's captured self pointer if available

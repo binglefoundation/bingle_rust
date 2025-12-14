@@ -23,14 +23,17 @@ pub struct AdvertRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<InetSocketAddress>,
     /// True if this node provides relay services
+    #[serde(rename = "amRelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amRelay: Option<bool>,
+    pub am_relay: Option<bool>,
     /// Optional identifier of the relay this node uses
+    #[serde(rename = "relayId")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relayId: Option<String>,
+    pub relay_id: Option<String>,
     /// Optional signature from the relay verifying this record
+    #[serde(rename = "relaySig")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relaySig: Option<String>,
+    pub relay_sig: Option<String>,
     /// Record creation or update timestamp (RFC 3339 date-time)
     pub date: String,
     /// Optional signature of this record by the node

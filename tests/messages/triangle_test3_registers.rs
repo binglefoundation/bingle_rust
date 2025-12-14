@@ -1,12 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration, Instant};
 
-use rust_comms::messages::{Message, RelayMessage};
-use rust_comms::messages::types::RelayTriangleTest3;
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::engine::EngineState;
-use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::messages::types::RelayTriangleTest3;
+use rust_comms::messages::{Message, RelayMessage};
 
 // Mock internal that simulates registering our discovered IP and records state transitions
 struct MockInternal {

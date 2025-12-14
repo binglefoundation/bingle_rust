@@ -1,8 +1,8 @@
 use crate::api::bingle_api::BingleApi;
-use crate::messages::types::*;
 use crate::ddb::DdbBackend;
-use std::sync::Arc;
+use crate::messages::types::*;
 use log::warn;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct FromStruct {

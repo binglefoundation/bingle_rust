@@ -6,9 +6,9 @@ fn advert_record_serde_roundtrip() {
     let rec = AdvertRecord {
         id: "SOMEALGOWALLETADDR".to_string(),
         endpoint: Some(InetSocketAddress { host: "1.2.3.4".to_string(), port: 4433 }),
-        amRelay: Some(true),
-        relayId: Some("RELAYID".to_string()),
-        relaySig: Some("relsig".to_string()),
+        am_relay: Some(true),
+        relay_id: Some("RELAYID".to_string()),
+        relay_sig: Some("relsig".to_string()),
         date: "2025-01-01T12:34:56Z".to_string(),
         sig: Some("nodesig".to_string()),
     };

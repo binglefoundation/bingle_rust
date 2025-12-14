@@ -1,9 +1,9 @@
-use rust_comms::messages::types::*;
 use rust_comms::messages::marshal;
+use rust_comms::messages::types::*;
 
 #[test]
 fn ddb_upsert_serde_roundtrip() {
-    let rec = AdvertRecord { id: "ID".into(), endpoint: None, amRelay: Some(false), relayId: None, relaySig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
+    let rec = AdvertRecord { id: "ID".into(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
     let msg = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
         app: "ddb".into(),
         start_id: "START".into(),
@@ -38,7 +38,7 @@ fn ddb_query_and_response_roundtrip() {
     let resp = Message::Ddb(DdbMessage::QueryResponse(DdbQueryResponse {
         app: "ddb".into(),
         found: true,
-        advert: Some(AdvertRecord { id: "ID123".into(), endpoint: None, amRelay: None, relayId: None, relaySig: None, date: "2025-01-02T03:04:05Z".into(), sig: None }),
+        advert: Some(AdvertRecord { id: "ID123".into(), endpoint: None, am_relay: None, relay_id: None, relay_sig: None, date: "2025-01-02T03:04:05Z".into(), sig: None }),
         tag: Some("t".into()),
         response_tag: Some("corr".into()),
         text: None,
@@ -156,7 +156,7 @@ fn ddb_init_and_dump_roundtrip() {
     let ir2 = marshal::from_json_str(&j2).unwrap();
     assert_eq!(init_resp, ir2);
 
-    let rec = AdvertRecord { id: "ID9".into(), endpoint: Some(InetSocketAddress { host: "host".into(), port: 9999 }), amRelay: Some(true), relayId: Some("RID".into()), relaySig: None, date: "2025-01-03T00:00:00Z".into(), sig: Some("RSIG".into()) };
+    let rec = AdvertRecord { id: "ID9".into(), endpoint: Some(InetSocketAddress { host: "host".into(), port: 9999 }), am_relay: Some(true), relay_id: Some("RID".into()), relay_sig: None, date: "2025-01-03T00:00:00Z".into(), sig: Some("RSIG".into()) };
     let dump = Message::Ddb(DdbMessage::DumpResolve(DdbDumpResolve { app: "ddb".into(), record: rec.clone(), tag: None, response_tag: None, text: None, data: None }));
     let jd = marshal::to_json_string(&dump);
     let d2 = marshal::from_json_str(&jd).unwrap();

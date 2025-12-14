@@ -5,8 +5,8 @@ use std::time::Duration;
 use serde_json::Value as JsonValue;
 
 use crate::api::bingle_api::{BingleApi, NetworkSourceKey};
-use crate::messages::{to_json_value, Message};
 use crate::messages::types::*;
+use crate::messages::{to_json_value, Message};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 
 /// Public DDB client interface used by higher layers.
@@ -69,9 +69,9 @@ impl DdbClient for DdbClientImpl {
         let record = AdvertRecord {
             id: my_id.clone(),
             endpoint: Some(InetSocketAddress { host: match endpoint.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() }, port: endpoint.port() }),
-            amRelay: Some(false),
-            relayId: None,
-            relaySig: None,
+            am_relay: Some(false),
+            relay_id: None,
+            relay_sig: None,
             date: "1970-01-01T00:00:00Z".to_string(),
             sig: None,
         };
@@ -95,7 +95,7 @@ impl DdbClient for DdbClientImpl {
             .api
             .send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)?;
         log::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
-        
+
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
         if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }
