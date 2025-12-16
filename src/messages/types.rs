@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 pub enum Message {
     PlainText(PlainTextMessage),
     Relay(RelayMessage),
+    Ping(PingMessage),
     // Fallback for any unknown message shapes
     Unknown(serde_json::Value),
 }
@@ -164,4 +165,42 @@ pub struct RelayCallResponse {
 pub struct RelayKeepAlive {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
+}
+
+// Ping messages (app: "ping")
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PingMessage {
+    #[serde(rename = "ping")]
+    Ping(PingPing),
+    #[serde(rename = "response")]
+    Response(PingResponse),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PingPing {
+    pub app: String, // must be "ping"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PingResponse {
+    pub app: String, // must be "ping"
+    #[serde(rename = "verifiedId")]
+    pub verified_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }

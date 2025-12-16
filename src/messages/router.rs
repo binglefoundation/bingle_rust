@@ -95,6 +95,10 @@ pub fn route<H: MessageHandler + ?Sized>(handler: &H, msg: &Message, from_id: &s
             RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), &from, m),
             RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), &from, m),
         },
+        Message::Ping(p) => match p {
+            PingMessage::Ping(m) => handler.on_ping_ping(api.clone(), &from, m),
+            PingMessage::Response(m) => handler.on_ping_response(api.clone(), &from, m),
+        },
         Message::Unknown(v) => handler.on_unknown(api.clone(), v),
     }
 }

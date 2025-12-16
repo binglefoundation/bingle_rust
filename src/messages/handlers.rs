@@ -19,6 +19,43 @@ pub trait MessageHandler {
         log::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
     }
 
+    // Ping messages
+    fn on_ping_ping(&self, api: Arc<dyn BingleApi>, from: &FromStruct, msg: &PingPing) {
+        // Reply with PingResponse: app="ping", type="response", verifiedId from API, text="ACK: {text}"
+        let sender_opt = crate::messages::router::get_sender();
+        if sender_opt.is_none() { warn!("[handlers::on_ping_ping] No sender available"); return; }
+        let sender = sender_opt.unwrap();
+
+        // Obtain our id (verifiedId)
+        let my_id = match api.get_my_id() {
+            Some(id) => id,
+            None => { warn!("[handlers::on_ping_ping] get_my_id returned None"); return; }
+        };
+
+        // Build response JSON following OpenAPI schema
+        let mut json_obj = serde_json::Map::new();
+        json_obj.insert("app".to_string(), serde_json::Value::String("ping".to_string()));
+        json_obj.insert("type".to_string(), serde_json::Value::String("response".to_string()));
+        json_obj.insert("verifiedId".to_string(), serde_json::Value::String(my_id));
+        // If responseTag was provided on request context, echo it
+        if let Some(tag) = crate::messages::router::get_last_response_tag() {
+            json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+        }
+        let ack_text = format!("ACK: {}", msg.text.clone().unwrap_or_default());
+        json_obj.insert("text".to_string(), serde_json::Value::String(ack_text));
+        let json_val = serde_json::Value::Object(json_obj);
+
+        // Prepare destination (convert from.id (issuer) to base64 user id)
+        let nsk = from.network_source_key.clone();
+        let raw_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let user_id_b64 = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw_id) {
+            Ok(s) => s,
+            Err(e) => { warn!("[handlers::on_ping_ping] invalid from.id '{}': {}", raw_id, e); return; }
+        };
+        let _ok = sender(&nsk, &user_id_b64, json_val);
+    }
+    fn on_ping_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }
+
     // Relay messages
     fn on_relay_call(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCall) { self.on_unimplemented(&Message::Relay(RelayMessage::Call(_msg.clone()))); }
     fn on_relay_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
