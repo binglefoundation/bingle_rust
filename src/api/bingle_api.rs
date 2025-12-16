@@ -28,7 +28,9 @@ pub trait BingleApiInternal: Send + Sync {
 }
 
 /// Convenience type aliases used by the Bingle API.
-pub type UserId = String; // Algorand address (id)
+/// UserId: Algorand address in base32 (RFC 4648, no padding), representing a 32‑byte public key
+/// followed by a 4‑byte checksum (total 36 bytes). Examples: "P577…", "4TKG…".
+pub type UserId = String; // Algorand address (base32, 36-byte decoded)
 pub type Handle = String; // User handle string
 /// NetworkSourceKey identifies where to send network traffic (direct or via relay).
 /// Translated from the provided Kotlin data class.
@@ -151,6 +153,10 @@ pub trait BingleApi: Send + Sync {
     /// Returns this node's id (Algorand address), if known.
     /// Implementations should derive this from the engine issuer (issuer without suffix).
     fn get_my_id(&self) -> Option<String>;
+    /// Alias for get_my_id to match external nomenclature.
+    fn get_user_id(&self) -> Option<String> { self.get_my_id() }
+    /// Returns the configured handle, if known.
+    fn get_handle(&self) -> Option<String> { None }
     /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
     fn get_app_id(&self) -> Option<u64>;
     /// Returns the configured Algorand provider config from StartOptions, if any. Default: None.

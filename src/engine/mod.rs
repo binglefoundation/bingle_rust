@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use data_encoding::BASE32_NOPAD;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId, Handle, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use uuid::Uuid;
@@ -51,10 +53,8 @@ pub struct Engine {
     triangle_wait: Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>, // wait for TriangleTest3
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>,
-    // BingleApi handle for handlers (e.g., RelayFinder) to use a real API bound to this engine instance
-    bingle_api_for_handlers: Option<Arc<dyn BingleApi>>,
-    // Back-reference to creating BingleApiImpl instance (non-global) for inbound dispatch
-    api_ptr: Option<Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>>,
+    // Unified BingleApi handle bound to this engine instance (non-optional)
+    bingle_api: Arc<dyn BingleApi>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
@@ -80,6 +80,123 @@ impl Engine {
     pub fn ddb_client(&self) -> Option<std::sync::Arc<dyn crate::ddb::DdbClient>> {
         self.ddb_client.clone()
     }
+    pub fn app_id(&self) -> Option<u64> { self.options.app_id }
+    pub fn algo_provider_config(&self) -> Option<AlgoChainConfig> { self.options.algo_provider_config.clone() }
+}
+
+// Adapter that exposes Engine as a BingleApi implementation so that handlers and discovery
+// can call back into the Engine directly without going through BingleApiImpl.
+pub struct EngineBingleApiHandle(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
+
+impl BingleApi for EngineBingleApiHandle {
+    fn debug_print_options(&self) {}
+    fn get_my_id(&self) -> Option<String> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).issuer().map(|iss| iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()) }
+    }
+    fn get_handle(&self) -> Option<String> {
+        // For safety, Engine-backed handle returns None; handle is available via high-level API.
+        None
+    }
+    fn get_app_id(&self) -> Option<u64> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).app_id() }
+    }
+    fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).algo_provider_config() }
+    }
+
+    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".into()) }
+    fn stop(&mut self) { }
+    fn network_change(&mut self) { }
+
+    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
+
+    fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
+        use std::sync::atomic::Ordering;
+        if let Some(addr) = nsk.inet_socket_address {
+            let valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
+                Ok(bytes) if bytes.len() == 36 => true,
+                _ => false,
+            };
+            if !valid { return false; }
+            let bytes = match serde_json::to_vec(&message) { Ok(b) => b, Err(_) => return false };
+            let p = self.0.load(Ordering::SeqCst);
+            if p.is_null() { return false; }
+            unsafe { (*p).send_to_peer(addr, &bytes).is_ok() }
+        } else { false }
+    }
+
+    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+
+    fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+        use std::sync::atomic::Ordering;
+        use uuid::Uuid;
+        let tag = Uuid::new_v4();
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return Err("null engine".into()); }
+        unsafe { (*p).register_pending(tag); }
+        let msg_with_tag = match message {
+            serde_json::Value::Object(mut m) => { m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string())); serde_json::Value::Object(m) }
+            other => { let mut m = serde_json::Map::new(); m.insert("payload".to_string(), other); m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string())); serde_json::Value::Object(m) }
+        };
+        let sent = self.send_message_to_network(nsk, user_id, msg_with_tag, None);
+        let timeout = Duration::from_secs(10);
+        let p2 = self.0.load(Ordering::SeqCst);
+        if p2.is_null() { return Err("null engine".into()); }
+        unsafe {
+            if let Some(resp) = (*p2).wait_for_response(&tag, timeout) { Ok(resp) } else { Err(if sent { "timeout waiting for response" } else { "send failed" }.into()) }
+        }
+    }
+
+    fn set_on_message(&mut self, _handler: Option<std::sync::Arc<crate::api::bingle_api::OnMessageHandler>>) { }
+    fn set_on_connect(&mut self, _handler: Option<std::sync::Arc<crate::api::bingle_api::OnConnectHandler>>) { }
+}
+
+// Adapter exposing minimal internal controls for handlers -> engine without referencing BingleApiImpl
+pub struct EngineInternalPtr(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
+impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
+    fn set_state(&self, state: EngineState) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe { let _ = (*p).set_state_internal(state); }
+    }
+    fn get_state(&self) -> EngineState {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return EngineState::StunIdentify; }
+        unsafe { (*p).state() }
+    }
+    fn set_nat_type(&self, nat: NatType) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe { (*p).set_nat_type(nat); }
+    }
+    fn get_last_public_addr(&self) -> Option<SocketAddr> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).last_public_addr() }
+    }
+    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return Err("null engine".into()); }
+        unsafe {
+            if let Some(cli) = (*p).ddb_client() { cli.register_ip(endpoint) } else { Err("ddb client not available".into()) }
+        }
+    }
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -90,7 +207,7 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new(options: StartOptions) -> Self {
+    pub fn new(options: StartOptions, api: Arc<dyn BingleApi>) -> Self {
         log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] {  }
         Self {
@@ -103,8 +220,7 @@ impl Engine {
             relay_finder: None,
             triangle_wait: None,
             send_via_bingle: None,
-            bingle_api_for_handlers: None,
-            api_ptr: None,
+            bingle_api: api,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
             registered: std::sync::atomic::AtomicBool::new(false),
@@ -116,6 +232,30 @@ impl Engine {
             router: None,
             ddb_client: None, 
         }
+    }
+
+    /// Create an Engine without binding a BingleApi; API can be provided later via set_bingle_api.
+    pub fn new_unbound(options: StartOptions) -> Self {
+        // Use a placeholder API that returns None/false until a real API is bound.
+        struct EmptyApi;
+        impl crate::api::bingle_api::BingleApi for EmptyApi {
+            fn debug_print_options(&self) {}
+            fn get_my_id(&self) -> Option<String> { None }
+            fn get_app_id(&self) -> Option<u64> { None }
+            fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
+            fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+            fn stop(&mut self) {}
+            fn network_change(&mut self) {}
+            fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_handle(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn send_message_to_handle_with_response(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
+            fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
+        }
+        Self::new(options, Arc::new(EmptyApi))
     }
 
     /// Provide a pre-configured DTLS instance (with server certificate material) from the API layer.
@@ -195,9 +335,9 @@ impl Engine {
         self.send_via_bingle = cb;
     }
 
-    /// Provide a BingleApi handle to be used by handlers and relay discovery bound to this Engine instance.
-    pub fn set_bingle_api_for_handlers(&mut self, api: Arc<dyn BingleApi>) {
-        self.bingle_api_for_handlers = Some(api.clone());
+    /// Set or replace the BingleApi handle bound to this Engine instance.
+    pub fn set_bingle_api(&mut self, api: Arc<dyn BingleApi>) {
+        self.bingle_api = api.clone();
         // Initialize a DDB client bound to this API instance when possible (non‑iOS)
         #[cfg(not(target_os = "ios"))]
         {
@@ -213,23 +353,12 @@ impl Engine {
         }
     }
 
-    /// Set back-reference to the creating BingleApiImpl.
-    pub fn set_api_ptr(&mut self, ptr: Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>) {
-        self.api_ptr = Some(ptr);
-    }
-
     /// Clear bindings to API instance and global router callbacks to avoid dangling pointers between tests.
     pub fn clear_api_bindings(&mut self) {
-        use std::sync::atomic::Ordering;
-        // Null out back-reference pointer if present
-        if let Some(ptr) = &self.api_ptr {
-            ptr.store(std::ptr::null_mut(), Ordering::SeqCst);
-        }
         // Clear per-API router instance only (no global fallbacks)
         if let Some(r) = &self.router { r.clear_for_tests(); }
         // Also drop local references
         self.send_via_bingle = None;
-        self.bingle_api_for_handlers = None;
     }
 
     /// Check whether the engine believes a connection to addr exists.
@@ -279,13 +408,11 @@ impl Engine {
         let connections = self.connections.clone();
         let pending_responses = self.pending_responses.clone();
         let _ = self.send_via_bingle.clone();
-        let bingle_api_for_handlers = self.bingle_api_for_handlers.clone();
+        let bingle_api = self.bingle_api.clone();
         let am_relay = self.options.am_relay;
         let ddb_backend = self.ddb_backend.clone();
 
         // Now obtain a mutable reference to dtls only for installing the new handler
-        // Capture a self pointer for delegating to handle_dtls_message from the DTLS callback.
-        let self_ptr_opt = Some(std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(self as *mut Engine)));
         if let Some(d) = self.dtls.as_mut() {
             let router_arc = self.router.clone();
             d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
@@ -302,32 +429,8 @@ impl Engine {
 
                     // No inline DDB handling; use Router + handlers instead
 
-                    // 2) Provide per-message sender and API bindings to router
-                    // Install a direct DTLS sender for the duration of this callback to avoid API re-entry
-                    if let Some(r) = &router_arc {
-                        let _self_ptr = std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut::<Engine>()));
-                        // Store current self pointer for direct Engine::send_to_peer usage
-                        // Note: we cannot access &mut self here; rely on AtomicPtr initialized once at install
-                        // Use the DTLS handler's captured self pointer if available
-                        // Fallback to null (sender becomes no-op)
-                        let sp = self_ptr_opt.as_ref().cloned();
-                        let sender_cb: std::sync::Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync> = std::sync::Arc::new(move |nsk, _uid, json| {
-                            use std::sync::atomic::Ordering;
-                            let eng_ptr = if let Some(pp) = &sp { pp.load(Ordering::SeqCst) } else { std::ptr::null_mut() };
-                            if eng_ptr.is_null() { return false; }
-                            let addr_opt = nsk.inet_socket_address.or_else(|| {
-                                // Try to use the current router's last_from via thread-local
-                                crate::messages::router::Router::current().and_then(|r| r.get_last_from())
-                            });
-                            let addr = match addr_opt { Some(a) => a, None => return false };
-                            let bytes = match serde_json::to_vec(&json) { Ok(b) => b, Err(_) => return false };
-                            unsafe { (*eng_ptr).send_to_peer(addr, &bytes).is_ok() }
-                        });
-                        r.set_sender(Some(sender_cb));
-                    }
-                    if let Some(api) = &bingle_api_for_handlers {
-                        if let Some(r) = &router_arc { r.set_bingle_api(Some(api.clone())); }
-                    }
+                    // 2) Provide per-message API bindings to router; sender remains as configured by API layer
+                    if let Some(r) = &router_arc { r.set_bingle_api(Some(bingle_api.clone())); }
                     // Provide DDB/relay context to router
                     if let Some(r) = &router_arc {
                         r.set_am_relay(am_relay);
@@ -362,18 +465,6 @@ impl Engine {
                                             }
                                         }
                                     }
-                                }
-                            }
-                        }
-                    }
-
-
-                    // Forward to API on_message for application-level handling (plaintext, relay pings, etc.) via global router handler
-                    if let Ok(s) = std::str::from_utf8(data) {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                            if let Some(r) = &router_arc {
-                                if let Some(cb) = r.get_on_message() {
-                                    cb(issuer.to_string(), from.to_string(), v.clone());
                                 }
                             }
                         }
@@ -537,8 +628,7 @@ impl Engine {
         if let Some(addr) = public_addr {
             let _a2 = addr.clone();
             // Use the real BingleApi provided via router
-            let api_opt = self.bingle_api_for_handlers.clone();
-            if api_opt.is_none() { panic!("[Engine] No BingleApi available for relay check"); }
+            let api = self.bingle_api.clone();
 
             // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
             // Prefer app_id from StartOptions; fallback to env var for legacy tests; else use built-in localhost relays.
@@ -563,7 +653,7 @@ impl Engine {
                 }
             };
 
-            let finder = RelayFinder::new(api_opt.unwrap(), Duration::from_secs(60), discover);
+            let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
             let my_id: String = if let Some(iss) = self.issuer.as_deref() {
@@ -592,16 +682,10 @@ impl Engine {
             // Build JSON value for the message
             let json_val = crate::messages::marshal::to_json_value(&msg);
             if let Some(cb) = &self.send_via_bingle {
-                // Use the relay's actual id as the user id. Convert Algorand base32 address to base64(36) for API validation.
-                let uid = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&target.id) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::info!("[Engine][WARN] invalid relay id '{}': {}; using raw id which may fail validation", target.id, e);
-                        target.id.clone()
-                    }
-                };
+                // Use the relay's actual Algorand address (base32) as the user id.
+                let uid = target.id.clone();
                 let ok = cb(&nsk, &uid, json_val);
-                log::info!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok);
+                log::info!("[Engine] TriangleTest1 send_via_bingle to {} (uid=base32 relay id) -> {}", to_addr, ok);
                 #[allow(unused)] {  }
             } else {
                 log::info!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);

@@ -2,10 +2,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{NetworkSourceKey, BingleApi};
-use base64::Engine as _;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use rust_comms::blockchain::algo_ops::byte_key_to_address;
+#[path = "../test_util.rs"]
+mod test_util;
 
 #[derive(Clone)]
 struct MockDtls {
@@ -50,7 +51,7 @@ fn unit_send_message_to_network_calls_dtls_send() {
     let msg = serde_json::json!({"hello": "world"});
     let progress_calls: Arc<Mutex<Vec<(u8, String)>>> = Arc::new(Mutex::new(vec![]));
     let progress_calls_closure = progress_calls.clone();
-    let uid = base64::engine::general_purpose::STANDARD.encode([0u8; 36]);
+    let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.send_message_to_network(
         &nsk,
         &uid,
@@ -118,7 +119,7 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     // Send a message and ensure issuer is passed through
     let addr_send: SocketAddr = "127.0.0.1:45678".parse().unwrap();
     let nsk = NetworkSourceKey { inet_socket_address: Some(addr_send), relay_channel: None, relay_address: None };
-    let uid2 = base64::engine::general_purpose::STANDARD.encode([1u8; 36]);
+    let uid2 = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None);
     assert!(ok);
     let cap = captured.lock().unwrap();

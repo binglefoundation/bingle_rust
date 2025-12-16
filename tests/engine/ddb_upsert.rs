@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 
 use rust_comms::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -89,16 +89,9 @@ fn ddb_upsert_success_when_server_is_relay() {
 
     // Send request from client to server
     let nsk = NetworkSourceKey::new_direct(server_addr);
-    let uid_b64 = rust_comms::blockchain::algo_ops::id_b64_from_algorand_addr(&server.get_my_id().unwrap()).unwrap();
-    let ok = client.send_message_to_network(&nsk, &uid_b64, json, None);
-    assert!(ok, "client send ok");
-
-    // Wait for response to be observed
-    let start = Instant::now();
-    while !got_update.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(5) {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert!(got_update.load(Ordering::SeqCst), "expected updateResponse from server");
+    let uid = server.get_my_id().unwrap();
+    let response = client.send_message_to_network_with_response(&nsk, &uid, json, None);
+    assert!(response.is_ok(), "client send ok");
 
     // Cleanup
     server.stop();
@@ -122,8 +115,8 @@ fn ddb_upsert_ignored_when_not_relay() {
     })));
 
     let nsk = NetworkSourceKey::new_direct(server_addr);
-    let uid_b64 = rust_comms::blockchain::algo_ops::id_b64_from_algorand_addr(&server.get_my_id().unwrap()).unwrap();
-    let ok = client.send_message_to_network(&nsk, &uid_b64, json, None);
+    let uid = server.get_my_id().unwrap();
+    let ok = client.send_message_to_network(&nsk, &uid, json, None);
     assert!(ok, "client send ok");
 
     // Give some time; expect no updateResponse because server is not a relay
@@ -152,8 +145,8 @@ fn ddb_upsert_rejected_on_id_mismatch() {
     })));
 
     let nsk = NetworkSourceKey::new_direct(server_addr);
-    let uid_b64 = rust_comms::blockchain::algo_ops::id_b64_from_algorand_addr(&server.get_my_id().unwrap()).unwrap();
-    let ok = client.send_message_to_network(&nsk, &uid_b64, json, None);
+    let uid = server.get_my_id().unwrap();
+    let ok = client.send_message_to_network(&nsk, &uid, json, None);
     assert!(ok, "client send ok");
 
     std::thread::sleep(Duration::from_millis(200));

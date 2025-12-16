@@ -13,9 +13,24 @@ pub struct FromStruct {
 pub trait MessageHandler {
     // Plain text
     fn on_plain_text(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &PlainTextMessage) {
-        // Default implementation: print payload; frameworks may provide their own handler that
-        // forwards to an API instance without using globals.
+        // Build JSON for callback
         let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
+        // Delegate to API on_message via the per-API Router if installed
+        if let Some(router) = crate::messages::router::Router::current() {
+            if let Some(cb) = router.get_on_message() {
+                // Normalize sender id: issuer without suffix
+                let sender_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                // Use direct socket address as sender_handle when available
+                let sender_handle = _from
+                    .network_source_key
+                    .inet_socket_address
+                    .map(|a| a.to_string())
+                    .unwrap_or_else(|| "".to_string());
+                cb(sender_id, sender_handle, json);
+                return;
+            }
+        }
+        // Fallback to logging if no on_message callback is installed
         log::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
     }
 
@@ -42,16 +57,9 @@ pub trait MessageHandler {
         }
         let json_val = serde_json::Value::Object(json_obj);
         let nsk = from.network_source_key.clone();
-        // Convert from.id (issuer) to raw address and base64(36)
-        let raw_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-        let user_id_b64 = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw_id) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("[handlers::on_relay_check] invalid from.id '{}': {}", raw_id, e);
-                return; // do not send invalid id
-            }
-        };
-        let _ok = sender(&nsk, &user_id_b64, json_val);
+        // Convert from.id (issuer) to raw Algorand address (base32)
+        let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let _ok = sender(&nsk, &user_id, json_val);
     }
     fn on_relay_listen_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
     fn on_relay_check_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
@@ -122,17 +130,8 @@ impl MessageHandler for DefaultPrintingHandler {
         let api_for_thread = api.clone();
         // Clone sender context needed inside the spawned thread (avoid borrowing 'from')
         let from_nsk = from.network_source_key.clone();
-        // Convert issuer-form id to base64(36) user id for network send
-        let from_user_id_b64 = {
-            let raw = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw) {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("[handlers::on_triangle_test1] invalid from.id '{}': {}", raw, e);
-                    String::new()
-                }
-            }
-        };
+        // Convert issuer-form id to raw Algorand address (base32) for network send
+        let from_user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
         std::thread::spawn(move || {
             // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use std::time::Duration;
@@ -177,15 +176,9 @@ impl MessageHandler for DefaultPrintingHandler {
             let json_val = crate::messages::marshal::to_json_value(&msg_out);
 
             // Build NetworkSourceKey and user id base64(36) as required by API
-            use crate::api::bingle_api::{NetworkSourceKey, UserId};
+            use crate::api::bingle_api::NetworkSourceKey;
             let nsk = NetworkSourceKey::new_direct(associated_relay.address);
-            let user_id: UserId = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&associated_relay.id) {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("[handlers::on_triangle_test1] invalid relay id '{}': {}", associated_relay.id, e);
-                    associated_relay.id.clone()
-                }
-            };
+            let user_id = associated_relay.id.clone();
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
             log::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", associated_relay.address, ok);
@@ -195,10 +188,10 @@ impl MessageHandler for DefaultPrintingHandler {
             let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
             let resp_json = crate::messages::marshal::to_json_value(&resp);
 
-            if from_user_id_b64.is_empty() {
+            if from_user_id.is_empty() {
                 warn!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
             } else {
-                let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id_b64, resp_json, None);
+                let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
                 log::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
             }
         });
@@ -207,40 +200,34 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_triangle_test2(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &RelayTriangleTest2) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkSourceKey;
-        use base64::Engine as _;
         let endpoint = msg.checking_endpoint;
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);
         let nsk = NetworkSourceKey::new_direct(endpoint);
-        // Convert checking_id (issuer) to raw address by trimming issuer suffix, then base32->base64(36)
-        let raw_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-        let user_id_b64 = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw_id) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("[handlers::on_triangle_test2] invalid checking_id '{}': {}", raw_id, e);
-                // Fallback to a deterministic valid 36-byte base64 string so the send path is exercised in tests
-                base64::engine::general_purpose::STANDARD.encode([0u8; 36])
-            }
-        };
-        let ok = api.send_message_to_network(&nsk, &user_id_b64, json_val, None);
+        // Convert checking_id (issuer) to raw address by trimming issuer suffix (base32 Algorand address)
+        let user_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let ok = api.send_message_to_network(&nsk, &user_id, json_val, None);
         log::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
     }
 
-    fn on_triangle_test3(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
+    fn on_triangle_test3(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
         // Use internal API to set engine state to EndpointAvailable and NAT type to FullCone.
         if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
             internal.set_state(crate::engine::EngineState::EndpointAvailable);
             internal.set_nat_type(crate::engine::NatType::FullCone);
             // After setting NAT type, start a background thread to register our discovered public endpoint in DDB.
             let internal_clone = internal.clone();
+            let api_for_log = api.clone();
             std::thread::spawn(move || {
                 // Obtain the discovered public address (including port)
                 if let Some(addr) = internal_clone.get_last_public_addr() {
                     match internal_clone.ddb_register_ip(addr) {
                         Ok(()) => {
-                            // On success, mark engine state as Registered
-                            log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded");
+                            // On success, mark engine state as Registered and print id/handle for debugging
+                            let uid = api_for_log.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
+                            let handle = api_for_log.get_handle().unwrap_or_else(|| "<unknown>".to_string());
+                            log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded (user_id={}, handle={})", uid, handle);
                             internal_clone.set_state(crate::engine::EngineState::Registered);
                         }
                         Err(e) => {

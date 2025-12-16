@@ -20,3 +20,6 @@ mod bingle_api_start_fail;
 
 #[path = "bingle_api_relay_check_two_nodes.rs"]
 mod bingle_api_relay_check_two_nodes;
+
+#[path = "bingle_getters.rs"]
+mod bingle_getters;

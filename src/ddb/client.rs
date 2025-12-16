@@ -52,8 +52,13 @@ impl DdbClientImpl {
         finder.find_relay(&my_id)
     }
 
-    fn relay_user_id_b64(relay_id: &str) -> Result<String, String> {
-        crate::blockchain::algo_ops::id_b64_from_algorand_addr(relay_id)
+    fn relay_user_id(relay_id: &str) -> Result<String, String> {
+        // Validate Algorand base32 address by decoding to 36 bytes
+        match data_encoding::BASE32_NOPAD.decode(relay_id.as_bytes()) {
+            Ok(bytes) if bytes.len() == 36 => Ok(relay_id.to_string()),
+            Ok(bytes) => Err(format!("invalid relay id: base32 decoded length {} != 36", bytes.len())),
+            Err(e) => Err(format!("invalid relay id: {}", e)),
+        }
     }
 }
 
@@ -61,7 +66,7 @@ impl DdbClient for DdbClientImpl {
     fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
         // 1) Find relay to talk to
         let relay = self.find_relay()?;
-        let relay_user_b64 = Self::relay_user_id_b64(&relay.id)?;
+        let relay_user_b64 = Self::relay_user_id(&relay.id)?;
         let nsk = NetworkSourceKey::new_direct(relay.address);
 
         // 2) Build UpsertResolve using our id as startId and record.id
@@ -104,7 +109,7 @@ impl DdbClient for DdbClientImpl {
     fn lookup(&self, id: &str) -> Result<NetworkSourceKey, String> {
         // 1) Find relay to talk to
         let relay = self.find_relay()?;
-        let relay_user_b64 = Self::relay_user_id_b64(&relay.id)?;
+        let relay_user_b64 = Self::relay_user_id(&relay.id)?;
         let nsk = NetworkSourceKey::new_direct(relay.address);
 
         // 2) Build QueryResolve

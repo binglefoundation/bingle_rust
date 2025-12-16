@@ -1239,6 +1239,7 @@ pub fn byte_key_to_address(byte_public_key: &[u8; 32]) -> Result<String> {
     use sha2::{Digest, Sha512_256};
     // Compute checksum: SHA512/256 over public key, take last 4 bytes
     let mut hasher = Sha512_256::new();
+
     hasher.update(byte_public_key);
     let hash = hasher.finalize();
     let checksum = &hash[hash.len() - 4..];

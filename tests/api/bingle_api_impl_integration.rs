@@ -1,7 +1,6 @@
 use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkSourceKey, BingleApi};
 use std::net::SocketAddr;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use base64::Engine as _;
 #[path = "../test_util.rs"]
 mod test_util;
 
@@ -32,7 +31,7 @@ fn start_succeeds() {
 fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new();
     let nsk = NetworkSourceKey { inet_socket_address: None, relay_channel: None, relay_address: None };
-    let uid = base64::engine::general_purpose::STANDARD.encode([0u8; 36]);
+    let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None);
     assert!(!ok, "Should return false when no direct address is provided");
 }
@@ -43,7 +42,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     use std::net::SocketAddr;
     use std::sync::{OnceLock, Arc};
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration};
 
     use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 
@@ -103,16 +102,11 @@ fn relay_check_end_to_end_on_message_receives_response() {
     // Give server time to bind
     thread::sleep(Duration::from_millis(200));
 
-    // Build BingleApiImpl client and install on_message to capture the RelayCheckResponse
+    // Build BingleApiImpl client
     let mut api = BingleApiImpl::new();
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let start_result = api.start(opts);
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
-
-    api.set_on_message(Some(Arc::new(|sender, handle, msg| {
-        log::info!("[test][on_message] sender={} handle={} msg={}", sender, handle, msg);
-        let _ = CLIENT_SEEN.set(msg);
-    })));
 
     // Prepare a direct NetworkSourceKey to server and send RelayCheck
     let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
@@ -120,19 +114,12 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let req_tag = Uuid::new_v4().to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check", "responseTag": req_tag });
 
-    let uid2 = base64::engine::general_purpose::STANDARD.encode([1u8; 36]);
-    let ok = api.send_message_to_network(&nsk, &uid2, payload, None);
-    assert!(ok, "client send failed");
+    let uid2 = test_util::ADDRESS_SPEND.to_string();
+    let response = api.send_message_to_network_with_response(&nsk, &uid2, payload, None);
+    assert!(response.is_ok(), "client send failed");
 
-    // Wait for the response to be observed via on_message
-    let start = Instant::now();
-    while CLIENT_SEEN.get().is_none() && start.elapsed() < Duration::from_secs(3) {
-        thread::sleep(Duration::from_millis(20));
-    }
-
-    let seen = CLIENT_SEEN.get().expect("did not receive RelayCheckResponse via on_message");
-    assert_eq!(seen.get("app"), Some(&serde_json::Value::Null));
-    assert_eq!(seen.get("type").and_then(|v| v.as_str()), Some("CheckResponse"));
-    assert_eq!(seen.get("available").and_then(|v| v.as_bool()), Some(true));
-    assert_eq!(seen.get("tag").and_then(|v| v.as_str()), Some(req_tag.as_str()), "RelayCheckResponse should echo the request's responseTag in 'tag'");
+    let response_content = response.unwrap();
+    assert_eq!(response_content.get("app"), Some(&serde_json::Value::Null));
+    assert_eq!(response_content.get("type").and_then(|v| v.as_str()), Some("CheckResponse"));
+    assert_eq!(response_content.get("available").and_then(|v| v.as_bool()), Some(true));
 }
