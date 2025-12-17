@@ -24,6 +24,12 @@ mod relay_ping_handler_unit;
 #[path = "messages/relay_ping_handlers.rs"]
 mod relay_ping_handlers;
 
+#[path = "messages/marshal_ping.rs"]
+mod marshal_ping;
+
+#[path = "messages/ping_routing.rs"]
+mod ping_routing;
+
 #[path = "messages/triangle_test1_response_sets_state.rs"]
 mod triangle_test1_response_sets_state;
 
