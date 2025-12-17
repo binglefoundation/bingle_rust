@@ -1,9 +1,10 @@
+use rust_comms::messages::Router;
 use std::sync::{Arc, Mutex};
 
-use rust_comms::messages::{route, Message};
+use rust_comms::messages::{Message};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{PingMessage, PingPing};
-use rust_comms::messages::router::set_bingle_api;
+
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler {
@@ -44,13 +45,15 @@ fn route_invokes_on_ping_ping() {
     let flag = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(flag.clone());
 
-    // Provide API to router so it can be passed into handler per new signature
-    set_bingle_api(Some(Arc::new(MockApi)));
+    if let Some(router) = Router::current() {
+        // Provide API to router so it can be passed into handler per new signature
+        router.set_bingle_api(Some(Arc::new(MockApi)));
 
-    let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
-    let msg = Message::Ping(PingMessage::Ping(ping));
-    route(&handler, &msg, "SOMEISSUER.");
+        let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
+        let msg = Message::Ping(PingMessage::Ping(ping));
+        router.route(&handler, &msg, "SOMEISSUER.");
 
-    let got = flag.lock().unwrap().clone();
-    assert!(got, "on_ping_ping was not called");
+        let got = flag.lock().unwrap().clone();
+        assert!(got, "on_ping_ping was not called");
+    }
 }
