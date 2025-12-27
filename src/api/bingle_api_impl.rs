@@ -38,7 +38,7 @@ pub struct BingleApiImpl {
 impl Default for BingleApiImpl {
     fn default() -> Self {
         // Create an unbound Engine; we'll bind API/router during start().
-        let engine = Engine::new_unbound(StartOptions::default());
+        let engine = Engine::new_unbound(&StartOptions::default());
         Self {
             on_message: None,
             on_connect: None,
@@ -51,15 +51,23 @@ impl Default for BingleApiImpl {
 }
 
 
-#[cfg(not(target_os = "ios"))]
-
 impl BingleApiImpl {
-    pub fn new() -> Self {
+    pub fn new(options: &StartOptions) -> Self {
         log::info!("[BingleApiImpl::new][enter]");
-        #[allow(unused)] {  }
-        let s = Self::default();
+        let mut s = Self::default();
+        s.started_options = options.clone();
+
+        // Create a temporary engine with a placeholder API handle that we'll update later
+        let eng_ptr_arc = Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()));
+        let api_handle: Arc<dyn BingleApi> = Arc::new(crate::engine::EngineBingleApiHandle(eng_ptr_arc.clone()));
+
+        // Create the engine with the placeholder handle
+        s.engine = Box::new(Engine::new(&options, api_handle));
+
+        // Update the atomic pointer to point to our engine now that it's created
+        eng_ptr_arc.store(&mut *s.engine as *mut Engine, std::sync::atomic::Ordering::SeqCst);
+
         log::info!("[BingleApiImpl::new][exit]");
-        #[allow(unused)] {  }
         s
     }
 }
@@ -119,13 +127,9 @@ impl BingleApiImpl {
     }
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkSourceKey, String> {
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);
-        if let Some(cli) = self.engine.ddb_client() {
-            let res = cli.lookup(id);
-            log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
-            res
-        } else {
-            Err("ddb client not available".to_string())
-        }
+        let res = self.engine.ddb_client().lookup(id);
+        log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
+        res
     }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
@@ -202,7 +206,7 @@ impl BingleApi for BingleApiImpl {
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
         self.started_options.algo_provider_config.clone()
     }
-    fn start(&mut self, options: StartOptions) -> Result<(), String> {
+    fn start(&mut self, options: &StartOptions) -> Result<(), String> {
         // Initialize logging once (stderr + timestamps), respect options.log_level if provided.
         static INIT: Once = Once::new();
         INIT.call_once(|| {
@@ -300,7 +304,7 @@ impl BingleApi for BingleApiImpl {
         self.engine.set_bingle_api(api_for_engine);
         // Provide per-API router to the Engine for routing context
         self.engine.set_router(router_arc.clone());
-        self.engine.start(options.clone())?;
+        self.engine.start(options)?;
 
         log::info!("[BingleApiImpl::start][exit] Ok(())");
         #[allow(unused)] {  }
@@ -329,15 +333,7 @@ impl BingleApi for BingleApiImpl {
         if let Some(cb) = _progress.as_ref() { cb(5, "Starting DDB lookup".to_string()); }
         // Validate DDB client is available
         if let Some(cb) = _progress.as_ref() { cb(10, "Engine ready".to_string()); }
-        let ddb = match self.engine.ddb_client() {
-            Some(c) => c,
-            None => {
-                warn!("[BingleApiImpl::send_message_to_id] DDB client not available (did you call start with app_id?)");
-                if let Some(cb) = _progress.as_ref() { cb(100, "DDB client not available".to_string()); }
-                log::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
-                return false;
-            }
-        };
+        let ddb = self.engine.ddb_client();
         if let Some(cb) = _progress.as_ref() { cb(20, "Looking up recipient".to_string()); }
         match ddb.lookup(_user_id) {
             Ok(nsk) => {
@@ -552,12 +548,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.last_public_addr()
     }
     fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
-        if let Some(cli) = self.engine.ddb_client() {
-            log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}", endpoint);
-            cli.register_ip(endpoint)
-        } else {
-            Err("ddb client not available".to_string())
-        }
+        let cli = self.engine.ddb_client();
+        log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}", endpoint);
+        cli.register_ip(endpoint)
     }
 }
 

@@ -72,12 +72,12 @@ pub struct Engine {
     ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend> >,
     // Per-API router instance used to avoid global mutable state
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
-    // DDB client bound to the API instance (created when API handle is set)
-    ddb_client: Option<std::sync::Arc<dyn crate::ddb::DdbClient>>, 
+    // DDB client bound to the API instance (always present; may be a NullDdbClient)
+    ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>, 
 }
 
 impl Engine {
-    pub fn ddb_client(&self) -> Option<std::sync::Arc<dyn crate::ddb::DdbClient>> {
+    pub fn ddb_client(&self) -> std::sync::Arc<dyn crate::ddb::DdbClient> {
         self.ddb_client.clone()
     }
     pub fn app_id(&self) -> Option<u64> { self.options.app_id }
@@ -113,7 +113,7 @@ impl BingleApi for EngineBingleApiHandle {
         unsafe { (*p).algo_provider_config() }
     }
 
-    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Err("not supported".into()) }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Err("not supported".into()) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
 
@@ -193,9 +193,7 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return Err("null engine".into()); }
-        unsafe {
-            if let Some(cli) = (*p).ddb_client() { cli.register_ip(endpoint) } else { Err("ddb client not available".into()) }
-        }
+        unsafe { (*p).ddb_client().register_ip(endpoint) }
     }
 }
 
@@ -207,9 +205,20 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new(options: StartOptions, api: Arc<dyn BingleApi>) -> Self {
+    pub fn new(options: &StartOptions, api: Arc<dyn BingleApi>) -> Self {
         log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] {  }
+        // Build a DDB client now (always present); choose real or null implementation
+        #[cfg(not(target_os = "ios"))]
+        let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = {
+            let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            if have_app.is_none() { log::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient"); }
+            if have_app.is_some() { std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone())) } else { std::sync::Arc::new(crate::ddb::NullDdbClient::new()) }
+        };
+
+        #[cfg(target_os = "ios")]
+        let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = std::sync::Arc::new(crate::ddb::NullDdbClient::new());
+
         Self {
             options: options.clone(),
             mux: None,
@@ -230,12 +239,12 @@ impl Engine {
             issuer: None,
             ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
             router: None,
-            ddb_client: None, 
+            ddb_client: ddb,
         }
     }
 
     /// Create an Engine without binding a BingleApi; API can be provided later via set_bingle_api.
-    pub fn new_unbound(options: StartOptions) -> Self {
+    pub fn new_unbound(options: &StartOptions) -> Self {
         // Use a placeholder API that returns None/false until a real API is bound.
         struct EmptyApi;
         impl crate::api::bingle_api::BingleApi for EmptyApi {
@@ -243,7 +252,7 @@ impl Engine {
             fn get_my_id(&self) -> Option<String> { None }
             fn get_app_id(&self) -> Option<u64> { None }
             fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
-            fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+            fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
             fn stop(&mut self) {}
             fn network_change(&mut self) {}
             fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
@@ -338,18 +347,19 @@ impl Engine {
     /// Set or replace the BingleApi handle bound to this Engine instance.
     pub fn set_bingle_api(&mut self, api: Arc<dyn BingleApi>) {
         self.bingle_api = api.clone();
-        // Initialize a DDB client bound to this API instance when possible (non‑iOS)
+        // Initialize a DDB client bound to this API instance (always set; may be Null)
         #[cfg(not(target_os = "ios"))]
         {
             let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-            if have_app.is_some() {
-                let client = crate::ddb::DdbClientImpl::new(api.clone());
-                let arc: std::sync::Arc<dyn crate::ddb::DdbClient> = std::sync::Arc::new(client);
-                self.ddb_client = Some(arc);
+            self.ddb_client = if have_app.is_some() {
+                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone()))
             } else {
-                // Leave None if no discovery context available
-                self.ddb_client = None;
-            }
+                std::sync::Arc::new(crate::ddb::NullDdbClient::new())
+            };
+        }
+        #[cfg(target_os = "ios")]
+        {
+            self.ddb_client = std::sync::Arc::new(crate::ddb::NullDdbClient::new());
         }
     }
 
@@ -509,7 +519,7 @@ impl Engine {
 
     /// Start the engine using the provided StartOptions.
     /// Implements static endpoint path or STUN-based discovery when not provided.
-    pub fn start(&mut self, options: StartOptions) -> Result<(), String> {
+    pub fn start(&mut self, options: &StartOptions) -> Result<(), String> {
         // Keep a copy of options
         self.options = options.clone();
 
@@ -566,7 +576,7 @@ impl Engine {
         Ok(())
     }
 
-    fn start_with_addr(&mut self, _options: StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
+    fn start_with_addr(&mut self, _options: &StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
         // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
         // The static address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();

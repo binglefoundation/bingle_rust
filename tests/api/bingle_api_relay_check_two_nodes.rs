@@ -16,7 +16,7 @@ fn bingle_api_relay_check_two_nodes() {
     // 1) Start relay node on an unused port with PASSPHRASE_RECEIVE and id ADDRESS_RECEIVE
     let relay_port = test_util::find_unused_loopback_port();
     let relay_addr = SocketAddr::from(([127, 0, 0, 1], relay_port));
-    let mut relay = BingleApiImpl::new();
+    let mut relay = BingleApiImpl::new(&StartOptions::default());
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
@@ -29,7 +29,7 @@ fn bingle_api_relay_check_two_nodes() {
         asset_id: None,
         log_level: None,
     };
-    relay.start(relay_opts).expect("relay start");
+    relay.start(&relay_opts).expect("relay start");
 
     // Install an on_message on the relay that responds to RelayCheck with RelayCheckResponse.
     // We need to send back to the client's socket address; this is provided via sender_handle (from_address string).
@@ -64,7 +64,7 @@ fn bingle_api_relay_check_two_nodes() {
     // 2) Start client node on an unused port with PASSPHRASE_SPEND and id ADDRESS_SPEND
     let client_port = test_util::find_unused_loopback_port();
     let client_addr = SocketAddr::from(([127, 0, 0, 1], client_port));
-    let mut client = BingleApiImpl::new();
+    let mut client = BingleApiImpl::new(&StartOptions::default());
     let client_opts = StartOptions {
         handle: Handle::from("client"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -77,7 +77,7 @@ fn bingle_api_relay_check_two_nodes() {
         asset_id: None,
         log_level: None,
     };
-    client.start(client_opts).expect("client start");
+    client.start(&client_opts).expect("client start");
 
     // 3) Send RelayCheck from client to relay directly
     let nsk_relay = NetworkSourceKey::new_direct(relay_addr);

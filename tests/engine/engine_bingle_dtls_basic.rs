@@ -24,8 +24,8 @@ fn engine_basic_bingle_dtls_layer() {
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
     // Create server and client nodes
-    let mut server = BingleApiImpl::new();
-    let mut client = BingleApiImpl::new();
+    let mut server = BingleApiImpl::new(&StartOptions::default());
+    let mut client = BingleApiImpl::new(&StartOptions::default());
 
     // Install server handlers that print and signal when a message arrives
     let delivered = Arc::new(AtomicBool::new(false));
@@ -66,9 +66,9 @@ fn engine_basic_bingle_dtls_layer() {
 
     // Start both nodes
     log::info!("[test] starting server at {}", server_addr);
-    server.start(server_opts).expect("server start() should succeed");
+    server.start(&server_opts).expect("server start() should succeed");
     log::info!("[test] starting client at {}", client_addr);
-    client.start(client_opts).expect("client start() should succeed");
+    client.start(&client_opts).expect("client start() should succeed");
 
     // Build direct network destination to server and send a simple plaintext JSON message.
     let dest = NetworkSourceKey::new_direct(server_addr);

@@ -17,8 +17,8 @@ fn start_pair() -> (Arc<std::sync::Mutex<BingleApiImpl>>, Arc<std::sync::Mutex<B
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let relay = Arc::new(std::sync::Mutex::new(BingleApiImpl::new()));
-    let client = Arc::new(std::sync::Mutex::new(BingleApiImpl::new()));
+    let relay = Arc::new(std::sync::Mutex::new(BingleApiImpl::new(&StartOptions::default())));
+    let client = Arc::new(std::sync::Mutex::new(BingleApiImpl::new(&StartOptions::default())));
 
     let relay_opts = StartOptions {
         handle: "relay".into(),
@@ -44,8 +44,8 @@ fn start_pair() -> (Arc<std::sync::Mutex<BingleApiImpl>>, Arc<std::sync::Mutex<B
         asset_id: None,
         log_level: None,
     };
-    relay.lock().unwrap().start(relay_opts).expect("relay start ok");
-    client.lock().unwrap().start(client_opts).expect("client start ok");
+    relay.lock().unwrap().start(&relay_opts).expect("relay start ok");
+    client.lock().unwrap().start(&client_opts).expect("client start ok");
     (relay, client, relay_addr, client_addr)
 }
 
@@ -59,7 +59,7 @@ fn ddb_client_register_ip_ok() {
     impl BingleApi for ApiProxy {
         fn get_my_id(&self) -> Option<String> { self.0.lock().ok().and_then(|g| g.get_my_id()) }
         fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+        fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }

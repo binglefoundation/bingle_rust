@@ -16,7 +16,7 @@ mod test_util;
 
 // Helper: start a relay node at a fixed address
 fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> BingleApiImpl {
-    let mut api = BingleApiImpl::new();
+    let mut api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
@@ -29,13 +29,13 @@ fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> BingleApiImpl 
         asset_id: None,
         log_level: None,
     };
-    api.start(opts).expect("relay start");
+    api.start(&opts).expect("relay start");
     api
 }
 
 // Helper: start a client node with given STUN list
 fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> BingleApiImpl {
-    let mut api = BingleApiImpl::new();
+    let mut api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
@@ -48,7 +48,7 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Bin
         asset_id: None,
         log_level: None,
     };
-    api.start(opts).expect("client start");
+    api.start(&opts).expect("client start");
     api
 }
 

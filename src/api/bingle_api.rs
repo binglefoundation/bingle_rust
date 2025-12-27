@@ -162,7 +162,7 @@ pub trait BingleApi: Send + Sync {
     /// Returns the configured Algorand provider config from StartOptions, if any. Default: None.
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
     /// Start the node using the provided options. Implementations may spawn background tasks.
-    fn start(&mut self, options: StartOptions) -> Result<(), String>;
+    fn start(&mut self, options: &StartOptions) -> Result<(), String>;
 
     /// Stop all threads/tasks and release resources.
     fn stop(&mut self);

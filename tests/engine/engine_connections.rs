@@ -59,7 +59,7 @@ impl BingleApi for DummyApi {
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }
     fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
-    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
@@ -74,7 +74,7 @@ impl BingleApi for DummyApi {
 
 #[test]
 fn engine_send_to_peer_tracks_connections_and_reuses() {
-    let mut engine = Engine::new(StartOptions::default(), Arc::new(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), Arc::new(DummyApi));
     engine.set_dtls(Box::new(FakeDtls::new()));
 
     let a1: SocketAddr = "127.0.0.1:12345".parse().unwrap();

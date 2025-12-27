@@ -27,7 +27,7 @@ impl MockApi {
 
 impl BingleApi for MockApi {
     fn get_my_id(&self) -> Option<String> { None }
-    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
 

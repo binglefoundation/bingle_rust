@@ -62,6 +62,21 @@ impl DdbClientImpl {
     }
 }
 
+pub struct NullDdbClient;
+
+impl NullDdbClient {
+    pub fn new() -> Self { Self }
+}
+
+impl DdbClient for NullDdbClient {
+    fn register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
+    fn lookup(&self, _id: &str) -> Result<NetworkSourceKey, String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
+}
+
 impl DdbClient for DdbClientImpl {
     fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
         // 1) Find relay to talk to

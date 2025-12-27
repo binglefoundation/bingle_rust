@@ -58,8 +58,6 @@ fn testnet_user_reaches_endpoint_available() {
         .expect("indexer query for static endpoints");
     assert!(list.len() >= 2, "Expected at least two static endpoints on testnet, got {}", list.len());
 
-    // Start the user and wait for EndpointAvailable
-    let mut api = BingleApiImpl::new();
 
     // Load STUN servers from the repository root file and configure options accordingly.
     let stun_servers = parse_stun_file("stunservers.txt").expect("failed to read/parse stunservers.txt");
@@ -77,7 +75,10 @@ fn testnet_user_reaches_endpoint_available() {
         log_level: None,
     };
 
-    api.start(opts).expect("start api");
+    // Start the user and wait for EndpointAvailable
+    let mut api = BingleApiImpl::new(&opts);
+
+    api.start(&opts).expect("start api");
 
     // Determine expected final state from environment.
     // Primary: EXPECT_FINAL_STATE can be set to "EndpointAvailable" or "NATRestricted".

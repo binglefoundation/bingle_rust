@@ -18,8 +18,8 @@ fn start_pair(server_am_relay: bool) -> (BingleApiImpl, BingleApiImpl, SocketAdd
     let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let mut server = BingleApiImpl::new();
-    let mut client = BingleApiImpl::new();
+    let mut server = BingleApiImpl::new(&StartOptions::default());
+    let mut client = BingleApiImpl::new(&StartOptions::default());
 
     let server_opts = StartOptions {
         handle: "server".into(),
@@ -45,8 +45,8 @@ fn start_pair(server_am_relay: bool) -> (BingleApiImpl, BingleApiImpl, SocketAdd
         asset_id: None,
         log_level: None,
     };
-    server.start(server_opts).expect("server start ok");
-    client.start(client_opts).expect("client start ok");
+    server.start(&server_opts).expect("server start ok");
+    client.start(&client_opts).expect("client start ok");
     (server, client, server_addr, client_addr)
 }
 

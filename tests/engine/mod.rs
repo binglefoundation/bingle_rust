@@ -14,3 +14,6 @@ mod engine_connections;
 
 #[path = "ddb_upsert.rs"]
 mod ddb_upsert;
+
+#[path = "ddb_client_non_optional.rs"]
+mod ddb_client_non_optional;

@@ -11,7 +11,7 @@ impl BingleApi for DummyApi {
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }
     fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
-    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
@@ -39,7 +39,7 @@ fn engine_start_without_static_ip_errors() {
         asset_id: None,
         log_level: None,
     };
-    let res = engine.start(opts);
+    let res = engine.start(&opts);
     assert!(res.is_err());
     let msg = res.err().unwrap();
     let ml = msg.to_lowercase();
@@ -68,7 +68,7 @@ fn engine_start_with_static_ip_localhost_ok() {
         asset_id: None,
         log_level: None,
     };
-    let res = engine.start(opts);
+    let res = engine.start(&opts);
     // Engine may fail to start DTLS due to lack of certificates; however, our DTLS implementation only
     // requires certificates for server. It uses defaults in tests; accept either Ok or Err as long as it doesn't panic.
     if let Err(e) = res {

@@ -19,14 +19,14 @@ fn ddb_client_lookup_returns_endpoint() {
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let mut relay = BingleApiImpl::new();
-    let mut client = BingleApiImpl::new();
+    let mut relay = BingleApiImpl::new(&StartOptions::default());
+    let mut client = BingleApiImpl::new(&StartOptions::default());
 
     let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
 
-    relay.start(relay_opts).expect("relay start ok");
-    client.start(client_opts).expect("client start ok");
+    relay.start(&relay_opts).expect("relay start ok");
+    client.start(&client_opts).expect("client start ok");
 
     // Use a DdbClientImpl with custom discovery that points to the relay
     #[derive(Clone)]
@@ -34,7 +34,7 @@ fn ddb_client_lookup_returns_endpoint() {
     impl BingleApi for ApiProxy {
         fn get_my_id(&self) -> Option<String> { self.0.lock().ok().and_then(|g| g.get_my_id()) }
         fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+        fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }

@@ -55,7 +55,7 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     impl BingleApi for MockApi {
         fn get_my_id(&self) -> Option<String> { Some("ME".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+        fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
@@ -98,7 +98,7 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     impl BingleApi for MockApi {
         fn get_my_id(&self) -> Option<String> { Some("ME".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+        fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }

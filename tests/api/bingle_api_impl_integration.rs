@@ -6,7 +6,7 @@ mod test_util;
 
 #[test]
 fn start_succeeds() {
-    let mut api = BingleApiImpl::new();
+    let mut api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { 
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -19,7 +19,7 @@ fn start_succeeds() {
         asset_id: None,
         log_level: None,
     };
-    let res = api.start(opts);
+    let res = api.start(&opts);
     // Engine may fail to start depending on DTLS/PKI availability; we only require DTLS instance creation here.
     if res.is_err() {
         eprintln!("api.start returned error: {:?}", res);
@@ -29,7 +29,7 @@ fn start_succeeds() {
 
 #[test]
 fn send_message_to_network_without_addr_fails_gracefully() {
-    let api = BingleApiImpl::new();
+    let api = BingleApiImpl::new(&StartOptions::default());
     let nsk = NetworkSourceKey { inet_socket_address: None, relay_channel: None, relay_address: None };
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None);
@@ -103,9 +103,9 @@ fn relay_check_end_to_end_on_message_receives_response() {
     thread::sleep(Duration::from_millis(200));
 
     // Build BingleApiImpl client
-    let mut api = BingleApiImpl::new();
+    let mut api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
-    let start_result = api.start(opts);
+    let start_result = api.start(&opts);
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 
     // Prepare a direct NetworkSourceKey to server and send RelayCheck

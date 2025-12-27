@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 pub mod client;
 
-pub use client::{DdbClient, DdbClientImpl};
+pub use client::{DdbClient, DdbClientImpl, NullDdbClient};
 
 /// InetSocketAddress as defined in BINGLE_SPEC.md
 /// Hostname/IP and UDP port number.

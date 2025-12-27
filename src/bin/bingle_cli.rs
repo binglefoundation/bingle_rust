@@ -117,7 +117,7 @@ fn cmd_run(args: Vec<String>) {
     }
 
     // Initialize API
-    let mut api = BingleApiImpl::new();
+    let mut api = BingleApiImpl::new(&rust_comms::api::bingle_api::StartOptions::default());
 
     // Install handlers that print args
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
@@ -131,7 +131,7 @@ fn cmd_run(args: Vec<String>) {
     api.set_on_connect(Some(on_connect));
 
     // Start API
-    if let Err(e) = api.start(opts) {
+    if let Err(e) = api.start(&opts) {
         warn!("Failed to start: {}", e);
         std::process::exit(1);
     }

@@ -10,7 +10,7 @@ impl BingleApi for DummyApi {
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }
     fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
-    fn start(&mut self, _options: StartOptions) -> Result<(), String> { Ok(()) }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
@@ -28,14 +28,14 @@ use rust_comms::dtls::DtlsOpenSsl;
 
 #[test]
 fn engine_dtls_is_none_before_configuration() {
-    let engine = Engine::new(StartOptions::default(), Arc::new(DummyApi));
+    let engine = Engine::new(&StartOptions::default(), Arc::new(DummyApi));
     assert!(engine.dtls().is_none(), "Engine::dtls() should be None when DTLS not configured");
 }
 
 #[cfg(not(target_os = "ios"))]
 #[test]
 fn engine_dtls_send_without_start_fails() {
-    let mut engine = Engine::new(StartOptions::default(), Arc::new(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), Arc::new(DummyApi));
     // Provide a DTLS instance but DO NOT call engine.start(); ensure direct send fails.
     engine.set_dtls(Box::new(DtlsOpenSsl::new()));
 
