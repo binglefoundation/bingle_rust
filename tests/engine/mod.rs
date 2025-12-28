@@ -15,6 +15,9 @@ mod engine_connections;
 #[path = "turn_relay_integration.rs"]
 mod turn_relay_integration;
 
+#[path = "turn_relay_forwards_dtls.rs"]
+mod turn_relay_forwards_dtls;
+
 #[path = "ddb_upsert.rs"]
 mod ddb_upsert;
 
