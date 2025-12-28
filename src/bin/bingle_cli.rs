@@ -117,7 +117,7 @@ fn cmd_run(args: Vec<String>) {
     }
 
     // Initialize API
-    let mut api = BingleApiImpl::new(&rust_comms::api::bingle_api::StartOptions::default());
+    let mut api = BingleApiImpl::new(&opts);
 
     // Install handlers that print args
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {

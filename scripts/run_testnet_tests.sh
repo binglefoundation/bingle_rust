@@ -24,22 +24,28 @@ TESTNET_USER=testuser10
 TESTNET_ADDRESS=SRIDWL763LIECMBL5N4WRJE6TGBBJL6SKJ6OZOMEQSGAOKW5JEBVUUH3QU
 TESTNET_PASSPHRASE="sand fantasy youth fix suggest immense stem awful piano pyramid garment wear butter setup cake finger hawk game language demise company surprise rule about during"
 
-# Update these users
+PINGABLE_USER=pinguser20
+PINGABLE_ADDRESS=SRIDF3MQNHGWOKYNZOSS7VONPKJB2LM52DOZGPY7QLT5ONZ5BPUAKH3Q4A
+PINGABLE_PASSPHRASE="sudden defy hunt quick lens long slender pupil example affair select announce flower meadow refuse owner beauty write always scene kiss cage picture ability gorilla"
 
+# Update these users
 bingle_admin root $RELAY_A_ADDRESS --enable \
  --node-file nodely_testnet_node.json \
- --passphrase "$CREATOR_PASSPHRASE" \
- --debug
+ --passphrase "$CREATOR_PASSPHRASE"
 
 bingle_admin root $RELAY_B_ADDRESS --enable \
  --node-file nodely_testnet_node.json \
- --passphrase "$CREATOR_PASSPHRASE" \
- --debug
+ --passphrase "$CREATOR_PASSPHRASE"
 
 bingle_admin updateuser --handle $TESTNET_USER \
  --passphrase "$CREATOR_PASSPHRASE" \
  --node-file nodely_testnet_node.json \
- --debug --userpassphrase "$TESTNET_PASSPHRASE"
+ --userpassphrase "$TESTNET_PASSPHRASE"
+
+bingle_admin updateuser --handle $PINGABLE_USER \
+ --passphrase "$CREATOR_PASSPHRASE" \
+ --node-file nodely_testnet_node.json \
+ --userpassphrase "$PINGABLE_PASSPHRASE"
 
 # Ensure a dedicated test network exists
 if ! docker network inspect bingle_testnet >/dev/null 2>&1; then
@@ -85,6 +91,7 @@ echo "Using STUN servers: ${STUN_A_IP}:3478, ${STUN_B_IP}:3478"
 docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_a \
  --network bingle_testnet \
+ -e RELAY=1 \
  -e PASSPHRASE="$RELAY_A_PASSPHRASE" \
  -e PORT=$RELAY_A_PORT \
  -e HANDLE=$RELAY_A_HANDLE \
@@ -94,9 +101,21 @@ sleep 20
 docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_b \
  --network bingle_testnet \
+ -e RELAY=1 \
  -e PASSPHRASE="$RELAY_B_PASSPHRASE" \
  -e PORT=$RELAY_B_PORT \
  -e HANDLE=$RELAY_B_HANDLE \
+ "bingle:local"
+sleep 20
+
+# Start the ping target
+docker run --platform linux/arm64 -d \
+ --name bingle_pingable \
+ --network bingle_testnet \
+ -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
+ -e PORT=30001 \
+ -e HANDLE=$PINGABLE_USER \
+ -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
  "bingle:local"
 sleep 20
 

@@ -8,7 +8,8 @@ set -euo pipefail
 #   PORT        - UDP/TCP port to bind/expose
 #   HANDLE      - User handle
 # Optional env vars:
-#   EXTERNAL_IP - externally reachable IP or DNS name; if blank, auto-detected
+#   RELAY       - set to enable relay mode with --relay and --static-ip params
+#   EXTERNAL_IP - externally reachable IP or DNS name; if blank, auto-detected (only used when RELAY is set)
 #   EXTRA_ARGS  - any extra args to pass to the CLI
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
 #   NODE_FILE   - path to node configuration JSON (default /app/nodely_testnet_node.json)
@@ -20,9 +21,9 @@ set -euo pipefail
 STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
 NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
 
-# Discover external IP if not provided or blank
-if [[ -z "${EXTERNAL_IP:-}" ]]; then
-  echo "EXTERNAL_IP not provided; attempting autodiscovery..."
+# Discover external IP if not provided or blank (only when RELAY is set)
+if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]]; then
+  echo "RELAY mode enabled but EXTERNAL_IP not provided; attempting autodiscovery..."
   # Preferred: use routing lookup to a public IP to find the egress interface IP
   if command -v ip >/dev/null 2>&1; then
     EXTERNAL_IP=$(ip -o -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}') || true
@@ -40,7 +41,7 @@ if [[ -z "${EXTERNAL_IP:-}" ]]; then
     EXTERNAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
   fi
   if [[ -z "${EXTERNAL_IP:-}" ]]; then
-    echo "Failed to autodetect EXTERNAL_IP. Please set EXTERNAL_IP explicitly." >&2
+    echo "Failed to autodetect EXTERNAL_IP for relay mode. Please set EXTERNAL_IP explicitly." >&2
     exit 2
   fi
   echo "Autodetected EXTERNAL_IP=${EXTERNAL_IP}"
@@ -59,12 +60,15 @@ fi
 CMD=("/app/bingle_cli" \
   "run" \
   "--handle" "$HANDLE" \
-  "--passphrase" "$PASSPHRASE" \
-  "--relay" \
-  "--static-ip" "${EXTERNAL_IP}:${PORT}" \
-  "--stun-servers-file" "$STUN_FILE" \
-  "--node-file" "$NODE_FILE"
+  "--passphrase" "$PASSPHRASE"
 )
+
+# Add relay-specific parameters if RELAY flag is set
+if [[ -n "${RELAY:-}" ]]; then
+  CMD+=("--relay" "--static-ip" "${EXTERNAL_IP}:${PORT}")
+fi
+
+CMD+=("--stun-servers-file" "$STUN_FILE" "--node-file" "$NODE_FILE")
 
 if [[ -n "${EXTRA_ARGS:-}" ]]; then
   # shellcheck disable=SC2206
