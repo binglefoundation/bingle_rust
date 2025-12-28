@@ -9,7 +9,7 @@ use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::turn::turn_handler::TurnHandler;
-use crate::messages::{from_json_str, route, DefaultPrintingHandler};
+use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::stun::endpoint_finder::StunEndpointFinder;
@@ -75,6 +75,8 @@ pub struct Engine {
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // DDB client bound to the API instance (always present; may be a NullDdbClient)
     ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
+    // TURN handler used for RelayListen and TURN ChannelData processing
+    turn_handler: std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>,
 }
 
 impl Engine {
@@ -196,8 +198,6 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         if p.is_null() { return Err("null engine".into()); }
         unsafe { (*p).ddb_client().register_ip(endpoint) }
     }
-    // TURN handler used for RelayListen and TURN ChannelData processing
-    turn_handler: std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>,
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -830,79 +830,6 @@ impl Engine {
             _ => {
                 // Other transitions not supported concurrently
                 false
-            }
-        }
-    }
-
-    /// DTLS message handler: try to interpret payload as UTF-8 JSON and route.
-    fn handle_dtls_message(&self, _server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {
-        // Debug: log inbound DTLS application message (best-effort UTF-8 preview)
-        let preview = match std::str::from_utf8(data) {
-            Ok(s) => {
-                let trimmed = if s.len() > 120 { &s[..120] } else { s };
-                format!("utf8:{} bytes: {}", s.len(), trimmed)
-            }
-            Err(_) => format!("non-utf8:{} bytes", data.len()),
-        };
-        log::info!("[Engine::handle_dtls_message] from={} issuer={} {}", from, issuer, preview);
-        #[allow(unused)] {  }
-
-        // Record last sender address for handlers that need to reply directly
-        crate::messages::router::set_last_from(Some(*from));
-
-        // Try to parse as JSON first to handle tagged responses and set router hints
-        if let Ok(s) = std::str::from_utf8(data) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                // Expose last responseTag (if this is a request). Handlers may echo it back.
-                if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
-                    crate::messages::router::set_last_response_tag(Some(tag.to_string()));
-                } else {
-                    crate::messages::router::set_last_response_tag(None);
-                }
-                // If this is a response, fulfill any waiter registered with Engine (supports both keys)
-                let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
-                    .or_else(|| v.get("tag").and_then(|vv| vv.as_str()));
-                if let Some(tag_str) = tag_str_opt {
-                    if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
-                        if self.fulfill_pending(&tag_uuid, v.clone()) {
-                            // Consumed by waiter; do not forward to API on_message
-                            return;
-                        }
-                    }
-                }
-                // Not a tagged response we were waiting for: forward to API on_message if available
-                if let Some(ptr) = &self.api_ptr {
-                    use std::sync::atomic::Ordering;
-                    let p = ptr.load(Ordering::SeqCst);
-                    if !p.is_null() {
-                        unsafe { (&*p).handle_incoming_network_message(issuer.to_string(), from.to_string(), v.clone()); }
-                    }
-                }
-            }
-        }
-
-        // If this is a RelayListen, wire to TURN handler to authorize sender IP
-        if let Ok(s) = std::str::from_utf8(data) {
-            if let Ok(msg) = from_json_str(s) {
-                if let Message::Relay(RelayMessage::Listen(_)) = msg {
-                    let ok = self.turn_handler.handle_listen(from);
-                    log::info!("[Engine::handle_dtls_message] RelayListen from {} -> handle_listen ok={}", from, ok);
-                }
-            }
-        }
-
-        // Route through the message framework for internal handlers (triangle tests etc.)
-        let handler = DefaultPrintingHandler;
-        match std::str::from_utf8(data) {
-            Ok(s) => match from_json_str(s) {
-                Ok(msg) => route(&handler, &msg, issuer),
-                Err(_) => {
-                    // Not valid JSON per our schema; treat as plaintext with raw bytes
-                    handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
-                }
-            },
-            Err(_) => {
-                handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
             }
         }
     }
