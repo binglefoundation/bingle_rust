@@ -558,6 +558,34 @@ impl Engine {
             }
         })));
 
+        // Configure TURN ChannelData handler based on role (relay vs client)
+        {
+            let am_relay = self.options.am_relay;
+            let turn = self.turn_handler.clone();
+            mux0.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
+                // Parse/unwrap the TURN ChannelData using our handler
+                if let Some(wrapped) = turn.handle_turn_incoming(packet) {
+                    if am_relay {
+                        // Relay role: forward stripped payload to resolved ipAddress via concrete UDP mux
+                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
+                            if let Err(e) = udp.write(wrapped.ipAddress, &wrapped.message) {
+                                log::warn!("[Engine::start][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
+                            } else {
+                                log::info!("[Engine::start][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ipAddress);
+                            }
+                        } else {
+                            log::warn!("[Engine::start][TURN relay] source is not UdpNetworkMux; cannot forward");
+                        }
+                    } else {
+                        // Non-relay role: this packet is for us. For now, log; later we will requeue into DTLS.
+                        log::debug!("[Engine::start][TURN client] received {} bytes from {} (stripped)", wrapped.message.len(), wrapped.ipAddress);
+                    }
+                } else {
+                    log::debug!("[Engine::start][TURN] handle_turn_incoming returned None (ignored)");
+                }
+            })));
+        }
+
         // Now wrap mux in Arc
         let mux = Arc::new(mux0);
 
@@ -589,12 +617,40 @@ impl Engine {
         let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
         log::info!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
         log::warn!("[Engine] start_with_addr: requested={:?} binding={:?}", bind_addr, bind_all);
-        let mux = Arc::new(UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?);
+        let mut mux0 = UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         // Determine the concrete local address after bind (handles port 0)
-        let _local_addr: SocketAddr = mux.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
+        let _local_addr: SocketAddr = mux0.local_addr().map_err(|e| format!("Failed to get local addr: {}", e))?;
 
         // Install the common DTLS handler wrapper
         self.install_dtls_handler()?;
+
+        // Configure TURN ChannelData handler based on role (relay vs client)
+        {
+            let am_relay = self.options.am_relay;
+            let turn = self.turn_handler.clone();
+            mux0.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
+                if let Some(wrapped) = turn.handle_turn_incoming(packet) {
+                    if am_relay {
+                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
+                            if let Err(e) = udp.write(wrapped.ipAddress, &wrapped.message) {
+                                log::warn!("[Engine::start_with_addr][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
+                            } else {
+                                log::info!("[Engine::start_with_addr][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ipAddress);
+                            }
+                        } else {
+                            log::warn!("[Engine::start_with_addr][TURN relay] source is not UdpNetworkMux; cannot forward");
+                        }
+                    } else {
+                        log::debug!("[Engine::start_with_addr][TURN client] received {} bytes from {} (stripped)", wrapped.message.len(), wrapped.ipAddress);
+                    }
+                } else {
+                    log::debug!("[Engine::start_with_addr][TURN] handle_turn_incoming returned None (ignored)");
+                }
+            })));
+        }
+
+        // Now wrap mux in Arc
+        let mux = Arc::new(mux0);
 
         // Start the UDP mux background loop first
         mux.start().map_err(|_| "Failed to start UDP mux")?;
