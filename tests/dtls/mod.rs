@@ -33,5 +33,8 @@ mod dtls_stun_interleave_handshake;
 #[path = "network_mux_udp_tests.rs"]
 mod network_mux_udp_tests;
 
+#[path = "network_mux_udp_reprocess.rs"]
+mod network_mux_udp_reprocess;
+
 #[path = "pki.rs"]
 mod pki;

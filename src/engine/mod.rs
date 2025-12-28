@@ -577,8 +577,13 @@ impl Engine {
                             log::warn!("[Engine::start][TURN relay] source is not UdpNetworkMux; cannot forward");
                         }
                     } else {
-                        // Non-relay role: this packet is for us. For now, log; later we will requeue into DTLS.
-                        log::debug!("[Engine::start][TURN client] received {} bytes from {} (stripped)", wrapped.message.len(), wrapped.ipAddress);
+                        // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
+                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
+                            udp.reprocess(wrapped.ipAddress, &wrapped.message);
+                            log::info!("[Engine::start][TURN client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.ipAddress);
+                        } else {
+                            log::warn!("[Engine::start][TURN client] source is not UdpNetworkMux; cannot reprocess");
+                        }
                     }
                 } else {
                     log::debug!("[Engine::start][TURN] handle_turn_incoming returned None (ignored)");
@@ -641,7 +646,13 @@ impl Engine {
                             log::warn!("[Engine::start_with_addr][TURN relay] source is not UdpNetworkMux; cannot forward");
                         }
                     } else {
-                        log::debug!("[Engine::start_with_addr][TURN client] received {} bytes from {} (stripped)", wrapped.message.len(), wrapped.ipAddress);
+                        // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
+                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
+                            udp.reprocess(wrapped.ipAddress, &wrapped.message);
+                            log::info!("[Engine::start_with_addr][TURN client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.ipAddress);
+                        } else {
+                            log::warn!("[Engine::start_with_addr][TURN client] source is not UdpNetworkMux; cannot reprocess");
+                        }
                     }
                 } else {
                     log::debug!("[Engine::start_with_addr][TURN] handle_turn_incoming returned None (ignored)");

@@ -154,41 +154,7 @@ impl UdpNetworkMux {
                     Ok((n, from)) => {
                         if n == 0 { continue; }
                         let data = &buf[..n];
-                        match mux_type_for(data) {
-                            MuxType::Dtls => {
-                                // Enqueue DTLS datagram for consumers
-                                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                                    warn!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
-                                    #[allow(unused)] {  }
-                                } else {
-                                    warn!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, buf.len());
-                                    #[allow(unused)] {  }
-                                }
-
-                                if let Ok(mut q) = this.dtls_queue.lock() {
-                                    q.push_back((from, data.to_vec()));
-                                }
-                                if let Some(h) = this.handle_dtls.lock().ok().and_then(|g| g.clone()) {
-                                    // Pass `&this` as &dyn NetworkMux
-                                    let source: &dyn NetworkMux = &*this;
-                                    (h)(source, &from, data);
-                                }
-                            }
-                            MuxType::Stun => {
-                                if let Some(h) = this.handle_stun.lock().ok().and_then(|g| g.clone()) {
-                                    let source: &dyn NetworkMux = &*this;
-                                    (h)(source, &from, data);
-                                }
-                            }
-                            MuxType::TurnChannelData => {
-                                if let Some(h) = this.handle_turn.lock().ok().and_then(|g| g.clone()) {
-                                    let source: &dyn NetworkMux = &*this;
-                                    (h)(source, &from, data);
-                                }
-                            }
-                            // Currently ignore ZRTP, RTP, UNKNOWN
-                            _ => {}
-                        }
+                        this.process_packet(from, data);
                     }
                     Err(e) => {
                         // Respect timeout for shutdown; ignore WouldBlock/TimedOut, break on other errors
@@ -351,5 +317,51 @@ impl UdpNetworkMux {
     /// Arc-friendly setter for DTLS handler to allow installing from Arc<UdpNetworkMux>.
     pub fn set_handle_dtls_arc(self: &std::sync::Arc<Self>, handler: Option<HandleDtls>) {
         if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; }
+    }
+
+    /// Shared handler that processes a datagram as if received on the socket.
+    /// Classifies, logs, enqueues DTLS payloads, and invokes installed handlers.
+    pub fn process_packet(&self, from: SocketAddr, data: &[u8]) {
+        if data.is_empty() { return; }
+        let to = self.local_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
+        match mux_type_for(data) {
+            MuxType::Dtls => {
+                if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
+                    warn!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
+                    #[allow(unused)] {  }
+                } else {
+                    warn!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, data.len());
+                    #[allow(unused)] {  }
+                }
+                if let Ok(mut q) = self.dtls_queue.lock() {
+                    q.push_back((from, data.to_vec()));
+                }
+                if let Some(h) = self.handle_dtls.lock().ok().and_then(|g| g.clone()) {
+                    let source: &dyn NetworkMux = self;
+                    (h)(source, &from, data);
+                }
+            }
+            MuxType::Stun => {
+                if let Some(h) = self.handle_stun.lock().ok().and_then(|g| g.clone()) {
+                    let source: &dyn NetworkMux = self;
+                    (h)(source, &from, data);
+                }
+            }
+            MuxType::TurnChannelData => {
+                if let Some(h) = self.handle_turn.lock().ok().and_then(|g| g.clone()) {
+                    let source: &dyn NetworkMux = self;
+                    (h)(source, &from, data);
+                }
+            }
+            _ => { /* ignore ZRTP, RTP, UNKNOWN */ }
+        }
+    }
+
+    /// Re-dispatch a buffer as if it was received from the socket from the specified source address.
+    /// This mirrors the classification and handler invocation logic used in the receive loop
+    /// and additionally enqueues DTLS packets into the internal queue for dtls_recv_* helpers.
+    pub fn reprocess(&self, from: SocketAddr, buf: &[u8]) {
+        if buf.is_empty() { return; }
+        self.process_packet(from, buf);
     }
 }
