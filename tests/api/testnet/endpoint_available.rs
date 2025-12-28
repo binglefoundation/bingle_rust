@@ -10,16 +10,14 @@
 // To keep CI green in environments without testnet credentials, this test only
 // runs when BINGLE_RUN_TESTNET=1 is set in the environment. Otherwise it exits early.
 
-use std::time::{Duration, Instant};
-use std::fs;
-use std::net::{SocketAddr, ToSocketAddrs};
 use log::LevelFilter;
-use rust_comms::AlgoBingle;
-use rust_comms::AlgoOps;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::engine::EngineState;
+use rust_comms::engine::{EngineState, NatType};
 use rust_comms::util::cli_utils::{parse_node_file_with_ids, parse_stun_file};
+use rust_comms::AlgoBingle;
+use rust_comms::AlgoOps;
+use std::time::{Duration, Instant};
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
@@ -60,8 +58,6 @@ fn testnet_user_reaches_endpoint_available() {
         .expect("indexer query for static endpoints");
     assert!(list.len() >= 2, "Expected at least two static endpoints on testnet, got {}", list.len());
 
-    // Start the user and wait for EndpointAvailable
-    let mut api = BingleApiImpl::new();
 
     // Load STUN servers from the repository root file and configure options accordingly.
     let stun_servers = parse_stun_file("stunservers.txt").expect("failed to read/parse stunservers.txt");
@@ -79,12 +75,15 @@ fn testnet_user_reaches_endpoint_available() {
         log_level: None,
     };
 
-    api.start(opts).expect("start api");
+    // Start the user and wait for EndpointAvailable
+    let mut api = BingleApiImpl::new(&opts);
+
+    api.start(&opts).expect("start api");
 
     // Determine expected final state from environment.
     // Primary: EXPECT_FINAL_STATE can be set to "EndpointAvailable" or "NATRestricted".
     // Secondary: derive from NAT_MODE if EXPECT_FINAL_STATE is not set.
-    let expect_state = match env_var("EXPECT_FINAL_STATE").as_deref() {
+    let _expect_state = match env_var("EXPECT_FINAL_STATE").as_deref() {
         Some("EndpointAvailable") => EngineState::EndpointAvailable,
         Some("NATRestricted") => EngineState::NATRestricted,
         Some(other) => panic!("Invalid EXPECT_FINAL_STATE='{}' (allowed: EndpointAvailable|NATRestricted)", other),
@@ -101,23 +100,60 @@ fn testnet_user_reaches_endpoint_available() {
         }
     };
 
-    // Wait up to 60 seconds for expected state
+    // Derive expected NAT type from environment
+    let expect_nat = match env_var("EXPECT_NAT_TYPE").as_deref() {
+        Some("Unknown") => NatType::Unknown,
+        Some("NoConnection") => NatType::NoConnection,
+        Some("Symmetric") => NatType::Symmetric,
+        Some("Restricted") => NatType::Restricted,
+        Some("FullCone") => NatType::FullCone,
+        Some(other) => panic!("Invalid EXPECT_NAT_TYPE='{}'", other),
+        None => {
+            match env_var("NAT_MODE").as_deref() {
+                Some("Restricted") => NatType::Restricted,
+                Some("Symmetric") => NatType::Symmetric,
+                // Direct and Full both indicate direct reachability
+                Some("Direct") | Some("Full") | None => NatType::FullCone,
+                Some(_) => NatType::FullCone,
+            }
+        }
+    };
+
+    // Wait up to 120 seconds for final state: Registered OR NATRestricted
     let start = Instant::now();
     let timeout = Duration::from_secs(120); // TODO: make handshakes faster
-    loop {
-        match (expect_state, api.engine_state_for_tests()) {
-            (EngineState::EndpointAvailable, Some(EngineState::EndpointAvailable)) => break,
-            (EngineState::NATRestricted, Some(EngineState::NATRestricted)) => break,
-            _ => {}
+    let final_state = loop {
+        if let Some(st) = api.engine_state_for_tests() {
+            if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
         }
         if start.elapsed() > timeout {
             panic!(
-                "Timed out waiting for {:?}; last state: {:?}",
-                expect_state,
+                "Timed out waiting for Registered or NATRestricted; last state: {:?}",
                 api.engine_state_for_tests()
             );
         }
         std::thread::sleep(Duration::from_millis(200));
+    };
+
+    // Validate NAT type once final state is reached
+    let got_nat = api.engine_nat_type_for_tests().expect("nat type should be set");
+    match final_state {
+        EngineState::Registered => assert_eq!(got_nat, NatType::FullCone, "Registered implies we reached EndpointAvailable with FullCone NAT"),
+        EngineState::NATRestricted => assert!(matches!(got_nat, NatType::Restricted | NatType::Symmetric), "NATRestricted should be Restricted or Symmetric (got {:?})", got_nat),
+        _ => {}
+    }
+    // If EXPECT_NAT_TYPE was provided, assert exact match
+    if env_var("EXPECT_NAT_TYPE").is_some() {
+        assert_eq!(got_nat, expect_nat, "expected NAT type {:?}, got {:?}", expect_nat, got_nat);
+    }
+
+    // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
+    if final_state == EngineState::Registered {
+        let my_id = api.get_my_id().expect("api.get_my_id Some");
+        let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
+        let looked = nsk.inet_socket_address.expect("lookup should return a direct endpoint");
+        let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
+        assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
     }
 
     api.stop();

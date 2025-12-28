@@ -1,0 +1,163 @@
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde_json::Value as JsonValue;
+
+use crate::api::bingle_api::{BingleApi, NetworkSourceKey};
+use crate::messages::types::*;
+use crate::messages::{to_json_value, Message};
+use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+
+/// Public DDB client interface used by higher layers.
+/// Provides register_ip and lookup helpers that send DDB messages over the network
+/// and validate typed responses.
+pub trait DdbClient: Send + Sync {
+    /// Register/update our endpoint IP:port in the DDB via a relay.
+    fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String>;
+    /// Alias with camelCase to match external nomenclature.
+    #[allow(non_snake_case)]
+    fn registerIP(&self, endpoint: SocketAddr) -> Result<(), String> { self.register_ip(endpoint) }
+
+    /// Lookup an id in the DDB and build a NetworkSourceKey from its AdvertRecord.
+    fn lookup(&self, id: &str) -> Result<NetworkSourceKey, String>;
+}
+
+pub struct DdbClientImpl {
+    api: Arc<dyn BingleApi>,
+    discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>,
+}
+
+impl DdbClientImpl {
+    /// Create a DdbClientImpl using indexer-based discovery (requires app_id configured on API or via env BINGLE_APP_ID).
+    #[cfg(not(target_os = "ios"))]
+    pub fn new(api: Arc<dyn BingleApi>) -> Self {
+        let app_id_opt = api
+            .get_app_id()
+            .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+        let app_id = app_id_opt.expect("DdbClientImpl::new: app_id is required (API options.app_id or BINGLE_APP_ID)");
+        let cfg = api.get_algo_provider_config();
+        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+        Self { api, discover }
+    }
+
+    /// Constructor that accepts a custom discovery closure (used by tests to avoid external dependencies).
+    pub fn with_discovery(api: Arc<dyn BingleApi>, discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>) -> Self {
+        Self { api, discover }
+    }
+
+    fn find_relay(&self) -> Result<RootRelayInfo, String> {
+        let finder = RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
+        let my_id = self.api.get_my_id().ok_or_else(|| "get_my_id returned None".to_string())?;
+        finder.find_relay(&my_id)
+    }
+
+    fn relay_user_id(relay_id: &str) -> Result<String, String> {
+        // Validate Algorand base32 address by decoding to 36 bytes
+        match data_encoding::BASE32_NOPAD.decode(relay_id.as_bytes()) {
+            Ok(bytes) if bytes.len() == 36 => Ok(relay_id.to_string()),
+            Ok(bytes) => Err(format!("invalid relay id: base32 decoded length {} != 36", bytes.len())),
+            Err(e) => Err(format!("invalid relay id: {}", e)),
+        }
+    }
+}
+
+pub struct NullDdbClient;
+
+impl NullDdbClient {
+    pub fn new() -> Self { Self }
+}
+
+impl DdbClient for NullDdbClient {
+    fn register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
+    fn lookup(&self, _id: &str) -> Result<NetworkSourceKey, String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
+}
+
+impl DdbClient for DdbClientImpl {
+    fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
+        // 1) Find relay to talk to
+        let relay = self.find_relay()?;
+        let relay_user_b64 = Self::relay_user_id(&relay.id)?;
+        let nsk = NetworkSourceKey::new_direct(relay.address);
+
+        // 2) Build UpsertResolve using our id as startId and record.id
+        let my_id = self.api.get_my_id().ok_or_else(|| "get_my_id returned None".to_string())?;
+        let record = AdvertRecord {
+            id: my_id.clone(),
+            endpoint: Some(InetSocketAddress { host: match endpoint.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() }, port: endpoint.port() }),
+            am_relay: Some(false),
+            relay_id: None,
+            relay_sig: None,
+            date: "1970-01-01T00:00:00Z".to_string(),
+            sig: None,
+        };
+        let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
+            app: "ddb".to_string(),
+            start_id: my_id,
+            epoch: 1,
+            record,
+            original_signature: "SIG".to_string(),
+            rippled: false,
+            tag: None,
+            response_tag: None,
+            text: None,
+            data: None,
+        }));
+        let json: JsonValue = to_json_value(&up);
+
+        // 3) Send and wait for response; validate UpdateResponse
+        log::info!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
+        let resp = self
+            .api
+            .send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)?;
+        log::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
+
+        let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
+        if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }
+    }
+
+    fn lookup(&self, id: &str) -> Result<NetworkSourceKey, String> {
+        // 1) Find relay to talk to
+        let relay = self.find_relay()?;
+        let relay_user_b64 = Self::relay_user_id(&relay.id)?;
+        let nsk = NetworkSourceKey::new_direct(relay.address);
+
+        // 2) Build QueryResolve
+        let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {
+            app: "ddb".to_string(),
+            id: id.to_string(),
+            tag: None,
+            response_tag: None,
+            text: None,
+            data: None,
+        }));
+        let json: JsonValue = to_json_value(&q);
+
+        // 3) Send and await response
+        let resp = self
+            .api
+            .send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)?;
+
+        let is_ddb = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+        let ty = resp.get("type").and_then(|v| v.as_str());
+        if !is_ddb || ty != Some("queryResponse") {
+            return Err("unexpected response (expected DdbQueryResponse)".to_string());
+        }
+        let found = resp.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !found {
+            return Err("not found".to_string());
+        }
+        // Build NetworkSourceKey from advert.endpoint
+        let advert = resp.get("advert").ok_or_else(|| "missing advert".to_string())?;
+        let host = advert.get("endpoint").and_then(|v| v.get("host")).and_then(|v| v.as_str()).ok_or_else(|| "missing endpoint.host".to_string())?;
+        let port = advert.get("endpoint").and_then(|v| v.get("port")).and_then(|v| v.as_u64()).ok_or_else(|| "missing endpoint.port".to_string())? as u16;
+        let ip: IpAddr = host.parse().map_err(|_| format!("invalid host '{}': not an IP address", host))?;
+        let addr = SocketAddr::new(ip, port);
+        Ok(NetworkSourceKey::new_direct(addr))
+    }
+}

@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use data_encoding::BASE32_NOPAD;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId, Handle, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::turn::turn_handler::TurnHandler;
 use crate::messages::{from_json_str, route, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
-use base64::Engine as _;
 use uuid::Uuid;
 
 #[derive(Debug, Default)]
@@ -27,7 +28,17 @@ pub enum EngineState {
     StunIdentify,
     TrianglePing,
     EndpointAvailable,
+    Registered,
     NATRestricted
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NatType {
+    Unknown = 0,
+    NoConnection = 1,
+    Symmetric = 2,
+    Restricted = 3,
+    FullCone = 4,
 }
 
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
@@ -43,19 +54,148 @@ pub struct Engine {
     triangle_wait: Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>, // wait for TriangleTest3
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>,
-    // BingleApi handle for handlers (e.g., RelayFinder) to use a real API bound to this engine instance
-    bingle_api_for_handlers: Option<Arc<dyn BingleApi>>,
-    // Back-reference to creating BingleApiImpl instance (non-global) for inbound dispatch
-    api_ptr: Option<Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>>,
+    // Unified BingleApi handle bound to this engine instance (non-optional)
+    bingle_api: Arc<dyn BingleApi>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
     nat_restricted: std::sync::atomic::AtomicBool,
+    // Flag indicating we have registered our endpoint in the DDB
+    registered: std::sync::atomic::AtomicBool,
+    // Current NAT type classification
+    nat_type: std::sync::atomic::AtomicU8,
     // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
     connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<SocketAddr, ConnectionEntry>>>,
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<String>,
+    // In-memory DDB backend used by relay nodes (and for tests)
+    ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend> >,
+    // Per-API router instance used to avoid global mutable state
+    router: Option<std::sync::Arc<crate::messages::router::Router>>,
+    // DDB client bound to the API instance (always present; may be a NullDdbClient)
+    ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
+}
+
+impl Engine {
+    pub fn ddb_client(&self) -> std::sync::Arc<dyn crate::ddb::DdbClient> {
+        self.ddb_client.clone()
+    }
+    pub fn app_id(&self) -> Option<u64> { self.options.app_id }
+    pub fn algo_provider_config(&self) -> Option<AlgoChainConfig> { self.options.algo_provider_config.clone() }
+}
+
+// Adapter that exposes Engine as a BingleApi implementation so that handlers and discovery
+// can call back into the Engine directly without going through BingleApiImpl.
+pub struct EngineBingleApiHandle(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
+
+impl BingleApi for EngineBingleApiHandle {
+    fn debug_print_options(&self) {}
+    fn get_my_id(&self) -> Option<String> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).issuer().map(|iss| iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()) }
+    }
+    fn get_handle(&self) -> Option<String> {
+        // For safety, Engine-backed handle returns None; handle is available via high-level API.
+        None
+    }
+    fn get_app_id(&self) -> Option<u64> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).app_id() }
+    }
+    fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).algo_provider_config() }
+    }
+
+    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Err("not supported".into()) }
+    fn stop(&mut self) { }
+    fn network_change(&mut self) { }
+
+    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
+
+    fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
+        use std::sync::atomic::Ordering;
+        if let Some(addr) = nsk.inet_socket_address {
+            let valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
+                Ok(bytes) if bytes.len() == 36 => true,
+                _ => false,
+            };
+            if !valid { return false; }
+            let bytes = match serde_json::to_vec(&message) { Ok(b) => b, Err(_) => return false };
+            let p = self.0.load(Ordering::SeqCst);
+            if p.is_null() { return false; }
+            unsafe { (*p).send_to_peer(addr, &bytes).is_ok() }
+        } else { false }
+    }
+
+    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+
+    fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+        use std::sync::atomic::Ordering;
+        use uuid::Uuid;
+        let tag = Uuid::new_v4();
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return Err("null engine".into()); }
+        unsafe { (*p).register_pending(tag); }
+        let msg_with_tag = match message {
+            serde_json::Value::Object(mut m) => { m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string())); serde_json::Value::Object(m) }
+            other => { let mut m = serde_json::Map::new(); m.insert("payload".to_string(), other); m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string())); serde_json::Value::Object(m) }
+        };
+        let sent = self.send_message_to_network(nsk, user_id, msg_with_tag, None);
+        let timeout = Duration::from_secs(10);
+        let p2 = self.0.load(Ordering::SeqCst);
+        if p2.is_null() { return Err("null engine".into()); }
+        unsafe {
+            if let Some(resp) = (*p2).wait_for_response(&tag, timeout) { Ok(resp) } else { Err(if sent { "timeout waiting for response" } else { "send failed" }.into()) }
+        }
+    }
+
+    fn set_on_message(&mut self, _handler: Option<std::sync::Arc<crate::api::bingle_api::OnMessageHandler>>) { }
+    fn set_on_connect(&mut self, _handler: Option<std::sync::Arc<crate::api::bingle_api::OnConnectHandler>>) { }
+}
+
+// Adapter exposing minimal internal controls for handlers -> engine without referencing BingleApiImpl
+pub struct EngineInternalPtr(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
+impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
+    fn set_state(&self, state: EngineState) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe { let _ = (*p).set_state_internal(state); }
+    }
+    fn get_state(&self) -> EngineState {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return EngineState::StunIdentify; }
+        unsafe { (*p).state() }
+    }
+    fn set_nat_type(&self, nat: NatType) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe { (*p).set_nat_type(nat); }
+    }
+    fn get_last_public_addr(&self) -> Option<SocketAddr> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).last_public_addr() }
+    }
+    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return Err("null engine".into()); }
+        unsafe { (*p).ddb_client().register_ip(endpoint) }
+    }
     // TURN handler used for RelayListen and TURN ChannelData processing
     turn_handler: std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>,
 }
@@ -68,9 +208,20 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new(options: StartOptions) -> Self {
+    pub fn new(options: &StartOptions, api: Arc<dyn BingleApi>) -> Self {
         log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] {  }
+        // Build a DDB client now (always present); choose real or null implementation
+        #[cfg(not(target_os = "ios"))]
+        let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = {
+            let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            if have_app.is_none() { log::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient"); }
+            if have_app.is_some() { std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone())) } else { std::sync::Arc::new(crate::ddb::NullDdbClient::new()) }
+        };
+
+        #[cfg(target_os = "ios")]
+        let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = std::sync::Arc::new(crate::ddb::NullDdbClient::new());
+
         Self {
             options: options.clone(),
             mux: None,
@@ -81,20 +232,53 @@ impl Engine {
             relay_finder: None,
             triangle_wait: None,
             send_via_bingle: None,
-            bingle_api_for_handlers: None,
-            api_ptr: None,
+            bingle_api: api,
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
+            registered: std::sync::atomic::AtomicBool::new(false),
+            nat_type: std::sync::atomic::AtomicU8::new(NatType::Unknown as u8),
             connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
+            ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
+            router: None,
+            ddb_client: ddb,
             turn_handler: std::sync::Arc::new(crate::turn::turn_handler::TurnHandlerImpl::new()),
         }
+    }
+
+    /// Create an Engine without binding a BingleApi; API can be provided later via set_bingle_api.
+    pub fn new_unbound(options: &StartOptions) -> Self {
+        // Use a placeholder API that returns None/false until a real API is bound.
+        struct EmptyApi;
+        impl crate::api::bingle_api::BingleApi for EmptyApi {
+            fn debug_print_options(&self) {}
+            fn get_my_id(&self) -> Option<String> { None }
+            fn get_app_id(&self) -> Option<u64> { None }
+            fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
+            fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
+            fn stop(&mut self) {}
+            fn network_change(&mut self) {}
+            fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_handle(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn send_message_to_handle_with_response(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
+            fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
+        }
+        Self::new(options, Arc::new(EmptyApi))
     }
 
     /// Provide a pre-configured DTLS instance (with server certificate material) from the API layer.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
         self.dtls = Some(dtls);
+    }
+
+    /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
+    pub fn set_router(&mut self, router: std::sync::Arc<crate::messages::router::Router>) {
+        self.router = Some(router);
     }
 
     /// Access the configured DTLS instance, if any (read-only).
@@ -164,25 +348,31 @@ impl Engine {
         self.send_via_bingle = cb;
     }
 
-    /// Provide a BingleApi handle to be used by handlers and relay discovery bound to this Engine instance.
-    pub fn set_bingle_api_for_handlers(&mut self, api: Arc<dyn BingleApi>) {
-        self.bingle_api_for_handlers = Some(api);
-    }
-
-    /// Set back-reference to the creating BingleApiImpl.
-    pub fn set_api_ptr(&mut self, ptr: Arc<std::sync::atomic::AtomicPtr<crate::api::bingle_api_impl::BingleApiImpl>>) {
-        self.api_ptr = Some(ptr);
-    }
-
-    /// Register a connection in the engine's per-connection registry.
-    fn register_connection(&mut self, addr: SocketAddr) {
-        if let Ok(mut m) = self.connections.lock() {
-            if let Some(entry) = m.get_mut(&addr) {
-                entry.last_seen = Instant::now();
+    /// Set or replace the BingleApi handle bound to this Engine instance.
+    pub fn set_bingle_api(&mut self, api: Arc<dyn BingleApi>) {
+        self.bingle_api = api.clone();
+        // Initialize a DDB client bound to this API instance (always set; may be Null)
+        #[cfg(not(target_os = "ios"))]
+        {
+            let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            self.ddb_client = if have_app.is_some() {
+                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone()))
             } else {
-                m.insert(addr, ConnectionEntry { last_seen: Instant::now() });
-            }
+                std::sync::Arc::new(crate::ddb::NullDdbClient::new())
+            };
         }
+        #[cfg(target_os = "ios")]
+        {
+            self.ddb_client = std::sync::Arc::new(crate::ddb::NullDdbClient::new());
+        }
+    }
+
+    /// Clear bindings to API instance and global router callbacks to avoid dangling pointers between tests.
+    pub fn clear_api_bindings(&mut self) {
+        // Clear per-API router instance only (no global fallbacks)
+        if let Some(r) = &self.router { r.clear_for_tests(); }
+        // Also drop local references
+        self.send_via_bingle = None;
     }
 
     /// Check whether the engine believes a connection to addr exists.
@@ -195,21 +385,23 @@ impl Engine {
         self.connections.lock().map(|m| m.len()).unwrap_or(0)
     }
 
-    /// Send bytes to a peer and track the connection's last_seen. Avoid per-connection DTLS adapters to prevent dangling pointers.
+    /// Send bytes to a peer and track the connection's last_seen.
+    /// If this is the first interaction with the peer, create a connection entry on successful send.
     pub fn send_to_peer(&self, addr: SocketAddr, data: &[u8]) -> Result<(), String> {
-        // Update or insert connection entry
-        {
-            let mut map = self.connections.lock().map_err(|_| "connections lock poisoned".to_string())?;
-            if let Some(entry) = map.get_mut(&addr) {
-                entry.last_seen = Instant::now();
-            } else {
-                map.insert(addr, ConnectionEntry { last_seen: Instant::now() });
-            }
-        }
+        // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
+        // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
+        // after a successful send.
         let dtls = self.dtls.as_ref().ok_or_else(|| "DTLS instance not provided".to_string())?;
         let res = dtls.send(addr, data);
         if res.is_ok() {
-            if let Ok(mut m) = self.connections.lock() { if let Some(e) = m.get_mut(&addr) { e.last_seen = Instant::now(); } }
+            // Ensure a connection entry exists after a successful send (insert if missing)
+            if let Ok(mut m) = self.connections.lock() {
+                use std::collections::hash_map::Entry;
+                match m.entry(addr) {
+                    Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
+                    Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+                }
+            }
         }
         res
     }
@@ -225,34 +417,103 @@ impl Engine {
                 .ok_or_else(|| "DTLS instance not provided".to_string())?;
             dref.get_handle_message()
         };
-        // Prepare a raw pointer to this Engine for use inside the handler closure
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+
+        // Capture safe, shareable state for the handler closure (avoid raw self pointers)
+        let connections = self.connections.clone();
+        let pending_responses = self.pending_responses.clone();
+        let _ = self.send_via_bingle.clone();
+        let bingle_api = self.bingle_api.clone();
+        let am_relay = self.options.am_relay;
+        let ddb_backend = self.ddb_backend.clone();
+
         // Now obtain a mutable reference to dtls only for installing the new handler
         if let Some(d) = self.dtls.as_mut() {
+            let router_arc = self.router.clone();
             d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
-                use std::sync::atomic::Ordering;
-                // Register/refresh connection for this peer on any inbound data and refresh message sender binding
-                let p = self_ptr.load(Ordering::SeqCst);
-                if !p.is_null() {
-                    unsafe {
-                        let eng = &mut *p;
-                        eng.register_connection(*from);
-                        // Bind per-message sender so handlers send via the correct API/engine instance
-                        if let Some(cb) = &eng.send_via_bingle {
-                            crate::messages::router::set_sender(Some(cb.clone()));
+                log::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
+                let work = || {
+                    // 1) Track connection last_seen using captured connections map
+                    if let Ok(mut m) = connections.lock() {
+                        use std::collections::hash_map::Entry;
+                        match m.entry(*from) {
+                            Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
+                            Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
                         }
-                        // Bind the per-engine BingleApi to the router for this message context
-                        if let Some(api) = &eng.bingle_api_for_handlers {
-                            crate::messages::router::set_bingle_api(Some(api.clone()));
-                        }
-                        // Route to engine default handler
-                        eng.handle_dtls_message(server, from, issuer, data);
                     }
-                }
-                // Then delegate to any previously-registered handler from API
-                if let Some(h) = &existing {
-                    h(server, from, issuer, data);
-                }
+
+                    // No inline DDB handling; use Router + handlers instead
+
+                    // 2) Provide per-message API bindings to router; sender remains as configured by API layer
+                    if let Some(r) = &router_arc { r.set_bingle_api(Some(bingle_api.clone())); }
+                    // Provide DDB/relay context to router
+                    if let Some(r) = &router_arc {
+                        r.set_am_relay(am_relay);
+                        r.set_ddb_backend(Some(ddb_backend.clone()));
+                    }
+
+                    // 3) Engine routing logic (inline to avoid &self)
+                    // Record last sender for reply helpers
+                    if let Some(r) = &router_arc { r.set_last_from(Some(*from)); }
+
+                    // Try JSON parse to extract responseTag and fulfill waiters
+                    if let Ok(s) = std::str::from_utf8(data) {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                            // Expose last responseTag (if this is a request). Handlers may echo it back.
+                            if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
+                                if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
+                            } else {
+                                if let Some(r) = &router_arc { r.set_last_response_tag(None); }
+                            }
+                            // If this is a response, fulfill any waiter registered with Engine (supports both keys)
+                            let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
+                                .or_else(|| v.get("tag").and_then(|vv| vv.as_str()));
+                            if let Some(tag_str) = tag_str_opt {
+                                if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
+                                    if let Ok(map) = pending_responses.lock() {
+                                        if let Some(wait) = map.get(&tag_uuid) {
+                                            if let Ok(mut g) = wait.0.lock() {
+                                                g.responded = true;
+                                                g.response = Some(v.clone());
+                                                wait.1.notify_all();
+                                                return; // consumed by waiter; do not forward
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Route through the message framework for internal handlers (triangle tests etc.)
+                    let handler = DefaultPrintingHandler;
+                    match std::str::from_utf8(data) {
+                        Ok(s) => match from_json_str(s) {
+                            Ok(msg) => {
+                                if let Some(r) = &router_arc {
+                                    r.route(&handler, &msg, issuer);
+                                    if let Some(out) = r.take_outbound_response() {
+                                        let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
+                                        if let Err(e) = server.send(*from, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                // Not valid JSON per our schema; treat as plaintext with raw bytes
+                                handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
+                            }
+                        },
+                        Err(_) => {
+                            handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
+                        }
+                    }
+
+                    // Then delegate to any previously-registered handler from API
+                    if let Some(h) = &existing {
+                        h(server, from, issuer, data);
+                    }
+                };
+
+                if let Some(r) = &router_arc { crate::messages::router::Router::with_current_router(r.clone(), || work()); } else { work(); }
             })));
             Ok(())
         } else {
@@ -262,7 +523,7 @@ impl Engine {
 
     /// Start the engine using the provided StartOptions.
     /// Implements static endpoint path or STUN-based discovery when not provided.
-    pub fn start(&mut self, options: StartOptions) -> Result<(), String> {
+    pub fn start(&mut self, options: &StartOptions) -> Result<(), String> {
         // Keep a copy of options
         self.options = options.clone();
 
@@ -319,7 +580,7 @@ impl Engine {
         Ok(())
     }
 
-    fn start_with_addr(&mut self, _options: StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
+    fn start_with_addr(&mut self, _options: &StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
         // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
         // The static address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();
@@ -381,8 +642,7 @@ impl Engine {
         if let Some(addr) = public_addr {
             let _a2 = addr.clone();
             // Use the real BingleApi provided via router
-            let api_opt = self.bingle_api_for_handlers.clone().or_else(|| crate::messages::router::get_bingle_api());
-            if api_opt.is_none() { panic!("[Engine] No BingleApi available for relay check"); }
+            let api = self.bingle_api.clone();
 
             // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
             // Prefer app_id from StartOptions; fallback to env var for legacy tests; else use built-in localhost relays.
@@ -407,7 +667,7 @@ impl Engine {
                 }
             };
 
-            let finder = RelayFinder::new(api_opt.unwrap(), Duration::from_secs(60), discover);
+            let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
             let my_id: String = if let Some(iss) = self.issuer.as_deref() {
@@ -436,16 +696,10 @@ impl Engine {
             // Build JSON value for the message
             let json_val = crate::messages::marshal::to_json_value(&msg);
             if let Some(cb) = &self.send_via_bingle {
-                // Use the relay's actual id as the user id. Convert Algorand base32 address to base64(36) for API validation.
-                let uid = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&target.id) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::info!("[Engine][WARN] invalid relay id '{}': {}; using raw id which may fail validation", target.id, e);
-                        target.id.clone()
-                    }
-                };
+                // Use the relay's actual Algorand address (base32) as the user id.
+                let uid = target.id.clone();
                 let ok = cb(&nsk, &uid, json_val);
-                log::info!("[Engine] TriangleTest1 send_via_bingle to {} (uid from relay id) -> {}", to_addr, ok);
+                log::info!("[Engine] TriangleTest1 send_via_bingle to {} (uid=base32 relay id) -> {}", to_addr, ok);
                 #[allow(unused)] {  }
             } else {
                 log::info!("[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}", to_addr);
@@ -504,6 +758,8 @@ impl Engine {
 
     /// Stop the engine and background tasks if started.
     pub fn stop(&mut self) {
+        // First, clear any API pointers and global router callbacks to avoid dangling references across tests
+        self.clear_api_bindings();
         if let Some(dtls) = &mut self.dtls {
             dtls.stop().expect("DTLS stop failed in Engine::stop");
         }
@@ -522,7 +778,9 @@ impl Engine {
 
     pub fn state(&self) -> EngineState {
         use std::sync::atomic::Ordering;
-        if self.endpoint_ready.load(Ordering::SeqCst) {
+        if self.registered.load(Ordering::SeqCst) {
+            EngineState::Registered
+        } else if self.endpoint_ready.load(Ordering::SeqCst) {
             EngineState::EndpointAvailable
         } else if self.nat_restricted.load(Ordering::SeqCst) {
             EngineState::NATRestricted
@@ -533,6 +791,21 @@ impl Engine {
     pub fn last_public_addr(&self) -> Option<SocketAddr> { self.last_public_addr }
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) { self.on_stun_consistent(Some(addr)); }
 
+    pub fn set_nat_type(&self, nat: NatType) {
+        use std::sync::atomic::Ordering;
+        self.nat_type.store(nat as u8, Ordering::SeqCst);
+    }
+    pub fn nat_type(&self) -> NatType {
+        use std::sync::atomic::Ordering;
+        match self.nat_type.load(Ordering::SeqCst) {
+            1 => NatType::NoConnection,
+            2 => NatType::Symmetric,
+            3 => NatType::Restricted,
+            4 => NatType::FullCone,
+            _ => NatType::Unknown,
+        }
+    }
+
     /// Internal setter used by BingleApiInternal to update engine state in a thread-safe way.
     /// Currently supports transitioning to EndpointAvailable.
     pub fn set_state_internal(&self, new_state: EngineState) -> bool {
@@ -540,6 +813,10 @@ impl Engine {
         match new_state {
             EngineState::EndpointAvailable => {
                 self.endpoint_ready.store(true, Ordering::SeqCst);
+                true
+            }
+            EngineState::Registered => {
+                self.registered.store(true, Ordering::SeqCst);
                 true
             }
             EngineState::NATRestricted => {

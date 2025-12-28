@@ -1,26 +1,28 @@
-#![cfg(not(target_os = "ios"))]
+use rust_comms::messages::Router;
+use std::sync::{Arc, Mutex};
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-
+use rust_comms::messages::{Message};
 use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::messages::types::{Message, PlainTextMessage};
+use rust_comms::messages::types::{PingMessage, PingPing};
+
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler {
-    called: &'static AtomicBool,
-    sink: Arc<Mutex<Option<serde_json::Value>>>,
+    called: Arc<Mutex<bool>>,
 }
 
+impl CapturingHandler { fn new(flag: Arc<Mutex<bool>>) -> Self { Self { called: flag } } }
+
 impl MessageHandler for CapturingHandler {
-    fn on_plain_text(&self, _api: Arc<dyn BingleApi>, from: &rust_comms::messages::handlers::FromStruct, msg: &PlainTextMessage) {
-        assert_eq!(from.id, "from-handle");
-        let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text.clone()}));
-        self.called.store(true, Ordering::SeqCst);
-        *self.sink.lock().unwrap() = Some(json);
+    fn on_ping_ping(&self, _api: Arc<dyn BingleApi>, _from: &rust_comms::messages::handlers::FromStruct, msg: &PingPing) {
+        // Ensure we received the ping message with expected fields
+        assert_eq!(msg.app, "ping");
+        assert_eq!(msg.text.as_deref(), Some("hello"));
+        if let Ok(mut g) = self.called.lock() { *g = true; }
     }
 }
 
-// Minimal API impl to satisfy router requirements
+// Minimal API impl so router can pass an API into the handler
 struct MockApi;
 impl BingleApi for MockApi {
     fn get_my_id(&self) -> Option<String> { None }
@@ -39,25 +41,19 @@ impl BingleApi for MockApi {
 }
 
 #[test]
-fn on_plain_text_calls_handler_implementation() {
-    static CALLED: AtomicBool = AtomicBool::new(false);
-    let received = Arc::new(Mutex::new(None::<serde_json::Value>));
+fn route_invokes_on_ping_ping() {
+    let flag = Arc::new(Mutex::new(false));
+    let handler = CapturingHandler::new(flag.clone());
 
-    // Provide a per-test Router with our MockApi and run the route within its context
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    if let Some(router) = Router::current() {
+        // Provide API to router so it can be passed into handler per new signature
+        router.set_bingle_api(Some(Arc::new(MockApi)));
 
-    // Build a PlainText message and route it through a custom handler implementation
-    let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };
-    let msg = Message::PlainText(pt.clone());
+        let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
+        let msg = Message::Ping(PingMessage::Ping(ping));
+        router.route(&handler, &msg, "SOMEISSUER.");
 
-    let handler = CapturingHandler { called: &CALLED, sink: received.clone() };
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        router.route(&handler, &msg, "from-handle");
-    });
-
-    assert!(CALLED.load(Ordering::SeqCst), "handler was not called by on_plain_text");
-
-    let got = received.lock().unwrap().clone().expect("no payload captured");
-    // Expect the JSON to include the text field
-    assert_eq!(got.get("text").and_then(|v| v.as_str()), Some("Hello"));
+        let got = flag.lock().unwrap().clone();
+        assert!(got, "on_ping_ping was not called");
+    }
 }

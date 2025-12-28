@@ -1,8 +1,9 @@
-use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
+use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps};
 use std::env;
 
 // Macro to skip localnet-dependent tests with a standard message.
 // Usage: skip_if_no_localnet!();
+#[allow(unused_macros)]
 macro_rules! skip_if_no_localnet {
     () => {
         if !test_util::should_run_localnet() {

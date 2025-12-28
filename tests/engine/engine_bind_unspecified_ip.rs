@@ -25,7 +25,7 @@ fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
     // Provide a loopback static address; engine should still bind to 0.0.0.0:<port>.
     let static_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
-    let mut api = BingleApiImpl::new();
+    let mut api = BingleApiImpl::new(&StartOptions::default());
 
     let opts = StartOptions {
         handle: "bind-test".into(),
@@ -40,7 +40,7 @@ fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
         log_level: None,
     };
 
-    api.start(opts).expect("api.start should succeed");
+    api.start(&opts).expect("api.start should succeed");
 
     // Retrieve the actual bound address and assert it's 0.0.0.0 with the same port
     let local = api.engine_local_bind_addr_for_tests();

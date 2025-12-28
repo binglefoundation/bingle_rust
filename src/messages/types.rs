@@ -1,12 +1,17 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
+// Re-export common DDB types for convenience
+pub use crate::ddb::{AdvertRecord, InetSocketAddress};
+
 // Core message enum representing all known classes we currently model from the OpenAPI
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Message {
     PlainText(PlainTextMessage),
     Relay(RelayMessage),
+    Ddb(DdbMessage),
+    Ping(PingMessage),
     // Fallback for any unknown message shapes
     Unknown(serde_json::Value),
 }
@@ -164,4 +169,272 @@ pub struct RelayCallResponse {
 pub struct RelayKeepAlive {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
+}
+
+// ---------------- DDB messages (app = "ddb") ----------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum DdbMessage {
+    #[serde(rename = "upsertResolve")] UpsertResolve(DdbUpsertResolve),
+    #[serde(rename = "deleteResolve")] DeleteResolve(DdbDeleteResolve),
+    #[serde(rename = "queryResolve")] QueryResolve(DdbQueryResolve),
+    #[serde(rename = "queryResponse")] QueryResponse(DdbQueryResponse),
+    #[serde(rename = "updateResponse")] UpdateResponse(DdbUpdateResponse),
+    #[serde(rename = "signon")] Signon(DdbSignon),
+    #[serde(rename = "signonResponse")] SignonResponse(DdbSignonResponse),
+    #[serde(rename = "getEpoch")] GetEpoch(DdbGetEpoch),
+    #[serde(rename = "getEpochResponse")] EpochInfo(DdbEpochInfo),
+    #[serde(rename = "initResolve")] InitResolve(DdbInitResolve),
+    #[serde(rename = "initResponse")] InitResponse(DdbInitResponse),
+    #[serde(rename = "dumpResolve")] DumpResolve(DdbDumpResolve),
+    #[serde(rename = "dumpResolveResponse")] DumpResolveResponse(DdbDumpResolveResponse),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbUpsertResolve {
+    pub app: String, // "ddb"
+    #[serde(rename = "startId")]
+    pub start_id: String,
+    pub epoch: u64,
+    pub record: AdvertRecord,
+    #[serde(rename = "originalSignature")]
+    pub original_signature: String,
+    pub rippled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbDeleteResolve {
+    pub app: String, // "ddb"
+    #[serde(rename = "startId")]
+    pub start_id: String,
+    pub epoch: u64,
+    #[serde(rename = "originalSignature")]
+    pub original_signature: String,
+    pub rippled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbQueryResolve {
+    pub app: String, // "ddb"
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbQueryResponse {
+    pub app: String, // "ddb"
+    pub found: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advert: Option<AdvertRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbUpdateResponse {
+    pub app: String, // "ddb"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbSignon {
+    pub app: String, // "ddb"
+    #[serde(rename = "startId")]
+    pub start_id: String,
+    #[serde(rename = "originalSignature", default, skip_serializing_if = "Option::is_none")]
+    pub original_signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rippled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbSignonResponse {
+    pub app: String, // "ddb"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbGetEpoch {
+    pub app: String, // "ddb"
+    #[serde(rename = "epochId")]
+    pub epoch_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbEpochInfo {
+    pub app: String, // "ddb"
+    #[serde(rename = "epochId")]
+    pub epoch_id: i64,
+    #[serde(rename = "treeOrder")]
+    pub tree_order: i32,
+    #[serde(rename = "relayIds")]
+    pub relay_ids: Vec<String>,
+    #[serde(rename = "relayEndpoints", default, skip_serializing_if = "Option::is_none")]
+    pub relay_endpoints: Option<Vec<InetSocketAddress>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbInitResolve {
+    pub app: String, // "ddb"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbInitResponse {
+    pub app: String, // "ddb"
+    #[serde(rename = "dbCount")]
+    pub db_count: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbDumpResolve {
+    pub app: String, // "ddb"
+    pub record: AdvertRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbDumpResolveResponse {
+    pub app: String, // "ddb"
+    #[serde(rename = "recordIndex")]
+    pub record_index: i64,
+    #[serde(rename = "recordId")]
+    pub record_id: String,
+    pub record: AdvertRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+// Ping messages (app: "ping")
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PingMessage {
+    #[serde(rename = "ping")]
+    Ping(PingPing),
+    #[serde(rename = "response")]
+    Response(PingResponse),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PingPing {
+    pub app: String, // must be "ping"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PingResponse {
+    pub app: String, // must be "ping"
+    #[serde(rename = "verifiedId")]
+    pub verified_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }

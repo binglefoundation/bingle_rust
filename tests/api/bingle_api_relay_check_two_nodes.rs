@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use base64::Engine as _;
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -12,20 +11,12 @@ mod test_util;
 #[cfg(not(target_os = "ios"))]
 #[test]
 fn bingle_api_relay_check_two_nodes() {
-    // Helper to convert Algorand base32 ID to base64(36) as required by API validation.
-    fn id_base64_from_base32(addr_b32: &str) -> String {
-        let bytes = data_encoding::BASE32_NOPAD
-            .decode(addr_b32.as_bytes())
-            .expect("base32 decode of Algorand address should succeed");
-        assert_eq!(bytes.len(), 36, "decoded Algorand address should be 36 bytes");
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    }
 
 
     // 1) Start relay node on an unused port with PASSPHRASE_RECEIVE and id ADDRESS_RECEIVE
     let relay_port = test_util::find_unused_loopback_port();
     let relay_addr = SocketAddr::from(([127, 0, 0, 1], relay_port));
-    let mut relay = BingleApiImpl::new();
+    let mut relay = BingleApiImpl::new(&StartOptions::default());
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
@@ -38,14 +29,14 @@ fn bingle_api_relay_check_two_nodes() {
         asset_id: None,
         log_level: None,
     };
-    relay.start(relay_opts).expect("relay start");
+    relay.start(&relay_opts).expect("relay start");
 
     // Install an on_message on the relay that responds to RelayCheck with RelayCheckResponse.
     // We need to send back to the client's socket address; this is provided via sender_handle (from_address string).
     // For user_id, use the known ADDRESS_SPEND (client id).
     let relay_arc: Arc<Mutex<BingleApiImpl>> = Arc::new(Mutex::new(relay));
     let relay_for_cb = relay_arc.clone();
-    let client_id_b64 = id_base64_from_base32(test_util::ADDRESS_SPEND);
+    let client_id = test_util::ADDRESS_SPEND.to_string();
     {
         let mut guard = relay_arc.lock().unwrap();
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
@@ -65,14 +56,15 @@ fn bingle_api_relay_check_two_nodes() {
                 let _ok = relay_for_cb
                     .lock()
                     .expect("relay Arc<Mutex> should be lockable")
-                    .send_message_to_network(&nsk, &client_id_b64, resp, None);
+                    .send_message_to_network(&nsk, &client_id, resp, None);
             }
         })));
     }
 
-    // 2) Start client node on port 12346 with PASSPHRASE_SPEND and id ADDRESS_SPEND
-    let client_addr = SocketAddr::from(([127, 0, 0, 1], 12346));
-    let mut client = BingleApiImpl::new();
+    // 2) Start client node on an unused port with PASSPHRASE_SPEND and id ADDRESS_SPEND
+    let client_port = test_util::find_unused_loopback_port();
+    let client_addr = SocketAddr::from(([127, 0, 0, 1], client_port));
+    let mut client = BingleApiImpl::new(&StartOptions::default());
     let client_opts = StartOptions {
         handle: Handle::from("client"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -85,29 +77,17 @@ fn bingle_api_relay_check_two_nodes() {
         asset_id: None,
         log_level: None,
     };
-    client.start(client_opts).expect("client start");
-
-    // Capture RelayCheckResponse on the client
-    static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
-    client.set_on_message(Some(Arc::new(|sender, handle, msg| {
-        log::info!("[test][client on_message] sender={} handle={} msg={}", sender, handle, msg);
-        let _ = CLIENT_SEEN.set(msg.clone());
-    })));
+    client.start(&client_opts).expect("client start");
 
     // 3) Send RelayCheck from client to relay directly
     let nsk_relay = NetworkSourceKey::new_direct(relay_addr);
-    let relay_id_b64 = id_base64_from_base32(test_util::ADDRESS_RECEIVE);
+    let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check" });
 
-    let ok = client.send_message_to_network(&nsk_relay, &relay_id_b64, payload, None);
-    assert!(ok, "client send_message_to_network should return true");
-
-    // 4) Await RelayCheckResponse via client's on_message
-    let start = Instant::now();
-    while CLIENT_SEEN.get().is_none() && start.elapsed() < Duration::from_secs(5) {
-        thread::sleep(Duration::from_millis(20));
-    }
-    let seen = CLIENT_SEEN.get().expect("did not receive RelayCheckResponse at client");
+    let response = client.send_message_to_network_with_response(&nsk_relay, &relay_id, payload, None);
+    assert!(response.is_ok(), "client send_message_to_network should return true");
+    
+    let seen = response.unwrap();
     assert_eq!(seen.get("app"), Some(&serde_json::Value::Null));
     assert_eq!(seen.get("type").and_then(|v| v.as_str()), Some("CheckResponse"));
     assert_eq!(seen.get("available").and_then(|v| v.as_bool()), Some(true));

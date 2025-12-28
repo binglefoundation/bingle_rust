@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::api::bingle_api::{BingleApi, NetworkSourceKey};
-use base64::Engine as _;
+use data_encoding::BASE32_NOPAD;
 
 #[derive(Debug, Clone)]
 pub struct RootRelayInfo {
@@ -147,18 +147,16 @@ impl RelayFinder {
     }
 
     fn relay_check(&self, id: &str, addr: SocketAddr) -> bool {
-        // Ensure user_id is a base64 string that decodes to exactly 36 bytes (Algorand address bytes)
-        let user_id_b64 = match Self::base64_36_or_convert_from_base32(id) {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!("[RelayFinder][relay_check] invalid relay id '{}': {}", id, e);
-                return false;
-            }
-        };
+        // Validate Algorand base32 address decodes to 36 bytes
+        match BASE32_NOPAD.decode(id.as_bytes()) {
+            Ok(bytes) if bytes.len() == 36 => {}
+            Ok(bytes) => { log::warn!("[RelayFinder][relay_check] invalid relay id '{}': base32 decoded length {} != 36", id, bytes.len()); return false; }
+            Err(e) => { log::warn!("[RelayFinder][relay_check] invalid relay id '{}': {}", id, e); return false; }
+        }
         let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
         let req = json!({ "app": null, "type": "Check" });
-        log::info!("[RelayFinder] relay_check: sending request via API -> nsk={} user_id_b64={} raw_id={} req={}", nsk, user_id_b64, id, req);
-        match self.api.send_message_to_network_with_response(&nsk, &user_id_b64, req, None) {
+        log::info!("[RelayFinder] relay_check: sending request via API -> nsk={} user_id={} req={}", nsk, id, req);
+        match self.api.send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {
             Ok(resp) => {
                 let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
                     && resp.get("available").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -166,15 +164,5 @@ impl RelayFinder {
             }
             Err(_) => false,
         }
-    }
-
-    /// Helper: accept base64(36) as-is; otherwise, try to decode Algorand base32 address to 36 bytes and re-encode base64.
-    fn base64_36_or_convert_from_base32(id: &str) -> Result<String, String> {
-        // Try base64 decode first
-        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(id.as_bytes()) {
-            if bytes.len() == 36 { return Ok(id.to_string()); }
-        }
-        // Delegate Algorand base32 address conversion to shared helper
-        crate::blockchain::algo_ops::id_b64_from_algorand_addr(id)
     }
 }

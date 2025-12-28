@@ -220,6 +220,7 @@ impl AlgoBingle {
                 req = req.header("X-Indexer-API-Token", tok.clone())
                          .header(self.ops.config.token_key.clone().unwrap_or_else(|| "X-Algo-API-Token".to_string()), tok.clone());
             }
+            log::info!("Sending indexer request {:?}", req);
             let resp = req.send().map_err(|e| anyhow!("indexer request failed: {e}"))?;
             if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
             let v: serde_json::Value = resp.json().map_err(|e| anyhow!("indexer json parse failed: {e}"))?;

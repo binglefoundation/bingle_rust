@@ -22,11 +22,26 @@ pub fn from_json_value(val: JsonValue) -> Result<Message, MarshalError> {
             let has_app = map.get("app").is_some();
             let has_type = map.get("type").is_some();
 
+            // Try ping typed messages first when app == "ping"
+            if let Some(JsonValue::String(app_str)) = map.get("app") {
+                if app_str == "ping" {
+                    if let Ok(ping) = serde_json::from_value::<PingMessage>(JsonValue::Object(map.clone())) {
+                        return Ok(Message::Ping(ping));
+                    }
+                }
+            }
+
             // Try relay typed messages when type present and app is null (or missing)
             if has_type {
                 // We accept app missing or null for relay
                 if let Ok(relay) = serde_json::from_value::<RelayMessage>(JsonValue::Object(map.clone())) {
                     return Ok(Message::Relay(relay));
+                }
+                // Try DDB typed messages when app=="ddb"
+                if map.get("app").and_then(|v| v.as_str()).map(|s| s=="ddb").unwrap_or(false) {
+                    if let Ok(ddb) = serde_json::from_value::<DdbMessage>(JsonValue::Object(map.clone())) {
+                        return Ok(Message::Ddb(ddb));
+                    }
                 }
             }
 
@@ -52,6 +67,8 @@ pub fn to_json_value(msg: &Message) -> JsonValue {
     match msg {
         Message::PlainText(pt) => serde_json::to_value(pt).unwrap_or(JsonValue::Null),
         Message::Relay(r) => serde_json::to_value(r).unwrap_or(JsonValue::Null),
+        Message::Ddb(d) => serde_json::to_value(d).unwrap_or(JsonValue::Null),
+        Message::Ping(p) => serde_json::to_value(p).unwrap_or(JsonValue::Null),
         Message::Unknown(v) => v.clone(),
     }
 }

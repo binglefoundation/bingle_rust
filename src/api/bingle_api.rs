@@ -17,10 +17,20 @@ pub trait BingleApiInternal: Send + Sync {
     /// delegate to the underlying Engine instance. Implementations may be best-effort
     /// and can ignore unsupported transitions.
     fn set_state(&self, state: crate::engine::EngineState);
+    /// Get the current engine state. Default: StunIdentify for mocks that don't track state.
+    fn get_state(&self) -> crate::engine::EngineState { crate::engine::EngineState::StunIdentify }
+    /// Set the detected NAT type on the engine. Default no-op to keep older tests/mocks compiling.
+    fn set_nat_type(&self, _nat: crate::engine::NatType) { }
+    /// Retrieve the last discovered public address (IP:port) if available. Default None.
+    fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
+    /// Register an endpoint IP:port via the engine's DDB client. Default: not implemented.
+    fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
 }
 
 /// Convenience type aliases used by the Bingle API.
-pub type UserId = String; // Algorand address (id)
+/// UserId: Algorand address in base32 (RFC 4648, no padding), representing a 32‑byte public key
+/// followed by a 4‑byte checksum (total 36 bytes). Examples: "P577…", "4TKG…".
+pub type UserId = String; // Algorand address (base32, 36-byte decoded)
 pub type Handle = String; // User handle string
 /// NetworkSourceKey identifies where to send network traffic (direct or via relay).
 /// Translated from the provided Kotlin data class.
@@ -143,12 +153,16 @@ pub trait BingleApi: Send + Sync {
     /// Returns this node's id (Algorand address), if known.
     /// Implementations should derive this from the engine issuer (issuer without suffix).
     fn get_my_id(&self) -> Option<String>;
+    /// Alias for get_my_id to match external nomenclature.
+    fn get_user_id(&self) -> Option<String> { self.get_my_id() }
+    /// Returns the configured handle, if known.
+    fn get_handle(&self) -> Option<String> { None }
     /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
     fn get_app_id(&self) -> Option<u64>;
     /// Returns the configured Algorand provider config from StartOptions, if any. Default: None.
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
     /// Start the node using the provided options. Implementations may spawn background tasks.
-    fn start(&mut self, options: StartOptions) -> Result<(), String>;
+    fn start(&mut self, options: &StartOptions) -> Result<(), String>;
 
     /// Stop all threads/tasks and release resources.
     fn stop(&mut self);
