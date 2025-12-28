@@ -84,7 +84,40 @@ pub trait MessageHandler {
     fn on_ping_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }
 
     // Relay messages
-    fn on_relay_call(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCall) { self.on_unimplemented(&Message::Relay(RelayMessage::Call(_msg.clone()))); }
+    fn on_relay_call(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCall) {
+        use crate::turn::turn_handler::TurnRelayHandler;
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() {
+                warn!("[handlers::on_relay_call] Not a relay: ignoring Call");
+                return;
+            }
+            let src = match router.get_last_from() {
+                Some(a) => a,
+                None => { warn!("[handlers::on_relay_call] No source address available"); return; }
+            };
+            let turn = match router.get_turn_handler() {
+                Some(h) => h,
+                None => { warn!("[handlers::on_relay_call] No TURN handler available"); return; }
+            };
+            // Resolve destination address by id recorded via Listen
+            let called_id_raw = _msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let dest = match turn.lookup_addr_by_id(&called_id_raw) {
+                Some(a) => a,
+                None => { warn!("[handlers::on_relay_call] called id not registered: {}", called_id_raw); return; }
+            };
+            let ch = TurnRelayHandler::handle_call(&*turn, &src, &dest);
+            if ch < 0 { warn!("[handlers::on_relay_call] handle_call failed"); return; }
+            // Build RelayResponse { app: null, channel }
+            let mut obj = serde_json::Map::new();
+            obj.insert("app".to_string(), serde_json::Value::Null);
+            obj.insert("type".to_string(), serde_json::Value::String("RelayResponse".to_string()));
+            obj.insert("channel".to_string(), serde_json::Value::Number(serde_json::Number::from(ch as u64)));
+            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+        } else {
+            warn!("[handlers::on_relay_call] No router context available");
+        }
+    }
     fn on_relay_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
     fn on_triangle_test1(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone()))); }
     fn on_triangle_test2(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
@@ -113,7 +146,8 @@ pub trait MessageHandler {
                     return;
                 }
             };
-            let _ok = turn.handle_listen(&src);
+            let source_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let _ok = turn.handle_listen(&source_id, &src);
             // Build and stash a ListenResponse; include responseTag if present
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::Null);

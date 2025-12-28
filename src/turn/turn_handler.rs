@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::{SocketAddr, IpAddr};
 use std::sync::Mutex;
 
@@ -45,12 +45,14 @@ pub trait TurnHandler {
     /**
      * Handle a TURN Listen operation, which in Bingle results
      * from a Relay::Listen message directed at the relay server.
-     * Adds the sender's IP to the set of valid addresses from whom TURN packets will be accepted.
+     * Records the sender's id and address so TURN packets will be accepted and
+     * the relay can resolve id -> address for subsequent Call routing.
      *
+     * @param source_id the id of the peer sending the `Listen` request (issuer suffix trimmed)
      * @param source the address of the peer sending the `Listen` request
-     * @return true if the address was recorded (or already present), false on error
+     * @return true if the id/address was recorded (or already present), false on error
      */
-    fn handle_listen(&self, source: &SocketAddr) -> bool;
+    fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool;
 
     /**
      * Handle an incoming TURN packet from a peer, which may be the originator or the destination node
@@ -97,8 +99,9 @@ pub struct TurnHandlerImpl {
     ch_to_addr: Mutex<HashMap<u16, SocketAddr>>,
     // (source, dest) -> channel
     pair_to_ch: Mutex<HashMap<(SocketAddr, SocketAddr), u16>>,
-    // Allowed source IPs (Listen registered)
-    allowed_ips: Mutex<HashSet<IpAddr>>,
+    // Allowed mapping of ids to addresses and reverse (registered via Listen)
+    allowed_id_to_addr: Mutex<HashMap<String, SocketAddr>>,
+    allowed_addr_to_id: Mutex<HashMap<SocketAddr, String>>,
 }
 
 impl TurnHandlerImpl {
@@ -106,13 +109,30 @@ impl TurnHandlerImpl {
         Self {
             ch_to_addr: Mutex::new(HashMap::new()),
             pair_to_ch: Mutex::new(HashMap::new()),
-            allowed_ips: Mutex::new(HashSet::new()),
+            allowed_id_to_addr: Mutex::new(HashMap::new()),
+            allowed_addr_to_id: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Test helper: check if an IP is in the allowed set
+    /// Test helper: check if any registered address matches the given IP
     pub fn is_ip_allowed(&self, ip: IpAddr) -> bool {
-        match self.allowed_ips.lock() { Ok(g) => g.contains(&ip), Err(_) => false }
+        if let Ok(map) = self.allowed_id_to_addr.lock() {
+            map.values().any(|addr| addr.ip() == ip)
+        } else { false }
+    }
+
+    /// Lookup helpers for tests/handlers
+    pub fn lookup_addr_by_id(&self, id: &str) -> Option<SocketAddr> {
+        self.allowed_id_to_addr.lock().ok()?.get(id).cloned()
+    }
+    pub fn lookup_id_by_addr(&self, addr: &SocketAddr) -> Option<String> {
+        self.allowed_addr_to_id.lock().ok()?.get(addr).cloned()
+    }
+    pub fn lookup_addr_by_channel_for_tests(&self, ch: u16) -> Option<SocketAddr> {
+        self.ch_to_addr.lock().ok()?.get(&ch).cloned()
+    }
+    pub fn lookup_channel_for_pair_for_tests(&self, a: &SocketAddr, b: &SocketAddr) -> Option<u16> {
+        self.pair_to_ch.lock().ok()?.get(&(*a, *b)).cloned()
     }
 
     const MIN_CH: u16 = 0x4000;
@@ -147,18 +167,15 @@ impl TurnHandlerImpl {
 impl Default for TurnHandlerImpl { fn default() -> Self { Self::new() } }
 
 impl TurnHandler for TurnHandlerImpl {
-    fn handle_listen(&self, source: &SocketAddr) -> bool {
-        let ip = source.ip();
-        if let Ok(mut set) = self.allowed_ips.lock() {
-            let inserted = set.insert(ip);
-            if inserted {
-                log::info!("[TurnHandlerImpl::handle_listen] added allowed ip {}", ip);
-            } else {
-                log::info!("[TurnHandlerImpl::handle_listen] ip {} already allowed", ip);
-            }
+    fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
+        // Record id -> addr and addr -> id
+        if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
+            id2a.insert(source_id.to_string(), *source);
+            a2id.insert(*source, source_id.to_string());
+            log::info!("[TurnHandlerImpl::handle_listen] registered {} -> {}", source_id, source);
             true
         } else {
-            log::info!("[TurnHandlerImpl::handle_listen] lock poisoned while adding {}", ip);
+            log::info!("[TurnHandlerImpl::handle_listen] lock poisoned while adding {} -> {}", source_id, source);
             false
         }
     }
@@ -169,15 +186,14 @@ impl TurnHandler for TurnHandlerImpl {
             let map = self.ch_to_addr.lock().ok()?;
             map.get(&ch).cloned()?
         };
-        // Gate by allowed IPs
-        let ip = addr.ip();
-        if let Ok(set) = self.allowed_ips.lock() {
-            if !set.contains(&ip) {
-                log::info!("[TurnHandlerImpl::handle_turn_incoming] rejecting packet from {}: not in allowed set", ip);
+        // Gate by allowed addr presence
+        if let Ok(map) = self.allowed_addr_to_id.lock() {
+            if !map.contains_key(&addr) {
+                log::info!("[TurnHandlerImpl::handle_turn_incoming] rejecting packet from {}: address not registered via Listen", addr);
                 return None;
             }
         } else {
-            log::info!("[TurnHandlerImpl::handle_turn_incoming] allowed_ips lock poisoned; rejecting packet from {}", ip);
+            log::info!("[TurnHandlerImpl::handle_turn_incoming] allowed_addr_to_id lock poisoned; rejecting packet from {}", addr);
             return None;
         }
         let payload = packet[4..4+len].to_vec();
@@ -223,7 +239,8 @@ pub type TurnRelayImpl = TurnHandlerImpl;
 pub struct TurnClientImpl {
     ch_to_addr: Mutex<HashMap<u16, SocketAddr>>,           // channel -> source (originator)
     pair_to_ch: Mutex<HashMap<(SocketAddr, SocketAddr), u16>>, // (a,b) -> ch for both directions
-    allowed_ips: Mutex<HashSet<IpAddr>>,                   // Listen-registered IPs
+    allowed_id_to_addr: Mutex<HashMap<String, SocketAddr>>,   // id -> addr
+    allowed_addr_to_id: Mutex<HashMap<SocketAddr, String>>,   // addr -> id
 }
 
 impl TurnClientImpl {
@@ -231,7 +248,8 @@ impl TurnClientImpl {
         Self {
             ch_to_addr: Mutex::new(HashMap::new()),
             pair_to_ch: Mutex::new(HashMap::new()),
-            allowed_ips: Mutex::new(HashSet::new()),
+            allowed_id_to_addr: Mutex::new(HashMap::new()),
+            allowed_addr_to_id: Mutex::new(HashMap::new()),
         }
     }
 
@@ -247,20 +265,13 @@ impl TurnClientImpl {
 impl Default for TurnClientImpl { fn default() -> Self { Self::new() } }
 
 impl TurnHandler for TurnClientImpl {
-    fn handle_listen(&self, source: &SocketAddr) -> bool {
-        let ip = source.ip();
-        if let Ok(mut set) = self.allowed_ips.lock() {
-            let inserted = set.insert(ip);
-            if inserted {
-                log::info!("[TurnClientImpl::handle_listen] added allowed ip {}", ip);
-            } else {
-                log::info!("[TurnClientImpl::handle_listen] ip {} already allowed", ip);
-            }
+    fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
+        if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
+            id2a.insert(source_id.to_string(), *source);
+            a2id.insert(*source, source_id.to_string());
+            log::info!("[TurnClientImpl::handle_listen] registered {} -> {}", source_id, source);
             true
-        } else {
-            log::info!("[TurnClientImpl::handle_listen] lock poisoned while adding {}", ip);
-            false
-        }
+        } else { false }
     }
 
     fn handle_turn_incoming(&self, packet: &[u8]) -> Option<WrappedMessageWithAddress> {
@@ -269,11 +280,9 @@ impl TurnHandler for TurnClientImpl {
             let map = self.ch_to_addr.lock().ok()?;
             map.get(&ch).cloned()?
         };
-        // Gate by allowed IPs
-        let ip = addr.ip();
-        if let Ok(set) = self.allowed_ips.lock() {
-            if !set.contains(&ip) { log::info!("[TurnClientImpl::handle_turn_incoming] rejecting packet from {}: not in allowed set", ip); return None; }
-        } else { log::info!("[TurnClientImpl::handle_turn_incoming] allowed_ips lock poisoned; rejecting packet from {}", ip); return None; }
+        if let Ok(map) = self.allowed_addr_to_id.lock() {
+            if !map.contains_key(&addr) { log::info!("[TurnClientImpl::handle_turn_incoming] rejecting packet from {}: not registered", addr); return None; }
+        } else { return None; }
         let payload = packet[4..4+len].to_vec();
         log::info!("[TurnClientImpl::handle_turn_incoming] accepted packet from {} on ch {} ({} bytes)", addr, ch, len);
         Some(WrappedMessageWithAddress { ipAddress: addr, message: payload })

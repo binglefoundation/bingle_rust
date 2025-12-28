@@ -8,8 +8,8 @@ fn unit_turn_client_handle_called_and_send() {
     let client = TurnClientImpl::new();
     let src = addr(8001);
     let dst = addr(8000);
-    // Allow source ip
-    assert!(client.handle_listen(&src));
+    // Allow source id/address
+    assert!(client.handle_listen("SRCID1", &src));
 
     // Relay informs client of an incoming call mapping (source -> dest) with a known channel
     let ch: u16 = 0x4001;
@@ -42,8 +42,8 @@ fn unit_turn_client_handle_call_response_and_send() {
     let client = TurnClientImpl::new();
     let src = addr(8101);
     let dst = addr(8100);
-    // Allow source ip
-    assert!(client.handle_listen(&src));
+    // Allow source id/address
+    assert!(client.handle_listen("SRCID2", &src));
 
     // After we call, we receive a CallResponse indicating channel
     let ch: u16 = 0x4002;

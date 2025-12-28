@@ -30,8 +30,8 @@ fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     let handler = TurnHandlerImpl::new();
     let src = addr(6001);
     let dst = addr(6000);
-    // Register listen for IP gating (source must be allowed)
-    assert!(handler.handle_listen(&src));
+    // Register listen for gating (source must be allowed)
+    assert!(handler.handle_listen("SRCID3", &src));
     let ch = TurnRelayHandler::handle_call(&handler, &src, &dst);
     assert!(ch >= 0);
 

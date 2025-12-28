@@ -1,12 +1,13 @@
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
-use rust_comms::messages::types::{RelayListen};
+use rust_comms::messages::types::{RelayCall};
+use rust_comms::turn::turn_handler::TurnHandler;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkSourceKey, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
-// Minimal API stub for router context
+// Minimal API stub
 struct MockApi;
 impl BingleApi for MockApi {
     fn debug_print_options(&self) {}
@@ -28,30 +29,41 @@ impl BingleApi for MockApi {
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
 #[test]
-fn relay_listen_registers_and_responds() {
-    // Arrange: a Router configured as a relay with a TURN handler
+fn relay_call_allocates_channel_and_maps_pair() {
+    // Arrange: router as relay with TURN handler and two registered peers
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
     router.set_turn_handler(Some(turn.clone()));
     router.set_am_relay(true);
-    let source = addr(9001);
-    router.set_last_from(Some(source));
 
-    // Act: route a Relay::Listen message via DefaultPrintingHandler
+    let caller = addr(9101);
+    let callee = addr(9102);
+    // Register both via handle_listen
+    assert!(turn.handle_listen("CALLERID", &caller));
+    assert!(turn.handle_listen("CALLEEID", &callee));
+
+    // Source of message is caller
+    router.set_last_from(Some(caller));
+
+    // Act: send Relay::Call(calledId = CALLEEID)
     let handler = DefaultPrintingHandler;
-    let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
+    let call = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "CALLEEID".to_string() }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        // from_id not used in this path
-        router.route(&handler, &msg, "ALGOADDR123");
+        router.route(&handler, &call, "CALLERID");
     });
 
-    // Assert response was produced and source IP registered
+    // Assert: RelayResponse with channel
     let out = router.take_outbound_response();
-    assert!(out.is_some(), "expected an outbound response");
+    assert!(out.is_some(), "expected a RelayResponse");
     let obj = out.unwrap();
     let t = obj.get("type").and_then(|v| v.as_str());
-    assert_eq!(t, Some("ListenResponse"));
+    assert_eq!(t, Some("RelayResponse"));
+    let ch = obj.get("channel").and_then(|v| v.as_u64()).expect("channel");
+    let ch_u16 = ch as u16;
 
-    // id->addr map should contain the from.id (issuer trimmed) -> source address
-    assert_eq!(turn.lookup_addr_by_id("ALGOADDR123"), Some(source));
+    // Verify internal mappings reflect (caller, callee) -> ch and ch -> caller
+    let mapped_caller = turn.lookup_addr_by_channel_for_tests(ch_u16).expect("ch->addr");
+    assert_eq!(mapped_caller, caller);
+    let p2c = turn.lookup_channel_for_pair_for_tests(&caller, &callee).expect("pair->ch");
+    assert_eq!(p2c, ch_u16);
 }
