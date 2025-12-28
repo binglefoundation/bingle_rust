@@ -222,8 +222,8 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
         let ch = match ch_opt { Some(v) => v, None => return -1 };
         // Insert into maps
         if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_addr.lock(), self.pair_to_ch.lock()) {
-            // Map channel to the source address (originator) for incoming source attribution
-            c2a.insert(ch, *source);
+            // Map channel to the destination address so incoming packets are forwarded to the callee
+            c2a.insert(ch, *dest);
             p2c.insert((*source, *dest), ch);
             log::info!("[TurnRelayImpl::handle_call] allocated channel {:#X} for {} -> {}", ch, source, dest);
             ch as i32

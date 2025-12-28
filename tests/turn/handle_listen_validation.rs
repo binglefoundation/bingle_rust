@@ -24,8 +24,8 @@ fn unit_turn_incoming_accepted_after_listen() {
     let handler = TurnHandlerImpl::new();
     let src = addr(7101);
     let dst = addr(7100);
-    // Register listen for this IP (source)
-    let ok = handler.handle_listen("SRCID", &src);
+    // Register listen for destination IP (callee)
+    let ok = handler.handle_listen("DSTID", &dst);
     assert!(ok);
     // Allocate a channel for (src,dst)
     let ch = TurnRelayHandler::handle_call(&handler, &src, &dst);
@@ -37,6 +37,6 @@ fn unit_turn_incoming_accepted_after_listen() {
     let incoming = handler.handle_turn_incoming(&wrapped.message);
     assert!(incoming.is_some(), "expected acceptance after listen registration");
     let incoming = incoming.unwrap();
-    assert_eq!(incoming.ipAddress, src);
+    assert_eq!(incoming.ipAddress, dst);
     assert_eq!(incoming.message, payload);
 }

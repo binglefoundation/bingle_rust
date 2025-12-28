@@ -892,3 +892,11 @@ impl Engine {
         }
     }
 }
+
+
+impl Engine {
+    /// Test-only accessor to the TURN handler instance (exposed unconditionally for integration tests).
+    pub fn turn_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl> {
+        self.turn_handler.clone()
+    }
+}

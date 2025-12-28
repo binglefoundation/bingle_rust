@@ -1,0 +1,123 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::time::Duration;
+
+use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
+use rust_comms::dtls::network_mux_trait::NetworkMux;
+use rust_comms::messages::{Message, RelayMessage};
+use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
+use rust_comms::messages::types::{RelayListen, RelayCall};
+use rust_comms::turn::turn_handler::TurnHandler;
+
+#[path = "../test_util.rs"]
+mod test_util;
+
+fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+
+fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + payload.len() + 3);
+    out.extend_from_slice(&channel.to_be_bytes());
+    out.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+    out.extend_from_slice(payload);
+    let pad = (4 - (payload.len() % 4)) % 4;
+    for _ in 0..pad { out.push(0); }
+    out
+}
+
+#[test]
+fn end_to_end_turn_relay_forwards_payload() {
+    // Allocate three ports: relay, client A, client B
+    let relay_port = test_util::find_unused_loopback_port();
+    let a_port = test_util::find_unused_loopback_port();
+    let b_port = test_util::find_unused_loopback_port();
+    assert_ne!(relay_port, 0);
+    assert_ne!(a_port, 0);
+    assert_ne!(b_port, 0);
+
+    let relay_addr = addr(relay_port);
+    let a_addr = addr(a_port);
+    let b_addr = addr(b_port);
+
+    // Create the relay UDP mux and TURN handler
+    let mut mux = UdpNetworkMux::bind(relay_addr).expect("bind relay mux");
+    let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
+
+    // Configure TURN ChannelData handler to forward payloads to destination
+    {
+        let turn_clone = turn.clone();
+        mux.set_handle_turn(Some(std::sync::Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
+            if let Some(wrapped) = turn_clone.handle_turn_incoming(packet) {
+                if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
+                    let _ = udp.write(wrapped.ipAddress, &wrapped.message);
+                }
+            }
+        })));
+    }
+
+    // Start mux receive loop
+    let mux = std::sync::Arc::new(mux);
+    mux.start().expect("start mux");
+
+    // Prepare a Router acting as the relay to process Listen and Call messages
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(std::sync::Arc::new(MockApi)));
+    router.set_am_relay(true);
+    router.set_turn_handler(Some(turn.clone()));
+
+    let handler = DefaultPrintingHandler;
+
+    // 1) Simulate B sending RelayListen to the relay
+    router.set_last_from(Some(b_addr));
+    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
+    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &listen_msg, "BID");
+    });
+    // Validate id->addr registration
+    assert_eq!(turn.lookup_addr_by_id("BID"), Some(b_addr));
+
+    // 2) Simulate A sending RelayCall(calledId=BID) to the relay
+    router.set_last_from(Some(a_addr));
+    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "BID".to_string() }));
+    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &call_msg, "AID");
+    });
+    // Extract channel from outbound response
+    let out = router.take_outbound_response().expect("RelayResponse present");
+    let ch = out.get("channel").and_then(|v| v.as_u64()).expect("channel") as u16;
+
+    // 3) Bind a raw UDP socket on B's address to receive the forwarded payload
+    let recv_sock = UdpSocket::bind(b_addr).expect("bind b udp");
+    recv_sock.set_read_timeout(Some(Duration::from_secs(2))).ok();
+
+    // 4) Send TURN ChannelData from A to the relay and verify it arrives at B
+    let payload = b" TURN_OK"; // leading space to avoid special mux classifications
+    let ch_data = build_channel_data(ch, payload);
+    let send_sock = UdpSocket::bind(addr(test_util::find_unused_loopback_port())).expect("bind temp udp");
+    send_sock.send_to(&ch_data, relay_addr).expect("send channeldata");
+
+    // Receive forwarded packet at B: relay forwards the stripped inner payload (no TURN header)
+    let mut buf = [0u8; 2048];
+    let (n, _from) = recv_sock.recv_from(&mut buf).expect("receive at B");
+    assert_eq!(n, payload.len());
+    assert_eq!(&buf[..n], payload);
+
+    // Cleanup
+    mux.stop();
+}
+
+// Minimal API stub for Router context in this test
+struct MockApi;
+impl rust_comms::api::bingle_api::BingleApi for MockApi {
+    fn debug_print_options(&self) {}
+    fn get_my_id(&self) -> Option<String> { None }
+    fn get_app_id(&self) -> Option<u64> { None }
+    fn start(&mut self, _options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }
+    fn stop(&mut self) {}
+    fn network_change(&mut self) {}
+    fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkSourceKey, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_network_with_response(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkSourceKey, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn set_on_message(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
+    fn set_on_connect(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
+}

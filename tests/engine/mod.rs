@@ -12,6 +12,9 @@ mod engine_bingle_dtls_basic;
 #[path = "engine_connections.rs"]
 mod engine_connections;
 
+#[path = "turn_relay_integration.rs"]
+mod turn_relay_integration;
+
 #[path = "ddb_upsert.rs"]
 mod ddb_upsert;
 

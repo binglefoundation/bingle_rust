@@ -138,6 +138,11 @@ impl BingleApiImpl {
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
         #[allow(unused)] {  }
     }
+
+    /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
+    pub fn engine_turn_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl> {
+        self.engine.turn_handler_for_tests()
+    }
     
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool {
