@@ -110,6 +110,11 @@ impl TurnHandlerImpl {
         }
     }
 
+    /// Test helper: check if an IP is in the allowed set
+    pub fn is_ip_allowed(&self, ip: IpAddr) -> bool {
+        match self.allowed_ips.lock() { Ok(g) => g.contains(&ip), Err(_) => false }
+    }
+
     const MIN_CH: u16 = 0x4000;
     const MAX_CH: u16 = 0x7FFE; // inclusive per RFC range
 

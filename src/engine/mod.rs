@@ -429,6 +429,8 @@ impl Engine {
         // Now obtain a mutable reference to dtls only for installing the new handler
         if let Some(d) = self.dtls.as_mut() {
             let router_arc = self.router.clone();
+            // Provide TURN handler to router so handlers can access it.
+            if let Some(r) = &self.router { r.set_turn_handler(Some(self.turn_handler.clone())); }
             d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
                 log::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || {

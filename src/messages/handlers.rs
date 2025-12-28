@@ -2,6 +2,7 @@ use crate::api::bingle_api::BingleApi;
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use log::warn;
+use crate::turn::turn_handler::TurnHandler;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -89,7 +90,42 @@ pub trait MessageHandler {
     fn on_triangle_test2(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
     fn on_triangle_test3(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
     fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(_msg.clone()))); }
-    fn on_relay_listen(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayListen) { self.on_unimplemented(&Message::Relay(RelayMessage::Listen(_msg.clone()))); }
+    fn on_relay_listen(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayListen) {
+        // Only process on relay nodes
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() {
+                warn!("[handlers::on_relay_listen] Not a relay: ignoring Listen request");
+                return;
+            }
+            // Source address must be known from DTLS/mux layer
+            let src = match router.get_last_from() {
+                Some(a) => a,
+                None => {
+                    warn!("[handlers::on_relay_listen] No source address available");
+                    return;
+                }
+            };
+            // Turn handler must be provided via Router by the Engine
+            let turn = match router.get_turn_handler() {
+                Some(h) => h,
+                None => {
+                    warn!("[handlers::on_relay_listen] No TURN handler available");
+                    return;
+                }
+            };
+            let _ok = turn.handle_listen(&src);
+            // Build and stash a ListenResponse; include responseTag if present
+            let mut obj = serde_json::Map::new();
+            obj.insert("app".to_string(), serde_json::Value::Null);
+            obj.insert("type".to_string(), serde_json::Value::String("ListenResponse".to_string()));
+            if let Some(tag) = router.get_last_response_tag() {
+                obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+            }
+            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+        } else {
+            warn!("[handlers::on_relay_listen] No router context available");
+        }
+    }
     fn on_relay_check(&self, _api: Arc<dyn BingleApi>, from: &FromStruct, _msg: &RelayCheck) {
         // Send CheckResponse available=true back to the last sender address using the real Bingle API sender
         let sender_opt = crate::messages::router::Router::current().and_then(|r| r.get_sender());

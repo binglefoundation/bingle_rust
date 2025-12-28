@@ -39,6 +39,9 @@ mod marshal_relay_call;
 #[path = "messages/triangle_test3_registers.rs"]
 mod triangle_test3_registers;
 
+#[path = "messages/relay_listen.rs"]
+mod relay_listen;
+
 #[path = "messages/ddb_messages_json.rs"]
 mod ddb_messages_json;
 

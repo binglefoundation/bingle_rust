@@ -27,6 +27,8 @@ pub struct Router {
     // DDB/relay context
     am_relay: std::sync::atomic::AtomicBool,
     ddb_backend: Mutex<Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>>,
+    // TURN handler reference used by relay message processing
+    turn_handler: Mutex<Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>>>,
     // Outbound response produced by handlers during routing (consumed by Engine/DTLS layer)
     outbound_response: Mutex<Option<serde_json::Value>>,
 }
@@ -42,6 +44,7 @@ impl Router {
             on_message: Mutex::new(None),
             am_relay: std::sync::atomic::AtomicBool::new(false),
             ddb_backend: Mutex::new(None),
+            turn_handler: Mutex::new(None),
             outbound_response: Mutex::new(None),
         }
     }
@@ -84,6 +87,10 @@ impl Router {
     pub fn get_am_relay(&self) -> bool { self.am_relay.load(std::sync::atomic::Ordering::SeqCst) }
     pub fn set_ddb_backend(&self, backend: Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
     pub fn get_ddb_backend(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
+
+    // TURN handler reference
+    pub fn set_turn_handler(&self, h: Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>>) { if let Ok(mut g) = self.turn_handler.lock() { *g = h; } }
+    pub fn get_turn_handler(&self) -> Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>> { match self.turn_handler.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
     // Outbound response helpers
     pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
