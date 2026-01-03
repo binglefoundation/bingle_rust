@@ -567,6 +567,11 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}", endpoint);
         cli.register_ip(endpoint)
     }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
+        let cli = self.engine.ddb_client();
+        log::info!("[BingleApiImpl::ddb_register_relay] registering relay: id={}", relay_id);
+        cli.register_relay(relay_id, relay_sig)
+    }
 }
 
 

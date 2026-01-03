@@ -25,6 +25,8 @@ pub trait BingleApiInternal: Send + Sync {
     fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
     /// Register an endpoint IP:port via the engine's DDB client. Default: not implemented.
     fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
+    /// Register a relay association via the engine's DDB client. Default: not implemented.
+    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("not implemented".to_string()) }
 }
 
 /// Convenience type aliases used by the Bingle API.

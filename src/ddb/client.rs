@@ -19,6 +19,10 @@ pub trait DdbClient: Send + Sync {
     #[allow(non_snake_case)]
     fn registerIP(&self, endpoint: SocketAddr) -> Result<(), String> { self.register_ip(endpoint) }
 
+    /// Register/update our chosen relay association in the DDB via a relay.
+    /// relay_id must be a valid Algorand base32 address (36-byte decoded).
+    fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String>;
+
     /// Lookup an id in the DDB and build a NetworkSourceKey from its AdvertRecord.
     fn lookup(&self, id: &str) -> Result<NetworkSourceKey, String>;
 }
@@ -72,6 +76,9 @@ impl DdbClient for NullDdbClient {
     fn register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> {
         Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
     }
+    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
     fn lookup(&self, _id: &str) -> Result<NetworkSourceKey, String> {
         Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
     }
@@ -117,6 +124,50 @@ impl DdbClient for DdbClientImpl {
         log::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
+        if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }
+    }
+
+    fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
+        // 1) Find relay to talk to (we also accept the relay_id parameter for the record)
+        let relay = self.find_relay()?;
+        let relay_user_b64 = Self::relay_user_id(&relay.id)?;
+        let _ = Self::relay_user_id(&relay_id)?; // validate provided relay_id shape
+        let nsk = NetworkSourceKey::new_direct(relay.address);
+
+        // 2) Build UpsertResolve using our id as startId and record.id
+        let my_id = self.api.get_my_id().ok_or_else(|| "get_my_id returned None".to_string())?;
+        let record = AdvertRecord {
+            id: my_id.clone(),
+            endpoint: None,
+            am_relay: Some(false),
+            relay_id: Some(relay_id),
+            relay_sig,
+            date: "1970-01-01T00:00:00Z".to_string(),
+            sig: None,
+        };
+        let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
+            app: "ddb".to_string(),
+            start_id: my_id,
+            epoch: 1,
+            record,
+            original_signature: "SIG".to_string(),
+            rippled: false,
+            tag: None,
+            response_tag: None,
+            text: None,
+            data: None,
+        }));
+        let json: JsonValue = to_json_value(&up);
+
+        // 3) Send and wait for response; validate UpdateResponse
+        log::info!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
+        let resp = self
+            .api
+            .send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)?;
+        log::info!("[DdbClientImpl::register_relay] received DdbUpdateResponse: {:?}", resp);
+
+        let app_ok = resp.get("app").and_then(|v| v.as_str()).is_some_and(|s| s == "ddb") || resp.get("app").is_none();
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
         if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }
     }

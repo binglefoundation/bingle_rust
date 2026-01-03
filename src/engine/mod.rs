@@ -199,6 +199,12 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         if p.is_null() { return Err("null engine".into()); }
         unsafe { (*p).ddb_client().register_ip(endpoint) }
     }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return Err("null engine".into()); }
+        unsafe { (*p).ddb_client().register_relay(relay_id, relay_sig) }
+    }
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
