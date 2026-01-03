@@ -3,13 +3,13 @@
 # Purpose: Build the Docker 'tests' stage image that runs the prebuilt integration test binary.
 #
 # Usage:
-#   scripts/build_tests_image.sh [--tag <tag>] [--test-bin <path>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]
+#   scripts/build_tests_image.sh [--tag <tag>] [--test <test_name>] [--test-bin <path>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]
 #
 # Behavior:
 # - If --test-bin is not provided, this script will:
 #   1) Build the integration test binary without running it for the specified --target (default aarch64-unknown-linux-musl).
 #      By default we use cargo-zigbuild for musl cross-compilation. Pass --no-zig to use plain cargo.
-#   2) Auto-detect the resulting binary path under target/<triple>/debug/deps/endpoint_available-*
+#   2) Auto-detect the resulting binary path under target/<triple>/debug/deps/${TEST_NAME}-*
 # - Builds the Docker image using the tests stage:
 #     docker buildx build --platform <platform> --target tests -t <tag> --build-arg TEST_BIN_PATH=<path> .
 # - By default, tag is bingle-tests:local and platform is linux/arm64.
@@ -24,11 +24,14 @@ DO_CARGO_BUILD=1
 TARGET_TRIPLE="aarch64-unknown-linux-musl"
 USE_ZIG=1
 DOCKER_PLATFORM="linux/arm64"
+TEST_NAME="endpoint_available"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag)
       TAG="$2"; shift 2;;
+    --test)
+      TEST_NAME="$2"; shift 2;;
     --test-bin)
       TEST_BIN_PATH="$2"; shift 2;;
     --no-build)
@@ -40,7 +43,7 @@ while [[ $# -gt 0 ]]; do
     --platform)
       DOCKER_PLATFORM="$2"; shift 2;;
     -h|--help)
-      echo "Usage: $0 [--tag <tag>] [--test-bin <path>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]"; exit 0;;
+      echo "Usage: $0 [--tag <tag>] [--test <test_name>] [--test-bin <path>] [--no-build] [--target <triple>] [--no-zig] [--platform <docker-platform>]"; exit 0;;
     *)
       echo "Unknown argument: $1" >&2; exit 2;;
   esac
@@ -56,13 +59,13 @@ if [[ $DO_CARGO_BUILD -eq 1 ]]; then
     fi
     # Ensure the rust target is added
     rustup target add "$TARGET_TRIPLE" || true
-    echo "[build-tests-image] Using: cargo zigbuild --test endpoint_available --target $TARGET_TRIPLE"
-    NO_COLOR=1 cargo zigbuild --test endpoint_available --target "$TARGET_TRIPLE"
+    echo "[build-tests-image] Using: cargo zigbuild --test $TEST_NAME --target $TARGET_TRIPLE"
+    NO_COLOR=1 cargo zigbuild --test "$TEST_NAME" --target "$TARGET_TRIPLE"
   else
     # Plain cargo build path (requires toolchain/linker set up for cross)
     rustup target add "$TARGET_TRIPLE" || true
-    echo "[build-tests-image] Using: cargo test --target $TARGET_TRIPLE --test endpoint_available --no-run"
-    NO_COLOR=1 cargo test --target "$TARGET_TRIPLE" --test endpoint_available --no-run
+    echo "[build-tests-image] Using: cargo test --target $TARGET_TRIPLE --test $TEST_NAME --no-run"
+    NO_COLOR=1 cargo test --target "$TARGET_TRIPLE" --test "$TEST_NAME" --no-run
   fi
 fi
 
@@ -70,9 +73,9 @@ fi
 if [[ -z "$TEST_BIN_PATH" ]]; then
   # Try target-specific locations first, then generic
   CANDIDATES=(
-    "target/${TARGET_TRIPLE}/debug/deps/endpoint_available-*"
-    target/*/debug/deps/endpoint_available-*
-    target/debug/deps/endpoint_available-*
+    "target/${TARGET_TRIPLE}/debug/deps/${TEST_NAME}-*"
+    target/*/debug/deps/${TEST_NAME}-*
+    target/debug/deps/${TEST_NAME}-*
   )
   for pat in "${CANDIDATES[@]}"; do
     # Use globbing safely even if pattern doesn't match

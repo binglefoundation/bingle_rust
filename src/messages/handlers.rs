@@ -36,6 +36,7 @@ pub trait MessageHandler {
 
     // Ping messages
     fn on_ping_ping(&self, api: Arc<dyn BingleApi>, from: &FromStruct, msg: &PingPing) {
+        log::info!("[on_ping_ping] handling ping {:?} from {:?}", msg, from);
         // Reply with PingResponse: app="ping", type="response", verifiedId from API, text="ACK: {text}"
         if let Some(router) = crate::messages::router::Router::current() {
             let sender_opt = router.get_sender();
@@ -67,17 +68,14 @@ pub trait MessageHandler {
             json_obj.insert("text".to_string(), serde_json::Value::String(ack_text));
             let json_val = serde_json::Value::Object(json_obj);
 
-            // Prepare destination (convert from.id (issuer) to base64 user id)
+            // Prepare destination (use from.id (issuer) as base32 algorand address without conversion)
             let nsk = from.network_source_key.clone();
-            let raw_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            let user_id_b64 = match crate::blockchain::algo_ops::id_b64_from_algorand_addr(&raw_id) {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("[handlers::on_ping_ping] invalid from.id '{}': {}", raw_id, e);
-                    return;
-                }
-            };
-            let _ok = sender(&nsk, &user_id_b64, json_val);
+            let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            log::info!("[handlers::on_ping_ping] sending response {:?}", json_val);
+            let ok = sender(&nsk, &user_id, json_val);
+            if !ok {
+                log::warn!("[handlers::on_ping_ping] sender returned false");
+            }
         }
     }
     fn on_ping_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }

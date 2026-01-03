@@ -60,4 +60,9 @@ path = "tests/all.rs"
 # Keep endpoint_available as its own test target for Docker-based testnet runs
 [[test]]
 name = "endpoint_available"
-path = "tests/api/testnet/endpoint_available.rs"
+path = "tests/e2e/testnet/endpoint_available.rs"
+
+# E2E: ping a registered node on testnet (Docker-based)
+[[test]]
+name = "ping_registered_node"
+path = "tests/e2e/testnet/ping_registered_node.rs"

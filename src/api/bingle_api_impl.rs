@@ -282,7 +282,11 @@ impl BingleApi for BingleApiImpl {
             // Sender closure routes via the engine-backed API handle
             let api_for_sender = api_handle.clone();
             let sender_cb: Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync> = Arc::new(move |nsk, uid, msg| {
-                api_for_sender.send_message_to_network(nsk, uid, msg, None)
+                log::info!("[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}", nsk, uid, msg);
+                let progress_cb = Arc::new(|percent: u8, message: String| {
+                    log::info!("[BingleApiImpl::start][router sender] Send progress: {}% - {}", percent, message);
+                });
+                api_for_sender.send_message_to_network(nsk, uid, msg, Some(progress_cb))
             });
             router.set_sender(Some(sender_cb));
             // Bind internal control adapter for engine state updates
@@ -297,7 +301,11 @@ impl BingleApi for BingleApiImpl {
         // Install Engine callback to send via Bingle protocol using the engine-backed API handle
         let api_for_engine_send: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(crate::engine::EngineBingleApiHandle(eng_ptr_arc.clone()));
         self.engine.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
-            api_for_engine_send.send_message_to_network(nsk, uid, msg, None)
+            log::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
+            let progress_cb = Arc::new(|percent: u8, message: String| {
+                log::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
+            });
+            api_for_engine_send.send_message_to_network(nsk, uid, msg, Some(progress_cb))
         })));
         // Provide the BingleApi handle to Engine for handlers and DDB client
         let api_for_engine: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(crate::engine::EngineBingleApiHandle(eng_ptr_arc.clone()));
@@ -424,13 +432,15 @@ impl BingleApi for BingleApiImpl {
         }
     }
 
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        log::info!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some());
-        #[allow(unused)] {  }
-        let err = "not implemented".to_string();
-        log::info!("[BingleApiImpl::send_message_to_id_with_response][exit] Err({})", err);
-        #[allow(unused)] {  }
-        Err(err)
+    fn send_message_to_id_with_response(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
+        log::info!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
+        // 1) Use the Engine-bound DDB client to resolve the destination NetworkSourceKey
+        let cli = self.engine.ddb_client();
+        let nsk = cli.lookup(user_id)?;
+        // 2) Delegate to send_message_to_network_with_response for the actual send + wait
+        let res = self.send_message_to_network_with_response(&nsk, user_id, message, progress);
+        log::info!("[BingleApiImpl::send_message_to_id_with_response][exit] result={:?}", res.as_ref().ok());
+        res
     }
 
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {

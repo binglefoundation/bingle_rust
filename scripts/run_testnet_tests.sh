@@ -145,3 +145,23 @@ docker run --platform linux/arm64 --rm \
   -v "$PWD/tmp/test_out":/out \
   -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
   "bingle-tests:local"
+
+# Build image for ping_registered_node test and run it in Direct NAT mode only
+scripts/build_tests_image.sh --tag bingle-tests:ping --test ping_registered_node
+
+# Run the ping test: Direct mode only, set explicit filter to the ping test function and pass pingable address
+PING_FILTER="testnet_send_ping_to_registered_node"
+
+docker run --platform linux/arm64 --rm \
+  --name bingle_test_runner_ping \
+  --network bingle_testnet \
+  --cap-add NET_ADMIN \
+  -e NAT_MODE="Direct" \
+  -e TEST_FILTER="$PING_FILTER" \
+  -e TESTNET_USER="$TESTNET_USER" \
+  -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
+  -e PINGABLE_ADDRESS="$PINGABLE_ADDRESS" \
+  -v "$PWD/tmp/test_out":/out \
+  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+  "bingle-tests:ping"
+
