@@ -4,7 +4,7 @@ CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid e
 
 # Ensure cleanup of background containers on exit
 cleanup() {
-  docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b >/dev/null 2>&1 || true
+  docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -24,22 +24,28 @@ TESTNET_USER=testuser10
 TESTNET_ADDRESS=SRIDWL763LIECMBL5N4WRJE6TGBBJL6SKJ6OZOMEQSGAOKW5JEBVUUH3QU
 TESTNET_PASSPHRASE="sand fantasy youth fix suggest immense stem awful piano pyramid garment wear butter setup cake finger hawk game language demise company surprise rule about during"
 
-# Update these users
+PINGABLE_USER=pinguser20
+PINGABLE_ADDRESS=SRIDF3MQNHGWOKYNZOSS7VONPKJB2LM52DOZGPY7QLT5ONZ5BPUAKH3Q4A
+PINGABLE_PASSPHRASE="sudden defy hunt quick lens long slender pupil example affair select announce flower meadow refuse owner beauty write always scene kiss cage picture ability gorilla"
 
+# Update these users
 bingle_admin root $RELAY_A_ADDRESS --enable \
  --node-file nodely_testnet_node.json \
- --passphrase "$CREATOR_PASSPHRASE" \
- --debug
+ --passphrase "$CREATOR_PASSPHRASE"
 
 bingle_admin root $RELAY_B_ADDRESS --enable \
  --node-file nodely_testnet_node.json \
- --passphrase "$CREATOR_PASSPHRASE" \
- --debug
+ --passphrase "$CREATOR_PASSPHRASE"
 
 bingle_admin updateuser --handle $TESTNET_USER \
  --passphrase "$CREATOR_PASSPHRASE" \
  --node-file nodely_testnet_node.json \
- --debug --userpassphrase "$TESTNET_PASSPHRASE"
+ --userpassphrase "$TESTNET_PASSPHRASE"
+
+bingle_admin updateuser --handle $PINGABLE_USER \
+ --passphrase "$CREATOR_PASSPHRASE" \
+ --node-file nodely_testnet_node.json \
+ --userpassphrase "$PINGABLE_PASSPHRASE"
 
 # Ensure a dedicated test network exists
 if ! docker network inspect bingle_testnet >/dev/null 2>&1; then
@@ -85,6 +91,7 @@ echo "Using STUN servers: ${STUN_A_IP}:3478, ${STUN_B_IP}:3478"
 docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_a \
  --network bingle_testnet \
+ -e RELAY=1 \
  -e PASSPHRASE="$RELAY_A_PASSPHRASE" \
  -e PORT=$RELAY_A_PORT \
  -e HANDLE=$RELAY_A_HANDLE \
@@ -94,9 +101,21 @@ sleep 20
 docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_b \
  --network bingle_testnet \
+ -e RELAY=1 \
  -e PASSPHRASE="$RELAY_B_PASSPHRASE" \
  -e PORT=$RELAY_B_PORT \
  -e HANDLE=$RELAY_B_HANDLE \
+ "bingle:local"
+sleep 20
+
+# Start the ping target
+docker run --platform linux/arm64 -d --rm \
+ --name bingle_pingable \
+ --network bingle_testnet \
+ -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
+ -e PORT=30001 \
+ -e HANDLE=$PINGABLE_USER \
+ -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
  "bingle:local"
 sleep 20
 
@@ -111,6 +130,14 @@ scripts/build_tests_image.sh --tag bingle-tests:local
 # Prepare output directory to collect results from the container
 mkdir -p tmp/test_out
 
+# File paths for collecting results from each docker run
+MAIN_OUT="$PWD/tmp/test_out/test_results_main.out"
+PING_OUT="$PWD/tmp/test_out/test_results_ping.out"
+
+# Ensure previous outputs are cleared
+: > "$MAIN_OUT"
+: > "$PING_OUT"
+
 # Run the prebuilt test inside the dedicated tests image (streams output and waits for completion)
 # NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted|All
 # Default to All to exercise all three modes in sequence with a final summary
@@ -123,6 +150,102 @@ docker run --platform linux/arm64 --rm \
   -e NAT_MODE="$NAT_MODE" \
   -e TESTNET_USER="$TESTNET_USER" \
   -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
+  -e OUT_FILE="/out/$(basename "$MAIN_OUT")" \
   -v "$PWD/tmp/test_out":/out \
   -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
   "bingle-tests:local"
+MAIN_RC=$?
+
+# Build image for ping_registered_node test and run it in Direct NAT mode only
+scripts/build_tests_image.sh --tag bingle-tests:ping --test ping_registered_node
+
+# Run the ping test: Direct mode only, set explicit filter to the ping test function and pass pingable address
+PING_FILTER="testnet_send_ping_to_registered_node"
+
+docker run --platform linux/arm64 --rm \
+  --name bingle_test_runner_ping \
+  --network bingle_testnet \
+  --cap-add NET_ADMIN \
+  -e NAT_MODE="Direct" \
+  -e TEST_FILTER="$PING_FILTER" \
+  -e TESTNET_USER="$TESTNET_USER" \
+  -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
+  -e PINGABLE_ADDRESS="$PINGABLE_ADDRESS" \
+  -e OUT_FILE="/out/$(basename "$PING_OUT")" \
+  -v "$PWD/tmp/test_out":/out \
+  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+  "bingle-tests:ping"
+PING_RC=$?
+
+# Attempt to stop the ping runner explicitly (in case it lingered)
+docker stop bingle_test_runner_ping >/dev/null 2>&1 || true
+
+# ---------------------------
+# Extract and consolidate results
+# ---------------------------
+echo ""
+echo "================ Consolidated Test Results ================"
+
+# Show individual results from the main run
+if [[ -f "$MAIN_OUT" ]]; then
+  echo "-- Main run (per-mode results) --"
+  grep -E '^\[runner\]\[(Direct|Full|Restricted)\] Test ' "$MAIN_OUT" || echo "(no per-mode result lines found)"
+  echo "-- Main run (summary) --"
+  grep -E '^\[runner\]\[summary\]' "$MAIN_OUT" || echo "(no summary lines found)"
+else
+  echo "[WARN] Main results file not found: $MAIN_OUT"
+fi
+
+# Show results from the ping run
+if [[ -f "$PING_OUT" ]]; then
+  echo "-- Ping run (per-mode results) --"
+  grep -E '^\[runner\]\[(Direct|Full|Restricted)\] Test ' "$PING_OUT" || echo "(no per-mode result lines found)"
+else
+  echo "[WARN] Ping results file not found: $PING_OUT"
+fi
+
+# Determine statuses
+MAIN_STATUS="UNKNOWN"
+PING_STATUS="UNKNOWN"
+
+if [[ -f "$MAIN_OUT" ]]; then
+  if grep -Eq '^\[runner\]\[summary\].*FAILED' "$MAIN_OUT"; then
+    MAIN_STATUS="FAIL"
+  elif grep -Eq '^\[runner\]\[summary\].*PASSED' "$MAIN_OUT"; then
+    # If any PASSED summaries found and no FAILED, consider PASS
+    MAIN_STATUS="PASS"
+  else
+    # Fall back to exit code
+    if [[ ${MAIN_RC:-1} -eq 0 ]]; then MAIN_STATUS="PASS"; else MAIN_STATUS="FAIL"; fi
+  fi
+else
+  if [[ ${MAIN_RC:-1} -eq 0 ]]; then MAIN_STATUS="PASS"; else MAIN_STATUS="FAIL"; fi
+fi
+
+if [[ -f "$PING_OUT" ]]; then
+  if grep -Eq '^\[runner\]\[Direct\] Test PASSED' "$PING_OUT"; then
+    PING_STATUS="PASS"
+  elif grep -Eq '^\[runner\]\[(Direct|Full|Restricted)\] Test FAILED' "$PING_OUT"; then
+    PING_STATUS="FAIL"
+  else
+    if [[ ${PING_RC:-1} -eq 0 ]]; then PING_STATUS="PASS"; else PING_STATUS="FAIL"; fi
+  fi
+else
+  if [[ ${PING_RC:-1} -eq 0 ]]; then PING_STATUS="PASS"; else PING_STATUS="FAIL"; fi
+fi
+
+echo "-- Overall --"
+echo "Main run: $MAIN_STATUS"
+echo "Ping run: $PING_STATUS"
+
+if [[ "$MAIN_STATUS" == "PASS" && "$PING_STATUS" == "PASS" ]]; then
+  echo "OVERALL RESULT: PASS"
+  exit 0
+else
+  echo "OVERALL RESULT: FAIL"
+  # Prefer returning the first non-zero original RC if available
+  if [[ ${MAIN_RC:-0} -ne 0 ]]; then exit ${MAIN_RC:-1}; fi
+  if [[ ${PING_RC:-0} -ne 0 ]]; then exit ${PING_RC:-1}; fi
+  exit 1
+fi
+

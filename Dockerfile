@@ -1,7 +1,7 @@
 # Multi-target runtime Dockerfile (no in-container build)
 # - base: Common runtime dependencies and assets
 # - cli:  Runs the prebuilt bingle_cli binary with docker_start.sh
-# - tests: Runs the prebuilt test binary for testnet_user_reaches_endpoint_available and writes results to a mounted host file
+# - tests: Runs the prebuilt Rust test binary (endpoint_available or ping_registered_node) and writes results to a mounted host file
 
 # Allow selecting target platform when building multi-arch images
 ARG TARGETPLATFORM=linux/arm64

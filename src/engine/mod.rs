@@ -124,6 +124,7 @@ impl BingleApi for EngineBingleApiHandle {
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
 
     fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
+        log::info!("[EngineBingleApiHandle::send_message_to_network] nsk={} user_id={} message={}", nsk, user_id, message);
         use std::sync::atomic::Ordering;
         if let Some(addr) = nsk.inet_socket_address {
             let valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
@@ -460,6 +461,7 @@ impl Engine {
                     // Try JSON parse to extract responseTag and fulfill waiters
                     if let Ok(s) = std::str::from_utf8(data) {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                            log::info!("[Engine::install_dtls_handler][cb] checking for responseTag in {}", v);
                             // Expose last responseTag (if this is a request). Handlers may echo it back.
                             if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
                                 if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
@@ -474,6 +476,7 @@ impl Engine {
                                     if let Ok(map) = pending_responses.lock() {
                                         if let Some(wait) = map.get(&tag_uuid) {
                                             if let Ok(mut g) = wait.0.lock() {
+                                                log::info!("[Engine::install_dtls_handler][cb] got response, returning");
                                                 g.responded = true;
                                                 g.response = Some(v.clone());
                                                 wait.1.notify_all();
@@ -491,20 +494,24 @@ impl Engine {
                     match std::str::from_utf8(data) {
                         Ok(s) => match from_json_str(s) {
                             Ok(msg) => {
+                                log::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
                                 if let Some(r) = &router_arc {
                                     r.route(&handler, &msg, issuer);
                                     if let Some(out) = r.take_outbound_response() {
+                                        log::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
                                         if let Err(e) = server.send(*from, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                     }
                                 }
                             }
-                            Err(_) => {
+                            Err(e) => {
                                 // Not valid JSON per our schema; treat as plaintext with raw bytes
+                                log::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s, e);
                                 handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
                             }
                         },
-                        Err(_) => {
+                        Err(e) => {
+                            log::warn!("[Engine::install_dtls_handler][cb] not UTF-8 {:?}", e);
                             handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
                         }
                     }
