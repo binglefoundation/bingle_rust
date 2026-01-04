@@ -368,76 +368,78 @@ impl MessageHandler for DefaultPrintingHandler {
             if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
                 let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
                 internal.set_nat_type(crate::engine::NatType::Restricted);
+
+                // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
+                // We run this in a background thread to avoid blocking the handler.
+                let api_for_thread = api.clone();
+                std::thread::spawn(move || {
+                    use std::time::Duration;
+                    use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+
+                    // Build discovery closure similar to on_triangle_test1
+                    let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+                        #[cfg(not(target_os = "ios"))]
+                        {
+                            let app_id_opt = api_for_thread
+                                .get_app_id()
+                                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                            let app_id = match app_id_opt {
+                                Some(v) => v,
+                                None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
+                            };
+                            let cfg = api_for_thread.get_algo_provider_config();
+                            crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+                        }
+                        #[cfg(target_os = "ios")]
+                        {
+                            let _ = api_for_thread
+                                .get_app_id()
+                                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
+                                .expect("on_triangle_test1_response (iOS): app_id is required");
+                            std::sync::Arc::new(|| panic!("on_triangle_test1_response (iOS): discovery not supported without indexer"))
+                        }
+                    };
+
+                    let finder = RelayFinder::new(api_for_thread.clone(), Duration::from_secs(60), discover);
+                    let my_id = match api_for_thread.get_my_id() {
+                        Some(id) => id,
+                        None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
+                    };
+                    let relay_info = match finder.find_relay(&my_id) {
+                        Ok(info) => info,
+                        Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
+                    };
+
+                    // Send Relay::Listen and expect Relay::ListenResponse
+                    let listen = crate::messages::types::RelayListen { app: None };
+                    let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
+                    let json = crate::messages::marshal::to_json_value(&msg);
+                    let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(relay_info.address);
+                    let uid = relay_info.id.clone();
+                    match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                        Ok(resp) => {
+                            let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                            if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
+                        }
+                        Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
+                    }
+
+                    // Register relay association in DDB
+                    if let Some(internal) = internal_opt {
+                        if let Err(e) = internal.ddb_register_relay(relay_info.id.clone(), None) {
+                            warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
+                        } else {
+                            log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+                            internal.set_state(crate::engine::EngineState::Registered)
+                        }
+                    }
+                });
+
             } else {
                 log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
             }
         } else {
             warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
         }
-
-        // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
-        // We run this in a background thread to avoid blocking the handler.
-        let api_for_thread = api.clone();
-        std::thread::spawn(move || {
-            use std::time::Duration;
-            use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
-
-            // Build discovery closure similar to on_triangle_test1
-            let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
-                #[cfg(not(target_os = "ios"))]
-                {
-                    let app_id_opt = api_for_thread
-                        .get_app_id()
-                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                    let app_id = match app_id_opt {
-                        Some(v) => v,
-                        None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
-                    };
-                    let cfg = api_for_thread.get_algo_provider_config();
-                    crate::relay::discovery::indexer_discover_closure(app_id, cfg)
-                }
-                #[cfg(target_os = "ios")]
-                {
-                    let _ = api_for_thread
-                        .get_app_id()
-                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
-                        .expect("on_triangle_test1_response (iOS): app_id is required");
-                    std::sync::Arc::new(|| panic!("on_triangle_test1_response (iOS): discovery not supported without indexer"))
-                }
-            };
-
-            let finder = RelayFinder::new(api_for_thread.clone(), Duration::from_secs(60), discover);
-            let my_id = match api_for_thread.get_my_id() {
-                Some(id) => id,
-                None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
-            };
-            let relay_info = match finder.find_relay(&my_id) {
-                Ok(info) => info,
-                Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
-            };
-
-            // Send Relay::Listen and expect Relay::ListenResponse
-            let listen = crate::messages::types::RelayListen { app: None };
-            let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
-            let json = crate::messages::marshal::to_json_value(&msg);
-            let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(relay_info.address);
-            let uid = relay_info.id.clone();
-            match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
-                Ok(resp) => {
-                    let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                    if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
-                }
-                Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
-            }
-
-            // Register relay association in DDB
-            if let Some(internal) = internal_opt {
-                if let Err(e) = internal.ddb_register_relay(relay_info.id.clone(), None) {
-                    warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
-                } else {
-                    log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
-                }
-            }
-        });
     }
 }

@@ -23,7 +23,6 @@ fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-
 #[test]
 fn testnet_user_reaches_endpoint_available() {
     // Only run when explicitly enabled.
@@ -53,10 +52,10 @@ fn testnet_user_reaches_endpoint_available() {
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(provider_cfg.clone()));
 
     let ab = AlgoBingle::new(ops.clone(), app_id, 0);
-    let list = ab
+    let static_endpoints = ab
         .list_static_endpoints_via_indexer(app_id)
         .expect("indexer query for static endpoints");
-    assert!(list.len() >= 2, "Expected at least two static endpoints on testnet, got {}", list.len());
+    assert!(static_endpoints.len() >= 2, "Expected at least two static endpoints on testnet, got {}", static_endpoints.len());
 
 
     // Load STUN servers from the repository root file and configure options accordingly.
@@ -151,10 +150,16 @@ fn testnet_user_reaches_endpoint_available() {
     if final_state == EngineState::Registered {
         let my_id = api.get_my_id().expect("api.get_my_id Some");
         let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
-        let looked = nsk.inet_socket_address.expect("lookup should return a direct endpoint");
-        let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
-        assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
+        if(got_nat != NatType::FullCone) {
+            let looked = nsk.inet_socket_address.expect("lookup should return a direct endpoint");
+            let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
+            assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
+        }
+        else {
+            let looked = nsk.relay_address.expect("lookup should return relay address");
+            assert_eq!(looked.to_string(), static_endpoints[0].1, "DDB lookup should return our discovered public endpoint");
+        }
     }
-
+    
     api.stop();
 }
