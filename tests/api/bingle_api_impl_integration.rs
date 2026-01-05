@@ -30,7 +30,7 @@ fn start_succeeds() {
 #[test]
 fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new(&StartOptions::default());
-    let nsk = NetworkSourceKey { inet_socket_address: None, relay_channel: None, relay_address: None };
+    let nsk = NetworkSourceKey { inet_socket_address: None, relay_channel: None, relay_address: None, relay_id: None };
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None);
     assert!(!ok, "Should return false when no direct address is provided");
@@ -109,7 +109,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 
     // Prepare a direct NetworkSourceKey to server and send RelayCheck
-    let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
+    let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None, relay_id: None };
     use uuid::Uuid;
     let req_tag = Uuid::new_v4().to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check", "responseTag": req_tag });

@@ -874,29 +874,27 @@ pub mod non_ios {
                 self.owned_udp_mux = None;
                 Ok(())
             }
-        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
+        fn send(&self, to: std::net::SocketAddr, data: &[u8]) -> Result<()> {
             use std::io::Write;
             // We require a running UDP mux to perform client handshake and writes
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
-            // 1) If there is an existing inbound (server-accepted) connection for `to`, use its writer.
+            // 1) If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer.
             if let Some(writers) = &self.server_writers {
                 if let Ok(map) = writers.lock() {
                     if let Some(writer) = map.get(&to) {
                         log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to, data.len());
-                        #[allow(unused)] {  }
                         return writer(data);
                     }
                 }
             }
 
-            // 2) If there is an existing outbound/client connection stream for `to`, write to it.
+            // 2) If there is an existing outbound/client connection stream for `to_addr`, write to it.
             if let Some(streams_arc) = &self.streams {
                 if let Ok(map) = streams_arc.lock() {
                     if let Some(stream_arc) = map.get(&to) {
                         if let Ok(mut guard) = stream_arc.lock() {
                             log::info!("[DtlsOpenSsl::send] using existing outbound stream to {} ({} bytes)", to, data.len());
-                            #[allow(unused)] {  }
                             return guard.write_all(data).map_err(|e| format!("dtls write failed: {}", e));
                         }
                     }
@@ -905,7 +903,6 @@ pub mod non_ios {
 
             // 3) Otherwise, create a new outbound DTLS connection and persist it for reuse.
             log::info!("[DtlsOpenSsl::send] creating new outbound DTLS connection to {}", to);
-            #[allow(unused)] {  }
             // Build DTLSv1.2 client connector
             let connector = self.prepare_client_context()?;
             // Ensure a per-peer queue exists so incoming handshake/application data is delivered via the handler
@@ -923,15 +920,13 @@ pub mod non_ios {
             if let Some(set_arc) = &self.connecting_peers {
                 if let Ok(mut set) = set_arc.lock() { 
                     log::info!("[DtlsOpenSsl::send] mark {} as connecting (suppress server accept)", to);
-                    #[allow(unused)] {  }
-                    set.insert(to); 
+                    set.insert(to);
                 }
             }
             // Create a UDP-backed connection to the peer using the per-peer queue.
             let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: to, queue: q_arc };
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
             log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
-            #[allow(unused)] {  }
             let stream = match connector.connect("localhost", conn) {
                 Ok(s) => s,
                 Err(HandshakeError::WouldBlock(mut mid)) => {

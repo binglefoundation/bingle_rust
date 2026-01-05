@@ -24,7 +24,7 @@ impl RelayPingHandler {
 
     fn send_json_to(&self, to: SocketAddr, msg: &Message) {
         let json = to_json_string(msg);
-        self.dtls.send(to, json.as_bytes()).expect("DTLS send failed in RelayPingHandler");
+        self.dtls.send_direct(to, json.as_bytes()).expect("DTLS send failed in RelayPingHandler");
     }
 }
 

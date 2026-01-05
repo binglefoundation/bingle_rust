@@ -399,7 +399,7 @@ impl Engine {
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
         let dtls = self.dtls.as_ref().ok_or_else(|| "DTLS instance not provided".to_string())?;
-        let res = dtls.send(addr, data);
+        let res = dtls.send_direct(addr, data);
         if res.is_ok() {
             // Ensure a connection entry exists after a successful send (insert if missing)
             if let Ok(mut m) = self.connections.lock() {
@@ -506,7 +506,7 @@ impl Engine {
                                     if let Some(out) = r.take_outbound_response() {
                                         log::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
-                                        if let Err(e) = server.send(*from, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
+                                        if let Err(e) = server.send_direct(*from, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                     }
                                 }
                             }

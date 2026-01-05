@@ -47,7 +47,7 @@ fn unit_send_message_to_network_calls_dtls_send() {
     let (mock, sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
     let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
-    let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None };
+    let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None, relay_id: None };
     let msg = serde_json::json!({"hello": "world"});
     let progress_calls: Arc<Mutex<Vec<(u8, String)>>> = Arc::new(Mutex::new(vec![]));
     let progress_calls_closure = progress_calls.clone();
@@ -118,7 +118,7 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
 
     // Send a message and ensure issuer is passed through
     let addr_send: SocketAddr = "127.0.0.1:45678".parse().unwrap();
-    let nsk = NetworkSourceKey { inet_socket_address: Some(addr_send), relay_channel: None, relay_address: None };
+    let nsk = NetworkSourceKey { inet_socket_address: Some(addr_send), relay_channel: None, relay_address: None, relay_id: None };
     let uid2 = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None);
     assert!(ok);
