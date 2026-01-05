@@ -411,7 +411,7 @@ pub mod non_ios {
     // Shared NetworkMux-backed Read/Write adapter using a per-peer queue provided by the DTLS layer.
     pub(crate) struct CommonNetworkMuxConn {
         mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
-        peer: std::net::SocketAddr,
+        peer: crate::api::bingle_api::NetworkSourceKey,
         queue: Arc<PeerQueue>,
     }
     impl std::io::Read for CommonNetworkMuxConn {
@@ -433,20 +433,26 @@ pub mod non_ios {
     }
     impl std::io::Write for CommonNetworkMuxConn {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let peer_addr_opt = self.peer.inet_socket_address;
+            let peer_str = peer_addr_opt.map(|a| a.to_string()).unwrap_or_else(|| "<no-inet-addr>".to_string());
             #[cfg(debug_assertions)]
             {
                 let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    log::warn!("[dtls muxconn][send][{} -> {}] {}", from_ip, self.peer, json);
+                    log::warn!("[dtls muxconn][send][{} -> {}] {}", from_ip, peer_str, json);
                 } else {
-                    log::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, self.peer, buf.len());
+                    log::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, peer_str, buf.len());
                 }
             }
-            match self.mux.write(self.peer, buf) {
+            let to_addr = match peer_addr_opt {
+                Some(a) => a,
+                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "NetworkSourceKey has no inet_socket_address for direct DTLS send")),
+            };
+            match self.mux.write(to_addr, buf) {
                 Ok(()) => Ok(buf.len()),
                 Err(e) => {
                     let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                    log::warn!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, self.peer, e);
+                    log::warn!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, peer_str, e);
                     #[allow(unused)] {  }
                     Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e)))
                 }
@@ -762,7 +768,7 @@ pub mod non_ios {
                 #[allow(unused)] {  }
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
-                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: from, queue: q_arc.clone() };
+                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkSourceKey::new_direct(from), queue: q_arc.clone() };
                 let ssl_stream = SslStream::new(ssl, conn).expect("ssl stream new");
                 let stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
                 {
@@ -924,7 +930,7 @@ pub mod non_ios {
                 }
             }
             // Create a UDP-backed connection to the peer using the per-peer queue.
-            let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: to, queue: q_arc };
+            let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkSourceKey::new_direct(to), queue: q_arc };
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
             log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
             let stream = match connector.connect("localhost", conn) {
