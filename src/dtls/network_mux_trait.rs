@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::any::Any;
 
 /// Local Result type for NetworkMux operations with string error messages.
@@ -32,11 +32,11 @@ pub type HandleTurn = std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8])
 pub trait NetworkMux {
     /**
      * Write a datagram to the underlying transport to the specified destination.
-     * @param to the destination address (any ToSocketAddrs)
-     * @param buf the datagram payload to write
-     * @return Ok(()) if the data was queued/sent, Err(()) otherwise
+     * Accepts a NetworkSourceKey to pave the way for TURN encapsulation. For now,
+     * only direct inet_socket_address is supported; implementors should extract it
+     * and perform a UDP send. Implementations may panic if inet_socket_address is None.
      */
-    fn write<A: ToSocketAddrs>(&self, to: A, buf: &[u8]) -> Result<()>
+    fn write(&self, to: &crate::api::bingle_api::NetworkSourceKey, buf: &[u8]) -> Result<()>
     where
         Self: Sized;
 

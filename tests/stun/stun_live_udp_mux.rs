@@ -61,7 +61,11 @@ fn live_stun_endpoint_finder_with_udp_mux() {
         let mux_for_send = Arc::clone(&mux);
         f.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, data: &[u8]| {
             // Best-effort send; ignore error in test path
-            let _ = mux_for_send.write((host, port), data);
+            if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+                            let addr = std::net::SocketAddr::new(ip, port);
+                            let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr);
+                            let _ = mux_for_send.write(&nsk, data);
+                        }
         })));
 
         f.set_state_change_handler(Some(Arc::new(move |st, ep| {

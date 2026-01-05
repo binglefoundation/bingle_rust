@@ -53,7 +53,11 @@ fn simple_stun_two_servers_consistent() {
         let mut f = finder.lock().unwrap();
         let m = mux.clone();
         f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
-            let _ = m.write((host, port), payload);
+            if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+                let addr = std::net::SocketAddr::new(ip, port);
+                let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr);
+                let _ = m.write(&nsk, payload);
+            }
         })));
         f.set_state_change_handler(Some(Arc::new(move |st, ep| {
             seen2.lock().unwrap().push((st, ep));

@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::{SocketAddr, UdpSocket, ToSocketAddrs};
 use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
@@ -201,13 +201,9 @@ impl Drop for UdpNetworkMux {
 }
 
 impl NetworkMux for UdpNetworkMux {
-    fn write<A: ToSocketAddrs>(&self, to: A, buf: &[u8]) -> Result<()> {
-        // Resolve destination for logging and send
-        let to_addr_opt = to.to_socket_addrs().ok().and_then(|mut it| it.next());
-        let to_addr = match to_addr_opt {
-            Some(a) => a,
-            None => return Err("to address resolution failed".to_string()),
-        };
+    fn write(&self, to: &crate::api::bingle_api::NetworkSourceKey, buf: &[u8]) -> Result<()> {
+        // Extract destination inet address; panic if missing per design for future TURN support
+        let to_addr = to.inet_socket_address.expect("UdpNetworkMux::write: NetworkSourceKey missing inet_socket_address");
         // Determine mux type and print a debug line; if DTLS, try to print JSON packet
         let from_addr = self.socket.local_addr().ok();
         match mux_type_for(buf) {

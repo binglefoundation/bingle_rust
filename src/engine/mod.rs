@@ -581,7 +581,8 @@ impl Engine {
                     if am_relay {
                         // Relay role: forward stripped payload to resolved ipAddress via concrete UDP mux
                         if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            if let Err(e) = udp.write(wrapped.ipAddress, &wrapped.message) {
+                            let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(wrapped.ipAddress);
+                            if let Err(e) = udp.write(&nsk, &wrapped.message) {
                                 log::warn!("[Engine::start][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
                             } else {
                                 log::info!("[Engine::start][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ipAddress);
@@ -650,7 +651,8 @@ impl Engine {
                 if let Some(wrapped) = turn.handle_turn_incoming(packet) {
                     if am_relay {
                         if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            if let Err(e) = udp.write(wrapped.ipAddress, &wrapped.message) {
+                            let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(wrapped.ipAddress);
+                            if let Err(e) = udp.write(&nsk, &wrapped.message) {
                                 log::warn!("[Engine::start_with_addr][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
                             } else {
                                 log::info!("[Engine::start_with_addr][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ipAddress);
@@ -810,9 +812,19 @@ impl Engine {
             // Route STUN outbound packets through the UDP mux
             let mux_clone = mux.clone();
             f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
-                mux_clone
-                    .write((host, port), payload)
-                    .expect("UDP mux write failed in STUN send_packet_handler");
+                // Resolve host string to IP and wrap into NetworkSourceKey for direct UDP send
+                match host.parse::<std::net::IpAddr>() {
+                    Ok(ip) => {
+                        let addr = std::net::SocketAddr::new(ip, port);
+                        let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(addr);
+                        mux_clone
+                            .write(&nsk, payload)
+                            .expect("UDP mux write failed in STUN send_packet_handler");
+                    }
+                    Err(e) => {
+                        log::warn!("[Engine::start] STUN send_packet_handler: invalid host '{}': {}", host, e);
+                    }
+                }
             })));
 
             // Wire STUN state changes into Engine handlers.

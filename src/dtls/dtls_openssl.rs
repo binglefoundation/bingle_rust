@@ -444,11 +444,11 @@ pub mod non_ios {
                     log::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, peer_str, buf.len());
                 }
             }
-            let to_addr = match peer_addr_opt {
+            let _to_addr = match peer_addr_opt {
                 Some(a) => a,
                 None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "NetworkSourceKey has no inet_socket_address for direct DTLS send")),
             };
-            match self.mux.write(to_addr, buf) {
+            match self.mux.write(&self.peer, buf) {
                 Ok(()) => Ok(buf.len()),
                 Err(e) => {
                     let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());

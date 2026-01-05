@@ -126,7 +126,8 @@ fn write_sends_payload() {
     let mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
 
     let payload = b"hello world";
-    mux.write(recv_addr, payload).expect("write ok");
+    let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(recv_addr);
+    mux.write(&nsk, payload).expect("write ok");
 
     let mut buf = [0u8; 64];
     let (n, _from) = receiver.recv_from(&mut buf).expect("recv payload");
