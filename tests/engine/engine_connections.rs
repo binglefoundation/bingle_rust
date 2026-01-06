@@ -83,19 +83,21 @@ fn engine_send_to_peer_tracks_connections_and_reuses() {
     assert_eq!(engine.connections_len_for_tests(), 0);
 
     // First send should create entry
-    let r1 = engine.send_to_peer(a1, b"hello");
+    let nsk1 = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(a1);
+    let r1 = engine.send_to_peer(&nsk1, b"hello");
     assert!(r1.is_ok());
     assert!(engine.has_connection(&a1));
     assert_eq!(engine.connections_len_for_tests(), 1);
 
     // Second send to same addr should not create a second entry
-    let r2 = engine.send_to_peer(a1, b"again");
+    let r2 = engine.send_to_peer(&nsk1, b"again");
     assert!(r2.is_ok());
     assert!(engine.has_connection(&a1));
     assert_eq!(engine.connections_len_for_tests(), 1);
 
     // Send to a different addr should add another entry
-    let r3 = engine.send_to_peer(a2, b"new peer");
+    let nsk2 = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(a2);
+    let r3 = engine.send_to_peer(&nsk2, b"new peer");
     assert!(r3.is_ok());
     assert!(engine.has_connection(&a2));
     assert_eq!(engine.connections_len_for_tests(), 2);

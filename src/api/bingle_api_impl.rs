@@ -170,9 +170,9 @@ impl BingleApiImpl {
         }
     }
 
-    fn send_over_dtls(&self, addr: SocketAddr, message: JsonValue) -> bool {
+    fn send_over_dtls(&self, nsk: &NetworkSourceKey, message: JsonValue) -> bool {
         let bytes = serde_json::to_vec(&message).expect("Failed to serialize message to JSON bytes");
-        match self.engine.send_to_peer(addr, &bytes) {
+        match self.engine.send_to_peer(nsk, &bytes) {
             Ok(_) => true,
             Err(err) => {
                 warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
@@ -384,57 +384,18 @@ impl BingleApi for BingleApiImpl {
         log::info!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
         #[allow(unused)] {  }
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
-        // Only direct socket address path is implemented at this stage.
-        if let Some(addr) = network_source_key.inet_socket_address {
-            // JUNIE: do not reinstate the below hack
-            // Determine if this is a RelayCheck before sending so we can synthesize a response if needed
-            // let mut is_check = false;
-            // if let serde_json::Value::Object(map) = &msg_clone {
-            //     is_check = map.get("type").and_then(|v| v.as_str()) == Some("Check")
-            //         && map.get("app").map(|v| v.is_null()).unwrap_or(true);
-            // }
+        // Validate user_id is an Algorand address (base32 without padding) that decodes to 36 bytes
+        let user_id_valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
+            Ok(bytes) if bytes.len() == 36 => true,
+            Ok(bytes) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base32 decoded length {} (expected 36)", bytes.len()); false },
+            Err(e) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base32 decode failed: {}", e); false },
+        };
 
-            // Validate user_id is an Algorand address (base32 without padding) that decodes to 36 bytes
-            let user_id_valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
-                Ok(bytes) if bytes.len() == 36 => true,
-                Ok(bytes) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base32 decoded length {} (expected 36)", bytes.len()); false },
-                Err(e) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base32 decode failed: {}", e); false },
-            };
+        let ok = if user_id_valid { self.send_over_dtls(network_source_key, message) } else { false };
 
-            let ok = if user_id_valid { self.send_over_dtls(addr, message) } else { false };
-
-            // JUNIE: do not reinstate the below hack
-            // Special-case: if this was a RelayCheck (app == null, type == "Check"), synthesize a local
-            // CheckResponse to on_message to make tests deterministic even if send fails or response is dropped.
-            // if is_check {
-            //     let map = if let serde_json::Value::Object(m) = &msg_clone { m } else { &serde_json::Map::new() };
-            //     let mut resp = serde_json::Map::new();
-            //     resp.insert("app".to_string(), serde_json::Value::Null);
-            //     resp.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
-            //     resp.insert("available".to_string(), serde_json::Value::Bool(true));
-            //     if let Some(tag) = map.get("responseTag").and_then(|v| v.as_str()) {
-            //         resp.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
-            //     }
-            //     if let Ok(g) = self.shared_on_message.lock() {
-            //         if let Some(cb) = g.as_ref() {
-            //             cb("".to_string(), addr.to_string(), serde_json::Value::Object(resp));
-            //         }
-            //     }
-            // }
-
-            if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
-
-            // JUNIE: do not reinstate the below hack
-            // For RelayCheck, treat send as successful even if DTLS send failed (we synthesized response)
-            // let __ret = if is_check { true } else { ok };
-
-            log::info!("[BingleApiImpl::send_message_to_network][exit] return={}", ok);
-            #[allow(unused)] {  }
-            ok
-        } else {
-            if let Some(cb) = progress.as_ref() { cb(100, "Relay send not yet implemented".to_string()); }
-            false
-        }
+        if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
+        log::info!("[BingleApiImpl::send_message_to_network][exit] return={}", ok);
+        ok
     }
 
     fn send_message_to_id_with_response(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {

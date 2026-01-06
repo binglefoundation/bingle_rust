@@ -126,7 +126,7 @@ impl BingleApi for EngineBingleApiHandle {
     fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
         log::info!("[EngineBingleApiHandle::send_message_to_network] nsk={} user_id={} message={}", nsk, user_id, message);
         use std::sync::atomic::Ordering;
-        if let Some(addr) = nsk.inet_socket_address {
+        if nsk.inet_socket_address.is_some() || (nsk.relay_channel.is_some() && nsk.relay_address.is_some()) {
             let valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => true,
                 _ => false,
@@ -135,7 +135,7 @@ impl BingleApi for EngineBingleApiHandle {
             let bytes = match serde_json::to_vec(&message) { Ok(b) => b, Err(_) => return false };
             let p = self.0.load(Ordering::SeqCst);
             if p.is_null() { return false; }
-            unsafe { (*p).send_to_peer(addr, &bytes).is_ok() }
+            unsafe { (*p).send_to_peer(nsk, &bytes).is_ok() }
         } else { false }
     }
 
@@ -394,20 +394,22 @@ impl Engine {
 
     /// Send bytes to a peer and track the connection's last_seen.
     /// If this is the first interaction with the peer, create a connection entry on successful send.
-    pub fn send_to_peer(&self, addr: SocketAddr, data: &[u8]) -> Result<(), String> {
+    pub fn send_to_peer(&self, to: &crate::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<(), String> {
         // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
         let dtls = self.dtls.as_ref().ok_or_else(|| "DTLS instance not provided".to_string())?;
-        let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(addr);
-        let res = dtls.send(&nsk, data);
+        let res = dtls.send(to, data);
         if res.is_ok() {
-            // Ensure a connection entry exists after a successful send (insert if missing)
-            if let Ok(mut m) = self.connections.lock() {
-                use std::collections::hash_map::Entry;
-                match m.entry(addr) {
-                    Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
-                    Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+            // Track connection by concrete socket address when available (direct or relay address)
+            let key_addr_opt = to.inet_socket_address.or(to.relay_address);
+            if let Some(key_addr) = key_addr_opt {
+                if let Ok(mut m) = self.connections.lock() {
+                    use std::collections::hash_map::Entry;
+                    match m.entry(key_addr) {
+                        Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
+                        Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+                    }
                 }
             }
         }
