@@ -43,7 +43,7 @@ fn engine_dtls_send_without_start_fails() {
     let res = engine
         .dtls()
         .expect("dtls should be present")
-        .send(to, b"hello");
+        .send_direct(to, b"hello");
     assert!(res.is_err(), "Dtls::send should error when DTLS was not started");
     let msg = res.err().unwrap();
     // Accept common error messages

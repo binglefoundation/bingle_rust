@@ -47,7 +47,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
         let _ = SERVER_ECHOED.set(data.to_vec());
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
-        let _ = server.send(*from,  &echoed);
+        let _ = server.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(*from),  &echoed);
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
@@ -88,7 +88,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
     // Retry a few times in case of transient handshake timing.
     let mut ok = false;
     for _ in 0..5 {
-        if client.send(addr, payload).is_ok() { ok = true; break; }
+        if client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), payload).is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client DTLS send failed");

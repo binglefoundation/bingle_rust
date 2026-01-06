@@ -15,9 +15,10 @@ struct MockDtls {
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
     fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
-    fn send(&self, to: SocketAddr, data: &[u8]) -> DtlsResult<()> {
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkSourceKey, data: &[u8]) -> DtlsResult<()> {
         let mut g = self.sent.lock().unwrap();
-        g.push((to, data.to_vec()));
+        let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address");
+        g.push((addr, data.to_vec()));
         Ok(())
     }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }

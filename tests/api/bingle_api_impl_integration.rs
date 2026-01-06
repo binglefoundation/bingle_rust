@@ -81,7 +81,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
                         obj.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
                     }
                     if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
-                        let _ = server.send(*from, &bytes);
+                        let _ = server.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(*from), &bytes);
                     }
                     return;
                 }

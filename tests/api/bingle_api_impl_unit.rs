@@ -18,7 +18,7 @@ impl MockDtls { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
     fn stop(&mut self) -> Result<()> { Ok(()) }
-    fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> { self.sends.lock().unwrap().push((to, data.to_vec())); Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<()> { let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address"); self.sends.lock().unwrap().push((addr, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
@@ -78,8 +78,9 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     impl Dtls for MockDtlsCapture {
         fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
-        fn send(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
-            self.captured.lock().unwrap().push((to, data.to_vec()));
+        fn send(&self, to: &rust_comms::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<()> {
+            let addr = to.inet_socket_address.expect("MockDtlsCapture::send requires inet_socket_address");
+            self.captured.lock().unwrap().push((addr, data.to_vec()));
             Ok(())
         }
         fn get_handle_message(&self) -> Option<HandleMessage> { None }

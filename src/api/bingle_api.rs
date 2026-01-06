@@ -36,7 +36,7 @@ pub type UserId = String; // Algorand address (base32, 36-byte decoded)
 pub type Handle = String; // User handle string
 /// NetworkSourceKey identifies where to send network traffic (direct or via relay).
 /// Translated from the provided Kotlin data class.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NetworkSourceKey {
     /// Direct socket address if sending directly.
     pub inet_socket_address: Option<SocketAddr>,

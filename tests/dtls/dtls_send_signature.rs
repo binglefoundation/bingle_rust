@@ -9,7 +9,7 @@ struct DummyDtls;
 impl Dtls for DummyDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) -> Result<(), String> { Ok(()) }
-    fn send(&self, _to: SocketAddr, _data: &[u8]) -> Result<(), String> { Ok(()) }
+    fn send(&self, _to: &rust_comms::api::bingle_api::NetworkSourceKey, _data: &[u8]) -> Result<(), String> { Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
@@ -39,5 +39,5 @@ fn dtls_send_takes_no_issuer() {
     let to: SocketAddr = "127.0.0.1:9000".parse().unwrap();
     let data = b"hello";
     // Should compile and run: no issuer argument
-    assert!(Dtls::send(&d, to, data).is_ok());
+    assert!(Dtls::send_direct(&d, to, data).is_ok());
 }

@@ -69,7 +69,7 @@ fn dtls_client_keeps_stream_open_across_sends() {
 
     // First send (triggers handshake)
     let payload1 = b"first-message";
-    assert!(client.send(server_addr, payload1).is_ok(), "first send failed");
+    assert!(client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(server_addr), payload1).is_ok(), "first send failed");
 
     // Wait until server receives first message
     let start = Instant::now();
@@ -80,7 +80,7 @@ fn dtls_client_keeps_stream_open_across_sends() {
 
     // Second send should reuse the same client DTLS stream; the stream must remain open across send()
     let payload2 = b"second-message";
-    assert!(client.send(server_addr, payload2).is_ok(), "second send failed (stream may have been closed)");
+    assert!(client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(server_addr), payload2).is_ok(), "second send failed (stream may have been closed)");
 
     // Wait for second message
     let start2 = Instant::now();

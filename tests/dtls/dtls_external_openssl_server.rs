@@ -161,7 +161,7 @@ fn dtls_openssl_external_s_server_client_send() {
         let cmux = std::sync::Arc::new(cmux0);
         cmux.start().expect("client mux start");
         client.start(cmux.clone()).expect("client start");
-        if client.send(addr, b"probe").is_ok() { attempt_ok = true; }
+        if client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), b"probe").is_ok() { attempt_ok = true; }
         // if not yet received, wait a moment before next attempt
         if CLIENT_SEEN.get().is_some() { break; }
         thread::sleep(Duration::from_millis(100));

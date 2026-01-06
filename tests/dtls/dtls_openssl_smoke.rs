@@ -82,7 +82,7 @@ fn dtls_openssl_udp_listener_invokes_handler() {
     client.start(cmux.clone()).expect("client start");
 
     let payload = b"hello-dtls";
-    assert!(client.send(addr,  payload).is_ok(), "client DTLS send failed");
+    assert!(client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr),  payload).is_ok(), "client DTLS send failed");
 
     // Spin-wait up to ~1 second for the handler to observe the message.
     let start = Instant::now();

@@ -123,7 +123,7 @@ fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
 
     // Send a small JSON payload to trigger delivery
     let payload = br#"{\"hello\":\"world\"}"#;
-    let _ = client.send(addr, payload);
+    let _ = client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), payload);
 
     // Wait for server to capture issuer
     let start = Instant::now();
