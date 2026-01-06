@@ -23,7 +23,7 @@ pub mod non_ios {
     // Combined per-endpoint state: writer + verified issuer string
     #[derive(Clone)]
     struct PeerState { writer: Option<ServerWriter>, issuer: String }
-    type PeerStates = Arc<Mutex<HashMap<SocketAddr, PeerState>>>;
+    type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
     // Internal control message prefix used to announce our own certificate to the peer at the
     // application-data layer when the server's CertificateRequest CA list would otherwise prevent
@@ -52,10 +52,17 @@ pub mod non_ios {
         log_tag: &str,
     ) {
         use std::io::{ErrorKind, Read};
+        // Precompute the NetworkEndpointKey for this peer (direct)
+        let key_from = crate::api::bingle_api::NetworkEndpoint::new_direct(from)
+            .get_key()
+            .expect("direct endpoint key");
         // Helper to query issuer string already recorded
         let get_issuer = || -> Option<String> {
+            let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from)
+                .get_key()
+                .expect("direct endpoint key");
             match peers.lock() {
-                Ok(m) => m.get(&from).map(|ps| ps.issuer.clone()),
+                Ok(m) => m.get(&key).map(|ps| ps.issuer.clone()),
                 Err(_) => None,
             }
         };
@@ -114,8 +121,11 @@ pub mod non_ios {
                             Ok(mut s) if !s.is_empty() => {
                                 if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
                                 {
+                                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from)
+                                        .get_key()
+                                        .expect("direct endpoint key");
                                     let _ = peers.lock().map(|mut m| {
-                                        m.entry(from)
+                                        m.entry(key)
                                             .and_modify(|ps| ps.issuer = s.clone())
                                             .or_insert(PeerState { writer: None, issuer: s.clone() });
                                     });
@@ -129,7 +139,7 @@ pub mod non_ios {
                     } else {
                         {
                             let _ = peers.lock().map(|mut m| {
-                                m.entry(from)
+                                m.entry(key_from.clone())
                                     .and_modify(|ps| ps.issuer = String::new())
                                     .or_insert(PeerState { writer: None, issuer: String::new() });
                             });
@@ -145,7 +155,8 @@ pub mod non_ios {
             // On first data: evaluate peer certificate and record issuer
             {
                 if let Ok(mut m) = peers.lock() {
-                    let have = m.get(&from).map(|ps| !ps.issuer.is_empty()).unwrap_or(false);
+                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                    let have = m.get(&key).map(|ps| !ps.issuer.is_empty()).unwrap_or(false);
                     if !have {
                         // Extract cert
                         if let Ok(guard) = stream_arc.lock() {
@@ -168,7 +179,7 @@ pub mod non_ios {
                                             match h(&cert_pem, ca_vec) {
                                                 Ok(mut s) if !s.is_empty() => {
                                                     if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
-                                                    m.entry(from).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s });
+                                                    m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s });
                                                 }
                                                 _ => {
                                                     log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] validation failed (empty issuer or error)", log_tag, from);
@@ -180,7 +191,7 @@ pub mod non_ios {
                                         }
                                     } else {
                                         let s: String = String::from_utf8_lossy(&cert_pem).into();
-                                        m.entry(from).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s });
+                                        m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s });
                                     }
                                 }
                             }
@@ -204,7 +215,7 @@ pub mod non_ios {
         }
         // Cleanup
         {
-            let _ = peers.lock().map(|mut m| { m.remove(&from); });
+            let _ = peers.lock().map(|mut m| { m.remove(&key_from); });
         }
         log::info!("[DtlsOpenSsl{}][read-loop {}] exit and cleanup", log_tag, from);
     }
@@ -510,16 +521,12 @@ pub mod non_ios {
         fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
-            let to_addr = if let Some(addr) = to.inet_socket_address {
-                addr
-            } else if to.relay_channel.is_some() && to.relay_address.is_some() {
-                return Err("relay send not implemented".to_string());
-            } else {
-                panic!("PeerAdapter::send: invalid NetworkSourceKey: missing inet_socket_address and relay info");
-            };
+            let key = to
+                .get_key()
+                .expect("PeerAdapter::send requires a NetworkEndpointKey (inet_socket_address or relay_id)");
             match self.0.lock() {
                 Ok(map) => {
-                    if let Some(ps) = map.get(&to_addr) {
+                    if let Some(ps) = map.get(&key) {
                         if let Some(w) = &ps.writer { w(data) } else { Err("no writer for peer".to_string()) }
                     } else { Err("no writer for peer".to_string()) }
                 }
@@ -835,8 +842,9 @@ pub mod non_ios {
                 });
                 // Install or update peer state with writer
                 if let Ok(mut m) = peers.lock() {
-                    let issuer_prev = m.get(&from).map(|ps| ps.issuer.clone()).unwrap_or_default();
-                    m.insert(from, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev });
+                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                    let issuer_prev = m.get(&key).map(|ps| ps.issuer.clone()).unwrap_or_default();
+                    m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev });
                     log::info!("[DtlsOpenSsl::accept] installed writer for {}", from);
                 }
 
@@ -942,10 +950,13 @@ pub mod non_ios {
                 panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address)");
             };
 
+            let key_to = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
+
             // 1) If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
             if let Some(peers) = &self.peer_states {
+                let key_to = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
                 if let Ok(map) = peers.lock() {
-                    if let Some(ps) = map.get(&to_addr) {
+                    if let Some(ps) = map.get(&key_to) {
                         if let Some(writer) = &ps.writer {
                             log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to_addr, data.len());
                             return writer(data);
@@ -1085,7 +1096,7 @@ pub mod non_ios {
                                         let id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
                                         if let Some(peers) = &self.peer_states {
                                             let _ = peers.lock().map(|mut m| {
-                                                m.entry(to_addr)
+                                                m.entry(key_to.clone())
                                                     .and_modify(|ps| ps.issuer = id.clone())
                                                     .or_insert(PeerState { writer: None, issuer: id.clone() });
                                             });
@@ -1131,8 +1142,8 @@ pub mod non_ios {
                     guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
                 });
                 let _ = peers.lock().map(|mut m| {
-                    let prev_issuer = m.get(&to_addr).map(|ps| ps.issuer.clone()).unwrap_or_default();
-                    m.insert(to_addr, PeerState { writer: Some(writer_fn.clone()), issuer: prev_issuer });
+                    let prev_issuer = m.get(&key_to).map(|ps| ps.issuer.clone()).unwrap_or_default();
+                    m.insert(key_to.clone(), PeerState { writer: Some(writer_fn.clone()), issuer: prev_issuer });
                 });
             }
 

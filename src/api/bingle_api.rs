@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 use std::net::SocketAddr;
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -34,57 +33,7 @@ pub trait BingleApiInternal: Send + Sync {
 /// followed by a 4‑byte checksum (total 36 bytes). Examples: "P577…", "4TKG…".
 pub type UserId = String; // Algorand address (base32, 36-byte decoded)
 pub type Handle = String; // User handle string
-/// NetworkSourceKey identifies where to send network traffic (direct or via relay).
-/// Translated from the provided Kotlin data class.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NetworkEndpoint {
-    /// Direct socket address if sending directly.
-    pub inet_socket_address: Option<SocketAddr>,
-    /// TURN relay channel number if using a relay (16-bit per RFC 5766).
-    pub relay_channel: Option<u16>,
-    /// Relay server socket address (IP:port) if using a relay.
-    pub relay_address: Option<SocketAddr>,
-    /// Optional relay id (Algorand base32 address) used when a channel has not yet been allocated.
-    #[serde(default)]
-    pub relay_id: Option<String>,
-}
-
-impl NetworkEndpoint {
-    /// Construct a direct (non-relay) endpoint key.
-    pub fn new_direct(addr: SocketAddr) -> Self {
-        Self {
-            inet_socket_address: Some(addr),
-            relay_channel: None,
-            relay_address: None,
-            relay_id: None,
-        }
-    }
-
-    /// Construct a relay endpoint key.
-    pub fn new_relay(relay_address: SocketAddr, relay_channel: u16) -> Self {
-        Self {
-            inet_socket_address: None,
-            relay_channel: Some(relay_channel),
-            relay_address: Some(relay_address),
-            relay_id: None,
-        }
-    }
-
-    /// True if this key represents a relay endpoint.
-    pub fn is_relay(&self) -> bool { self.relay_channel.is_some() }
-}
-
-impl fmt::Display for NetworkEndpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_relay() {
-            write!(f, "NetworkSourceKey(relayChannel={:?}, relayAddress={:?}, relayId={:?})", self.relay_channel, self.relay_address, self.relay_id)
-        } else if self.relay_id.is_some() {
-            write!(f, "NetworkSourceKey(relayId={:?})", self.relay_id)
-        } else {
-            write!(f, "NetworkSourceKey(inetSocketAddress={:?})", self.inet_socket_address)
-        }
-    }
-}
+pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 
 /// Progress callback reported during send operations.
 /// Parameters:
