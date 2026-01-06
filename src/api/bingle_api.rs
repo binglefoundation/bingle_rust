@@ -37,7 +37,7 @@ pub type Handle = String; // User handle string
 /// NetworkSourceKey identifies where to send network traffic (direct or via relay).
 /// Translated from the provided Kotlin data class.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NetworkSourceKey {
+pub struct NetworkEndpoint {
     /// Direct socket address if sending directly.
     pub inet_socket_address: Option<SocketAddr>,
     /// TURN relay channel number if using a relay (16-bit per RFC 5766).
@@ -49,7 +49,7 @@ pub struct NetworkSourceKey {
     pub relay_id: Option<String>,
 }
 
-impl NetworkSourceKey {
+impl NetworkEndpoint {
     /// Construct a direct (non-relay) endpoint key.
     pub fn new_direct(addr: SocketAddr) -> Self {
         Self {
@@ -74,7 +74,7 @@ impl NetworkSourceKey {
     pub fn is_relay(&self) -> bool { self.relay_channel.is_some() }
 }
 
-impl fmt::Display for NetworkSourceKey {
+impl fmt::Display for NetworkEndpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_relay() {
             write!(f, "NetworkSourceKey(relayChannel={:?}, relayAddress={:?}, relayId={:?})", self.relay_channel, self.relay_address, self.relay_id)
@@ -200,7 +200,7 @@ pub trait BingleApi: Send + Sync {
     /// Send a message when we have the endpoint NetworkSourceKey and the id.
     fn send_message_to_network(
         &self,
-        network_source_key: &NetworkSourceKey,
+        network_source_key: &NetworkEndpoint,
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
@@ -225,7 +225,7 @@ pub trait BingleApi: Send + Sync {
     /// Send a message when we have the endpoint NetworkSourceKey and the id and need a response.
     fn send_message_to_network_with_response(
         &self,
-        network_source_key: &NetworkSourceKey,
+        network_source_key: &NetworkEndpoint,
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,

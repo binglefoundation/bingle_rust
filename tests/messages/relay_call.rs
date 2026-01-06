@@ -5,7 +5,7 @@ use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
 use rust_comms::messages::types::{RelayCall};
 use rust_comms::turn::turn_handler::TurnHandler;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkSourceKey, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 // Minimal API stub
 struct MockApi;
@@ -18,10 +18,10 @@ impl BingleApi for MockApi {
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_network_with_response(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_network_with_response(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
     fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }

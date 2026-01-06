@@ -3,7 +3,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, Handle, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, Handle, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
 use rust_comms::relay::relay_finder::RootRelayInfo;
@@ -64,10 +64,10 @@ fn ddb_client_register_relay_ok_and_persisted() {
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-        fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _uid: &UserId, _msg: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+        fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _uid: &UserId, _msg: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, uid: &UserId, msg: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+        fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, uid: &UserId, msg: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
             self.0.lock().map_err(|_| "lock".to_string()).and_then(|g| g.send_message_to_network_with_response(nsk, uid, msg, progress))
         }
         fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
@@ -93,7 +93,7 @@ fn ddb_client_register_relay_ok_and_persisted() {
         rust_comms::messages::types::DdbQueryResolve { app: "ddb".to_string(), id: client_id.clone(), tag: None, response_tag: None, text: None, data: None }
     ));
     let json = rust_comms::messages::marshal::to_json_value(&q);
-    let nsk = NetworkSourceKey::new_direct(relay_addr);
+    let nsk = NetworkEndpoint::new_direct(relay_addr);
     let resp = api_arc.send_message_to_network_with_response(&nsk, &relay_id, json, None).expect("query response");
 
     assert_eq!(resp.get("type").and_then(|v| v.as_str()), Some("queryResponse"));

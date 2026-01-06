@@ -55,7 +55,7 @@ fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]
     if let Some(first) = data.first() { if *first == 22 || *first == 23 { return; } }
     let mut echoed = b"ECHOED: ".to_vec();
     echoed.extend_from_slice(data);
-    let _ = server.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(*from), &echoed);
+    let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), &echoed);
 }
 
 fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
@@ -114,7 +114,7 @@ fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     let payload = b"peer-cert-test";
     let mut ok = false;
     for _ in 0..8 {
-        if client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), payload).is_ok() { ok = true; break; }
+        if client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload).is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client DTLS send failed");

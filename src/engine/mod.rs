@@ -4,7 +4,7 @@ use data_encoding::BASE32_NOPAD;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions, UserId, Handle, ProgressCallback};
+use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, Handle, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
@@ -53,7 +53,7 @@ pub struct Engine {
     relay_finder: Option<Arc<RelayFinder>>, // used to locate peer relay
     triangle_wait: Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>, // wait for TriangleTest3
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
-    send_via_bingle: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>,
+    send_via_bingle: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
     // Unified BingleApi handle bound to this engine instance (non-optional)
     bingle_api: Arc<dyn BingleApi>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
@@ -123,7 +123,7 @@ impl BingleApi for EngineBingleApiHandle {
     fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
 
-    fn send_message_to_network(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
+    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
         log::info!("[EngineBingleApiHandle::send_message_to_network] nsk={} user_id={} message={}", nsk, user_id, message);
         use std::sync::atomic::Ordering;
         if nsk.inet_socket_address.is_some() || (nsk.relay_channel.is_some() && nsk.relay_address.is_some()) {
@@ -142,7 +142,7 @@ impl BingleApi for EngineBingleApiHandle {
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
 
-    fn send_message_to_network_with_response(&self, nsk: &NetworkSourceKey, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
         use std::sync::atomic::Ordering;
         use uuid::Uuid;
         let tag = Uuid::new_v4();
@@ -268,10 +268,10 @@ impl Engine {
             fn network_change(&mut self) {}
             fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
             fn send_message_to_handle(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-            fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
+            fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
             fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
             fn send_message_to_handle_with_response(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
-            fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
+            fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
             fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
             fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
         }
@@ -351,7 +351,7 @@ impl Engine {
     }
 
     /// Install a Bingle protocol sender callback for Engine-initiated messages.
-    pub fn set_send_via_bingle(&mut self, cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync>>) {
+    pub fn set_send_via_bingle(&mut self, cb: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>) {
         self.send_via_bingle = cb;
     }
 
@@ -394,7 +394,7 @@ impl Engine {
 
     /// Send bytes to a peer and track the connection's last_seen.
     /// If this is the first interaction with the peer, create a connection entry on successful send.
-    pub fn send_to_peer(&self, to: &crate::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<(), String> {
+    pub fn send_to_peer(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<(), String> {
         // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
@@ -510,7 +510,7 @@ impl Engine {
                                         log::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
                                         {
-                                            let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(*from);
+                                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(*from);
                                             if let Err(e) = server.send(&nsk, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                         }
                                     }
@@ -587,7 +587,7 @@ impl Engine {
                     if am_relay {
                         // Relay role: forward stripped payload to resolved ipAddress via concrete UDP mux
                         if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(wrapped.ipAddress);
+                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
                             if let Err(e) = udp.write(&nsk, &wrapped.message) {
                                 log::warn!("[Engine::start][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
                             } else {
@@ -657,7 +657,7 @@ impl Engine {
                 if let Some(wrapped) = turn.handle_turn_incoming(packet) {
                     if am_relay {
                         if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(wrapped.ipAddress);
+                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
                             if let Err(e) = udp.write(&nsk, &wrapped.message) {
                                 log::warn!("[Engine::start_with_addr][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
                             } else {
@@ -782,7 +782,7 @@ impl Engine {
             let to_addr = target.address;
             let checking_ep = public_addr.unwrap_or(to_addr);
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checking_endpoint: checking_ep }));
-            let nsk = NetworkSourceKey::new_direct(to_addr);
+            let nsk = NetworkEndpoint::new_direct(to_addr);
             // Build JSON value for the message
             let json_val = crate::messages::marshal::to_json_value(&msg);
             if let Some(cb) = &self.send_via_bingle {
@@ -822,7 +822,7 @@ impl Engine {
                 match host.parse::<std::net::IpAddr>() {
                     Ok(ip) => {
                         let addr = std::net::SocketAddr::new(ip, port);
-                        let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(addr);
+                        let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
                         mux_clone
                             .write(&nsk, payload)
                             .expect("UDP mux write failed in STUN send_packet_handler");

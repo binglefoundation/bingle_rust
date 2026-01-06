@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use crate::api::bingle_api::{BingleApi, NetworkSourceKey, UserId};
+use crate::api::bingle_api::{BingleApi, NetworkEndpoint, UserId};
 use crate::api::bingle_api::BingleApiInternal;
 
 // Thread-local current router used to avoid globals and isolate per-API state.
@@ -18,7 +18,7 @@ thread_local! {
 
 #[derive(Default)]
 pub struct Router {
-    sender: Mutex<Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>,
+    sender: Mutex<Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>,
     api: Mutex<Option<Arc<dyn BingleApi>>>,
     api_internal: Mutex<Option<Arc<dyn BingleApiInternal>>>,
     last_from: Mutex<Option<SocketAddr>>,
@@ -60,10 +60,10 @@ impl Router {
         out
     }
 
-    pub fn set_sender(&self, cb: Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>) {
+    pub fn set_sender(&self, cb: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>) {
         if let Ok(mut g) = self.sender.lock() { *g = cb; }
     }
-    pub fn get_sender(&self) -> Option<Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>> {
+    pub fn get_sender(&self) -> Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>> {
         match self.sender.lock() { Ok(g) => g.clone(), Err(_) => None }
     }
 
@@ -105,9 +105,9 @@ impl Router {
         let api = api_opt.unwrap();
         // Build FromStruct with id and network source key (direct from last_from if available)
         let nsk = if let Some(addr) = self.get_last_from() {
-            NetworkSourceKey::new_direct(addr)
+            NetworkEndpoint::new_direct(addr)
         } else {
-            NetworkSourceKey::new_direct("0.0.0.0:0".parse().unwrap())
+            NetworkEndpoint::new_direct("0.0.0.0:0".parse().unwrap())
         };
         let from = FromStruct { id: from_id.to_string(), network_source_key: nsk };
         match msg {

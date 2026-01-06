@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
 
 // Minimal mock API that returns a positive CheckResponse for send_message_to_network_with_response
 struct MockApi;
@@ -14,11 +14,11 @@ impl BingleApi for MockApi {
 
     fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { true }
+    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { true }
 
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not used".to_string()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not used".to_string()) }
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
         // Validate that Option gets Some where required in helper calls
         let is_check = message.get("type").and_then(|v| v.as_str()) == Some("Check") && message.get("app").map(|v| v.is_null()).unwrap_or(false);
         assert!(is_check, "RelayFinder should perform a Check");

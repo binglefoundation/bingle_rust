@@ -201,7 +201,7 @@ impl Drop for UdpNetworkMux {
 }
 
 impl NetworkMux for UdpNetworkMux {
-    fn write(&self, to: &crate::api::bingle_api::NetworkSourceKey, buf: &[u8]) -> Result<()> {
+    fn write(&self, to: &crate::api::bingle_api::NetworkEndpoint, buf: &[u8]) -> Result<()> {
         // Support two paths:
         // - Relay: when relay_channel and relay_address are provided, wrap payload in TURN ChannelData and send to relay_address
         // - Direct: otherwise, require inet_socket_address and send raw payload

@@ -3,7 +3,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult, UdpNetworkMux};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::relay_ping_handler::RelayPingHandler;
@@ -17,7 +17,7 @@ impl MockDtls { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
     fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
-    fn send(&self, to: &rust_comms::api::bingle_api::NetworkSourceKey, data: &[u8]) -> DtlsResult<()> { let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address"); self.sends.lock().unwrap().push((addr, data.to_vec())); Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> DtlsResult<()> { let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address"); self.sends.lock().unwrap().push((addr, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
@@ -51,10 +51,10 @@ impl BingleApi for MockApi {
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
     fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
@@ -68,7 +68,7 @@ fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     let t1 = RelayTriangleTest1 { app: None, checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) };
 
     // Act: invoke handler directly
-    let from = rust_comms::messages::handlers::FromStruct { id: "FROM-OTHER-ID".to_string(), network_source_key: rust_comms::api::bingle_api::NetworkSourceKey::new_direct("127.0.0.1:1".parse().unwrap()) };
+    let from = rust_comms::messages::handlers::FromStruct { id: "FROM-OTHER-ID".to_string(), network_source_key: rust_comms::api::bingle_api::NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
     handler.on_triangle_test1(api, &from, &t1);
 
     // Assert: one send to the configured peer, and TriangleTest2 has checkingId == "MYID"

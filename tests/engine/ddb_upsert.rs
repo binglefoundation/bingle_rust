@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration};
 
-use rust_comms::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
@@ -88,7 +88,7 @@ fn ddb_upsert_success_when_server_is_relay() {
     })));
 
     // Send request from client to server
-    let nsk = NetworkSourceKey::new_direct(server_addr);
+    let nsk = NetworkEndpoint::new_direct(server_addr);
     let uid = server.get_my_id().unwrap();
     let response = client.send_message_to_network_with_response(&nsk, &uid, json, None);
     assert!(response.is_ok(), "client send ok");
@@ -114,7 +114,7 @@ fn ddb_upsert_ignored_when_not_relay() {
         if msg.get("type").and_then(|v| v.as_str()) == Some("updateResponse") { got_update_flag.store(true, Ordering::SeqCst); }
     })));
 
-    let nsk = NetworkSourceKey::new_direct(server_addr);
+    let nsk = NetworkEndpoint::new_direct(server_addr);
     let uid = server.get_my_id().unwrap();
     let ok = client.send_message_to_network(&nsk, &uid, json, None);
     assert!(ok, "client send ok");
@@ -144,7 +144,7 @@ fn ddb_upsert_rejected_on_id_mismatch() {
         if msg.get("type").and_then(|v| v.as_str()) == Some("updateResponse") { got_update_flag.store(true, Ordering::SeqCst); }
     })));
 
-    let nsk = NetworkSourceKey::new_direct(server_addr);
+    let nsk = NetworkEndpoint::new_direct(server_addr);
     let uid = server.get_my_id().unwrap();
     let ok = client.send_message_to_network(&nsk, &uid, json, None);
     assert!(ok, "client send ok");

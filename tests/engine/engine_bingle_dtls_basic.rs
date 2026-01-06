@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 
-use rust_comms::api::bingle_api::{BingleApi, NetworkSourceKey, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[path = "../test_util.rs"]
@@ -71,7 +71,7 @@ fn engine_basic_bingle_dtls_layer() {
     client.start(&client_opts).expect("client start() should succeed");
 
     // Build direct network destination to server and send a simple plaintext JSON message.
-    let dest = NetworkSourceKey::new_direct(server_addr);
+    let dest = NetworkEndpoint::new_direct(server_addr);
     let payload = serde_json::json!({
         "text": "hello from client"
     });

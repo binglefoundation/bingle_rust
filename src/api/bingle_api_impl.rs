@@ -9,7 +9,7 @@ use log::{info, warn, error, LevelFilter};
 use simple_logger::SimpleLogger;
 use std::sync::Once;
 
-use crate::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
@@ -125,7 +125,7 @@ impl BingleApiImpl {
         #[allow(unused)] {  }
         a
     }
-    pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkSourceKey, String> {
+    pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, String> {
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);
         let res = self.engine.ddb_client().lookup(id);
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
@@ -170,7 +170,7 @@ impl BingleApiImpl {
         }
     }
 
-    fn send_over_dtls(&self, nsk: &NetworkSourceKey, message: JsonValue) -> bool {
+    fn send_over_dtls(&self, nsk: &NetworkEndpoint, message: JsonValue) -> bool {
         let bytes = serde_json::to_vec(&message).expect("Failed to serialize message to JSON bytes");
         match self.engine.send_to_peer(nsk, &bytes) {
             Ok(_) => true,
@@ -286,7 +286,7 @@ impl BingleApi for BingleApiImpl {
             let router = std::sync::Arc::new(crate::messages::router::Router::new(api_handle.clone()));
             // Sender closure routes via the engine-backed API handle
             let api_for_sender = api_handle.clone();
-            let sender_cb: Arc<dyn Fn(&NetworkSourceKey, &UserId, serde_json::Value) -> bool + Send + Sync> = Arc::new(move |nsk, uid, msg| {
+            let sender_cb: Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync> = Arc::new(move |nsk, uid, msg| {
                 log::info!("[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}", nsk, uid, msg);
                 let progress_cb = Arc::new(|percent: u8, message: String| {
                     log::info!("[BingleApiImpl::start][router sender] Send progress: {}% - {}", percent, message);
@@ -376,7 +376,7 @@ impl BingleApi for BingleApiImpl {
 
     fn send_message_to_network(
         &self,
-        network_source_key: &NetworkSourceKey,
+        network_source_key: &NetworkEndpoint,
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
@@ -420,7 +420,7 @@ impl BingleApi for BingleApiImpl {
 
     fn send_message_to_network_with_response(
         &self,
-        network_source_key: &NetworkSourceKey,
+        network_source_key: &NetworkEndpoint,
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,

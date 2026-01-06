@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::api::bingle_api::{BingleApi, NetworkSourceKey};
+use crate::api::bingle_api::{BingleApi, NetworkEndpoint};
 use data_encoding::BASE32_NOPAD;
 
 #[derive(Debug, Clone)]
@@ -153,7 +153,7 @@ impl RelayFinder {
             Ok(bytes) => { log::warn!("[RelayFinder][relay_check] invalid relay id '{}': base32 decoded length {} != 36", id, bytes.len()); return false; }
             Err(e) => { log::warn!("[RelayFinder][relay_check] invalid relay id '{}': {}", id, e); return false; }
         }
-        let nsk = NetworkSourceKey { inet_socket_address: Some(addr), relay_channel: None, relay_address: None, relay_id: None };
+        let nsk = NetworkEndpoint { inet_socket_address: Some(addr), relay_channel: None, relay_address: None, relay_id: None };
         let req = json!({ "app": null, "type": "Check" });
         log::info!("[RelayFinder] relay_check: sending request via API -> nsk={} user_id={} req={}", nsk, id, req);
         match self.api.send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {

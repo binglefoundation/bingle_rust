@@ -41,7 +41,7 @@ pub trait Dtls {
      * @param data the data to send
      * @return Ok(()) if the data was queued/sent, Err(()) otherwise
      */
-    fn send(&self, to: &crate::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<()>;
+    fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()>;
 
 
     /**

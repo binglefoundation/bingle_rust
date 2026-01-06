@@ -55,7 +55,7 @@ fn simple_stun_two_servers_consistent() {
         f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
             if let Ok(ip) = host.parse::<std::net::IpAddr>() {
                 let addr = std::net::SocketAddr::new(ip, port);
-                let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr);
+                let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
                 let _ = m.write(&nsk, payload);
             }
         })));

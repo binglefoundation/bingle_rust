@@ -13,7 +13,6 @@ pub mod non_ios {
     use std::sync::{Arc, Mutex};
 
     type ServerWriter = Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync>;
-    type ServerWriters = Arc<Mutex<HashMap<SocketAddr, ServerWriter>>>;
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
     #[allow(unused_imports)]
@@ -21,7 +20,10 @@ pub mod non_ios {
     #[allow(unused_imports)]
     use openssl::x509::X509;
 
-    type EndpointIssuers = Arc<Mutex<HashMap<SocketAddr, String>>>;
+    // Combined per-endpoint state: writer + verified issuer string
+    #[derive(Clone)]
+    struct PeerState { writer: Option<ServerWriter>, issuer: String }
+    type PeerStates = Arc<Mutex<HashMap<SocketAddr, PeerState>>>;
 
     // Internal control message prefix used to announce our own certificate to the peer at the
     // application-data layer when the server's CertificateRequest CA list would otherwise prevent
@@ -41,8 +43,7 @@ pub mod non_ios {
     fn run_read_loop(
         stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>>,
         from: SocketAddr,
-        writers_opt: Option<ServerWriters>,
-        issuers_opt: Option<EndpointIssuers>,
+        peers: PeerStates,
         handle_message: Option<HandleMessage>,
         peer_cert_handler: Option<HandlePeerCertificate>,
         ca_mode: CaMode,
@@ -53,7 +54,10 @@ pub mod non_ios {
         use std::io::{ErrorKind, Read};
         // Helper to query issuer string already recorded
         let get_issuer = || -> Option<String> {
-            issuers_opt.as_ref().and_then(|m| m.lock().ok()).and_then(|mm| mm.get(&from).cloned())
+            match peers.lock() {
+                Ok(m) => m.get(&from).map(|ps| ps.issuer.clone()),
+                Err(_) => None,
+            }
         };
 
         let mut buf = [0u8; 2048];
@@ -109,7 +113,13 @@ pub mod non_ios {
                         match h(cert_pem, ca_pem) {
                             Ok(mut s) if !s.is_empty() => {
                                 if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
-                                if let Some(map) = &issuers_opt { let _ = map.lock().map(|mut m| { m.insert(from, s); }); }
+                                {
+                                    let _ = peers.lock().map(|mut m| {
+                                        m.entry(from)
+                                            .and_modify(|ps| ps.issuer = s.clone())
+                                            .or_insert(PeerState { writer: None, issuer: s.clone() });
+                                    });
+                                }
                             }
                             _ => {
                                 log::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] validation failed (empty issuer or error)", log_tag, from);
@@ -117,7 +127,13 @@ pub mod non_ios {
                             }
                         }
                     } else {
-                        if let Some(map) = &issuers_opt { let _ = map.lock().map(|mut m| { m.insert(from, String::new()); }); }
+                        {
+                            let _ = peers.lock().map(|mut m| {
+                                m.entry(from)
+                                    .and_modify(|ps| ps.issuer = String::new())
+                                    .or_insert(PeerState { writer: None, issuer: String::new() });
+                            });
+                        }
                     }
                 } else {
                     log::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] malformed announce payload (no END CERTIFICATE)", log_tag, from);
@@ -127,9 +143,10 @@ pub mod non_ios {
             }
 
             // On first data: evaluate peer certificate and record issuer
-            if let Some(issuers_arc) = &issuers_opt {
-                if let Ok(mut imap) = issuers_arc.lock() {
-                    if !imap.contains_key(&from) {
+            {
+                if let Ok(mut m) = peers.lock() {
+                    let have = m.get(&from).map(|ps| !ps.issuer.is_empty()).unwrap_or(false);
+                    if !have {
                         // Extract cert
                         if let Ok(guard) = stream_arc.lock() {
                             if let Some(cert) = guard.ssl().peer_certificate() {
@@ -151,7 +168,7 @@ pub mod non_ios {
                                             match h(&cert_pem, ca_vec) {
                                                 Ok(mut s) if !s.is_empty() => {
                                                     if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
-                                                    let _ = imap.insert(from, s);
+                                                    m.entry(from).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s });
                                                 }
                                                 _ => {
                                                     log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] validation failed (empty issuer or error)", log_tag, from);
@@ -162,7 +179,8 @@ pub mod non_ios {
                                             log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] no CA available; skipping handler invocation", log_tag, from);
                                         }
                                     } else {
-                                        let _ = imap.insert(from, String::from_utf8_lossy(&cert_pem).into());
+                                        let s: String = String::from_utf8_lossy(&cert_pem).into();
+                                        m.entry(from).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s });
                                     }
                                 }
                             }
@@ -180,17 +198,14 @@ pub mod non_ios {
             log::info!("[DtlsOpenSsl{}][read-loop {}] application data {} bytes", log_tag, from, n);
             if let Some(h) = &handle_message {
                 let issuer = issuer_opt.unwrap_or_default();
-                let adapter = if let Some(w) = &writers_opt { WriterAdapter(w.clone()) } else {
-                    use std::collections::HashMap;
-                    let empty: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
-                    WriterAdapter(empty)
-                };
+                let adapter = PeerAdapter(peers.clone());
                 (h)(&adapter as &dyn Dtls, &from, &issuer, &buf[..n]);
             }
         }
         // Cleanup
-        if let Some(w) = &writers_opt { let _ = w.lock().map(|mut m| { m.remove(&from); }); }
-        if let Some(i) = &issuers_opt { let _ = i.lock().map(|mut m| { m.remove(&from); }); }
+        {
+            let _ = peers.lock().map(|mut m| { m.remove(&from); });
+        }
         log::info!("[DtlsOpenSsl{}][read-loop {}] exit and cleanup", log_tag, from);
     }
     #[inline]
@@ -437,7 +452,7 @@ pub mod non_ios {
     // Shared NetworkMux-backed Read/Write adapter using a per-peer queue provided by the DTLS layer.
     pub(crate) struct CommonNetworkMuxConn {
         mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
-        peer: crate::api::bingle_api::NetworkSourceKey,
+        peer: crate::api::bingle_api::NetworkEndpoint,
         queue: Arc<PeerQueue>,
     }
     impl std::io::Read for CommonNetworkMuxConn {
@@ -487,26 +502,28 @@ pub mod non_ios {
         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
     }
 
-    // Minimal adapter that implements Dtls::send by delegating to the writers map.
-    // Used by the client-side background reader to allow handlers to reply using the same DTLS stream.
-    struct WriterAdapter(ServerWriters);
+    // Minimal adapter that implements Dtls::send by delegating to the unified peer_states map.
+    // Used by the background reader to allow handlers to reply using the same DTLS stream.
+    struct PeerAdapter(PeerStates);
 
-    impl Dtls for WriterAdapter {
+    impl Dtls for PeerAdapter {
         fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
-        fn send(&self, to: &crate::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<()> {
+        fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             let to_addr = if let Some(addr) = to.inet_socket_address {
                 addr
             } else if to.relay_channel.is_some() && to.relay_address.is_some() {
                 return Err("relay send not implemented".to_string());
             } else {
-                panic!("WriterAdapter::send: invalid NetworkSourceKey: missing inet_socket_address and relay info");
+                panic!("PeerAdapter::send: invalid NetworkSourceKey: missing inet_socket_address and relay info");
             };
             match self.0.lock() {
                 Ok(map) => {
-                    if let Some(w) = map.get(&to_addr) { w(data) } else { Err("no writer for peer".to_string()) }
+                    if let Some(ps) = map.get(&to_addr) {
+                        if let Some(w) = &ps.writer { w(data) } else { Err("no writer for peer".to_string()) }
+                    } else { Err("no writer for peer".to_string()) }
                 }
-                Err(_) => Err("writers lock poisoned".to_string()),
+                Err(_) => Err("peers lock poisoned".to_string()),
             }
         }
         fn get_handle_message(&self) -> Option<HandleMessage> { None }
@@ -560,9 +577,8 @@ pub mod non_ios {
         // State placeholders
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
         pub(crate) acceptor: Option<SslAcceptor>,
-        pub(crate) server_writers: Option<ServerWriters>,
-        // Map from endpoint to verified issuer (CN)
-        pub(crate) endpoint_issuers: Option<EndpointIssuers>,
+        // Combined peer state map: writer and issuer per endpoint
+        pub(crate) peer_states: Option<PeerStates>,
         // Per-peer incoming datagram queues for SslStream consumption
         pub(crate) peer_queues: Option<Arc<Mutex<HashMap<SocketAddr, Arc<PeerQueue>>>>>,
         // Map from endpoint to active SslStream used by the server accept side
@@ -571,9 +587,9 @@ pub mod non_ios {
         pub(crate) stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
         // Peers currently performing an outbound (client-side) handshake; used to suppress creating accept streams
-        pub(crate) connecting_peers: Option<Arc<Mutex<HashSet<crate::api::bingle_api::NetworkSourceKey>>>>,
+        pub(crate) connecting_peers: Option<Arc<Mutex<HashSet<crate::api::bingle_api::NetworkEndpoint>>>>,
         // Peers to whom we've already announced our client certificate via an out-of-band app message
-        pub(crate) announced_client_cert_peers: Option<Arc<Mutex<HashSet<crate::api::bingle_api::NetworkSourceKey>>>>,
+        pub(crate) announced_client_cert_peers: Option<Arc<Mutex<HashSet<crate::api::bingle_api::NetworkEndpoint>>>>,
     }
 
     impl DtlsOpenSsl {
@@ -585,11 +601,10 @@ pub mod non_ios {
             }
             use std::sync::{Arc, Mutex};
             use std::collections::{HashMap, HashSet};
-            let writers: ServerWriters = Arc::new(Mutex::new(HashMap::new()));
-            let issuers: EndpointIssuers = Arc::new(Mutex::new(HashMap::new()));
-            let connecting: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkSourceKey>>> = Arc::new(Mutex::new(HashSet::new()));
-            let announced: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkSourceKey>>> = Arc::new(Mutex::new(HashSet::new()));
-            let mut s = Self { server_writers: Some(writers), endpoint_issuers: Some(issuers), connecting_peers: Some(connecting), announced_client_cert_peers: Some(announced), ..Default::default() };
+            let peers: PeerStates = Arc::new(Mutex::new(HashMap::new()));
+            let connecting: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkEndpoint>>> = Arc::new(Mutex::new(HashSet::new()));
+            let announced: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkEndpoint>>> = Arc::new(Mutex::new(HashSet::new()));
+            let mut s = Self { peer_states: Some(peers), connecting_peers: Some(connecting), announced_client_cert_peers: Some(announced), ..Default::default() };
             // Enable NULL (no-encryption) ciphers by default to avoid handshake failures with Ed25519
             // certificates under DTLS 1.2 in test environments. Tests that need encryption can
             // disable this via set_null_encryption(false).
@@ -761,12 +776,11 @@ pub mod non_ios {
             acceptor: Arc<SslAcceptor>,
             queues: Arc<Mutex<HashMap<SocketAddr, Arc<PeerQueue>>>>,
             streams: Arc<Mutex<HashMap<SocketAddr, Arc<Mutex<SslStream<CommonNetworkMuxConn>>>>>>,
-            writers: ServerWriters,
-            issuers: EndpointIssuers,
+            peers: PeerStates,
             handle_message: Option<HandleMessage>,
             peer_cert_handler: Option<HandlePeerCertificate>,
             ca_bytes: Arc<Vec<u8>>,
-            connecting: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkSourceKey>>>,
+            connecting: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkEndpoint>>>,
             from: SocketAddr,
             data: &[u8],
         ) {
@@ -789,7 +803,7 @@ pub mod non_ios {
             q_arc.push(data.to_vec());
 
             // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
-            let suppressed = connecting.lock().ok().map(|s| s.contains(&crate::api::bingle_api::NetworkSourceKey::new_direct(from))).unwrap_or(false);
+            let suppressed = connecting.lock().ok().map(|s| s.contains(&crate::api::bingle_api::NetworkEndpoint::new_direct(from))).unwrap_or(false);
             if suppressed {
                 log::info!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
                 #[allow(unused)] {}
@@ -804,7 +818,7 @@ pub mod non_ios {
                 #[allow(unused)] {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
-                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkSourceKey::new_direct(from), queue: q_arc.clone() };
+                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkEndpoint::new_direct(from), queue: q_arc.clone() };
                 let ssl_stream = SslStream::new(ssl, conn).expect("ssl stream new");
                 let stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
                 {
@@ -819,15 +833,15 @@ pub mod non_ios {
                     use std::io::Write;
                     guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
                 });
-                if let Ok(mut map) = writers.lock() {
-                    map.insert(from, writer_fn.clone());
+                // Install or update peer state with writer
+                if let Ok(mut m) = peers.lock() {
+                    let issuer_prev = m.get(&from).map(|ps| ps.issuer.clone()).unwrap_or_default();
+                    m.insert(from, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev });
                     log::info!("[DtlsOpenSsl::accept] installed writer for {}", from);
-                    #[allow(unused)] {}
                 }
 
                 // Spawn a per-peer reader loop to deliver application data
-                let writers2 = writers.clone();
-                let issuers2 = issuers.clone();
+                let peers2 = peers.clone();
                 let handle_message2 = handle_message.clone();
                 let from2 = from;
                 let ca_bytes_for_thread = ca_bytes.clone();
@@ -835,8 +849,7 @@ pub mod non_ios {
                     run_read_loop(
                         stream_arc.clone(),
                         from2,
-                        Some(writers2.clone()),
-                        Some(issuers2.clone()),
+                        peers2.clone(),
                         handle_message2.clone(),
                         peer_cert_handler,
                         CaMode::UseLocal(ca_bytes_for_thread.clone()),
@@ -863,8 +876,7 @@ pub mod non_ios {
             self.client_mux = Some(mux.clone());
 
             // Shared state maps
-            let writers = self.server_writers.as_ref().cloned().unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new())));
-            let issuers = self.endpoint_issuers.as_ref().cloned().unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new())));
+            let peers: PeerStates = self.peer_states.as_ref().cloned().unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new())));
             let handle_message = self.handle_message.clone();
             let peer_cert_handler = self.handle_peer_certificate;
             let ca_bytes = std::sync::Arc::new(self.ca_cert.clone().unwrap_or_default());
@@ -874,7 +886,7 @@ pub mod non_ios {
             self.peer_queues = Some(queues.clone());
             self.streams = Some(streams.clone());
             // Connecting peers set
-            let connecting: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkSourceKey>>> = self.connecting_peers.take().unwrap_or_else(|| Arc::new(Mutex::new(HashSet::new())));
+            let connecting: Arc<Mutex<HashSet<crate::api::bingle_api::NetworkEndpoint>>> = self.connecting_peers.take().unwrap_or_else(|| Arc::new(Mutex::new(HashSet::new())));
             self.connecting_peers = Some(connecting.clone());
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
@@ -884,8 +896,7 @@ pub mod non_ios {
                     acceptor.clone(),
                     queues.clone(),
                     streams.clone(),
-                    writers.clone(),
-                    issuers.clone(),
+                    peers.clone(),
                     handle_message.clone(),
                     peer_cert_handler,
                     ca_bytes.clone(),
@@ -916,7 +927,7 @@ pub mod non_ios {
             self.owned_udp_mux = None;
             Ok(())
         }
-        fn send(&self, to: &crate::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<()> {
+        fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             use std::io::Write;
             // We require a running UDP mux to perform client handshake and writes
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
@@ -931,12 +942,14 @@ pub mod non_ios {
                 panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address)");
             };
 
-            // 1) If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer.
-            if let Some(writers) = &self.server_writers {
-                if let Ok(map) = writers.lock() {
-                    if let Some(writer) = map.get(&to_addr) {
-                        log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to_addr, data.len());
-                        return writer(data);
+            // 1) If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
+            if let Some(peers) = &self.peer_states {
+                if let Ok(map) = peers.lock() {
+                    if let Some(ps) = map.get(&to_addr) {
+                        if let Some(writer) = &ps.writer {
+                            log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to_addr, data.len());
+                            return writer(data);
+                        }
                     }
                 }
             }
@@ -973,11 +986,11 @@ pub mod non_ios {
             if let Some(set_arc) = &self.connecting_peers {
                 if let Ok(mut set) = set_arc.lock() {
                     log::info!("[DtlsOpenSsl::send] mark {} as connecting (suppress server accept)", to);
-                    set.insert(crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr));
+                    set.insert(crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr));
                 }
             }
             // Create a UDP-backed connection to the peer using the per-peer queue.
-            let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr), queue: q_arc };
+            let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr), queue: q_arc };
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
             log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
             let stream = match connector.connect("localhost", conn) {
@@ -999,7 +1012,7 @@ pub mod non_ios {
                                 iter += 1;
                                 let elapsed = start.elapsed();
                                 if elapsed > deadline {
-                                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr)); }); }
+                                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr)); }); }
                                     log::info!("[DtlsOpenSsl::send] connect() timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
                                     #[allow(unused)] {}
                                     return Err("dtls client connect timeout".to_string());
@@ -1014,14 +1027,14 @@ pub mod non_ios {
                                 continue;
                             }
                             Err(HandshakeError::Failure(mid2)) => {
-                                if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr)); }); }
+                                if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr)); }); }
                                 let err = mid2.error();
                                 log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                                 #[allow(unused)] {}
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::Failure: {}", err));
                             }
                             Err(HandshakeError::SetupFailure(err)) => {
-                                if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr)); }); }
+                                if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr)); }); }
                                 log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                                 #[allow(unused)] {}
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::SetupFailure: {}", err));
@@ -1030,14 +1043,14 @@ pub mod non_ios {
                     }
                 }
                 Err(HandshakeError::Failure(mid)) => {
-                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr)); }); }
+                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr)); }); }
                     let err = mid.error();
                     log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                     #[allow(unused)] {}
                     return Err(format!("dtls client connect failed - HandshakeError::Failure: {}", err));
                 }
                 Err(HandshakeError::SetupFailure(err)) => {
-                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr)); }); }
+                    if let Some(set_arc) = &self.connecting_peers { let _ = set_arc.lock().map(|mut set| { set.remove(&crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr)); }); }
                     log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                     #[allow(unused)] {}
                     return Err(format!("dtls client connect failed - HandshakeError::SetupFailure: {}", err));
@@ -1070,8 +1083,12 @@ pub mod non_ios {
                                     Ok(issuer) if !issuer.is_empty() => {
                                         // Convert issuer (subject CN) to id by trimming the trailing ISSUER_SUFFIX
                                         let id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                                        if let Some(issuers_arc) = &self.endpoint_issuers {
-                                            let _ = issuers_arc.lock().map(|mut m| { m.insert(to_addr, id); });
+                                        if let Some(peers) = &self.peer_states {
+                                            let _ = peers.lock().map(|mut m| {
+                                                m.entry(to_addr)
+                                                    .and_modify(|ps| ps.issuer = id.clone())
+                                                    .or_insert(PeerState { writer: None, issuer: id.clone() });
+                                            });
                                         }
                                     }
                                     Ok(_) => {
@@ -1105,32 +1122,34 @@ pub mod non_ios {
             if let Some(streams_arc) = &self.streams {
                 if let Ok(mut map) = streams_arc.lock() { map.insert(to_addr, stream_arc.clone()); }
             }
-            // Also install a writer for this peer so generic send path can use writers map.
-            if let Some(writers) = &self.server_writers {
-                if let Ok(mut map) = writers.lock() {
-                    let writer_stream = stream_arc.clone();
-                    let writer_fn: std::sync::Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = std::sync::Arc::new(move |payload: &[u8]| {
-                        let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                        guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
-                    });
-                    map.insert(to_addr, writer_fn);
-                }
+            // Also install/update the writer for this peer in the unified peer_states map.
+            if let Some(peers) = &self.peer_states {
+                let writer_stream = stream_arc.clone();
+                let writer_fn: std::sync::Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = std::sync::Arc::new(move |payload: &[u8]| {
+                    let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
+                    use std::io::Write;
+                    guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
+                });
+                let _ = peers.lock().map(|mut m| {
+                    let prev_issuer = m.get(&to_addr).map(|ps| ps.issuer.clone()).unwrap_or_default();
+                    m.insert(to_addr, PeerState { writer: Some(writer_fn.clone()), issuer: prev_issuer });
+                });
             }
 
             // Spawn a background reader loop for this outbound stream to deliver application data to the handler
             {
-                let writers2_opt = self.server_writers.as_ref().cloned();
-                let issuers2_opt = self.endpoint_issuers.as_ref().cloned();
                 let handle_message2 = self.handle_message.clone();
                 let peer_cert_handler = self.handle_peer_certificate;
                 let stream_arc_for_reader = stream_arc.clone();
                 let from2: SocketAddr = to_addr;
+                let peers2: PeerStates = self.peer_states.as_ref().cloned().unwrap_or_else(|| {
+                    std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()))
+                });
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc_for_reader.clone(),
                         from2,
-                        writers2_opt.clone(),
-                        issuers2_opt.clone(),
+                        peers2.clone(),
                         handle_message2.clone(),
                         peer_cert_handler,
                         CaMode::PeerChain,
@@ -1143,7 +1162,7 @@ pub mod non_ios {
             // Now that the stream is registered, remove from in-progress set
             if let Some(set_arc) = &self.connecting_peers {
                 let _ = set_arc.lock().map(|mut set| {
-                    let removed = set.remove(&crate::api::bingle_api::NetworkSourceKey::new_direct(to_addr));
+                    let removed = set.remove(&crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr));
                     log::info!("[DtlsOpenSsl::send] unmark {} as connecting (registered stream; removed={})", to, removed);
                     #[allow(unused)] {}
                 });

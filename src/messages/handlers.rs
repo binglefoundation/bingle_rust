@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct FromStruct {
     pub id: String,
-    pub network_source_key: crate::api::bingle_api::NetworkSourceKey,
+    pub network_source_key: crate::api::bingle_api::NetworkEndpoint,
 }
 
 pub trait MessageHandler {
@@ -292,8 +292,8 @@ impl MessageHandler for DefaultPrintingHandler {
             let json_val = crate::messages::marshal::to_json_value(&msg_out);
 
             // Build NetworkSourceKey and user id base64(36) as required by API
-            use crate::api::bingle_api::NetworkSourceKey;
-            let nsk = NetworkSourceKey::new_direct(associated_relay.address);
+            use crate::api::bingle_api::NetworkEndpoint;
+            let nsk = NetworkEndpoint::new_direct(associated_relay.address);
             let user_id = associated_relay.id.clone();
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
@@ -315,12 +315,12 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_triangle_test2(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &RelayTriangleTest2) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
-        use crate::api::bingle_api::NetworkSourceKey;
+        use crate::api::bingle_api::NetworkEndpoint;
         let endpoint = msg.checking_endpoint;
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);
-        let nsk = NetworkSourceKey::new_direct(endpoint);
+        let nsk = NetworkEndpoint::new_direct(endpoint);
         // Convert checking_id (issuer) to raw address by trimming issuer suffix (base32 Algorand address)
         let user_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
         let ok = api.send_message_to_network(&nsk, &user_id, json_val, None);
@@ -414,7 +414,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     let listen = crate::messages::types::RelayListen { app: None };
                     let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
                     let json = crate::messages::marshal::to_json_value(&msg);
-                    let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(relay_info.address);
+                    let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
                     let uid = relay_info.id.clone();
                     match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
                         Ok(resp) => {

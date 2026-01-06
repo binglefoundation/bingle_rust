@@ -47,7 +47,7 @@ fn end_to_end_turn_relay_forwards_payload() {
         mux.set_handle_turn(Some(std::sync::Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
             if let Some(wrapped) = turn_clone.handle_turn_incoming(packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                    let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(wrapped.ipAddress);
+                    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
                     let _ = udp.write(&nsk, &wrapped.message);
                 }
             }
@@ -115,10 +115,10 @@ impl rust_comms::api::bingle_api::BingleApi for MockApi {
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkSourceKey, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
     fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
     fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_network_with_response(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkSourceKey, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_network_with_response(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
     fn set_on_message(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }

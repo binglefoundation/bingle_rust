@@ -39,10 +39,10 @@ fn ddb_client_lookup_returns_endpoint() {
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
         fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-        fn send_message_to_network(&self, _nsk: &rust_comms::api::bingle_api::NetworkSourceKey, _uid: &rust_comms::api::bingle_api::UserId, _msg: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+        fn send_message_to_network(&self, _nsk: &rust_comms::api::bingle_api::NetworkEndpoint, _uid: &rust_comms::api::bingle_api::UserId, _msg: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
         fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_network_with_response(&self, nsk: &rust_comms::api::bingle_api::NetworkSourceKey, uid: &rust_comms::api::bingle_api::UserId, msg: serde_json::Value, progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.0.lock().map_err(|_| "lock".to_string()).and_then(|g| g.send_message_to_network_with_response(nsk, uid, msg, progress)) }
+        fn send_message_to_network_with_response(&self, nsk: &rust_comms::api::bingle_api::NetworkEndpoint, uid: &rust_comms::api::bingle_api::UserId, msg: serde_json::Value, progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.0.lock().map_err(|_| "lock".to_string()).and_then(|g| g.send_message_to_network_with_response(nsk, uid, msg, progress)) }
         fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
     }

@@ -126,7 +126,7 @@ fn write_sends_payload() {
     let mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
 
     let payload = b"hello world";
-    let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(recv_addr);
+    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(recv_addr);
     mux.write(&nsk, payload).expect("write ok");
 
     let mut buf = [0u8; 64];
@@ -149,7 +149,7 @@ fn write_relay_wraps_payload_in_turn_channel_data() {
     let payload: &[u8] = b"abc123"; // len = 6 → already 4-byte aligned, padding = 2
 
     // Build a relay NetworkSourceKey and perform write
-    let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_relay(relay_addr, ch);
+    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_relay(relay_addr, ch);
     mux.write(&nsk, payload).expect("relay write ok");
 
     // Receive the datagram and verify TURN ChannelData header + payload + padding

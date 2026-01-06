@@ -63,7 +63,7 @@ fn live_stun_endpoint_finder_with_udp_mux() {
             // Best-effort send; ignore error in test path
             if let Ok(ip) = host.parse::<std::net::IpAddr>() {
                             let addr = std::net::SocketAddr::new(ip, port);
-                            let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr);
+                            let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
                             let _ = mux_for_send.write(&nsk, data);
                         }
         })));

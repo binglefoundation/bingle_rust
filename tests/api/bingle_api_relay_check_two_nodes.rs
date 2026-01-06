@@ -1,4 +1,4 @@
-use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkSourceKey, BingleApi};
+use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleApi};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock, Mutex};
@@ -51,7 +51,7 @@ fn bingle_api_relay_check_two_nodes() {
                     "type": "CheckResponse",
                     "available": true,
                 });
-                let nsk = NetworkSourceKey::new_direct(addr);
+                let nsk = NetworkEndpoint::new_direct(addr);
                 // Validate that locking succeeds and attempt to send the response.
                 let _ok = relay_for_cb
                     .lock()
@@ -80,7 +80,7 @@ fn bingle_api_relay_check_two_nodes() {
     client.start(&client_opts).expect("client start");
 
     // 3) Send RelayCheck from client to relay directly
-    let nsk_relay = NetworkSourceKey::new_direct(relay_addr);
+    let nsk_relay = NetworkEndpoint::new_direct(relay_addr);
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check" });
 

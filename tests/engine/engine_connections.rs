@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkSourceKey, UserId, Handle, ProgressCallback};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback};
 use rust_comms::engine::Engine;
 use rust_comms::dtls::{Dtls, HandleMessage};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
@@ -19,7 +19,7 @@ impl FakeDtls {
 impl Dtls for FakeDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
     fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, to: &rust_comms::api::bingle_api::NetworkSourceKey, _data: &[u8]) -> rust_comms::dtls::Result<()> { let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address); Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address); Ok(()) }
 
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }
@@ -64,10 +64,10 @@ impl BingleApi for DummyApi {
     fn network_change(&mut self) {}
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
     fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
@@ -83,7 +83,7 @@ fn engine_send_to_peer_tracks_connections_and_reuses() {
     assert_eq!(engine.connections_len_for_tests(), 0);
 
     // First send should create entry
-    let nsk1 = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(a1);
+    let nsk1 = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a1);
     let r1 = engine.send_to_peer(&nsk1, b"hello");
     assert!(r1.is_ok());
     assert!(engine.has_connection(&a1));
@@ -96,7 +96,7 @@ fn engine_send_to_peer_tracks_connections_and_reuses() {
     assert_eq!(engine.connections_len_for_tests(), 1);
 
     // Send to a different addr should add another entry
-    let nsk2 = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(a2);
+    let nsk2 = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a2);
     let r3 = engine.send_to_peer(&nsk2, b"new peer");
     assert!(r3.is_ok());
     assert!(engine.has_connection(&a2));

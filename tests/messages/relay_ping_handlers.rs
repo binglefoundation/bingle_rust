@@ -5,7 +5,7 @@ use rust_comms::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, R
 use rust_comms::dtls::UdpNetworkMux;
 use rust_comms::messages::*;
 use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkSourceKey, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 #[derive(Default, Clone)]
 struct MockDtls {
@@ -15,7 +15,7 @@ struct MockDtls {
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
     fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
-    fn send(&self, to: &rust_comms::api::bingle_api::NetworkSourceKey, data: &[u8]) -> DtlsResult<()> {
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> DtlsResult<()> {
         let mut g = self.sent.lock().unwrap();
         let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address");
         g.push((addr, data.to_vec()));
@@ -61,15 +61,15 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-        fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+        fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+        fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
-    let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkSourceKey::new_direct("127.0.0.1:1".parse().unwrap()) };
+    let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
     handler.on_triangle_test1(api, &from, &t1);
 
     let records = mock.sent.lock().unwrap().clone();
@@ -104,15 +104,15 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
         fn network_change(&mut self) {}
         fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-        fn send_message_to_network(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+        fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_network_with_response(&self, _nsk: &NetworkSourceKey, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+        fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
-    let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkSourceKey::new_direct("127.0.0.1:1".parse().unwrap()) };
+    let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
     handler.on_triangle_test2(api, &from, &t2);
 
     let records = mock.sent.lock().unwrap().clone();
