@@ -43,16 +43,6 @@ pub trait Dtls {
      */
     fn send(&self, to: &crate::api::bingle_api::NetworkSourceKey, data: &[u8]) -> Result<()>;
 
-        /// Convenience helper: send directly to a socket address (alias of send)
-        fn send_direct(&self, to: SocketAddr, data: &[u8]) -> Result<()> {
-            let key = crate::api::bingle_api::NetworkSourceKey::new_direct(to);
-            self.send(&key, data)
-        }
-
-        /// Send via relay using a pre-populated NetworkSourceKey (relay_address + relay_channel)
-        fn send_via_relay(&self, _key: &crate::api::bingle_api::NetworkSourceKey, _data: &[u8]) -> Result<()> {
-            Err("relay send not implemented".to_string())
-        }
 
     /**
      * Get a message handler function

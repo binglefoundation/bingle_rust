@@ -38,6 +38,7 @@ fn dtls_send_takes_no_issuer() {
     let d = DummyDtls::default();
     let to: SocketAddr = "127.0.0.1:9000".parse().unwrap();
     let data = b"hello";
-    // Should compile and run: no issuer argument
-    assert!(Dtls::send_direct(&d, to, data).is_ok());
+    // Should compile and run via NetworkSourceKey helper
+    let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(to);
+    assert!(Dtls::send(&d, &nsk, data).is_ok());
 }

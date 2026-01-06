@@ -24,7 +24,8 @@ impl RelayPingHandler {
 
     fn send_json_to(&self, to: SocketAddr, msg: &Message) {
         let json = to_json_string(msg);
-        self.dtls.send_direct(to, json.as_bytes()).expect("DTLS send failed in RelayPingHandler");
+        let nsk = crate::api::bingle_api::NetworkSourceKey::new_direct(to);
+        self.dtls.send(&nsk, json.as_bytes()).expect("DTLS send failed in RelayPingHandler");
     }
 }
 

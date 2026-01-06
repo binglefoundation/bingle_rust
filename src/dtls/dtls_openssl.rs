@@ -896,8 +896,8 @@ pub mod non_ios {
                         let to_addr: SocketAddr = if let Some(addr) = to.inet_socket_address {
                             addr
                         } else if to.relay_channel.is_some() && to.relay_address.is_some() {
-                            // Delegate to relay send path (not yet implemented fully)
-                            return self.send_via_relay(to, data);
+                            // Relay path not yet implemented
+                            return Err("relay send not implemented".to_string());
                         } else {
                             panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address)");
                         };
