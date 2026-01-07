@@ -19,7 +19,7 @@ impl FakeDtls {
 impl Dtls for FakeDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
     fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address); Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address()); Ok(()) }
 
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }
@@ -86,19 +86,19 @@ fn engine_send_to_peer_tracks_connections_and_reuses() {
     let nsk1 = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a1);
     let r1 = engine.send_to_peer(&nsk1, b"hello");
     assert!(r1.is_ok());
-    assert!(engine.has_connection(&a1));
+    assert!(engine.has_connection(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a1)));
     assert_eq!(engine.connections_len_for_tests(), 1);
 
     // Second send to same addr should not create a second entry
     let r2 = engine.send_to_peer(&nsk1, b"again");
     assert!(r2.is_ok());
-    assert!(engine.has_connection(&a1));
+    assert!(engine.has_connection(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a1)));
     assert_eq!(engine.connections_len_for_tests(), 1);
 
     // Send to a different addr should add another entry
     let nsk2 = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a2);
     let r3 = engine.send_to_peer(&nsk2, b"new peer");
     assert!(r3.is_ok());
-    assert!(engine.has_connection(&a2));
+    assert!(engine.has_connection(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(a2)));
     assert_eq!(engine.connections_len_for_tests(), 2);
 }

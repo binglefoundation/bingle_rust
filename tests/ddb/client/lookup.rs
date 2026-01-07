@@ -61,7 +61,7 @@ fn ddb_client_lookup_returns_endpoint() {
     let nsk = cli.lookup(&id).expect("lookup should return a NetworkSourceKey");
 
     // Ensure the network source key carries the direct address we registered
-    let got = nsk.inet_socket_address.expect("inet_socket_address should be Some");
+    let got = nsk.inet_socket_address().expect("inet_socket_address should be Some");
     assert_eq!(got, client_addr);
 
     relay.stop();

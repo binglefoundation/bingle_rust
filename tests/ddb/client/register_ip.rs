@@ -88,7 +88,7 @@ fn ddb_client_register_ip_ok() {
     // Verify via lookup using the same DDB client
     let id = api_arc.get_my_id().expect("client id");
     let nsk = cli.lookup(&id).expect("lookup should succeed");
-    let ep = nsk.inet_socket_address.expect("direct endpoint");
+    let ep = nsk.inet_socket_address().expect("direct endpoint");
     assert_eq!(ep, client_addr);
 
     // Cleanup

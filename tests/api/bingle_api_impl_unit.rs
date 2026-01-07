@@ -18,7 +18,7 @@ impl MockDtls { fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) { let
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
     fn stop(&mut self) -> Result<()> { Ok(()) }
-    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> { let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address"); self.sends.lock().unwrap().push((addr, data.to_vec())); Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> { let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address"); self.sends.lock().unwrap().push((addr, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
@@ -47,7 +47,7 @@ fn unit_send_message_to_network_calls_dtls_send() {
     let (mock, sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
     let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
-    let nsk = NetworkEndpoint { inet_socket_address: Some(addr), relay_channel: None, relay_address: None, relay_id: None };
+    let nsk = NetworkEndpoint::new_direct(addr);
     let msg = serde_json::json!({"hello": "world"});
     let progress_calls: Arc<Mutex<Vec<(u8, String)>>> = Arc::new(Mutex::new(vec![]));
     let progress_calls_closure = progress_calls.clone();
@@ -79,7 +79,7 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
         fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
         fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
-            let addr = to.inet_socket_address.expect("MockDtlsCapture::send requires inet_socket_address");
+            let addr = to.inet_socket_address().expect("MockDtlsCapture::send requires inet_socket_address");
             self.captured.lock().unwrap().push((addr, data.to_vec()));
             Ok(())
         }
@@ -119,7 +119,7 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
 
     // Send a message and ensure issuer is passed through
     let addr_send: SocketAddr = "127.0.0.1:45678".parse().unwrap();
-    let nsk = NetworkEndpoint { inet_socket_address: Some(addr_send), relay_channel: None, relay_address: None, relay_id: None };
+    let nsk = NetworkEndpoint::new_direct(addr_send);
     let uid2 = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None);
     assert!(ok);

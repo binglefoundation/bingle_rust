@@ -64,8 +64,8 @@ pub struct Engine {
     registered: std::sync::atomic::AtomicBool,
     // Current NAT type classification
     nat_type: std::sync::atomic::AtomicU8,
-    // Per-connection state tracked at the Engine level (keyed by remote SocketAddr)
-    connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<SocketAddr, ConnectionEntry>>>,
+    // Per-connection state tracked at the Engine level (keyed by NetworkEndpointKey)
+    connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>>>, 
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<String>,
@@ -126,7 +126,7 @@ impl BingleApi for EngineBingleApiHandle {
     fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
         log::info!("[EngineBingleApiHandle::send_message_to_network] nsk={} user_id={} message={}", nsk, user_id, message);
         use std::sync::atomic::Ordering;
-        if nsk.inet_socket_address.is_some() || (nsk.relay_channel.is_some() && nsk.relay_address.is_some()) {
+        if nsk.inet_socket_address().is_some() || (nsk.relay_channel().is_some() && nsk.relay_address().is_some()) {
             let valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => true,
                 _ => false,
@@ -382,9 +382,13 @@ impl Engine {
         self.send_via_bingle = None;
     }
 
-    /// Check whether the engine believes a connection to addr exists.
-    pub fn has_connection(&self, addr: &SocketAddr) -> bool {
-        self.connections.lock().map(|m| m.contains_key(addr)).unwrap_or(false)
+    /// Check whether the engine believes a connection to endpoint exists.
+    pub fn has_connection(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> bool {
+        if let Some(key) = endpoint.get_key() {
+            self.connections.lock().map(|m| m.contains_key(&key)).unwrap_or(false)
+        } else {
+            false
+        }
     }
 
     /// Testing helper: number of tracked connections.
@@ -401,12 +405,11 @@ impl Engine {
         let dtls = self.dtls.as_ref().ok_or_else(|| "DTLS instance not provided".to_string())?;
         let res = dtls.send(to, data);
         if res.is_ok() {
-            // Track connection by concrete socket address when available (direct or relay address)
-            let key_addr_opt = to.inet_socket_address.or(to.relay_address);
-            if let Some(key_addr) = key_addr_opt {
+            // Track connection using NetworkEndpointKey derived from `to`
+            if let Some(key) = to.get_key() {
                 if let Ok(mut m) = self.connections.lock() {
                     use std::collections::hash_map::Entry;
-                    match m.entry(key_addr) {
+                    match m.entry(key) {
                         Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
                         Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
                     }
@@ -447,7 +450,10 @@ impl Engine {
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
-                        match m.entry(*from) {
+                        let key_from = crate::api::bingle_api::NetworkEndpoint::new_direct(*from)
+                            .get_key()
+                            .expect("direct endpoint key");
+                        match m.entry(key_from) {
                             Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
                             Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
                         }

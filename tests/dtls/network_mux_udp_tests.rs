@@ -3,6 +3,7 @@ use std::sync::{Mutex, OnceLock, Arc};
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{UdpNetworkMux, NetworkMux};
+use crate::util::test_util::ADDRESS_SPEND;
 
 // Global test guard to serialize tests in this module (Rust tests run in parallel by default)
 static TEST_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
@@ -149,7 +150,7 @@ fn write_relay_wraps_payload_in_turn_channel_data() {
     let payload: &[u8] = b"abc123"; // len = 6 → already 4-byte aligned, padding = 2
 
     // Build a relay NetworkSourceKey and perform write
-    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_relay(relay_addr, ch);
+    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_relay(ADDRESS_SPEND.to_string(), Some(relay_addr), Some(ch));
     mux.write(&nsk, payload).expect("relay write ok");
 
     // Receive the datagram and verify TURN ChannelData header + payload + padding

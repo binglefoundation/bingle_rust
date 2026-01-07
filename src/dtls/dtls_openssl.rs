@@ -485,7 +485,7 @@ pub mod non_ios {
     }
     impl std::io::Write for CommonNetworkMuxConn {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            let peer_addr_opt = self.peer.inet_socket_address;
+            let peer_addr_opt = self.peer.inet_socket_address();
             let peer_str = peer_addr_opt.map(|a| a.to_string()).unwrap_or_else(|| "<no-inet-addr>".to_string());
             #[cfg(debug_assertions)]
             {
@@ -941,9 +941,9 @@ pub mod non_ios {
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
             // Validate destination key: allow either direct inet address or relay channel+address
-            let to_addr: SocketAddr = if let Some(addr) = to.inet_socket_address {
+            let to_addr: SocketAddr = if let Some(addr) = to.inet_socket_address() {
                 addr
-            } else if to.relay_channel.is_some() && to.relay_address.is_some() {
+            } else if to.relay_channel().is_some() && to.relay_address().is_some() {
                 // Relay path not yet implemented
                 return Err("relay send not implemented".to_string());
             } else {

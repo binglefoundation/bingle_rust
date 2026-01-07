@@ -24,8 +24,8 @@ pub trait MessageHandler {
                 // Use direct socket address as sender_handle when available
                 let sender_handle = _from
                     .network_source_key
-                    .inet_socket_address
-                    .map(|a| a.to_string())
+                    .inet_socket_address()
+                    .map(|a: std::net::SocketAddr| a.to_string())
                     .unwrap_or_else(|| "".to_string());
                 cb(sender_id, sender_handle, json);
                 return;

@@ -17,7 +17,7 @@ impl Dtls for MockDtls {
     fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
     fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> DtlsResult<()> {
         let mut g = self.sent.lock().unwrap();
-        let addr = to.inet_socket_address.expect("MockDtls::send requires inet_socket_address");
+        let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
         g.push((addr, data.to_vec()));
         Ok(())
     }

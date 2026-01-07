@@ -43,7 +43,7 @@ fn server_assert_and_reply(server: &dyn Dtls, from: &SocketAddr, issuer: &str, d
     let _ = SERVER_SEEN_ISSUER.set(issuer.to_string());
     let _ = SERVER_SEEN_DATA.set(data.to_vec());
     // Reply
-    let _ = server.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(*from), b"hi-from-server");
+    let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), b"hi-from-server");
 }
 
 fn client_capture(_server: &dyn Dtls, _from: &SocketAddr, issuer: &str, data: &[u8]) {
@@ -99,7 +99,7 @@ fn issuer_mapping_basic_send_and_reply() {
     // Send from client to server
     let mut ok = false;
     for _ in 0..8 {
-        if client.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), b"hello").is_ok() { ok = true; break; }
+        if client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"hello").is_ok() { ok = true; break; }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client send failed");
@@ -233,9 +233,9 @@ fn multiple_clients_to_server_have_correct_issuers() {
     client_c.start(cmux_c.clone()).expect("client_c start");
 
     // Send messages from A, B, C
-    let mut ok = false; for _ in 0..6 { if client_a.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), b"mA").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
+    let mut ok = false; for _ in 0..6 { if client_a.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"mA").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
     thread::sleep(Duration::from_millis(200));
-    let mut ok = false; for _ in 0..10 { if client_b.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), b"mB").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
+    let mut ok = false; for _ in 0..10 { if client_b.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"mB").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
     thread::sleep(Duration::from_millis(200));
     let mut ok = false; for _ in 0..10 { if client_c.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), b"mC").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
 

@@ -206,7 +206,7 @@ impl NetworkMux for UdpNetworkMux {
         // - Relay: when relay_channel and relay_address are provided, wrap payload in TURN ChannelData and send to relay_address
         // - Direct: otherwise, require inet_socket_address and send raw payload
         let from_addr = self.socket.local_addr().ok();
-        if let (Some(ch), Some(relay_addr)) = (to.relay_channel, to.relay_address) {
+        if let (Some(ch), Some(relay_addr)) = (to.relay_channel(), to.relay_address()) {
             // Build TURN ChannelData
             let wrapped = match crate::turn::turn_handler::build_channel_data(ch, buf) {
                 Some(v) => v,
@@ -228,7 +228,7 @@ impl NetworkMux for UdpNetworkMux {
         }
         // Direct path: Extract destination inet address; panic if missing per design
         let to_addr = to
-            .inet_socket_address
+            .inet_socket_address()
             .expect("UdpNetworkMux::write: NetworkSourceKey missing inet_socket_address");
         // Determine mux type and print a debug line; if DTLS, try to print JSON packet
         match mux_type_for(buf) {

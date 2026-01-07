@@ -31,14 +31,14 @@ impl fmt::Display for NetworkEndpointKey {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NetworkEndpoint {
     /// Direct socket address if sending directly.
-    pub inet_socket_address: Option<SocketAddr>,
+    inet_socket_address: Option<SocketAddr>,
     /// TURN relay channel number if using a relay (16-bit per RFC 5766).
-    pub relay_channel: Option<u16>,
+    relay_channel: Option<u16>,
     /// Relay server socket address (IP:port) if using a relay.
-    pub relay_address: Option<SocketAddr>,
+    relay_address: Option<SocketAddr>,
     /// Optional relay id (Algorand base32 address) used when a channel has not yet been allocated.
     #[serde(default)]
-    pub relay_id: Option<String>,
+    relay_id: Option<String>,
 }
 
 impl NetworkEndpoint {
@@ -52,18 +52,33 @@ impl NetworkEndpoint {
         }
     }
 
+    /// Construct an empty endpoint (no fields set).
+    pub fn new_unset() -> Self {
+        Self { inet_socket_address: None, relay_channel: None, relay_address: None, relay_id: None }
+    }
+
     /// Construct a relay endpoint key.
-    pub fn new_relay(relay_address: SocketAddr, relay_channel: u16) -> Self {
+    pub fn new_relay(relay_id: String, relay_address: Option<SocketAddr>, relay_channel: Option<u16>) -> Self {
         Self {
             inet_socket_address: None,
-            relay_channel: Some(relay_channel),
-            relay_address: Some(relay_address),
-            relay_id: None,
+            relay_channel: relay_channel,
+            relay_address: relay_address,
+            relay_id: Some(relay_id),
         }
     }
 
     /// True if this key represents a relay endpoint.
-    pub fn is_relay(&self) -> bool { self.relay_channel.is_some() }
+    pub fn is_relay(&self) -> bool { self.relay_id.is_some() }
+
+    /// Getters for fields
+    pub fn inet_socket_address(&self) -> Option<SocketAddr> { self.inet_socket_address }
+    pub fn relay_channel(&self) -> Option<u16> { self.relay_channel }
+    pub fn relay_address(&self) -> Option<SocketAddr> { self.relay_address }
+    pub fn relay_id(&self) -> Option<&str> { self.relay_id.as_deref() }
+
+    /// Setters allowed: relay_address and relay_channel only
+    pub fn set_relay_address(&mut self, addr: Option<SocketAddr>) { self.relay_address = addr; }
+    pub fn set_relay_channel(&mut self, ch: Option<u16>) { self.relay_channel = ch; }
 
     /// Build a NetworkEndpointKey from this endpoint.
     /// Returns Some(key) when either inet_socket_address or relay_id is present; otherwise None.
@@ -73,7 +88,8 @@ impl NetworkEndpoint {
         } else if let Some(relay_id) = self.relay_id.as_ref() {
             Some(NetworkEndpointKey { inet_socket_address: None, relay_id: Some(relay_id.clone()) })
         } else {
-            None
+            // Cannot be reached as NetworkEndpointKey cannot be constructed from incomplete NetworkEndpoint
+            panic!("NetworkEndpointKey cannot be constructed from incomplete NetworkEndpoint: {:?}", self);
         }
     }
 }

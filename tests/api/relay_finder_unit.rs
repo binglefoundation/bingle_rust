@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkSourceKey, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
 use serde_json::Value as JsonValue;
 
@@ -33,14 +33,14 @@ impl BingleApi for MockApi {
 
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &NetworkSourceKey, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("ni".to_string()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("ni".to_string()) }
 
-    fn send_message_to_network_with_response(&self, network_source_key: &NetworkSourceKey, _user_id: &UserId, message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
+    fn send_message_to_network_with_response(&self, network_source_key: &NetworkEndpoint, _user_id: &UserId, message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
         // Count calls
         if let Ok(mut c) = self.calls.lock() { *c += 1; }
-        let addr = network_source_key.inet_socket_address.expect("addr required");
+        let addr = network_source_key.inet_socket_address().expect("addr required");
         // Should receive a RelayCheck
         let is_check = message.get("type").and_then(|v| v.as_str()) == Some("Check") && message.get("app").map(|v| v.is_null()).unwrap_or(true);
         if !is_check { return Err("unexpected message".to_string()); }

@@ -151,12 +151,12 @@ fn testnet_user_reaches_endpoint_available() {
         let my_id = api.get_my_id().expect("api.get_my_id Some");
         let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
         if(got_nat != NatType::FullCone) {
-            let looked = nsk.inet_socket_address.expect("lookup should return a direct endpoint");
+            let looked = nsk.inet_socket_address().expect("lookup should return a direct endpoint");
             let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
             assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
         }
         else {
-            let looked = nsk.relay_address.expect("lookup should return relay address");
+            let looked = nsk.relay_address().expect("lookup should return relay address");
             assert_eq!(looked.to_string(), static_endpoints[0].1, "DDB lookup should return our discovered public endpoint");
         }
     }

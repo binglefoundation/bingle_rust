@@ -9,7 +9,7 @@ struct DummyDtls;
 impl Dtls for DummyDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) -> Result<(), String> { Ok(()) }
-    fn send(&self, _to: &rust_comms::api::bingle_api::NetworkSourceKey, _data: &[u8]) -> Result<(), String> { Ok(()) }
+    fn send(&self, _to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> Result<(), String> { Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
@@ -38,7 +38,7 @@ fn dtls_send_takes_no_issuer() {
     let d = DummyDtls::default();
     let to: SocketAddr = "127.0.0.1:9000".parse().unwrap();
     let data = b"hello";
-    // Should compile and run via NetworkSourceKey helper
-    let nsk = rust_comms::api::bingle_api::NetworkSourceKey::new_direct(to);
+    // Should compile and run via NetworkEndpoint helper
+    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(to);
     assert!(Dtls::send(&d, &nsk, data).is_ok());
 }
