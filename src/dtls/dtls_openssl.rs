@@ -418,6 +418,8 @@ pub mod non_ios {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
     use std::sync::Condvar;
+    use crate::api::bingle_api::NetworkEndpointKey;
+    use crate::api::network_endpoint::NetworkEndpoint;
 
     #[derive(Default)]
     pub(crate) struct PeerQueue {
@@ -946,32 +948,30 @@ pub mod non_ios {
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
             // Validate destination key: allow either direct inet address or relay channel+address
-            let to_addr: SocketAddr = if let Some(addr) = to.inet_socket_address() {
-                addr
+            let endpoint: &NetworkEndpoint = if let Some(addr) = to.inet_socket_address() {
+                to
             } else if to.relay_channel().is_some() && to.relay_address().is_some() {
-                // Relay path not yet implemented
-                return Err("relay send not implemented".to_string());
+                to
             } else {
                 panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address)");
             };
 
-            let key_to = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
+            let key_to = to.get_key().expect("direct endpoint key");
 
-            // 1) If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
+            // If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
             {
                 let peers = &self.peer_states;
-                let key_to = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
                 if let Ok(map) = peers.lock() {
                     if let Some(ps) = map.get(&key_to) {
                         // Prefer direct stream write if available
                         if let Some(stream_arc) = ps.stream.as_ref() {
                             if let Ok(mut guard) = stream_arc.lock() {
-                                log::info!("[DtlsOpenSsl::send] using existing stream to {} ({} bytes)", to_addr, data.len());
+                                log::info!("[DtlsOpenSsl::send] using existing stream to {} ({} bytes)", to, data.len());
                                 return guard.write_all(data).map_err(|e| format!("dtls write failed: {}", e));
                             }
                         }
                         if let Some(writer) = &ps.writer {
-                            log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to_addr, data.len());
+                            log::info!("[DtlsOpenSsl::send] using existing inbound writer to {} ({} bytes)", to, data.len());
                             return writer(data);
                         }
                     }
@@ -985,14 +985,13 @@ pub mod non_ios {
             let connector = self.prepare_client_context()?;
             // Ensure a per-peer queue exists in peer_states so incoming handshake/application data is delivered via the handler
             let q_arc = {
-                let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
                 let peers = &self.peer_states;
                 let mut map = peers.lock().map_err(|_| "peers lock poisoned".to_string())?;
-                if let Some(ps) = map.get(&key) {
+                if let Some(ps) = map.get(&key_to) {
                     ps.queue.clone()
                 } else {
                     let q = std::sync::Arc::new(PeerQueue::default());
-                    map.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
+                    map.insert(key_to.clone(), PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
                     q
                 }
             };
@@ -1001,7 +1000,7 @@ pub mod non_ios {
                 let peers = &self.peer_states;
                 if let Ok(mut m) = peers.lock() {
                     use std::collections::hash_map::Entry;
-                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
+                    let key = to.get_key().expect("direct endpoint key");
                     match m.entry(key) {
                         Entry::Occupied(mut e) => { e.get_mut().is_connecting_peer = true; }
                         Entry::Vacant(v) => {
@@ -1011,7 +1010,7 @@ pub mod non_ios {
                 }
             }
             // Create a UDP-backed connection to the peer using the per-peer queue.
-            let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr), queue: q_arc };
+            let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc };
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
             log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
             let stream = match connector.connect("localhost", conn) {
@@ -1033,7 +1032,7 @@ pub mod non_ios {
                                 iter += 1;
                                 let elapsed = start.elapsed();
                                 if elapsed > deadline {
-                                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
                                     log::info!("[DtlsOpenSsl::send] connect() timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
                                     #[allow(unused)] {}
                                     return Err("dtls client connect timeout".to_string());
@@ -1048,14 +1047,14 @@ pub mod non_ios {
                                 continue;
                             }
                             Err(HandshakeError::Failure(mid2)) => {
-                                { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                                { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
                                 let err = mid2.error();
                                 log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                                 #[allow(unused)] {}
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::Failure: {}", err));
                             }
                             Err(HandshakeError::SetupFailure(err)) => {
-                                { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                                { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
                                 log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                                 #[allow(unused)] {}
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::SetupFailure: {}", err));
@@ -1064,14 +1063,14 @@ pub mod non_ios {
                     }
                 }
                 Err(HandshakeError::Failure(mid)) => {
-                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
                     let err = mid.error();
                     log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                     #[allow(unused)] {}
                     return Err(format!("dtls client connect failed - HandshakeError::Failure: {}", err));
                 }
                 Err(HandshakeError::SetupFailure(err)) => {
-                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
                     log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                     #[allow(unused)] {}
                     return Err(format!("dtls client connect failed - HandshakeError::SetupFailure: {}", err));
@@ -1159,7 +1158,7 @@ pub mod non_ios {
                 let handle_message2 = self.handle_message.clone();
                 let peer_cert_handler = self.handle_peer_certificate;
                 let stream_arc_for_reader = stream_arc.clone();
-                let from2: SocketAddr = to_addr;
+                let from2: SocketAddr = endpoint.inet_socket_address().unwrap();
                 let peers2: PeerStates = self.peer_states.clone();
                 std::thread::spawn(move || {
                     run_read_loop(
@@ -1179,7 +1178,7 @@ pub mod non_ios {
             {
                 let peers = &self.peer_states;
                 let _ = peers.lock().map(|mut m| {
-                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(to_addr).get_key().expect("direct endpoint key");
+                    let key = to.get_key().expect("direct endpoint key");
                     if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; }
                 });
             }
