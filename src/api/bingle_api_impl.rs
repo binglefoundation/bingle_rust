@@ -15,6 +15,7 @@ use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::dtls::Dtls;
 use crate::engine::{Engine, EngineState};
+use crate::turn::turn_handler::TurnHandler;
 use crate::protocol::ISSUER_SUFFIX;
 
 /// Concrete implementation of the BingleApi trait.
@@ -532,6 +533,20 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         let cli = self.engine.ddb_client();
         log::info!("[BingleApiImpl::ddb_register_relay] registering relay: id={}", relay_id);
         cli.register_relay(relay_id, relay_sig)
+    }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
+        log::info!("[BingleApiImpl::update_turn_listener_relay][enter] id={} addr={}", relay_id, relay_addr);
+        // Access the Engine's TURN handler and register the mapping id -> addr
+        let th = self.engine.turn_handler_for_tests();
+        let ok = th.handle_listen(&relay_id, &relay_addr);
+        if ok {
+            log::info!("[BingleApiImpl::update_turn_listener_relay][exit] Ok(())");
+            Ok(())
+        } else {
+            let err = format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr);
+            log::warn!("[BingleApiImpl::update_turn_listener_relay][exit] Err({})", err);
+            Err(err)
+        }
     }
 }
 

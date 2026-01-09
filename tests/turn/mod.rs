@@ -52,10 +52,10 @@ fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     assert_eq!(msg.len(), 4 + padded_len);
 
     // Now feed back to incoming parser
-    let incoming = handler.handle_turn_incoming(&msg);
+    let incoming = handler.handle_turn_incoming(None, &msg);
     assert!(incoming.is_some(), "expected incoming to parse");
     let incoming = incoming.unwrap();
-    assert_eq!(incoming.ipAddress, dst);
+    assert_eq!(incoming.ip_address, dst);
     assert_eq!(incoming.message, payload);
 }
 
@@ -63,8 +63,8 @@ fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
 fn unit_turn_incoming_invalid_packets_return_none() {
     let handler = TurnHandlerImpl::new();
     // Too short
-    assert!(handler.handle_turn_incoming(&[0x40]).is_none());
+    assert!(handler.handle_turn_incoming(None, &[0x40]).is_none());
     // Declared len longer than actual
     let bad = [0x40, 0x00, 0x00, 0x10];
-    assert!(handler.handle_turn_incoming(&bad).is_none());
+    assert!(handler.handle_turn_incoming(None, &bad).is_none());
 }

@@ -50,15 +50,15 @@ fn client_peer_cert_handler(cert_pem: &[u8], ca_pem: &[u8]) -> DtlsResult<String
     Ok("client-verified".to_string())
 }
 
-fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     // Ignore DTLS record-layer types if any (not expected for application handler)
     if let Some(first) = data.first() { if *first == 22 || *first == 23 { return; } }
     let mut echoed = b"ECHOED: ".to_vec();
     echoed.extend_from_slice(data);
-    let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), &echoed);
+    let _ = server.send(from, &echoed);
 }
 
-fn client_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn client_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     let _ = CLIENT_ECHOED.set(data.to_vec());
 }
 

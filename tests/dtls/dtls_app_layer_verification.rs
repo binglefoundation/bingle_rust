@@ -61,7 +61,7 @@ fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds() {
     client.start(cmux.clone()).expect("client start");
 
     // Attempt to send a payload; handshake should succeed (Ok) even though the handler rejects later.
-    let ok = client.send(saddr, b"hello-app").is_ok();
+    let ok = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(saddr), b"hello-app").is_ok();
     assert!(ok, "handshake should succeed under app-layer-only verification");
 
     // Give server some time; because the handler rejects the cert at app layer, delivery should be blocked.
@@ -110,7 +110,7 @@ fn dtls_app_layer_verification_accept_all_delivers_application_data() {
     cmux.start().expect("client mux start");
     client.start(cmux.clone()).expect("client start");
 
-    let ok = client.send(saddr, b"hello-app").is_ok();
+    let ok = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(saddr), b"hello-app").is_ok();
     assert!(ok, "handshake should succeed under app-layer-only verification");
 
     // Wait until delivered or timeout

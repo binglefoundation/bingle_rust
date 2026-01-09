@@ -16,10 +16,9 @@ fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<
 
 static MESSAGE_SEEN: AtomicBool = AtomicBool::new(false);
 
-fn handler(_server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     // Record that the server received application data.
     if !data.is_empty() {
-        let _ = from;
         MESSAGE_SEEN.store(true, Ordering::Relaxed);
     }
 }

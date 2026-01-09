@@ -30,10 +30,10 @@ fn unit_turn_client_handle_called_and_send() {
     assert_eq!(len, payload.len());
 
     // Feed back into incoming path; should attribute to the source address
-    let incoming = client.handle_turn_incoming(&msg);
+    let incoming = client.handle_turn_incoming(None, &msg);
     assert!(incoming.is_some(), "expected incoming parse");
     let incoming = incoming.unwrap();
-    assert_eq!(incoming.ipAddress, src);
+    assert_eq!(incoming.ip_address, src);
     assert_eq!(incoming.message, payload);
 }
 
@@ -64,9 +64,9 @@ fn unit_turn_client_handle_call_response_and_send() {
     assert_eq!(len, payload.len());
 
     // Incoming parse
-    let incoming = client.handle_turn_incoming(&msg);
+    let incoming = client.handle_turn_incoming(None, &msg);
     assert!(incoming.is_some());
     let incoming = incoming.unwrap();
-    assert_eq!(incoming.ipAddress, src);
+    assert_eq!(incoming.ip_address, src);
     assert_eq!(incoming.message, payload);
 }

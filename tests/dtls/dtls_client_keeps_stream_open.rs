@@ -18,7 +18,7 @@ fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<
 
 static MSG_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-fn server_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn server_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     if !data.is_empty() {
         MSG_COUNT.fetch_add(1, Ordering::Relaxed);
     }

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
 use log::warn;
+use crate::api::bingle_api::NetworkEndpoint;
 
 /// Mux classification types translated from the provided Kotlin function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +53,7 @@ pub struct UdpNetworkMux {
     handle_turn: Mutex<Option<HandleTurn>>,
     running: AtomicBool,
     rx_thread: Mutex<Option<JoinHandle<()>>>,
-    dtls_queue: Mutex<VecDeque<(SocketAddr, Vec<u8>)>>,
+    dtls_queue: Mutex<VecDeque<(NetworkEndpoint, Vec<u8>)>>,
 }
 
 impl UdpNetworkMux {
@@ -94,20 +95,20 @@ impl UdpNetworkMux {
     }
 
     /// Peek the next DTLS datagram from the internal queue without removing it.
-    pub fn dtls_peek_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+    pub fn dtls_peek_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, NetworkEndpoint)> {
         use std::io::{Error, ErrorKind};
         let q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
         if let Some((from, data)) = q.front() {
             let n = data.len().min(buf.len());
             buf[..n].copy_from_slice(&data[..n]);
-            Ok((n, *from))
+            Ok((n, from.clone()))
         } else {
             Err(Error::from(ErrorKind::WouldBlock))
         }
     }
 
     /// Pop the next DTLS datagram from the internal queue.
-    pub fn dtls_recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+    pub fn dtls_recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, NetworkEndpoint)> {
         use std::io::{Error, ErrorKind};
         let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
         if let Some((from, data)) = q.pop_front() {
@@ -120,10 +121,10 @@ impl UdpNetworkMux {
     }
 
     /// Pop the next DTLS datagram for a specific peer from the internal queue.
-    pub fn dtls_recv_from_peer(&self, peer: SocketAddr, buf: &mut [u8]) -> std::io::Result<usize> {
+    pub fn dtls_recv_from_peer(&self, peer_endpoint: NetworkEndpoint, buf: &mut [u8]) -> std::io::Result<usize> {
         use std::io::{Error, ErrorKind};
         let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
-        if let Some(idx) = q.iter().position(|(from, _)| *from == peer) {
+        if let Some(idx) = q.iter().position(|(from, _)| *from == peer_endpoint) {
             if let Some((_, data)) = q.remove(idx) {
                 let n = data.len().min(buf.len());
                 buf[..n].copy_from_slice(&data[..n]);
@@ -154,7 +155,8 @@ impl UdpNetworkMux {
                     Ok((n, from)) => {
                         if n == 0 { continue; }
                         let data = &buf[..n];
-                        this.process_packet(from, data);
+                        log::info!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
+                        this.process_packet(&NetworkEndpoint::new_direct(from), data);
                     }
                     Err(e) => {
                         // Respect timeout for shutdown; ignore WouldBlock/TimedOut, break on other errors
@@ -342,47 +344,49 @@ impl UdpNetworkMux {
 
     /// Shared handler that processes a datagram as if received on the socket.
     /// Classifies, logs, enqueues DTLS payloads, and invokes installed handlers.
-    pub fn process_packet(&self, from: SocketAddr, data: &[u8]) {
+    pub fn process_packet(&self, from_endpoint: &NetworkEndpoint, data: &[u8]) {
         if data.is_empty() { return; }
         let to = self.local_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
         match mux_type_for(data) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                    warn!("[UdpNetworkMux][receive][{} -> {:?}] {}", from, to, json);
+                    log::info!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}", from_endpoint, to, json);
                     #[allow(unused)] {  }
                 } else {
-                    warn!("[UdpNetworkMux][receive][{} -> {:?}] <parse error> ({} bytes)", from, to, data.len());
+                    warn!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] <parse error> ({} bytes)", from_endpoint, to, data.len());
                     #[allow(unused)] {  }
                 }
                 if let Ok(mut q) = self.dtls_queue.lock() {
-                    q.push_back((from, data.to_vec()));
+                    q.push_back((from_endpoint.clone(), data.to_vec()));
                 }
                 if let Some(h) = self.handle_dtls.lock().ok().and_then(|g| g.clone()) {
                     let source: &dyn NetworkMux = self;
-                    (h)(source, &from, data);
+                    (h)(source, from_endpoint, data);
                 }
             }
             MuxType::Stun => {
                 if let Some(h) = self.handle_stun.lock().ok().and_then(|g| g.clone()) {
                     let source: &dyn NetworkMux = self;
-                    (h)(source, &from, data);
+                    (h)(source, &from_endpoint.inet_socket_address().expect("Stun messages must originate from an IP"), data);
                 }
             }
             MuxType::TurnChannelData => {
                 if let Some(h) = self.handle_turn.lock().ok().and_then(|g| g.clone()) {
+                    log::info!("[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes", from_endpoint, to, data.len());
                     let source: &dyn NetworkMux = self;
-                    (h)(source, &from, data);
+                    (h)(source, &from_endpoint.inet_socket_address().expect("TURN messages must originate from an IP"), data);
                 }
             }
             _ => { /* ignore ZRTP, RTP, UNKNOWN */ }
         }
     }
 
-    /// Re-dispatch a buffer as if it was received from the socket from the specified source address.
+    /// Re-dispatch a buffer as if it was received from the socket from the specified source endpoint.
     /// This mirrors the classification and handler invocation logic used in the receive loop
     /// and additionally enqueues DTLS packets into the internal queue for dtls_recv_* helpers.
-    pub fn reprocess(&self, from: SocketAddr, buf: &[u8]) {
+    pub fn reprocess(&self, from: &crate::api::bingle_api::NetworkEndpoint, buf: &[u8]) {
         if buf.is_empty() { return; }
+        
         self.process_packet(from, buf);
     }
 }

@@ -23,3 +23,5 @@ mod bingle_api_relay_check_two_nodes;
 
 #[path = "bingle_getters.rs"]
 mod bingle_getters;
+mod dtls_via_relay_integration;
+mod bingle_api_relay_dtls;

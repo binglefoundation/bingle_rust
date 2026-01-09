@@ -69,7 +69,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing tag
-    fn server_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
+    fn server_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
         if let Ok(text) = std::str::from_utf8(data) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
                 let is_check = v.get("type").and_then(|x| x.as_str()) == Some("Check")
@@ -83,7 +83,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
                         obj.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
                     }
                     if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
-                        let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), &bytes);
+                        let _ = server.send(&from, &bytes);
                     }
                     return;
                 }

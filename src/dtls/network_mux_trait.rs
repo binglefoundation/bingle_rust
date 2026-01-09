@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::any::Any;
+use crate::api::bingle_api::NetworkEndpoint;
 
 /// Local Result type for NetworkMux operations with string error messages.
 pub type Result<T = ()> = core::result::Result<T, String>;
@@ -10,7 +11,7 @@ pub type Result<T = ()> = core::result::Result<T, String>;
  * @param from_address the address of the peer
  * @param data the datagram payload
  */
-pub type HandleDtls = std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync + 'static>;
+pub type HandleDtls = std::sync::Arc<dyn Fn(&dyn NetworkMux, &NetworkEndpoint, &[u8]) + Send + Sync + 'static>;
 
 /**
  * Handle STUN packets arriving on the mux

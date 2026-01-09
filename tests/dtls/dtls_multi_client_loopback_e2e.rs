@@ -17,11 +17,11 @@ static CLIENT1_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT2_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static SERVER_SEEN: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn client1_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn client1_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     let _ = CLIENT1_ECHOED.set(data.to_vec());
 }
 
-fn client2_handler(_server: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn client2_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     let _ = CLIENT2_ECHOED.set(data.to_vec());
 }
 
@@ -44,7 +44,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Echo handler: save payload (when it looks like application data) then send back with prefix using the server instance.
-    fn echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
+    fn echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
         if let Some(first) = data.first() {
             // Ignore DTLS record-layer (Handshake=22, Application=23) ciphertext bytes
             if *first == 22 || *first == 23 {
@@ -55,7 +55,7 @@ fn dtls_openssl_multi_client_loopback_echo() {
         if let Ok(mut v) = store.lock() { v.push(data.to_vec()); }
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
-        let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), &echoed);
+        let _ = server.send(from, &echoed);
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.

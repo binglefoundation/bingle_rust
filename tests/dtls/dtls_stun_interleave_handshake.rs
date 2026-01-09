@@ -16,14 +16,14 @@ fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<
 static CLIENT_ECHO_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CLIENT_ECHOS: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn client_handler(_client: &dyn Dtls, _from: &SocketAddr, _issuer: &str, data: &[u8]) {
+fn client_handler(_client: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     let m = CLIENT_ECHOS.get_or_init(|| Mutex::new(Vec::new()));
     m.lock().unwrap().push(data.to_vec());
     CLIENT_ECHO_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
-fn server_echo_handler(server: &dyn Dtls, from: &SocketAddr, _issuer: &str, data: &[u8]) {
-    let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), data);
+fn server_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+    let _ = server.send(from, data);
 }
 
 #[ntest::timeout(30_000)]

@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
+use rust_comms::api::network_endpoint::NetworkEndpoint;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::messages::{Message, RelayMessage};
@@ -37,11 +37,11 @@ fn end_to_end_turn_relay_forwards_dtls() {
 
     // Create destination mux (client B) with a DTLS handler that records packets
     let mut mux_b = UdpNetworkMux::bind(b_addr).expect("bind B mux");
-    let dtls_records: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let dtls_records: Arc<Mutex<Vec<(NetworkEndpoint, Vec<u8>)>>> = Arc::new(Mutex::new(Vec::new()));
     let dtls_records_clone = dtls_records.clone();
-    mux_b.set_handle_dtls(Some(Arc::new(move |_source: &dyn NetworkMux, from: &SocketAddr, data: &[u8]| {
+    mux_b.set_handle_dtls(Some(Arc::new(move |_source: &dyn NetworkMux, from: &NetworkEndpoint, data: &[u8]| {
         if let Ok(mut rec) = dtls_records_clone.lock() {
-            rec.push((*from, data.to_vec()));
+            rec.push((from.clone(), data.to_vec()));
         }
     })));
     let mux_b = Arc::new(mux_b);
@@ -55,9 +55,9 @@ fn end_to_end_turn_relay_forwards_dtls() {
     {
         let turn_clone = turn.clone();
         mux_relay.set_handle_turn(Some(std::sync::Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
-            if let Some(wrapped) = turn_clone.handle_turn_incoming(packet) {
+            if let Some(wrapped) = turn_clone.handle_turn_incoming(None, packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
+                    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ip_address);
                     let _ = udp.write(&nsk, &wrapped.message);
                 }
             }
@@ -116,13 +116,13 @@ fn end_to_end_turn_relay_forwards_dtls() {
     // Validate content and that source was relay_addr
     let recs = dtls_records.lock().unwrap();
     let (from_addr, data) = recs[0].clone();
-    assert_eq!(from_addr, relay_addr);
+    assert_eq!(from_addr.inet_socket_address(), Some(relay_addr));
     assert_eq!(data, dtls_payload);
 
     // Additionally, verify that the DTLS payload is enqueued in mux_b's DTLS queue
     let mut buf = [0u8; 64];
     let (n, from_q) = mux_b.dtls_peek_from(&mut buf).expect("dtls_peek_from should have data");
-    assert_eq!(from_q, relay_addr);
+    assert_eq!(from_q.inet_socket_address(), Some(relay_addr));
     assert_eq!(&buf[..n], &dtls_payload);
 
     // Cleanup

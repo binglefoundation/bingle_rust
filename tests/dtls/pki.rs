@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use std::fs;
+use crate::util::test_util::ADDRESS_RECEIVE;
 
 #[allow(dead_code)]
 pub struct TestCerts {
@@ -28,6 +29,11 @@ fn run(cmd: &mut Command) {
 
 #[allow(dead_code)]
 pub fn generate_ed25519_test_certs() -> TestCerts {
+    generate_ed25519_test_certs_with_key(ADDRESS_RECEIVE.to_string().as_str())
+}
+
+#[allow(dead_code)]
+pub fn generate_ed25519_test_certs_with_key(key: &str) -> TestCerts {
     // Use a temporary directory and read PEMs into memory
     let tmp = tempfile::tempdir().expect("tempdir");
     let dir = tmp.path();
@@ -48,7 +54,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     ]));
     run(Command::new("openssl").args([
         "req", "-x509", "-key", path_str(&ca_key), "-out", path_str(&ca_crt),
-        "-days", "2", "-subj", "/CN=virtual.bingle.home.arpa/O=OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A"
+        "-days", "2", "-subj", &format!("/CN=virtual.bingle.home.arpa/O={}", key)
     ]));
 
     // Server key (ECDSA P-256), CSR, and cert signed by Ed25519 CA
@@ -58,7 +64,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     ]));
     run(Command::new("openssl").args([
         "req", "-new", "-key", path_str(&server_key), "-out", path_str(&server_csr),
-        "-subj", "/CN=OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A."
+        "-subj", &format!("/CN={}.", key)
     ]));
     run(Command::new("openssl").args([
         "x509", "-req", "-in", path_str(&server_csr), "-CA", path_str(&ca_crt), "-CAkey",
@@ -72,7 +78,7 @@ pub fn generate_ed25519_test_certs() -> TestCerts {
     ]));
     run(Command::new("openssl").args([
         "req", "-new", "-key", path_str(&client_key), "-out", path_str(&client_csr),
-        "-subj", "/CN=4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE"
+        "-subj", &format!("/CN={}.", key)
     ]));
     run(Command::new("openssl").args([
         "x509", "-req", "-in", path_str(&client_csr), "-CA", path_str(&ca_crt), "-CAkey",

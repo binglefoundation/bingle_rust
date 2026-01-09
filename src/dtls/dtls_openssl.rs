@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 
 #[cfg(not(target_os = "ios"))]
@@ -42,7 +40,7 @@ pub mod non_ios {
 
     fn run_read_loop(
         stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>>,
-        from: SocketAddr,
+        from: &NetworkEndpoint,
         peers: PeerStates,
         handle_message: Option<HandleMessage>,
         peer_cert_handler: Option<HandlePeerCertificate>,
@@ -53,12 +51,12 @@ pub mod non_ios {
     ) {
         use std::io::{ErrorKind, Read};
         // Precompute the NetworkEndpointKey for this peer (direct)
-        let key_from = crate::api::bingle_api::NetworkEndpoint::new_direct(from)
+        let key_from = from
             .get_key()
             .expect("direct endpoint key");
         // Helper to query issuer string already recorded
         let get_issuer = || -> Option<String> {
-            let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from)
+            let key = from
                 .get_key()
                 .expect("direct endpoint key");
             match peers.lock() {
@@ -121,7 +119,7 @@ pub mod non_ios {
                             Ok(mut s) if !s.is_empty() => {
                                 if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
                                 {
-                                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from)
+                                    let key = from
                                         .get_key()
                                         .expect("direct endpoint key");
                                     let _ = peers.lock().map(|mut m| {
@@ -155,7 +153,7 @@ pub mod non_ios {
             // On first data: evaluate peer certificate and record issuer
             {
                 if let Ok(mut m) = peers.lock() {
-                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                    let key = from.get_key().expect("direct endpoint key");
                     let have = m.get(&key).map(|ps| !ps.issuer.is_empty()).unwrap_or(false);
                     if !have {
                         // Extract cert
@@ -414,12 +412,12 @@ pub mod non_ios {
         });
     }
 
+    use crate::api::bingle_api::NetworkEndpointKey;
+    use crate::api::network_endpoint::NetworkEndpoint;
     // Per-peer datagram queue and blocking mechanism.
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
     use std::sync::Condvar;
-    use crate::api::bingle_api::NetworkEndpointKey;
-    use crate::api::network_endpoint::NetworkEndpoint;
 
     #[derive(Default)]
     pub(crate) struct PeerQueue {
@@ -487,8 +485,14 @@ pub mod non_ios {
     }
     impl std::io::Write for CommonNetworkMuxConn {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            let peer_addr_opt = self.peer.inet_socket_address();
-            let peer_str = peer_addr_opt.map(|a| a.to_string()).unwrap_or_else(|| "<no-inet-addr>".to_string());
+            // Prefer direct inet address for logging; otherwise, show relay target if available.
+            let peer_str = if let Some(addr) = self.peer.inet_socket_address() {
+                addr.to_string()
+            } else if let Some(raddr) = self.peer.relay_address() {
+                format!("relay:{} ch={:?}", raddr, self.peer.relay_channel())
+            } else {
+                "<no-dest>".to_string()
+            };
             #[cfg(debug_assertions)]
             {
                 let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
@@ -498,10 +502,7 @@ pub mod non_ios {
                     log::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, peer_str, buf.len());
                 }
             }
-            let _to_addr = match peer_addr_opt {
-                Some(a) => a,
-                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "NetworkSourceKey has no inet_socket_address for direct DTLS send")),
-            };
+            // Delegate addressing decision to the UDP mux: it will send direct or wrap as TURN depending on fields set.
             match self.mux.write(&self.peer, buf) {
                 Ok(()) => Ok(buf.len()),
                 Err(e) => {
@@ -787,7 +788,7 @@ pub mod non_ios {
             handle_message: Option<HandleMessage>,
             peer_cert_handler: Option<HandlePeerCertificate>,
             ca_bytes: Arc<Vec<u8>>,
-            from: SocketAddr,
+            from: &NetworkEndpoint,
             data: &[u8],
         ) {
             // Debug log inbound DTLS packet at the DTLS layer
@@ -801,7 +802,7 @@ pub mod non_ios {
             }
             // Find or create the queue for this peer in peer_states and push the datagram
             let q_arc = {
-                let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
                 if let Some(ps) = pm.get(&key) {
                     ps.queue.clone()
@@ -817,7 +818,7 @@ pub mod non_ios {
 
             // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
             let suppressed = {
-                let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                let key = from.get_key().expect("direct endpoint key");
                 match peers.lock() {
                     Ok(m) => m.get(&key).map(|ps| ps.is_connecting_peer).unwrap_or(false),
                     Err(_) => false,
@@ -828,7 +829,7 @@ pub mod non_ios {
                 #[allow(unused)] {}
             }
             let create_stream = {
-                let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                let key = from.get_key().expect("direct endpoint key");
                 let pm = peers.lock().unwrap();
                 let have_stream = pm.get(&key).map(|ps| ps.stream.is_some()).unwrap_or(false);
                 !have_stream && !suppressed
@@ -839,12 +840,12 @@ pub mod non_ios {
                 #[allow(unused)] {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
-                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: crate::api::bingle_api::NetworkEndpoint::new_direct(from), queue: q_arc.clone() };
+                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: from.clone(), queue: q_arc.clone() };
                 let ssl_stream = SslStream::new(ssl, conn).expect("ssl stream new");
                 let stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
                 // Persist stream in unified peer_states entry
                 if let Ok(mut pm) = peers.lock() {
-                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                    let key = from.get_key().expect("direct endpoint key");
                     let (prev_writer, prev_issuer, prev_queue, prev_conn, prev_ann) = if let Some(ps) = pm.get(&key) { (ps.writer.clone(), ps.issuer.clone(), ps.queue.clone(), ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (None, String::new(), q_arc.clone(), false, false) };
                     pm.insert(key, PeerState { writer: prev_writer, issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn, is_announced_client_cert_peer: prev_ann });
                 }
@@ -858,7 +859,7 @@ pub mod non_ios {
                 });
                 // Install or update peer state with writer
                 if let Ok(mut m) = peers.lock() {
-                    let key = crate::api::bingle_api::NetworkEndpoint::new_direct(from).get_key().expect("direct endpoint key");
+                    let key = from.get_key().expect("direct endpoint key");
                     let (issuer_prev, queue_prev) = if let Some(ps) = m.get(&key) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), Arc::new(PeerQueue::default())) };
                     let (prev_conn_flag, prev_ann_flag) = if let Some(ps) = m.get(&key) { (ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (false, false) };
                                         m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag });
@@ -868,12 +869,12 @@ pub mod non_ios {
                 // Spawn a per-peer reader loop to deliver application data
                 let peers2 = peers.clone();
                 let handle_message2 = handle_message.clone();
-                let from2 = from;
+                let from2 = from.clone();
                 let ca_bytes_for_thread = ca_bytes.clone();
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc.clone(),
-                        from2,
+                        &from2,
                         peers2.clone(),
                         handle_message2.clone(),
                         peer_cert_handler,
@@ -887,8 +888,7 @@ pub mod non_ios {
         }
 
         pub fn start_accept_with_mux(&mut self, mux: std::sync::Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
-            use std::sync::{Arc, Mutex};
-            use std::collections::HashMap;
+            use std::sync::Arc;
             // Validate server creds
             if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
                 return Err("missing server credentials or CA".to_string());
@@ -916,7 +916,7 @@ pub mod non_ios {
                     handle_message.clone(),
                     peer_cert_handler,
                     ca_bytes.clone(),
-                    *from,
+                    from,
                     data,
                 );
             })));
@@ -1158,12 +1158,12 @@ pub mod non_ios {
                 let handle_message2 = self.handle_message.clone();
                 let peer_cert_handler = self.handle_peer_certificate;
                 let stream_arc_for_reader = stream_arc.clone();
-                let from2: SocketAddr = endpoint.inet_socket_address().unwrap();
+                let from2: NetworkEndpoint = endpoint.clone();
                 let peers2: PeerStates = self.peer_states.clone();
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc_for_reader.clone(),
-                        from2,
+                        &from2,
                         peers2.clone(),
                         handle_message2.clone(),
                         peer_cert_handler,

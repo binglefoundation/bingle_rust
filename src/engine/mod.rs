@@ -85,6 +85,42 @@ impl Engine {
     }
     pub fn app_id(&self) -> Option<u64> { self.options.app_id }
     pub fn algo_provider_config(&self) -> Option<AlgoChainConfig> { self.options.algo_provider_config.clone() }
+
+    /// Create a common TURN handler for both relay and client modes
+    fn create_turn_handler(&self) -> std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
+        let am_relay = self.options.am_relay;
+        let turn = self.turn_handler.clone();
+
+        Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+            // Parse/unwrap the TURN ChannelData using our handler
+            if let Some(wrapped) = turn.handle_turn_incoming(Some(from), packet) {
+                if am_relay {
+                    // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
+                    if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
+                        let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ip_address);
+                        // Here we forward the TURN packet including channel number to the resolved ip_address
+                        if let Err(e) = udp.write(&nsk, &packet) {
+                            log::warn!("[Engine][TURN relay] forward to {} failed: {}", wrapped.ip_address, e);
+                        } else {
+                            log::info!("[Engine][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ip_address);
+                        }
+                    } else {
+                        log::warn!("[Engine][TURN relay] source is not UdpNetworkMux; cannot forward");
+                    }
+                } else {
+                    // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
+                    if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
+                        udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
+                        log::info!("[Engine][TURN client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
+                    } else {
+                        log::warn!("[Engine][TURN client] source is not UdpNetworkMux; cannot reprocess");
+                    }
+                }
+            } else {
+                log::debug!("[Engine][TURN] handle_turn_incoming returned None (ignored)");
+            }
+        })
+    }
 }
 
 // Adapter that exposes Engine as a BingleApi implementation so that handlers and discovery
@@ -450,7 +486,7 @@ impl Engine {
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
-                        let key_from = crate::api::bingle_api::NetworkEndpoint::new_direct(*from)
+                        let key_from = from
                             .get_key()
                             .expect("direct endpoint key");
                         match m.entry(key_from) {
@@ -471,7 +507,7 @@ impl Engine {
 
                     // 3) Engine routing logic (inline to avoid &self)
                     // Record last sender for reply helpers
-                    if let Some(r) = &router_arc { r.set_last_from(Some(*from)); }
+                    if let Some(r) = &router_arc { r.set_last_from(from.inet_socket_address()); }
 
                     // Try JSON parse to extract responseTag and fulfill waiters
                     if let Ok(s) = std::str::from_utf8(data) {
@@ -516,8 +552,7 @@ impl Engine {
                                         log::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
                                         {
-                                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(*from);
-                                            if let Err(e) = server.send(&nsk, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
+                                            if let Err(e) = server.send(&from, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                         }
                                     }
                                 }
@@ -584,38 +619,7 @@ impl Engine {
         })));
 
         // Configure TURN ChannelData handler based on role (relay vs client)
-        {
-            let am_relay = self.options.am_relay;
-            let turn = self.turn_handler.clone();
-            mux0.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
-                // Parse/unwrap the TURN ChannelData using our handler
-                if let Some(wrapped) = turn.handle_turn_incoming(packet) {
-                    if am_relay {
-                        // Relay role: forward stripped payload to resolved ipAddress via concrete UDP mux
-                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
-                            if let Err(e) = udp.write(&nsk, &wrapped.message) {
-                                log::warn!("[Engine::start][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
-                            } else {
-                                log::info!("[Engine::start][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ipAddress);
-                            }
-                        } else {
-                            log::warn!("[Engine::start][TURN relay] source is not UdpNetworkMux; cannot forward");
-                        }
-                    } else {
-                        // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
-                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            udp.reprocess(wrapped.ipAddress, &wrapped.message);
-                            log::info!("[Engine::start][TURN client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.ipAddress);
-                        } else {
-                            log::warn!("[Engine::start][TURN client] source is not UdpNetworkMux; cannot reprocess");
-                        }
-                    }
-                } else {
-                    log::debug!("[Engine::start][TURN] handle_turn_incoming returned None (ignored)");
-                }
-            })));
-        }
+        mux0.set_handle_turn(Some(self.create_turn_handler()));
 
         // Now wrap mux in Arc
         let mux = Arc::new(mux0);
@@ -656,36 +660,7 @@ impl Engine {
         self.install_dtls_handler()?;
 
         // Configure TURN ChannelData handler based on role (relay vs client)
-        {
-            let am_relay = self.options.am_relay;
-            let turn = self.turn_handler.clone();
-            mux0.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
-                if let Some(wrapped) = turn.handle_turn_incoming(packet) {
-                    if am_relay {
-                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
-                            if let Err(e) = udp.write(&nsk, &wrapped.message) {
-                                log::warn!("[Engine::start_with_addr][TURN relay] forward to {} failed: {}", wrapped.ipAddress, e);
-                            } else {
-                                log::info!("[Engine::start_with_addr][TURN relay] forwarded {} bytes to {}", wrapped.message.len(), wrapped.ipAddress);
-                            }
-                        } else {
-                            log::warn!("[Engine::start_with_addr][TURN relay] source is not UdpNetworkMux; cannot forward");
-                        }
-                    } else {
-                        // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
-                        if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
-                            udp.reprocess(wrapped.ipAddress, &wrapped.message);
-                            log::info!("[Engine::start_with_addr][TURN client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.ipAddress);
-                        } else {
-                            log::warn!("[Engine::start_with_addr][TURN client] source is not UdpNetworkMux; cannot reprocess");
-                        }
-                    }
-                } else {
-                    log::debug!("[Engine::start_with_addr][TURN] handle_turn_incoming returned None (ignored)");
-                }
-            })));
-        }
+        mux0.set_handle_turn(Some(self.create_turn_handler()));
 
         // Now wrap mux in Arc
         let mux = Arc::new(mux0);

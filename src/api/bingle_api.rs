@@ -26,6 +26,9 @@ pub trait BingleApiInternal: Send + Sync {
     fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
     /// Register a relay association via the engine's DDB client. Default: not implemented.
     fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("not implemented".to_string()) }
+
+    // Update the TURN client listener relay - called after a Listen message has been sent.
+    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
 }
 
 /// Convenience type aliases used by the Bingle API.

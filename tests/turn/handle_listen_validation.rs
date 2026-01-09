@@ -15,7 +15,7 @@ fn unit_turn_incoming_rejected_without_listen() {
     let payload = b"xyz";
     let wrapped = handler.send_turn_outgoing(&src, &dst, payload).expect("wrap outgoing");
     // Now, since we never called handle_listen, incoming should be rejected (src ip not registered)
-    let incoming = handler.handle_turn_incoming(&wrapped.message);
+    let incoming = handler.handle_turn_incoming(None, &wrapped.message);
     assert!(incoming.is_none(), "expected rejection before listen registration");
 }
 
@@ -34,9 +34,9 @@ fn unit_turn_incoming_accepted_after_listen() {
     let payload = b"abcd"; // len 4, no padding
     let wrapped = handler.send_turn_outgoing(&src, &dst, payload).expect("wrap outgoing");
     // Incoming should now be accepted
-    let incoming = handler.handle_turn_incoming(&wrapped.message);
+    let incoming = handler.handle_turn_incoming(None, &wrapped.message);
     assert!(incoming.is_some(), "expected acceptance after listen registration");
     let incoming = incoming.unwrap();
-    assert_eq!(incoming.ipAddress, dst);
+    assert_eq!(incoming.ip_address, dst);
     assert_eq!(incoming.message, payload);
 }

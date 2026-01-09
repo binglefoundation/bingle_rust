@@ -1,6 +1,6 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
 use super::network_mux_udp::UdpNetworkMux;
+use crate::api::bingle_api::NetworkEndpoint;
+use std::sync::Arc;
 
 /// Local Result type for DTLS operations with string error messages.
 pub type Result<T = ()> = core::result::Result<T, String>;
@@ -11,7 +11,7 @@ pub type Result<T = ()> = core::result::Result<T, String>;
  * @param data the data received
  * Note: Use an Arc<dyn Fn> so implementations can capture per-instance context without globals.
  */
-pub type HandleMessage = Arc<dyn Fn(&dyn Dtls, &SocketAddr, &str, &[u8]) + Send + Sync>;
+pub type HandleMessage = Arc<dyn Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) + Send + Sync>;
 
 /**
  * Handle certificates presented by the peer for verification

@@ -38,15 +38,15 @@ static CLIENT_SEEN_ISSUER: OnceLock<String> = OnceLock::new();
 static SERVER_SEEN_DATA: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT_SEEN_DATA: OnceLock<Vec<u8>> = OnceLock::new();
 
-fn server_assert_and_reply(server: &dyn Dtls, from: &SocketAddr, issuer: &str, data: &[u8]) {
+fn server_assert_and_reply(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, issuer: &str, data: &[u8]) {
     // Record issuer and data we saw
     let _ = SERVER_SEEN_ISSUER.set(issuer.to_string());
     let _ = SERVER_SEEN_DATA.set(data.to_vec());
     // Reply
-    let _ = server.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(*from), b"hi-from-server");
+    let _ = server.send(from, b"hi-from-server");
 }
 
-fn client_capture(_server: &dyn Dtls, _from: &SocketAddr, issuer: &str, data: &[u8]) {
+fn client_capture(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, issuer: &str, data: &[u8]) {
     let _ = CLIENT_SEEN_ISSUER.set(issuer.to_string());
     let _ = CLIENT_SEEN_DATA.set(data.to_vec());
 }
@@ -122,7 +122,7 @@ fn issuer_mapping_basic_send_and_reply() {
 // -------------- Multiple clients A,B,C -> Z ---------------
 static SERVER_ALL_ISSUERS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
-fn server_collect_issuers(_server: &dyn Dtls, _from: &SocketAddr, issuer: &str, data: &[u8]) {
+fn server_collect_issuers(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, issuer: &str, data: &[u8]) {
     if !data.is_empty() {
         let v = SERVER_ALL_ISSUERS.get_or_init(|| Mutex::new(Vec::new()));
         if let Ok(mut list) = v.lock() { list.push(issuer.to_string()); }
@@ -237,7 +237,7 @@ fn multiple_clients_to_server_have_correct_issuers() {
     thread::sleep(Duration::from_millis(200));
     let mut ok = false; for _ in 0..10 { if client_b.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"mB").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
     thread::sleep(Duration::from_millis(200));
-    let mut ok = false; for _ in 0..10 { if client_c.send(&rust_comms::api::bingle_api::NetworkSourceKey::new_direct(addr), b"mC").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
+    let mut ok = false; for _ in 0..10 { if client_c.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"mC").is_ok() { ok = true; break; } thread::sleep(Duration::from_millis(50)); } assert!(ok);
 
     // Wait and assert issuers collected
     let start = Instant::now();

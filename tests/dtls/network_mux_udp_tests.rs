@@ -13,9 +13,10 @@ static DTLS_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new
 static STUN_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
 static TURN_RECORDS: OnceLock<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = OnceLock::new();
 
-fn dtls_handler(_src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]) {
+fn dtls_handler(_src: &dyn NetworkMux, from: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) {
     let m = DTLS_RECORDS.get_or_init(|| Mutex::new(Vec::new()));
-    m.lock().unwrap().push((*from, data.to_vec()));
+    let addr = from.inet_socket_address().expect("DTLS handler expected direct endpoint");
+    m.lock().unwrap().push((addr, data.to_vec()));
 }
 
 fn stun_handler(_src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]) {

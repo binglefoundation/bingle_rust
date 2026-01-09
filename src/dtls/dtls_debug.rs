@@ -23,6 +23,9 @@ pub struct DtlsRecordJson {
     /// Optional parsed DTLS handshake header/body summary (present when content_type==22 and parsing succeeds).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handshake: Option<HandshakeJson>,
+    /// Optional parsed DTLS alert summary (present when content_type==21 and payload has at least 2 bytes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert: Option<AlertJson>,
 }
 
 /// JSON representation of a UDP datagram containing one or more DTLS records.
@@ -61,6 +64,15 @@ pub struct ClientHelloSummary {
 pub struct ServerHelloSummary {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extensions: Vec<ExtensionJson>,
+}
+
+/// Summary of a DTLS Alert record. Only carries the raw level and description bytes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AlertJson {
+    /// Alert level (1 = warning, 2 = fatal)
+    pub level: u8,
+    /// Alert description (per TLS/DTLS AlertDescription enum)
+    pub description: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -199,6 +211,11 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
                 Some(hs)
             } else { None };
 
+            // Attempt to parse DTLS Alert (content_type == 21)
+            let alert = if content_type == 21 && payload.len() >= 2 {
+                Some(AlertJson { level: payload[0], description: payload[1] })
+            } else { None };
+
             records.push(DtlsRecordJson {
                 content_type,
                 content_type_name: Some(content_type_name(content_type).to_string()),
@@ -208,6 +225,7 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
                 length,
                 payload_b64,
                 handshake,
+                alert,
             });
             i += needed;
         }
@@ -241,6 +259,13 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
             }
             let needed = 13 + len;
             if datagram.len() - i < needed { return Err("truncated DTLS record payload".to_string()); }
+            // Alert summary: include level/description bytes when available
+            if ct == 21 && len >= 2 {
+                let level = datagram[i + 13];
+                let desc = datagram[i + 14];
+                let last = parts.pop().unwrap_or_else(|| format!("len={} ct={}", len, ct_name));
+                parts.push(format!("{} alert=L{}/D{}", last, level, desc));
+            }
             i += needed;
         }
         let summary = format!("DTLS {} bytes [{}]", datagram.len(), parts.join("; "));

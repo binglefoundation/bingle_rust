@@ -45,9 +45,9 @@ fn end_to_end_turn_relay_forwards_payload() {
     {
         let turn_clone = turn.clone();
         mux.set_handle_turn(Some(std::sync::Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
-            if let Some(wrapped) = turn_clone.handle_turn_incoming(packet) {
+            if let Some(wrapped) = turn_clone.handle_turn_incoming(None, packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ipAddress);
+                    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ip_address);
                     let _ = udp.write(&nsk, &wrapped.message);
                 }
             }

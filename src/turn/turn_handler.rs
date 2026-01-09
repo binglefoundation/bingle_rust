@@ -1,39 +1,51 @@
+use crate::api::bingle_api::NetworkEndpoint;
 use std::collections::HashMap;
-use std::net::{SocketAddr, IpAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 
 // Shared TURN ChannelData helpers (reused by both Relay and Client implementations)
 fn parse_channel_data_header(packet: &[u8]) -> Option<(u16, usize, usize)> {
-    if packet.len() < 4 { return None; }
+    if packet.len() < 4 {
+        return None;
+    }
     let ch = u16::from_be_bytes([packet[0], packet[1]]);
     let len = u16::from_be_bytes([packet[2], packet[3]]) as usize;
     let total = packet.len();
-    if total < 4 + len { return None; }
+    if total < 4 + len {
+        return None;
+    }
     // padding up to 4-byte boundary for the data portion
     let padded_len = (len + 3) & !3;
-    if total < 4 + padded_len { return None; }
+    if total < 4 + padded_len {
+        return None;
+    }
     let padding = padded_len - len;
     Some((ch, len, padding))
 }
 
 pub fn build_channel_data(channel: u16, data: &[u8]) -> Option<Vec<u8>> {
-    if data.len() > std::u16::MAX as usize { return None; }
+    if data.len() > std::u16::MAX as usize {
+        return None;
+    }
     let mut out = Vec::with_capacity(4 + data.len() + 3);
     out.extend_from_slice(&channel.to_be_bytes());
     out.extend_from_slice(&(data.len() as u16).to_be_bytes());
     out.extend_from_slice(data);
     let pad = (4 - (data.len() % 4)) % 4;
-    if pad > 0 { out.extend(std::iter::repeat(0u8).take(pad)); }
+    if pad > 0 {
+        out.extend(std::iter::repeat(0u8).take(pad));
+    }
     Some(out)
 }
 
 pub struct TurnMessageWithAddress {
-    pub ipAddress: SocketAddr,
+    pub ip_address: SocketAddr,
     pub message: Vec<u8>,
 }
 
-pub struct WrappedMessageWithAddress {
-    pub ipAddress: SocketAddr,
+pub struct WrappedMessageWithNetworkEndpoint {
+    pub ip_address: SocketAddr,
+    pub network_endpoint: NetworkEndpoint,
     pub message: Vec<u8>,
 }
 
@@ -61,7 +73,11 @@ pub trait TurnHandler {
      *
      * @return the contained packet and its source IP address
      */
-    fn handle_turn_incoming(&self, packet: &[u8]) -> Option<WrappedMessageWithAddress>;
+    fn handle_turn_incoming(
+        &self,
+        relay_address: Option<&SocketAddr>,
+        packet: &[u8],
+    ) -> Option<WrappedMessageWithNetworkEndpoint>;
 
     /**
      * Wrap an outgoing TURN message from this node
@@ -72,7 +88,12 @@ pub trait TurnHandler {
      *
      * @return the wrapped packet and its destination IP address
      */
-    fn send_turn_outgoing(&self, source: &SocketAddr, dest: &SocketAddr, packet: &[u8]) -> Option<TurnMessageWithAddress>;
+    fn send_turn_outgoing(
+        &self,
+        source: &SocketAddr,
+        dest: &SocketAddr,
+        packet: &[u8],
+    ) -> Option<TurnMessageWithAddress>;
 }
 
 /**
@@ -118,7 +139,9 @@ impl TurnHandlerImpl {
     pub fn is_ip_allowed(&self, ip: IpAddr) -> bool {
         if let Ok(map) = self.allowed_id_to_addr.lock() {
             map.values().any(|addr| addr.ip() == ip)
-        } else { false }
+        } else {
+            false
+        }
     }
 
     /// Lookup helpers for tests/handlers
@@ -157,30 +180,52 @@ impl TurnHandlerImpl {
                 return None;
             }
             // Next candidate with wrap-around
-            candidate = if candidate == Self::MAX_CH { Self::MIN_CH } else { candidate + 1 };
+            candidate = if candidate == Self::MAX_CH {
+                Self::MIN_CH
+            } else {
+                candidate + 1
+            };
         }
         None
     }
-
 }
 
-impl Default for TurnHandlerImpl { fn default() -> Self { Self::new() } }
+impl Default for TurnHandlerImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TurnHandler for TurnHandlerImpl {
     fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
         // Record id -> addr and addr -> id
-        if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
             id2a.insert(source_id.to_string(), *source);
             a2id.insert(*source, source_id.to_string());
-            log::info!("[TurnHandlerImpl::handle_listen] registered {} -> {}", source_id, source);
+            log::info!(
+                "[TurnHandlerImpl::handle_listen] registered {} -> {}",
+                source_id,
+                source
+            );
             true
         } else {
-            log::info!("[TurnHandlerImpl::handle_listen] lock poisoned while adding {} -> {}", source_id, source);
+            log::info!(
+                "[TurnHandlerImpl::handle_listen] lock poisoned while adding {} -> {}",
+                source_id,
+                source
+            );
             false
         }
     }
 
-    fn handle_turn_incoming(&self, packet: &[u8]) -> Option<WrappedMessageWithAddress> {
+    fn handle_turn_incoming(
+        &self,
+        relay_address: Option<&SocketAddr>,
+        packet: &[u8],
+    ) -> Option<WrappedMessageWithNetworkEndpoint> {
         let (ch, len, _pad) = parse_channel_data_header(packet)?;
         let addr = {
             let map = self.ch_to_addr.lock().ok()?;
@@ -189,25 +234,67 @@ impl TurnHandler for TurnHandlerImpl {
         // Gate by allowed addr presence
         if let Ok(map) = self.allowed_addr_to_id.lock() {
             if !map.contains_key(&addr) {
-                log::info!("[TurnHandlerImpl::handle_turn_incoming] rejecting packet from {}: address not registered via Listen", addr);
+                log::info!(
+                    "[TurnHandlerImpl::handle_turn_incoming] rejecting packet from {}: address not registered via Listen",
+                    addr
+                );
                 return None;
             }
         } else {
-            log::info!("[TurnHandlerImpl::handle_turn_incoming] allowed_addr_to_id lock poisoned; rejecting packet from {}", addr);
+            log::info!(
+                "[TurnHandlerImpl::handle_turn_incoming] allowed_addr_to_id lock poisoned; rejecting packet from {}",
+                addr
+            );
             return None;
         }
-        let payload = packet[4..4+len].to_vec();
-        log::info!("[TurnHandlerImpl::handle_turn_incoming] accepted packet from {} on ch {} ({} bytes)", addr, ch, len);
-        Some(WrappedMessageWithAddress { ipAddress: addr, message: payload })
+        let payload = packet[4..4 + len].to_vec();
+        log::info!(
+            "[TurnHandlerImpl::handle_turn_incoming] accepted packet from {} on ch {} ({} bytes)",
+            addr,
+            ch,
+            len
+        );
+
+        let network_endpoint: NetworkEndpoint = if let Some(relay_addr) = relay_address {
+            if let Some(relay_id) = self.lookup_id_by_addr(relay_addr) {
+                NetworkEndpoint::new_relay(
+                    relay_id,
+                    Some(*relay_addr),
+                    Some(ch),
+                )
+            } else {
+                NetworkEndpoint::new_direct(*relay_addr)
+            }
+        } else {
+            NetworkEndpoint::new_direct(addr)
+        };
+        log::info!(
+            "[TurnHandlerImpl::handle_turn_incoming] wrapping packet with network endpoint {:?}",
+            network_endpoint
+        );
+
+        Some(WrappedMessageWithNetworkEndpoint {
+            ip_address: addr,
+            message: payload,
+            network_endpoint: network_endpoint,
+        })
     }
 
-    fn send_turn_outgoing(&self, source: &SocketAddr, dest: &SocketAddr, packet: &[u8]) -> Option<TurnMessageWithAddress> {
+    fn send_turn_outgoing(
+        &self,
+        source: &SocketAddr,
+        dest: &SocketAddr,
+        packet: &[u8],
+    ) -> Option<TurnMessageWithAddress> {
         let ch = {
             let map = self.pair_to_ch.lock().ok()?;
             map.get(&(*source, *dest)).cloned()?
         };
         let msg = build_channel_data(ch, packet)?;
-        Some(TurnMessageWithAddress { ipAddress: *dest, message: msg })
+        Some(TurnMessageWithAddress {
+            ip_address: *dest,
+            message: msg,
+        })
     }
 }
 
@@ -215,17 +302,29 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
     fn handle_call(&self, source: &SocketAddr, dest: &SocketAddr) -> i32 {
         // If already have a channel for this (source, dest) pair, return it
         if let Ok(map) = self.pair_to_ch.lock() {
-            if let Some(ch) = map.get(&(*source, *dest)).cloned() { return ch as i32; }
-        } else { return -1; }
+            if let Some(ch) = map.get(&(*source, *dest)).cloned() {
+                return ch as i32;
+            }
+        } else {
+            return -1;
+        }
         // Allocate new channel
         let ch_opt = self.alloc_channel();
-        let ch = match ch_opt { Some(v) => v, None => return -1 };
+        let ch = match ch_opt {
+            Some(v) => v,
+            None => return -1,
+        };
         // Insert into maps
         if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_addr.lock(), self.pair_to_ch.lock()) {
             // Map channel to the destination address so incoming packets are forwarded to the callee
             c2a.insert(ch, *dest);
             p2c.insert((*source, *dest), ch);
-            log::info!("[TurnRelayImpl::handle_call] allocated channel {:#X} for {} -> {}", ch, source, dest);
+            log::info!(
+                "[TurnRelayImpl::handle_call] allocated channel {:#X} for {} -> {}",
+                ch,
+                source,
+                dest
+            );
             ch as i32
         } else {
             -1
@@ -237,10 +336,10 @@ pub type TurnRelayImpl = TurnHandlerImpl;
 
 /// Client-side TURN implementation
 pub struct TurnClientImpl {
-    ch_to_addr: Mutex<HashMap<u16, SocketAddr>>,           // channel -> source (originator)
+    ch_to_addr: Mutex<HashMap<u16, SocketAddr>>, // channel -> source (originator)
     pair_to_ch: Mutex<HashMap<(SocketAddr, SocketAddr), u16>>, // (a,b) -> ch for both directions
-    allowed_id_to_addr: Mutex<HashMap<String, SocketAddr>>,   // id -> addr
-    allowed_addr_to_id: Mutex<HashMap<SocketAddr, String>>,   // addr -> id
+    allowed_id_to_addr: Mutex<HashMap<String, SocketAddr>>, // id -> addr
+    allowed_addr_to_id: Mutex<HashMap<SocketAddr, String>>, // addr -> id
 }
 
 impl TurnClientImpl {
@@ -262,50 +361,135 @@ impl TurnClientImpl {
     }
 }
 
-impl Default for TurnClientImpl { fn default() -> Self { Self::new() } }
+impl Default for TurnClientImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TurnHandler for TurnClientImpl {
     fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
-        if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
             id2a.insert(source_id.to_string(), *source);
             a2id.insert(*source, source_id.to_string());
-            log::info!("[TurnClientImpl::handle_listen] registered {} -> {}", source_id, source);
+            log::info!(
+                "[TurnClientImpl::handle_listen] registered {} -> {}",
+                source_id,
+                source
+            );
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
-    fn handle_turn_incoming(&self, packet: &[u8]) -> Option<WrappedMessageWithAddress> {
+    fn handle_turn_incoming(
+        &self,
+        relay_address: Option<&SocketAddr>,
+        packet: &[u8],
+    ) -> Option<WrappedMessageWithNetworkEndpoint> {
         let (ch, len, _pad) = parse_channel_data_header(packet)?;
+        let payload = packet.get(4..4 + len)?.to_vec();
+
+        // If the packet is from our listener relay (registered via Listen), wrap with a relay-based endpoint.
+        if let Some(relay_addr) = relay_address {
+            if let Ok(map) = self.allowed_addr_to_id.lock() {
+                if let Some(relay_id) = map.get(relay_addr).cloned() {
+                    let network_endpoint = NetworkEndpoint::new_relay(relay_id, Some(*relay_addr), Some(ch));
+                    log::info!(
+                        "[TurnClientImpl::handle_turn_incoming] from registered relay {}; wrapping as {} (ch {:#X}, {} bytes)",
+                        relay_addr,
+                        network_endpoint,
+                        ch,
+                        len
+                    );
+                    return Some(WrappedMessageWithNetworkEndpoint {
+                        // For client-side reprocessing, ip_address is not used; set to relay_addr for completeness.
+                        ip_address: *relay_addr,
+                        message: payload,
+                        network_endpoint,
+                    });
+                }
+            } else {
+                return None;
+            }
+        }
+
+        // Otherwise consider the channel mapping and gate by the mapped peer address.
         let addr = {
             let map = self.ch_to_addr.lock().ok()?;
             map.get(&ch).cloned()?
         };
         if let Ok(map) = self.allowed_addr_to_id.lock() {
-            if !map.contains_key(&addr) { log::info!("[TurnClientImpl::handle_turn_incoming] rejecting packet from {}: not registered", addr); return None; }
-        } else { return None; }
-        let payload = packet[4..4+len].to_vec();
-        log::info!("[TurnClientImpl::handle_turn_incoming] accepted packet from {} on ch {} ({} bytes)", addr, ch, len);
-        Some(WrappedMessageWithAddress { ipAddress: addr, message: payload })
+            if !map.contains_key(&addr) {
+                log::info!(
+                    "[TurnClientImpl::handle_turn_incoming] rejecting packet from {}: not registered",
+                    addr
+                );
+                return None;
+            }
+        } else {
+            return None;
+        }
+        log::info!(
+            "[TurnClientImpl::handle_turn_incoming] accepted packet from {} on ch {} ({} bytes)",
+            addr,
+            ch,
+            len
+        );
+
+        let network_endpoint: NetworkEndpoint = NetworkEndpoint::new_direct(addr);
+        log::info!(
+            "[TurnClientImpl::handle_turn_incoming] wrapping packet with network endpoint {:?}",
+            network_endpoint
+        );
+
+        Some(WrappedMessageWithNetworkEndpoint {
+            ip_address: addr,
+            message: payload,
+            network_endpoint,
+        })
     }
 
-    fn send_turn_outgoing(&self, source: &SocketAddr, dest: &SocketAddr, packet: &[u8]) -> Option<TurnMessageWithAddress> {
+    fn send_turn_outgoing(
+        &self,
+        source: &SocketAddr,
+        dest: &SocketAddr,
+        packet: &[u8],
+    ) -> Option<TurnMessageWithAddress> {
         let ch = {
             let map = self.pair_to_ch.lock().ok()?;
             map.get(&(*source, *dest)).cloned()?
         };
         let msg = build_channel_data(ch, packet)?;
-        Some(TurnMessageWithAddress { ipAddress: *dest, message: msg })
+        Some(TurnMessageWithAddress {
+            ip_address: *dest,
+            message: msg,
+        })
     }
 }
 
 impl super::turn_handler::TurnClientHandler for TurnClientImpl {
     fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {
         self.insert_mapping(source, dest, channel);
-        log::info!("[TurnClientImpl::handle_call_response] set mapping ch={:#X} for {} <-> {}", channel, source, dest);
+        log::info!(
+            "[TurnClientImpl::handle_call_response] set mapping ch={:#X} for {} <-> {}",
+            channel,
+            source,
+            dest
+        );
     }
 
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {
         self.insert_mapping(source, dest, channel);
-        log::info!("[TurnClientImpl::handle_called] set mapping ch={:#X} for {} <-> {}", channel, source, dest);
+        log::info!(
+            "[TurnClientImpl::handle_called] set mapping ch={:#X} for {} <-> {}",
+            channel,
+            source,
+            dest
+        );
     }
 }
