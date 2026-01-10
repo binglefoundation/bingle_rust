@@ -1,10 +1,7 @@
 #![cfg(not(target_os = "ios"))]
 
 use serde_json::Value;
-use std::sync::Once;
-
-static INIT_TRACE: Once = Once::new();
-static INIT_DEBUG: Once = Once::new();
+use rust_comms::dtls::dtls_debug::dtls_udp_to_json_with_level;
 
 // Helper to build a single DTLS record datagram with given content type and payload
 fn build_dtls_record(ct: u8, epoch: u16, seq: u64, version: [u8; 2], payload: &[u8]) -> Vec<u8> {
@@ -27,20 +24,11 @@ fn build_dtls_record(ct: u8, epoch: u16, seq: u64, version: [u8; 2], payload: &[
 
 #[test]
 fn dtls_trace_json_includes_sequence_and_epoch() {
-    // Initialize logging at TRACE to force JSON output path
-    INIT_TRACE.call_once(|| {
-        let _ = simple_logger::SimpleLogger::new()
-            .with_level(log::LevelFilter::Trace)
-            .init();
-    });
-
-    use rust_comms::dtls::dtls_debug::dtls_udp_to_json;
-
     let epoch = 3u16;
     let seq: u64 = 0x0000_0000_00AB_CDu64; // fits in 48 bits
     let datagram = build_dtls_record(22, epoch, seq, [0xFE, 0xFD], &[0u8; 12]); // minimal handshake header length
 
-    let json_txt = dtls_udp_to_json(&datagram).expect("ok");
+    let json_txt = dtls_udp_to_json_with_level(&datagram, log::Level::Trace).expect("ok");
     assert!(json_txt.contains("\"records\""), "expected JSON output at TRACE");
 
     let v: Value = serde_json::from_str(&json_txt).expect("valid json");
@@ -53,23 +41,11 @@ fn dtls_trace_json_includes_sequence_and_epoch() {
 
 #[test]
 fn dtls_debug_compact_includes_sequence_and_epoch() {
-    // Initialize logging at DEBUG to force compact summary path when TRACE not enabled
-    INIT_DEBUG.call_once(|| {
-        // Note: if TRACE was already inited globally by other tests, this test will still pass
-        // because the summary at TRACE also implies visibility. We check for the presence of our
-        // epoch/seq substrings in whatever output is produced.
-        let _ = simple_logger::SimpleLogger::new()
-            .with_level(log::LevelFilter::Debug)
-            .init();
-    });
-
-    use rust_comms::dtls::dtls_debug::dtls_udp_to_json;
-
     let epoch = 7u16;
     let seq: u64 = 0x11_2233_4455u64; // within 48 bits
     let datagram = build_dtls_record(23, epoch, seq, [0xFE, 0xFD], &[1u8, 2u8, 3u8]);
 
-    let out = dtls_udp_to_json(&datagram).expect("ok");
+    let out = dtls_udp_to_json_with_level(&datagram, log::Level::Debug).expect("ok");
     assert!(!out.is_empty(), "expected some output at or above debug level");
 
     // In debug compact mode we expect epoch and seq presented. If we're at TRACE, we still

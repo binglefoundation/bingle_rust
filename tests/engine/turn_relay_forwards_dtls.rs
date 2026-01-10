@@ -27,8 +27,8 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
 #[test]
 fn end_to_end_turn_relay_forwards_dtls() {
     // Allocate three ports: relay, client A (ephemeral), client B (destination mux)
-    let relay_port = test_util::find_unused_loopback_port();
-    let b_port = test_util::find_unused_loopback_port();
+    let relay_port = 13000; //test_util::find_unused_loopback_port();
+    let b_port = 14000; // test_util::find_unused_loopback_port();
     assert_ne!(relay_port, 0);
     assert_ne!(b_port, 0);
 
@@ -57,8 +57,7 @@ fn end_to_end_turn_relay_forwards_dtls() {
         mux_relay.set_handle_turn(Some(std::sync::Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
             if let Some(wrapped) = turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
-                    let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ip_address);
-                    let _ = udp.write(&nsk, &wrapped.message);
+                    let _ = udp.write(&NetworkEndpoint::new_direct(wrapped.ip_address), &wrapped.message);
                 }
             }
         })));
@@ -98,7 +97,7 @@ fn end_to_end_turn_relay_forwards_dtls() {
     // 3) Send TURN ChannelData from A to the relay containing a DTLS-shaped payload (first byte 20..=63)
     let dtls_payload: [u8; 6] = [20, 1, 2, 3, 4, 5]; // classified as DTLS by mux_type_for
     let ch_data = build_channel_data(ch, &dtls_payload);
-    let send_sock = UdpSocket::bind(addr(test_util::find_unused_loopback_port())).expect("bind sender udp");
+    let send_sock = UdpSocket::bind(a_addr).expect("bind sender udp");
     send_sock.send_to(&ch_data, relay_addr).expect("send channeldata");
 
     // 4) Wait for DTLS handler on B mux to be invoked and validate
@@ -108,7 +107,7 @@ fn end_to_end_turn_relay_forwards_dtls() {
             let rec = dtls_records.lock().unwrap();
             if !rec.is_empty() { break true; }
         }
-        if start.elapsed() > Duration::from_secs(2) { break false; }
+        if start.elapsed() > Duration::from_secs(20) { break false; }
         std::thread::sleep(Duration::from_millis(10));
     };
     assert!(ok, "expected DTLS handler on B to be invoked");

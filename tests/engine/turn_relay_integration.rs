@@ -91,7 +91,7 @@ fn end_to_end_turn_relay_forwards_payload() {
     // 4) Send TURN ChannelData from A to the relay and verify it arrives at B
     let payload = b" TURN_OK"; // leading space to avoid special mux classifications
     let ch_data = build_channel_data(ch, payload);
-    let send_sock = UdpSocket::bind(addr(test_util::find_unused_loopback_port())).expect("bind temp udp");
+    let send_sock = UdpSocket::bind(a_addr).expect("bind temp udp");
     send_sock.send_to(&ch_data, relay_addr).expect("send channeldata");
 
     // Receive forwarded packet at B: relay forwards the stripped inner payload (no TURN header)

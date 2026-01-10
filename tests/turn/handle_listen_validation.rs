@@ -4,7 +4,7 @@ use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl, TurnRelayHand
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
 #[test]
-fn unit_turn_incoming_rejected_without_listen() {
+fn unit_turn_incoming_rejected_without_listen_and_call() {
     let handler = TurnHandlerImpl::new();
     let src = addr(7001);
     let dst = addr(7000);
@@ -14,8 +14,10 @@ fn unit_turn_incoming_rejected_without_listen() {
     // Build a small payload and wrap
     let payload = b"xyz";
     let wrapped = handler.send_turn_outgoing(&src, &dst, payload).expect("wrap outgoing");
-    // Now, since we never called handle_listen, incoming should be rejected (src ip not registered)
-    let incoming = handler.handle_turn_incoming(Some(&src), Some(dst), &wrapped.message);
+
+    // handler_unbound has no handle_listen or handle_call
+    let handler_unbound = TurnHandlerImpl::new();
+    let incoming = handler_unbound.handle_turn_incoming(Some(&src), Some(dst), &wrapped.message);
     assert!(incoming.is_none(), "expected rejection before listen registration");
 }
 

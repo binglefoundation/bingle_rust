@@ -75,7 +75,7 @@ pub trait TurnHandler {
      */
     fn handle_turn_incoming(
         &self,
-        relay_address: Option<&SocketAddr>,
+        sender_address: Option<&SocketAddr>,
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint>;
@@ -224,7 +224,7 @@ impl TurnHandler for TurnHandlerImpl {
 
     fn handle_turn_incoming(
         &self,
-        relay_address: Option<&SocketAddr>,
+        sender_address: Option<&SocketAddr>,
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
@@ -251,13 +251,13 @@ impl TurnHandler for TurnHandlerImpl {
             return None;
         }
 
-        let is_packet_from_dest = relay_address.map(|a| a != &source_addr).unwrap_or(false);
+        let is_packet_from_dest = sender_address.map(|a| a != &source_addr).unwrap_or(false);
 
         let payload = packet[4..4 + len].to_vec();
         log::info!(
             "[TurnHandlerImpl::handle_turn_incoming] accepted packet is_packet_from_dest={} from {:?} on ch {} ({:?} {} {:?}) ({} bytes)",
             is_packet_from_dest,
-            relay_address,
+            sender_address,
             ch,
             source_addr,
             (if is_packet_from_dest {"<-"} else {"->"}),
@@ -265,7 +265,7 @@ impl TurnHandler for TurnHandlerImpl {
             len
         );
 
-        let network_endpoint: NetworkEndpoint = if let Some(sender_addr) = relay_address {
+        let network_endpoint: NetworkEndpoint = if let Some(sender_addr) = sender_address {
             if let Some(relay_id) = self.lookup_id_by_addr(sender_addr) {
                 NetworkEndpoint::new_relay(
                     relay_id,
@@ -417,7 +417,7 @@ impl TurnHandler for TurnClientImpl {
 
     fn handle_turn_incoming(
         &self,
-        relay_address: Option<&SocketAddr>,
+        sender_address: Option<&SocketAddr>,
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
@@ -425,7 +425,7 @@ impl TurnHandler for TurnClientImpl {
         let payload = packet.get(4..4 + len)?.to_vec();
 
         // If the packet is from our listener relay (registered via Listen), wrap with a relay-based endpoint.
-        if let Some(relay_addr) = relay_address {
+        if let Some(relay_addr) = sender_address {
             if let Ok(map) = self.allowed_addr_to_id.lock() {
                 if let Some(relay_id) = map.get(relay_addr).cloned() {
                     let network_endpoint = NetworkEndpoint::new_relay(relay_id, Some(*relay_addr), Some(ch));

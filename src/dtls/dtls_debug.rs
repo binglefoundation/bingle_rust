@@ -141,11 +141,26 @@ fn read_u24(be3: &[u8]) -> u32 { ((be3[0] as u32) << 16) | ((be3[1] as u32) << 8
 /// Convert a raw UDP datagram containing DTLS records into a pretty-printed JSON string.
 /// Returns Err(String) if the datagram is malformed.
 pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
-    // Behavior depends on current log level:
+    // Use current global log level
+    let level = if log::log_enabled!(log::Level::Trace) {
+        log::Level::Trace
+    } else if log::log_enabled!(log::Level::Debug) {
+        log::Level::Debug
+    } else {
+        log::Level::Info
+    };
+    dtls_udp_to_json_with_level(datagram, level)
+}
+
+/// Convert a raw UDP datagram containing DTLS records into a pretty-printed JSON string.
+/// Behavior depends on the provided log level for testability.
+/// Returns Err(String) if the datagram is malformed.
+pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: log::Level) -> Result<String, String> {
+    // Behavior depends on provided log level:
     // - Trace: full JSON (pretty) with handshake introspection (existing behavior)
     // - Debug: single-line summary for quick inspection
     // - Below Debug: return an empty string
-    if log::log_enabled!(log::Level::Trace) {
+    if level <= log::Level::Trace {
         // Full decode path (existing behavior)
         let mut i: usize = 0;
         let mut records: Vec<DtlsRecordJson> = Vec::new();
