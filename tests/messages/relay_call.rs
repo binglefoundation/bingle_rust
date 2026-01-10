@@ -63,7 +63,7 @@ fn relay_call_allocates_channel_and_maps_pair() {
 
     // Verify internal mappings reflect (caller, callee) -> ch and ch -> caller
     let mapped_dest = turn.lookup_addr_by_channel_for_tests(ch_u16).expect("ch->addr");
-    assert_eq!(mapped_dest, callee);
+    assert_eq!(mapped_dest, (caller, callee));
     let p2c = turn.lookup_channel_for_pair_for_tests(&caller, &callee).expect("pair->ch");
     assert_eq!(p2c, ch_u16);
 }

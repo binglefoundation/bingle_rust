@@ -242,6 +242,13 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
             }
             let ct = datagram[i];
             let ct_name = content_type_name(ct);
+            let epoch = u16::from_be_bytes([datagram[i + 3], datagram[i + 4]]);
+            let seq = ((datagram[i + 5] as u64) << 40)
+                | ((datagram[i + 6] as u64) << 32)
+                | ((datagram[i + 7] as u64) << 24)
+                | ((datagram[i + 8] as u64) << 16)
+                | ((datagram[i + 9] as u64) << 8)
+                | (datagram[i + 10] as u64);
             let len = u16::from_be_bytes([datagram[i + 11], datagram[i + 12]]) as usize;
             // Default: no handshake type
             let mut hs_name: Option<&'static str> = None;
@@ -253,9 +260,9 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
                 }
             }
             if let Some(hn) = hs_name {
-                parts.push(format!("len={} ct={} hs={}", len, ct_name, hn));
+                parts.push(format!("len={} ct={} epoch={} seq={} hs={}", len, ct_name, epoch, seq, hn));
             } else {
-                parts.push(format!("len={} ct={}", len, ct_name));
+                parts.push(format!("len={} ct={} epoch={} seq=\"{}\"", len, ct_name, epoch, seq));
             }
             let needed = 13 + len;
             if datagram.len() - i < needed { return Err("truncated DTLS record payload".to_string()); }

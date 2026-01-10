@@ -39,5 +39,8 @@ mod network_mux_udp_reprocess;
 #[path = "dtls_debug_alert.rs"]
 mod dtls_debug_alert;
 
+#[path = "dtls_debug_sequence.rs"]
+mod dtls_debug_sequence;
+
 #[path = "pki.rs"]
 mod pki;

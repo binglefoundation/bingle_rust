@@ -62,8 +62,8 @@ fn bingle_api_send_via_relay_end_to_end() {
     {
         // Forward TURN ChannelData payloads to the indicated destination
         let turn_clone = turn.clone();
-        mux_relay.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, _from: &SocketAddr, packet: &[u8]| {
-            if let Some(wrapped) = turn_clone.handle_turn_incoming(None, packet) {
+        mux_relay.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+            if let Some(wrapped) = turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
                     let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
                     let _ = udp.write(&nsk, &wrapped.message);

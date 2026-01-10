@@ -91,9 +91,10 @@ impl Engine {
         let am_relay = self.options.am_relay;
         let turn = self.turn_handler.clone();
 
+        let local_public_addr = self.last_public_addr().clone();
         Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
             // Parse/unwrap the TURN ChannelData using our handler
-            if let Some(wrapped) = turn.handle_turn_incoming(Some(from), packet) {
+            if let Some(wrapped) = turn.handle_turn_incoming(Some(from), local_public_addr, packet) {
                 if am_relay {
                     // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
                     if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
@@ -270,7 +271,7 @@ impl Engine {
             mux: None,
             dtls: None,
             state: EngineState::StunIdentify,
-            last_public_addr: None,
+            last_public_addr: options.static_ip.clone(),
             stun: None,
             relay_finder: None,
             triangle_wait: None,
@@ -646,6 +647,8 @@ impl Engine {
     }
 
     fn start_with_addr(&mut self, _options: &StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
+        self.last_public_addr = Some(self.options.static_ip.clone().expect("start_with_address when no static address"));
+
         // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
         // The static address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();

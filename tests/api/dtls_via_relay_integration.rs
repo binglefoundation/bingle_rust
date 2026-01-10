@@ -55,18 +55,19 @@ fn dtls_send_via_relay_end_to_end() {
     // Install TURN handler on the mutable mux_target before wrapping in Arc
     {
         let turn_client_clone = turn_client.clone();
+        let local_address = Some(mux_target.local_addr().unwrap());
         mux_target.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
             // Handle TURN ChannelData for client (non-relay) mode
-            if let Some(wrapped) = turn_client_clone.handle_turn_incoming(Some(from), packet) {
+            if let Some(wrapped) = turn_client_clone.handle_turn_incoming(Some(from), local_address, packet) {
                 // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
                 if let Some(udp) = source.as_any().downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>() {
                     udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                    log::info!("[handle turn] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
+                    log::info!("[handle turn target] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
                 } else {
-                    log::warn!("[handle turn] source is not UdpNetworkMux; cannot reprocess");
+                    log::warn!("[handle turn target] source is not UdpNetworkMux; cannot reprocess");
                 }
             } else {
-                log::debug!("[handle_turn] handle_turn_incoming returned None (ignored)");
+                log::debug!("[handle_turn target] handle_turn_incoming returned None (ignored)");
             }
         })));
     }
@@ -105,7 +106,32 @@ fn dtls_send_via_relay_end_to_end() {
     let server_key_pem2: Vec<u8> = certs2.server_key.clone();
     let ca_pem2: Vec<u8> = certs2.ca_crt.clone();
 
-    let mux_client = Arc::new(UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 14000)).expect("bind target mux 2"));
+    let mut mux_client = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 14000)).expect("bind target mux 2");
+
+    // Add TURN handler to dtls_client for client mode (non-relay)
+    let mut turn_client2 = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());
+    let turn_client2_clone = turn_client2.clone();
+
+    // Install TURN handler on the mutable mux_client before wrapping in Arc
+    {
+        let local_address = Some(mux_client.local_addr().unwrap());
+        mux_client.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+        // Handle TURN ChannelData for client (non-relay) mode
+        if let Some(wrapped) = turn_client2_clone.handle_turn_incoming(Some(from), local_address, packet) {
+            // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
+            if let Some(udp) = source.as_any().downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>() {
+                udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
+                log::info!("[handle turn client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
+            } else {
+                log::warn!("[handle turn client] source is not UdpNetworkMux; cannot reprocess");
+            }
+        } else {
+            log::debug!("[handle_turn client] handle_turn_incoming returned None (ignored)");
+        }
+    })));
+    }
+
+    let mux_client_arc = Arc::new(mux_client);
 
     // Shared state to capture the channel from RelayResponse
     let captured_channel: Arc<Mutex<Option<u16>>> = Arc::new(Mutex::new(None));
@@ -136,8 +162,8 @@ fn dtls_send_via_relay_end_to_end() {
             }
         }));
 
-    mux_client.start().expect("start client mux");
-    dtls_client.start(mux_client.clone()).expect("start dtls client");
+    mux_client_arc.start().expect("start client mux");
+    dtls_client.start(mux_client_arc.clone()).expect("start dtls client");
 
     // 4) Send RelayCall from dtls client to relay
     let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: ADDRESS_RECEIVE.to_string() }));
@@ -163,7 +189,12 @@ fn dtls_send_via_relay_end_to_end() {
         let guard = captured_channel.lock().expect("lock captured_channel");
         guard.expect("channel should be present")
     };
-    let relay_endpoint = NetworkEndpoint::new_relay(ADDRESS_RECEIVE.to_string(), Some(relay_addr), Some(channel));
+
+    turn_client2.handle_call_response(&(relay_addr.clone()),
+                                      &(mux_target_arc.local_addr().expect("mux target has local addr")), channel, ADDRESS_10MIL
+    );
+    
+    let relay_endpoint = NetworkEndpoint::new_relay(ADDRESS_10MIL.to_string(), Some(relay_addr), Some(channel));
 
     let test_msg = Message::PlainText(PlainTextMessage { app:None, r#type:None, text: "Via relay".to_string() });
     let test_msg_bytes = serde_json::to_vec(&test_msg).expect("serialize listenMsg");

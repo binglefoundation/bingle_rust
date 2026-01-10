@@ -426,11 +426,24 @@ pub mod non_ios {
         closed: AtomicBool,
     }
     impl PeerQueue {
+        fn len(&self) -> usize {
+            if let Ok(mut q) = self.q.lock() {
+               q.len()
+            }
+            else {
+                log::error!("[dtls muxconn][len] queue lock get fails");
+                0
+            }
+        }
+
         fn push(&self, data: Vec<u8>) {
             if self.closed.load(AtomicOrdering::SeqCst) { return; }
             if let Ok(mut q) = self.q.lock() {
                 q.push_back(data);
                 self.cv.notify_one();
+            }
+            else {
+                log::error!("[dtls muxconn][push] queue lock get fails");
             }
         }
         fn pop_blocking(&self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -474,7 +487,7 @@ pub mod non_ios {
                 if n > 0 {
                     let to_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n]) {
-                        log::warn!("[dtls muxconn][recv from queue][{} -> {}] {}", self.peer, to_ip, json);
+                        log::info!("[dtls muxconn][recv from queue][{} -> {}] {} [{} queued b4]", self.peer, to_ip, json, self.queue.len());
                     } else {
                         log::warn!("[dtls muxconn][recv from queue][{} -> {}] <parse error> ({} bytes)", self.peer, to_ip, n);
                     }
@@ -812,7 +825,7 @@ pub mod non_ios {
                     q
                 }
             };
-            log::info!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes)", from, to_ip_str, data.len());
+            log::info!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes) [{} queued b4]", from, to_ip_str, data.len(), q_arc.len());
             #[allow(unused)] {}
             q_arc.push(data.to_vec());
 
