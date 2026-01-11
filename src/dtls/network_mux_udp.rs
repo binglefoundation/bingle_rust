@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, UdpSocket, ToSocketAddrs};
+use std::net::{UdpSocket, ToSocketAddrs};
 use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};

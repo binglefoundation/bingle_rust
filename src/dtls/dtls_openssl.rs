@@ -412,7 +412,6 @@ pub mod non_ios {
         });
     }
 
-    use crate::api::bingle_api::NetworkEndpointKey;
     use crate::api::network_endpoint::NetworkEndpoint;
     // Per-peer datagram queue and blocking mechanism.
     use std::collections::VecDeque;
@@ -427,7 +426,7 @@ pub mod non_ios {
     }
     impl PeerQueue {
         fn len(&self) -> usize {
-            if let Ok(mut q) = self.q.lock() {
+            if let Ok(q) = self.q.lock() {
                q.len()
             }
             else {
@@ -600,7 +599,7 @@ pub mod non_ios {
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
         pub(crate) acceptor: Option<SslAcceptor>,
         // Combined peer state map: writer and issuer per endpoint
-        pub(crate) peer_states: PeerStates,
+        peer_states: PeerStates,
         // Lifecycle control for accept loop or background tasks
         pub(crate) stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
@@ -961,7 +960,7 @@ pub mod non_ios {
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
             // Validate destination key: allow either direct inet address or relay channel+address
-            let endpoint: &NetworkEndpoint = if let Some(addr) = to.inet_socket_address() {
+            let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some() {
                 to
             } else if to.relay_channel().is_some() && to.relay_address().is_some() {
                 to

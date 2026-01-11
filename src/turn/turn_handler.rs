@@ -418,7 +418,7 @@ impl TurnHandler for TurnClientImpl {
     fn handle_turn_incoming(
         &self,
         sender_address: Option<&SocketAddr>,
-        local_public_address: Option<SocketAddr>,
+        _local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
         let (ch, len, _pad) = parse_channel_data_header(packet)?;
