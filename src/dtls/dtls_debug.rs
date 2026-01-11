@@ -160,7 +160,7 @@ pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: log::Level) -> Result
     // - Trace: full JSON (pretty) with handshake introspection (existing behavior)
     // - Debug: single-line summary for quick inspection
     // - Below Debug: return an empty string
-    if level <= log::Level::Trace {
+    if level >= log::Level::Trace {
         // Full decode path (existing behavior)
         let mut i: usize = 0;
         let mut records: Vec<DtlsRecordJson> = Vec::new();

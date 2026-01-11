@@ -96,7 +96,6 @@ docker run --platform linux/arm64 --rm -d \
  -e PORT=$RELAY_A_PORT \
  -e HANDLE=$RELAY_A_HANDLE \
  "bingle:local"
-sleep 20
 
 docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_b \
@@ -106,7 +105,7 @@ docker run --platform linux/arm64 --rm -d \
  -e PORT=$RELAY_B_PORT \
  -e HANDLE=$RELAY_B_HANDLE \
  "bingle:local"
-sleep 20
+sleep 60
 
 # Start the ping target
 docker run --platform linux/arm64 -d --rm \
@@ -117,7 +116,7 @@ docker run --platform linux/arm64 -d --rm \
  -e HANDLE=$PINGABLE_USER \
  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
  "bingle:local"
-sleep 20
+sleep 30
 
 # Build or refresh the tests image (uses Dockerfile tests stage and prebuilt test binary)
 export BINGLE_RUN_TESTNET=1

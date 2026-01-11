@@ -58,6 +58,7 @@ fn testnet_user_reaches_endpoint_available() {
     assert!(static_endpoints.len() >= 2, "Expected at least two static endpoints on testnet, got {}", static_endpoints.len());
 
 
+
     // Load STUN servers from the repository root file and configure options accordingly.
     let stun_servers = parse_stun_file("stunservers.txt").expect("failed to read/parse stunservers.txt");
 
@@ -78,6 +79,38 @@ fn testnet_user_reaches_endpoint_available() {
     let mut api = BingleApiImpl::new(&opts);
 
     api.start(&opts).expect("start api");
+
+    // Before proceeding, ensure both static endpoints are reachable: send RelayCheck and await response.
+    // Use a single 120s budget to validate availability of the first two endpoints returned by indexer.
+    {
+        let to_check: Vec<(String, String)> = static_endpoints.iter().take(2).cloned().collect();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        let mut ok: Vec<bool> = vec![false; to_check.len()];
+        while Instant::now() < deadline && ok.iter().any(|&b| !b) {
+            for (idx, (id, addr_str)) in to_check.iter().enumerate() {
+                if ok[idx] { continue; }
+                let addr: std::net::SocketAddr = addr_str.parse().expect("static endpoint address parse");
+                let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                let payload = serde_json::json!({ "app": null, "type": "Check" });
+                match api.send_message_to_network_with_response(&nsk, &id, payload.clone(), None) {
+                    Ok(resp) => {
+                        let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
+                            && resp.get("available").and_then(|v| v.as_bool()) == Some(true);
+                        if is_ok {
+                            ok[idx] = true;
+                        }
+                    }
+                    Err(_e) => {
+                        // retry until deadline
+                    }
+                }
+            }
+            if ok.iter().any(|&b| !b) {
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+        assert!(ok.iter().all(|&b| b), "Static endpoints did not respond to RelayCheck within 120s: ok={:?}, endpoints={:?}", ok, to_check);
+    }
 
     // Determine expected final state from environment.
     // Primary: EXPECT_FINAL_STATE can be set to "EndpointAvailable" or "NATRestricted".
@@ -146,11 +179,14 @@ fn testnet_user_reaches_endpoint_available() {
         assert_eq!(got_nat, expect_nat, "expected NAT type {:?}, got {:?}", expect_nat, got_nat);
     }
 
+    log::info!("Final state: {:?}, NAT type: {:?}", final_state, got_nat);
+    log::info!("Static endpoints: {:?}", static_endpoints);
+
     // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
     if final_state == EngineState::Registered {
-        let my_id = api.get_my_id().expect("api.get_my_id Some");
+        let my_id = api.get_y_id().expect("api.get_my_id Some");
         let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
-        if(got_nat != NatType::FullCone) {
+        if got_nat == NatType::FullCone {
             let looked = nsk.inet_socket_address().expect("lookup should return a direct endpoint");
             let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
             assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
