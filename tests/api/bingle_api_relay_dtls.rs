@@ -4,11 +4,11 @@ use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::messages::{Message, RelayMessage};
-use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
+use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayListen, RelayCall};
 use rust_comms::turn::turn_handler::TurnHandler;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,7 +29,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     let b_port = test_util::find_unused_loopback_port();
     let b_addr = addr(b_port);
 
-    let mut mux_b = UdpNetworkMux::bind(b_addr).expect("bind B mux");
+    let mux_b = UdpNetworkMux::bind(b_addr).expect("bind B mux");
     let mux_b = Arc::new(mux_b);
     mux_b.start().expect("start B mux");
 

@@ -7,8 +7,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
-use rust_comms::messages::{Message, PlainTextMessage, RelayMessage, RelayResponse};
-use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
+use rust_comms::messages::{Message, PlainTextMessage, RelayMessage};
 use rust_comms::messages::types::{RelayCall, RelayListen};
 use rust_comms::turn::turn_handler::{TurnClientHandler, TurnHandler};
 use crate::util::test_util::{ADDRESS_10MIL, ADDRESS_RECEIVE, ADDRESS_SPEND};
@@ -50,7 +49,7 @@ fn dtls_send_via_relay_end_to_end() {
         }));
 
     // Add TURN handler to dtls_server for client mode (non-relay)
-    let mut turn_client = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());
+    let turn_client = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());
 
     // Install TURN handler on the mutable mux_target before wrapping in Arc
     {
@@ -109,7 +108,7 @@ fn dtls_send_via_relay_end_to_end() {
     let mut mux_client = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 14000)).expect("bind target mux 2");
 
     // Add TURN handler to dtls_client for client mode (non-relay)
-    let mut turn_client2 = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());
+    let turn_client2 = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());
     let turn_client2_clone = turn_client2.clone();
 
     // Install TURN handler on the mutable mux_client before wrapping in Arc
@@ -203,6 +202,7 @@ fn dtls_send_via_relay_end_to_end() {
 }
 
 // Minimal API stub for Router context in this test
+#[allow(dead_code)]
 struct MockApi;
 impl rust_comms::api::bingle_api::BingleApi for MockApi {
     fn debug_print_options(&self) {}

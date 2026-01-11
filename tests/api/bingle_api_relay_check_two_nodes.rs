@@ -1,9 +1,7 @@
 use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleApi};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::SocketAddr;
-use std::sync::{Arc, OnceLock, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
 
 #[path = "../test_util.rs"]
 mod test_util;

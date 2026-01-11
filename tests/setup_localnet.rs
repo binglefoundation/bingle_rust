@@ -1,7 +1,6 @@
 use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
 use std::process::Command;
 use std::time::{Duration, Instant};
-use log::log;
 
 fn run_cmd(program: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(program).args(args).output().map_err(|e| format!("failed to run {program}: {e}"))?;

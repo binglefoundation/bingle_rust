@@ -2,7 +2,7 @@ use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
 use rust_comms::messages::{Message, RelayMessage};
-use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
+use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayListen};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
 

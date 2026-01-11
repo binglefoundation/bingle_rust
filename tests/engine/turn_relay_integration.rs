@@ -4,7 +4,7 @@ use std::time::Duration;
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::messages::{Message, RelayMessage};
-use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
+use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayListen, RelayCall};
 use rust_comms::turn::turn_handler::TurnHandler;
 

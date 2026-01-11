@@ -1,6 +1,5 @@
 #![cfg(not(target_os = "ios"))]
 
-use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;

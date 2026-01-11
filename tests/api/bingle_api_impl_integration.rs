@@ -55,6 +55,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
         Ok(test_util::ADDRESS_SPEND.to_string())
     }
 
+    #[allow(dead_code)]
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
 
     // Spin up a DTLS server that responds to RelayCheck with RelayCheckResponse
