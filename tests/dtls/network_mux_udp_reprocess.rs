@@ -64,21 +64,4 @@ fn reprocess_dispatches_and_enqueues_dtls() {
     assert_eq!(turn_recs.len(), 1);
     assert_eq!(turn_recs[0].0, local_from.inet_socket_address().unwrap());
     assert_eq!(turn_recs[0].1, turn);
-
-    // DTLS should also be enqueued into the internal DTLS queue
-    let mut buf = [0u8; 64];
-    let (n, from) = mux.dtls_peek_from(&mut buf).expect("dtls_peek_from should have data");
-    assert_eq!(from, local_from);
-    assert_eq!(&buf[..n], &dtls);
-
-    // And dtls_recv_from should pop it
-    let mut buf2 = [0u8; 64];
-    let (n2, from2) = mux.dtls_recv_from(&mut buf2).expect("dtls_recv_from should pop data");
-    assert_eq!(from2, local_from);
-    assert_eq!(&buf2[..n2], &dtls);
-
-    // After pop, queue should be empty
-    let mut tmp = [0u8; 8];
-    let res = mux.dtls_peek_from(&mut tmp);
-    assert!(res.is_err(), "queue should be empty after pop");
 }

@@ -118,12 +118,6 @@ fn end_to_end_turn_relay_forwards_dtls() {
     assert_eq!(from_addr.inet_socket_address(), Some(relay_addr));
     assert_eq!(data, dtls_payload);
 
-    // Additionally, verify that the DTLS payload is enqueued in mux_b's DTLS queue
-    let mut buf = [0u8; 64];
-    let (n, from_q) = mux_b.dtls_peek_from(&mut buf).expect("dtls_peek_from should have data");
-    assert_eq!(from_q.inet_socket_address(), Some(relay_addr));
-    assert_eq!(&buf[..n], &dtls_payload);
-
     // Cleanup
     mux_relay.stop();
     mux_b.stop();

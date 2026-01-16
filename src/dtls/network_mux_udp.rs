@@ -3,7 +3,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
 use log::warn;
@@ -53,7 +53,7 @@ pub struct UdpNetworkMux {
     handle_turn: Mutex<Option<HandleTurn>>,
     running: AtomicBool,
     rx_thread: Mutex<Option<JoinHandle<()>>>,
-    dtls_queue: Mutex<VecDeque<(NetworkEndpoint, Vec<u8>)>>,
+    // dtls_queue: Mutex<VecDeque<(NetworkEndpoint, Vec<u8>)>>,
 }
 
 impl UdpNetworkMux {
@@ -75,7 +75,7 @@ impl UdpNetworkMux {
             handle_turn: std::sync::Mutex::new(None),
             running: AtomicBool::new(false),
             rx_thread: Mutex::new(None),
-            dtls_queue: Mutex::new(VecDeque::new()),
+            // dtls_queue: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -94,45 +94,45 @@ impl UdpNetworkMux {
         self.socket.set_read_timeout(dur)
     }
 
-    /// Peek the next DTLS datagram from the internal queue without removing it.
-    pub fn dtls_peek_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, NetworkEndpoint)> {
-        use std::io::{Error, ErrorKind};
-        let q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
-        if let Some((from, data)) = q.front() {
-            let n = data.len().min(buf.len());
-            buf[..n].copy_from_slice(&data[..n]);
-            Ok((n, from.clone()))
-        } else {
-            Err(Error::from(ErrorKind::WouldBlock))
-        }
-    }
-
-    /// Pop the next DTLS datagram from the internal queue.
-    pub fn dtls_recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, NetworkEndpoint)> {
-        use std::io::{Error, ErrorKind};
-        let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
-        if let Some((from, data)) = q.pop_front() {
-            let n = data.len().min(buf.len());
-            buf[..n].copy_from_slice(&data[..n]);
-            Ok((n, from))
-        } else {
-            Err(Error::from(ErrorKind::WouldBlock))
-        }
-    }
-
-    /// Pop the next DTLS datagram for a specific peer from the internal queue.
-    pub fn dtls_recv_from_peer(&self, peer_endpoint: NetworkEndpoint, buf: &mut [u8]) -> std::io::Result<usize> {
-        use std::io::{Error, ErrorKind};
-        let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
-        if let Some(idx) = q.iter().position(|(from, _)| *from == peer_endpoint) {
-            if let Some((_, data)) = q.remove(idx) {
-                let n = data.len().min(buf.len());
-                buf[..n].copy_from_slice(&data[..n]);
-                return Ok(n);
-            }
-        }
-        Err(Error::from(ErrorKind::WouldBlock))
-    }
+    // /// Peek the next DTLS datagram from the internal queue without removing it.
+    // pub fn dtls_peek_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, NetworkEndpoint)> {
+    //     use std::io::{Error, ErrorKind};
+    //     let q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
+    //     if let Some((from, data)) = q.front() {
+    //         let n = data.len().min(buf.len());
+    //         buf[..n].copy_from_slice(&data[..n]);
+    //         Ok((n, from.clone()))
+    //     } else {
+    //         Err(Error::from(ErrorKind::WouldBlock))
+    //     }
+    // }
+    //
+    // /// Pop the next DTLS datagram from the internal queue.
+    // pub fn dtls_recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, NetworkEndpoint)> {
+    //     use std::io::{Error, ErrorKind};
+    //     let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
+    //     if let Some((from, data)) = q.pop_front() {
+    //         let n = data.len().min(buf.len());
+    //         buf[..n].copy_from_slice(&data[..n]);
+    //         Ok((n, from))
+    //     } else {
+    //         Err(Error::from(ErrorKind::WouldBlock))
+    //     }
+    // }
+    //
+    // /// Pop the next DTLS datagram for a specific peer from the internal queue.
+    // pub fn dtls_recv_from_peer(&self, peer_endpoint: NetworkEndpoint, buf: &mut [u8]) -> std::io::Result<usize> {
+    //     use std::io::{Error, ErrorKind};
+    //     let mut q = self.dtls_queue.lock().map_err(|e| Error::new(ErrorKind::Other, format!("queue poisoned: {}", e)))?;
+    //     if let Some(idx) = q.iter().position(|(from, _)| *from == peer_endpoint) {
+    //         if let Some((_, data)) = q.remove(idx) {
+    //             let n = data.len().min(buf.len());
+    //             buf[..n].copy_from_slice(&data[..n]);
+    //             return Ok(n);
+    //         }
+    //     }
+    //     Err(Error::from(ErrorKind::WouldBlock))
+    // }
 
     /// Start the receive loop in a background thread.
     /// Note: call this on an Arc to allow handlers to receive `&dyn NetworkMux` reference.
@@ -356,25 +356,46 @@ impl UdpNetworkMux {
                     warn!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] <parse error> ({} bytes)", from_endpoint, to, data.len());
                     #[allow(unused)] {  }
                 }
-                if let Ok(mut q) = self.dtls_queue.lock() {
-                    q.push_back((from_endpoint.clone(), data.to_vec()));
-                }
+                // if let Ok(mut q) = self.dtls_queue.lock() {
+                //     q.push_back((from_endpoint.clone(), data.to_vec()));
+                // }
                 if let Some(h) = self.handle_dtls.lock().ok().and_then(|g| g.clone()) {
+                    let start = Instant::now();
                     let source: &dyn NetworkMux = self;
                     (h)(source, from_endpoint, data);
+                    let elapsed = start.elapsed();
+                    if elapsed.as_millis() > 0 {
+                        log::info!("[UdpNetworkMux][process_packet][DTLS handler] took {}ms", elapsed.as_millis());
+                    } else if elapsed.as_micros() > 100 {
+                        log::debug!("[UdpNetworkMux][process_packet][DTLS handler] took {}μs", elapsed.as_micros());
+                    }
                 }
             }
             MuxType::Stun => {
                 if let Some(h) = self.handle_stun.lock().ok().and_then(|g| g.clone()) {
+                    let start = Instant::now();
                     let source: &dyn NetworkMux = self;
                     (h)(source, &from_endpoint.inet_socket_address().expect("Stun messages must originate from an IP"), data);
+                    let elapsed = start.elapsed();
+                    if elapsed.as_millis() > 0 {
+                        log::info!("[UdpNetworkMux][process_packet][STUN handler] took {}ms", elapsed.as_millis());
+                    } else if elapsed.as_micros() > 100 {
+                        log::debug!("[UdpNetworkMux][process_packet][STUN handler] took {}μs", elapsed.as_micros());
+                    }
                 }
             }
             MuxType::TurnChannelData => {
                 if let Some(h) = self.handle_turn.lock().ok().and_then(|g| g.clone()) {
                     log::info!("[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes", from_endpoint, to, data.len());
+                    let start = Instant::now();
                     let source: &dyn NetworkMux = self;
                     (h)(source, &from_endpoint.inet_socket_address().expect("TURN messages must originate from an IP"), data);
+                    let elapsed = start.elapsed();
+                    if elapsed.as_millis() > 0 {
+                        log::info!("[UdpNetworkMux][process_packet][TURN handler] took {}ms", elapsed.as_millis());
+                    } else if elapsed.as_micros() > 100 {
+                        log::debug!("[UdpNetworkMux][process_packet][TURN handler] took {}μs", elapsed.as_micros());
+                    }
                 }
             }
             _ => { /* ignore ZRTP, RTP, UNKNOWN */ }

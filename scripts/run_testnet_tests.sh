@@ -88,7 +88,7 @@ echo "Using STUN servers: ${STUN_A_IP}:3478, ${STUN_B_IP}:3478"
 # Start relay containers on the same docker network
 # They will autodetect EXTERNAL_IP inside the container and register static endpoints
 # reachable from other containers on this network.
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -97,7 +97,7 @@ docker run --platform linux/arm64 --rm -d \
  -e HANDLE=$RELAY_A_HANDLE \
  "bingle:local"
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \

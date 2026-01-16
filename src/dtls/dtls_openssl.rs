@@ -972,8 +972,10 @@ pub mod non_ios {
 
             // If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
             {
+                log::info!("[DtlsOpenSsl::send] checking for existing inbound stream for {}", endpoint);
                 let peers = &self.peer_states;
                 if let Ok(map) = peers.lock() {
+                    log::info!("[DtlsOpenSsl::send] checking peer {}", key_to);
                     if let Some(ps) = map.get(&key_to) {
                         // Prefer direct stream write if available
                         if let Some(stream_arc) = ps.stream.as_ref() {
