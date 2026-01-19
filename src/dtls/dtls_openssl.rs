@@ -78,8 +78,14 @@ pub mod non_ios {
                         log::info!("[DtlsOpenSsl{}][read-loop {}] EOF/peer closed", log_tag, from);
                         break;
                     }
-                    Ok(n) => n,
+                    Ok(n) => {
+                        // Reset the logged flag on successful read
+                        logged_wouldblock = false;
+                        n
+                    }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        // Release the stream lock immediately - the channel-based queue will handle blocking
+                        drop(guard);
                         if !logged_wouldblock {
                             log::info!("[DtlsOpenSsl{}][read-loop {}] WouldBlock (no datagram yet)", log_tag, from);
                             logged_wouldblock = true;
@@ -418,57 +424,74 @@ pub mod non_ios {
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
     use std::sync::Condvar;
 
-    #[derive(Default)]
     pub(crate) struct PeerQueue {
-        q: Mutex<VecDeque<Vec<u8>>>,
-        cv: Condvar,
+        sender: std::sync::mpsc::Sender<Vec<u8>>,
+        receiver: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
         closed: AtomicBool,
     }
+
+    impl Default for PeerQueue {
+        fn default() -> Self {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            Self {
+                sender,
+                receiver: std::sync::Mutex::new(receiver),
+                closed: AtomicBool::new(false),
+            }
+        }
+    }
+
     impl PeerQueue {
         fn len(&self) -> usize {
-            if let Ok(q) = self.q.lock() {
-               q.len()
-            }
-            else {
-                log::error!("[dtls muxconn][len] queue lock get fails");
-                0
-            }
+            // For channels, we can't easily get the exact count without draining
+            // This is primarily used for logging, so we'll return 0 as a placeholder
+            0
         }
 
         fn push(&self, data: Vec<u8>) {
-            if self.closed.load(AtomicOrdering::SeqCst) { return; }
-            if let Ok(mut q) = self.q.lock() {
-                q.push_back(data);
-                self.cv.notify_one();
+            if self.closed.load(AtomicOrdering::SeqCst) { 
+                return; 
             }
-            else {
-                log::error!("[dtls muxconn][push] queue lock get fails");
+            if let Err(_) = self.sender.send(data) {
+                log::error!("[dtls muxconn][push] channel send failed - receiver dropped");
             }
         }
+
         fn pop_blocking(&self, buf: &mut [u8]) -> std::io::Result<usize> {
             use std::io::{Error, ErrorKind};
-            let mut q = self.q.lock().map_err(|_| Error::new(ErrorKind::Other, "queue poisoned"))?;
-            loop {
-                if let Some(v) = q.pop_front() {
-                    let n = v.len().min(buf.len());
-                    buf[..n].copy_from_slice(&v[..n]);
-                    return Ok(n);
+
+            if self.closed.load(AtomicOrdering::SeqCst) {
+                return Ok(0);
+            }
+
+            // Get the receiver - this is the only lock we need
+            let receiver = match self.receiver.lock() {
+                Ok(r) => r,
+                Err(_) => return Err(Error::new(ErrorKind::Other, "receiver lock poisoned")),
+            };
+
+            // Block on the channel without holding any other locks
+            match receiver.recv_timeout(std::time::Duration::from_millis(50)) {
+                Ok(data) => {
+                    let n = data.len().min(buf.len());
+                    buf[..n].copy_from_slice(&data[..n]);
+                    Ok(n)
                 }
-                if self.closed.load(AtomicOrdering::SeqCst) {
-                    return Ok(0);
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    Err(Error::from(ErrorKind::WouldBlock))
                 }
-                // Wait with timeout to allow outer layers to treat lack of data as WouldBlock
-                let (guard, timeout_res) = self.cv.wait_timeout(q, std::time::Duration::from_millis(50)).map_err(|_| Error::new(ErrorKind::Other, "cv poisoned"))?;
-                q = guard;
-                if timeout_res.timed_out() {
-                    return Err(Error::from(ErrorKind::WouldBlock));
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    Ok(0) // EOF
                 }
             }
         }
+
         #[allow(dead_code)]
         fn close(&self) {
             self.closed.store(true, AtomicOrdering::SeqCst);
-            self.cv.notify_all();
+            // Drop the sender to signal EOF to receivers
+            // We can't actually drop it here since we don't own it, but setting closed flag
+            // will prevent further sends
         }
     }
 

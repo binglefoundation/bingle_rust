@@ -61,11 +61,21 @@ docker run --rm -d \
   instrumentisto/coturn \
   turnserver -n --no-tls --no-dtls --listening-port 3478 --fingerprint --lt-cred-mech=0 --max-bps=0 --min-port=49152 --max-port=49200
 
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to start bingle_stun_a container" >&2
+    exit 1
+fi
+
 docker run --rm -d \
   --name bingle_stun_b \
   --network bingle_testnet \
   instrumentisto/coturn \
   turnserver -n --no-tls --no-dtls --listening-port 3478 --fingerprint --lt-cred-mech=0 --max-bps=0 --min-port=49152 --max-port=49200
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to start bingle_stun_b container" >&2
+    exit 1
+fi
 
 # Fetch the internal Docker IPs of the STUN servers
 STUN_A_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' bingle_stun_a)
@@ -97,6 +107,11 @@ docker run --platform linux/arm64 -d \
  -e HANDLE=$RELAY_A_HANDLE \
  "bingle:local"
 
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to start bingle_relay_a container" >&2
+    exit 1
+fi
+
 docker run --platform linux/arm64 -d \
  --name bingle_relay_b \
  --network bingle_testnet \
@@ -105,6 +120,11 @@ docker run --platform linux/arm64 -d \
  -e PORT=$RELAY_B_PORT \
  -e HANDLE=$RELAY_B_HANDLE \
  "bingle:local"
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to start bingle_relay_b container" >&2
+    exit 1
+fi
 sleep 60
 
 # Start the ping target
@@ -116,6 +136,12 @@ docker run --platform linux/arm64 -d --rm \
  -e HANDLE=$PINGABLE_USER \
  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
  "bingle:local"
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to start bingle_pingable container" >&2
+    exit 1
+fi
+
 sleep 30
 
 # Build or refresh the tests image (uses Dockerfile tests stage and prebuilt test binary)
@@ -155,6 +181,11 @@ docker run --platform linux/arm64 --rm \
   "bingle-tests:local"
 MAIN_RC=$?
 
+if [ $MAIN_RC -ne 0 ]; then
+    echo "ERROR: Main test container failed with exit code $MAIN_RC" >&2
+    # Don't exit here - we want to collect results and run the ping test
+fi
+
 # Build image for ping_registered_node test and run it in Direct NAT mode only
 scripts/build_tests_image.sh --tag bingle-tests:ping --test ping_registered_node
 
@@ -175,6 +206,11 @@ docker run --platform linux/arm64 --rm \
   -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
   "bingle-tests:ping"
 PING_RC=$?
+
+if [ $PING_RC -ne 0 ]; then
+    echo "ERROR: Ping test container failed with exit code $PING_RC" >&2
+    # Don't exit here - we want to collect and report results
+fi
 
 # Attempt to stop the ping runner explicitly (in case it lingered)
 docker stop bingle_test_runner_ping >/dev/null 2>&1 || true

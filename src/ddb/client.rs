@@ -203,12 +203,32 @@ impl DdbClient for DdbClientImpl {
         if !found {
             return Err("not found".to_string());
         }
-        // Build NetworkSourceKey from advert.endpoint
+        // Build NetworkEndpoint from advert (supporting both direct endpoint and relay_id)
         let advert = resp.get("advert").ok_or_else(|| "missing advert".to_string())?;
-        let host = advert.get("endpoint").and_then(|v| v.get("host")).and_then(|v| v.as_str()).ok_or_else(|| "missing endpoint.host".to_string())?;
-        let port = advert.get("endpoint").and_then(|v| v.get("port")).and_then(|v| v.as_u64()).ok_or_else(|| "missing endpoint.port".to_string())? as u16;
-        let ip: IpAddr = host.parse().map_err(|_| format!("invalid host '{}': not an IP address", host))?;
-        let addr = SocketAddr::new(ip, port);
-        Ok(NetworkEndpoint::new_direct(addr))
+
+        // Check if this is a relay-based record
+        if let Some(relay_id_value) = advert.get("relayId") {
+            let relay_id = relay_id_value.as_str()
+                .ok_or_else(|| "relayId is not a string".to_string())?
+                .to_string();
+
+            // For relay endpoints, we don't have direct address/channel info in the DDB record
+            // The relay_id will be used to establish connection via the relay system
+            return Ok(NetworkEndpoint::new_relay(relay_id, None, None));
+        }
+
+        // Fall back to direct endpoint if no relay_id
+        if let Some(endpoint) = advert.get("endpoint") {
+            let host = endpoint.get("host").and_then(|v| v.as_str())
+                .ok_or_else(|| "missing endpoint.host".to_string())?;
+            let port = endpoint.get("port").and_then(|v| v.as_u64())
+                .ok_or_else(|| "missing endpoint.port".to_string())? as u16;
+            let ip: IpAddr = host.parse()
+                .map_err(|_| format!("invalid host '{}': not an IP address", host))?;
+            let addr = SocketAddr::new(ip, port);
+            return Ok(NetworkEndpoint::new_direct(addr));
+        }
+
+        Err("AdvertRecord contains neither relayId nor endpoint".to_string())
     }
 }
