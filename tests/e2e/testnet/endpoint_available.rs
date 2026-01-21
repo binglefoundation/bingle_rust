@@ -184,7 +184,7 @@ fn testnet_user_reaches_endpoint_available() {
 
     // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
     if final_state == EngineState::Registered {
-        let my_id = api.get_y_id().expect("api.get_my_id Some");
+        let my_id = api.get_my_id().expect("api.get_my_id Some");
         let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
         if got_nat == NatType::FullCone {
             let looked = nsk.inet_socket_address().expect("lookup should return a direct endpoint");

@@ -361,18 +361,22 @@ impl MessageHandler for DefaultPrintingHandler {
 
     fn on_triangle_test1_response(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
         log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
-        let internal_opt = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal());
-        if let Some(internal) = internal_opt.clone() {
-            // Only set state/nat_type if current state is neither EndpointAvailable nor Registered
-            let cur = internal.get_state();
-            if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
-                let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
-                internal.set_nat_type(crate::engine::NatType::Restricted);
 
-                // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
-                // We run this in a background thread to avoid blocking the handler.
-                let api_for_thread = api.clone();
-                std::thread::spawn(move || {
+        // Move all logic to a spawned thread with delay
+        let api_for_thread = api.clone();
+        std::thread::spawn(move || {
+            // Delay for 10 seconds before making the state check
+            std::thread::sleep(std::time::Duration::from_secs(10));
+
+            let internal_opt = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal());
+            if let Some(internal) = internal_opt.clone() {
+                // Only set state/nat_type if current state is neither EndpointAvailable nor Registered
+                let cur = internal.get_state();
+                if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
+                    let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
+                    internal.set_nat_type(crate::engine::NatType::Restricted);
+
+                    // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
                     use std::time::Duration;
                     use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 
@@ -400,8 +404,8 @@ impl MessageHandler for DefaultPrintingHandler {
                         }
                     };
 
-                    let finder = RelayFinder::new(api_for_thread.clone(), Duration::from_secs(60), discover);
-                    let my_id = match api_for_thread.get_my_id() {
+                    let finder = RelayFinder::new(api.clone(), Duration::from_secs(60), discover);
+                    let my_id = match api.get_my_id() {
                         Some(id) => id,
                         None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
                     };
@@ -416,7 +420,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     let json = crate::messages::marshal::to_json_value(&msg);
                     let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
                     let uid = relay_info.id.clone();
-                    match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                    match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
                         Ok(resp) => {
                             let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
                             if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
@@ -433,13 +437,13 @@ impl MessageHandler for DefaultPrintingHandler {
                             internal.set_state(crate::engine::EngineState::Registered)
                         }
                     }
-                });
 
+                } else {
+                    log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+                }
             } else {
-                log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+                warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
             }
-        } else {
-            warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
-        }
+        });
     }
 }

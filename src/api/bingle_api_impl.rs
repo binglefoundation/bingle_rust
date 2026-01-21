@@ -392,7 +392,32 @@ impl BingleApi for BingleApiImpl {
             Err(e) => { warn!("[BingleApiImpl::send_message_to_network][ERROR] invalid user_id: base32 decode failed: {}", e); false },
         };
 
-        let ok = if user_id_valid { self.send_over_dtls(network_source_key, message) } else { false };
+        let ok = if user_id_valid {
+            // If this is a relay endpoint missing a channel, allocate one via RelayClient::call
+            let mut effective_nsk = network_source_key.clone();
+            if effective_nsk.relay_id().is_some() && effective_nsk.relay_channel().is_none() {
+                log::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
+                if let Some(cb) = progress.as_ref() { cb(15, "Allocating relay channel".to_string()); }
+
+                // Build a temporary Engine-backed BingleApi handle and construct RelayClient with Engine DDB client
+                let eng_ptr_arc = std::sync::Arc::new(std::sync::atomic::AtomicPtr::new((&*self.engine) as *const crate::engine::Engine as *mut crate::engine::Engine));
+                let api_handle: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(crate::engine::EngineBingleApiHandle(eng_ptr_arc.clone()));
+                let ddb = self.engine.ddb_client();
+                let relay_client = crate::relay::relay_client::RelayClient::new(api_handle, ddb);
+                match relay_client.call(&effective_nsk, user_id) {
+                    Ok(updated) => {
+                        effective_nsk = updated;
+                        if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
+                    }
+                    Err(err) => {
+                        log::warn!("[BingleApiImpl::send_message_to_network] relay call failed: {}", err);
+                        if let Some(cb) = progress.as_ref() { cb(100, format!("Relay allocation failed: {}", err)); }
+                        return false;
+                    }
+                }
+            }
+            self.send_over_dtls(&effective_nsk, message)
+        } else { false };
 
         if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
         log::info!("[BingleApiImpl::send_message_to_network][exit] return={}", ok);
