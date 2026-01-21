@@ -98,7 +98,7 @@ echo "Using STUN servers: ${STUN_A_IP}:3478, ${STUN_B_IP}:3478"
 # Start relay containers on the same docker network
 # They will autodetect EXTERNAL_IP inside the container and register static endpoints
 # reachable from other containers on this network.
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 -d --rm \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -112,7 +112,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 -d --rm \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -267,6 +267,18 @@ if [[ -f "$PING_OUT" ]]; then
   fi
 else
   if [[ ${PING_RC:-1} -eq 0 ]]; then PING_STATUS="PASS"; else PING_STATUS="FAIL"; fi
+fi
+
+# Extract and display timing information
+echo "-- Timing Summary --"
+if [[ -f "$MAIN_OUT" ]]; then
+  echo "Main run timings:"
+  grep "TIMING:" "$MAIN_OUT" | sed 's/^/  /' || echo "  (no timing info found)"
+fi
+
+if [[ -f "$PING_OUT" ]]; then
+  echo "Ping run timings:"
+  grep "TIMING:" "$PING_OUT" | sed 's/^/  /' || echo "  (no timing info found)"
 fi
 
 echo "-- Overall --"

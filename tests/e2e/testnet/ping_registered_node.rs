@@ -60,10 +60,25 @@ fn testnet_send_ping_to_registered_node() {
         "text": "hello from e2e",
     });
 
-    // 5) Send and validate response
+    // 5) Send and validate response with timing and progress
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    // Create progress callback that logs at INFO level
+    let progress_callback = Arc::new(|progress: u8, message: String| {
+        log::info!("Ping message progress: {}% - {}", progress, message);
+    });
+
+    // Time the send_message_to_id_with_response call
+    let start_time = Instant::now();
     let resp = api
-        .send_message_to_id_with_response(&dest_id, ping_req, None)
+        .send_message_to_id_with_response(&dest_id, ping_req, Some(progress_callback))
         .expect("send_message_to_id_with_response should succeed");
+    let elapsed = start_time.elapsed();
+
+    // Output timing clearly
+    println!("TIMING: send_message_to_id_with_response took {:.3} seconds", elapsed.as_secs_f64());
+    log::info!("send_message_to_id_with_response completed in {:.3} seconds", elapsed.as_secs_f64());
 
     // Expected: { app: "ping", type: "response", verifiedId: dest_id, text: "ACK: ..." }
     let app = resp.get("app").and_then(|v| v.as_str());
