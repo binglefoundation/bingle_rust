@@ -1,13 +1,12 @@
-use std::net::{UdpSocket, ToSocketAddrs};
 use std::any::Any;
-use std::collections::VecDeque;
+use std::net::{ToSocketAddrs, UdpSocket};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
-use log::warn;
 use crate::api::bingle_api::NetworkEndpoint;
+use log::warn;
 
 /// Mux classification types translated from the provided Kotlin function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

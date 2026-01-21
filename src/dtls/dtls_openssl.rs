@@ -420,9 +420,7 @@ pub mod non_ios {
 
     use crate::api::network_endpoint::NetworkEndpoint;
     // Per-peer datagram queue and blocking mechanism.
-    use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-    use std::sync::Condvar;
 
     pub(crate) struct PeerQueue {
         sender: std::sync::mpsc::Sender<Vec<u8>>,
