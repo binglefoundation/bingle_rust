@@ -5,7 +5,7 @@ use rust_comms::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, R
 use rust_comms::dtls::UdpNetworkMux;
 use rust_comms::messages::*;
 use rust_comms::messages::handlers::MessageHandler;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 #[derive(Default, Clone)]
 struct MockDtls {
@@ -53,6 +53,7 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let t1 = RelayTriangleTest1 { app: None, checking_endpoint: "127.0.0.1:12345".parse().unwrap() };
     // Construct minimal API and FromStruct
     struct MockApi;
+    impl rust_comms::api::bingle_api::BingleApiInternal for MockApi { fn set_state(&self, _s: rust_comms::engine::EngineState) {} }
     impl BingleApi for MockApi {
         fn get_my_id(&self) -> Option<String> { Some("ME".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
@@ -68,7 +69,7 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
         fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
-    let api: Arc<dyn BingleApi> = Arc::new(MockApi);
+    let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
     handler.on_triangle_test1(api, &from, &t1);
 
@@ -96,6 +97,7 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     let t2 = RelayTriangleTest2 { app: None, checking_id: "id-abc".into(), checking_endpoint: endpoint };
     // Minimal API and FromStruct
     struct MockApi;
+    impl rust_comms::api::bingle_api::BingleApiInternal for MockApi { fn set_state(&self, _s: rust_comms::engine::EngineState) {} }
     impl BingleApi for MockApi {
         fn get_my_id(&self) -> Option<String> { Some("ME".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
@@ -111,7 +113,7 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
         fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
-    let api: Arc<dyn BingleApi> = Arc::new(MockApi);
+    let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
     handler.on_triangle_test2(api, &from, &t2);
 

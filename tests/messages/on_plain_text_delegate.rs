@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{Message, PlainTextMessage};
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler {
     called: &'static AtomicBool,
@@ -12,7 +12,7 @@ struct CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_plain_text(&self, _api: Arc<dyn BingleApi>, from: &rust_comms::messages::handlers::FromStruct, msg: &PlainTextMessage) {
+    fn on_plain_text(&self, _api: Arc<dyn BingleApiBoth>, from: &rust_comms::messages::handlers::FromStruct, msg: &PlainTextMessage) {
         assert_eq!(from.id, "from-handle");
         let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text.clone()}));
         self.called.store(true, Ordering::SeqCst);

@@ -1,4 +1,4 @@
-use crate::api::bingle_api::BingleApi;
+use crate::api::bingle_api::{BingleApi, BingleApiBoth};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use log::warn;
@@ -11,9 +11,31 @@ pub struct FromStruct {
     pub network_source_key: crate::api::bingle_api::NetworkEndpoint,
 }
 
+// Adapter to allow passing the composite API where a plain BingleApi is required (e.g., RelayFinder)
+struct BothAsApi { inner: Arc<dyn BingleApiBoth> }
+impl BingleApi for BothAsApi {
+    fn debug_print_options(&self) { self.inner.debug_print_options() }
+    fn get_my_id(&self) -> Option<String> { self.inner.get_my_id() }
+    fn get_user_id(&self) -> Option<String> { self.inner.get_user_id() }
+    fn get_handle(&self) -> Option<String> { self.inner.get_handle() }
+    fn get_app_id(&self) -> Option<u64> { self.inner.get_app_id() }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.inner.get_algo_provider_config() }
+    fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported".into()) }
+    fn stop(&mut self) { }
+    fn network_change(&mut self) { }
+    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_id(user_id, message, progress) }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_handle(handle, message, progress) }
+    fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_network(nsk, user_id, message, progress) }
+    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.inner.send_message_to_id_with_response(user_id, message, progress) }
+    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.inner.send_message_to_handle_with_response(handle, message, progress) }
+    fn send_message_to_network_with_response(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.inner.send_message_to_network_with_response(nsk, user_id, message, progress) }
+    fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
+    fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
+}
+
 pub trait MessageHandler {
     // Plain text
-    fn on_plain_text(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &PlainTextMessage) {
+    fn on_plain_text(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &PlainTextMessage) {
         // Build JSON for callback
         let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
         // Delegate to API on_message via the per-API Router if installed
@@ -36,7 +58,7 @@ pub trait MessageHandler {
     }
 
     // Ping messages
-    fn on_ping_ping(&self, api: Arc<dyn BingleApi>, from: &FromStruct, msg: &PingPing) {
+    fn on_ping_ping(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingPing) {
         log::info!("[on_ping_ping] handling ping {:?} from {:?}", msg, from);
         // Reply with PingResponse: app="ping", type="response", verifiedId from API, text="ACK: {text}"
         if let Some(router) = crate::messages::router::Router::current() {
@@ -79,10 +101,10 @@ pub trait MessageHandler {
             }
         }
     }
-    fn on_ping_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }
+    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }
 
     // Relay messages
-    fn on_relay_call(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCall) {
+    fn on_relay_call(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCall) {
         use crate::turn::turn_handler::TurnRelayHandler;
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() {
@@ -116,12 +138,12 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_call] No router context available");
         }
     }
-    fn on_relay_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
-    fn on_triangle_test1(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone()))); }
-    fn on_triangle_test2(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
-    fn on_triangle_test3(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
-    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(_msg.clone()))); }
-    fn on_relay_listen(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayListen) {
+    fn on_relay_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
+    fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone()))); }
+    fn on_triangle_test2(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
+    fn on_triangle_test3(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
+    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(_msg.clone()))); }
+    fn on_relay_listen(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListen) {
         // Only process on relay nodes
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() {
@@ -158,7 +180,7 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_listen] No router context available");
         }
     }
-    fn on_relay_check(&self, _api: Arc<dyn BingleApi>, from: &FromStruct, _msg: &RelayCheck) {
+    fn on_relay_check(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayCheck) {
         // Send CheckResponse available=true back to the last sender address using the real Bingle API sender
         let sender_opt = crate::messages::router::Router::current().and_then(|r| r.get_sender());
         if sender_opt.is_none() { warn!("[handlers::on_relay_check] No sender available"); return; }
@@ -177,17 +199,17 @@ pub trait MessageHandler {
         let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
         let _ok = sender(&nsk, &user_id, json_val);
     }
-    fn on_relay_listen_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
-    fn on_relay_check_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
-    fn on_relay_call_response(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
-    fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayKeepAlive) { self.on_unimplemented(&Message::Relay(RelayMessage::KeepAlive(_msg.clone()))); }
+    fn on_relay_listen_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
+    fn on_relay_check_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
+    fn on_relay_call_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
+    fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayKeepAlive) { self.on_unimplemented(&Message::Relay(RelayMessage::KeepAlive(_msg.clone()))); }
 
     // DDB messages (default to unimplemented unless overridden)
-    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
-    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
+    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
+    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
 
     // Unknown
-    fn on_unknown(&self, _api: Arc<dyn BingleApi>, _raw: &serde_json::Value) {
+    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
         log::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
     }
 
@@ -200,7 +222,7 @@ pub trait MessageHandler {
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
-    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApi>, from: &FromStruct, up: &DdbUpsertResolve) {
+    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, up: &DdbUpsertResolve) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() { return; }
             // Validate sender id
@@ -221,7 +243,7 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
-    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApi>, _from: &FromStruct, q: &DdbQueryResolve) {
+    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, q: &DdbQueryResolve) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() { return; }
             // Lookup
@@ -238,7 +260,7 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
-    fn on_triangle_test1(&self, api: Arc<dyn BingleApi>, from: &FromStruct, msg: &RelayTriangleTest1) {
+    fn on_triangle_test1(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayTriangleTest1) {
         // Print options via API for debugging
         api.debug_print_options();
         // Run in a thread per requirements
@@ -273,8 +295,9 @@ impl MessageHandler for DefaultPrintingHandler {
                     std::sync::Arc::new(|| panic!("on_triangle_test1 (iOS): discovery not supported without indexer"))
                 }
             };
-            // Use the BingleApi instance passed to the handler
-            let finder = RelayFinder::new(api_for_thread.clone(), Duration::from_secs(60), discover);
+            // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApi)
+            let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
+            let finder = RelayFinder::new(api_plain, Duration::from_secs(60), discover);
 
             // Obtain our id from API (derived from engine issuer)
             let my_id = match api_for_thread.get_my_id() {
@@ -313,7 +336,7 @@ impl MessageHandler for DefaultPrintingHandler {
         });
     }
 
-    fn on_triangle_test2(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, msg: &RelayTriangleTest2) {
+    fn on_triangle_test2(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayTriangleTest2) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkEndpoint;
         let endpoint = msg.checking_endpoint;
@@ -327,39 +350,34 @@ impl MessageHandler for DefaultPrintingHandler {
         log::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
     }
 
-    fn on_triangle_test3(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
-        // Use internal API to set engine state to EndpointAvailable and NAT type to FullCone.
-        if let Some(internal) = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal()) {
-            internal.set_state(crate::engine::EngineState::EndpointAvailable);
-            internal.set_nat_type(crate::engine::NatType::FullCone);
-            // After setting NAT type, start a background thread to register our discovered public endpoint in DDB.
-            let internal_clone = internal.clone();
-            let api_for_log = api.clone();
-            std::thread::spawn(move || {
-                // Obtain the discovered public address (including port)
-                if let Some(addr) = internal_clone.get_last_public_addr() {
-                    match internal_clone.ddb_register_ip(addr) {
-                        Ok(()) => {
-                            // On success, mark engine state as Registered and print id/handle for debugging
-                            let uid = api_for_log.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
-                            let handle = api_for_log.get_handle().unwrap_or_else(|| "<unknown>".to_string());
-                            log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded (user_id={}, handle={})", uid, handle);
-                            internal_clone.set_state(crate::engine::EngineState::Registered);
-                        }
-                        Err(e) => {
-                            log::warn!("[handlers::on_triangle_test3] ddb_register_ip failed: {}", e);
-                        }
+    fn on_triangle_test3(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
+        // Use the combined API (BingleApi + BingleApiInternal) instead of Router::get_bingle_api_internal
+        api.set_state(crate::engine::EngineState::EndpointAvailable);
+        api.set_nat_type(crate::engine::NatType::FullCone);
+        // After setting NAT type, start a background thread to register our discovered public endpoint in DDB.
+        let api_for_log = api.clone();
+        std::thread::spawn(move || {
+            // Obtain the discovered public address (including port)
+            if let Some(addr) = api_for_log.get_last_public_addr() {
+                match api_for_log.ddb_register_ip(addr) {
+                    Ok(()) => {
+                        // On success, mark engine state as Registered and print id/handle for debugging
+                        let uid = api_for_log.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
+                        let handle = api_for_log.get_handle().unwrap_or_else(|| "<unknown>".to_string());
+                        log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded (user_id={}, handle={})", uid, handle);
+                        api_for_log.set_state(crate::engine::EngineState::Registered);
                     }
-                } else {
-                    log::warn!("[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register");
+                    Err(e) => {
+                        log::warn!("[handlers::on_triangle_test3] ddb_register_ip failed: {}", e);
+                    }
                 }
-            });
-        } else {
-            warn!("[handlers::on_triangle_test3] No internal API available; cannot set state");
-        }
+            } else {
+                log::warn!("[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register");
+            }
+        });
     }
 
-    fn on_triangle_test1_response(&self, api: Arc<dyn BingleApi>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
+    fn on_triangle_test1_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
         log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
 
         // Move all logic to a spawned thread with delay
@@ -368,81 +386,75 @@ impl MessageHandler for DefaultPrintingHandler {
             // Delay for 10 seconds before making the state check
             std::thread::sleep(std::time::Duration::from_secs(10));
 
-            let internal_opt = crate::messages::router::Router::current().and_then(|r| r.get_bingle_api_internal());
-            if let Some(internal) = internal_opt.clone() {
-                // Only set state/nat_type if current state is neither EndpointAvailable nor Registered
-                let cur = internal.get_state();
-                if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
-                    let _ = internal.set_state(crate::engine::EngineState::NATRestricted);
-                    internal.set_nat_type(crate::engine::NatType::Restricted);
+            // Only set state/nat_type if current state is neither EndpointAvailable nor Registered
+            let cur = api_for_thread.get_state();
+            if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
+                let _ = api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
+                api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
 
-                    // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
-                    use std::time::Duration;
-                    use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+                // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
+                use std::time::Duration;
+                use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
 
-                    // Build discovery closure similar to on_triangle_test1
-                    let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
-                        #[cfg(not(target_os = "ios"))]
-                        {
-                            let app_id_opt = api_for_thread
-                                .get_app_id()
-                                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                            let app_id = match app_id_opt {
-                                Some(v) => v,
-                                None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
-                            };
-                            let cfg = api_for_thread.get_algo_provider_config();
-                            crate::relay::discovery::indexer_discover_closure(app_id, cfg)
-                        }
-                        #[cfg(target_os = "ios")]
-                        {
-                            let _ = api_for_thread
-                                .get_app_id()
-                                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
-                                .expect("on_triangle_test1_response (iOS): app_id is required");
-                            std::sync::Arc::new(|| panic!("on_triangle_test1_response (iOS): discovery not supported without indexer"))
-                        }
-                    };
-
-                    let finder = RelayFinder::new(api.clone(), Duration::from_secs(60), discover);
-                    let my_id = match api.get_my_id() {
-                        Some(id) => id,
-                        None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
-                    };
-                    let relay_info = match finder.find_relay(&my_id) {
-                        Ok(info) => info,
-                        Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
-                    };
-
-                    // Send Relay::Listen and expect Relay::ListenResponse
-                    let listen = crate::messages::types::RelayListen { app: None };
-                    let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
-                    let json = crate::messages::marshal::to_json_value(&msg);
-                    let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
-                    let uid = relay_info.id.clone();
-                    match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
-                        Ok(resp) => {
-                            let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                            if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
-                        }
-                        Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
+                // Build discovery closure similar to on_triangle_test1
+                let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+                    #[cfg(not(target_os = "ios"))]
+                    {
+                        let app_id_opt = api_for_thread
+                            .get_app_id()
+                            .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                        let app_id = match app_id_opt {
+                            Some(v) => v,
+                            None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
+                        };
+                        let cfg = api_for_thread.get_algo_provider_config();
+                        crate::relay::discovery::indexer_discover_closure(app_id, cfg)
                     }
-
-                    // Register relay association in DDB
-                    if let Some(internal) = internal_opt {
-                        if let Err(e) = internal.ddb_register_relay(relay_info.id.clone(), None) {
-                            warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
-                        } else {
-                            log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
-                            internal.set_state(crate::engine::EngineState::Registered)
-                        }
+                    #[cfg(target_os = "ios")]
+                    {
+                        let _ = api_for_thread
+                            .get_app_id()
+                            .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
+                            .expect("on_triangle_test1_response (iOS): app_id is required");
+                        std::sync::Arc::new(|| panic!("on_triangle_test1_response (iOS): discovery not supported without indexer"))
                     }
+                };
 
+                // Wrap combined API as plain BingleApi for RelayFinder
+                let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
+                let finder = RelayFinder::new(api_plain, Duration::from_secs(60), discover);
+                let my_id = match api_for_thread.get_my_id() {
+                    Some(id) => id,
+                    None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
+                };
+                let relay_info = match finder.find_relay(&my_id) {
+                    Ok(info) => info,
+                    Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
+                };
+
+                // Send Relay::Listen and expect Relay::ListenResponse
+                let listen = crate::messages::types::RelayListen { app: None };
+                let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
+                let json = crate::messages::marshal::to_json_value(&msg);
+                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
+                let uid = relay_info.id.clone();
+                match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                    Ok(resp) => {
+                        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                        if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
+                    }
+                    Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
+                }
+
+                // Register relay association in DDB and mark registered
+                if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id.clone(), None) {
+                    warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
                 } else {
-                    log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+                    log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+                    api_for_thread.set_state(crate::engine::EngineState::Registered)
                 }
             } else {
-                warn!("[handlers::on_triangle_test1_response] No internal API available; cannot set state");
+                log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
             }
         });
     }

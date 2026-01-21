@@ -3,7 +3,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult, UdpNetworkMux};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::relay_ping_handler::RelayPingHandler;
@@ -43,6 +43,9 @@ impl Dtls for MockDtls {
 
 #[derive(Clone)]
 struct MockApi;
+impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
+    fn set_state(&self, _state: rust_comms::engine::EngineState) { }
+}
 impl BingleApi for MockApi {
     fn get_my_id(&self) -> Option<String> { Some("MYID".to_string()) }
     fn get_app_id(&self) -> Option<u64> { None }
@@ -64,7 +67,7 @@ fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     // Arrange
     let (mock_dtls, sends) = MockDtls::new();
     let handler = RelayPingHandler::new(Arc::new(mock_dtls), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 34567)));
-    let api: Arc<dyn BingleApi> = Arc::new(MockApi);
+    let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let t1 = RelayTriangleTest1 { app: None, checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) };
 
     // Act: invoke handler directly

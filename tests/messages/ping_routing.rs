@@ -5,7 +5,7 @@ use rust_comms::messages::{Message};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{PingMessage, PingPing};
 
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler {
     called: Arc<Mutex<bool>>,
@@ -14,7 +14,7 @@ struct CapturingHandler {
 impl CapturingHandler { fn new(flag: Arc<Mutex<bool>>) -> Self { Self { called: flag } } }
 
 impl MessageHandler for CapturingHandler {
-    fn on_ping_ping(&self, _api: Arc<dyn BingleApi>, _from: &rust_comms::messages::handlers::FromStruct, msg: &PingPing) {
+    fn on_ping_ping(&self, _api: Arc<dyn BingleApiBoth>, _from: &rust_comms::messages::handlers::FromStruct, msg: &PingPing) {
         // Ensure we received the ping message with expected fields
         assert_eq!(msg.app, "ping");
         assert_eq!(msg.text.as_deref(), Some("hello"));

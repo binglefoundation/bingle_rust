@@ -5,8 +5,7 @@ use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use crate::api::bingle_api::{BingleApi, NetworkEndpoint, UserId};
-use crate::api::bingle_api::BingleApiInternal;
+use crate::api::bingle_api::{BingleApi, BingleApiInternal, NetworkEndpoint, UserId};
 
 // Thread-local current router used to avoid globals and isolate per-API state.
 thread_local! {
@@ -31,6 +30,53 @@ pub struct Router {
     turn_handler: Mutex<Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>>>,
     // Outbound response produced by handlers during routing (consumed by Engine/DTLS layer)
     outbound_response: Mutex<Option<serde_json::Value>>,
+}
+
+struct CombinedApi {
+    api: Arc<dyn BingleApi>,
+    internal: Option<Arc<dyn BingleApiInternal>>,
+}
+
+impl BingleApi for CombinedApi {
+    fn debug_print_options(&self) { self.api.debug_print_options() }
+    fn get_my_id(&self) -> Option<String> { self.api.get_my_id() }
+    fn get_handle(&self) -> Option<String> { self.api.get_handle() }
+    fn get_app_id(&self) -> Option<u64> { self.api.get_app_id() }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.get_algo_provider_config() }
+    fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported in handler context".into()) }
+    fn stop(&mut self) { }
+    fn network_change(&mut self) { }
+    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.send_message_to_id(user_id, message, progress) }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.send_message_to_handle(handle, message, progress) }
+    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.send_message_to_network(nsk, user_id, message, progress) }
+    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_id_with_response(user_id, message, progress) }
+    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_handle_with_response(handle, message, progress) }
+    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_network_with_response(nsk, user_id, message, progress) }
+    fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
+    fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
+}
+impl BingleApiInternal for CombinedApi {
+    fn set_state(&self, state: crate::engine::EngineState) {
+        if let Some(i) = &self.internal { i.set_state(state); }
+    }
+    fn get_state(&self) -> crate::engine::EngineState {
+        if let Some(i) = &self.internal { i.get_state() } else { crate::engine::EngineState::StunIdentify }
+    }
+    fn set_nat_type(&self, nat: crate::engine::NatType) {
+        if let Some(i) = &self.internal { i.set_nat_type(nat); }
+    }
+    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
+        if let Some(i) = &self.internal { i.get_last_public_addr() } else { None }
+    }
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
+        if let Some(i) = &self.internal { i.ddb_register_ip(endpoint) } else { Err("not implemented".into()) }
+    }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
+        if let Some(i) = &self.internal { i.ddb_register_relay(relay_id, relay_sig) } else { Err("not implemented".into()) }
+    }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
+        if let Some(i) = &self.internal { i.update_turn_listener_relay(relay_id, relay_addr) } else { Err("not implemented".into()) }
+    }
 }
 
 impl Router {
@@ -102,7 +148,10 @@ impl Router {
             log::warn!("[router::route] No BingleApi available to pass to handler");
             return;
         }
-        let api = api_opt.unwrap();
+        let api_base = api_opt.unwrap();
+        let internal = self.get_bingle_api_internal();
+        let combined_api: Arc<dyn crate::api::bingle_api::BingleApiBoth> = Arc::new(CombinedApi { api: api_base.clone(), internal });
+        let api = combined_api.clone();
         // Build FromStruct with id and network source key (direct from last_from if available)
         let nsk = if let Some(addr) = self.get_last_from() {
             NetworkEndpoint::new_direct(addr)

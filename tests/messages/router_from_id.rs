@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::RelayTriangleTest1;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler {
     last_from_id: Arc<Mutex<Option<String>>>,
@@ -14,7 +14,7 @@ impl CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_triangle_test1(&self, _api: Arc<dyn BingleApi>, from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1) {
+    fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1) {
         if let Ok(mut g) = self.last_from_id.lock() { *g = Some(from.id.to_string()); }
     }
 }

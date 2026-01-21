@@ -3,13 +3,13 @@ use std::sync::{Arc, Mutex};
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::RelayTriangleTest1Response;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 
 struct CapturingHandler { hit: Arc<Mutex<bool>> }
 impl CapturingHandler { fn new(hit: Arc<Mutex<bool>>) -> Self { Self { hit } } }
 
 impl MessageHandler for CapturingHandler {
-    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApi>, _from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1Response) {
+    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1Response) {
         if let Ok(mut g) = self.hit.lock() { *g = true; }
     }
 }

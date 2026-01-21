@@ -38,6 +38,10 @@ pub type UserId = String; // Algorand address (base32, 36-byte decoded)
 pub type Handle = String; // User handle string
 pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 
+/// Composite trait required by message handlers: implements both the public API and internal controls.
+pub trait BingleApiBoth: BingleApi + BingleApiInternal {}
+impl<T: BingleApi + BingleApiInternal> BingleApiBoth for T {}
+
 /// Progress callback reported during send operations.
 /// Parameters:
 /// - percent_done: 0..=100 indicating the percentage complete
