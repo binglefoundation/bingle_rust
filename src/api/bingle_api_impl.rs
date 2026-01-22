@@ -29,6 +29,8 @@ pub struct BingleApiImpl {
     started_options: StartOptions,
     // Shared on_message handler accessible from Engine/DTLS callback without needing &self
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
+    // Optional on_listening handler
+    on_listening: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1). Boxed to ensure stable address across moves.
     engine: Box<Engine>,
     // Per-API router to avoid global cross-talk
@@ -45,6 +47,7 @@ impl Default for BingleApiImpl {
             on_connect: None,
             started_options: StartOptions::default(),
             shared_on_message: Arc::new(Mutex::new(None)),
+            on_listening: None,
             engine: Box::new(engine),
             router: None,
         }
@@ -327,11 +330,11 @@ impl BingleApi for BingleApiImpl {
 
     fn stop(&mut self) {
         log::info!("[BingleApiImpl::stop][enter]");
-        #[allow(unused)] {  }
+        // Notify listeners that we are no longer listening
+        if let Some(cb) = &self.on_listening { cb(false); }
         // Stop Engine
         self.engine.stop();
         log::info!("[BingleApiImpl::stop][exit]");
-        #[allow(unused)] {  }
     }
 
     fn network_change(&mut self) {
@@ -507,10 +510,14 @@ impl BingleApi for BingleApiImpl {
 
     fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>) { 
             log::info!("[BingleApiImpl::set_on_connect][enter] handler_is_some={}", handler.is_some());
-            #[allow(unused)] {  }
             self.on_connect = handler; 
             log::info!("[BingleApiImpl::set_on_connect][exit]");
-            #[allow(unused)] {  }
+        }
+
+    fn set_on_listening(&mut self, handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {
+            log::info!("[BingleApiImpl::set_on_listening][enter] handler_is_some={}", handler.is_some());
+            self.on_listening = handler;
+            log::info!("[BingleApiImpl::set_on_listening][exit]");
         }
 }
 
@@ -572,6 +579,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             log::warn!("[BingleApiImpl::update_turn_listener_relay][exit] Err({})", err);
             Err(err)
         }
+    }
+    fn notify_listening(&self, listening: bool) {
+        if let Some(cb) = &self.on_listening { cb(listening); }
     }
 }
 

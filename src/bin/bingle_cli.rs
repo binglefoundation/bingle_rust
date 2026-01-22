@@ -3,7 +3,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender};
 
-use rust_comms::api::bingle_api::{BingleApi, OnConnectHandler, OnMessageHandler};
+use rust_comms::api::bingle_api::{BingleApi, OnConnectHandler, OnMessageHandler, OnListeningHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
@@ -65,23 +65,42 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  Global logging: --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  Global logging: --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
     if code == 0 { log::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
 
-fn cmd_run(args: Vec<String>) {
+fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
-        warn!("Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]");
+        warn!("Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>]");
         std::process::exit(0);
+    }
+
+    // Extract and remove optional --sentinel-file <path> from args before StartOptions parsing
+    let mut sentinel_file: Option<String> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        if args[i] == "--sentinel-file" {
+            if i + 1 >= args.len() {
+                warn!("--sentinel-file requires a <path> value");
+                std::process::exit(2);
+            }
+            sentinel_file = Some(args[i + 1].clone());
+            // Remove the flag and its value
+            args.remove(i); // remove flag
+            args.remove(i); // remove value now at same index
+            // Do not increment i; continue scanning
+            continue;
+        }
+        i += 1;
     }
 
     // Parse CLI args into StartOptions
     let opts = match parse_start_options_from_args(args.clone()) {
         Ok(o) => o,
         Err(e) => {
-            warn!("Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>]", e);
+            warn!("Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>]", e);
             std::process::exit(2);
         }
     };
@@ -129,6 +148,30 @@ fn cmd_run(args: Vec<String>) {
         log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
     });
     api.set_on_connect(Some(on_connect));
+
+    // Optional: install OnListening handler to manage a sentinel file
+    if let Some(path) = sentinel_file.clone() {
+        let p = path.clone();
+        let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
+            if listening {
+                match fs::OpenOptions::new().create(true).write(true).truncate(true).open(&p) {
+                    Ok(mut f) => {
+                        let _ = writeln!(f, "listening");
+                        log::info!("Created sentinel file: {}", p);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to create sentinel file '{}': {}", p, e);
+                    }
+                }
+            } else {
+                match fs::remove_file(&p) {
+                    Ok(()) => log::info!("Removed sentinel file: {}", p),
+                    Err(e) => log::warn!("Failed to remove sentinel file '{}': {}", p, e),
+                }
+            }
+        });
+        api.set_on_listening(Some(on_listening));
+    }
 
     // Start API
     if let Err(e) = api.start(&opts) {

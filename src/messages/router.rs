@@ -77,6 +77,9 @@ impl BingleApiInternal for CombinedApi {
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
         if let Some(i) = &self.internal { i.update_turn_listener_relay(relay_id, relay_addr) } else { Err("not implemented".into()) }
     }
+    fn notify_listening(&self, listening: bool) {
+        if let Some(i) = &self.internal { i.notify_listening(listening) }
+    }
 }
 
 impl Router {
@@ -178,6 +181,7 @@ impl Router {
             Message::Ddb(d) => match d {
                 DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), &from, m),
                 DdbMessage::QueryResolve(m) => handler.on_ddb_query_resolve(api.clone(), &from, m),
+                DdbMessage::InitResolve(m) => handler.on_ddb_init_resolve(api.clone(), &from, m),
                 _ => handler.on_unimplemented(msg),
             },
             Message::Ping(p) => match p {

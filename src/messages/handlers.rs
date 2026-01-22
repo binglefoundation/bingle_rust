@@ -207,6 +207,7 @@ pub trait MessageHandler {
     // DDB messages (default to unimplemented unless overridden)
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
     fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
+    fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbInitResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone()))); }
 
     // Unknown
     fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
@@ -222,6 +223,30 @@ pub trait MessageHandler {
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
+    fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbInitResolve) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() { return; }
+            let sender_opt = router.get_sender();
+            if sender_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No sender available"); return; }
+            let sender = sender_opt.unwrap();
+
+            // Get backend
+            let backend_opt = router.get_ddb_backend();
+            if backend_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No DDB backend available"); return; }
+            let backend_arc = backend_opt.unwrap();
+            let guard = backend_arc.lock();
+            if guard.is_err() { warn!("[handlers::on_ddb_init_resolve] Backend lock poisoned"); return; }
+            let backend = guard.unwrap();
+
+            // Prepare destination from FromStruct
+            let nsk = from.network_source_key.clone();
+            let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+
+            // Invoke backend handle_init: snapshot and send InitResponse + DumpResolve per record.
+            backend.handle_init(&nsk, &user_id, msg.response_tag.clone(), &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
+        }
+    }
+
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, up: &DdbUpsertResolve) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() { return; }
@@ -366,6 +391,8 @@ impl MessageHandler for DefaultPrintingHandler {
                         let handle = api_for_log.get_handle().unwrap_or_else(|| "<unknown>".to_string());
                         log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded (user_id={}, handle={})", uid, handle);
                         api_for_log.set_state(crate::engine::EngineState::Registered);
+                        // Notify that we are listening now
+                        api_for_log.notify_listening(true);
                     }
                     Err(e) => {
                         log::warn!("[handlers::on_triangle_test3] ddb_register_ip failed: {}", e);
@@ -451,7 +478,9 @@ impl MessageHandler for DefaultPrintingHandler {
                     warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
                 } else {
                     log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
-                    api_for_thread.set_state(crate::engine::EngineState::Registered)
+                    api_for_thread.set_state(crate::engine::EngineState::Registered);
+                    // Notify that we are listening now
+                    api_for_thread.notify_listening(true)
                 }
             } else {
                 log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);

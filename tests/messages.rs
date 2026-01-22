@@ -48,6 +48,9 @@ mod relay_call;
 #[path = "messages/ddb_messages_json.rs"]
 mod ddb_messages_json;
 
+#[path = "messages/listening_notifications.rs"]
+mod listening_notifications;
+
 // Some repositories include an additional test file for TriangleTest3 state setting.
 // If present in this repo, include it; otherwise harmless if missing when not referenced.
 // Note: We cannot conditionally include based on file existence in Rust at build time.

@@ -49,6 +49,18 @@ pub trait DdbBackend {
     fn delete(&mut self, id: &str);
     /// Lookup and return a copy of the record, if it exists
     fn lookup(&self, id: &str) -> Option<AdvertRecord>;
+
+    /// Handle InitResolve: take a snapshot and send InitResponse and DumpResolve messages to the requester.
+    ///
+    /// Implementations should not block extensively; they should iterate over a consistent snapshot of the DB.
+    /// The sender callback will be used to send messages to the new peer (identified by `nsk` and `user_id`).
+    fn handle_init(
+        &self,
+        nsk: &crate::api::bingle_api::NetworkEndpoint,
+        user_id: &str,
+        response_tag: Option<String>,
+        sender: &dyn Fn(&crate::api::bingle_api::NetworkEndpoint, &str, serde_json::Value) -> bool,
+    );
 }
 
 /// Simple in-memory DDB backend backed by a HashMap
@@ -72,5 +84,46 @@ impl DdbBackend for InMemoryDdbBackend {
 
     fn lookup(&self, id: &str) -> Option<AdvertRecord> {
         self.map.get(id).cloned()
+    }
+
+    fn handle_init(
+        &self,
+        nsk: &crate::api::bingle_api::NetworkEndpoint,
+        user_id: &str,
+        response_tag: Option<String>,
+        sender: &dyn Fn(&crate::api::bingle_api::NetworkEndpoint, &str, serde_json::Value) -> bool,
+    ) {
+        // Snapshot keys to avoid holding the map across sends
+        let mut records: Vec<AdvertRecord> = self.map.values().cloned().collect();
+        // Deterministic ordering for tests
+        records.sort_by(|a, b| a.id.cmp(&b.id));
+        let db_count = records.len() as i64;
+
+        // Send InitResponse with dbCount
+        let init_resp = crate::messages::types::Message::Ddb(
+            crate::messages::types::DdbMessage::InitResponse(
+                crate::messages::types::DdbInitResponse {
+                    app: "ddb".to_string(),
+                    db_count,
+                    tag: None,
+                    response_tag: response_tag.clone(),
+                    text: None,
+                    data: None,
+                }
+            )
+        );
+        let init_json = crate::messages::marshal::to_json_value(&init_resp);
+        let _ = sender(nsk, user_id, init_json);
+
+        // Send one DumpResolve per record
+        for rec in records.into_iter() {
+            let dump = crate::messages::types::Message::Ddb(
+                crate::messages::types::DdbMessage::DumpResolve(
+                    crate::messages::types::DdbDumpResolve { app: "ddb".into(), record: rec, tag: None, response_tag: None, text: None, data: None }
+                )
+            );
+            let dump_json = crate::messages::marshal::to_json_value(&dump);
+            let _ = sender(nsk, user_id, dump_json);
+        }
     }
 }

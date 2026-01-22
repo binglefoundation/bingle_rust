@@ -29,6 +29,9 @@ pub trait BingleApiInternal: Send + Sync {
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
+
+    /// Notify that the node's listening state changed. Default no-op.
+    fn notify_listening(&self, _listening: bool) { }
 }
 
 /// Convenience type aliases used by the Bingle API.
@@ -60,6 +63,11 @@ pub type OnMessageHandler = dyn Fn(UserId, Handle, JsonValue) + Send + Sync + 's
 /// - sender: id of the sender
 /// - sender_handle: handle of the sender
 pub type OnConnectHandler = dyn Fn(UserId, Handle) + Send + Sync + 'static;
+
+/// Handler invoked when the node starts/stops listening for network messages.
+/// Parameter:
+/// - listening: true when the node is listening; false when it has stopped.
+pub type OnListeningHandler = dyn Fn(bool) + Send + Sync + 'static;
 
 /// Options used to start the Bingle node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -194,4 +202,7 @@ pub trait BingleApi: Send + Sync {
 
     /// Set or clear the onConnect callback. Pass None to clear.
     fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>);
+
+    /// Set or clear the onListening callback. Pass None to clear.
+    fn set_on_listening(&mut self, handler: Option<Arc<OnListeningHandler>>) { let _ = handler; }
 }
