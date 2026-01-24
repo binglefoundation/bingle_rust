@@ -5,6 +5,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
+use std::sync::OnceLock;
 use crate::api::bingle_api::NetworkEndpoint;
 use log::warn;
 
@@ -49,7 +50,7 @@ pub struct UdpNetworkMux {
     socket: UdpSocket,
     handle_dtls: Mutex<Option<HandleDtls>>,
     handle_stun: Mutex<Option<HandleStun>>,
-    handle_turn: Mutex<Option<HandleTurn>>,
+    handle_turn: std::sync::OnceLock<HandleTurn>,
     running: AtomicBool,
     rx_thread: Mutex<Option<JoinHandle<()>>>,
     // dtls_queue: Mutex<VecDeque<(NetworkEndpoint, Vec<u8>)>>,
@@ -71,7 +72,7 @@ impl UdpNetworkMux {
             socket,
             handle_dtls: std::sync::Mutex::new(None),
             handle_stun: std::sync::Mutex::new(None),
-            handle_turn: std::sync::Mutex::new(None),
+            handle_turn: OnceLock::new(),
             running: AtomicBool::new(false),
             rx_thread: Mutex::new(None),
             // dtls_queue: Mutex::new(VecDeque::new()),
@@ -230,7 +231,7 @@ impl NetworkMux for UdpNetworkMux {
         // Direct path: Extract destination inet address; panic if missing per design
         let to_addr = to
             .inet_socket_address()
-            .expect("UdpNetworkMux::write: NetworkSourceKey missing inet_socket_address");
+            .expect("UdpNetworkMux::write: NetworkSourceKey missing inet_socket_address (and no relay_address)");
         // Determine mux type and print a debug line; if DTLS, try to print JSON packet
         match mux_type_for(buf) {
             MuxType::Dtls => {
@@ -271,12 +272,15 @@ impl NetworkMux for UdpNetworkMux {
         self
     }
 
-    fn get_handle_turn(&self) -> Option<HandleTurn> { self.handle_turn.lock().ok().and_then(|g| g.clone()) }
+    fn get_handle_turn<'a>(&'a self) -> Option<&'a HandleTurn> { self.handle_turn.get() }
 
-    fn set_handle_turn(&mut self, handler: Option<HandleTurn>) { if let Ok(mut g) = self.handle_turn.lock() { *g = handler; } }
+    fn set_handle_turn(&mut self, handler: Option<&HandleTurn>) { 
+        log::debug!("[UdpNetworkMux] set_handle_turn: handler={}", if handler.is_some() { "Some" } else { "None" });
+        if let Some(h) = handler { let _ = self.handle_turn.set(h.clone()); }
+    }
 
     fn with_handle_turn(self, handler: HandleTurn) -> Self where Self: Sized {
-        if let Ok(mut g) = self.handle_turn.lock() { *g = Some(handler); }
+        let _ = self.handle_turn.set(handler);
         self
     }
 
@@ -384,7 +388,7 @@ impl UdpNetworkMux {
                 }
             }
             MuxType::TurnChannelData => {
-                if let Some(h) = self.handle_turn.lock().ok().and_then(|g| g.clone()) {
+                if let Some(h) = self.handle_turn.get() {
                     log::info!("[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes", from_endpoint, to, data.len());
                     let start = Instant::now();
                     let source: &dyn NetworkMux = self;

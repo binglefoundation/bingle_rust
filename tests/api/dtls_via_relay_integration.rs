@@ -55,7 +55,7 @@ fn dtls_send_via_relay_end_to_end() {
     {
         let turn_client_clone = turn_client.clone();
         let local_address = Some(mux_target.local_addr().unwrap());
-        mux_target.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
             // Handle TURN ChannelData for client (non-relay) mode
             if let Some(wrapped) = turn_client_clone.handle_turn_incoming(Some(from), local_address, packet) {
                 // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
@@ -68,7 +68,8 @@ fn dtls_send_via_relay_end_to_end() {
             } else {
                 log::debug!("[handle_turn target] handle_turn_incoming returned None (ignored)");
             }
-        })));
+        });
+        mux_target.set_handle_turn(Some(&th));
     }
     let mux_target_arc = Arc::new(mux_target);
     mux_target_arc.start().expect("start target mux");
@@ -114,7 +115,7 @@ fn dtls_send_via_relay_end_to_end() {
     // Install TURN handler on the mutable mux_client before wrapping in Arc
     {
         let local_address = Some(mux_client.local_addr().unwrap());
-        mux_client.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
         // Handle TURN ChannelData for client (non-relay) mode
         if let Some(wrapped) = turn_client2_clone.handle_turn_incoming(Some(from), local_address, packet) {
             // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
@@ -127,7 +128,8 @@ fn dtls_send_via_relay_end_to_end() {
         } else {
             log::debug!("[handle_turn client] handle_turn_incoming returned None (ignored)");
         }
-    })));
+    });
+        mux_client.set_handle_turn(Some(&th));
     }
 
     let mux_client_arc = Arc::new(mux_client);

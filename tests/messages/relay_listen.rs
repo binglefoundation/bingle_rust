@@ -2,6 +2,7 @@ use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
 use rust_comms::messages::{Message, RelayMessage};
+use rust_comms::turn::turn_handler::TurnHandler;
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayListen};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
@@ -32,7 +33,15 @@ fn relay_listen_registers_and_responds() {
     // Arrange: a Router configured as a relay with a TURN handler
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
-    router.set_turn_handler(Some(turn.clone()));
+    // Provide internal API that exposes the shared TurnHandlerImpl
+    struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
+    impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+        fn set_state(&self, _state: rust_comms::engine::EngineState) {}
+        fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { self.turn.handle_listen(&id, &source) }
+        fn turn_lookup_addr_by_id(&self, id: std::string::String) -> Option<std::net::SocketAddr> { self.turn.lookup_addr_by_id(&id) }
+        fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source, &dest) }
+    }
+    router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
     router.set_am_relay(true);
     let source = addr(9001);
     router.set_last_from(Some(source));

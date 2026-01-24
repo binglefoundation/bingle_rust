@@ -29,9 +29,18 @@ pub trait BingleApiInternal: Send + Sync {
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
+    /// Lookup a previously registered address for the given id (TURN mapping).
+    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
+    /// Handle a Relay::Call by allocating or retrieving a TURN channel for the (source, dest) pair.
+    /// Returns the channel number as i32 (negative on failure) to mirror TurnHandler::handle_call.
+    fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
+    /// Handle a Relay::Listen on the relay side to register id -> source address.
+    fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
+    /// Handle a RelayCalled notification at the client side to register the channel mapping.
+    fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) { }
 
     /// Notify that the node's listening state changed. Default no-op.
-    fn notify_listening(&self, _listening: bool) { }
+    fn notify_listening(&self, _listening: bool) { panic!("notify_listening called on non-mock BingleApiInternal")} 
 }
 
 /// Convenience type aliases used by the Bingle API.

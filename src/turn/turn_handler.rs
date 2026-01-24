@@ -113,6 +113,8 @@ pub trait TurnClientHandler {
     fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str);
     /// Received when we are the recipient of a call via the relay (source -> dest on channel).
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16);
+    /// Received when we get a Listen response from a relay (registers relay address and ID).
+    fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str);
 }
 
 /// Concrete TURN handler implementing RFC5766 ChannelData wrapping and demux (relay variant)
@@ -228,10 +230,81 @@ impl TurnHandler for TurnHandlerImpl {
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
-        let (ch, len, _pad) = parse_channel_data_header(packet)?;
+        log::info!("[TurnHandlerImpl::handle_turn_incoming] {} bytes from {:?}:", packet.len(), sender_address);
+
+        let (ch, len, _pad) = match parse_channel_data_header(packet) {
+            Some(header) => header,
+            None => {
+                log::warn!("[TurnHandlerImpl::handle_turn_incoming] failed to parse TURN channel data header from {} byte packet", packet.len());
+                return None;
+            }
+        };
+
         let (source_addr, dest_addr) = {
-            let map = self.ch_to_pair.lock().ok()?;
-            map.get(&ch).cloned()?
+            let map = match self.ch_to_pair.lock() {
+                Ok(m) => m,
+                Err(_) => {
+                    log::error!("[TurnHandlerImpl::handle_turn_incoming] ch_to_pair lock is poisoned");
+                    return None;
+                }
+            };
+
+            match map.get(&ch).cloned() {
+                Some(pair) => pair,
+                None => {
+                    // No mapping found - this could be an inbound packet from a channel we advertised via listen
+                    log::info!("[TurnHandlerImpl::handle_turn_incoming] no mapping found for channel {:#X}, checking if sender is allowed", ch);
+
+                    let sender_addr = match sender_address {
+                        Some(addr) => *addr,
+                        None => {
+                            log::warn!("[TurnHandlerImpl::handle_turn_incoming] no sender address provided for unmapped channel {:#X}", ch);
+                            return None;
+                        }
+                    };
+
+                    // Check if sender is in allowed addresses (registered via Listen)
+                    let relay_id = match self.allowed_addr_to_id.lock() {
+                        Ok(addr_to_id) => {
+                            match addr_to_id.get(&sender_addr).cloned() {
+                                Some(id) => id,
+                                None => {
+                                    log::warn!("[TurnHandlerImpl::handle_turn_incoming] sender {} not in allowed addresses for unmapped channel {:#X}", sender_addr, ch);
+                                    return None;
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            log::error!("[TurnHandlerImpl::handle_turn_incoming] allowed_addr_to_id lock is poisoned");
+                            return None;
+                        }
+                    };
+
+                    // Extract payload
+                    let payload = packet[4..4 + len].to_vec();
+
+                    // Create relay NetworkEndpoint
+                    let network_endpoint = NetworkEndpoint::new_relay(
+                        relay_id.clone(),
+                        Some(sender_addr),
+                        Some(ch),
+                    );
+
+                    log::info!(
+                        "[TurnHandlerImpl::handle_turn_incoming] inbound packet from advertised relay {} on ch {:#X} ({} bytes), wrapping with endpoint {:?}",
+                        relay_id,
+                        ch,
+                        len,
+                        network_endpoint
+                    );
+
+                    return Some(WrappedMessageWithNetworkEndpoint {
+                        ip_address: sender_addr,
+                        message: payload,
+                        network_endpoint,
+                    });
+                }
+            }
         };
 
         // Gate by allowed addr presence
@@ -358,6 +431,68 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
         } else {
             -1
         }
+    }
+}
+
+// Provide client-side control callbacks on TurnHandlerImpl for backward compatibility
+impl super::turn_handler::TurnClientHandler for TurnHandlerImpl {
+    fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
+            id2a.insert(relay_id.to_string(), *relay_address);
+            a2id.insert(*relay_address, relay_id.to_string());
+            log::info!(
+                "[TurnHandlerImpl::handle_listen_response] registered relay {} -> {}",
+                relay_id,
+                relay_address
+            );
+        } else {
+            log::warn!(
+                "[TurnHandlerImpl::handle_listen_response] failed to register relay {} -> {} due to lock poisoning",
+                relay_id,
+                relay_address
+            );
+        }
+    }
+
+    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
+        // Record bidirectional mapping for channel and ensure relay id/address is registered
+        if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_pair.lock(), self.pair_to_ch.lock()) {
+            c2a.insert(channel, (*source, *dest));
+            p2c.insert((*source, *dest), channel);
+            p2c.insert((*dest, *source), channel);
+        }
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
+            // Associate the relay id with the caller/source address so inbound packets from the relay are accepted
+            id2a.insert(relay_id.to_string(), *source);
+            a2id.insert(*source, relay_id.to_string());
+        }
+        log::info!(
+            "[TurnHandlerImpl::handle_call_response] set mapping ch={:#X} for {} <-> {} (relay_id={})",
+            channel,
+            source,
+            dest,
+            relay_id
+        );
+    }
+
+    fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {
+        if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_pair.lock(), self.pair_to_ch.lock()) {
+            c2a.insert(channel, (*source, *dest));
+            p2c.insert((*source, *dest), channel);
+            p2c.insert((*dest, *source), channel);
+        }
+        log::info!(
+            "[TurnHandlerImpl::handle_called] set mapping ch={:#X} for {} <-> {}",
+            channel,
+            source,
+            dest
+        );
     }
 }
 
@@ -493,6 +628,27 @@ impl TurnHandler for TurnClientImpl {
 }
 
 impl super::turn_handler::TurnClientHandler for TurnClientImpl {
+    fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
+            id2a.insert(relay_id.to_string(), *relay_address);
+            a2id.insert(*relay_address, relay_id.to_string());
+            log::info!(
+                "[TurnClientImpl::handle_listen_response] registered relay {} -> {}",
+                relay_id,
+                relay_address
+            );
+        } else {
+            log::warn!(
+                "[TurnClientImpl::handle_listen_response] failed to register relay {} -> {} due to lock poisoning",
+                relay_id,
+                relay_address
+            );
+        }
+    }
+
     fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
         self.insert_mapping(source, dest, channel);
         log::info!(

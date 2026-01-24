@@ -26,8 +26,6 @@ pub struct Router {
     // DDB/relay context
     am_relay: std::sync::atomic::AtomicBool,
     ddb_backend: Mutex<Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>>,
-    // TURN handler reference used by relay message processing
-    turn_handler: Mutex<Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>>>,
     // Outbound response produced by handlers during routing (consumed by Engine/DTLS layer)
     outbound_response: Mutex<Option<serde_json::Value>>,
 }
@@ -77,6 +75,18 @@ impl BingleApiInternal for CombinedApi {
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
         if let Some(i) = &self.internal { i.update_turn_listener_relay(relay_id, relay_addr) } else { Err("not implemented".into()) }
     }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
+        if let Some(i) = &self.internal { i.turn_lookup_addr_by_id(id) } else { None }
+    }
+    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
+        if let Some(i) = &self.internal { i.turn_handle_call(source, dest) } else { -1 }
+    }
+    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
+        if let Some(i) = &self.internal { i.turn_handle_listen(id, source) } else { false }
+    }
+    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
+        if let Some(i) = &self.internal { i.turn_handle_called(source, dest, channel) }
+    }
     fn notify_listening(&self, listening: bool) {
         if let Some(i) = &self.internal { i.notify_listening(listening) }
     }
@@ -93,7 +103,6 @@ impl Router {
             on_message: Mutex::new(None),
             am_relay: std::sync::atomic::AtomicBool::new(false),
             ddb_backend: Mutex::new(None),
-            turn_handler: Mutex::new(None),
             outbound_response: Mutex::new(None),
         }
     }
@@ -137,9 +146,6 @@ impl Router {
     pub fn set_ddb_backend(&self, backend: Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
     pub fn get_ddb_backend(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
-    // TURN handler reference
-    pub fn set_turn_handler(&self, h: Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>>) { if let Ok(mut g) = self.turn_handler.lock() { *g = h; } }
-    pub fn get_turn_handler(&self) -> Option<std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>> { match self.turn_handler.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
     // Outbound response helpers
     pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
@@ -177,6 +183,7 @@ impl Router {
                 RelayMessage::CheckResponse(m) => handler.on_relay_check_response(api.clone(), &from, m),
                 RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), &from, m),
                 RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), &from, m),
+                RelayMessage::RelayCalled(m) => handler.on_relay_called(api.clone(), &from, m),
             },
             Message::Ddb(d) => match d {
                 DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), &from, m),

@@ -35,7 +35,8 @@ fn reprocess_dispatches_and_enqueues_dtls() {
     let mut mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
     mux.set_handle_dtls(Some(Arc::new(dtls_handler)));
     mux.set_handle_stun(Some(Arc::new(stun_handler)));
-    mux.set_handle_turn(Some(Arc::new(turn_handler)));
+    let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(turn_handler);
+    mux.set_handle_turn(Some(&th));
 
     let local_from = NetworkEndpoint::new_direct(mux.local_addr().unwrap());
 

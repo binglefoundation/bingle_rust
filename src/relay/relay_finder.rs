@@ -20,6 +20,12 @@ struct CachedRelay {
     pub expires_at: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct CachedRelayList {
+    pub relays: Vec<RootRelayInfo>,
+    pub expires_at: Instant,
+}
+
 /// RelayFinder: finds and caches the preferred root relay per spec (root relays only).
 ///
 /// Behaviour (root relays only):
@@ -32,7 +38,8 @@ struct CachedRelay {
 pub struct RelayFinder {
     api: Arc<dyn BingleApi>,
     cache_ttl: Duration,
-    cache: Mutex<Option<CachedRelay>>,
+    cache: Mutex<Option<CachedRelay>>, // single selected relay cache
+    list_cache: Mutex<Option<CachedRelayList>>, // cached list of roots
     // Injection point for discovery (keeps this component testable and avoids tying to indexer here)
     discover_roots: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>,
 }
@@ -43,7 +50,7 @@ impl RelayFinder {
         cache_ttl: Duration,
         discover_roots: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>,
     ) -> Self {
-        Self { api, cache_ttl, cache: Mutex::new(None), discover_roots }
+        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), discover_roots }
     }
 
     /// Convenience constructor: wire discovery to AlgoBingle::discover_root_relays using provided ops, app_id and candidate accounts.
@@ -62,7 +69,7 @@ impl RelayFinder {
                 Err(_) => Vec::new(),
             }
         });
-        Self { api, cache_ttl, cache: Mutex::new(None), discover_roots: discover }
+        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), discover_roots: discover }
     }
 
     /// Find any relay suitable for us. Currently identical to finding the preferred root relay.
@@ -70,10 +77,40 @@ impl RelayFinder {
         self.find_root_relay(my_id)
     }
 
+    /// Return the list of root relays, optionally including ourselves, using cached list if not expired.
+    pub fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RootRelayInfo> {
+        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        // 1) Use cached list if valid
+        if let Ok(guard) = self.list_cache.lock() {
+            if let Some(list) = &*guard {
+                if Instant::now() < list.expires_at {
+                    // Return a copy to avoid exposing internal cache
+                    let mut result = list.relays.clone();
+                    if !include_self {
+                        result.retain(|r| r.id != my_id_norm);
+                    }
+                    return result;
+                }
+            }
+        }
+        // 2) Discover and conditionally filter out self, then sort by id
+        let mut relays = (self.discover_roots)();
+        if !include_self {
+            relays.retain(|r| r.id != my_id_norm);
+        }
+        relays.sort_by(|a, b| a.id.cmp(&b.id));
+        // 3) Cache the list
+        let expires = Instant::now() + self.cache_ttl;
+        if let Ok(mut guard) = self.list_cache.lock() {
+            *guard = Some(CachedRelayList { relays: relays.clone(), expires_at: expires });
+        }
+        relays
+    }
+
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     pub fn find_root_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
         log::info!("[RelayFinder] find_root_relay: my_id={}", my_id);
-        // Normalize our id: if an issuer suffix is present, trim it so we compare raw addresses
+        // Normalize our id to raw address
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
 
         // 1) Return cached if valid AND not ourselves
@@ -84,36 +121,27 @@ impl RelayFinder {
             }
         }
 
-        // 2) Discover candidates
-        let mut relays = (self.discover_roots)();
-        if relays.is_empty() {
-            return Err("no root relays discovered".to_string());
-        }
-        // Reject ourselves from the candidate list
-        relays.retain(|r| r.id != my_id_norm);
+        // 2) Get candidate list (cached when possible)
+        let relays = self.list_root_relays(my_id, false);
         if relays.is_empty() {
             return Err("no root relays discovered (after excluding self)".to_string());
         }
-        // Sort by id lexicographically (spec)
-        relays.sort_by(|a, b| a.id.cmp(&b.id));
-        log::info!("[RelayFinder] find_root_relay: discovered candidates (post-filter) = {:?}", relays);
+        log::info!("[RelayFinder] find_root_relay: candidates = {:?}", relays);
 
         // 3) Choose preferred and alternate per partitioning rule
         let (pref_idx, alt_idx) = self.select_indices(&relays, my_id_norm);
 
         // 4) Try preferred then alternate via RelayCheck
-        let order = [pref_idx, alt_idx];
-        for &idx in &order {
+        for &idx in &[pref_idx, alt_idx] {
             let cand = &relays[idx];
             if self.relay_check(&*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_root_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
                 let info = RootRelayInfo { id: cand.id.clone(), address: cand.address };
-                // Cache
+                // Cache single selection
                 let expires = Instant::now() + self.cache_ttl;
                 *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
                 return Ok(info);
-            }
-            else {
+            } else {
                 log::info!("[RelayFinder] find_root_relay: relay {} failed RelayCheck: {} {}", idx, cand.id, cand.address);
             }
         }

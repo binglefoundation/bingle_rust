@@ -52,6 +52,8 @@ pub enum RelayMessage {
     CallResponse(RelayCallResponse),
     #[serde(rename = "KeepAlive")]
     KeepAlive(RelayKeepAlive),
+    #[serde(rename = "RelayCalled")]
+    RelayCalled(RelayCalled),
 }
 
 // Note: In the OpenAPI, these relay message schemas require app: null. We model this as Option<Option<String>>
@@ -99,6 +101,13 @@ pub struct RelayResponse {
     pub app: Option<String>, // must be None (null)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayCalled {
+    #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
+    pub app: Option<String>, // must be None (null)
+    pub channel: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

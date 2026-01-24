@@ -13,6 +13,7 @@ set -euo pipefail
 #   EXTRA_ARGS  - any extra args to pass to the CLI
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
 #   NODE_FILE   - path to node configuration JSON (default /app/nodely_testnet_node.json)
+#   NAT_MODE    - Direct|Full|Restricted (default Direct)
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${PORT:?Environment variable PORT must be set}"
@@ -20,6 +21,62 @@ set -euo pipefail
 
 STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
 NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
+SENTINEL_FILE=${SENTINEL_FILE:-}
+NAT_MODE=${NAT_MODE:-Direct}
+
+# Configure NAT/iptables rules inside the container to emulate NAT types
+configure_nat() {
+  local mode="$1"
+  echo "[docker_start][NAT] NAT_MODE=${mode}"
+  if [[ "${mode}" == "Direct" ]]; then
+    echo "[docker_start][NAT] Direct mode: no iptables changes"
+    return 0
+  fi
+
+  if ! command -v iptables >/dev/null 2>&1; then
+    echo "[docker_start][NAT][WARN] iptables not available; skipping NAT emulation" >&2
+    return 0
+  fi
+
+  # Determine primary interface (default eth0)
+  local IFACE
+  IFACE=$(ip route show default 2>/dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
+  IFACE=${IFACE:-eth0}
+  echo "[docker_start][NAT] Using interface ${IFACE}"
+
+  # Reset rules
+  iptables -F || true
+  iptables -t nat -F || true
+  iptables -t raw -F || true
+  iptables -t mangle -F || true
+
+  # Baseline policies
+  iptables -P INPUT DROP || true
+  iptables -P FORWARD DROP || true
+  iptables -P OUTPUT ACCEPT || true
+  iptables -A INPUT -i lo -j ACCEPT
+  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+  case "${mode}" in
+    Full)
+      echo "[docker_start][NAT] Applying Full cone approximation"
+      iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
+      iptables -A INPUT -i "$IFACE" -p udp --dport 1024:65535 -j ACCEPT
+      iptables -A INPUT -i "$IFACE" -p tcp --dport 1024:65535 -j ACCEPT
+      ;;
+    Restricted)
+      echo "[docker_start][NAT] Applying Restricted cone approximation"
+      iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
+      iptables -A OUTPUT -o "$IFACE" -p udp -m state --state NEW -m recent --name bingle_peers --set
+      iptables -A OUTPUT -o "$IFACE" -p tcp -m state --state NEW -m recent --name bingle_peers --set
+      iptables -A INPUT -i "$IFACE" -p udp -m recent --name bingle_peers --rcheck -j ACCEPT
+      iptables -A INPUT -i "$IFACE" -p tcp -m recent --name bingle_peers --rcheck -j ACCEPT
+      ;;
+    *)
+      echo "[docker_start][NAT][WARN] Unknown NAT_MODE='${mode}'; leaving default rules" >&2
+      ;;
+  esac
+}
 
 # Discover external IP if not provided or blank (only when RELAY is set)
 if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]]; then
@@ -57,6 +114,9 @@ if [[ ! -s "$NODE_FILE" ]]; then
   exit 2
 fi
 
+# Apply NAT emulation (if any) before starting CLI
+configure_nat "$NAT_MODE" || true
+
 CMD=("/app/bingle_cli" \
   "run" \
   "--handle" "$HANDLE" \
@@ -69,6 +129,11 @@ if [[ -n "${RELAY:-}" ]]; then
 fi
 
 CMD+=("--stun-servers-file" "$STUN_FILE" "--node-file" "$NODE_FILE")
+
+# Append sentinel-file argument if provided
+if [[ -n "$SENTINEL_FILE" ]]; then
+  CMD+=("--sentinel-file" "$SENTINEL_FILE")
+fi
 
 if [[ -n "${EXTRA_ARGS:-}" ]]; then
   # shellcheck disable=SC2206

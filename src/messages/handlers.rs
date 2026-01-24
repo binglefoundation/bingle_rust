@@ -2,7 +2,6 @@ use crate::api::bingle_api::{BingleApi, BingleApiBoth};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use log::warn;
-use crate::turn::turn_handler::TurnHandler;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -104,8 +103,7 @@ pub trait MessageHandler {
     fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }
 
     // Relay messages
-    fn on_relay_call(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCall) {
-        use crate::turn::turn_handler::TurnRelayHandler;
+    fn on_relay_call(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCall) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() {
                 warn!("[handlers::on_relay_call] Not a relay: ignoring Call");
@@ -115,18 +113,26 @@ pub trait MessageHandler {
                 Some(a) => a,
                 None => { warn!("[handlers::on_relay_call] No source address available"); return; }
             };
-            let turn = match router.get_turn_handler() {
-                Some(h) => h,
-                None => { warn!("[handlers::on_relay_call] No TURN handler available"); return; }
-            };
-            // Resolve destination address by id recorded via Listen
+            // Resolve destination address by id recorded via Listen using internal API
             let called_id_raw = _msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            let dest = match turn.lookup_addr_by_id(&called_id_raw) {
+            let dest = match api.turn_lookup_addr_by_id(called_id_raw.clone()) {
                 Some(a) => a,
                 None => { warn!("[handlers::on_relay_call] called id not registered: {}", called_id_raw); return; }
             };
-            let ch = TurnRelayHandler::handle_call(&*turn, &src, &dest);
-            if ch < 0 { warn!("[handlers::on_relay_call] handle_call failed"); return; }
+            let ch = api.turn_handle_call(src, dest);
+            if ch < 0 { warn!("[handlers::on_relay_call] turn_handle_call failed"); return; }
+
+            // Before setting the response, notify the called node with a RelayCalled message
+            if let Some(sender) = router.get_sender() {
+                let msg = Message::Relay(RelayMessage::RelayCalled(RelayCalled { app: None, channel: ch as u16 }));
+                let json_val = crate::messages::marshal::to_json_value(&msg);
+                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(dest);
+                let ok = sender(&nsk, &called_id_raw, json_val);
+                if !ok { warn!("[handlers::on_relay_call] sender returned false when sending RelayCalled"); }
+            } else {
+                warn!("[handlers::on_relay_call] No sender available to notify called node");
+            }
+
             // Build RelayResponse { app: null, channel }
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::Null);
@@ -143,7 +149,7 @@ pub trait MessageHandler {
     fn on_triangle_test2(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
     fn on_triangle_test3(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
     fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(_msg.clone()))); }
-    fn on_relay_listen(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListen) {
+    fn on_relay_listen(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListen) {
         // Only process on relay nodes
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() {
@@ -158,16 +164,8 @@ pub trait MessageHandler {
                     return;
                 }
             };
-            // Turn handler must be provided via Router by the Engine
-            let turn = match router.get_turn_handler() {
-                Some(h) => h,
-                None => {
-                    warn!("[handlers::on_relay_listen] No TURN handler available");
-                    return;
-                }
-            };
             let source_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            let _ok = turn.handle_listen(&source_id, &src);
+            let _ok = api.turn_handle_listen(source_id, src);
             // Build and stash a ListenResponse; include responseTag if present
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::Null);
@@ -203,6 +201,25 @@ pub trait MessageHandler {
     fn on_relay_check_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
     fn on_relay_call_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
     fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayKeepAlive) { self.on_unimplemented(&Message::Relay(RelayMessage::KeepAlive(_msg.clone()))); }
+
+    // New: RelayCalled handler (client-side) – register TURN mapping via internal API
+    fn on_relay_called(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayCalled) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            // The UDP sender of this message should be the relay address
+            let relay_addr = match router.get_last_from() {
+                Some(a) => a,
+                None => { warn!("[handlers::on_relay_called] No relay address (last_from) available"); return; }
+            };
+            // Our public address must be known (from STUN/static); use API to obtain
+            let my_pub = match api.get_last_public_addr() {
+                Some(a) => a,
+                None => { warn!("[handlers::on_relay_called] No public address available to register TURN mapping"); return; }
+            };
+            api.turn_handle_called(my_pub, relay_addr, msg.channel);
+        } else {
+            warn!("[handlers::on_relay_called] No router context available");
+        }
+    }
 
     // DDB messages (default to unimplemented unless overridden)
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
@@ -469,6 +486,11 @@ impl MessageHandler for DefaultPrintingHandler {
                     Ok(resp) => {
                         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
                         if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
+
+                        // Register the relay listener mapping via the internal API (engine turn_handler)
+                        if let Err(e) = api_for_thread.update_turn_listener_relay(relay_info.id.clone(), relay_info.address) {
+                            warn!("[on_triangle_test1_response] update_turn_listener_relay failed: {}", e);
+                        }
                     }
                     Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
                 }

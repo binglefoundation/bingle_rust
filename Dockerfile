@@ -32,8 +32,8 @@ COPY stunservers.txt /app/stunservers.txt
 COPY nodely_testnet_node.json /app/nodely_testnet_node.json
 
 # Create output directory for test logs (mounted at runtime)
-RUN mkdir -p /out
-VOLUME ["/out"]
+RUN mkdir -p /out /sentinels
+VOLUME ["/out", "/sentinels"]
 
 # ------------------------
 # CLI stage: package the prebuilt bingle_cli and start script

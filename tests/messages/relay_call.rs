@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
-use rust_comms::messages::types::{RelayCall};
+use rust_comms::messages::types::RelayCall;
 use rust_comms::turn::turn_handler::TurnHandler;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use std::sync::Mutex;
 
 // Minimal API stub
 struct MockApi;
@@ -33,7 +34,14 @@ fn relay_call_allocates_channel_and_maps_pair() {
     // Arrange: router as relay with TURN handler and two registered peers
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
-    router.set_turn_handler(Some(turn.clone()));
+    struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
+    impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+        fn set_state(&self, _state: rust_comms::engine::EngineState) {}
+        fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { use rust_comms::turn::turn_handler::TurnHandler; self.turn.handle_listen(&id, &source) }
+        fn turn_lookup_addr_by_id(&self, id: std::string::String) -> Option<std::net::SocketAddr> { self.turn.lookup_addr_by_id(&id) }
+        fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source, &dest) }
+    }
+    router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
     router.set_am_relay(true);
 
     let caller = addr(9101);
@@ -44,6 +52,14 @@ fn relay_call_allocates_channel_and_maps_pair() {
 
     // Source of message is caller
     router.set_last_from(Some(caller));
+
+    // Install a sender to capture RelayCalled sent to callee
+    let captured: Arc<Mutex<Option<(NetworkEndpoint, String, serde_json::Value)>>> = Arc::new(Mutex::new(None));
+    let captured_clone = captured.clone();
+    router.set_sender(Some(Arc::new(move |nsk: &NetworkEndpoint, uid: &UserId, json: serde_json::Value| {
+        *captured_clone.lock().unwrap() = Some((nsk.clone(), uid.to_string(), json.clone()));
+        true
+    })));
 
     // Act: send Relay::Call(calledId = CALLEEID)
     let handler = DefaultPrintingHandler;
@@ -60,6 +76,14 @@ fn relay_call_allocates_channel_and_maps_pair() {
     assert_eq!(t, Some("RelayResponse"));
     let ch = obj.get("channel").and_then(|v| v.as_u64()).expect("channel");
     let ch_u16 = ch as u16;
+
+    // Verify RelayCalled was sent to callee with the same channel
+    let sent = captured.lock().unwrap().clone().expect("RelayCalled should be sent to callee");
+    let (nsk_sent, user_id_sent, json_sent) = sent;
+    assert_eq!(nsk_sent, NetworkEndpoint::new_direct(callee));
+    assert_eq!(user_id_sent, "CALLEEID");
+    assert_eq!(json_sent.get("type").and_then(|v| v.as_str()), Some("RelayCalled"));
+    assert_eq!(json_sent.get("channel").and_then(|v| v.as_u64()), Some(ch));
 
     // Verify internal mappings reflect (caller, callee) -> ch and ch -> caller
     let mapped_dest = turn.lookup_addr_by_channel_for_tests(ch_u16).expect("ch->addr");

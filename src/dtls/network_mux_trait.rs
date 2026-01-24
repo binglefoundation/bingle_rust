@@ -78,12 +78,12 @@ pub trait NetworkMux {
     /**
      * Get the TURN handler function
      */
-    fn get_handle_turn(&self) -> Option<HandleTurn>;
+    fn get_handle_turn<'a>(&'a self) -> Option<&'a HandleTurn>;
 
     /**
      * Set the TURN handler function
      */
-    fn set_handle_turn(&mut self, handler: Option<HandleTurn>);
+    fn set_handle_turn(&mut self, handler: Option<&HandleTurn>);
 
     /**
      * Fluently set the TURN handler function

@@ -9,7 +9,7 @@ use log::{info, warn, error, LevelFilter};
 use simple_logger::SimpleLogger;
 use std::sync::Once;
 
-use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, BingleApiInternal, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
@@ -410,10 +410,19 @@ impl BingleApi for BingleApiImpl {
                 match relay_client.call(&effective_nsk, user_id) {
                     Ok(updated) => {
                         effective_nsk = updated;
+
+                        // Call TurnClientHandler::handle_call_response when we get a successful call response
+                        if let (Some(channel), Some(relay_addr)) = (effective_nsk.relay_channel(), effective_nsk.relay_address()) {
+                            let turn_handler = self.engine.turn_handler_for_tests();
+                            use crate::turn::turn_handler::TurnClientHandler;
+                            let source_addr = effective_nsk.inet_socket_address().unwrap_or(relay_addr);
+                            TurnClientHandler::handle_call_response(&*turn_handler, &source_addr, &relay_addr, channel, user_id);
+                        }
+
                         if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
                     }
                     Err(err) => {
-                        log::warn!("[BingleApiImpl::send_message_to_network] relay call failed: {}", err);
+                        log::warn!("[BingleApiImpl::send_message_to_network] relay Call failed: {}", err);
                         if let Some(cb) = progress.as_ref() { cb(100, format!("Relay allocation failed: {}", err)); }
                         return false;
                     }
@@ -516,7 +525,10 @@ impl BingleApi for BingleApiImpl {
 
     fn set_on_listening(&mut self, handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {
             log::info!("[BingleApiImpl::set_on_listening][enter] handler_is_some={}", handler.is_some());
-            self.on_listening = handler;
+            // Store locally
+            self.on_listening = handler.clone();
+            // Propagate to Engine so internal notifications can reach the application
+            self.engine.set_on_listening_handler(handler);
             log::info!("[BingleApiImpl::set_on_listening][exit]");
         }
 }
@@ -581,7 +593,13 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         }
     }
     fn notify_listening(&self, listening: bool) {
+        log::info!("[BingleApiImpl::notify_listening] listening={}", listening);
         if let Some(cb) = &self.on_listening { cb(listening); }
+    }
+    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
+        // Forward to the engine's TURN handler client-side interface
+        let th = self.engine.turn_handler_for_tests();
+        crate::turn::turn_handler::TurnClientHandler::handle_called(&*th, &source, &dest, channel);
     }
 }
 

@@ -9,6 +9,14 @@ mod handle_listen_validation;
 #[path = "client_impl.rs"]
 mod client_impl;
 
+// Relay-side tests
+#[path = "relay_impl.rs"]
+mod relay_impl;
+
+// Client handler (impl split) tests
+#[path = "client_handler_impl.rs"]
+mod client_handler_impl;
+
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
 #[test]

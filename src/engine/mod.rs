@@ -11,6 +11,7 @@ use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::turn::turn_handler::TurnHandler;
 use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::ddb::{AdvertRecord, InetSocketAddress, DdbBackend};
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
@@ -77,14 +78,73 @@ pub struct Engine {
     ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
     // TURN handler used for RelayListen and TURN ChannelData processing
     turn_handler: std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>,
+    // Application-level callback for listening state changes (set by API)
+    on_listening_cb: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>>>,
 }
 
 impl Engine {
+    /// Upsert a list of root relays into the in-memory DDB backend (as am_relay=true records).
+    fn upsert_roots_into_backend(&self, roots: &[RootRelayInfo]) {
+        if roots.is_empty() {
+            log::debug!("[Engine::upsert_roots_into_backend] no roots to upsert");
+            return;
+        }
+        log::info!(
+            "[Engine::upsert_roots_into_backend] upserting {} root relay record(s)",
+            roots.len()
+        );
+        if let Ok(mut b) = self.ddb_backend.lock() {
+            for r in roots {
+                let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
+                log::debug!(
+                    "[Engine::upsert_roots_into_backend] upsert id={} addr={}:{}",
+                    r.id,
+                    host,
+                    r.address.port()
+                );
+                let rec = AdvertRecord {
+                    id: r.id.clone(),
+                    endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
+                    am_relay: Some(true),
+                    relay_id: None,
+                    relay_sig: None,
+                    date: "1970-01-01T00:00:00Z".to_string(),
+                    sig: None,
+                };
+                b.upsert(rec);
+            }
+            log::info!("[Engine::upsert_roots_into_backend] upsert complete");
+        } else {
+            log::warn!("[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert");
+        }
+    }
+
+    /// Test helper to upsert provided roots into backend.
+    pub fn upsert_root_relays_for_tests(&mut self, roots: Vec<RootRelayInfo>) {
+        self.upsert_roots_into_backend(&roots);
+    }
+
+    /// Test helper to query backend for a given id.
+    pub fn ddb_backend_lookup_for_tests(&self, id: &str) -> Option<crate::ddb::AdvertRecord> {
+        self.ddb_backend.lock().ok().and_then(|b| b.lookup(id))
+    }
     pub fn ddb_client(&self) -> std::sync::Arc<dyn crate::ddb::DdbClient> {
         self.ddb_client.clone()
     }
     pub fn app_id(&self) -> Option<u64> { self.options.app_id }
     pub fn algo_provider_config(&self) -> Option<AlgoChainConfig> { self.options.algo_provider_config.clone() }
+
+    /// Install or clear the application-level OnListening handler (set by API).
+    pub fn set_on_listening_handler(&mut self, cb: Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>) {
+        if let Ok(mut g) = self.on_listening_cb.lock() { *g = cb; }
+    }
+
+    /// Notify the application-level OnListening handler, if installed.
+    pub fn notify_listening(&self, listening: bool) {
+        if let Ok(g) = self.on_listening_cb.lock() {
+            if let Some(cb) = &*g { cb(listening); }
+        }
+    }
 
     /// Create a common TURN handler for both relay and client modes
     fn create_turn_handler(&self) -> std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
@@ -96,6 +156,7 @@ impl Engine {
             // Parse/unwrap the TURN ChannelData using our handler
             if let Some(wrapped) = turn.handle_turn_incoming(Some(from), local_public_addr, packet) {
                 if am_relay {
+                    log::info!("[Engine][TURN] handle_turn_incoming (relay) {} bytes from {}:", wrapped.message.len(), wrapped.network_endpoint);
                     // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
                     if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
                         let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(wrapped.ip_address);
@@ -109,6 +170,7 @@ impl Engine {
                         log::warn!("[Engine][TURN relay] source is not UdpNetworkMux; cannot forward");
                     }
                 } else {
+                    log::info!("[Engine][TURN] handle_turn_incoming (not relay) {} bytes from {}:", wrapped.message.len(), wrapped.network_endpoint);
                     // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
                     if let Some(udp) = source.as_any().downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>() {
                         udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
@@ -118,7 +180,7 @@ impl Engine {
                     }
                 }
             } else {
-                log::debug!("[Engine][TURN] handle_turn_incoming returned None (ignored)");
+                log::warn!("[Engine][TURN] handle_turn_incoming returned None (ignored)");
             }
         })
     }
@@ -242,6 +304,49 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         if p.is_null() { return Err("null engine".into()); }
         unsafe { (*p).ddb_client().register_relay(relay_id, relay_sig) }
     }
+    fn notify_listening(&self, listening: bool) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe { (*p).notify_listening(listening); }
+    }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return Err("null engine".into()); }
+        unsafe {
+            let ok = (*p).turn_handler.handle_listen(&relay_id, &relay_addr);
+            if ok { Ok(()) } else { Err(format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr)) }
+        }
+    }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).turn_handler.lookup_addr_by_id(&id) }
+    }
+    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return -1; }
+        unsafe {
+            crate::turn::turn_handler::TurnRelayHandler::handle_call(&*((*p).turn_handler), &source, &dest)
+        }
+    }
+    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return false; }
+        unsafe { (*p).turn_handler.handle_listen(&id, &source) }
+    }
+    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe {
+            crate::turn::turn_handler::TurnClientHandler::handle_called(&*((*p).turn_handler), &source, &dest, channel);
+        }
+    }
 }
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
@@ -288,6 +393,7 @@ impl Engine {
             router: None,
             ddb_client: ddb,
             turn_handler: std::sync::Arc::new(crate::turn::turn_handler::TurnHandlerImpl::new()),
+            on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -479,8 +585,6 @@ impl Engine {
         // Now obtain a mutable reference to dtls only for installing the new handler
         if let Some(d) = self.dtls.as_mut() {
             let router_arc = self.router.clone();
-            // Provide TURN handler to router so handlers can access it.
-            if let Some(r) = &self.router { r.set_turn_handler(Some(self.turn_handler.clone())); }
             d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
                 log::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || {
@@ -620,7 +724,9 @@ impl Engine {
         })));
 
         // Configure TURN ChannelData handler based on role (relay vs client)
-        mux0.set_handle_turn(Some(self.create_turn_handler()));
+        log::info!("[Engine] set_handle_turn from start");
+        let th = self.create_turn_handler();
+        mux0.set_handle_turn(Some(&th));
 
         // Now wrap mux in Arc
         let mux = Arc::new(mux0);
@@ -663,7 +769,9 @@ impl Engine {
         self.install_dtls_handler()?;
 
         // Configure TURN ChannelData handler based on role (relay vs client)
-        mux0.set_handle_turn(Some(self.create_turn_handler()));
+        log::info!("[Engine] set_handle_turn from start_with_addr");
+        let th = self.create_turn_handler();
+        mux0.set_handle_turn(Some(&th));
 
         // Now wrap mux in Arc
         let mux = Arc::new(mux0);
@@ -674,11 +782,50 @@ impl Engine {
         // Start DTLS accept loop with the mux
         if let Some(d) = self.dtls.as_mut() {
             d.start(mux.clone()).map_err(|e| format!("Failed to start DTLS: {}", e))?;
+            // Static address path: once DTLS accept loop is running, notify that we are listening.
+            if let Some(r) = &self.router {
+                if let Some(internal) = r.get_bingle_api_internal() {
+                    log::info!("[Engine] notifying internal listeners of listening state true");
+                    internal.notify_listening(true);
+                }
+                else {
+                    log::error!("[Engine] start_with_address: no internal API");
+                }
+            }
+            else {
+                log::error!("[Engine] start_with_address: no router");
+            }
+
+            // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
+            if self.options.am_relay {
+                // Build discovery closure using indexer when app_id is configured; else skip.
+                #[cfg(not(target_os = "ios"))]
+                {
+                    let app_id_opt = self.options.app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                    if let Some(app_id) = app_id_opt {
+                        let cfg = self.options.algo_provider_config.clone();
+                        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+                        let finder = RelayFinder::new(self.bingle_api.clone(), Duration::from_secs(60), discover);
+                        // Determine our id for exclusion
+                        let my_id = if let Some(iss) = self.issuer.as_deref() { iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string() } else { self.options.handle.clone() };
+                        let roots = finder.list_root_relays(&my_id, true);
+                        log::info!("[Engine::start_with_addr] discovered {} root relays (excluding self)", roots.len());
+                        self.upsert_roots_into_backend(&roots);
+                        log::info!("[Engine::start_with_addr] upserted root relays into backend");
+                        self.relay_finder = Some(Arc::new(finder));
+                    } else {
+                        log::warn!("[Engine::start_with_addr] am_relay set but app_id not configured; skipping root relay discovery");
+                    }
+                }
+            }
         } else {
+            log::error!("[Engine] start_with_address: no DTLS instance");
             return Err("DTLS instance not provided".to_string());
         }
 
         self.mux = Some(mux);
+        log::info!("[Engine] start_with_addr: done");
+
         Ok(())
     }
 
@@ -750,6 +897,14 @@ impl Engine {
                 // Fallback: if issuer is not set, use the handle (best-effort; may yield suboptimal selection).
                 self.options.handle.clone()
             };
+            // If configured as a relay, update the in-memory DDB with all root relays discovered
+            if self.options.am_relay {
+                let roots = finder.list_root_relays(&my_id, true);
+                log::info!("[Engine::stun_consistent_process] discovered {} root relays (excluding self)", roots.len());
+                self.upsert_roots_into_backend(&roots);
+                log::info!("[Engine::stun_consistent_process] upserted root relays into backend");
+            }
+
             let relay = finder.find_relay(&my_id);
             if let Ok(r) = relay {
                 relay_target = Some(r.clone());

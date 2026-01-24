@@ -45,6 +45,9 @@ mod relay_listen;
 #[path = "messages/relay_call.rs"]
 mod relay_call;
 
+#[path = "messages/relay_called_handler.rs"]
+mod relay_called_handler;
+
 #[path = "messages/ddb_messages_json.rs"]
 mod ddb_messages_json;
 

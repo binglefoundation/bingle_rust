@@ -62,14 +62,15 @@ fn bingle_api_send_via_relay_end_to_end() {
     {
         // Forward TURN ChannelData payloads to the indicated destination
         let turn_clone = turn.clone();
-        mux_relay.set_handle_turn(Some(Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
             if let Some(wrapped) = turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
                     let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
                     let _ = udp.write(&nsk, &wrapped.message);
                 }
             }
-        })));
+        });
+        mux_relay.set_handle_turn(Some(&th));
     }
 
     let mux_relay = Arc::new(mux_relay);
@@ -77,7 +78,15 @@ fn bingle_api_send_via_relay_end_to_end() {
 
     let router = Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
     router.set_am_relay(true);
-    router.set_turn_handler(Some(turn.clone()));
+    // Provide internal API exposing the shared TurnHandlerImpl
+    struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
+    impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+        fn set_state(&self, _state: rust_comms::engine::EngineState) {}
+        fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { use rust_comms::turn::turn_handler::TurnHandler; self.turn.handle_listen(&id, &source) }
+        fn turn_lookup_addr_by_id(&self, id: std::string::String) -> Option<std::net::SocketAddr> { self.turn.lookup_addr_by_id(&id) }
+        fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source, &dest) }
+    }
+    router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
     let handler = DefaultPrintingHandler;
 
     // 3) B sends RelayListen to the relay to register its id -> address mapping
