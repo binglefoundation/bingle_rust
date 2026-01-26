@@ -1,21 +1,20 @@
+use data_encoding::BASE32_NOPAD;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use data_encoding::BASE32_NOPAD;
 
+use log::{error, info, warn, LevelFilter};
 use serde_json::{Map as JsonMap, Value as JsonValue};
-use uuid::Uuid;
-use log::{info, warn, error, LevelFilter};
 use simple_logger::SimpleLogger;
 use std::sync::Once;
+use uuid::Uuid;
 
-use crate::api::bingle_api::{BingleApi, BingleApiInternal, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::dtls::Dtls;
 use crate::engine::{Engine, EngineState};
-use crate::turn::turn_handler::TurnHandler;
 use crate::protocol::ISSUER_SUFFIX;
 
 /// Concrete implementation of the BingleApi trait.

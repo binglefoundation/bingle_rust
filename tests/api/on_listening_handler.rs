@@ -1,7 +1,7 @@
 use std::fs;
 use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, OnListeningHandler, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[test]

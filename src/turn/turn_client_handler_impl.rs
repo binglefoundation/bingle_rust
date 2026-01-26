@@ -65,7 +65,7 @@ impl TurnClientHandlerImpl {
 impl Default for TurnClientHandlerImpl { fn default() -> Self { Self::new() } }
 
 impl TurnHandler for TurnClientHandlerImpl {
-    fn handle_listen(&self, source_id: &str, source: &SocketAddr) -> bool {
+    fn handle_listen(&self, _source_id: &str, _source: &SocketAddr) -> bool {
         log::error!("[TurnClientHandlerImpl::handle_listen] unexpected relay command listen on client; ignoring");
         false
     }

@@ -155,7 +155,7 @@ fn client_call_response_registers_allowed_and_channel() {
     TurnClientHandler::handle_call_response(&client, &source, &dest, ch, "RELAY_C");
 
     // After call response, sending should succeed
-    let wrapped = client
+    let _wrapped = client
         .send_turn_outgoing(&source, &dest, b"ok")
         .expect("send should succeed after call response");
 
