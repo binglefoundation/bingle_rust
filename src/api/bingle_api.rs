@@ -16,31 +16,33 @@ pub trait BingleApiInternal: Send + Sync {
     /// delegate to the underlying Engine instance. Implementations may be best-effort
     /// and can ignore unsupported transitions.
     fn set_state(&self, state: crate::engine::EngineState);
-    /// Get the current engine state. Default: StunIdentify for mocks that don't track state.
-    fn get_state(&self) -> crate::engine::EngineState { crate::engine::EngineState::StunIdentify }
-    /// Set the detected NAT type on the engine. Default no-op to keep older tests/mocks compiling.
-    fn set_nat_type(&self, _nat: crate::engine::NatType) { }
-    /// Retrieve the last discovered public address (IP:port) if available. Default None.
-    fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
-    /// Register an endpoint IP:port via the engine's DDB client. Default: not implemented.
-    fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
-    /// Register a relay association via the engine's DDB client. Default: not implemented.
-    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("not implemented".to_string()) }
+    /// Get the current engine state.
+    fn get_state(&self) -> crate::engine::EngineState;
+    /// Set the detected NAT type on the engine.
+    fn set_nat_type(&self, nat: crate::engine::NatType);
+    /// Retrieve the last discovered public address (IP:port) if available.
+    fn get_last_public_addr(&self) -> Option<SocketAddr>;
+    /// Register an endpoint IP:port via the engine's DDB client.
+    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String>;
+    /// Register a relay association via the engine's DDB client.
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String>;
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
-    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("not implemented".to_string()) }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), String>;
+    /// Client-side handler invoked on ListenResponse to register allowed relay id <-> addr mapping.
+    fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String);
     /// Lookup a previously registered address for the given id (TURN mapping).
-    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr>;
     /// Handle a Relay::Call by allocating or retrieving a TURN channel for the (source, dest) pair.
     /// Returns the channel number as i32 (negative on failure) to mirror TurnHandler::handle_call.
-    fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
+    fn turn_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32;
     /// Handle a Relay::Listen on the relay side to register id -> source address.
-    fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
+    fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool;
     /// Handle a RelayCalled notification at the client side to register the channel mapping.
-    fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) { }
+    fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16);
 
-    /// Notify that the node's listening state changed. Default no-op.
-    fn notify_listening(&self, _listening: bool) { panic!("notify_listening called on non-mock BingleApiInternal")} 
+    /// Notify that the node's listening state changed.
+    fn notify_listening(&self, listening: bool);
 }
 
 /// Convenience type aliases used by the Bingle API.

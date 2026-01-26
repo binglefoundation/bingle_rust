@@ -54,6 +54,14 @@ impl TurnRelayHandlerImpl {
         if let Ok(map) = self.allowed_id_to_addr.lock() { map.values().any(|addr| addr.ip() == ip) } else { false }
     }
 
+    /// Lookup helpers for tests/engine
+    pub fn lookup_addr_by_id(&self, id: &str) -> Option<SocketAddr> {
+        self.allowed_id_to_addr.lock().ok()?.get(id).cloned()
+    }
+    pub fn lookup_id_by_addr(&self, addr: &SocketAddr) -> Option<String> {
+        self.allowed_addr_to_id.lock().ok()?.get(addr).cloned()
+    }
+
     fn alloc_channel(&self) -> Option<u16> {
         use uuid::Uuid;
         const MIN_CH: u16 = 0x4000;

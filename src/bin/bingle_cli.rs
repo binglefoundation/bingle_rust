@@ -18,6 +18,43 @@ fn init_logger_from_args(args: &mut Vec<String>) {
     let mut i = 0usize;
     while i < args.len() {
         let a = args[i].as_str();
+        // Support --log-level <level> and --log-level=<level>
+        if a == "--log-level" {
+            if i + 1 < args.len() {
+                let val = args[i + 1].to_ascii_lowercase();
+                let lvl = match val.as_str() {
+                    "trace" => LevelFilter::Trace,
+                    "debug" => LevelFilter::Debug,
+                    "info" => LevelFilter::Info,
+                    "warn" | "warning" => LevelFilter::Warn,
+                    "error" => LevelFilter::Error,
+                    _ => LevelFilter::Info,
+                };
+                chosen = Some(lvl);
+                // Remove flag and its value
+                args.remove(i); // remove "--log-level"
+                args.remove(i); // remove value now at same index
+                continue; // re-check current index
+            } else {
+                // No value provided; drop the flag and continue
+                args.remove(i);
+                continue;
+            }
+        } else if let Some(rest) = a.strip_prefix("--log-level=") {
+            let val = rest.to_ascii_lowercase();
+            let lvl = match val.as_str() {
+                "trace" => LevelFilter::Trace,
+                "debug" => LevelFilter::Debug,
+                "info" => LevelFilter::Info,
+                "warn" | "warning" => LevelFilter::Warn,
+                "error" => LevelFilter::Error,
+                _ => LevelFilter::Info,
+            };
+            chosen = Some(lvl);
+            args.remove(i);
+            continue;
+        }
+
         let matched = match a {
             "--log-warn" | "-q" => { chosen = Some(LevelFilter::Warn); true }
             "--log-info" => { chosen = Some(LevelFilter::Info); true }

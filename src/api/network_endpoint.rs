@@ -9,16 +9,22 @@ use serde::{Deserialize, Serialize};
 pub struct NetworkEndpointKey {
     /// Direct socket address if the endpoint is directly reachable.
     pub inet_socket_address: Option<SocketAddr>,
-    /// Relay id for endpoints that are identified by relay id (no channel/address yet).
+    /// Relay id for endpoints that are identified by relay id.
     #[serde(default)]
     pub relay_id: Option<String>,
+    /// TURN relay channel number (16-bit) when using a relay endpoint.
+    #[serde(default)]
+    pub relay_channel: Option<u16>,
 }
 
 impl fmt::Display for NetworkEndpointKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(addr) = self.inet_socket_address {
             write!(f, "NetworkEndpointKey(inetSocketAddress={:?})", addr)
+        } else if let (Some(id), Some(ch)) = (&self.relay_id, self.relay_channel) {
+            write!(f, "NetworkEndpointKey(relayId={:?}, relayChannel={:#X})", id, ch)
         } else if let Some(id) = &self.relay_id {
+            // Backward-compat logging (should not occur for new relay keys)
             write!(f, "NetworkEndpointKey(relayId={:?})", id)
         } else {
             write!(f, "NetworkEndpointKey(<empty>)")
@@ -81,15 +87,18 @@ impl NetworkEndpoint {
     pub fn set_relay_channel(&mut self, ch: Option<u16>) { self.relay_channel = ch; }
 
     /// Build a NetworkEndpointKey from this endpoint.
-    /// Returns Some(key) when either inet_socket_address or relay_id is present; otherwise None.
+    /// For relay endpoints, both relay_id and relay_channel must be present.
     pub fn get_key(&self) -> Option<NetworkEndpointKey> {
         if let Some(addr) = self.inet_socket_address {
-            Some(NetworkEndpointKey { inet_socket_address: Some(addr), relay_id: None })
-        } else if let Some(relay_id) = self.relay_id.as_ref() {
-            Some(NetworkEndpointKey { inet_socket_address: None, relay_id: Some(relay_id.clone()) })
+            Some(NetworkEndpointKey { inet_socket_address: Some(addr), relay_id: None, relay_channel: None })
+        } else if let (Some(relay_id), Some(ch)) = (self.relay_id.as_ref(), self.relay_channel) {
+            Some(NetworkEndpointKey { inet_socket_address: None, relay_id: Some(relay_id.clone()), relay_channel: Some(ch) })
+        } else if self.relay_id.is_some() || self.relay_channel.is_some() {
+            // Relay endpoint must include both id and channel per requirement
+            panic!("NetworkEndpointKey (relay) requires both relay_id and relay_channel: {:?}", self);
         } else {
-            // Cannot be reached as NetworkEndpointKey cannot be constructed from incomplete NetworkEndpoint
-            panic!("NetworkEndpointKey cannot be constructed from incomplete NetworkEndpoint: {:?}", self);
+            // No fields set; cannot construct a key
+            None
         }
     }
 }

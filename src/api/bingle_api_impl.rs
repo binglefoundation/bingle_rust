@@ -144,8 +144,11 @@ impl BingleApiImpl {
     }
 
     /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
-    pub fn engine_turn_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl> {
-        self.engine.turn_handler_for_tests()
+    pub fn engine_turn_client_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
+        self.engine.turn_client_handler_for_tests()
+    }
+    pub fn engine_turn_relay_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
+        self.engine.turn_relay_handler_for_tests()
     }
     
     /// Exposed for integration tests: whether a DTLS instance has been created.
@@ -411,12 +414,10 @@ impl BingleApi for BingleApiImpl {
                     Ok(updated) => {
                         effective_nsk = updated;
 
-                        // Call TurnClientHandler::handle_call_response when we get a successful call response
+                        // Register TURN client mapping upon successful CallResponse without using test-only accessors
                         if let (Some(channel), Some(relay_addr)) = (effective_nsk.relay_channel(), effective_nsk.relay_address()) {
-                            let turn_handler = self.engine.turn_handler_for_tests();
-                            use crate::turn::turn_handler::TurnClientHandler;
                             let source_addr = effective_nsk.inet_socket_address().unwrap_or(relay_addr);
-                            TurnClientHandler::handle_call_response(&*turn_handler, &source_addr, &relay_addr, channel, user_id);
+                            self.engine.turn_client_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()"));
                         }
 
                         if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
@@ -580,26 +581,32 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
         log::info!("[BingleApiImpl::update_turn_listener_relay][enter] id={} addr={}", relay_id, relay_addr);
-        // Access the Engine's TURN handler and register the mapping id -> addr
-        let th = self.engine.turn_handler_for_tests();
-        let ok = th.handle_listen(&relay_id, &relay_addr);
-        if ok {
-            log::info!("[BingleApiImpl::update_turn_listener_relay][exit] Ok(())");
-            Ok(())
-        } else {
-            let err = format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr);
-            log::warn!("[BingleApiImpl::update_turn_listener_relay][exit] Err({})", err);
-            Err(err)
-        }
+        // Backwards-compatible: delegate to client-side listen response handler
+        <BingleApiImpl as crate::api::bingle_api::BingleApiInternal>::turn_client_handle_listen_response(self, relay_addr, relay_id);
+        log::info!("[BingleApiImpl::update_turn_listener_relay][exit] Ok(())");
+        Ok(())
+    }
+    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
+        log::info!("[BingleApiImpl::turn_client_handle_listen_response][enter] id={} addr={}", relay_id, relay_addr);
+        self.engine.turn_client_handle_listen_response(relay_addr, &relay_id);
+        log::info!("[BingleApiImpl::turn_client_handle_listen_response][exit]");
     }
     fn notify_listening(&self, listening: bool) {
         log::info!("[BingleApiImpl::notify_listening] listening={}", listening);
         if let Some(cb) = &self.on_listening { cb(listening); }
     }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
-        // Forward to the engine's TURN handler client-side interface
-        let th = self.engine.turn_handler_for_tests();
-        crate::turn::turn_handler::TurnClientHandler::handle_called(&*th, &source, &dest, channel);
+        // Forward to the engine's TURN handler client-side interface (non-test API)
+        self.engine.turn_client_handle_called(source, dest, channel);
+    }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
+        self.engine.turn_relay_lookup_addr_by_id(&id)
+    }
+    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
+        self.engine.turn_relay_handle_call(source, dest)
+    }
+    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
+        self.engine.turn_relay_handle_listen(&id, &source)
     }
 }
 

@@ -75,6 +75,9 @@ impl BingleApiInternal for CombinedApi {
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
         if let Some(i) = &self.internal { i.update_turn_listener_relay(relay_id, relay_addr) } else { Err("not implemented".into()) }
     }
+    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
+        if let Some(i) = &self.internal { i.turn_client_handle_listen_response(relay_addr, relay_id) }
+    }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
         if let Some(i) = &self.internal { i.turn_lookup_addr_by_id(id) } else { None }
     }
@@ -151,23 +154,19 @@ impl Router {
     pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
     pub fn take_outbound_response(&self) -> Option<serde_json::Value> { match self.outbound_response.lock() { Ok(mut g) => g.take(), Err(_) => None } }
 
-    pub fn route<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str) {
+    /// Route a message providing the source network endpoint explicitly.
+    pub fn route_with_network<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint) {
         let api_opt = self.get_bingle_api();
         if api_opt.is_none() {
-            log::warn!("[router::route] No BingleApi available to pass to handler");
+            log::warn!("[router::route_with_network] No BingleApi available to pass to handler");
             return;
         }
         let api_base = api_opt.unwrap();
         let internal = self.get_bingle_api_internal();
         let combined_api: Arc<dyn crate::api::bingle_api::BingleApiBoth> = Arc::new(CombinedApi { api: api_base.clone(), internal });
         let api = combined_api.clone();
-        // Build FromStruct with id and network source key (direct from last_from if available)
-        let nsk = if let Some(addr) = self.get_last_from() {
-            NetworkEndpoint::new_direct(addr)
-        } else {
-            NetworkEndpoint::new_direct("0.0.0.0:0".parse().unwrap())
-        };
-        let from = FromStruct { id: from_id.to_string(), network_source_key: nsk };
+        // Build FromStruct with id and provided network endpoint
+        let from = FromStruct { id: from_id.to_string(), network_source_key: from_ep.clone() };
         match msg {
             Message::PlainText(pt) => handler.on_plain_text(api.clone(), &from, pt),
             Message::Relay(r) => match r {
@@ -198,6 +197,17 @@ impl Router {
             Message::Unknown(v) => handler.on_unknown(api.clone(), v),
         }
         // Handlers may set an outbound_response to be sent by DTLS layer; no-op here.
+    }
+
+    /// Backwards-compatible route that derives the endpoint from last_from.
+    pub fn route<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str) {
+        // Build FromStruct using last_from as a direct endpoint for legacy callers
+        let nsk = if let Some(addr) = self.get_last_from() {
+            NetworkEndpoint::new_direct(addr)
+        } else {
+            NetworkEndpoint::new_direct("0.0.0.0:0".parse().unwrap())
+        };
+        self.route_with_network(handler, msg, from_id, &nsk);
     }
 
     /// Test helper to clear all stored state (used by Engine::clear_api_bindings)

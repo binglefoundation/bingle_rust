@@ -134,7 +134,7 @@ RELAY_B_SENT="relay_${RELAY_B_HANDLE}_${RELAY_B_PORT}.sentinel"
 # Remove any old sentinel files
 rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT"
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -150,7 +150,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 -d --rm \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -174,10 +174,12 @@ wait_for_file "$SENT_DIR/$RELAY_B_SENT" 180 || exit 1
 PING_INIT_SENT="pingable_${PING_INIT_MODE}_${PINGABLE_PORT}.sentinel"
 rm -f "$SENT_DIR/$PING_INIT_SENT"
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 -d --rm \
  --name bingle_pingable \
  --network bingle_testnet \
  --cap-add NET_ADMIN \
+ -e RUST_BACKTRACE=1 \
+ -e EXTRA_ARGS="--log-debug" \
  -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
  -e PORT=$PINGABLE_PORT \
  -e HANDLE=$PINGABLE_USER \
@@ -398,13 +400,35 @@ fi
 # Extract and display timing information
 echo "-- Timing Summary --"
 if [[ -f "$MAIN_OUT" ]]; then
-  echo "Main run timings:"
-  grep "TIMING:" "$MAIN_OUT" | sed 's/^/  /' || echo "  (no timing info found)"
+  echo "Main run timings (NAT_MODE=$NAT_MODE):"
+  # Prefix each timing line with the NAT mode used by the main test container
+  grep "TIMING:" "$MAIN_OUT" | sed "s/^/  [NAT=$NAT_MODE] /" || echo "  (no timing info found)"
 fi
 
-if [[ -f "$PING_OUT" ]]; then
-  echo "Ping run timings:"
-  grep "TIMING:" "$PING_OUT" | sed 's/^/  /' || echo "  (no timing info found)"
+# For ping run, show timings per NAT mode exercised (if any)
+echo "Ping run timings:"
+if [[ -n "${PING_MODES[*]:-}" ]]; then
+  any_timing=0
+  for MODE in "${PING_MODES[@]}"; do
+    host_file="${PING_OUT_BASE}_${MODE}.out"
+    if [[ -f "$host_file" ]]; then
+      # Prefix per-mode timing lines with the NAT mode
+      if grep -q "TIMING:" "$host_file"; then
+        grep "TIMING:" "$host_file" | sed "s/^/  [NAT=$MODE] /"
+        any_timing=1
+      fi
+    fi
+  done
+  if [[ $any_timing -eq 0 ]]; then
+    echo "  (no timing info found)"
+  fi
+else
+  if [[ -f "$PING_OUT" ]]; then
+    # Fallback: prefix timings found in combined file without per-mode context
+    grep "TIMING:" "$PING_OUT" | sed 's/^/  /' || echo "  (no timing info found)"
+  else
+    echo "  (no timing info found)"
+  fi
 fi
 
 echo "-- Overall --"

@@ -28,3 +28,6 @@ mod bingle_api_relay_dtls;
 
 #[path = "on_listening_handler.rs"]
 mod on_listening_handler;
+
+#[path = "network_endpoint_key.rs"]
+mod network_endpoint_key;

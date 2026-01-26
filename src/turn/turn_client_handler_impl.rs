@@ -46,6 +46,13 @@ impl TurnClientHandlerImpl {
         }
     }
 
+    pub fn lookup_addr_by_id(&self, id: &str) -> Option<SocketAddr> {
+        self.allowed_id_to_addr.lock().ok()?.get(id).cloned()
+    }
+    pub fn lookup_id_by_addr(&self, addr: &SocketAddr) -> Option<String> {
+        self.allowed_addr_to_id.lock().ok()?.get(addr).cloned()
+    }
+
     fn insert_mapping(&self, source: &SocketAddr, dest: &SocketAddr, ch: u16) {
         if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_addr.lock(), self.pair_to_ch.lock()) {
             c2a.insert(ch, *source); // always attribute to originator
@@ -69,6 +76,7 @@ impl TurnHandler for TurnClientHandlerImpl {
         _local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
+        log::info!("[TurnClientHandlerImpl::handle_turn_incoming] received TURN packet from {:?} with {} bytes", sender_address, packet.len());
         let (ch, len, _pad) = match parse_channel_data_header(packet) {
             Some(header) => header,
             None => {
@@ -100,6 +108,10 @@ impl TurnHandler for TurnClientHandlerImpl {
                         );
                         return Some(WrappedMessageWithNetworkEndpoint { ip_address: *relay_addr, message: payload, network_endpoint });
                     }
+                    else {
+                        log::warn!("[TurnClientHandlerImpl::handle_turn_incoming] packet from unknown relay {:?}; dropping", relay_addr);
+                        return None;
+                    }
                 }
                 Err(_) => {
                     log::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to lock allowed_addr_to_id");
@@ -107,31 +119,10 @@ impl TurnHandler for TurnClientHandlerImpl {
                 }
             }
         }
-
-        // Otherwise consider the channel mapping and gate by the mapped peer address.
-        let addr = match self.ch_to_addr.lock() {
-            Ok(map) => {
-                match map.get(&ch).cloned() {
-                    Some(address) => address,
-                    None => {
-                        log::error!("[TurnClientHandlerImpl::handle_turn_incoming] no address mapping found for channel {:#X}", ch);
-                        return None;
-                    }
-                }
-            }
-            Err(_) => {
-                log::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to lock ch_to_addr");
-                return None;
-            }
-        };
-
-        log::info!(
-            "[TurnClientHandlerImpl::handle_turn_incoming] accepted packet from {} on ch {} ({} bytes)",
-            addr, ch, len
-        );
-        let network_endpoint: NetworkEndpoint = NetworkEndpoint::new_direct(addr);
-        log::info!("[TurnClientHandlerImpl::handle_turn_incoming] wrapping packet with network endpoint {:?}", network_endpoint);
-        Some(WrappedMessageWithNetworkEndpoint { ip_address: addr, message: payload, network_endpoint })
+        else {
+            log::warn!("[TurnClientHandlerImpl::handle_turn_incoming] no sender address for incoming packet; dropping");
+            return None;
+        }
     }
 
     fn send_turn_outgoing(&self, source: &SocketAddr, dest: &SocketAddr, packet: &[u8]) -> Option<TurnMessageWithAddress> {
@@ -176,6 +167,8 @@ impl TurnClientHandler for TurnClientHandlerImpl {
     fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
         if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
             // Ensure both addresses are present in allowed maps under the relay id
+            id2a.insert(relay_id.to_string(), *source);
+            a2id.insert(*source, relay_id.to_string());
             id2a.insert(relay_id.to_string(), *dest);
             a2id.insert(*dest, relay_id.to_string());
         }

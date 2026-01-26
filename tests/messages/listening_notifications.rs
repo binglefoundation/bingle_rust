@@ -18,6 +18,7 @@ impl MockInternal {
 }
 impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
     fn set_state(&self, _state: EngineState) { }
+    fn get_state(&self) -> EngineState { EngineState::StunIdentify }
     fn set_nat_type(&self, _nat: rust_comms::engine::NatType) { }
     fn get_last_public_addr(&self) -> Option<SocketAddr> { Some(self.last_public_addr) }
     fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
@@ -25,6 +26,13 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
         self.register_called.store(true, Ordering::SeqCst);
         Ok(())
     }
+    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
+    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Ok(()) }
+    fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) { }
+    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
+    fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
+    fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
+    fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) { }
     fn notify_listening(&self, listening: bool) { if listening { self.listening_notified.store(true, Ordering::SeqCst); } }
 }
 

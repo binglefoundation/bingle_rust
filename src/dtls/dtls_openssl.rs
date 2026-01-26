@@ -840,6 +840,7 @@ pub mod non_ios {
                 if let Some(ps) = pm.get(&key) {
                     ps.queue.clone()
                 } else {
+                    log::info!("[DtlsOpenSsl::accept] new queue for {} (key: {})", from, key);
                     let q = Arc::new(PeerQueue::default());
                     pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
                     q
@@ -976,6 +977,7 @@ pub mod non_ios {
             Ok(())
         }
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
+            // TODO: target id and relay id get confused here
             use std::io::Write;
             // We require a running UDP mux to perform client handshake and writes
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
@@ -983,10 +985,10 @@ pub mod non_ios {
             // Validate destination key: allow either direct inet address or relay channel+address
             let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some() {
                 to
-            } else if to.relay_channel().is_some() && to.relay_address().is_some() {
+            } else if to.relay_channel().is_some() && to.relay_address().is_some() && to.relay_id().is_some() {
                 to
             } else {
-                panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address)");
+                panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address + relay_id)");
             };
 
             let key_to = to.get_key().expect("direct endpoint key");
@@ -1025,6 +1027,7 @@ pub mod non_ios {
                 if let Some(ps) = map.get(&key_to) {
                     ps.queue.clone()
                 } else {
+                    log::info!("[DtlsOpenSsl::send] new queue for {} (key: {})", endpoint, key_to);
                     let q = std::sync::Arc::new(PeerQueue::default());
                     map.insert(key_to.clone(), PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
                     q

@@ -93,7 +93,7 @@ pub trait MessageHandler {
             // Prepare destination (use from.id (issuer) as base32 algorand address without conversion)
             let nsk = from.network_source_key.clone();
             let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            log::info!("[handlers::on_ping_ping] sending response {:?}", json_val);
+            log::info!("[handlers::on_ping_ping] sending response {:?} to {:?}", json_val, nsk);
             let ok = sender(&nsk, &user_id, json_val);
             if !ok {
                 log::warn!("[handlers::on_ping_ping] sender returned false");
@@ -215,7 +215,7 @@ pub trait MessageHandler {
                 Some(a) => a,
                 None => { warn!("[handlers::on_relay_called] No public address available to register TURN mapping"); return; }
             };
-            api.turn_handle_called(my_pub, relay_addr, msg.channel);
+            api.turn_handle_called(relay_addr, my_pub, msg.channel);
         } else {
             warn!("[handlers::on_relay_called] No router context available");
         }
@@ -488,9 +488,8 @@ impl MessageHandler for DefaultPrintingHandler {
                         if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
 
                         // Register the relay listener mapping via the internal API (engine turn_handler)
-                        if let Err(e) = api_for_thread.update_turn_listener_relay(relay_info.id.clone(), relay_info.address) {
-                            warn!("[on_triangle_test1_response] update_turn_listener_relay failed: {}", e);
-                        }
+                        log::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
+                        api_for_thread.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
                     }
                     Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
                 }

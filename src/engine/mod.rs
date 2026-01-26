@@ -76,13 +76,23 @@ pub struct Engine {
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // DDB client bound to the API instance (always present; may be a NullDdbClient)
     ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
-    // TURN handler used for RelayListen and TURN ChannelData processing
-    turn_handler: std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl>,
+    // TURN handlers (split): client and relay variants
+    turn_handler_client: std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>,
+    turn_handler_relay: std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>,
     // Application-level callback for listening state changes (set by API)
     on_listening_cb: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>>>,
 }
 
 impl Engine {
+    /// Return the appropriate TURN handler for current role (client vs relay)
+    pub fn get_approp_turn_handler(&self) -> std::sync::Arc<dyn TurnHandler + Send + Sync> {
+        if self.options.am_relay {
+            self.turn_handler_relay.clone()
+        } else {
+            self.turn_handler_client.clone()
+        }
+    }
+
     /// Upsert a list of root relays into the in-memory DDB backend (as am_relay=true records).
     fn upsert_roots_into_backend(&self, roots: &[RootRelayInfo]) {
         if roots.is_empty() {
@@ -149,7 +159,7 @@ impl Engine {
     /// Create a common TURN handler for both relay and client modes
     fn create_turn_handler(&self) -> std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
         let am_relay = self.options.am_relay;
-        let turn = self.turn_handler.clone();
+        let turn: std::sync::Arc<dyn TurnHandler + Send + Sync> = self.get_approp_turn_handler();
 
         let local_public_addr = self.last_public_addr().clone();
         Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
@@ -315,7 +325,7 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return Err("null engine".into()); }
         unsafe {
-            let ok = (*p).turn_handler.handle_listen(&relay_id, &relay_addr);
+            let ok = (*p).turn_handler_relay.handle_listen(&relay_id, &relay_addr);
             if ok { Ok(()) } else { Err(format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr)) }
         }
     }
@@ -323,28 +333,36 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return None; }
-        unsafe { (*p).turn_handler.lookup_addr_by_id(&id) }
+        unsafe { (*p).turn_handler_relay.lookup_addr_by_id(&id) }
     }
     fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return -1; }
         unsafe {
-            crate::turn::turn_handler::TurnRelayHandler::handle_call(&*((*p).turn_handler), &source, &dest)
+            crate::turn::turn_handler::TurnRelayHandler::handle_call(&*((*p).turn_handler_relay), &source, &dest)
         }
     }
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return false; }
-        unsafe { (*p).turn_handler.handle_listen(&id, &source) }
+        unsafe { (*p).turn_handler_relay.handle_listen(&id, &source) }
     }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return; }
         unsafe {
-            crate::turn::turn_handler::TurnClientHandler::handle_called(&*((*p).turn_handler), &source, &dest, channel);
+            crate::turn::turn_handler::TurnClientHandler::handle_called(&*((*p).turn_handler_client), &source, &dest, channel);
+        }
+    }
+    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe {
+            (*p).turn_client_handle_listen_response(relay_addr, &relay_id);
         }
     }
 }
@@ -392,7 +410,8 @@ impl Engine {
             ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
             router: None,
             ddb_client: ddb,
-            turn_handler: std::sync::Arc::new(crate::turn::turn_handler::TurnHandlerImpl::new()),
+            turn_handler_client: std::sync::Arc::new(crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new()),
+            turn_handler_relay: std::sync::Arc::new(crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl::new()),
             on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -652,7 +671,7 @@ impl Engine {
                             Ok(msg) => {
                                 log::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
                                 if let Some(r) = &router_arc {
-                                    r.route(&handler, &msg, issuer);
+                                    r.route_with_network(&handler, &msg, issuer, &from);
                                     if let Some(out) = r.take_outbound_response() {
                                         log::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
@@ -1076,8 +1095,43 @@ impl Engine {
 
 
 impl Engine {
-    /// Test-only accessor to the TURN handler instance (exposed unconditionally for integration tests).
-    pub fn turn_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_handler::TurnHandlerImpl> {
-        self.turn_handler.clone()
+    /// Test-only accessors to the TURN handler instances (exposed for integration tests).
+    pub fn turn_client_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
+        self.turn_handler_client.clone()
+    }
+    pub fn turn_relay_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
+        self.turn_handler_relay.clone()
+    }
+}
+
+impl Engine {
+    /// Relay-side: register a listener relay id -> address mapping (non-test API)
+    pub fn turn_relay_handle_listen(&self, relay_id: &str, relay_addr: &SocketAddr) -> bool {
+        self.turn_handler_relay.handle_listen(relay_id, relay_addr)
+    }
+
+    /// Relay-side: lookup address by id (non-test API)
+    pub fn turn_relay_lookup_addr_by_id(&self, relay_id: &str) -> Option<SocketAddr> {
+        self.turn_handler_relay.lookup_addr_by_id(relay_id)
+    }
+
+    /// Relay-side: handle a Call by allocating channel (non-test API)
+    pub fn turn_relay_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32 {
+        crate::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn_handler_relay, &source, &dest)
+    }
+
+    /// Client-side: record ListenResponse mapping (non-test API)
+    pub fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: &str) {
+        crate::turn::turn_handler::TurnClientHandler::handle_listen_response(&*self.turn_handler_client, &relay_addr, relay_id);
+    }
+
+    /// Client-side: record CallResponse mapping (non-test API)
+    pub fn turn_client_handle_call_response(&self, source: SocketAddr, dest: SocketAddr, channel: u16, relay_id: &str) {
+        crate::turn::turn_handler::TurnClientHandler::handle_call_response(&*self.turn_handler_client, &source, &dest, channel, relay_id);
+    }
+
+    /// Client-side: record Called mapping (non-test API)
+    pub fn turn_client_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) {
+        crate::turn::turn_handler::TurnClientHandler::handle_called(&*self.turn_handler_client, &source, &dest, channel);
     }
 }

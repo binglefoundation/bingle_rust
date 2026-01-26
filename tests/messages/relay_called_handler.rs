@@ -36,6 +36,7 @@ impl BingleApiInternal for CapturingInternal {
     fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("ni".into()) }
     fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("ni".into()) }
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("ni".into()) }
+    fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) { }
     fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
     fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
@@ -60,6 +61,7 @@ fn relay_called_handler_invokes_turn_handle_called() {
         fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("ni".into()) }
         fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("ni".into()) }
         fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("ni".into()) }
+        fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) { }
         fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
         fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
         fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
