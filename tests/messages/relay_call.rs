@@ -36,6 +36,7 @@ fn relay_call_allocates_channel_and_maps_pair() {
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+        fn get_relay_state(&self) -> String { "off".to_string() }
         fn set_state(&self, _state: rust_comms::engine::EngineState) {}
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}

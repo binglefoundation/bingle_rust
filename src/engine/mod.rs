@@ -42,6 +42,13 @@ pub enum NatType {
     FullCone = 4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayState {
+    Off,
+    Starting,
+    Available,
+}
+
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
     options: StartOptions,
@@ -49,6 +56,7 @@ pub struct Engine {
     // Underlying DTLS listener; per-connection adapters delegate to this
     dtls: Option<Box<dyn Dtls + Send + Sync>>,
     state: EngineState,
+    relay_state: RelayState,
     last_public_addr: Option<SocketAddr>,
     stun: Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>, // background STUN
     relay_finder: Option<Arc<RelayFinder>>, // used to locate peer relay
@@ -84,6 +92,14 @@ pub struct Engine {
 }
 
 impl Engine {
+    pub fn relay_state_str(&self) -> String {
+        match self.relay_state {
+            RelayState::Off => "off".to_string(),
+            RelayState::Starting => "starting".to_string(),
+            RelayState::Available => "available".to_string(),
+        }
+    }
+
     /// Return the appropriate TURN handler for current role (client vs relay)
     pub fn get_approp_turn_handler(&self) -> std::sync::Arc<dyn TurnHandler + Send + Sync> {
         if self.options.am_relay {
@@ -278,6 +294,12 @@ impl BingleApi for EngineBingleApiHandle {
 // Adapter exposing minimal internal controls for handlers -> engine without referencing BingleApiImpl
 pub struct EngineInternalPtr(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
 impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
+    fn get_relay_state(&self) -> String {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return "off".to_string(); }
+        unsafe { (*p).relay_state_str() }
+    }
     fn set_state(&self, state: EngineState) {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
@@ -394,6 +416,7 @@ impl Engine {
             mux: None,
             dtls: None,
             state: EngineState::StunIdentify,
+            relay_state: RelayState::Off,
             last_public_addr: options.static_ip.clone(),
             stun: None,
             relay_finder: None,
@@ -817,6 +840,8 @@ impl Engine {
 
             // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
             if self.options.am_relay {
+                // Before discovering peers, mark relay state as Starting
+                self.relay_state = RelayState::Starting;
                 // Build discovery closure using indexer when app_id is configured; else skip.
                 #[cfg(not(target_os = "ios"))]
                 {
@@ -832,8 +857,12 @@ impl Engine {
                         self.upsert_roots_into_backend(&roots);
                         log::info!("[Engine::start_with_addr] upserted root relays into backend");
                         self.relay_finder = Some(Arc::new(finder));
+                        // DDB is ready after upserting roots
+                        self.relay_state = RelayState::Available;
                     } else {
                         log::warn!("[Engine::start_with_addr] am_relay set but app_id not configured; skipping root relay discovery");
+                        // Even if discovery is skipped, the relay is operational for local tests; mark available.
+                        self.relay_state = RelayState::Available;
                     }
                 }
             }

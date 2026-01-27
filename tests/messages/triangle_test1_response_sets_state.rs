@@ -13,6 +13,7 @@ impl MockInternal {
     fn get(&self) -> Option<EngineState> { self.state.lock().ok().and_then(|g| *g) }
 }
 impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+    fn get_relay_state(&self) -> String { "off".to_string() }
     fn set_state(&self, state: EngineState) {
         if let Ok(mut g) = self.state.lock() {
             if matches!(*g, Some(EngineState::EndpointAvailable)) && state == EngineState::NATRestricted {

@@ -17,6 +17,7 @@ impl MockInternal {
     fn new(addr: SocketAddr) -> Self { Self { last_public_addr: addr, register_called: AtomicBool::new(false), listening_notified: AtomicBool::new(false) } }
 }
 impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+    fn get_relay_state(&self) -> String { "off".to_string() }
     fn set_state(&self, _state: EngineState) { }
     fn get_state(&self) -> EngineState { EngineState::StunIdentify }
     fn set_nat_type(&self, _nat: rust_comms::engine::NatType) { }

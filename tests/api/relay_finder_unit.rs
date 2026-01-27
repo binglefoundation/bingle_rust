@@ -49,7 +49,7 @@ impl BingleApi for MockApi {
             .and_then(|v| v.iter().find(|(a, _)| *a == addr).cloned())
             .map(|(_, ok)| ok)
             .unwrap_or(false);
-        let resp = serde_json::json!({ "app": null, "type": "CheckResponse", "available": available });
+        let resp = serde_json::json!({ "app": null, "type": "CheckResponse", "state": if available { "available" } else { "off" } });
         Ok(resp)
     }
 

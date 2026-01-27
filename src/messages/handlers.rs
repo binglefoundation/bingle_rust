@@ -178,8 +178,8 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_listen] No router context available");
         }
     }
-    fn on_relay_check(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayCheck) {
-        // Send CheckResponse available=true back to the last sender address using the real Bingle API sender
+    fn on_relay_check(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayCheck) {
+        // Send CheckResponse with current relay state back to the last sender address using the real Bingle API sender
         let sender_opt = crate::messages::router::Router::current().and_then(|r| r.get_sender());
         if sender_opt.is_none() { warn!("[handlers::on_relay_check] No sender available"); return; }
         let sender = sender_opt.unwrap();
@@ -187,7 +187,8 @@ pub trait MessageHandler {
         let mut json_obj = serde_json::Map::new();
         json_obj.insert("app".to_string(), serde_json::Value::Null);
         json_obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
-        json_obj.insert("available".to_string(), serde_json::Value::Bool(true));
+        let state = api.get_relay_state();
+        json_obj.insert("state".to_string(), serde_json::Value::String(state));
         if let Some(tag) = crate::messages::router::Router::current().and_then(|r| r.get_last_response_tag()) {
             json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }

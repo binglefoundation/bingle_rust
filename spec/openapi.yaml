@@ -958,7 +958,7 @@ components:
     RelayCheckResponse:
       type: object
       description: Response to a `RelayCheck` message. |
-        Indicates if a relay node is available.
+        Indicates the relay state.
       properties:
         app:
           nullable: true
@@ -968,9 +968,11 @@ components:
           type: string
           enum: ["CheckResponse"]
           description: CheckResponse
-        available:
-          type: boolean
-      required: [app, type, available]
+        state:
+          type: string
+          description: |
+            Relay state string: one of "off", "starting", or "available".
+      required: [app, type, state]
 
     RelayCallResponse:
       type: object

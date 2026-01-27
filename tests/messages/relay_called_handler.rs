@@ -29,6 +29,7 @@ struct CapturingInternal {
 }
 impl CapturingInternal { fn new() -> Self { Self { captured: std::sync::Mutex::new(None) } } }
 impl BingleApiInternal for CapturingInternal {
+    fn get_relay_state(&self) -> String { "off".to_string() }
     fn set_state(&self, _state: rust_comms::engine::EngineState) {}
     fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
     fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
@@ -54,6 +55,7 @@ fn relay_called_handler_invokes_turn_handle_called() {
     // Internal that also reports a public address
     struct InternalWithPub { cap: CapturingInternal, pub_addr: SocketAddr }
     impl BingleApiInternal for InternalWithPub {
+        fn get_relay_state(&self) -> String { "off".to_string() }
         fn set_state(&self, _state: rust_comms::engine::EngineState) {}
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}

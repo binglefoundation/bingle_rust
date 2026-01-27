@@ -54,6 +54,7 @@ impl BingleApi for CombinedApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
 }
 impl BingleApiInternal for CombinedApi {
+    fn get_relay_state(&self) -> String { if let Some(i) = &self.internal { i.get_relay_state() } else { "off".to_string() } }
     fn set_state(&self, state: crate::engine::EngineState) {
         if let Some(i) = &self.internal { i.set_state(state); }
     }

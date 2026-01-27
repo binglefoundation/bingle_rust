@@ -64,6 +64,7 @@ impl BingleApi for MockApi {
 // Internal capture to assert notify_listening(true) gets called.
 struct CaptureInternal { pub notified: Arc<AtomicBool> }
 impl rust_comms::api::bingle_api::BingleApiInternal for CaptureInternal {
+    fn get_relay_state(&self) -> String { "off".to_string() }
     fn set_state(&self, _state: rust_comms::engine::EngineState) {}
     fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
     fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}

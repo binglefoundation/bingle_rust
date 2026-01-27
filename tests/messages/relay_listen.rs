@@ -36,6 +36,7 @@ fn relay_listen_registers_and_responds() {
     // Provide internal API that exposes the shared TurnHandlerImpl
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+        fn get_relay_state(&self) -> String { "off".to_string() }
         fn set_state(&self, _state: rust_comms::engine::EngineState) {}
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}

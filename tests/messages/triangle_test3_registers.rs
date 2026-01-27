@@ -17,6 +17,7 @@ impl MockInternal {
     fn new(addr: SocketAddr) -> Self { Self { last_public_addr: addr, register_called: AtomicBool::new(false), set_registered: AtomicBool::new(false) } }
 }
 impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+    fn get_relay_state(&self) -> String { "off".to_string() }
     fn set_state(&self, state: EngineState) {
         if state == EngineState::Registered { self.set_registered.store(true, Ordering::SeqCst); }
         // Accept EndpointAvailable too but do not record; test only checks final Registered

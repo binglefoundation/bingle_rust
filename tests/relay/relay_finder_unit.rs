@@ -25,7 +25,7 @@ impl BingleApi for MockApi {
         let mut obj = serde_json::Map::new();
         obj.insert("app".to_string(), serde_json::Value::Null);
         obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".into()));
-        obj.insert("available".to_string(), serde_json::Value::Bool(true));
+        obj.insert("state".to_string(), serde_json::Value::String("available".into()));
         Ok(serde_json::Value::Object(obj))
     }
 

@@ -187,7 +187,7 @@ impl RelayFinder {
         match self.api.send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {
             Ok(resp) => {
                 let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
-                    && resp.get("available").and_then(|v| v.as_bool()).unwrap_or(false);
+                    && resp.get("state").and_then(|v| v.as_str()) == Some("available");
                 is_ok
             }
             Err(_) => false,

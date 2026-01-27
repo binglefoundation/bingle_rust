@@ -550,6 +550,7 @@ impl BingleApiImpl {
 
 
 impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
+    fn get_relay_state(&self) -> String { self.engine.relay_state_str() }
     fn set_state(&self, state: EngineState) {
         log::info!("[BingleApiImpl::set_state][enter] state={:?}", state);
         #[allow(unused)] {  }

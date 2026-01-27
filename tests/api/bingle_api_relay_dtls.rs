@@ -81,6 +81,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     // Provide internal API exposing the shared TurnHandlerImpl
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
+        fn get_relay_state(&self) -> String { "off".to_string() }
         fn set_state(&self, _state: rust_comms::engine::EngineState) {}
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}

@@ -43,6 +43,9 @@ pub trait BingleApiInternal: Send + Sync {
 
     /// Notify that the node's listening state changed.
     fn notify_listening(&self, listening: bool);
+
+    /// Get current relay state string for CheckResponse ("off"|"starting"|"available").
+    fn get_relay_state(&self) -> String;
 }
 
 /// Convenience type aliases used by the Bingle API.

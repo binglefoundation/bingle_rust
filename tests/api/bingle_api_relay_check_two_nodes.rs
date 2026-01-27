@@ -47,7 +47,7 @@ fn bingle_api_relay_check_two_nodes() {
                 let resp = serde_json::json!({
                     "app": null,
                     "type": "CheckResponse",
-                    "available": true,
+                    "state": "available", 
                 });
                 let nsk = NetworkEndpoint::new_direct(addr);
                 // Validate that locking succeeds and attempt to send the response.
@@ -88,7 +88,7 @@ fn bingle_api_relay_check_two_nodes() {
     let seen = response.unwrap();
     assert_eq!(seen.get("app"), Some(&serde_json::Value::Null));
     assert_eq!(seen.get("type").and_then(|v| v.as_str()), Some("CheckResponse"));
-    assert_eq!(seen.get("available").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(seen.get("state").and_then(|v| v.as_str()), Some("available"));
 
     // Optional: stop nodes (best-effort)
     if let Ok(mut r) = relay_arc.lock() { r.stop(); }

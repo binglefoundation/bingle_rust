@@ -79,7 +79,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
                     let mut obj = serde_json::Map::new();
                     obj.insert("app".to_string(), serde_json::Value::Null);
                     obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
-                    obj.insert("available".to_string(), serde_json::Value::Bool(true));
+                    obj.insert("state".to_string(), serde_json::Value::String("available".to_string()));
                     if let Some(tag) = v.get("responseTag").and_then(|t| t.as_str()) {
                         obj.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
                     }
@@ -124,5 +124,5 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let response_content = response.unwrap();
     assert_eq!(response_content.get("app"), Some(&serde_json::Value::Null));
     assert_eq!(response_content.get("type").and_then(|v| v.as_str()), Some("CheckResponse"));
-    assert_eq!(response_content.get("available").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(response_content.get("state").and_then(|v| v.as_str()), Some("available"));
 }

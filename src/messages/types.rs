@@ -162,7 +162,8 @@ pub struct RelayListenResponse {
 pub struct RelayCheckResponse {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
-    pub available: bool,
+    #[serde(rename = "state")]
+    pub relay_state: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

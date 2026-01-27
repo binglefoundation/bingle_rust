@@ -54,6 +54,7 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     // Construct minimal API and FromStruct
     struct MockApi;
     impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
+        fn get_relay_state(&self) -> String { "off".to_string() }
         fn set_state(&self, _s: rust_comms::engine::EngineState) {}
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
@@ -112,6 +113,7 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     // Minimal API and FromStruct
     struct MockApi;
     impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
+        fn get_relay_state(&self) -> String { "off".to_string() }
         fn set_state(&self, _s: rust_comms::engine::EngineState) {}
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
