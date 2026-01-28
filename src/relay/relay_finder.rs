@@ -78,11 +78,25 @@ impl RelayFinder {
         }
         // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
         let _ = self.list_root_relays(my_id, true);
-        // 2) Fetch all relays via DDB
+        // 2) Pick preferred root relay and fetch all relays via DDB from that single root only
         let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
-        let mut relays: Vec<RelayInfo> = match cli.get_relays() {
-            Ok(pairs) => pairs.into_iter().map(|(id, addr)| RelayInfo { id, address: addr }).collect(),
-            Err(_e) => Vec::new(),
+        let mut relays: Vec<RelayInfo> = {
+            // Access cached root list
+            let roots_opt = self.list_cache.lock().ok().and_then(|g| g.clone());
+            if let Some(roots) = roots_opt {
+                if !roots.root_relays.is_empty() {
+                    let (pref_idx, _alt_idx) = self.select_indices(&roots.root_relays, my_id_norm);
+                    let chosen = &roots.root_relays[pref_idx];
+                    match cli.get_relays_from(chosen) {
+                        Ok(pairs) => pairs.into_iter().map(|(id, addr)| RelayInfo { id, address: addr }).collect(),
+                        Err(_e) => Vec::new(),
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            }
         };
         // 3) Fallback: if none from DDB, use the cached root list
         if relays.is_empty() {

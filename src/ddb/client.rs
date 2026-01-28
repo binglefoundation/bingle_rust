@@ -68,6 +68,36 @@ impl DdbClientImpl {
             Err(e) => Err(format!("invalid relay id: {}", e)),
         }
     }
+
+    /// Send a single getEpoch request to the specified relay and parse the relay list.
+    /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
+    pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, String> {
+        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let relay_user = Self::relay_user_id(&relay.id)?;
+        let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, response_tag: None, text: None, data: None }));
+        let json: JsonValue = to_json_value(&req);
+        let resp = self.api.send_message_to_network_with_response(&nsk, &relay_user, json, None)?;
+        let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("getEpochResponse");
+        if !app_ok || !ty_ok { return Err("unexpected response to getEpoch".to_string()); }
+        let ids_arr = resp.get("relayIds").and_then(|v| v.as_array()).ok_or_else(|| "missing relayIds".to_string())?;
+        let ids: Vec<String> = ids_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+        let eps_opt = resp.get("relayEndpoints").and_then(|v| v.as_array());
+        if let Some(eps) = eps_opt {
+            if eps.len() == ids.len() {
+                let mut out: Vec<(String, SocketAddr)> = Vec::new();
+                for (i, id) in ids.iter().enumerate() {
+                    let ep = &eps[i];
+                    let host = ep.get("host").and_then(|v| v.as_str()).ok_or_else(|| "endpoint missing host".to_string())?;
+                    let port = ep.get("port").and_then(|v| v.as_u64()).ok_or_else(|| "endpoint missing port".to_string())? as u16;
+                    if let Ok(ip) = host.parse::<IpAddr>() { out.push((id.clone(), SocketAddr::new(ip, port))); }
+                }
+                return Ok(out);
+            }
+        }
+        // If endpoints are absent or misaligned, return empty to allow caller fallback
+        Ok(Vec::new())
+    }
 }
 
 pub struct NullDdbClient;

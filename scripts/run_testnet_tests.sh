@@ -75,9 +75,9 @@ bingle_admin updateuser --handle $PINGABLE_USER \
  --node-file nodely_testnet_node.json \
  --userpassphrase "$PINGABLE_PASSPHRASE"
 
-# Ensure a dedicated test network exists
+# Ensure a dedicated test network exists with custom subnet for IP assignment
 if ! docker network inspect bingle_testnet >/dev/null 2>&1; then
-  docker network create bingle_testnet >/dev/null
+  docker network create --subnet=172.18.0.0/16 bingle_testnet >/dev/null
 fi
 
 # Start two local STUN servers in Docker (coturn in STUN-only mode)
@@ -171,12 +171,18 @@ wait_for_file "$SENT_DIR/$RELAY_A_SENT" 180 || exit 1
 wait_for_file "$SENT_DIR/$RELAY_B_SENT" 180 || exit 1
 
 # Start the ping target
+echo "Restarting ping target mode ${PING_INIT_MODE}"
+# Initialize IP address tracking for bingle_pingable container
+PINGABLE_IP_SUFFIX=100
+echo "Using IP address 172.18.0.$PINGABLE_IP_SUFFIX for initial bingle_pingable"
 PING_INIT_SENT="pingable_${PING_INIT_MODE}_${PINGABLE_PORT}.sentinel"
+echo "Delete sentinel ${SENT_DIR}/${PING_INIT_SENT}"
 rm -f "$SENT_DIR/$PING_INIT_SENT"
 
 docker run --platform linux/arm64 -d --rm \
  --name bingle_pingable \
  --network bingle_testnet \
+ --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
  --cap-add NET_ADMIN \
  -e RUST_BACKTRACE=1 \
  -e EXTRA_ARGS="--log-debug" \
@@ -195,7 +201,9 @@ if [ $? -ne 0 ]; then
 fi
 
 # Wait for pingable listening sentinel
+echo "Waiting for ${SENT_DIR}/${PING_INIT_SENT}"
 wait_for_file "$SENT_DIR/$PING_INIT_SENT" 180 || exit 1
+echo "Ping target restarted"
 
 # Build or refresh the tests image (uses Dockerfile tests stage and prebuilt test binary)
 export BINGLE_RUN_TESTNET=1
@@ -261,11 +269,25 @@ for MODE in "${PING_MODES[@]}"; do
   if [ $FIRST_MODE -eq 0 ]; then
     echo "Restarting bingle_pingable with NAT_MODE=$MODE..."
     docker stop bingle_pingable >/dev/null 2>&1 || true
+    # Wait for container to be fully stopped and removed
+    timeout=10
+    elapsed=0
+    while docker ps -a --format '{{.Names}}' | grep -q "^bingle_pingable$" && [ $elapsed -lt $timeout ]; do
+      sleep 0.5
+      elapsed=$((elapsed + 1))
+    done
+    # Force remove if still exists
+    docker rm -f bingle_pingable >/dev/null 2>&1 || true
+    # Increment IP address for new container
+    PINGABLE_IP_SUFFIX=$((PINGABLE_IP_SUFFIX + 1))
+    echo "Using IP address 172.18.0.$PINGABLE_IP_SUFFIX for bingle_pingable restart"
     PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
+    echo "Removing $SENT_DIR/$PING_SENT"
     rm -f "$SENT_DIR/$PING_SENT"
     docker run --platform linux/arm64 -d --rm \
       --name bingle_pingable \
       --network bingle_testnet \
+      --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
       --cap-add NET_ADMIN \
       -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
       -e PORT=$PINGABLE_PORT \
@@ -281,6 +303,7 @@ for MODE in "${PING_MODES[@]}"; do
       continue
     fi
     # Wait for per-mode pingable listening sentinel
+    echo "Waiting for $SENT_DIR/$PING_SENT"
     if ! wait_for_file "$SENT_DIR/$PING_SENT" 240; then
       echo "ERROR: Pingable did not signal listening for mode $MODE within timeout" >&2
       PING_ANY_FAIL=1
