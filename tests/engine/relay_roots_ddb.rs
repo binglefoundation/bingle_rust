@@ -72,8 +72,8 @@ fn engine_upserts_root_relays_into_backend() {
 
     // Use test helper to upsert roots (avoid network/indexer dependencies)
     let roots = vec![
-        RootRelayInfo { id: "RID1".into(), address: "127.0.0.1:6001".parse().unwrap() },
-        RootRelayInfo { id: "RID2".into(), address: "127.0.0.1:6002".parse().unwrap() },
+        RootRelayInfo { id: "RID1".into(), address: "127.0.0.1:6001".parse().unwrap(), state: None },
+        RootRelayInfo { id: "RID2".into(), address: "127.0.0.1:6002".parse().unwrap(), state: None },
     ];
     eng.upsert_root_relays_for_tests(roots);
 

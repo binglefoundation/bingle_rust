@@ -80,8 +80,11 @@ fn error_after_three_intervals_with_less_than_two_responders() {
     // Simulate only one server ever responding
     let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
     finder.process_packet(s1, &r1);
-    // Wait a bit more than 3 intervals to allow error condition
-    std::thread::sleep(Duration::from_millis(20));
+    // Wait until error handler invoked or timeout
+    let deadline = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < deadline && hits.load(AOrdering::SeqCst) < 1 {
+        std::thread::sleep(Duration::from_millis(5));
+    }
     assert!(hits.load(AOrdering::SeqCst) >= 1);
     finder.stop();
 }

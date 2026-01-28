@@ -56,8 +56,8 @@ fn find_root_relay_rejects_self() {
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
     let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
-            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
-            RelayInfo { id: test_util::ADDRESS_RECEIVE.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
+            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345), state: None },
+            RelayInfo { id: test_util::ADDRESS_RECEIVE.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346), state: None },
         ]
     });
     let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);
@@ -74,7 +74,7 @@ fn find_root_relay_only_self_errors() {
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
     let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
-            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12000) },
+            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12000), state: None },
         ]
     });
     let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);

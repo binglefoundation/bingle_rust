@@ -69,8 +69,8 @@ fn relay_finder_caches_successful_root_relay() {
 
     // Discovery closure
     let discover = Arc::new(move || vec![
-        RootRelayInfo { id: "ADDR1".to_string(), address: a1 },
-        RootRelayInfo { id: "ADDR2".to_string(), address: a2 },
+        RootRelayInfo { id: "ADDR1".to_string(), address: a1, state: None },
+        RootRelayInfo { id: "ADDR2".to_string(), address: a2, state: None },
     ]);
 
     let finder = RelayFinder::new(api_arc.clone(), Duration::from_millis(200), discover);

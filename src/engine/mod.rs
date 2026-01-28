@@ -42,7 +42,7 @@ pub enum NatType {
     FullCone = 4,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RelayState {
     Off,
     Starting,
@@ -794,6 +794,46 @@ impl Engine {
         Ok(())
     }
 
+    fn initialize_relay(&mut self) {
+        // Before discovering peers, mark relay state as Starting
+        self.relay_state = RelayState::Starting;
+        // Build discovery closure using indexer when app_id is configured; else skip
+        #[cfg(not(target_os = "ios"))]
+        {
+            let app_id_opt = self
+                .options
+                .app_id
+                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            if let Some(app_id) = app_id_opt {
+                let cfg = self.options.algo_provider_config.clone();
+                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+                let finder = RelayFinder::new(self.bingle_api.clone(), Duration::from_secs(60), discover);
+                // Determine our id for exclusion
+                let my_id = if let Some(iss) = self.issuer.as_deref() {
+                    iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
+                } else {
+                    self.options.handle.clone()
+                };
+                let roots = finder.list_root_relays(&my_id, true);
+                log::info!(
+                    "[Engine::initialize_relay] discovered {} root relays (excluding self)",
+                    roots.len()
+                );
+                self.upsert_roots_into_backend(&roots);
+                log::info!("[Engine::initialize_relay] upserted root relays into backend");
+                self.relay_finder = Some(Arc::new(finder));
+                // DDB is ready after upserting roots
+                self.relay_state = RelayState::Available;
+            } else {
+                log::warn!(
+                    "[Engine::initialize_relay] am_relay set but app_id not configured; skipping root relay discovery"
+                );
+                // Even if discovery is skipped, the relay is operational for local tests; mark available.
+                self.relay_state = RelayState::Available;
+            }
+        }
+    }
+
     fn start_with_addr(&mut self, _options: &StartOptions, bind_addr: SocketAddr) -> Result<(), String> {
         self.last_public_addr = Some(self.options.static_ip.clone().expect("start_with_address when no static address"));
 
@@ -840,31 +880,7 @@ impl Engine {
 
             // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
             if self.options.am_relay {
-                // Before discovering peers, mark relay state as Starting
-                self.relay_state = RelayState::Starting;
-                // Build discovery closure using indexer when app_id is configured; else skip.
-                #[cfg(not(target_os = "ios"))]
-                {
-                    let app_id_opt = self.options.app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                    if let Some(app_id) = app_id_opt {
-                        let cfg = self.options.algo_provider_config.clone();
-                        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
-                        let finder = RelayFinder::new(self.bingle_api.clone(), Duration::from_secs(60), discover);
-                        // Determine our id for exclusion
-                        let my_id = if let Some(iss) = self.issuer.as_deref() { iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string() } else { self.options.handle.clone() };
-                        let roots = finder.list_root_relays(&my_id, true);
-                        log::info!("[Engine::start_with_addr] discovered {} root relays (excluding self)", roots.len());
-                        self.upsert_roots_into_backend(&roots);
-                        log::info!("[Engine::start_with_addr] upserted root relays into backend");
-                        self.relay_finder = Some(Arc::new(finder));
-                        // DDB is ready after upserting roots
-                        self.relay_state = RelayState::Available;
-                    } else {
-                        log::warn!("[Engine::start_with_addr] am_relay set but app_id not configured; skipping root relay discovery");
-                        // Even if discovery is skipped, the relay is operational for local tests; mark available.
-                        self.relay_state = RelayState::Available;
-                    }
-                }
+                self.initialize_relay();
             }
         } else {
             log::error!("[Engine] start_with_address: no DTLS instance");
@@ -932,7 +948,7 @@ impl Engine {
                 }
                 #[cfg(target_os = "ios")]
                 {
-                    Arc::new(|| vec![RelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                    Arc::new(|| vec![RelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345), state: None }])
                 }
             };
 

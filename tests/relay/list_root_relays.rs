@@ -33,8 +33,8 @@ fn list_root_relays_excludes_self_and_caches() {
     let discover = Arc::new(move || {
         calls_clone.fetch_add(1, Ordering::SeqCst);
         vec![
-            RootRelayInfo { id: "AAA".into(), address: "127.0.0.1:5001".parse().unwrap() },
-            RootRelayInfo { id: "BBB".into(), address: "127.0.0.1:5002".parse().unwrap() },
+            RootRelayInfo { id: "AAA".into(), address: "127.0.0.1:5001".parse().unwrap(), state: None },
+            RootRelayInfo { id: "BBB".into(), address: "127.0.0.1:5002".parse().unwrap(), state: None },
         ]
     });
 

@@ -7,11 +7,14 @@ use serde_json::json;
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint};
 use crate::ddb::client::DdbClient;
 use data_encoding::BASE32_NOPAD;
+use std::collections::HashMap;
+use crate::engine::RelayState;
 
 #[derive(Debug, Clone)]
 pub struct RelayInfo {
     pub id: String,           // Algorand address of the relay
     pub address: SocketAddr,  // Relay IP:port
+    pub state: Option<RelayState>, // Optional known state from RelayCheck
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +55,8 @@ pub struct RelayFinder {
     discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
 }
 
+pub type RootRelayInfo = RelayInfo;
+
 impl RelayFinder {
     pub fn new(
         api: Arc<dyn BingleApi>,
@@ -88,7 +93,7 @@ impl RelayFinder {
                     let (pref_idx, _alt_idx) = self.select_indices(&roots.root_relays, my_id_norm);
                     let chosen = &roots.root_relays[pref_idx];
                     match cli.get_relays_from(chosen) {
-                        Ok(pairs) => pairs.into_iter().map(|(id, addr)| RelayInfo { id, address: addr }).collect(),
+                        Ok(pairs) => pairs.into_iter().map(|(id, addr)| RelayInfo { id, address: addr, state: None }).collect(),
                         Err(_e) => Vec::new(),
                     }
                 } else {
@@ -126,7 +131,7 @@ impl RelayFinder {
         let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
         let discover = Arc::new(move || {
             match ab.discover_root_relays(app_id, &accounts) {
-                Ok(pairs) => pairs.into_iter().map(|(id, address)| RelayInfo { id, address }).collect(),
+                Ok(pairs) => pairs.into_iter().map(|(id, address)| RelayInfo { id, address, state: None }).collect(),
                 Err(_) => Vec::new(),
             }
         });
@@ -141,7 +146,7 @@ impl RelayFinder {
         if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
             if Instant::now() < c.expires_at && c.id != my_id_norm {
                 log::info!("find_relay: using cached relay: {} {}", c.id, c.address);
-                return Ok(RelayInfo { id: c.id.clone(), address: c.address });
+                return Ok(RelayInfo { id: c.id.clone(), address: c.address, state: None });
             }
         }
         // 2) Get all relays (requires root cache populated; list_all_relays ensures this)
@@ -155,7 +160,7 @@ impl RelayFinder {
             let cand = &relays[idx];
             if self.relay_check(&*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
-                let info = RelayInfo { id: cand.id.clone(), address: cand.address };
+                let info = RelayInfo { id: cand.id.clone(), address: cand.address, state: None };
                 // Cache selection
                 let expires = Instant::now() + self.cache_ttl;
                 *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
@@ -206,7 +211,7 @@ impl RelayFinder {
         if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
             if Instant::now() < c.expires_at && c.id != my_id_norm {
                 log::info!("find_root_relay: using cached root relay: {} {}", c.id, c.address);
-                return Ok(RelayInfo { id: c.id.clone(), address: c.address });
+                return Ok(RelayInfo { id: c.id.clone(), address: c.address, state: None });
             }
         }
 
@@ -225,7 +230,7 @@ impl RelayFinder {
             let cand = &relays[idx];
             if self.relay_check(&*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_root_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
-                let info = RelayInfo { id: cand.id.clone(), address: cand.address };
+                let info = RelayInfo { id: cand.id.clone(), address: cand.address, state: None };
                 // Cache single selection
                 let expires = Instant::now() + self.cache_ttl;
                 *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
@@ -263,6 +268,58 @@ impl RelayFinder {
         u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]])
     }
 
+    fn parse_state_str(&self, s: &str) -> RelayState {
+        match s.to_ascii_lowercase().as_str() {
+            "off" => RelayState::Off,
+            "starting" => RelayState::Starting,
+            "available" => RelayState::Available,
+            _ => RelayState::Off,
+        }
+    }
+
+    fn update_cached_state(&self, id: &str, st: RelayState) {
+        if let Ok(mut g) = self.list_cache.lock() {
+            if let Some(list) = &mut *g {
+                for r in &mut list.root_relays {
+                    if r.id == id { r.state = Some(st); }
+                }
+            }
+        }
+        if let Ok(mut g) = self.all_list_cache.lock() {
+            if let Some(list) = &mut *g {
+                for r in &mut list.relays {
+                    if r.id == id { r.state = Some(st); }
+                }
+            }
+        }
+    }
+
+    pub fn load_relay_states(&self, my_id: &str) {
+        // Ensure we have a list of all relays cached (includes self)
+        let relays = self.list_all_relays(my_id, true);
+        for r in relays {
+            let _ = self.relay_check(&r.id, r.address);
+        }
+    }
+
+    pub fn relays_available(&self) -> HashMap<RelayState, usize> {
+        let mut out: HashMap<RelayState, usize> = HashMap::new();
+        let mut accumulate = |v: &Vec<RelayInfo>| {
+            for r in v {
+                if let Some(st) = r.state {
+                    *out.entry(st).or_insert(0) += 1;
+                }
+            }
+        };
+        if let Ok(g) = self.all_list_cache.lock() {
+            if let Some(list) = &*g { accumulate(&list.relays); return out; }
+        }
+        if let Ok(g) = self.list_cache.lock() {
+            if let Some(list) = &*g { accumulate(&list.root_relays); }
+        }
+        out
+    }
+
     fn relay_check(&self, id: &str, addr: SocketAddr) -> bool {
         // Validate Algorand base32 address decodes to 36 bytes
         match BASE32_NOPAD.decode(id.as_bytes()) {
@@ -275,9 +332,14 @@ impl RelayFinder {
         log::info!("[RelayFinder] relay_check: sending request via API -> nsk={} user_id={} req={}", nsk, id, req);
         match self.api.send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {
             Ok(resp) => {
-                let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
-                    && resp.get("state").and_then(|v| v.as_str()) == Some("available");
-                is_ok
+                if resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse") {
+                    if let Some(st_str) = resp.get("state").and_then(|v| v.as_str()) {
+                        let st = self.parse_state_str(st_str);
+                        self.update_cached_state(id, st);
+                        return st == RelayState::Available;
+                    }
+                }
+                false
             }
             Err(_) => false,
         }
