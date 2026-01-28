@@ -50,6 +50,10 @@ pub trait DdbBackend {
     /// Lookup and return a copy of the record, if it exists
     fn lookup(&self, id: &str) -> Option<AdvertRecord>;
 
+    /// Construct relayIds and relayEndpoints for the current epoch snapshot.
+    /// Returns (relay_ids, relay_endpoints) where relay_endpoints is None when no endpoints are known.
+    fn make_epoch_info(&self) -> (Vec<String>, Option<Vec<InetSocketAddress>>);
+
     /// Handle InitResolve: take a snapshot and send InitResponse and DumpResolve messages to the requester.
     ///
     /// Implementations should not block extensively; they should iterate over a consistent snapshot of the DB.
@@ -84,6 +88,33 @@ impl DdbBackend for InMemoryDdbBackend {
 
     fn lookup(&self, id: &str) -> Option<AdvertRecord> {
         self.map.get(id).cloned()
+    }
+
+    fn make_epoch_info(&self) -> (Vec<String>, Option<Vec<InetSocketAddress>>) {
+        // Collect all records that are relays (am_relay == Some(true))
+        let mut ids: Vec<String> = Vec::new();
+        let mut endpoints: Vec<InetSocketAddress> = Vec::new();
+        for rec in self.map.values() {
+            if rec.am_relay.unwrap_or(false) {
+                ids.push(rec.id.clone());
+                if let Some(ep) = &rec.endpoint {
+                    endpoints.push(ep.clone());
+                }
+            }
+        }
+        // Deterministic ordering
+        ids.sort();
+        // Keep endpoint order aligned by sorting by host:port to avoid flakiness in tests
+        if !endpoints.is_empty() {
+            endpoints.sort_by(|a, b| {
+                let ha = format!("{}:{}", a.host, a.port);
+                let hb = format!("{}:{}", b.host, b.port);
+                ha.cmp(&hb)
+            });
+            (ids, Some(endpoints))
+        } else {
+            (ids, None)
+        }
     }
 
     fn handle_init(

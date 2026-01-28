@@ -181,6 +181,18 @@ pub struct RelayKeepAlive {
     pub app: Option<String>, // must be None (null)
 }
 
+// Generic Fail message (app: null, type: "fail")
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Fail {
+    #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
+    pub app: Option<String>, // must be None (null)
+    #[serde(rename = "type")]
+    pub typ: String, // must be "fail"
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    pub reason: String,
+}
+
 // ---------------- DDB messages (app = "ddb") ----------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

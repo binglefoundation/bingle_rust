@@ -189,6 +189,7 @@ impl Router {
                 DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), &from, m),
                 DdbMessage::QueryResolve(m) => handler.on_ddb_query_resolve(api.clone(), &from, m),
                 DdbMessage::InitResolve(m) => handler.on_ddb_init_resolve(api.clone(), &from, m),
+                DdbMessage::GetEpoch(m) => handler.on_ddb_get_epoch(api.clone(), &from, m),
                 _ => handler.on_unimplemented(msg),
             },
             Message::Ping(p) => match p {

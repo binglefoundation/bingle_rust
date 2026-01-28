@@ -1009,3 +1009,27 @@ components:
           enum: ["KeepAlive"]
           description: KeepAlive
       required: [app, type]
+
+    Fail:
+      type: object
+      description: |
+        Generic failure message used when a command cannot be processed.
+        This message uses a null app namespace and a type of "fail".
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for generic failure messages.
+        type:
+          type: string
+          enum: ["fail"]
+          description: fail
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        reason:
+          type: string
+          description: Human-readable reason for the failure.
+      required: [app, type, reason]
+      additionalProperties: true

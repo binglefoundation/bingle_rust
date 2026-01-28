@@ -180,8 +180,18 @@ pub trait MessageHandler {
     }
     fn on_relay_check(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayCheck) {
         // Send CheckResponse with current relay state back to the last sender address using the real Bingle API sender
-        let sender_opt = crate::messages::router::Router::current().and_then(|r| r.get_sender());
-        if sender_opt.is_none() { warn!("[handlers::on_relay_check] No sender available"); return; }
+        let router_opt = crate::messages::router::Router::current();
+        let sender_opt = router_opt.as_ref().and_then(|r| r.get_sender());
+        if sender_opt.is_none() {
+            warn!("[handlers::on_relay_check] No sender available");
+            if let Some(router) = router_opt {
+                // Use typed Fail message per OpenAPI instead of building a raw map
+                let fail = crate::messages::types::Fail { app: None, typ: "fail".to_string(), response_tag: router.get_last_response_tag(), reason: "no sender available".to_string() };
+                let json = serde_json::to_value(fail).unwrap_or(serde_json::Value::Null);
+                router.set_outbound_response(Some(json));
+            }
+            return;
+        }
         let sender = sender_opt.unwrap();
         // Compose JSON manually to include responseTag if present
         let mut json_obj = serde_json::Map::new();
@@ -226,6 +236,7 @@ pub trait MessageHandler {
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
     fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
     fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbInitResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone()))); }
+    fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetEpoch(msg.clone()))); }
 
     // Unknown
     fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
@@ -241,6 +252,71 @@ pub trait MessageHandler {
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
+    fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            // Only relays in Available state may serve getEpoch
+            if !router.get_am_relay() {
+                let mut obj = serde_json::Map::new();
+                obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+                obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+                if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+                obj.insert("text".to_string(), serde_json::Value::String("not a relay".into()));
+                router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+                return;
+            }
+            // Consult internal API for relay state
+            let state_ok = crate::messages::router::Router::current()
+                .and_then(|r| r.get_bingle_api_internal())
+                .map(|i| i.get_relay_state() == "available")
+                .unwrap_or(false);
+            if !state_ok {
+                let mut obj = serde_json::Map::new();
+                obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+                obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+                if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+                obj.insert("text".to_string(), serde_json::Value::String("relay not available".into()));
+                router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+                return;
+            }
+            // Build DdbEpochInfo from backend snapshot
+            if let Some(backend_arc) = router.get_ddb_backend() {
+                if let Ok(backend) = backend_arc.lock() {
+                    let (relay_ids, relay_endpoints) = backend.make_epoch_info();
+                    let info = crate::messages::types::DdbEpochInfo {
+                        app: "ddb".into(),
+                        epoch_id: msg.epoch_id,
+                        tree_order: 2,
+                        relay_ids,
+                        relay_endpoints,
+                        tag: None,
+                        response_tag: router.get_last_response_tag(),
+                        text: None,
+                        data: None,
+                    };
+                    let resp = crate::messages::types::Message::Ddb(
+                        crate::messages::types::DdbMessage::EpochInfo(info)
+                    );
+                    let json = crate::messages::marshal::to_json_value(&resp);
+                    router.set_outbound_response(Some(json));
+                } else {
+                    let mut obj = serde_json::Map::new();
+                    obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+                    obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+                    if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+                    obj.insert("text".to_string(), serde_json::Value::String("ddb backend unavailable".into()));
+                    router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+                }
+            } else {
+                let mut obj = serde_json::Map::new();
+                obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+                obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+                if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+                obj.insert("text".to_string(), serde_json::Value::String("no ddb backend".into()));
+                router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+            }
+        }
+    }
+
     fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbInitResolve) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() { return; }
