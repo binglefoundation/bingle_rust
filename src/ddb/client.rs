@@ -7,7 +7,7 @@ use serde_json::Value as JsonValue;
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint};
 use crate::messages::types::*;
 use crate::messages::{to_json_value, Message};
-use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 
 /// Public DDB client interface used by higher layers.
 /// Provides register_ip and lookup helpers that send DDB messages over the network
@@ -25,11 +25,15 @@ pub trait DdbClient: Send + Sync {
 
     /// Lookup an id in the DDB and build a NetworkSourceKey from its AdvertRecord.
     fn lookup(&self, id: &str) -> Result<NetworkEndpoint, String>;
+
+    /// Obtain list of all relays via DdbGetEpoch, returning pairs of (relay_id, SocketAddr).
+    /// Implementations should attempt multiple known relays and fallback to discovery when unavailable.
+    fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String>;
 }
 
 pub struct DdbClientImpl {
     api: Arc<dyn BingleApi>,
-    discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>,
+    discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
 }
 
 impl DdbClientImpl {
@@ -46,11 +50,11 @@ impl DdbClientImpl {
     }
 
     /// Constructor that accepts a custom discovery closure (used by tests to avoid external dependencies).
-    pub fn with_discovery(api: Arc<dyn BingleApi>, discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>) -> Self {
+    pub fn with_discovery(api: Arc<dyn BingleApi>, discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>) -> Self {
         Self { api, discover }
     }
 
-    fn find_relay(&self) -> Result<RootRelayInfo, String> {
+    fn find_relay(&self) -> Result<RelayInfo, String> {
         let finder = RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
         let my_id = self.api.get_my_id().ok_or_else(|| "get_my_id returned None".to_string())?;
         finder.find_relay(&my_id)
@@ -82,9 +86,63 @@ impl DdbClient for NullDdbClient {
     fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, String> {
         Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
     }
+    fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
 }
 
 impl DdbClient for DdbClientImpl {
+    fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> {
+        // Try each discovered relay to obtain epoch info
+        let discovered: Vec<RelayInfo> = (self.discover)();
+        let mut last_err: Option<String> = None;
+        for cand in &discovered {
+            let nsk = NetworkEndpoint::new_direct(cand.address);
+            let relay_user = match Self::relay_user_id(&cand.id) { Ok(u) => u, Err(e) => { last_err = Some(e); continue; } };
+            let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, response_tag: None, text: None, data: None }));
+            let json: JsonValue = to_json_value(&req);
+            match self.api.send_message_to_network_with_response(&nsk, &relay_user, json, None) {
+                Ok(resp) => {
+                    let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+                    let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("getEpochResponse");
+                    if !app_ok || !ty_ok { last_err = Some("unexpected response to getEpoch".to_string()); continue; }
+                    let ids_arr = match resp.get("relayIds").and_then(|v| v.as_array()) { Some(a) => a, None => { last_err = Some("missing relayIds".into()); continue; } };
+                    let ids: Vec<String> = ids_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                    let eps_opt = resp.get("relayEndpoints").and_then(|v| v.as_array());
+                    // If endpoints provided and length matches, pair by index
+                    if let Some(eps) = eps_opt {
+                        if eps.len() == ids.len() {
+                            let mut out: Vec<(String, SocketAddr)> = Vec::new();
+                            for (i, id) in ids.iter().enumerate() {
+                                let ep = &eps[i];
+                                let host = match ep.get("host").and_then(|v| v.as_str()) { Some(h) => h, None => { last_err = Some("endpoint missing host".into()); continue; } };
+                                let port = match ep.get("port").and_then(|v| v.as_u64()) { Some(p) => p as u16, None => { last_err = Some("endpoint missing port".into()); continue; } };
+                                if let Ok(ip) = host.parse::<IpAddr>() { out.push((id.clone(), SocketAddr::new(ip, port))); }
+                            }
+                            if !out.is_empty() { return Ok(out); }
+                        }
+                    }
+                    // Fallback: map using discovered addresses where ids match
+                    if !discovered.is_empty() {
+                        let map: std::collections::HashMap<String, SocketAddr> = discovered.iter().map(|r| (r.id.clone(), r.address)).collect();
+                        let mut out: Vec<(String, SocketAddr)> = Vec::new();
+                        for id in ids.into_iter() { if let Some(addr) = map.get(&id) { out.push((id, *addr)); } }
+                        if !out.is_empty() { return Ok(out); }
+                    }
+                }
+                Err(e) => { last_err = Some(e); continue; }
+            }
+        }
+        // Final fallback: use discovery directly
+        if !discovered.is_empty() {
+            let mut out: Vec<(String, SocketAddr)> = discovered.into_iter().map(|r| (r.id, r.address)).collect();
+            // Sort by id for deterministic order
+            out.sort_by(|a, b| a.0.cmp(&b.0));
+            return Ok(out);
+        }
+        Err(last_err.unwrap_or_else(|| "no relays discovered".to_string()))
+    }
+
     fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
         // 1) Find relay to talk to
         let relay = self.find_relay()?;

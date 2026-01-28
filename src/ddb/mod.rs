@@ -91,26 +91,19 @@ impl DdbBackend for InMemoryDdbBackend {
     }
 
     fn make_epoch_info(&self) -> (Vec<String>, Option<Vec<InetSocketAddress>>) {
-        // Collect all records that are relays (am_relay == Some(true))
-        let mut ids: Vec<String> = Vec::new();
-        let mut endpoints: Vec<InetSocketAddress> = Vec::new();
-        for rec in self.map.values() {
-            if rec.am_relay.unwrap_or(false) {
-                ids.push(rec.id.clone());
-                if let Some(ep) = &rec.endpoint {
-                    endpoints.push(ep.clone());
-                }
-            }
-        }
-        // Deterministic ordering
-        ids.sort();
-        // Keep endpoint order aligned by sorting by host:port to avoid flakiness in tests
-        if !endpoints.is_empty() {
-            endpoints.sort_by(|a, b| {
-                let ha = format!("{}:{}", a.host, a.port);
-                let hb = format!("{}:{}", b.host, b.port);
-                ha.cmp(&hb)
-            });
+        // Collect relay records preserving association between id and endpoint
+        let mut rels: Vec<(String, Option<InetSocketAddress>)> = self
+            .map
+            .values()
+            .filter(|rec| rec.am_relay.unwrap_or(false))
+            .map(|rec| (rec.id.clone(), rec.endpoint.clone()))
+            .collect();
+        // Deterministic ordering by id
+        rels.sort_by(|a, b| a.0.cmp(&b.0));
+        let ids: Vec<String> = rels.iter().map(|(id, _)| id.clone()).collect();
+        // Only include endpoints when all relays have one; keep order aligned with ids
+        if rels.iter().all(|(_, ep)| ep.is_some()) {
+            let endpoints: Vec<InetSocketAddress> = rels.into_iter().map(|(_, ep)| ep.expect("checked" )).collect();
             (ids, Some(endpoints))
         } else {
             (ids, None)

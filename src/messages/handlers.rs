@@ -392,8 +392,8 @@ impl MessageHandler for DefaultPrintingHandler {
         std::thread::spawn(move || {
             // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use std::time::Duration;
-            use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
-            let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+            use crate::relay::relay_finder::{RelayFinder, RelayInfo};
+            let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                 #[cfg(not(target_os = "ios"))]
                 {
                     // Prefer app_id from API options; fallback to env var for legacy
@@ -515,10 +515,10 @@ impl MessageHandler for DefaultPrintingHandler {
 
                 // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
                 use std::time::Duration;
-                use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+                use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 
                 // Build discovery closure similar to on_triangle_test1
-                let discover: std::sync::Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+                let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                     #[cfg(not(target_os = "ios"))]
                     {
                         let app_id_opt = api_for_thread

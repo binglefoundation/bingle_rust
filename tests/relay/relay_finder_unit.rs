@@ -19,21 +19,34 @@ impl BingleApi for MockApi {
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not used".to_string()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not used".to_string()) }
     fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
-        // Validate that Option gets Some where required in helper calls
-        let is_check = message.get("type").and_then(|v| v.as_str()) == Some("Check") && message.get("app").map(|v| v.is_null()).unwrap_or(false);
-        assert!(is_check, "RelayFinder should perform a Check");
-        let mut obj = serde_json::Map::new();
-        obj.insert("app".to_string(), serde_json::Value::Null);
-        obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".into()));
-        obj.insert("state".to_string(), serde_json::Value::String("available".into()));
-        Ok(serde_json::Value::Object(obj))
+        let ty = message.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let app = message.get("app");
+        if ty == "Check" && app.map(|v| v.is_null()).unwrap_or(false) {
+            // Respond to RelayCheck
+            let mut obj = serde_json::Map::new();
+            obj.insert("app".to_string(), serde_json::Value::Null);
+            obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".into()));
+            obj.insert("state".to_string(), serde_json::Value::String("available".into()));
+            Ok(serde_json::Value::Object(obj))
+        } else if ty == "getEpoch" && app.and_then(|v| v.as_str()) == Some("ddb") {
+            // Respond to DdbGetEpoch with minimal EpochInfo; keep relayIds empty so client falls back to discovery
+            Ok(serde_json::json!({
+                "app": "ddb",
+                "type": "getEpochResponse",
+                "epochId": -1,
+                "treeOrder": 2,
+                "relayIds": []
+            }))
+        } else {
+            Err("unexpected message".into())
+        }
     }
 
     fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
-use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -41,10 +54,10 @@ mod test_util;
 #[test]
 fn find_root_relay_rejects_self() {
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
-    let discover = Arc::new(|| -> Vec<RootRelayInfo> {
+    let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
-            RootRelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
-            RootRelayInfo { id: test_util::ADDRESS_RECEIVE.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
+            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) },
+            RelayInfo { id: test_util::ADDRESS_RECEIVE.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346) },
         ]
     });
     let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);
@@ -59,9 +72,9 @@ fn find_root_relay_rejects_self() {
 #[test]
 fn find_root_relay_only_self_errors() {
     let api: Arc<dyn BingleApi> = Arc::new(MockApi);
-    let discover = Arc::new(|| -> Vec<RootRelayInfo> {
+    let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
-            RootRelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12000) },
+            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12000) },
         ]
     });
     let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);

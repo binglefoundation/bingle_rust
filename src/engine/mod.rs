@@ -10,7 +10,7 @@ use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::turn::turn_handler::TurnHandler;
 use crate::messages::{from_json_str, DefaultPrintingHandler};
-use crate::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 use crate::ddb::{AdvertRecord, InetSocketAddress, DdbBackend};
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::stun::endpoint_finder::StunEndpointFinder;
@@ -110,7 +110,7 @@ impl Engine {
     }
 
     /// Upsert a list of root relays into the in-memory DDB backend (as am_relay=true records).
-    fn upsert_roots_into_backend(&self, roots: &[RootRelayInfo]) {
+    fn upsert_roots_into_backend(&self, roots: &[RelayInfo]) {
         if roots.is_empty() {
             log::debug!("[Engine::upsert_roots_into_backend] no roots to upsert");
             return;
@@ -146,7 +146,7 @@ impl Engine {
     }
 
     /// Test helper to upsert provided roots into backend.
-    pub fn upsert_root_relays_for_tests(&mut self, roots: Vec<RootRelayInfo>) {
+    pub fn upsert_root_relays_for_tests(&mut self, roots: Vec<RelayInfo>) {
         self.upsert_roots_into_backend(&roots);
     }
 
@@ -907,7 +907,7 @@ impl Engine {
 
         // Create/use a RelayFinder and use find_relay to obtain our relay address.
         // For now, discovery is stubbed to the provided public_addr (if any) and RelayCheck always returns available.
-        let mut relay_target: Option<RootRelayInfo> = None;
+        let mut relay_target: Option<RelayInfo> = None;
         if let Some(addr) = public_addr {
             let _a2 = addr.clone();
             // Use the real BingleApi provided via router
@@ -915,7 +915,7 @@ impl Engine {
 
             // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
             // Prefer app_id from StartOptions; fallback to env var for legacy tests; else use built-in localhost relays.
-            let discover: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync> = {
+            let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                 #[cfg(not(target_os = "ios"))]
                 {
                     // Capture app_id and provider config from options
@@ -932,7 +932,7 @@ impl Engine {
                 }
                 #[cfg(target_os = "ios")]
                 {
-                    Arc::new(|| vec![RootRelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
+                    Arc::new(|| vec![RelayInfo { id: "IOS-DUMMY".to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345) }])
                 }
             };
 

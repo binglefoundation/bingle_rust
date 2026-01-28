@@ -6,7 +6,7 @@ use std::sync::Arc;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
-use rust_comms::relay::relay_finder::RootRelayInfo;
+use rust_comms::relay::relay_finder::RelayInfo;
 
 #[path = "../../test_util.rs"]
 mod test_util;
@@ -50,7 +50,7 @@ fn ddb_client_lookup_returns_endpoint() {
     let client_shared = Arc::new(std::sync::Mutex::new(client));
     let api_arc: Arc<dyn BingleApi> = Arc::new(ApiProxy(client_shared.clone()));
     let relay_id = relay.get_my_id().expect("relay id");
-    let discover = Arc::new(move || vec![RootRelayInfo { id: relay_id.clone(), address: relay_addr }]);
+    let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr }]);
     let cli = DdbClientImpl::with_discovery(api_arc.clone(), discover);
 
     // First register our IP so the relay has an advert

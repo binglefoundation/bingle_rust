@@ -5,10 +5,11 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint};
+use crate::ddb::client::DdbClient;
 use data_encoding::BASE32_NOPAD;
 
 #[derive(Debug, Clone)]
-pub struct RootRelayInfo {
+pub struct RelayInfo {
     pub id: String,           // Algorand address of the relay
     pub address: SocketAddr,  // Relay IP:port
 }
@@ -22,7 +23,13 @@ struct CachedRelay {
 
 #[derive(Debug, Clone)]
 struct CachedRelayList {
-    pub relays: Vec<RootRelayInfo>,
+    root_relays: Vec<RelayInfo>,
+    pub expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedAllRelayList {
+    relays: Vec<RelayInfo>,
     pub expires_at: Instant,
 }
 
@@ -40,17 +47,57 @@ pub struct RelayFinder {
     cache_ttl: Duration,
     cache: Mutex<Option<CachedRelay>>, // single selected relay cache
     list_cache: Mutex<Option<CachedRelayList>>, // cached list of roots
+    all_list_cache: Mutex<Option<CachedAllRelayList>>, // cached list of all relays
     // Injection point for discovery (keeps this component testable and avoids tying to indexer here)
-    discover_roots: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>,
+    discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
 }
 
 impl RelayFinder {
     pub fn new(
         api: Arc<dyn BingleApi>,
         cache_ttl: Duration,
-        discover_roots: Arc<dyn Fn() -> Vec<RootRelayInfo> + Send + Sync>,
+        discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
     ) -> Self {
-        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), discover_roots }
+        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots }
+    }
+
+    /// Return the list of all relays (root and non-root) using the DDB client get_relays.
+    /// Requires that the root relay cache has been populated (list_root_relays called recently).
+    pub fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        // 0) Return cached all-relays list if valid
+        if let Ok(guard) = self.all_list_cache.lock() {
+            if let Some(list) = &*guard {
+                if Instant::now() < list.expires_at {
+                    let mut result = list.relays.clone();
+                    if !include_self { result.retain(|r| r.id != my_id_norm); }
+                    result.sort_by(|a, b| a.id.cmp(&b.id));
+                    return result;
+                }
+            }
+        }
+        // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
+        let _ = self.list_root_relays(my_id, true);
+        // 2) Fetch all relays via DDB
+        let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
+        let mut relays: Vec<RelayInfo> = match cli.get_relays() {
+            Ok(pairs) => pairs.into_iter().map(|(id, addr)| RelayInfo { id, address: addr }).collect(),
+            Err(_e) => Vec::new(),
+        };
+        // 3) Fallback: if none from DDB, use the cached root list
+        if relays.is_empty() {
+            if let Ok(g) = self.list_cache.lock() {
+                if let Some(roots) = &*g {
+                    relays = roots.root_relays.clone();
+                }
+            }
+        }
+        if !include_self { relays.retain(|r| r.id != my_id_norm); }
+        relays.sort_by(|a, b| a.id.cmp(&b.id));
+        // 4) Cache all-relays list
+        let expires = Instant::now() + self.cache_ttl;
+        if let Ok(mut g) = self.all_list_cache.lock() { *g = Some(CachedAllRelayList { relays: relays.clone(), expires_at: expires }); }
+        relays
     }
 
     /// Convenience constructor: wire discovery to AlgoBingle::discover_root_relays using provided ops, app_id and candidate accounts.
@@ -65,27 +112,55 @@ impl RelayFinder {
         let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
         let discover = Arc::new(move || {
             match ab.discover_root_relays(app_id, &accounts) {
-                Ok(pairs) => pairs.into_iter().map(|(id, address)| RootRelayInfo { id, address }).collect(),
+                Ok(pairs) => pairs.into_iter().map(|(id, address)| RelayInfo { id, address }).collect(),
                 Err(_) => Vec::new(),
             }
         });
-        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), discover_roots: discover }
+        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots: discover }
     }
 
-    /// Find any relay suitable for us. Currently identical to finding the preferred root relay.
-    pub fn find_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
-        self.find_root_relay(my_id)
+    /// Find any relay suitable for us (root or non-root). Uses DDB getEpoch via list_all_relays.
+    pub fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
+        log::info!("[RelayFinder] find_relay: my_id={}", my_id);
+        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        // 1) Return cached if valid AND not ourselves
+        if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
+            if Instant::now() < c.expires_at && c.id != my_id_norm {
+                log::info!("find_relay: using cached relay: {} {}", c.id, c.address);
+                return Ok(RelayInfo { id: c.id.clone(), address: c.address });
+            }
+        }
+        // 2) Get all relays (requires root cache populated; list_all_relays ensures this)
+        let relays = self.list_all_relays(my_id, false);
+        if relays.is_empty() { return Err("no relays discovered (after excluding self)".to_string()); }
+        log::info!("[RelayFinder] find_relay: candidates = {:?}", relays);
+        // 3) Choose preferred and alternate per partitioning rule
+        let (pref_idx, alt_idx) = self.select_indices(&relays, my_id_norm);
+        // 4) Try preferred then alternate via RelayCheck
+        for &idx in &[pref_idx, alt_idx] {
+            let cand = &relays[idx];
+            if self.relay_check(&*cand.id, cand.address) {
+                log::info!("[RelayFinder] find_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
+                let info = RelayInfo { id: cand.id.clone(), address: cand.address };
+                // Cache selection
+                let expires = Instant::now() + self.cache_ttl;
+                *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
+                return Ok(info);
+            } else {
+                log::info!("[RelayFinder] find_relay: relay {} failed RelayCheck: {} {}", idx, cand.id, cand.address);
+            }
+        }
+        Err("no available relay (preferred and alternate failed RelayCheck)".to_string())
     }
 
-    /// Return the list of root relays, optionally including ourselves, using cached list if not expired.
-    pub fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RootRelayInfo> {
+    /// Return the list of root relays discovered via the blockchain (discover_roots), optionally including ourselves.
+    pub fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 1) Use cached list if valid
         if let Ok(guard) = self.list_cache.lock() {
             if let Some(list) = &*guard {
                 if Instant::now() < list.expires_at {
-                    // Return a copy to avoid exposing internal cache
-                    let mut result = list.relays.clone();
+                    let mut result = list.root_relays.clone();
                     if !include_self {
                         result.retain(|r| r.id != my_id_norm);
                     }
@@ -93,22 +168,22 @@ impl RelayFinder {
                 }
             }
         }
-        // 2) Discover and conditionally filter out self, then sort by id
+        // 2) Discover roots via provided closure
         let mut relays = (self.discover_roots)();
         if !include_self {
             relays.retain(|r| r.id != my_id_norm);
         }
         relays.sort_by(|a, b| a.id.cmp(&b.id));
-        // 3) Cache the list
+        // 3) Cache root relays only
         let expires = Instant::now() + self.cache_ttl;
         if let Ok(mut guard) = self.list_cache.lock() {
-            *guard = Some(CachedRelayList { relays: relays.clone(), expires_at: expires });
+            *guard = Some(CachedRelayList { root_relays: relays.clone(), expires_at: expires });
         }
         relays
     }
 
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
-    pub fn find_root_relay(&self, my_id: &str) -> Result<RootRelayInfo, String> {
+    pub fn find_root_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
         log::info!("[RelayFinder] find_root_relay: my_id={}", my_id);
         // Normalize our id to raw address
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
@@ -117,7 +192,7 @@ impl RelayFinder {
         if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
             if Instant::now() < c.expires_at && c.id != my_id_norm {
                 log::info!("find_root_relay: using cached root relay: {} {}", c.id, c.address);
-                return Ok(RootRelayInfo { id: c.id.clone(), address: c.address });
+                return Ok(RelayInfo { id: c.id.clone(), address: c.address });
             }
         }
 
@@ -136,7 +211,7 @@ impl RelayFinder {
             let cand = &relays[idx];
             if self.relay_check(&*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_root_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
-                let info = RootRelayInfo { id: cand.id.clone(), address: cand.address };
+                let info = RelayInfo { id: cand.id.clone(), address: cand.address };
                 // Cache single selection
                 let expires = Instant::now() + self.cache_ttl;
                 *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
@@ -149,7 +224,7 @@ impl RelayFinder {
         Err("no available root relay (preferred and alternate failed RelayCheck)".to_string())
     }
 
-    fn select_indices(&self, relays: &[RootRelayInfo], my_id: &str) -> (usize, usize) {
+    fn select_indices(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
         let n = relays.len();
         if n == 1 { return (0usize, 0usize); }
         let bucket = self.id_bucket_u32(my_id);
