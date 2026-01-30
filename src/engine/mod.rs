@@ -3,6 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use data_encoding::BASE32_NOPAD;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use rand_core::{RngCore, OsRng};
 
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, Handle, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
@@ -47,6 +48,7 @@ pub enum RelayState {
     Off,
     Starting,
     Available,
+    Own,
 }
 
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
@@ -97,7 +99,38 @@ impl Engine {
             RelayState::Off => "off".to_string(),
             RelayState::Starting => "starting".to_string(),
             RelayState::Available => "available".to_string(),
+            RelayState::Own => "own".to_string(),
         }
+    }
+
+    fn relay_state_to_str_static(st: RelayState) -> &'static str {
+        match st {
+            RelayState::Off => "off",
+            RelayState::Starting => "starting",
+            RelayState::Available => "available",
+            RelayState::Own => "own",
+        }
+    }
+
+    fn set_relay_state(&mut self, new_state: RelayState, reason: &str) {
+        let prev = self.relay_state;
+        let prev_str = Self::relay_state_to_str_static(prev);
+        let new_str = Self::relay_state_to_str_static(new_state);
+        if prev != new_state {
+            log::info!(
+                "[Engine] relay_state change: {} -> {} reason={}",
+                prev_str,
+                new_str,
+                reason
+            );
+        } else {
+            log::info!(
+                "[Engine] relay_state set to {} again reason={}",
+                new_str,
+                reason
+            );
+        }
+        self.relay_state = new_state;
     }
 
     /// Return the appropriate TURN handler for current role (client vs relay)
@@ -795,8 +828,16 @@ impl Engine {
     }
 
     fn initialize_relay(&mut self) {
+        self.set_relay_state(RelayState::Off, "initialize_relay: starting sequence (set Off before delay)");
+
+        // Random delay of 5-15 seconds at startup
+        let delay_secs = 5 + (OsRng.next_u32() % 201); // 5 + (0-200) = 5-205 seconds
+        let delay_duration = Duration::from_secs(delay_secs as u64);
+        log::info!("[Engine::initialize_relay] delaying startup by {} seconds", delay_secs);
+        std::thread::sleep(delay_duration);
+
         // Before discovering peers, mark relay state as Starting
-        self.relay_state = RelayState::Starting;
+        self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
         // Build discovery closure using indexer when app_id is configured; else skip
         #[cfg(not(target_os = "ios"))]
         {
@@ -814,22 +855,85 @@ impl Engine {
                 } else {
                     self.options.handle.clone()
                 };
+
+                // Clear any stale state so that we always reload fresh on startup
+                finder.clear_state_cache();
+
+                // 1) Seed caches and load current states across the network
+                let _ = finder.list_root_relays(&my_id, true);
+                // Load states via RelayCheck for all known relays (may include self)
+                finder.load_relay_states(&my_id);
+
+                // Helper to count peer states (excluding self)
+                let mut count_peer_states = || -> (usize, usize) {
+                    let peers = finder.list_root_relays(&my_id, false);
+                    let mut available = 0usize;
+                    let mut starting = 0usize;
+                    for r in peers {
+                        if let Some(st) = r.state {
+                            match st {
+                                RelayState::Available => available += 1,
+                                RelayState::Starting => starting += 1,
+                                RelayState::Off => {},
+                                RelayState::Own => {},
+                            }
+                        }
+                    }
+                    (available, starting)
+                };
+
+                // 2) Evaluate current peer states
+                let (mut avail_cnt, mut starting_cnt) = count_peer_states();
+                log::info!("[Engine::initialize_relay] peer relays: available={} starting={}", avail_cnt, starting_cnt);
+
+                // 3) If any peers are Starting, poll every 10s until none are Starting (with a safety cap)
+                if starting_cnt > 0 {
+                    log::info!("[Engine::initialize_relay] peers in Starting; polling every 10s until they settle");
+                    let max_iters = 30; // safety cap: ~5 minutes
+                    for i in 0..max_iters {
+                        std::thread::sleep(Duration::from_secs(10));
+                        // Clear cached states to force a fresh reload each poll cycle
+                        finder.clear_state_cache();
+                        finder.load_relay_states(&my_id);
+                        let (a2, s2) = count_peer_states();
+                        log::info!("[Engine::initialize_relay] poll {} => available={} starting={}", i + 1, a2, s2);
+                        avail_cnt = a2;
+                        starting_cnt = s2;
+                        if starting_cnt == 0 { break; }
+                    }
+                    if starting_cnt > 0 {
+                        log::warn!("[Engine::initialize_relay] peers still Starting after wait; proceeding");
+                    }
+                }
+
+                // 4) Branch by final peer state
+                if avail_cnt > 0 && starting_cnt == 0 {
+                    // There are available peers and none starting
+                    log::error!("[Engine::initialize_relay] >0 peer relays Available and none Starting: not implemented yet");
+                    // Still record the finder for later use and mark Available for operation
+                    self.relay_finder = Some(Arc::new(finder));
+                    self.set_relay_state(RelayState::Available, 
+                        "initialize_relay: peers available and none starting; not-implemented branch, mark Available to continue");
+                    return;
+                }
+
+                // Either no peers or none are Available/Starting -> first relay: proceed with upsert
                 let roots = finder.list_root_relays(&my_id, true);
                 log::info!(
-                    "[Engine::initialize_relay] discovered {} root relays (excluding self)",
+                    "[Engine::initialize_relay] discovered {} root relays (including self)",
                     roots.len()
                 );
                 self.upsert_roots_into_backend(&roots);
                 log::info!("[Engine::initialize_relay] upserted root relays into backend");
                 self.relay_finder = Some(Arc::new(finder));
                 // DDB is ready after upserting roots
-                self.relay_state = RelayState::Available;
+                self.set_relay_state(RelayState::Available, "initialize_relay: upsert complete; DDB ready, mark Available");
             } else {
                 log::warn!(
                     "[Engine::initialize_relay] am_relay set but app_id not configured; skipping root relay discovery"
                 );
                 // Even if discovery is skipped, the relay is operational for local tests; mark available.
-                self.relay_state = RelayState::Available;
+                self.set_relay_state(RelayState::Available, "initialize_relay: app_id not configured; skipping discovery; mark Available for local operation");
             }
         }
     }

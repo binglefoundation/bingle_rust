@@ -158,7 +158,7 @@ impl RelayFinder {
         // 4) Try preferred then alternate via RelayCheck
         for &idx in &[pref_idx, alt_idx] {
             let cand = &relays[idx];
-            if self.relay_check(&*cand.id, cand.address) {
+            if self.relay_check(my_id, &*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
                 let info = RelayInfo { id: cand.id.clone(), address: cand.address, state: None };
                 // Cache selection
@@ -228,7 +228,7 @@ impl RelayFinder {
         // 4) Try preferred then alternate via RelayCheck
         for &idx in &[pref_idx, alt_idx] {
             let cand = &relays[idx];
-            if self.relay_check(&*cand.id, cand.address) {
+            if self.relay_check(my_id, &*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_root_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
                 let info = RelayInfo { id: cand.id.clone(), address: cand.address, state: None };
                 // Cache single selection
@@ -273,6 +273,7 @@ impl RelayFinder {
             "off" => RelayState::Off,
             "starting" => RelayState::Starting,
             "available" => RelayState::Available,
+            "own" => RelayState::Own,
             _ => RelayState::Off,
         }
     }
@@ -298,7 +299,7 @@ impl RelayFinder {
         // Ensure we have a list of all relays cached (includes self)
         let relays = self.list_all_relays(my_id, true);
         for r in relays {
-            let _ = self.relay_check(&r.id, r.address);
+            let _ = self.relay_check(my_id, &r.id, r.address);
         }
     }
 
@@ -320,7 +321,13 @@ impl RelayFinder {
         out
     }
 
-    fn relay_check(&self, id: &str, addr: SocketAddr) -> bool {
+    fn relay_check(&self, my_id: &str, id: &str, addr: SocketAddr) -> bool {
+        // If this is our own relay id, do not perform a network check; mark as Own and return false
+        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        if id == my_id_norm {
+            self.update_cached_state(id, RelayState::Own);
+            return false;
+        }
         // Validate Algorand base32 address decodes to 36 bytes
         match BASE32_NOPAD.decode(id.as_bytes()) {
             Ok(bytes) if bytes.len() == 36 => {}
@@ -342,6 +349,28 @@ impl RelayFinder {
                 false
             }
             Err(_) => false,
+        }
+    }
+
+    /// Clear cached relay selection and expire lists; reset all cached states to None.
+    /// After calling this, subsequent list/load calls will refresh via discovery and checks.
+    pub fn clear_state_cache(&self) {
+        // Clear single-relay cache
+        if let Ok(mut g) = self.cache.lock() { *g = None; }
+        // Expire root list and reset states
+        if let Ok(mut g) = self.list_cache.lock() {
+            if let Some(list) = &mut *g {
+                for r in &mut list.root_relays { r.state = None; }
+                // Expire immediately to force reload on next access
+                list.expires_at = Instant::now() - Duration::from_secs(1);
+            }
+        }
+        // Expire all-relays list and reset states
+        if let Ok(mut g) = self.all_list_cache.lock() {
+            if let Some(list) = &mut *g {
+                for r in &mut list.relays { r.state = None; }
+                list.expires_at = Instant::now() - Duration::from_secs(1);
+            }
         }
     }
 }

@@ -206,6 +206,7 @@ pub trait MessageHandler {
         let nsk = from.network_source_key.clone();
         // Convert from.id (issuer) to raw Algorand address (base32)
         let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        log::info!("[handlers::on_relay_check] Sending CheckResponse to {}: {}", user_id, json_val);
         let _ok = sender(&nsk, &user_id, json_val);
     }
     fn on_relay_listen_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }

@@ -134,7 +134,7 @@ RELAY_B_SENT="relay_${RELAY_B_HANDLE}_${RELAY_B_PORT}.sentinel"
 # Remove any old sentinel files
 rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT"
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -150,7 +150,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 -d --rm \
+docker run --platform linux/arm64 -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \

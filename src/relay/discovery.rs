@@ -32,10 +32,9 @@ pub fn indexer_discover_closure(
                     }
                 }
                 if out.is_empty() {
-                    panic!("[discovery] indexer discovery returned empty static endpoints list");
-                } else {
-                    out
+                    log::warn!("[discovery] indexer discovery returned empty static endpoints list");
                 }
+                out
             }
             Err(e) => {
                 panic!("[discovery] indexer discovery failed: {}", e);
