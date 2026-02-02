@@ -865,7 +865,7 @@ impl Engine {
                 finder.load_relay_states(&my_id);
 
                 // Helper to count peer states (excluding self)
-                let mut count_peer_states = || -> (usize, usize) {
+                let count_peer_states = || -> (usize, usize) {
                     let peers = finder.list_root_relays(&my_id, false);
                     let mut available = 0usize;
                     let mut starting = 0usize;

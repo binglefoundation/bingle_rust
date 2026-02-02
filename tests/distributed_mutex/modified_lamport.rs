@@ -17,6 +17,7 @@ impl TestNetwork {
         Self { nodes: Arc::new(Mutex::new(HashMap::new())), down: Arc::new(Mutex::new(vec![])) }
     }
 
+    #[allow(dead_code)]
     fn is_down(&self, id: &str) -> bool {
         let d = self.down.lock().expect("down lock");
         d.iter().any(|x| x == id)
@@ -25,7 +26,7 @@ impl TestNetwork {
     fn drop_node(&self, id: &str) { self.down.lock().expect("down lock").push(id.to_string()); }
 
     fn add_node(&self, id: &str, all_ids: Vec<String>) -> Arc<ModifiedLamportDistributedMutex> {
-        let nodes_map = self.nodes.clone();
+        let _nodes_map = self.nodes.clone();
         let self_id = id.to_string();
         let net_for_req = self.nodes.clone();
         let net_for_rep = self.nodes.clone();

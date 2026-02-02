@@ -15,11 +15,13 @@ impl TestNetwork {
         Self { nodes: Arc::new(Mutex::new(HashMap::new())), down: Arc::new(Mutex::new(vec![])) }
     }
 
+    #[allow(dead_code)]
     pub fn is_down(&self, id: &str) -> bool {
         let d = self.down.lock().expect("down lock");
         d.iter().any(|x| x == id)
     }
 
+    #[allow(dead_code)]
     pub fn drop_node(&self, id: &str) {
         self.down.lock().expect("down lock").push(id.to_string());
     }

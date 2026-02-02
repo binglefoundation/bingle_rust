@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint};
-use crate::ddb::client::DdbClient;
 use data_encoding::BASE32_NOPAD;
 use std::collections::HashMap;
 use crate::engine::RelayState;

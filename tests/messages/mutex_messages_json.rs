@@ -1,5 +1,5 @@
 use rust_comms::messages::marshal::{from_json_str, to_json_value};
-use rust_comms::messages::types::{Message, MutexMessage, MutexRequest, MutexResponse, MutexRelease};
+use rust_comms::messages::types::{Message, MutexMessage, MutexResponse, MutexRelease};
 
 #[test]
 fn unit_mutex_request_from_json() {

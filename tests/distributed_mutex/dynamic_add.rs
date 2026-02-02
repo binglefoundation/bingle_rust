@@ -1,4 +1,4 @@
-use std::sync::{Arc, Barrier, atomic::{AtomicIsize, Ordering}};
+use std::sync::{Arc, atomic::{AtomicIsize, Ordering}};
 use std::thread;
 use std::time::Duration;
 
@@ -41,8 +41,7 @@ fn modified_lamport_dynamic_add_node_after_start() {
         thread::sleep(Duration::from_millis(10));
 
         // Add Z with the extended view that includes itself.
-        let mut ids_with_z = vec!["A".to_string(), "B".to_string(), "C".to_string(), "Z".to_string()];
-        let z = net2.add_node("Z", ids_with_z.clone());
+        let z = net2.add_node("Z", vec!["A".to_string(), "B".to_string(), "C".to_string(), "Z".to_string()]);
 
         // Now have Z try to acquire; it should eventually succeed.
         z.acquire(|| {
