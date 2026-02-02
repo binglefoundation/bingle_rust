@@ -196,6 +196,7 @@ impl Router {
                 PingMessage::Ping(m) => handler.on_ping_ping(api.clone(), &from, m),
                 PingMessage::Response(m) => handler.on_ping_response(api.clone(), &from, m),
             },
+            Message::Mutex(_) => handler.on_unimplemented(msg),
             Message::Unknown(v) => handler.on_unknown(api.clone(), v),
         }
         // Handlers may set an outbound_response to be sent by DTLS layer; no-op here.

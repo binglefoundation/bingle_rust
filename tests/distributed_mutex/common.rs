@@ -1,0 +1,85 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use rust_comms::distributed_mutex::ModifiedLamportDistributedMutex;
+use rust_comms::messages::types::{MutexRelease, MutexRequest, MutexResponse};
+
+#[derive(Clone)]
+pub struct TestNetwork {
+    pub nodes: Arc<Mutex<HashMap<String, Arc<ModifiedLamportDistributedMutex>>>>,
+    pub down: Arc<Mutex<Vec<String>>>,
+}
+
+impl TestNetwork {
+    pub fn new() -> Self {
+        Self { nodes: Arc::new(Mutex::new(HashMap::new())), down: Arc::new(Mutex::new(vec![])) }
+    }
+
+    pub fn is_down(&self, id: &str) -> bool {
+        let d = self.down.lock().expect("down lock");
+        d.iter().any(|x| x == id)
+    }
+
+    pub fn drop_node(&self, id: &str) {
+        self.down.lock().expect("down lock").push(id.to_string());
+    }
+
+    pub fn add_node(&self, id: &str, all_ids: Vec<String>) -> Arc<ModifiedLamportDistributedMutex> {
+        let self_id = id.to_string();
+        let net_for_req = self.nodes.clone();
+        let net_for_rep = self.nodes.clone();
+        let net_for_rel = self.nodes.clone();
+        let down_ref = self.down.clone();
+        let down_ref2 = self.down.clone();
+        let down_ref3 = self.down.clone();
+
+        let self_id_for_req = self_id.clone();
+        let send_request = move |dest_id: &str, req: &MutexRequest| {
+            {
+                let down = down_ref.lock().expect("down");
+                if down.iter().any(|x| x == dest_id) { return; }
+            }
+            let dest_opt = {
+                let map = net_for_req.lock().expect("net");
+                map.get(dest_id).cloned()
+            };
+            if let Some(dest) = dest_opt {
+                dest.handle_request(&self_id_for_req, req);
+            }
+        };
+
+        let self_id_for_rep = self_id.clone();
+        let send_reply = move |dest_id: &str, resp: &MutexResponse| {
+            {
+                let down = down_ref2.lock().expect("down");
+                if down.iter().any(|x| x == dest_id) { return; }
+            }
+            let dest_opt = {
+                let map = net_for_rep.lock().expect("net");
+                map.get(dest_id).cloned()
+            };
+            if let Some(dest) = dest_opt {
+                dest.handle_reply(&self_id_for_rep, resp);
+            }
+        };
+
+        let self_id_for_rel = self_id.clone();
+        let send_release = move |dest_id: &str, rel: &MutexRelease| {
+            {
+                let down = down_ref3.lock().expect("down");
+                if down.iter().any(|x| x == dest_id) { return; }
+            }
+            let dest_opt = {
+                let map = net_for_rel.lock().expect("net");
+                map.get(dest_id).cloned()
+            };
+            if let Some(dest) = dest_opt {
+                dest.handle_release(&self_id_for_rel, rel);
+            }
+        };
+
+        let m = Arc::new(ModifiedLamportDistributedMutex::new(self_id.clone(), all_ids, send_request, send_reply, send_release));
+        self.nodes.lock().expect("nodes").insert(self_id, m.clone());
+        m
+    }
+}

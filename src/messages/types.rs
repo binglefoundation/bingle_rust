@@ -12,6 +12,7 @@ pub enum Message {
     Relay(RelayMessage),
     Ddb(DdbMessage),
     Ping(PingMessage),
+    Mutex(MutexMessage),
     // Fallback for any unknown message shapes
     Unknown(serde_json::Value),
 }
@@ -459,4 +460,39 @@ pub struct PingResponse {
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
+}
+
+// Mutex messages (app: "mutex")
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum MutexMessage {
+    #[serde(rename = "request")]
+    Request(MutexRequest),
+    #[serde(rename = "response")]
+    Response(MutexResponse),
+    #[serde(rename = "release")]
+    Release(MutexRelease),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MutexRequest {
+    pub app: String, // must be "mutex"
+    #[serde(rename = "lamport_timestamp")]
+    pub lamport_timestamp: i64,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MutexResponse {
+    pub app: String, // must be "mutex"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MutexRelease {
+    pub app: String, // must be "mutex"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }

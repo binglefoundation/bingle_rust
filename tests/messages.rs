@@ -27,6 +27,9 @@ mod relay_ping_handlers;
 #[path = "messages/marshal_ping.rs"]
 mod marshal_ping;
 
+#[path = "messages/mutex_messages_json.rs"]
+mod mutex_messages_json;
+
 #[path = "messages/ping_routing.rs"]
 mod ping_routing;
 

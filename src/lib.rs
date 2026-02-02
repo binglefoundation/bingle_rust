@@ -9,6 +9,7 @@ pub mod engine;
 pub mod protocol;
 pub mod util;
 pub mod turn;
+pub mod distributed_mutex;
 
 // Backward-compatible module re-exports
 #[cfg(not(target_os = "ios"))]

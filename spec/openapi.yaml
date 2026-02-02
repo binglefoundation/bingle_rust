@@ -1033,3 +1033,68 @@ components:
           description: Human-readable reason for the failure.
       required: [app, type, reason]
       additionalProperties: true
+
+    # Mutex messages (app: "mutex")
+    MutexRequest:
+      type: object
+      description: |
+        Request to acquire a distributed mutex using Lamport timestamps.
+      properties:
+        app:
+          type: string
+          enum: ["mutex"]
+          description: mutex
+        type:
+          type: string
+          enum: ["request"]
+          description: request
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        lamport_timestamp:
+          type: integer
+          format: int64
+          description: Requester's Lamport timestamp for ordering.
+      required: [app, type, lamport_timestamp]
+      additionalProperties: true
+
+    MutexResponse:
+      type: object
+      description: |
+        Response to a MutexRequest. Presence of this message indicates peers have observed the request.
+      properties:
+        app:
+          type: string
+          enum: ["mutex"]
+          description: mutex
+        type:
+          type: string
+          enum: ["response"]
+          description: response
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+      required: [app, type]
+      additionalProperties: true
+
+    MutexRelease:
+      type: object
+      description: |
+        Notification that the mutex is being released by the current holder.
+      properties:
+        app:
+          type: string
+          enum: ["mutex"]
+          description: mutex
+        type:
+          type: string
+          enum: ["release"]
+          description: release
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+      required: [app, type]
+      additionalProperties: true
