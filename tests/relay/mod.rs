@@ -17,3 +17,6 @@ mod relay_states_own;
 
 #[path = "clear_state_cache.rs"]
 mod clear_state_cache;
+
+#[path = "exclude_self_from_ddb.rs"]
+mod exclude_self_from_ddb;

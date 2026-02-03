@@ -54,7 +54,6 @@ impl DdbClient for DdbMock {
     fn register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not used".into()) }
     fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("not used".into()) }
     fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, String> { self.lookup_result.clone().ok_or_else(|| "no lookup".into()) }
-    fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> { Ok(vec![]) }
 }
 
 // ---------------- Tests ----------------

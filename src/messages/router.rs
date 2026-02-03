@@ -54,6 +54,15 @@ impl BingleApi for CombinedApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
 }
 impl BingleApiInternal for CombinedApi {
+    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) {
+        if let Some(i) = &self.internal { i.mutex_handle_request(from_id, req); }
+    }
+    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) {
+        if let Some(i) = &self.internal { i.mutex_handle_response(from_id, resp); }
+    }
+    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) {
+        if let Some(i) = &self.internal { i.mutex_handle_release(from_id, rel); }
+    }
     fn get_relay_state(&self) -> String { if let Some(i) = &self.internal { i.get_relay_state() } else { "off".to_string() } }
     fn set_state(&self, state: crate::engine::EngineState) {
         if let Some(i) = &self.internal { i.set_state(state); }
@@ -196,7 +205,18 @@ impl Router {
                 PingMessage::Ping(m) => handler.on_ping_ping(api.clone(), &from, m),
                 PingMessage::Response(m) => handler.on_ping_response(api.clone(), &from, m),
             },
-            Message::Mutex(_) => handler.on_unimplemented(msg),
+            Message::Mutex(m) => {
+                            // Forward Mutex messages into Engine via BingleApiInternal if available
+                            if let Some(internal) = self.get_bingle_api_internal() {
+                                match m {
+                                    MutexMessage::Request(req) => internal.mutex_handle_request(from.id.clone(), req.clone()),
+                                    MutexMessage::Response(resp) => internal.mutex_handle_response(from.id.clone(), resp.clone()),
+                                    MutexMessage::Release(rel) => internal.mutex_handle_release(from.id.clone(), rel.clone()),
+                                }
+                            } else {
+                                handler.on_unimplemented(msg)
+                            }
+                        },
             Message::Unknown(v) => handler.on_unknown(api.clone(), v),
         }
         // Handlers may set an outbound_response to be sent by DTLS layer; no-op here.

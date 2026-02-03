@@ -76,6 +76,7 @@ impl RelayFinder {
                     let mut result = list.relays.clone();
                     if !include_self { result.retain(|r| r.id != my_id_norm); }
                     result.sort_by(|a, b| a.id.cmp(&b.id));
+                    log::info!("[RelayFinder] list_all_relays: returning cached relay list: {:?}", result);
                     return result;
                 }
             }
@@ -88,11 +89,22 @@ impl RelayFinder {
             // Access cached root list
             let roots_opt = self.list_cache.lock().ok().and_then(|g| g.clone());
             if let Some(roots) = roots_opt {
-                if !roots.root_relays.is_empty() {
-                    let (pref_idx, _alt_idx) = self.select_indices(&roots.root_relays, my_id_norm);
-                    let chosen = &roots.root_relays[pref_idx];
+                // Exclude self from the roots list before selecting which root to query via DDB
+                let candidates: Vec<RelayInfo> = roots
+                    .root_relays
+                    .iter()
+                    .cloned()
+                    .filter(|r| r.id != my_id_norm)
+                    .collect();
+                if !candidates.is_empty() {
+                    let (pref_idx, _alt_idx) = self.select_indices(&candidates, my_id_norm);
+                    let chosen = &candidates[pref_idx];
                     match cli.get_relays_from(chosen) {
-                        Ok(pairs) => pairs.into_iter().map(|(id, addr)| RelayInfo { id, address: addr, state: None }).collect(),
+                        Ok(pairs) => pairs
+                            .into_iter()
+                            .filter(|(id, _addr)| id != my_id_norm)
+                            .map(|(id, addr)| RelayInfo { id, address: addr, state: None })
+                            .collect(),
                         Err(_e) => Vec::new(),
                     }
                 } else {
@@ -107,6 +119,19 @@ impl RelayFinder {
             if let Ok(g) = self.list_cache.lock() {
                 if let Some(roots) = &*g {
                     relays = roots.root_relays.clone();
+                }
+            }
+        }
+        // If caller requested inclusion of self but DDB list excluded it, reinsert our own relay from roots cache
+        if include_self {
+            let has_self = relays.iter().any(|r| r.id == my_id_norm);
+            if !has_self {
+                if let Ok(g) = self.list_cache.lock() {
+                    if let Some(roots) = &*g {
+                        if let Some(me) = roots.root_relays.iter().find(|r| r.id == my_id_norm) {
+                            relays.push(RelayInfo { id: me.id.clone(), address: me.address, state: None });
+                        }
+                    }
                 }
             }
         }

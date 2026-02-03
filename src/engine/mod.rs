@@ -3,7 +3,6 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use data_encoding::BASE32_NOPAD;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use rand_core::{RngCore, OsRng};
 
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, Handle, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
@@ -11,6 +10,7 @@ use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::turn::turn_handler::TurnHandler;
 use crate::messages::{from_json_str, DefaultPrintingHandler};
+use crate::distributed_mutex::DistributedMutex;
 use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 use crate::ddb::{AdvertRecord, InetSocketAddress, DdbBackend};
 use crate::blockchain::algo_ops::AlgoChainConfig;
@@ -53,6 +53,8 @@ pub enum RelayState {
 
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
+    // Distributed mutex used to coordinate relay initialization across peer relays
+    relay_init_mutex: Option<std::sync::Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
     options: StartOptions,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
     // Underlying DTLS listener; per-connection adapters delegate to this
@@ -327,6 +329,39 @@ impl BingleApi for EngineBingleApiHandle {
 // Adapter exposing minimal internal controls for handlers -> engine without referencing BingleApiImpl
 pub struct EngineInternalPtr(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
 impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
+    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe {
+            let eng = &*p;
+            if let Some(m) = &eng.relay_init_mutex {
+                m.handle_request(&from_id, &req);
+            }
+        }
+    }
+    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe {
+            let eng = &*p;
+            if let Some(m) = &eng.relay_init_mutex {
+                m.handle_reply(&from_id, &resp);
+            }
+        }
+    }
+    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe {
+            let eng = &*p;
+            if let Some(m) = &eng.relay_init_mutex {
+                m.handle_release(&from_id, &rel);
+            }
+        }
+    }
     fn get_relay_state(&self) -> String {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
@@ -445,6 +480,7 @@ impl Engine {
         let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = std::sync::Arc::new(crate::ddb::NullDdbClient::new());
 
         Self {
+                    relay_init_mutex: None,
             options: options.clone(),
             mux: None,
             dtls: None,
@@ -828,16 +864,13 @@ impl Engine {
     }
 
     fn initialize_relay(&mut self) {
+        log::info!("[Engine] initializing relay");
         self.set_relay_state(RelayState::Off, "initialize_relay: starting sequence (set Off before delay)");
-
-        // Random delay of 5-15 seconds at startup
-        let delay_secs = 5 + (OsRng.next_u32() % 201); // 5 + (0-200) = 5-205 seconds
-        let delay_duration = Duration::from_secs(delay_secs as u64);
-        log::info!("[Engine::initialize_relay] delaying startup by {} seconds", delay_secs);
-        std::thread::sleep(delay_duration);
 
         // Before discovering peers, mark relay state as Starting
         self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
+        log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting");
+
         // Build discovery closure using indexer when app_id is configured; else skip
         #[cfg(not(target_os = "ios"))]
         {
@@ -846,26 +879,33 @@ impl Engine {
                 .app_id
                 .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
             if let Some(app_id) = app_id_opt {
+                log::info!("[Engine::initialize_relay] app_id configured: {}", app_id);
+
                 let cfg = self.options.algo_provider_config.clone();
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
                 let finder = RelayFinder::new(self.bingle_api.clone(), Duration::from_secs(60), discover);
+                log::info!("[Engine::initialize_relay] RelayFinder constructed");
+
                 // Determine our id for exclusion
                 let my_id = if let Some(iss) = self.issuer.as_deref() {
                     iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
                 } else {
                     self.options.handle.clone()
                 };
+                log::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
 
                 // Clear any stale state so that we always reload fresh on startup
                 finder.clear_state_cache();
+                log::info!("[Engine::initialize_relay] cleared finder state cache");
 
                 // 1) Seed caches and load current states across the network
                 let _ = finder.list_root_relays(&my_id, true);
                 // Load states via RelayCheck for all known relays (may include self)
                 finder.load_relay_states(&my_id);
+                log::info!("[Engine::initialize_relay] loaded peer relay states");
 
                 // Helper to count peer states (excluding self)
-                let count_peer_states = || -> (usize, usize) {
+                let _count_peer_states = || -> (usize, usize) {
                     let peers = finder.list_root_relays(&my_id, false);
                     let mut available = 0usize;
                     let mut starting = 0usize;
@@ -881,59 +921,121 @@ impl Engine {
                     }
                     (available, starting)
                 };
-
-                // 2) Evaluate current peer states
-                let (mut avail_cnt, mut starting_cnt) = count_peer_states();
-                log::info!("[Engine::initialize_relay] peer relays: available={} starting={}", avail_cnt, starting_cnt);
-
-                // 3) If any peers are Starting, poll every 10s until none are Starting (with a safety cap)
-                if starting_cnt > 0 {
-                    log::info!("[Engine::initialize_relay] peers in Starting; polling every 10s until they settle");
-                    let max_iters = 30; // safety cap: ~5 minutes
-                    for i in 0..max_iters {
-                        std::thread::sleep(Duration::from_secs(10));
-                        // Clear cached states to force a fresh reload each poll cycle
-                        finder.clear_state_cache();
-                        finder.load_relay_states(&my_id);
-                        let (a2, s2) = count_peer_states();
-                        log::info!("[Engine::initialize_relay] poll {} => available={} starting={}", i + 1, a2, s2);
-                        avail_cnt = a2;
-                        starting_cnt = s2;
-                        if starting_cnt == 0 { break; }
-                    }
-                    if starting_cnt > 0 {
-                        log::warn!("[Engine::initialize_relay] peers still Starting after wait; proceeding");
-                    }
-                }
-
-                // 4) Branch by final peer state
-                if avail_cnt > 0 && starting_cnt == 0 {
-                    // There are available peers and none starting
-                    log::error!("[Engine::initialize_relay] >0 peer relays Available and none Starting: not implemented yet");
-                    // Still record the finder for later use and mark Available for operation
-                    self.relay_finder = Some(Arc::new(finder));
-                    self.set_relay_state(RelayState::Available, 
-                        "initialize_relay: peers available and none starting; not-implemented branch, mark Available to continue");
-                    return;
-                }
-
-                // Either no peers or none are Available/Starting -> first relay: proceed with upsert
-                let roots = finder.list_root_relays(&my_id, true);
+                let (avail_cnt, starting_cnt) = _count_peer_states();
                 log::info!(
-                    "[Engine::initialize_relay] discovered {} root relays (including self)",
-                    roots.len()
+                    "[Engine::initialize_relay] peer states after load: available={} starting={}",
+                    avail_cnt,
+                    starting_cnt
                 );
-                self.upsert_roots_into_backend(&roots);
-                log::info!("[Engine::initialize_relay] upserted root relays into backend");
-                self.relay_finder = Some(Arc::new(finder));
-                // DDB is ready after upserting roots
-                self.set_relay_state(RelayState::Available, "initialize_relay: upsert complete; DDB ready, mark Available");
+
+                // Build peer id list including self for the mutex
+                let roots_all = finder.list_root_relays(&my_id, true);
+                log::info!("[Engine::initialize_relay] discovered {} roots (including self)", roots_all.len());
+                let mut ids: Vec<String> = roots_all.iter().map(|r| r.id.clone()).collect();
+                ids.sort(); ids.dedup();
+                log::info!("[Engine::initialize_relay] mutex participants: {}", ids.len());
+
+                // Prepare a simple id->addr map from the discovered roots
+                let addr_map: std::collections::HashMap<String, std::net::SocketAddr> = roots_all.iter().map(|r| (r.id.clone(), r.address)).collect();
+                let addr_map = std::sync::Arc::new(addr_map);
+                log::info!("[Engine::initialize_relay] built addr_map with {} entries", addr_map.len());
+
+                // Prepare sender closures to transmit mutex messages to peers by id
+                let api = self.bingle_api.clone();
+                let finder_arc = Arc::new(finder);
+                let router_opt = self.router.clone();
+                let addr_map_cloned = addr_map.clone();
+                let send_common = move |dest_id: &str, json_val: serde_json::Value| {
+                    // Resolve destination address via local addr_map or engine-internal lookup (best-effort)
+                    let nsk_opt = if let Some(addr) = addr_map_cloned.get(dest_id) {
+                        Some(crate::api::bingle_api::NetworkEndpoint::new_direct(*addr))
+                    } else {
+                        // Fallback: try engine internal (TURN relay address mapping)
+                        if let Some(r) = &router_opt {
+                            if let Some(internal) = r.get_bingle_api_internal() {
+                                if let Some(addr) = internal.turn_lookup_addr_by_id(dest_id.to_string()) {
+                                    Some(crate::api::bingle_api::NetworkEndpoint::new_direct(addr))
+                                } else { None }
+                            } else { None }
+                        } else { None }
+                    };
+                    if let Some(nsk) = nsk_opt {
+                        let ok = api.send_message_to_network(&nsk, &dest_id.to_string(), json_val, None);
+                        if !ok { log::warn!("[Engine::initialize_relay][mutex] send_message_to_network failed for {}", dest_id); }
+                    } else {
+                        log::warn!("[Engine::initialize_relay][mutex] no endpoint for id {}", dest_id);
+                    }
+                };
+                let send_request = {
+                    let send_common = send_common.clone();
+                    move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
+                        let msg = crate::messages::types::Message::Mutex(crate::messages::types::MutexMessage::Request(req.clone()));
+                        let json_val = crate::messages::marshal::to_json_value(&msg);
+                        send_common(dest_id, json_val);
+                    }
+                };
+                let send_reply = {
+                    let send_common = send_common.clone();
+                    move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
+                        let msg = crate::messages::types::Message::Mutex(crate::messages::types::MutexMessage::Response(resp.clone()));
+                        let json_val = crate::messages::marshal::to_json_value(&msg);
+                        send_common(dest_id, json_val);
+                    }
+                };
+                let send_release = {
+                    let send_common = send_common.clone();
+                    move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
+                        let msg = crate::messages::types::Message::Mutex(crate::messages::types::MutexMessage::Release(rel.clone()));
+                        let json_val = crate::messages::marshal::to_json_value(&msg);
+                        send_common(dest_id, json_val);
+                    }
+                };
+                log::info!("[Engine::initialize_relay] prepared distributed mutex messaging closures");
+
+                // Create and store the distributed mutex
+                let mtx = crate::distributed_mutex::ModifiedLamportDistributedMutex::new(my_id.clone(), ids, send_request, send_reply, send_release);
+                self.relay_init_mutex = Some(std::sync::Arc::new(mtx));
+                log::info!("[Engine::initialize_relay] created distributed mutex");
+
+                // Use the mutex to serialize initialization of the DDB one node at a time
+                let ddb_backend_arc = self.ddb_backend.clone();
+                let roots_copy = roots_all.clone();
+                if let Some(m) = self.relay_init_mutex.as_ref().cloned() {
+                    m.acquire(|| {
+                        // Inline upsert of roots into backend under the distributed mutex
+                        if let Ok(mut b) = ddb_backend_arc.lock() {
+                            for r in &roots_copy {
+                                let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
+                                let rec = AdvertRecord {
+                                    id: r.id.clone(),
+                                    endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
+                                    am_relay: Some(true),
+                                    relay_id: None,
+                                    relay_sig: None,
+                                    date: "1970-01-01T00:00:00Z".to_string(),
+                                    sig: None,
+                                };
+                                b.upsert(rec);
+                            }
+                            log::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
+                        } else {
+                            log::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
+                        }
+                    });
+                    // After critical section completes, mark as Available
+                    self.set_relay_state(RelayState::Available, "initialize_relay: DDB initialized under mutex");
+                    log::info!("[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available");
+                }
+                // Record the finder
+                self.relay_finder = Some(finder_arc);
+                log::info!("[Engine::initialize_relay] stored RelayFinder reference");
             } else {
                 log::warn!(
                     "[Engine::initialize_relay] am_relay set but app_id not configured; skipping root relay discovery"
                 );
                 // Even if discovery is skipped, the relay is operational for local tests; mark available.
                 self.set_relay_state(RelayState::Available, "initialize_relay: app_id not configured; skipping discovery; mark Available for local operation");
+                log::warn!("[Engine::initialize_relay] stage complete: discovery skipped, relay marked Available");
             }
         }
     }
