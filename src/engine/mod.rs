@@ -18,6 +18,24 @@ use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use uuid::Uuid;
 
+// Helper: count peer states (excluding self) from finder caches
+fn count_peer_states(finder: &crate::relay::relay_finder::RelayFinder, my_id: &str) -> (usize, usize) {
+    let peers = finder.list_root_relays(my_id, false);
+    let mut available = 0usize;
+    let mut starting = 0usize;
+    for r in peers {
+        if let Some(st) = r.state {
+            match st {
+                RelayState::Available => available += 1,
+                RelayState::Starting => starting += 1,
+                RelayState::Off => {}
+                RelayState::Own => {}
+            }
+        }
+    }
+    (available, starting)
+}
+
 #[derive(Debug, Default)]
 struct ResponseWait {
     responded: bool,
@@ -280,7 +298,37 @@ impl BingleApi for EngineBingleApiHandle {
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
 
-    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
+    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
+        log::info!("[EngineBingleApiHandle::send_message_to_id][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some());
+        // Emit initial progress if provided
+        if let Some(cb) = _progress.as_ref() { cb(5, "Engine handle: starting send".to_string()); }
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() {
+            log::warn!("[EngineBingleApiHandle::send_message_to_id] null engine pointer");
+            if let Some(cb) = _progress.as_ref() { cb(100, "Engine unavailable".to_string()); }
+            log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return=false");
+            return false;
+        }
+        // Resolve destination via Engine-bound DDB client
+        if let Some(cb) = _progress.as_ref() { cb(15, "Resolving recipient via DDB".to_string()); }
+        let nsk_opt = unsafe { (*p).ddb_client().lookup(_user_id).ok() };
+        match nsk_opt {
+            Some(nsk) => {
+                if let Some(cb) = _progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
+                let ok = self.send_message_to_network(&nsk, _user_id, _message, _progress.clone());
+                if let Some(cb) = _progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
+                log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return={}", ok);
+                ok
+            }
+            None => {
+                log::warn!("[EngineBingleApiHandle::send_message_to_id] DDB lookup failed for {}", _user_id);
+                if let Some(cb) = _progress.as_ref() { cb(100, "DDB lookup failed".to_string()); }
+                log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return=false");
+                false
+            }
+        }
+    }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool { false }
 
     fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
@@ -904,24 +952,8 @@ impl Engine {
                 finder.load_relay_states(&my_id);
                 log::info!("[Engine::initialize_relay] loaded peer relay states");
 
-                // Helper to count peer states (excluding self)
-                let _count_peer_states = || -> (usize, usize) {
-                    let peers = finder.list_root_relays(&my_id, false);
-                    let mut available = 0usize;
-                    let mut starting = 0usize;
-                    for r in peers {
-                        if let Some(st) = r.state {
-                            match st {
-                                RelayState::Available => available += 1,
-                                RelayState::Starting => starting += 1,
-                                RelayState::Off => {},
-                                RelayState::Own => {},
-                            }
-                        }
-                    }
-                    (available, starting)
-                };
-                let (avail_cnt, starting_cnt) = _count_peer_states();
+                // Count peer states (excluding self)
+                let (avail_cnt, starting_cnt) = count_peer_states(&finder, &my_id);
                 log::info!(
                     "[Engine::initialize_relay] peer states after load: available={} starting={}",
                     avail_cnt,
@@ -935,36 +967,23 @@ impl Engine {
                 ids.sort(); ids.dedup();
                 log::info!("[Engine::initialize_relay] mutex participants: {}", ids.len());
 
-                // Prepare a simple id->addr map from the discovered roots
-                let addr_map: std::collections::HashMap<String, std::net::SocketAddr> = roots_all.iter().map(|r| (r.id.clone(), r.address)).collect();
-                let addr_map = std::sync::Arc::new(addr_map);
-                log::info!("[Engine::initialize_relay] built addr_map with {} entries", addr_map.len());
-
-                // Prepare sender closures to transmit mutex messages to peers by id
+                // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
                 let api = self.bingle_api.clone();
                 let finder_arc = Arc::new(finder);
-                let router_opt = self.router.clone();
-                let addr_map_cloned = addr_map.clone();
                 let send_common = move |dest_id: &str, json_val: serde_json::Value| {
-                    // Resolve destination address via local addr_map or engine-internal lookup (best-effort)
-                    let nsk_opt = if let Some(addr) = addr_map_cloned.get(dest_id) {
-                        Some(crate::api::bingle_api::NetworkEndpoint::new_direct(*addr))
-                    } else {
-                        // Fallback: try engine internal (TURN relay address mapping)
-                        if let Some(r) = &router_opt {
-                            if let Some(internal) = r.get_bingle_api_internal() {
-                                if let Some(addr) = internal.turn_lookup_addr_by_id(dest_id.to_string()) {
-                                    Some(crate::api::bingle_api::NetworkEndpoint::new_direct(addr))
-                                } else { None }
-                            } else { None }
-                        } else { None }
-                    };
-                    if let Some(nsk) = nsk_opt {
-                        let ok = api.send_message_to_network(&nsk, &dest_id.to_string(), json_val, None);
-                        if !ok { log::warn!("[Engine::initialize_relay][mutex] send_message_to_network failed for {}", dest_id); }
-                    } else {
-                        log::warn!("[Engine::initialize_relay][mutex] no endpoint for id {}", dest_id);
-                    }
+                    let uid = dest_id.to_string();
+                    // Progress logger for sending
+                    let progress: Arc<ProgressCallback> = Arc::new({
+                        let uid = uid.clone();
+                        move |pct: u8, msg: String| {
+                            log::info!(
+                                "[Engine::initialize_relay][mutex] progress={} dest_id={} msg={}",
+                                pct, uid, msg
+                            );
+                        }
+                    });
+                    let ok = api.send_message_to_id(&uid, json_val, Some(progress));
+                    if !ok { log::warn!("[Engine::initialize_relay][mutex] send_message_to_id failed for {}", dest_id); }
                 };
                 let send_request = {
                     let send_common = send_common.clone();
@@ -1001,25 +1020,34 @@ impl Engine {
                 let ddb_backend_arc = self.ddb_backend.clone();
                 let roots_copy = roots_all.clone();
                 if let Some(m) = self.relay_init_mutex.as_ref().cloned() {
+                    let finder_arc_for_mtx = finder_arc.clone();
+                    let my_id_for_mtx = my_id.clone();
                     m.acquire(|| {
-                        // Inline upsert of roots into backend under the distributed mutex
-                        if let Ok(mut b) = ddb_backend_arc.lock() {
-                            for r in &roots_copy {
-                                let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
-                                let rec = AdvertRecord {
-                                    id: r.id.clone(),
-                                    endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
-                                    am_relay: Some(true),
-                                    relay_id: None,
-                                    relay_sig: None,
-                                    date: "1970-01-01T00:00:00Z".to_string(),
-                                    sig: None,
-                                };
-                                b.upsert(rec);
+                        // Re-count peer states under the mutex to decide initialization strategy
+                        let (avail_cnt, _starting_cnt) = count_peer_states(&finder_arc_for_mtx, &my_id_for_mtx);
+                        if avail_cnt == 0 {
+                            // No available peers: upsert roots into backend as bootstrap
+                            if let Ok(mut b) = ddb_backend_arc.lock() {
+                                for r in &roots_copy {
+                                    let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
+                                    let rec = AdvertRecord {
+                                        id: r.id.clone(),
+                                        endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
+                                        am_relay: Some(true),
+                                        relay_id: None,
+                                        relay_sig: None,
+                                        date: "1970-01-01T00:00:00Z".to_string(),
+                                        sig: None,
+                                    };
+                                    b.upsert(rec);
+                                }
+                                log::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
+                            } else {
+                                log::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
                             }
-                            log::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
                         } else {
-                            log::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
+                            // Peers available: in future, load DDB from a peer instead of rewriting
+                            log::warn!("TODO: load DDB from peer");
                         }
                     });
                     // After critical section completes, mark as Available
