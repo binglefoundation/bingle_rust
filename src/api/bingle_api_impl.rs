@@ -385,17 +385,17 @@ impl BingleApi for BingleApiImpl {
         #[allow(unused)] {  }
     }
 
-    fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        log::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", _user_id, _message, progress.is_some());
+    fn send_message_to_id(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
+        log::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         if let Some(cb) = progress.as_ref() { cb(5, "Starting DDB lookup".to_string()); }
         // Validate DDB client is available
         if let Some(cb) = progress.as_ref() { cb(10, "Engine ready".to_string()); }
         let ddb = self.engine.ddb_client();
         if let Some(cb) = progress.as_ref() { cb(20, "Looking up recipient".to_string()); }
-        match ddb.lookup(_user_id) {
+        match ddb.lookup(user_id) {
             Ok(nsk) => {
                 if let Some(cb) = progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
-                let ok = self.send_message_to_network(&nsk, _user_id, _message, progress.clone());
+                let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
                 log::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
                 ok
             }
@@ -408,8 +408,8 @@ impl BingleApi for BingleApiImpl {
         }
     }
 
-    fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool {
-        log::info!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", _handle, _message, _progress.is_some());
+    fn send_message_to_handle(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
+        log::info!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
         #[allow(unused)] {  }
         // Not implemented yet
         let __ret = false;
@@ -486,8 +486,8 @@ impl BingleApi for BingleApiImpl {
         res
     }
 
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        log::info!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", _handle, _message, _progress.is_some());
+    fn send_message_to_handle_with_response(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
+        log::info!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
         #[allow(unused)] {  }
         let err = "not implemented".to_string();
         log::info!("[BingleApiImpl::send_message_to_handle_with_response][exit] Err({})", err);

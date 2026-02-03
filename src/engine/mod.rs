@@ -298,32 +298,32 @@ impl BingleApi for EngineBingleApiHandle {
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
 
-    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
-        log::info!("[EngineBingleApiHandle::send_message_to_id][enter] user_id={} msg={} progress={}", _user_id, _message, _progress.is_some());
+    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
+        log::info!("[EngineBingleApiHandle::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         // Emit initial progress if provided
-        if let Some(cb) = _progress.as_ref() { cb(5, "Engine handle: starting send".to_string()); }
+        if let Some(cb) = progress.as_ref() { cb(5, "Engine handle: starting send".to_string()); }
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() {
             log::warn!("[EngineBingleApiHandle::send_message_to_id] null engine pointer");
-            if let Some(cb) = _progress.as_ref() { cb(100, "Engine unavailable".to_string()); }
+            if let Some(cb) = progress.as_ref() { cb(100, "Engine unavailable".to_string()); }
             log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return=false");
             return false;
         }
         // Resolve destination via Engine-bound DDB client
-        if let Some(cb) = _progress.as_ref() { cb(15, "Resolving recipient via DDB".to_string()); }
-        let nsk_opt = unsafe { (*p).ddb_client().lookup(_user_id).ok() };
+        if let Some(cb) = progress.as_ref() { cb(15, "Resolving recipient via DDB".to_string()); }
+        let nsk_opt = unsafe { (*p).ddb_client().lookup(user_id).ok() };
         match nsk_opt {
             Some(nsk) => {
-                if let Some(cb) = _progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
-                let ok = self.send_message_to_network(&nsk, _user_id, _message, _progress.clone());
-                if let Some(cb) = _progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
+                if let Some(cb) = progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
+                let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
+                if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
                 log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return={}", ok);
                 ok
             }
             None => {
-                log::warn!("[EngineBingleApiHandle::send_message_to_id] DDB lookup failed for {}", _user_id);
-                if let Some(cb) = _progress.as_ref() { cb(100, "DDB lookup failed".to_string()); }
+                log::warn!("[EngineBingleApiHandle::send_message_to_id] DDB lookup failed for {}", user_id);
+                if let Some(cb) = progress.as_ref() { cb(100, "DDB lookup failed".to_string()); }
                 log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return=false");
                 false
             }
