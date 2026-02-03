@@ -48,7 +48,7 @@ pub struct RelayFinder {
     api: Arc<dyn BingleApi>,
     cache_ttl: Duration,
     cache: Mutex<Option<CachedRelay>>, // single selected relay cache
-    list_cache: Mutex<Option<CachedRelayList>>, // cached list of roots
+    root_list_cache: Mutex<Option<CachedRelayList>>, // cached list of roots
     all_list_cache: Mutex<Option<CachedAllRelayList>>, // cached list of all relays
     // Injection point for discovery (keeps this component testable and avoids tying to indexer here)
     discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
@@ -62,7 +62,7 @@ impl RelayFinder {
         cache_ttl: Duration,
         discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
     ) -> Self {
-        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots }
+        Self { api, cache_ttl, cache: Mutex::new(None), root_list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots }
     }
 
     /// Return the list of all relays (root and non-root) using the DDB client get_relays.
@@ -87,7 +87,7 @@ impl RelayFinder {
         let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
         let mut relays: Vec<RelayInfo> = {
             // Access cached root list
-            let roots_opt = self.list_cache.lock().ok().and_then(|g| g.clone());
+            let roots_opt = self.root_list_cache.lock().ok().and_then(|g| g.clone());
             if let Some(roots) = roots_opt {
                 // Exclude self from the roots list before selecting which root to query via DDB
                 let candidates: Vec<RelayInfo> = roots
@@ -116,7 +116,7 @@ impl RelayFinder {
         };
         // 3) Fallback: if none from DDB, use the cached root list
         if relays.is_empty() {
-            if let Ok(g) = self.list_cache.lock() {
+            if let Ok(g) = self.root_list_cache.lock() {
                 if let Some(roots) = &*g {
                     relays = roots.root_relays.clone();
                 }
@@ -126,7 +126,7 @@ impl RelayFinder {
         if include_self {
             let has_self = relays.iter().any(|r| r.id == my_id_norm);
             if !has_self {
-                if let Ok(g) = self.list_cache.lock() {
+                if let Ok(g) = self.root_list_cache.lock() {
                     if let Some(roots) = &*g {
                         if let Some(me) = roots.root_relays.iter().find(|r| r.id == my_id_norm) {
                             relays.push(RelayInfo { id: me.id.clone(), address: me.address, state: None });
@@ -159,7 +159,7 @@ impl RelayFinder {
                 Err(_) => Vec::new(),
             }
         });
-        Self { api, cache_ttl, cache: Mutex::new(None), list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots: discover }
+        Self { api, cache_ttl, cache: Mutex::new(None), root_list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots: discover }
     }
 
     /// Find any relay suitable for us (root or non-root). Uses DDB getEpoch via list_all_relays.
@@ -200,7 +200,7 @@ impl RelayFinder {
     pub fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 1) Use cached list if valid
-        if let Ok(guard) = self.list_cache.lock() {
+        if let Ok(guard) = self.root_list_cache.lock() {
             if let Some(list) = &*guard {
                 if Instant::now() < list.expires_at {
                     let mut result = list.root_relays.clone();
@@ -219,7 +219,7 @@ impl RelayFinder {
         relays.sort_by(|a, b| a.id.cmp(&b.id));
         // 3) Cache root relays only
         let expires = Instant::now() + self.cache_ttl;
-        if let Ok(mut guard) = self.list_cache.lock() {
+        if let Ok(mut guard) = self.root_list_cache.lock() {
             *guard = Some(CachedRelayList { root_relays: relays.clone(), expires_at: expires });
         }
         relays
@@ -303,7 +303,7 @@ impl RelayFinder {
     }
 
     fn update_cached_state(&self, id: &str, st: RelayState) {
-        if let Ok(mut g) = self.list_cache.lock() {
+        if let Ok(mut g) = self.root_list_cache.lock() {
             if let Some(list) = &mut *g {
                 for r in &mut list.root_relays {
                     if r.id == id { r.state = Some(st); }
@@ -339,7 +339,7 @@ impl RelayFinder {
         if let Ok(g) = self.all_list_cache.lock() {
             if let Some(list) = &*g { accumulate(&list.relays); return out; }
         }
-        if let Ok(g) = self.list_cache.lock() {
+        if let Ok(g) = self.root_list_cache.lock() {
             if let Some(list) = &*g { accumulate(&list.root_relays); }
         }
         out
@@ -382,7 +382,7 @@ impl RelayFinder {
         // Clear single-relay cache
         if let Ok(mut g) = self.cache.lock() { *g = None; }
         // Expire root list and reset states
-        if let Ok(mut g) = self.list_cache.lock() {
+        if let Ok(mut g) = self.root_list_cache.lock() {
             if let Some(list) = &mut *g {
                 for r in &mut list.root_relays { r.state = None; }
                 // Expire immediately to force reload on next access
@@ -396,5 +396,21 @@ impl RelayFinder {
                 list.expires_at = Instant::now() - Duration::from_secs(1);
             }
         }
+    }
+
+    /// Lookup a root relay id and return its direct NetworkEndpoint if known.
+    /// Uses list_root_relays to ensure the root list cache is populated, then searches the cache.
+    pub fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint> {
+        let id_norm = id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        // Ensure root list is populated/cached (include_self=true to avoid filtering out the queried id)
+        let _ = self.list_root_relays(id_norm, true);
+        if let Ok(g) = self.root_list_cache.lock() {
+            if let Some(list) = &*g {
+                if let Some(r) = list.root_relays.iter().find(|r| r.id == id_norm) {
+                    return Some(NetworkEndpoint::new_direct(r.address));
+                }
+            }
+        }
+        None
     }
 }

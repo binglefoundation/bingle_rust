@@ -387,11 +387,39 @@ impl BingleApi for BingleApiImpl {
 
     fn send_message_to_id(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
         log::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
-        if let Some(cb) = progress.as_ref() { cb(5, "Starting DDB lookup".to_string()); }
-        // Validate DDB client is available
+        if let Some(cb) = progress.as_ref() { cb(5, "Starting lookup".to_string()); }
+        // Engine is ready
         if let Some(cb) = progress.as_ref() { cb(10, "Engine ready".to_string()); }
+
+        // 1) Try to resolve as a known root relay via RelayFinder::lookup_root_id first (non-iOS only)
+        #[cfg(not(target_os = "ios"))]
+        {
+            if let Some(cb) = progress.as_ref() { cb(15, "Checking root relays".to_string()); }
+            let app_id_opt = self
+                .get_app_id()
+                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            if let Some(app_id) = app_id_opt {
+                let cfg = self.get_algo_provider_config();
+                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+                // Build a delegating API handle for RelayFinder
+                let self_ptr = if let Some(p) = self.self_ptr.as_ref() { p.clone() } else { Arc::new(AtomicPtr::new(std::ptr::null_mut())) };
+                self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
+                let api_handle: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BingleApiImplHandle(self_ptr.clone()));
+                let finder = crate::relay::relay_finder::RelayFinder::new(api_handle, Duration::from_secs(60), discover);
+                if let Some(nsk) = finder.lookup_root_id(user_id) {
+                    if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
+                    let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
+                    log::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
+                    return ok;
+                } else {
+                    if let Some(cb) = progress.as_ref() { cb(20, "Root not known; falling back to DDB".to_string()); }
+                }
+            }
+        }
+
+        // 2) Fallback to DDB lookup as previously
         let ddb = self.engine.ddb_client();
-        if let Some(cb) = progress.as_ref() { cb(20, "Looking up recipient".to_string()); }
+        if let Some(cb) = progress.as_ref() { cb(20, "Looking up recipient via DDB".to_string()); }
         match ddb.lookup(user_id) {
             Ok(nsk) => {
                 if let Some(cb) = progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }

@@ -20,3 +20,6 @@ mod clear_state_cache;
 
 #[path = "exclude_self_from_ddb.rs"]
 mod exclude_self_from_ddb;
+
+#[path = "lookup_root_id.rs"]
+mod lookup_root_id;
