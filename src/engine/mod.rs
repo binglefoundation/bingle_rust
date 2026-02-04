@@ -916,8 +916,8 @@ impl Engine {
         self.set_relay_state(RelayState::Off, "initialize_relay: starting sequence (set Off before delay)");
 
         // Before discovering peers, mark relay state as Starting
-        self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
-        log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting");
+        // self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
+        // log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting");
 
         // Build discovery closure using indexer when app_id is configured; else skip
         #[cfg(not(target_os = "ios"))]
@@ -1023,9 +1023,18 @@ impl Engine {
                     let finder_arc_for_mtx = finder_arc.clone();
                     let my_id_for_mtx = my_id.clone();
                     m.acquire(|| {
+                        self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
+                        log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting");
+
                         // Re-count peer states under the mutex to decide initialization strategy
-                        let (avail_cnt, _starting_cnt) = count_peer_states(&finder_arc_for_mtx, &my_id_for_mtx);
+                        finder_arc_for_mtx.clear_state_cache();
+                        log::info!("[Engine::initialize_relay] cleared finder state cache");
+                        finder_arc_for_mtx.load_relay_states(&my_id);
+                        log::info!("[Engine::initialize_relay] loaded peer relay states");
+                        let (avail_cnt, starting_cnt) = count_peer_states(&finder_arc_for_mtx, &my_id_for_mtx);
+                        log::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
                         if avail_cnt == 0 {
+                            log::info!("[Engine::initialize_relay] No peers available; initializing DDB directly");
                             // No available peers: upsert roots into backend as bootstrap
                             if let Ok(mut b) = ddb_backend_arc.lock() {
                                 for r in &roots_copy {
