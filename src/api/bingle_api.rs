@@ -48,8 +48,14 @@ pub trait BingleApiInternal: Send + Sync {
     /// Notify that the node's listening state changed.
     fn notify_listening(&self, listening: bool);
 
-    /// Get current relay state string for CheckResponse ("off"|"starting"|"available").
+    /// Get current relay state string for CheckResponse ("off"|"starting"|"loading"|"loaded"|"available"|"own").
     fn get_relay_state(&self) -> String;
+
+    /// Set the relay_state on the engine. Handlers use this to transition to Loaded after sync.
+    fn set_relay_state(&self, _state: crate::engine::RelayState) { /* default no-op */ }
+
+    /// If loading from a peer, return the target number of records expected from InitResponse.
+    fn get_peer_ddb_target(&self) -> Option<usize> { None }
 }
 
 /// Convenience type aliases used by the Bingle API.

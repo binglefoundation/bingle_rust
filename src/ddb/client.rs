@@ -26,6 +26,10 @@ pub trait DdbClient: Send + Sync {
     /// Lookup an id in the DDB and build a NetworkSourceKey from its AdvertRecord.
     fn lookup(&self, id: &str) -> Result<NetworkEndpoint, String>;
 
+    /// Start loading the DDB from a peer relay by sending DdbInitResolve.
+    /// Returns the number of records reported by DdbInitResponse (dbCount) on success.
+    fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, String>;
+
     // /// Obtain list of all relays via DdbGetEpoch, returning pairs of (relay_id, SocketAddr).
     // /// Implementations should attempt multiple known relays and fallback to discovery when unavailable.
     // fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String>;
@@ -117,12 +121,51 @@ impl DdbClient for NullDdbClient {
     fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, String> {
         Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
     }
+    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, String> {
+        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    }
     // fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> {
     //     Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
     // }
 }
 
 impl DdbClient for DdbClientImpl {
+    fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, String> {
+        log::info!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
+        // Resolve the peer relay's direct endpoint using RelayFinder first, then fall back to DDB lookup
+        let finder = RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
+        let mut nsk_opt = finder.lookup_root_id(peer_id);
+        if nsk_opt.is_none() {
+            // Fallback to DDB lookup which may return a direct endpoint
+            match self.lookup(peer_id) {
+                Ok(nsk) => nsk_opt = Some(nsk),
+                Err(e) => {
+                    let err = format!("failed to resolve peer '{}' via roots or DDB: {}", peer_id, e);
+                    log::warn!("[DdbClientImpl::start_load_from_peer] {}", err);
+                    return Err(err);
+                }
+            }
+        }
+        let nsk = nsk_opt.expect("nsk set above");
+        let addr = nsk.inet_socket_address().ok_or_else(|| "peer NetworkEndpoint is not a direct address".to_string())?;
+        let relay_user = Self::relay_user_id(peer_id)?;
+        // Compose InitResolve
+        let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve { app: "ddb".into(), tag: None, response_tag: None, text: None, data: None }));
+        let json: JsonValue = to_json_value(&init);
+        // Send and await InitResponse
+        let nsk_direct = NetworkEndpoint::new_direct(addr);
+        let resp = self.api.send_message_to_network_with_response(&nsk_direct, &relay_user, json, None)?;
+        let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
+        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("initResponse");
+        if !app_ok || !ty_ok {
+            return Err("unexpected response (expected DdbInitResponse)".to_string());
+        }
+        let cnt = resp.get("dbCount").and_then(|v| v.as_i64()).ok_or_else(|| "missing dbCount".to_string())?;
+        let out = usize::try_from(cnt).map_err(|_| "dbCount out of range".to_string())?;
+        log::info!("[DdbClientImpl::start_load_from_peer][exit] Ok({})", out);
+        Ok(out)
+    }
+
     // fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> {
     //     // Try each discovered relay to obtain epoch info
     //     let discovered: Vec<RelayInfo> = (self.discover)();

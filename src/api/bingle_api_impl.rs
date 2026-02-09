@@ -236,9 +236,13 @@ impl BingleApi for BingleApiImpl {
     }
     fn get_my_id(&self) -> Option<String> {
         // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
-        self.engine
-            .issuer()
-            .map(|iss| iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string())
+        match self.engine.issuer() {
+            Ok(iss) => Some(iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()),
+            Err(e) => {
+                log::warn!("[BingleApiImpl::get_my_id] {}", e);
+                None
+            }
+        }
     }
     fn get_handle(&self) -> Option<String> {
         let h = self.started_options.handle.clone();

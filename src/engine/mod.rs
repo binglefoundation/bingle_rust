@@ -28,6 +28,8 @@ fn count_peer_states(finder: &crate::relay::relay_finder::RelayFinder, my_id: &s
             match st {
                 RelayState::Available => available += 1,
                 RelayState::Starting => starting += 1,
+                RelayState::Loading => {},
+                RelayState::Loaded => {},
                 RelayState::Off => {}
                 RelayState::Own => {}
             }
@@ -65,6 +67,8 @@ pub enum NatType {
 pub enum RelayState {
     Off,
     Starting,
+    Loading,
+    Loaded,
     Available,
     Own,
 }
@@ -111,6 +115,8 @@ pub struct Engine {
     turn_handler_relay: std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>,
     // Application-level callback for listening state changes (set by API)
     on_listening_cb: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>>>,
+    // When loading DDB from a peer, store the reported record count
+    peer_ddb_records: Option<usize>,
 }
 
 impl Engine {
@@ -118,6 +124,8 @@ impl Engine {
         match self.relay_state {
             RelayState::Off => "off".to_string(),
             RelayState::Starting => "starting".to_string(),
+            RelayState::Loading => "loading".to_string(),
+            RelayState::Loaded => "loaded".to_string(),
             RelayState::Available => "available".to_string(),
             RelayState::Own => "own".to_string(),
         }
@@ -127,6 +135,8 @@ impl Engine {
         match st {
             RelayState::Off => "off",
             RelayState::Starting => "starting",
+            RelayState::Loading => "loading",
+            RelayState::Loaded => "loaded",
             RelayState::Available => "available",
             RelayState::Own => "own",
         }
@@ -275,7 +285,12 @@ impl BingleApi for EngineBingleApiHandle {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
         if p.is_null() { return None; }
-        unsafe { (*p).issuer().map(|iss| iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()) }
+        unsafe {
+            match (*p).issuer.as_deref() {
+                Some(iss) => Some(iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()),
+                None => panic!("[EngineBingleApiHandle::get_my_id] issuer not set"),
+            }
+        }
     }
     fn get_handle(&self) -> Option<String> {
         // For safety, Engine-backed handle returns None; handle is available via high-level API.
@@ -416,6 +431,18 @@ impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
         if p.is_null() { return "off".to_string(); }
         unsafe { (*p).relay_state_str() }
     }
+    fn set_relay_state(&self, state: RelayState) {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return; }
+        unsafe { (*p).set_relay_state(state, "set via BingleApiInternal"); }
+    }
+    fn get_peer_ddb_target(&self) -> Option<usize> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() { return None; }
+        unsafe { (*p).peer_ddb_records }
+    }
     fn set_state(&self, state: EngineState) {
         use std::sync::atomic::Ordering;
         let p = self.0.load(Ordering::SeqCst);
@@ -553,6 +580,7 @@ impl Engine {
             turn_handler_client: std::sync::Arc::new(crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new()),
             turn_handler_relay: std::sync::Arc::new(crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl::new()),
             on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            peer_ddb_records: None,
         }
     }
 
@@ -607,7 +635,16 @@ impl Engine {
 
     /// Set and get issuer moved from API layer.
     pub fn set_issuer(&mut self, issuer: String) { self.issuer = Some(issuer); }
-    pub fn issuer(&self) -> Option<&str> { self.issuer.as_deref() }
+    /// Return the issuer string (id + ISSUER_SUFFIX) or an error if not set. Logs a warning on None.
+    pub fn issuer(&self) -> Result<&str, String> {
+        match self.issuer.as_deref() {
+            Some(s) => Ok(s),
+            None => {
+                log::warn!("[Engine::issuer] issuer not set");
+                Err("issuer not set".to_string())
+            }
+        }
+    }
 
     /// Pending response registration/fulfillment helpers
     pub fn register_pending(&self, tag: Uuid) {
@@ -1055,8 +1092,25 @@ impl Engine {
                                 log::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
                             }
                         } else {
-                            // Peers available: in future, load DDB from a peer instead of rewriting
-                            log::warn!("TODO: load DDB from peer");
+                            // Peers available: start DDB load from a peer
+                            // Choose a preferred root peer (not self)
+                            let relays = finder_arc_for_mtx.list_root_relays(&my_id_for_mtx, false);
+                            if let Some(first) = relays.first() {
+                                let peer_id: String = first.id.clone();
+                                let count_res = self.ddb_client().start_load_from_peer(&peer_id);
+                                match count_res {
+                                    Ok(n) => {
+                                        self.peer_ddb_records = Some(n);
+                                        self.set_relay_state(RelayState::Loading, "initialize_relay: started DDB load from peer");
+                                        log::info!("[Engine::initialize_relay] started DDB load from peer {} with {} records", peer_id, n);
+                                    }
+                                    Err(e) => {
+                                        log::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);
+                                    }
+                                }
+                            } else {
+                                log::warn!("[Engine::initialize_relay] no peer selected for DDB load");
+                            }
                         }
                     });
                     // After critical section completes, mark as Available
@@ -1107,7 +1161,12 @@ impl Engine {
         // Start DTLS accept loop with the mux
         if let Some(d) = self.dtls.as_mut() {
             d.start(mux.clone()).map_err(|e| format!("Failed to start DTLS: {}", e))?;
-            // Static address path: once DTLS accept loop is running, notify that we are listening.
+
+            // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
+            if self.options.am_relay {
+                self.initialize_relay();
+            }
+            // Static address path: once DTLS accept loop is running and any relay is available, notify that we are listening.
             if let Some(r) = &self.router {
                 if let Some(internal) = r.get_bingle_api_internal() {
                     log::info!("[Engine] notifying internal listeners of listening state true");
@@ -1121,10 +1180,6 @@ impl Engine {
                 log::error!("[Engine] start_with_address: no router");
             }
 
-            // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
-            if self.options.am_relay {
-                self.initialize_relay();
-            }
         } else {
             log::error!("[Engine] start_with_address: no DTLS instance");
             return Err("DTLS instance not provided".to_string());
