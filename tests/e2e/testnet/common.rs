@@ -82,5 +82,6 @@ pub fn start_api_and_wait(options: &StartOptions) -> (BingleApiImpl, EngineState
         std::thread::sleep(Duration::from_millis(200));
     };
 
+    log::info!("[start_api_and_wait] state: {:?}", final_state);
     (api, final_state)
 }

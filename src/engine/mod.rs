@@ -103,7 +103,7 @@ pub struct Engine {
     connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>>>, 
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
-    issuer: Option<String>,
+    issuer: Option<&'static str>,
     // In-memory DDB backend used by relay nodes (and for tests)
     ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend> >,
     // Per-API router instance used to avoid global mutable state
@@ -279,34 +279,40 @@ impl Engine {
 // can call back into the Engine directly without going through BingleApiImpl.
 pub struct EngineBingleApiHandle(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
 
+impl EngineBingleApiHandle {
+    /// Safely apply a closure to the underlying Engine reference if available.
+    fn with_engine<R>(&self, f: impl FnOnce(&Engine) -> R) -> Option<R> {
+        use std::sync::atomic::Ordering;
+        let p = self.0.load(Ordering::SeqCst);
+        if p.is_null() {
+            None
+        } else {
+            // Safety: the pointer is managed by the owning Engine and considered valid
+            // for the duration of this call; callers ensure no mutation invalidates it here.
+            Some(unsafe { f(&*p) })
+        }
+    }
+}
+
 impl BingleApi for EngineBingleApiHandle {
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return None; }
-        unsafe {
-            match (*p).issuer.as_deref() {
-                Some(iss) => Some(iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()),
-                None => panic!("[EngineBingleApiHandle::get_my_id] issuer not set"),
-            }
-        }
+        self.with_engine(|eng| {
+            let iss = eng
+                .issuer()
+                .expect("[EngineBingleApiHandle::get_my_id] issuer not set");
+            iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
+        })
     }
     fn get_handle(&self) -> Option<String> {
         // For safety, Engine-backed handle returns None; handle is available via high-level API.
         None
     }
     fn get_app_id(&self) -> Option<u64> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return None; }
-        unsafe { (*p).app_id() }
+        self.with_engine(|eng| eng.app_id()).and_then(|v| v)
     }
     fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return None; }
-        unsafe { (*p).algo_provider_config() }
+        self.with_engine(|eng| eng.algo_provider_config()).and_then(|v| v)
     }
 
     fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Err("not supported".into()) }
@@ -317,17 +323,21 @@ impl BingleApi for EngineBingleApiHandle {
         log::info!("[EngineBingleApiHandle::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         // Emit initial progress if provided
         if let Some(cb) = progress.as_ref() { cb(5, "Engine handle: starting send".to_string()); }
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() {
+
+        // Ensure engine is available
+        if self.with_engine(|_| ()).is_none() {
             log::warn!("[EngineBingleApiHandle::send_message_to_id] null engine pointer");
             if let Some(cb) = progress.as_ref() { cb(100, "Engine unavailable".to_string()); }
             log::info!("[EngineBingleApiHandle::send_message_to_id][exit] return=false");
             return false;
         }
+
         // Resolve destination via Engine-bound DDB client
         if let Some(cb) = progress.as_ref() { cb(15, "Resolving recipient via DDB".to_string()); }
-        let nsk_opt = unsafe { (*p).ddb_client().lookup(user_id).ok() };
+        let nsk_opt = self
+            .with_engine(|eng| eng.ddb_client().lookup(user_id).ok())
+            .and_then(|v| v);
+
         match nsk_opt {
             Some(nsk) => {
                 if let Some(cb) = progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
@@ -348,7 +358,6 @@ impl BingleApi for EngineBingleApiHandle {
 
     fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> bool {
         log::info!("[EngineBingleApiHandle::send_message_to_network] nsk={} user_id={} message={}", nsk, user_id, message);
-        use std::sync::atomic::Ordering;
         if nsk.inet_socket_address().is_some() || (nsk.relay_channel().is_some() && nsk.relay_address().is_some()) {
             let valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
                 Ok(bytes) if bytes.len() == 36 => true,
@@ -356,9 +365,7 @@ impl BingleApi for EngineBingleApiHandle {
             };
             if !valid { return false; }
             let bytes = match serde_json::to_vec(&message) { Ok(b) => b, Err(_) => return false };
-            let p = self.0.load(Ordering::SeqCst);
-            if p.is_null() { return false; }
-            unsafe { (*p).send_to_peer(nsk, &bytes).is_ok() }
+            self.with_engine(|eng| eng.send_to_peer(nsk, &bytes).is_ok()).unwrap_or(false)
         } else { false }
     }
 
@@ -366,22 +373,34 @@ impl BingleApi for EngineBingleApiHandle {
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
 
     fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, _progress: Option<std::sync::Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
-        use std::sync::atomic::Ordering;
         use uuid::Uuid;
         let tag = Uuid::new_v4();
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return Err("null engine".into()); }
-        unsafe { (*p).register_pending(tag); }
+
+        // Register pending tag on engine
+        if self.with_engine(|eng| { eng.register_pending(tag); }).is_none() {
+            return Err("null engine".into());
+        }
+
         let msg_with_tag = match message {
-            serde_json::Value::Object(mut m) => { m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string())); serde_json::Value::Object(m) }
-            other => { let mut m = serde_json::Map::new(); m.insert("payload".to_string(), other); m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string())); serde_json::Value::Object(m) }
+            serde_json::Value::Object(mut m) => {
+                m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string()));
+                serde_json::Value::Object(m)
+            }
+            other => {
+                let mut m = serde_json::Map::new();
+                m.insert("payload".to_string(), other);
+                m.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string()));
+                serde_json::Value::Object(m)
+            }
         };
+
         let sent = self.send_message_to_network(nsk, user_id, msg_with_tag, None);
         let timeout = Duration::from_secs(10);
-        let p2 = self.0.load(Ordering::SeqCst);
-        if p2.is_null() { return Err("null engine".into()); }
-        unsafe {
-            if let Some(resp) = (*p2).wait_for_response(&tag, timeout) { Ok(resp) } else { Err(if sent { "timeout waiting for response" } else { "send failed" }.into()) }
+
+        match self.with_engine(|eng| eng.wait_for_response(&tag, timeout)) {
+            None => Err("null engine".into()),
+            Some(Some(resp)) => Ok(resp),
+            Some(None) => Err(if sent { "timeout waiting for response" } else { "send failed" }.into()),
         }
     }
 
@@ -634,16 +653,21 @@ impl Engine {
     }
 
     /// Set and get issuer moved from API layer.
-    pub fn set_issuer(&mut self, issuer: String) { self.issuer = Some(issuer); }
+    pub fn set_issuer(&mut self, issuer: String) {
+        log::info!("[Engine::set_issuer] issuer={}", issuer);
+        
+        // Leak the provided issuer string to obtain a process-lifetime reference.
+        let leaked: &'static str = Box::leak(issuer.into_boxed_str());
+        self.issuer = Some(leaked);
+    }
     /// Return the issuer string (id + ISSUER_SUFFIX) or an error if not set. Logs a warning on None.
     pub fn issuer(&self) -> Result<&str, String> {
-        match self.issuer.as_deref() {
-            Some(s) => Ok(s),
-            None => {
+        self.issuer
+            .as_deref()
+            .ok_or_else(|| {
                 log::warn!("[Engine::issuer] issuer not set");
-                Err("issuer not set".to_string())
-            }
-        }
+                "issuer not set".to_string()
+            })
     }
 
     /// Pending response registration/fulfillment helpers
@@ -972,7 +996,7 @@ impl Engine {
                 log::info!("[Engine::initialize_relay] RelayFinder constructed");
 
                 // Determine our id for exclusion
-                let my_id = if let Some(iss) = self.issuer.as_deref() {
+                let my_id = if let Some(iss) = self.issuer {
                     iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
                 } else {
                     self.options.handle.clone()
@@ -1253,7 +1277,7 @@ impl Engine {
             let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
-            let my_id: String = if let Some(iss) = self.issuer.as_deref() {
+            let my_id: String = if let Some(iss) = self.issuer {
                 iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
             } else {
                 // Fallback: if issuer is not set, use the handle (best-effort; may yield suboptimal selection).
