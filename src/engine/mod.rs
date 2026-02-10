@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use data_encoding::BASE32_NOPAD;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, Handle, ProgressCallback};
+use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
@@ -103,7 +102,7 @@ pub struct Engine {
     connections: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>>>, 
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
-    issuer: Option<&'static str>,
+    issuer: Option<Arc<String>>,
     // In-memory DDB backend used by relay nodes (and for tests)
     ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend> >,
     // Per-API router instance used to avoid global mutable state
@@ -472,6 +471,7 @@ impl Engine {
 
     /// Create an Engine without binding a BingleApi; API can be provided later via set_bingle_api.
     pub fn new_unbound(options: &StartOptions) -> Self {
+        log::info!("[Engine::new_unbound] options={:?}", options);
         // Use a placeholder API that returns None/false until a real API is bound.
         struct EmptyApi;
         impl crate::api::bingle_api::BingleApi for EmptyApi {
@@ -522,19 +522,16 @@ impl Engine {
     /// Set and get issuer moved from API layer.
     pub fn set_issuer(&mut self, issuer: String) {
         log::info!("[Engine::set_issuer] issuer={}", issuer);
-        
-        // Leak the provided issuer string to obtain a process-lifetime reference.
-        let leaked: &'static str = Box::leak(issuer.into_boxed_str());
-        self.issuer = Some(leaked);
+        self.issuer = Some(Arc::from(issuer));
     }
     /// Return the issuer string (id + ISSUER_SUFFIX) or an error if not set. Logs a warning on None.
     pub fn issuer(&self) -> Result<&str, String> {
-        self.issuer
-            .as_deref()
-            .ok_or_else(|| {
-                log::warn!("[Engine::issuer] issuer not set");
-                "issuer not set".to_string()
-            })
+        if let Some(ref s) = self.issuer {
+            Ok(s.as_str())
+        } else {
+            log::warn!("[Engine::issuer] issuer not set");
+            Err("issuer not set".to_string())
+        }
     }
 
     /// Pending response registration/fulfillment helpers
@@ -863,7 +860,7 @@ impl Engine {
                 log::info!("[Engine::initialize_relay] RelayFinder constructed");
 
                 // Determine our id for exclusion
-                let my_id = if let Some(iss) = self.issuer {
+                let my_id = if let Some(iss) = self.issuer.as_deref() {
                     iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
                 } else {
                     self.options.handle.clone()
@@ -1144,7 +1141,7 @@ impl Engine {
             let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
-            let my_id: String = if let Some(iss) = self.issuer {
+            let my_id: String = if let Some(iss) = self.issuer.as_deref() {
                 iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
             } else {
                 // Fallback: if issuer is not set, use the handle (best-effort; may yield suboptimal selection).

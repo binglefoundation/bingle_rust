@@ -42,6 +42,7 @@ pub struct BingleApiImpl {
 
 impl Default for BingleApiImpl {
     fn default() -> Self {
+        log::info!("[BingleApiImpl::default][enter]");
         // Create an unbound Engine; we'll bind API/router during start().
         let engine = Engine::new_unbound(&StartOptions::default());
         Self {
@@ -511,8 +512,10 @@ impl BingleApi for BingleApiImpl {
         log::info!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         // 1) Use the Engine-bound DDB client to resolve the destination NetworkSourceKey
         let cli = self.engine.ddb_client();
-        let nsk = cli.lookup(user_id)?;
+        log::debug!("[BingleApiImpl::send_message_to_id_with_response][enter] got ddb_client");
+        let nsk = cli.lookup(user_id).map_err(|e| format!("DDB lookup failed: {}", e))?;
         // 2) Delegate to send_message_to_network_with_response for the actual send + wait
+        log::debug!("[BingleApiImpl::send_message_to_id_with_response] calling with nsk={}", nsk);
         let res = self.send_message_to_network_with_response(&nsk, user_id, message, progress);
         log::info!("[BingleApiImpl::send_message_to_id_with_response][exit] result={:?}", res.as_ref().ok());
         res
