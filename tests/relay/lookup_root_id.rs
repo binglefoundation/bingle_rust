@@ -53,7 +53,7 @@ fn lookup_known_root_returns_endpoint() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(api, std::time::Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), std::time::Duration::from_millis(200), discover);
 
     // Known id should resolve to Some(NetworkEndpoint::Direct(addr))
     let nsk_opt = finder.lookup_root_id(&id1);
@@ -76,7 +76,7 @@ fn lookup_unknown_root_returns_none() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(api, std::time::Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), std::time::Duration::from_millis(200), discover);
 
     let nsk_opt = finder.lookup_root_id(&unknown);
     assert!(nsk_opt.is_none(), "expected None for unknown root id");

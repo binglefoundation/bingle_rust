@@ -1,5 +1,5 @@
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use serde_json::Value as JsonValue;
@@ -36,25 +36,25 @@ pub trait DdbClient: Send + Sync {
 }
 
 pub struct DdbClientImpl {
-    api: Arc<dyn BingleApi>,
+    api: Weak<Mutex<dyn BingleApi>>,
     discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
 }
 
 impl DdbClientImpl {
     /// Create a DdbClientImpl using indexer-based discovery (requires app_id configured on API or via env BINGLE_APP_ID).
     #[cfg(not(target_os = "ios"))]
-    pub fn new(api: Arc<dyn BingleApi>) -> Self {
-        let app_id_opt = api
+    pub fn new(api: Weak<Mutex<dyn BingleApi>>) -> Self {
+        let app_id_opt = api.upgrade().expect("BingleApi dropped").lock().unwrap()
             .get_app_id()
             .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
         let app_id = app_id_opt.expect("DdbClientImpl::new: app_id is required (API options.app_id or BINGLE_APP_ID)");
-        let cfg = api.get_algo_provider_config();
+        let cfg = api.upgrade().expect("BingleApi dropped").lock().unwrap().get_algo_provider_config();
         let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
         Self { api, discover }
     }
 
     /// Constructor that accepts a custom discovery closure (used by tests to avoid external dependencies).
-    pub fn with_discovery(api: Arc<dyn BingleApi>, discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>) -> Self {
+    pub fn with_discovery(api: Weak<Mutex<dyn BingleApi>>, discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>) -> Self {
         Self { api, discover }
     }
 
@@ -62,7 +62,7 @@ impl DdbClientImpl {
         log::info!("[DdbClientImpl::find_relay] create RelayFinder");
         let finder = RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
         log::info!("[DdbClientImpl::find_relay] get_my_id");
-        let my_id = self.api.get_my_id().ok_or_else(|| "get_my_id returned None".to_string())?;
+        let my_id = self.api.upgrade().expect("BingleApi dropped").lock().unwrap().get_my_id().ok_or_else(|| "get_my_id returned None".to_string())?;
         log::info!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
         finder.find_relay(&my_id)
     }
@@ -90,7 +90,7 @@ impl DdbClientImpl {
         };
         let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, response_tag: None, text: None, data: None }));
         let json: JsonValue = to_json_value(&req);
-        let resp = match self.api.send_message_to_network_with_response(&nsk, &relay_user, json, None) {
+        let resp = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_network_with_response(&nsk, &relay_user, json, None) {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[DdbClientImpl::get_relays_from] send_message_to_network_with_response failed: {}", e);
@@ -207,7 +207,7 @@ impl DdbClient for DdbClientImpl {
 
         // Send and await InitResponse
         let nsk_direct = NetworkEndpoint::new_direct(addr);
-        let resp = match self.api.send_message_to_network_with_response(&nsk_direct, &relay_user, json, None) {
+        let resp: serde_json::Value = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_network_with_response(&nsk_direct, &relay_user, json, None) {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[DdbClientImpl::start_load_from_peer] send_message_to_network_with_response failed: {}", e);
@@ -313,7 +313,7 @@ impl DdbClient for DdbClientImpl {
         let nsk = NetworkEndpoint::new_direct(relay.address);
 
         // 2) Build UpsertResolve using our id as startId and record.id
-        let my_id = match self.api.get_my_id() {
+        let my_id = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().get_my_id() {
             Some(id) => id,
             None => {
                 let err = "get_my_id returned None".to_string();
@@ -346,7 +346,7 @@ impl DdbClient for DdbClientImpl {
 
         // 3) Send and wait for response; validate UpdateResponse
         log::info!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
-        let resp = match self.api.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
+        let resp = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[DdbClientImpl::register_ip] send_message_to_network_with_response failed: {}", e);
@@ -384,7 +384,7 @@ impl DdbClient for DdbClientImpl {
         let nsk = NetworkEndpoint::new_direct(relay.address);
 
         // 2) Build UpsertResolve using our id as startId and record.id
-        let my_id = match self.api.get_my_id() {
+        let my_id = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().get_my_id() {
             Some(id) => id,
             None => {
                 let err = "get_my_id returned None".to_string();
@@ -417,7 +417,7 @@ impl DdbClient for DdbClientImpl {
 
         // 3) Send and wait for response; validate UpdateResponse
         log::info!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
-        let resp = match self.api.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
+        let resp = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[DdbClientImpl::register_relay] send_message_to_network_with_response failed: {}", e);
@@ -461,7 +461,7 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&q);
 
         // 3) Send and await response
-        let resp = match self.api.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
+        let resp = match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}", e);

@@ -76,7 +76,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     let mux_relay = Arc::new(mux_relay);
     mux_relay.start().expect("start relay mux");
 
-    let router = Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    let router = Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
     // Provide internal API exposing the shared TurnHandlerImpl
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }

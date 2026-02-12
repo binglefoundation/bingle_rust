@@ -40,7 +40,7 @@ fn list_root_relays_excludes_self_and_caches() {
         ]
     });
 
-    let finder = RelayFinder::new(api, Duration::from_millis(2000), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(2000), discover);
     let list1 = finder.list_root_relays("AAA");
     assert_eq!(list1.len(), 1, "should exclude self");
     assert_eq!(list1[0].id, "BBB");

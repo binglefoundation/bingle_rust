@@ -49,7 +49,7 @@ fn on_plain_text_calls_handler_implementation() {
     let received = Arc::new(Mutex::new(None::<serde_json::Value>));
 
     // Provide a per-test Router with our MockApi and run the route within its context
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
 
     // Build a PlainText message and route it through a custom handler implementation
     let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };

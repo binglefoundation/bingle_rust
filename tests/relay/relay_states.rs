@@ -109,7 +109,7 @@ fn load_and_summarize_states() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(api, Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(500), discover);
 
     // Load states (will internally call list_all_relays which uses DDB getEpoch from preferred root)
     finder.load_relay_states("MYID");

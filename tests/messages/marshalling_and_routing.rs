@@ -148,7 +148,7 @@ fn integration_unimplemented_handler_prints_without_panic() {
     let _json = to_json_string(&msg);
     let handler = DefaultPrintingHandler;
     // Should simply print unimplemented message; we just ensure it runs
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(std::sync::Arc::new(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
     });

@@ -31,7 +31,7 @@ impl BingleApi for MockApi {
 #[test]
 fn ddb_init_resolve_triggers_snapshot_and_dump() {
     // Prepare router and context
-    let router = Arc::new(Router::new(Arc::new(MockApi)));
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     // Capture sent messages
     let captured: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::new(Mutex::new(Vec::new()));
     let captured_clone = captured.clone();

@@ -55,7 +55,7 @@ fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOS
 
 #[test]
 fn relay_called_handler_invokes_turn_handle_called() {
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     // Internal that also reports a public address
     struct InternalWithPub { cap: CapturingInternal, pub_addr: SocketAddr }
     impl BingleApiInternal for InternalWithPub {

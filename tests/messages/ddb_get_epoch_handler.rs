@@ -68,7 +68,7 @@ impl BingleApiInternal for InternalStarting {
 #[test]
 fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     // Arrange router as relay with internal state available and ddb backend
-    let router = Arc::new(Router::new(Arc::new(MockApi)));
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
     router.set_bingle_api_internal(Some(Arc::new(InternalAvailable) as Arc<dyn BingleApiInternal>));
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
@@ -105,7 +105,7 @@ fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
 #[test]
 fn ddb_get_epoch_returns_fail_when_not_allowed() {
     // Case 1: not a relay
-    let router = Arc::new(Router::new(Arc::new(MockApi)));
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(false);
     router.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
     let handler = DefaultPrintingHandler;
@@ -116,7 +116,7 @@ fn ddb_get_epoch_returns_fail_when_not_allowed() {
     assert_eq!(out1.get("type").and_then(|v| v.as_str()), Some("fail"));
 
     // Case 2: relay but not available
-    let router2 = Arc::new(Router::new(Arc::new(MockApi)));
+    let router2 = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router2.set_am_relay(true);
     router2.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
     Router::with_current_router(router2.clone(), || { router2.route(&handler, &msg, "SENDER."); });

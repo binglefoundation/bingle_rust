@@ -104,7 +104,7 @@ fn own_state_is_marked_and_not_checked() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(api, Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(500), discover);
 
     // Load states including self
     finder.load_relay_states(&id1);

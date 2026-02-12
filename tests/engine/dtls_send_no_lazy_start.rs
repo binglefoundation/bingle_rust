@@ -31,14 +31,14 @@ use rust_comms::dtls::DtlsOpenSsl;
 
 #[test]
 fn engine_dtls_is_none_before_configuration() {
-    let engine = Engine::new(&StartOptions::default(), Arc::new(DummyApi));
+    let engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     assert!(engine.dtls().is_none(), "Engine::dtls() should be None when DTLS not configured");
 }
 
 #[cfg(not(target_os = "ios"))]
 #[test]
 fn engine_dtls_send_without_start_fails() {
-    let mut engine = Engine::new(&StartOptions::default(), Arc::new(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     // Provide a DTLS instance but DO NOT call engine.start(); ensure direct send fails.
     engine.set_dtls(Box::new(DtlsOpenSsl::new()));
 

@@ -56,7 +56,7 @@ fn ddb_client_lookup_returns_endpoint() {
     let api_arc: Arc<dyn BingleApi> = Arc::new(ApiProxy(client_shared.clone()));
     let relay_id = relay.get_my_id().expect("relay id");
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr, state: None }]);
-    let cli = DdbClientImpl::with_discovery(api_arc.clone(), discover);
+    let cli = DdbClientImpl::with_discovery(crate::util::mock_bingle_api::arc_to_weak(api_arc.clone()), discover);
 
     // First register our IP so the relay has an advert
     cli.registerIP(client_addr).expect("registerIP should succeed");

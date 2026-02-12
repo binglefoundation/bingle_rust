@@ -2,7 +2,7 @@ use crate::api::bingle_api::{BingleApi, BingleApiBoth};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use log::warn;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct FromStruct {
@@ -417,8 +417,8 @@ impl MessageHandler for DefaultPrintingHandler {
                 }
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApi)
-            let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
-            let finder = RelayFinder::new(api_plain, Duration::from_secs(60), discover);
+            let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApi>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
+            let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
 
             // Obtain our id from API (derived from engine issuer)
             let my_id = match api_for_thread.get_my_id() {
@@ -544,8 +544,8 @@ impl MessageHandler for DefaultPrintingHandler {
                 };
 
                 // Wrap combined API as plain BingleApi for RelayFinder
-                let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
-                let finder = RelayFinder::new(api_plain, Duration::from_secs(60), discover);
+                let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApi>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
+                let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
                 let my_id = match api_for_thread.get_my_id() {
                     Some(id) => id,
                     None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }

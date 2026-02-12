@@ -29,7 +29,7 @@ impl BingleApi for DummyApi {
 
 #[test]
 fn engine_start_without_static_ip_errors() {
-    let mut engine = Engine::new(StartOptions::default(), Arc::new(DummyApi));
+    let mut engine = Engine::new(StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let opts = StartOptions {
         handle: "tester".into(),
         algo_passphrase: Some("pass".into()),
@@ -57,7 +57,7 @@ fn engine_start_without_static_ip_errors() {
 
 #[test]
 fn engine_start_with_static_ip_localhost_ok() {
-    let mut engine = Engine::new(StartOptions::default(), Arc::new(DummyApi));
+    let mut engine = Engine::new(StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
     let opts = StartOptions {
         handle: "tester".into(),

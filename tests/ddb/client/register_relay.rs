@@ -86,7 +86,7 @@ fn ddb_client_register_relay_ok_and_persisted() {
     let relay_id = relay.lock().unwrap().get_my_id().expect("relay id should be Some");
     let relay_id_for_discovery = relay_id.clone();
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id_for_discovery.clone(), address: relay_addr, state: None }]);
-    let cli = DdbClientImpl::with_discovery(api_arc.clone(), discover);
+    let cli = DdbClientImpl::with_discovery(crate::util::mock_bingle_api::arc_to_weak(api_arc.clone()), discover);
 
     // Perform register_relay against the relay
     let res = cli.register_relay(relay_id.clone(), None);

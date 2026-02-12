@@ -60,7 +60,7 @@ fn end_to_end_turn_relay_forwards_payload() {
     mux.start().expect("start mux");
 
     // Prepare a Router acting as the relay to process Listen and Call messages
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(std::sync::Arc::new(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {

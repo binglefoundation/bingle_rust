@@ -85,7 +85,7 @@ fn ddb_client_register_ip_ok() {
     // Build a discovery closure that returns the started relay
     let relay_id = relay.lock().unwrap().get_my_id().expect("relay id");
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr, state: None }]);
-    let cli = DdbClientImpl::with_discovery(api_arc.clone(), discover);
+    let cli = DdbClientImpl::with_discovery(crate::util::mock_bingle_api::arc_to_weak(api_arc.clone()), discover);
 
     // Register the client's endpoint on the relay
     cli.registerIP(client_addr).expect("registerIP should succeed");

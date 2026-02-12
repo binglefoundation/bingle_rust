@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 
 use serde_json::Value as JsonValue;
 
@@ -19,12 +19,12 @@ use crate::messages::types::RelayCall;
 /// - Return a populated NetworkEndpoint with relay_id, relay_address and relay_channel.
 #[derive(Clone)]
 pub struct RelayClient {
-    api: Arc<dyn BingleApi>,
+    api: Weak<Mutex<dyn BingleApi>>,
     ddb: Arc<dyn DdbClient>,
 }
 
 impl RelayClient {
-    pub fn new(api: Arc<dyn BingleApi>, ddb: Arc<dyn DdbClient>) -> Self {
+    pub fn new(api: Weak<Mutex<dyn BingleApi>>, ddb: Arc<dyn DdbClient>) -> Self {
         Self { api, ddb }
     }
 
@@ -56,7 +56,7 @@ impl RelayClient {
         // Send to the relay and await response
         let relay_endpoint = NetworkEndpoint::new_direct(relay_addr);
         let resp = self
-            .api
+            .api.upgrade().expect("BingleApi dropped").lock().unwrap()
             .send_message_to_network_with_response(&relay_endpoint, &relay_id, json, None)?;
 
         // Parse channel from either RelayResponse or RelayCallResponse

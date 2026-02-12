@@ -3,7 +3,7 @@ use crate::messages::types::*;
 
 use std::cell::RefCell;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, NetworkEndpoint, UserId};
 
@@ -18,7 +18,7 @@ thread_local! {
 #[derive(Default)]
 pub struct Router {
     sender: Mutex<Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>,
-    api: Mutex<Option<Arc<dyn BingleApi>>>,
+    api: Mutex<Option<Weak<Mutex<dyn BingleApi>>>>,
     api_internal: Mutex<Option<Arc<dyn BingleApiInternal>>>,
     last_from: Mutex<Option<SocketAddr>>,
     last_response_tag: Mutex<Option<String>>,
@@ -31,26 +31,26 @@ pub struct Router {
 }
 
 struct CombinedApi {
-    api: Arc<dyn BingleApi>,
+    api: Arc<Mutex<dyn BingleApi>>,
     internal: Option<Arc<dyn BingleApiInternal>>,
 }
 
 impl BingleApi for CombinedApi {
-    fn debug_print_options(&self) { self.api.debug_print_options() }
-    fn get_my_id(&self) -> Option<String> { self.api.get_my_id() }
-    fn get_user_id(&self) -> Option<String> { self.api.get_user_id() }
-    fn get_handle(&self) -> Option<String> { self.api.get_handle() }
-    fn get_app_id(&self) -> Option<u64> { self.api.get_app_id() }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.get_algo_provider_config() }
+    fn debug_print_options(&self) { self.api.lock().unwrap().debug_print_options() }
+    fn get_my_id(&self) -> Option<String> { self.api.lock().unwrap().get_my_id() }
+    fn get_user_id(&self) -> Option<String> { self.api.lock().unwrap().get_user_id() }
+    fn get_handle(&self) -> Option<String> { self.api.lock().unwrap().get_handle() }
+    fn get_app_id(&self) -> Option<u64> { self.api.lock().unwrap().get_app_id() }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.lock().unwrap().get_algo_provider_config() }
     fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported in handler context".into()) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
-    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.send_message_to_id(user_id, message, progress) }
-    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.send_message_to_handle(handle, message, progress) }
-    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.send_message_to_network(nsk, user_id, message, progress) }
-    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_id_with_response(user_id, message, progress) }
-    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_handle_with_response(handle, message, progress) }
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_network_with_response(nsk, user_id, message, progress) }
+    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.lock().unwrap().send_message_to_id(user_id, message, progress) }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.lock().unwrap().send_message_to_handle(handle, message, progress) }
+    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.lock().unwrap().send_message_to_network(nsk, user_id, message, progress) }
+    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.lock().unwrap().send_message_to_id_with_response(user_id, message, progress) }
+    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.lock().unwrap().send_message_to_handle_with_response(handle, message, progress) }
+    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.lock().unwrap().send_message_to_network_with_response(nsk, user_id, message, progress) }
     fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
     fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
@@ -108,7 +108,7 @@ impl BingleApiInternal for CombinedApi {
 }
 
 impl Router {
-    pub fn new(api: Arc<dyn BingleApi>) -> Self {
+    pub fn new(api: Weak<Mutex<dyn BingleApi>>) -> Self {
         Self {
             sender: Mutex::new(None),
             api: Mutex::new(Some(api)),
@@ -140,8 +140,8 @@ impl Router {
         match self.sender.lock() { Ok(g) => g.clone(), Err(_) => None }
     }
 
-    pub fn set_bingle_api(&self, api: Option<Arc<dyn BingleApi>>) { if let Ok(mut g) = self.api.lock() { *g = api; } }
-    pub fn get_bingle_api(&self) -> Option<Arc<dyn BingleApi>> { match self.api.lock() { Ok(g) => g.clone(), Err(_) => None } }
+    pub fn set_bingle_api(&self, api: Option<Weak<Mutex<dyn BingleApi>>>) { if let Ok(mut g) = self.api.lock() { *g = api; } }
+    pub fn get_bingle_api(&self) -> Option<Arc<Mutex<dyn BingleApi>>> { match self.api.lock() { Ok(g) => g.as_ref().and_then(|w: &Weak<Mutex<dyn BingleApi>>| w.upgrade()), Err(_) => None } }
 
     pub fn set_bingle_api_internal(&self, api: Option<Arc<dyn BingleApiInternal>>) { if let Ok(mut g) = self.api_internal.lock() { *g = api; } }
     pub fn get_bingle_api_internal(&self) -> Option<Arc<dyn BingleApiInternal>> { match self.api_internal.lock() { Ok(g) => g.clone(), Err(_) => None } }

@@ -75,7 +75,7 @@ fn call_with_address_present_returns_endpoint_with_channel() {
     }));
     let ddb = DdbMock::new(None);
 
-    let client = RelayClient::new(Arc::new(api.clone()), Arc::new(ddb));
+    let client = RelayClient::new(crate::util::mock_bingle_api::to_weak(api.clone()), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 
@@ -104,7 +104,7 @@ fn call_resolves_relay_address_via_ddb_when_missing() {
     }));
     let ddb = DdbMock::new(Some(NetworkEndpoint::new_direct(relay_addr)));
 
-    let client = RelayClient::new(Arc::new(api.clone()), Arc::new(ddb));
+    let client = RelayClient::new(crate::util::mock_bingle_api::to_weak(api.clone()), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 

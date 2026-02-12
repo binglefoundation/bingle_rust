@@ -95,7 +95,7 @@ fn list_all_relays_excludes_self_from_ddb() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(api, Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(200), discover);
 
     // When include_self = false, our own id must not be present even if DDB provided it
     let list = finder.list_all_relays(&my_id, false);
@@ -124,7 +124,7 @@ fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(api, Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(200), discover);
 
     let picked = finder.find_relay(&my_id).expect("should pick a relay");
     assert_ne!(picked.id, my_id, "must not select self");

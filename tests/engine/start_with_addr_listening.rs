@@ -101,9 +101,9 @@ fn start_with_addr_notifies_listening_true() {
     };
 
     // Build Engine unbound and inject DTLS + Router with CaptureInternal
-    let mut eng = Engine::new(&opts, Arc::new(crate::util::mock_bingle_api::MockBingleApi));
+    let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::mock_api_weak());
     eng.set_dtls(Box::new(MockDtls));
-    let router = Arc::new(Router::new(Arc::new(MockApi)));
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     let flag = Arc::new(AtomicBool::new(false));
     router.set_bingle_api_internal(Some(Arc::new(CaptureInternal { notified: flag.clone() }) as Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
     eng.set_router(router);

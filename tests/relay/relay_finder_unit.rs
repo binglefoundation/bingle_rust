@@ -65,7 +65,7 @@ fn find_root_relay_rejects_self() {
             RelayInfo { id: test_util::ADDRESS_RECEIVE.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346), state: None },
         ]
     });
-    let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), std::time::Duration::from_secs(30), discover);
     // my_id is ADDRESS_SPEND, ensure we do not select ourselves and get ADDRESS_RECEIVE instead
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_ok(), "should find other relay");
@@ -82,7 +82,7 @@ fn find_root_relay_only_self_errors() {
             RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12000), state: None },
         ]
     });
-    let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), std::time::Duration::from_secs(30), discover);
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_err(), "should error when only self is present");
 }

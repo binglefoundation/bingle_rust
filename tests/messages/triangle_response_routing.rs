@@ -41,7 +41,7 @@ fn router_dispatches_triangle_test1_response() {
     let hit = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(hit.clone());
 
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "SENDERID");

@@ -66,10 +66,10 @@ impl BingleApi for MockApi {
 fn engine_upserts_root_relays_into_backend() {
     // Engine with am_relay true
     let opts = StartOptions { handle: "eng".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
-    let mut eng = Engine::new(&opts, Arc::new(crate::util::mock_bingle_api::MockBingleApi));
+    let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::mock_api_weak());
     eng.set_dtls(Box::new(MockDtls));
     // Need a router to avoid nulls in start; use minimal MockApi
-    let router = Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    let router = Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     eng.set_router(router);
 
     // Use test helper to upsert roots (avoid network/indexer dependencies)

@@ -33,10 +33,13 @@ pub struct BingleApiImpl {
     on_listening: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1). Boxed to ensure stable address across moves.
     engine: Box<Engine>,
+
     // Per-API router to avoid global cross-talk
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // Pointer to this BingleApiImpl for delegating wrapper handles created at start()
     self_ptr: Option<std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>>,
+    // Shared BingleApi handle to keep it alive for the Engine (Weak reference)
+    inner_api_handle: Arc<Mutex<dyn BingleApi>>,
 }
 
 
@@ -44,9 +47,9 @@ impl Default for BingleApiImpl {
     fn default() -> Self {
         log::info!("[BingleApiImpl::default][enter]");
         let self_ptr = Arc::new(AtomicPtr::new(std::ptr::null_mut()));
-        let api_handle = Arc::new(BingleApiImplHandle(self_ptr.clone()));
+        let api_handle: Arc<Mutex<dyn BingleApi>> = Arc::new(Mutex::new(BingleApiImplHandle(self_ptr.clone())));
         // Create Engine with delegating handle; we'll bind the real API pointer during start().
-        let engine = Engine::new(&StartOptions::default(), api_handle);
+        let engine = Engine::new(&StartOptions::default(), Arc::downgrade(&api_handle));
         Self {
             on_message: None,
             on_connect: None,
@@ -56,6 +59,7 @@ impl Default for BingleApiImpl {
             engine: Box::new(engine),
             router: None,
             self_ptr: Some(self_ptr),
+            inner_api_handle: api_handle,
         }
     }
 }
@@ -336,16 +340,15 @@ impl BingleApi for BingleApiImpl {
 
         // Create a per-API Router instance and bind delegating API handle, sender, and internal controls
         let router_arc: std::sync::Arc<crate::messages::router::Router> = {
-            let api_handle: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BingleApiImplHandle(self_ptr.clone()));
-            let router = std::sync::Arc::new(crate::messages::router::Router::new(api_handle.clone()));
+            let router = std::sync::Arc::new(crate::messages::router::Router::new(Arc::downgrade(&self.inner_api_handle)));
             // Sender closure routes via the delegating API handle
-            let api_for_sender = api_handle.clone();
-            let sender_cb: Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync> = Arc::new(move |nsk, uid, msg| {
+            let api_for_sender = self.inner_api_handle.clone();
+            let sender_cb: Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static> = Arc::new(move |nsk, uid, msg| {
                 log::info!("[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}", nsk, uid, msg);
                 let progress_cb = Arc::new(|percent: u8, message: String| {
                     log::info!("[BingleApiImpl::start][router sender] Send progress: {}% - {}", percent, message);
                 });
-                api_for_sender.send_message_to_network(nsk, uid, msg, Some(progress_cb))
+                api_for_sender.lock().unwrap().send_message_to_network(nsk, uid, msg, Some(progress_cb))
             });
             router.set_sender(Some(sender_cb));
             // Bind internal control adapter for engine state updates
@@ -359,23 +362,22 @@ impl BingleApi for BingleApiImpl {
         if let Some(h) = self.on_message.clone() { router_arc.set_on_message(Some(h)); }
 
         // Install Engine callback to send via Bingle protocol using the delegating API handle
-        let api_for_engine_send: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BingleApiImplHandle(self_ptr.clone()));
+        let api_for_engine_send = self.inner_api_handle.clone();
         self.engine.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
             log::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
             let progress_cb = Arc::new(|percent: u8, message: String| {
                 log::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
             });
-            api_for_engine_send.send_message_to_network(nsk, uid, msg, Some(progress_cb))
+            api_for_engine_send.lock().unwrap().send_message_to_network(nsk, uid, msg, Some(progress_cb))
         })));
         // Provide the BingleApi handle to Engine for handlers and DDB client
-        let api_for_engine: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BingleApiImplHandle(self_ptr.clone()));
-        self.engine.set_bingle_api(api_for_engine);
+        self.engine.set_bingle_api(Arc::downgrade(&self.inner_api_handle));
         // Provide per-API router to the Engine for routing context
         self.engine.set_router(router_arc.clone());
         self.engine.start(options)?;
 
         log::info!("[BingleApiImpl::start][exit] Ok(())");
-        #[allow(unused)] {  }
+        self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
         Ok(())
     }
 
@@ -415,8 +417,7 @@ impl BingleApi for BingleApiImpl {
                 // Build a delegating API handle for RelayFinder
                 let self_ptr = if let Some(p) = self.self_ptr.as_ref() { p.clone() } else { Arc::new(AtomicPtr::new(std::ptr::null_mut())) };
                 self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
-                let api_handle: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BingleApiImplHandle(self_ptr.clone()));
-                let finder = crate::relay::relay_finder::RelayFinder::new(api_handle, Duration::from_secs(60), discover);
+                let finder = crate::relay::relay_finder::RelayFinder::new(Arc::downgrade(&self.inner_api_handle), Duration::from_secs(60), discover);
                 if let Some(nsk) = finder.lookup_root_id(user_id) {
                     if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
                     let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
@@ -484,9 +485,8 @@ impl BingleApi for BingleApiImpl {
                 // Build a temporary delegating BingleApi handle to this API and construct RelayClient with Engine DDB client
                 let self_ptr = if let Some(p) = self.self_ptr.as_ref() { p.clone() } else { Arc::new(AtomicPtr::new(std::ptr::null_mut())) };
                 self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
-                let api_handle: std::sync::Arc<dyn crate::api::bingle_api::BingleApi> = std::sync::Arc::new(BingleApiImplHandle(self_ptr.clone()));
                 let ddb = self.engine.ddb_client();
-                let relay_client = crate::relay::relay_client::RelayClient::new(api_handle, ddb);
+                let relay_client = crate::relay::relay_client::RelayClient::new(Arc::downgrade(&self.inner_api_handle), ddb);
                 match relay_client.call(&effective_nsk, user_id) {
                     Ok(updated) => {
                         effective_nsk = updated;

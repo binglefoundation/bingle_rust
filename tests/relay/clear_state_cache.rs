@@ -110,7 +110,7 @@ fn clear_state_cache_resets_and_reloads() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(api, Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(500), discover);
 
     // Initial load populates states
     finder.load_relay_states("MYID");

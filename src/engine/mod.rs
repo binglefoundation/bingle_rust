@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, ProgressCallback};
@@ -89,7 +89,7 @@ pub struct Engine {
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
     // Unified BingleApi handle bound to this engine instance (non-optional)
-    bingle_api: Arc<dyn BingleApi>,
+    bingle_api: Weak<Mutex<dyn BingleApi>>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
@@ -425,13 +425,13 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new(options: &StartOptions, api: Arc<dyn BingleApi>) -> Self {
+    pub fn new(options: &StartOptions, api: Weak<Mutex<dyn BingleApi>>) -> Self {
         log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] {  }
         // Build a DDB client now (always present); choose real or null implementation
         #[cfg(not(target_os = "ios"))]
         let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = {
-            let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            let have_app = api.upgrade().expect("BingleApi dropped").lock().unwrap().get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
             if have_app.is_none() { log::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient"); }
             if have_app.is_some() { std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone())) } else { std::sync::Arc::new(crate::ddb::NullDdbClient::new()) }
         };
@@ -558,12 +558,12 @@ impl Engine {
     }
 
     /// Set or replace the BingleApi handle bound to this Engine instance.
-    pub fn set_bingle_api(&mut self, api: Arc<dyn BingleApi>) {
+    pub fn set_bingle_api(&mut self, api: Weak<Mutex<dyn BingleApi>>) {
         self.bingle_api = api.clone();
         // Initialize a DDB client bound to this API instance (always set; may be Null)
         #[cfg(not(target_os = "ios"))]
         {
-            let have_app = api.get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            let have_app = api.upgrade().expect("BingleApi dropped").lock().unwrap().get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
             self.ddb_client = if have_app.is_some() {
                 std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone()))
             } else {
@@ -868,7 +868,7 @@ impl Engine {
                 log::info!("[Engine::initialize_relay] mutex participants: {}", ids.len());
 
                 // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
-                let api = self.bingle_api.clone();
+                let api_weak = self.bingle_api.clone();
                 let finder_arc = Arc::new(finder);
                 let send_common = move |dest_id: &str, json_val: serde_json::Value| {
                     let uid = dest_id.to_string();
@@ -882,7 +882,7 @@ impl Engine {
                             );
                         }
                     });
-                    let ok = api.send_message_to_id(&uid, json_val, Some(progress));
+                    let ok = api_weak.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_id(&uid, json_val, Some(progress));
                     if !ok { log::warn!("[Engine::initialize_relay][mutex] send_message_to_id failed for {}", dest_id); }
                 };
                 let send_request = {
@@ -1113,7 +1113,7 @@ impl Engine {
                 }
             };
 
-            let finder = RelayFinder::new(api, Duration::from_secs(60), discover);
+            let finder = RelayFinder::new(api.clone(), Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
             let my_id: String = if let Some(iss) = self.issuer.as_deref() {

@@ -32,7 +32,7 @@ impl BingleApi for DummyApi {
 #[test]
 #[ignore]
 fn engine_forced_stun_sets_endpoint_available() {
-    let mut engine = Engine::new(&StartOptions::default(), Arc::new(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let pub_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55555);
     engine.test_force_stun_consistent(pub_addr);
     assert_eq!(engine.state(), EngineState::EndpointAvailable);

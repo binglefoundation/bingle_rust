@@ -35,7 +35,7 @@ fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOS
 #[test]
 fn relay_listen_registers_and_responds() {
     // Arrange: a Router configured as a relay with a TURN handler
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
     // Provide internal API that exposes the shared TurnHandlerImpl
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
