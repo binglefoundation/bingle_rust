@@ -12,7 +12,7 @@ fn start_returns_err_on_invalid_passphrase() {
     // Provide a static endpoint so Engine would choose static path if we got that far; we expect early Err instead.
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
 
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: "tester".into(),
         algo_passphrase: Some(bad_pass),
@@ -26,7 +26,7 @@ fn start_returns_err_on_invalid_passphrase() {
         log_level: None,
     };
 
-    let err = api.start(&opts).expect_err("start should fail for invalid passphrase");
+    let err = api.lock().unwrap().start(&opts).expect_err("start should fail for invalid passphrase");
     // Check that the error message includes context from private_key_bytes failure mapping
     assert!(err.contains("Failed to get private key bytes"), "Unexpected error: {err}");
 }

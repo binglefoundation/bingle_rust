@@ -115,10 +115,10 @@ fn bingle_api_send_via_relay_end_to_end() {
         router.route(&handler, &call_msg, "AID");
     });
     let out = router.take_outbound_response().expect("RelayResponse present");
-    let ch = out.get("channel").and_then(|v| v.as_u64()).expect("channel") as u16;
+    let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
 
     // 5) Build Bingle API client (node A)
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -131,7 +131,7 @@ fn bingle_api_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
     };
-    let start_res = api.start(&opts);
+    let start_res = api.lock().unwrap().start(&opts);
     if let Err(e) = start_res { eprintln!("api.start error: {}", e); }
 
     // 6) Send a message via the relay using NetworkEndpoint::new_relay
@@ -141,7 +141,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     // Retry send a few times to avoid flakiness due to startup races
     let mut ok = false;
     for _ in 0..10 {
-        if api.send_message_to_network(&nsk, &uid, payload.clone(), None) { ok = true; break; }
+        if api.lock().unwrap().send_message_to_network(&nsk, &uid, payload.clone(), None) { ok = true; break; }
         std::thread::sleep(Duration::from_millis(100));
     }
     assert!(ok, "send_message_to_network returned false");

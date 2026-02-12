@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::turn::turn_handler::TurnHandler;
@@ -72,7 +72,7 @@ fn relay_listen_registers_and_responds() {
     let out = router.take_outbound_response();
     assert!(out.is_some(), "expected an outbound response");
     let obj = out.unwrap();
-    let t = obj.get("type").and_then(|v| v.as_str());
+    let t = obj.get("type").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(t, Some("ListenResponse"));
 
     // id->addr map should contain the from.id (issuer trimmed) -> source address

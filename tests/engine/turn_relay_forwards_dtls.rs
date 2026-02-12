@@ -110,7 +110,7 @@ fn end_to_end_turn_relay_forwards_dtls() {
     });
     // Extract channel from outbound response
     let out = router.take_outbound_response().expect("RelayResponse present");
-    let ch = out.get("channel").and_then(|v| v.as_u64()).expect("channel") as u16;
+    let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
 
     // 3) Send TURN ChannelData from A to the relay containing a DTLS-shaped payload (first byte 20..=63)
     let dtls_payload: [u8; 6] = [20, 1, 2, 3, 4, 5]; // classified as DTLS by mux_type_for

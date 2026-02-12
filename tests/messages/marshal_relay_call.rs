@@ -9,9 +9,9 @@ fn unit_serialize_relay_call_and_roundtrip() {
     let val = as_json_value(&msg);
     // Ensure shape
     let obj = val.as_object().expect("json object");
-    assert_eq!(obj.get("type").and_then(|v| v.as_str()).expect("type"), "Call");
+    assert_eq!(obj.get("type").and_then(|v: &serde_json::Value| v.as_str()).expect("type"), "Call");
     assert!(obj.get("app").expect("app").is_null());
-    assert_eq!(obj.get("calledId").and_then(|v| v.as_str()).expect("calledId"), "abc");
+    assert_eq!(obj.get("calledId").and_then(|v: &serde_json::Value| v.as_str()).expect("calledId"), "abc");
 
     // Round-trip
     let s = to_json_string(&msg);
@@ -30,7 +30,7 @@ fn unit_serialize_relay_listen() {
     let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
     let val = as_json_value(&msg);
     let obj = val.as_object().expect("obj");
-    assert_eq!(obj.get("type").and_then(|v| v.as_str()).expect("type"), "Listen");
+    assert_eq!(obj.get("type").and_then(|v: &serde_json::Value| v.as_str()).expect("type"), "Listen");
     assert!(obj.get("app").expect("app").is_null());
 }
 
@@ -39,7 +39,7 @@ fn unit_serialize_relay_listen_response() {
     let msg = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None }));
     let val = as_json_value(&msg);
     let obj = val.as_object().expect("obj");
-    assert_eq!(obj.get("type").and_then(|v| v.as_str()).expect("type"), "ListenResponse");
+    assert_eq!(obj.get("type").and_then(|v: &serde_json::Value| v.as_str()).expect("type"), "ListenResponse");
     assert!(obj.get("app").expect("app").is_null());
 }
 
@@ -48,10 +48,10 @@ fn unit_serialize_relay_call_response_and_roundtrip() {
     let msg = Message::Relay(RelayMessage::CallResponse(RelayCallResponse { app: None, called_id: "callee".to_string(), channel: 42 }));
     let val = as_json_value(&msg);
     let obj = val.as_object().expect("obj");
-    assert_eq!(obj.get("type").and_then(|v| v.as_str()).expect("type"), "CallResponse");
+    assert_eq!(obj.get("type").and_then(|v: &serde_json::Value| v.as_str()).expect("type"), "CallResponse");
     assert!(obj.get("app").expect("app").is_null());
-    assert_eq!(obj.get("calledId").and_then(|v| v.as_str()).expect("calledId"), "callee");
-    assert_eq!(obj.get("channel").and_then(|v| v.as_u64()).expect("channel"), 42);
+    assert_eq!(obj.get("calledId").and_then(|v: &serde_json::Value| v.as_str()).expect("calledId"), "callee");
+    assert_eq!(obj.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel"), 42);
 
     let s = to_json_string(&msg);
     let back = from_json_str(&s).expect("decode back");

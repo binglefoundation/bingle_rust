@@ -1,6 +1,6 @@
 use data_encoding::BASE32_NOPAD;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use log::{error, info, warn, LevelFilter};
@@ -31,101 +31,43 @@ pub struct BingleApiImpl {
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
     // Optional on_listening handler
     on_listening: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
-    // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1). Boxed to ensure stable address across moves.
-    engine: Box<Engine>,
+    // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1).
+    engine: Arc<Mutex<Engine>>,
 
     // Per-API router to avoid global cross-talk
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
-    // Pointer to this BingleApiImpl for delegating wrapper handles created at start()
-    self_ptr: Option<std::sync::Arc<std::sync::atomic::AtomicPtr<BingleApiImpl>>>,
-    // Shared BingleApi handle to keep it alive for the Engine (Weak reference)
-    inner_api_handle: Arc<Mutex<dyn BingleApi>>,
-}
-
-
-impl Default for BingleApiImpl {
-    fn default() -> Self {
-        log::info!("[BingleApiImpl::default][enter]");
-        let self_ptr = Arc::new(AtomicPtr::new(std::ptr::null_mut()));
-        let api_handle: Arc<Mutex<dyn BingleApi>> = Arc::new(Mutex::new(BingleApiImplHandle(self_ptr.clone())));
-        // Create Engine with delegating handle; we'll bind the real API pointer during start().
-        let engine = Engine::new(&StartOptions::default(), Arc::downgrade(&api_handle));
-        Self {
-            on_message: None,
-            on_connect: None,
-            started_options: StartOptions::default(),
-            shared_on_message: Arc::new(Mutex::new(None)),
-            on_listening: None,
-            engine: Box::new(engine),
-            router: None,
-            self_ptr: Some(self_ptr),
-            inner_api_handle: api_handle,
-        }
-    }
-}
-
-
-// Delegating handle that forwards BingleApi calls to a BingleApiImpl instance via raw pointer.
-// This avoids duplicating API functionality inside Engine and keeps logic in BingleApiImpl.
-pub struct BingleApiImplHandle(pub Arc<AtomicPtr<BingleApiImpl>>);
-
-impl BingleApi for BingleApiImplHandle {
-    fn debug_print_options(&self) { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return; } unsafe { (&*p).debug_print_options(); } }
-    fn get_my_id(&self) -> Option<String> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_my_id() } }
-    fn get_user_id(&self) -> Option<String> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_user_id() } }
-    fn get_handle(&self) -> Option<String> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_handle() } }
-    fn get_app_id(&self) -> Option<u64> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_app_id() } }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_algo_provider_config() } }
-
-    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Err("not supported in handle context".into()) }
-    fn stop(&mut self) { }
-    fn network_change(&mut self) { }
-
-    fn send_message_to_id(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        let p = self.0.load(Ordering::SeqCst); if p.is_null() { return false; } unsafe { (&*p).send_message_to_id(user_id, message, progress) }
-    }
-    fn send_message_to_handle(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        let p = self.0.load(Ordering::SeqCst); if p.is_null() { return false; } unsafe { (&*p).send_message_to_handle(handle, message, progress) }
-    }
-    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        let p = self.0.load(Ordering::SeqCst); if p.is_null() { return false; } unsafe { (&*p).send_message_to_network(nsk, user_id, message, progress) }
-    }
-
-    fn send_message_to_id_with_response(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        let p = self.0.load(Ordering::SeqCst); if p.is_null() { return Err("null api".into()); } unsafe { (&*p).send_message_to_id_with_response(user_id, message, progress) }
-    }
-    fn send_message_to_handle_with_response(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        let p = self.0.load(Ordering::SeqCst); if p.is_null() { return Err("null api".into()); } unsafe { (&*p).send_message_to_handle_with_response(handle, message, progress) }
-    }
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        let p = self.0.load(Ordering::SeqCst); if p.is_null() { return Err("null api".into()); } unsafe { (&*p).send_message_to_network_with_response(nsk, user_id, message, progress) }
-    }
-
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) { }
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) { }
-    fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
+    // Weak reference to ourselves for passing to components
+    this: Weak<Mutex<BingleApiImpl>>,
 }
 
 impl BingleApiImpl {
-    pub fn new(options: &StartOptions) -> Self {
+    pub fn new(options: &StartOptions) -> Arc<Mutex<Self>> {
         log::info!("[BingleApiImpl::new][enter]");
-        let mut s = Self::default();
-        s.started_options = options.clone();
-        log::info!("[BingleApiImpl::new][exit]");
-        s
+        let initial_options = options.clone();
+        Arc::<Mutex<Self>>::new_cyclic(|me| {
+            let engine = Arc::new(Mutex::new(Engine::new(&initial_options, me.clone() as Weak<Mutex<dyn BingleApi>>)));
+            Mutex::new(Self {
+                on_message: None,
+                on_connect: None,
+                started_options: initial_options,
+                shared_on_message: Arc::new(Mutex::new(None)),
+                on_listening: None,
+                engine,
+                router: None,
+                this: me.clone(),
+            })
+        })
     }
 }
 
 impl BingleApiImpl {
     /// Test-oriented constructor to inject a custom DTLS implementation.
-    pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Self {
+    pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Mutex<Self>> {
         log::info!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
-        #[allow(unused)] {  }
-        let mut s = Self::default();
-        s.engine.set_dtls(dtls);
+        let api = Self::new(&StartOptions::default());
+        api.lock().unwrap().engine.lock().unwrap().set_dtls(dtls);
         log::info!("[BingleApiImpl::new_with_dtls][exit]");
-        #[allow(unused)] {  }
-        s
+        api
     }
 
     /// Test-only helper: override issuer directly for unit/integration tests.
@@ -133,7 +75,7 @@ impl BingleApiImpl {
     pub fn set_issuer_for_tests(&mut self, issuer: String) {
         log::info!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
         #[allow(unused)] {  }
-        self.engine.set_issuer(issuer);
+        self.engine.lock().unwrap().set_issuer(issuer);
         log::info!("[BingleApiImpl::set_issuer_for_tests][exit]");
         #[allow(unused)] {  }
     }
@@ -142,21 +84,21 @@ impl BingleApiImpl {
     pub fn engine_state_for_tests(&self) -> Option<EngineState> {
         log::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
         #[allow(unused)] {  }
-        let s = Some(self.engine.state());
+        let s = Some(self.engine.lock().unwrap().state());
         log::trace!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
         #[allow(unused)] {  }
         s
     }
     pub fn engine_nat_type_for_tests(&self) -> Option<crate::engine::NatType> {
         log::info!("[BingleApiImpl::engine_nat_type_for_tests][enter]");
-        let t = Some(self.engine.nat_type());
+        let t = Some(self.engine.lock().unwrap().nat_type());
         log::info!("[BingleApiImpl::engine_nat_type_for_tests][exit] nat_type={:?}", t);
         t
     }
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
         log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
         #[allow(unused)] {  }
-        let a = self.engine.last_public_addr();
+        let a = self.engine.lock().unwrap().last_public_addr();
         log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a);
         #[allow(unused)] {  }
         a
@@ -164,38 +106,43 @@ impl BingleApiImpl {
     pub fn engine_local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
         log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
         #[allow(unused)] {  }
-        let a = self.engine.local_bind_addr_for_tests();
+        let a = self.engine.lock().unwrap().local_bind_addr_for_tests();
         log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
         #[allow(unused)] {  }
         a
     }
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, String> {
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);
-        let res = self.engine.ddb_client().lookup(id);
+        let res = self.engine.lock().unwrap().ddb_client().lookup(id);
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
         res
+    }
+
+    /// Test-only accessor to the Engine (for white-box integration tests)
+    pub fn engine_for_tests(&self) -> Arc<Mutex<Engine>> {
+        self.engine.clone()
     }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
         #[allow(unused)] {  }
-        self.engine.test_force_stun_consistent(addr);
+        self.engine.lock().unwrap().test_force_stun_consistent(addr);
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
         #[allow(unused)] {  }
     }
 
     /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
     pub fn engine_turn_client_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
-        self.engine.turn_client_handler_for_tests()
+        self.engine.lock().unwrap().turn_client_handler_for_tests()
     }
     pub fn engine_turn_relay_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
-        self.engine.turn_relay_handler_for_tests()
+        self.engine.lock().unwrap().turn_relay_handler_for_tests()
     }
     
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool {
         log::info!("[BingleApiImpl::has_dtls][enter]");
         #[allow(unused)] {  }
-        let b = self.engine.dtls().is_some();
+        let b = self.engine.lock().unwrap().dtls().is_some();
         log::info!("[BingleApiImpl::has_dtls][exit] return={}", b);
         #[allow(unused)] {  }
         b
@@ -205,10 +152,10 @@ impl BingleApiImpl {
         // Only available on non-iOS targets.
         #[cfg(not(target_os = "ios"))]
         {
-            let need = self.engine.dtls().is_none();
+            let need = self.engine.lock().unwrap().dtls().is_none();
             if need {
                 let dtls = crate::dtls::DtlsOpenSsl::new();
-                self.engine.set_dtls(Box::new(dtls));
+                self.engine.lock().unwrap().set_dtls(Box::new(dtls));
             }
         }
         #[cfg(target_os = "ios")]
@@ -219,7 +166,7 @@ impl BingleApiImpl {
 
     fn send_over_dtls(&self, nsk: &NetworkEndpoint, message: JsonValue) -> bool {
         let bytes = serde_json::to_vec(&message).expect("Failed to serialize message to JSON bytes");
-        match self.engine.send_to_peer(nsk, &bytes) {
+        match self.engine.lock().unwrap().send_to_peer(nsk, &bytes) {
             Ok(_) => true,
             Err(err) => {
                 warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
@@ -244,7 +191,7 @@ impl BingleApi for BingleApiImpl {
     }
     fn get_my_id(&self) -> Option<String> {
         // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
-        match self.engine.issuer() {
+        match self.engine.lock().unwrap().issuer() {
             Ok(iss) => Some(iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()),
             Err(e) => {
                 log::warn!("[BingleApiImpl::get_my_id] {}", e);
@@ -305,12 +252,12 @@ impl BingleApi for BingleApiImpl {
                 }
             };
             let issuer = format!("{}{}", addr, ISSUER_SUFFIX);
-            self.engine.set_issuer(issuer.clone());
+            self.engine.lock().unwrap().set_issuer(issuer.clone());
 
             // Generate certificates: CA = Ed25519 self-signed using Algorand key; server/client = RSA-2048 signed by CA (SHA-512).
             match generate_pki_from_ops(&ops, &issuer) {
                 Ok((ca_pem, server_cert_pem, server_key_pem, client_cert_pem, client_key_pem)) => {
-                    self.engine.with_dtls_mut(|dtls| {
+                    self.engine.lock().unwrap().with_dtls_mut(|dtls: &mut (dyn Dtls + Send + Sync)| {
                         dtls.set_ca_cert(Some(ca_pem));
                         dtls.set_server_signing_cert(Some(server_cert_pem));
                         dtls.set_server_signing_private_key(Some(server_key_pem));
@@ -331,29 +278,25 @@ impl BingleApi for BingleApiImpl {
         // Engine will handle incoming DTLS messages; no API-level DTLS handler required
 
         // Start Engine using the provided StartOptions and propagate any errors
-        // Build a delegating BingleApi handle backed by this BingleApiImpl so handlers can call through BingleApiImpl.
-        if self.self_ptr.is_none() {
-            self.self_ptr = Some(Arc::new(AtomicPtr::new(std::ptr::null_mut())));
-        }
-        let self_ptr = self.self_ptr.as_ref().unwrap().clone();
-        self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
-
         // Create a per-API Router instance and bind delegating API handle, sender, and internal controls
         let router_arc: std::sync::Arc<crate::messages::router::Router> = {
-            let router = std::sync::Arc::new(crate::messages::router::Router::new(Arc::downgrade(&self.inner_api_handle)));
+            let router = std::sync::Arc::new(crate::messages::router::Router::new(self.this.clone() as Weak<Mutex<dyn BingleApi>>));
             // Sender closure routes via the delegating API handle
-            let api_for_sender = self.inner_api_handle.clone();
+            let this_weak = self.this.clone();
             let sender_cb: Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static> = Arc::new(move |nsk, uid, msg| {
                 log::info!("[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}", nsk, uid, msg);
                 let progress_cb = Arc::new(|percent: u8, message: String| {
                     log::info!("[BingleApiImpl::start][router sender] Send progress: {}% - {}", percent, message);
                 });
-                api_for_sender.lock().unwrap().send_message_to_network(nsk, uid, msg, Some(progress_cb))
+                if let Some(api) = this_weak.upgrade() {
+                    api.lock().unwrap().send_message_to_network(nsk, uid, msg, Some(progress_cb))
+                } else {
+                    false
+                }
             });
             router.set_sender(Some(sender_cb));
             // Bind internal control adapter for engine state updates
-            let eng_ptr_arc = Arc::new(AtomicPtr::new(&mut *self.engine as *mut Engine));
-            let internal = crate::engine::EngineInternalPtr(eng_ptr_arc.clone());
+            let internal = crate::engine::EngineInternalHandle(self.engine.clone());
             router.set_bingle_api_internal(Some(std::sync::Arc::new(internal)));
             router
         };
@@ -362,22 +305,25 @@ impl BingleApi for BingleApiImpl {
         if let Some(h) = self.on_message.clone() { router_arc.set_on_message(Some(h)); }
 
         // Install Engine callback to send via Bingle protocol using the delegating API handle
-        let api_for_engine_send = self.inner_api_handle.clone();
-        self.engine.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
+        let this_weak_for_engine = self.this.clone();
+        self.engine.lock().unwrap().set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
             log::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
             let progress_cb = Arc::new(|percent: u8, message: String| {
                 log::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
             });
-            api_for_engine_send.lock().unwrap().send_message_to_network(nsk, uid, msg, Some(progress_cb))
+            if let Some(api) = this_weak_for_engine.upgrade() {
+                api.lock().unwrap().send_message_to_network(nsk, uid, msg, Some(progress_cb))
+            } else {
+                false
+            }
         })));
         // Provide the BingleApi handle to Engine for handlers and DDB client
-        self.engine.set_bingle_api(Arc::downgrade(&self.inner_api_handle));
+        self.engine.lock().unwrap().set_bingle_api(self.this.clone() as Weak<Mutex<dyn BingleApi>>);
         // Provide per-API router to the Engine for routing context
-        self.engine.set_router(router_arc.clone());
-        self.engine.start(options)?;
+        self.engine.lock().unwrap().set_router(router_arc.clone());
+        self.engine.lock().unwrap().start(options)?;
 
         log::info!("[BingleApiImpl::start][exit] Ok(())");
-        self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
         Ok(())
     }
 
@@ -386,7 +332,7 @@ impl BingleApi for BingleApiImpl {
         // Notify listeners that we are no longer listening
         if let Some(cb) = &self.on_listening { cb(false); }
         // Stop Engine
-        self.engine.stop();
+        self.engine.lock().unwrap().stop();
         log::info!("[BingleApiImpl::stop][exit]");
     }
 
@@ -414,10 +360,8 @@ impl BingleApi for BingleApiImpl {
             if let Some(app_id) = app_id_opt {
                 let cfg = self.get_algo_provider_config();
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
-                // Build a delegating API handle for RelayFinder
-                let self_ptr = if let Some(p) = self.self_ptr.as_ref() { p.clone() } else { Arc::new(AtomicPtr::new(std::ptr::null_mut())) };
-                self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
-                let finder = crate::relay::relay_finder::RelayFinder::new(Arc::downgrade(&self.inner_api_handle), Duration::from_secs(60), discover);
+                // Use self.this for RelayFinder (it's a Weak reference inside)
+                let finder = crate::relay::relay_finder::RelayFinder::new(self.this.clone() as Weak<Mutex<dyn BingleApi>>, Duration::from_secs(60), discover);
                 if let Some(nsk) = finder.lookup_root_id(user_id) {
                     if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
                     let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
@@ -430,7 +374,7 @@ impl BingleApi for BingleApiImpl {
         }
 
         // 2) Fallback to DDB lookup as previously
-        let ddb = self.engine.ddb_client();
+        let ddb = self.engine.lock().unwrap().ddb_client();
         if let Some(cb) = progress.as_ref() { cb(20, "Looking up recipient via DDB".to_string()); }
         match ddb.lookup(user_id) {
             Ok(nsk) => {
@@ -482,19 +426,17 @@ impl BingleApi for BingleApiImpl {
                 log::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
                 if let Some(cb) = progress.as_ref() { cb(15, "Allocating relay channel".to_string()); }
 
-                // Build a temporary delegating BingleApi handle to this API and construct RelayClient with Engine DDB client
-                let self_ptr = if let Some(p) = self.self_ptr.as_ref() { p.clone() } else { Arc::new(AtomicPtr::new(std::ptr::null_mut())) };
-                self_ptr.store(self as *const BingleApiImpl as *mut BingleApiImpl, Ordering::SeqCst);
-                let ddb = self.engine.ddb_client();
-                let relay_client = crate::relay::relay_client::RelayClient::new(Arc::downgrade(&self.inner_api_handle), ddb);
+                // Construct RelayClient with Engine directly to break circular locking
+                let ddb = self.engine.lock().unwrap().ddb_client();
+                let relay_client = crate::relay::relay_client::RelayClient::new(self.engine.clone(), ddb);
                 match relay_client.call(&effective_nsk, user_id) {
                     Ok(updated) => {
                         effective_nsk = updated;
 
-                        // Register TURN client mapping upon successful CallResponse without using test-only accessors
+                        // Register TURN client mapping upon successful CallResponse
                         if let (Some(channel), Some(relay_addr)) = (effective_nsk.relay_channel(), effective_nsk.relay_address()) {
                             let source_addr = effective_nsk.inet_socket_address().unwrap_or(relay_addr);
-                            self.engine.turn_client_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()"));
+                            self.engine.lock().unwrap().turn_client_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()"));
                         }
 
                         if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
@@ -517,7 +459,7 @@ impl BingleApi for BingleApiImpl {
     fn send_message_to_id_with_response(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
         log::info!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         // 1) Use the Engine-bound DDB client to resolve the destination NetworkSourceKey
-        let cli = self.engine.ddb_client();
+        let cli = self.engine.lock().unwrap().ddb_client();
         log::debug!("[BingleApiImpl::send_message_to_id_with_response][enter] got ddb_client");
         let nsk = cli.lookup(user_id).map_err(|e| format!("DDB lookup failed: {}", e))?;
         // 2) Delegate to send_message_to_network_with_response for the actual send + wait
@@ -546,8 +488,12 @@ impl BingleApi for BingleApiImpl {
         log::info!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
         #[allow(unused)] {  }
         // Create a unique tag and register a pending waiter with the Engine
-        let tag = Uuid::new_v4();
-        self.engine.register_pending(tag);
+        let (tag, pending) = {
+            let eng = self.engine.lock().unwrap();
+            let tag = Uuid::new_v4();
+            eng.register_pending(tag);
+            (tag, eng.pending_responses_arc())
+        };
 
         // Ensure message has the responseTag field
         let msg_with_tag = match message {
@@ -570,7 +516,7 @@ impl BingleApi for BingleApiImpl {
 
         // Now wait for a response tagged with our UUID using the Engine's pending map
         let timeout = Duration::from_secs(10);
-        if let Some(resp) = self.engine.wait_for_response(&tag, timeout) {
+        if let Some(resp) = Engine::wait_for_response_static(pending, &tag, timeout) {
             if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
             log::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
             #[allow(unused)] {  }
@@ -608,7 +554,7 @@ impl BingleApi for BingleApiImpl {
             // Store locally
             self.on_listening = handler.clone();
             // Propagate to Engine so internal notifications can reach the application
-            self.engine.set_on_listening_handler(handler);
+            self.engine.lock().unwrap().set_on_listening_handler(handler);
             log::info!("[BingleApiImpl::set_on_listening][exit]");
         }
 }
@@ -630,32 +576,32 @@ impl BingleApiImpl {
 
 
 impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
-    fn get_relay_state(&self) -> String { self.engine.relay_state_str() }
+    fn get_relay_state(&self) -> String { self.engine.lock().unwrap().relay_state_str() }
     fn set_state(&self, state: EngineState) {
         log::info!("[BingleApiImpl::set_state][enter] state={:?}", state);
         #[allow(unused)] {  }
-        let _ = self.engine.set_state_internal(state);
+        let _ = self.engine.lock().unwrap().set_state_internal(state);
         log::info!("[BingleApiImpl::set_state][exit]");
         #[allow(unused)] {  }
     }
     fn get_state(&self) -> EngineState {
-        self.engine.state()
+        self.engine.lock().unwrap().state()
     }
     fn set_nat_type(&self, nat: crate::engine::NatType) {
         log::info!("[BingleApiImpl::set_nat_type][enter] nat_type={:?}", nat);
-        self.engine.set_nat_type(nat);
+        self.engine.lock().unwrap().set_nat_type(nat);
         log::info!("[BingleApiImpl::set_nat_type][exit]");
     }
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
-        self.engine.last_public_addr()
+        self.engine.lock().unwrap().last_public_addr()
     }
     fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
-        let cli = self.engine.ddb_client();
+        let cli = self.engine.lock().unwrap().ddb_client();
         log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}", endpoint);
         cli.register_ip(endpoint)
     }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
-        let cli = self.engine.ddb_client();
+        let cli = self.engine.lock().unwrap().ddb_client();
         log::info!("[BingleApiImpl::ddb_register_relay] registering relay: id={}", relay_id);
         cli.register_relay(relay_id, relay_sig)
     }
@@ -668,7 +614,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
         log::info!("[BingleApiImpl::turn_client_handle_listen_response][enter] id={} addr={}", relay_id, relay_addr);
-        self.engine.turn_client_handle_listen_response(relay_addr, &relay_id);
+        self.engine.lock().unwrap().turn_client_handle_listen_response(relay_addr, &relay_id);
         log::info!("[BingleApiImpl::turn_client_handle_listen_response][exit]");
     }
     fn notify_listening(&self, listening: bool) {
@@ -677,16 +623,16 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
         // Forward to the engine's TURN handler client-side interface (non-test API)
-        self.engine.turn_client_handle_called(source, dest, channel);
+        self.engine.lock().unwrap().turn_client_handle_called(source, dest, channel);
     }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
-        self.engine.turn_relay_lookup_addr_by_id(&id)
+        self.engine.lock().unwrap().turn_relay_lookup_addr_by_id(&id)
     }
     fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
-        self.engine.turn_relay_handle_call(source, dest)
+        self.engine.lock().unwrap().turn_relay_handle_call(source, dest)
     }
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
-        self.engine.turn_relay_handle_listen(&id, &source)
+        self.engine.lock().unwrap().turn_relay_handle_listen(&id, &source)
     }
 }
 

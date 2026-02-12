@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::types::{RelayTriangleTest1Response, RelayTriangleTest3};

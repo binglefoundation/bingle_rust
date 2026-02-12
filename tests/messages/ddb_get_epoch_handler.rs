@@ -91,9 +91,9 @@ fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
 
     // Assert: outbound response exists and is EpochInfo
     let out = router.take_outbound_response().expect("expected response");
-    assert_eq!(out.get("app").and_then(|v| v.as_str()), Some("ddb"));
-    assert_eq!(out.get("type").and_then(|v| v.as_str()), Some("getEpochResponse"));
-    assert_eq!(out.get("responseTag").and_then(|v| v.as_str()), Some("rt1"));
+    assert_eq!(out.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
+    assert_eq!(out.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("getEpochResponse"));
+    assert_eq!(out.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("rt1"));
     let ids = out.get("relayIds").and_then(|v| v.as_array()).expect("relayIds array");
     let id_list: Vec<String> = ids.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
     assert!(id_list.contains(&"RID1".to_string()));
@@ -113,7 +113,7 @@ fn ddb_get_epoch_returns_fail_when_not_allowed() {
     let msg = Message::Ddb(DdbMessage::GetEpoch(get));
     Router::with_current_router(router.clone(), || { router.route(&handler, &msg, "SENDER."); });
     let out1 = router.take_outbound_response().expect("response");
-    assert_eq!(out1.get("type").and_then(|v| v.as_str()), Some("fail"));
+    assert_eq!(out1.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("fail"));
 
     // Case 2: relay but not available
     let router2 = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
@@ -121,5 +121,5 @@ fn ddb_get_epoch_returns_fail_when_not_allowed() {
     router2.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
     Router::with_current_router(router2.clone(), || { router2.route(&handler, &msg, "SENDER."); });
     let out2 = router2.take_outbound_response().expect("response");
-    assert_eq!(out2.get("type").and_then(|v| v.as_str()), Some("fail"));
+    assert_eq!(out2.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("fail"));
 }

@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 // and propagates them to the caller.
 #[test]
 fn bingle_api_start_propagates_engine_error() {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     // No static_ip and empty STUN server list will cause Engine::start to error
     let opts = StartOptions {
         handle: "tester".into(),
@@ -21,7 +21,7 @@ fn bingle_api_start_propagates_engine_error() {
         log_level: None,
     };
 
-    let res = api.start(&opts);
+    let res = api.lock().unwrap().start(&opts);
     assert!(res.is_err(), "expected start() to propagate Engine error");
     let msg = res.err().unwrap().to_lowercase();
     assert!(msg.contains("stun") || msg.contains("no stun") || msg.contains("no stun servers"),

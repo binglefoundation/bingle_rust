@@ -1,7 +1,7 @@
 #![cfg(not(target_os = "ios"))]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, Handle, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -17,8 +17,8 @@ fn start_pair() -> (Arc<std::sync::Mutex<BingleApiImpl>>, Arc<std::sync::Mutex<B
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let relay = Arc::new(std::sync::Mutex::new(BingleApiImpl::new(&StartOptions::default())));
-    let client = Arc::new(std::sync::Mutex::new(BingleApiImpl::new(&StartOptions::default())));
+    let relay = BingleApiImpl::new(&StartOptions::default());
+    let client = BingleApiImpl::new(&StartOptions::default());
 
     let relay_opts = StartOptions {
         handle: "relay".into(),

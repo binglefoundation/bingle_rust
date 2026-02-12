@@ -5,6 +5,7 @@ use rust_comms::engine::EngineState;
 use rust_comms::util::cli_utils::{parse_node_file_with_ids, parse_stun_file};
 use rust_comms::{AlgoBingle, AlgoOps};
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub fn env_var(name: &str) -> Option<String> {
@@ -60,23 +61,23 @@ pub fn make_start_options(
     }
 }
 
-pub fn start_api_and_wait(options: &StartOptions) -> (BingleApiImpl, EngineState) {
+pub fn start_api_and_wait(options: &StartOptions) -> (Arc<Mutex<BingleApiImpl>>, EngineState) {
     log::set_max_level(LevelFilter::Info);
 
-    let mut api = BingleApiImpl::new(options);
-    api.start(options).expect("start api");
+    let api = BingleApiImpl::new(options);
+    api.lock().unwrap().start(options).expect("start api");
 
     // Wait up to 120 seconds for final state: Registered OR NATRestricted
     let start = Instant::now();
     let timeout = Duration::from_secs(120);
     let final_state = loop {
-        if let Some(st) = api.engine_state_for_tests() {
+        if let Some(st) = api.lock().unwrap().engine_state_for_tests() {
             if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
         }
         if start.elapsed() > timeout {
             panic!(
                 "Timed out waiting for Registered or NATRestricted; last state: {:?}",
-                api.engine_state_for_tests()
+                api.lock().unwrap().engine_state_for_tests()
             );
         }
         std::thread::sleep(Duration::from_millis(200));

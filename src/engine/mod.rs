@@ -7,7 +7,7 @@ use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, P
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
-use crate::turn::turn_handler::TurnHandler;
+use crate::turn::turn_handler::{TurnHandler, TurnRelayHandler, TurnClientHandler};
 use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::distributed_mutex::DistributedMutex;
 use crate::relay::relay_finder::{RelayFinder, RelayInfo};
@@ -38,9 +38,9 @@ fn count_peer_states(finder: &crate::relay::relay_finder::RelayFinder, my_id: &s
 }
 
 #[derive(Debug, Default)]
-struct ResponseWait {
-    responded: bool,
-    response: Option<serde_json::Value>,
+pub struct ResponseWait {
+    pub responded: bool,
+    pub response: Option<serde_json::Value>,
 }
 
 
@@ -275,145 +275,75 @@ impl Engine {
 }
 
 // Adapter exposing minimal internal controls for handlers -> engine without referencing BingleApiImpl
-pub struct EngineInternalPtr(pub std::sync::Arc<std::sync::atomic::AtomicPtr<Engine>>);
-impl crate::api::bingle_api::BingleApiInternal for EngineInternalPtr {
+pub struct EngineInternalHandle(pub std::sync::Arc<std::sync::Mutex<Engine>>);
+impl crate::api::bingle_api::BingleApiInternal for EngineInternalHandle {
     fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe {
-            let eng = &*p;
-            if let Some(m) = &eng.relay_init_mutex {
-                m.handle_request(&from_id, &req);
-            }
+        let eng = self.0.lock().unwrap();
+        if let Some(m) = &eng.relay_init_mutex {
+            m.handle_request(&from_id, &req);
         }
     }
     fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe {
-            let eng = &*p;
-            if let Some(m) = &eng.relay_init_mutex {
-                m.handle_reply(&from_id, &resp);
-            }
+        let eng = self.0.lock().unwrap();
+        if let Some(m) = &eng.relay_init_mutex {
+            m.handle_reply(&from_id, &resp);
         }
     }
     fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe {
-            let eng = &*p;
-            if let Some(m) = &eng.relay_init_mutex {
-                m.handle_release(&from_id, &rel);
-            }
+        let eng = self.0.lock().unwrap();
+        if let Some(m) = &eng.relay_init_mutex {
+            m.handle_release(&from_id, &rel);
         }
     }
     fn get_relay_state(&self) -> String {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return "off".to_string(); }
-        unsafe { (*p).relay_state_str() }
+        self.0.lock().unwrap().relay_state_str()
     }
     fn set_relay_state(&self, state: RelayState) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe { (*p).set_relay_state(state, "set via BingleApiInternal"); }
+        self.0.lock().unwrap().set_relay_state(state, "set via BingleApiInternal");
     }
     fn get_peer_ddb_target(&self) -> Option<usize> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return None; }
-        unsafe { (*p).peer_ddb_records }
+        self.0.lock().unwrap().peer_ddb_records
     }
     fn set_state(&self, state: EngineState) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe { let _ = (*p).set_state_internal(state); }
+        let _ = self.0.lock().unwrap().set_state_internal(state);
     }
     fn get_state(&self) -> EngineState {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return EngineState::StunIdentify; }
-        unsafe { (*p).state() }
+        self.0.lock().unwrap().state()
     }
     fn set_nat_type(&self, nat: NatType) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe { (*p).set_nat_type(nat); }
+        self.0.lock().unwrap().set_nat_type(nat);
     }
     fn get_last_public_addr(&self) -> Option<SocketAddr> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return None; }
-        unsafe { (*p).last_public_addr() }
+        self.0.lock().unwrap().last_public_addr()
     }
     fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return Err("null engine".into()); }
-        unsafe { (*p).ddb_client().register_ip(endpoint) }
+        self.0.lock().unwrap().ddb_client().register_ip(endpoint)
     }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return Err("null engine".into()); }
-        unsafe { (*p).ddb_client().register_relay(relay_id, relay_sig) }
+        self.0.lock().unwrap().ddb_client().register_relay(relay_id, relay_sig)
     }
     fn notify_listening(&self, listening: bool) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe { (*p).notify_listening(listening); }
+        self.0.lock().unwrap().notify_listening(listening);
     }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return Err("null engine".into()); }
-        unsafe {
-            let ok = (*p).turn_handler_relay.handle_listen(&relay_id, &relay_addr);
-            if ok { Ok(()) } else { Err(format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr)) }
-        }
+        let eng = self.0.lock().unwrap();
+        let ok = eng.turn_handler_relay.handle_listen(&relay_id, &relay_addr);
+        if ok { Ok(()) } else { Err(format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr)) }
     }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return None; }
-        unsafe { (*p).turn_handler_relay.lookup_addr_by_id(&id) }
+        self.0.lock().unwrap().turn_handler_relay.lookup_addr_by_id(&id)
     }
     fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return -1; }
-        unsafe {
-            crate::turn::turn_handler::TurnRelayHandler::handle_call(&*((*p).turn_handler_relay), &source, &dest)
-        }
+        self.0.lock().unwrap().turn_handler_relay.handle_call(&source, &dest)
     }
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return false; }
-        unsafe { (*p).turn_handler_relay.handle_listen(&id, &source) }
+        self.0.lock().unwrap().turn_handler_relay.handle_listen(&id, &source)
     }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe {
-            crate::turn::turn_handler::TurnClientHandler::handle_called(&*((*p).turn_handler_client), &source, &dest, channel);
-        }
+        self.0.lock().unwrap().turn_handler_client.handle_called(&source, &dest, channel);
     }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
-        use std::sync::atomic::Ordering;
-        let p = self.0.load(Ordering::SeqCst);
-        if p.is_null() { return; }
-        unsafe {
-            (*p).turn_client_handle_listen_response(relay_addr, &relay_id);
-        }
+        self.0.lock().unwrap().turn_handler_client.handle_listen_response(&relay_addr, &relay_id);
     }
 }
 
@@ -431,9 +361,13 @@ impl Engine {
         // Build a DDB client now (always present); choose real or null implementation
         #[cfg(not(target_os = "ios"))]
         let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = {
-            let have_app = api.upgrade().expect("BingleApi dropped").lock().unwrap().get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            let have_app = options.app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
             if have_app.is_none() { log::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient"); }
-            if have_app.is_some() { std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone())) } else { std::sync::Arc::new(crate::ddb::NullDdbClient::new()) }
+            if let Some(app_id) = have_app {
+                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone(), app_id, options.algo_provider_config.clone()))
+            } else {
+                std::sync::Arc::new(crate::ddb::NullDdbClient::new())
+            }
         };
 
         #[cfg(target_os = "ios")]
@@ -524,9 +458,21 @@ impl Engine {
             true
         } else { false }
     }
+
+    /// Returns a clone of the pending responses map Arc to allow waiting without holding the Engine lock.
+    pub fn pending_responses_arc(&self) -> Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>> {
+        self.pending_responses.clone()
+    }
+
     pub fn wait_for_response(&self, tag: &Uuid, timeout: Duration) -> Option<serde_json::Value> {
+        let pending = self.pending_responses.clone();
+        Self::wait_for_response_static(pending, tag, timeout)
+    }
+
+    /// Static version of wait_for_response that can be called without holding the Engine lock.
+    pub fn wait_for_response_static(pending: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>, tag: &Uuid, timeout: Duration) -> Option<serde_json::Value> {
         let pair_opt = {
-            match self.pending_responses.lock() { Ok(m) => m.get(tag).cloned(), Err(_) => None }
+            match pending.lock() { Ok(m) => m.get(tag).cloned(), Err(_) => None }
         };
         if let Some(pair) = pair_opt {
             let (lock, cvar) = (&pair.0, &pair.1);
@@ -543,7 +489,7 @@ impl Engine {
                 let out = if g.responded { g.response.take() } else { None };
                 drop(g);
                 // cleanup
-                if let Ok(mut m) = self.pending_responses.lock() { m.remove(tag); }
+                if let Ok(mut m) = pending.lock() { m.remove(tag); }
                 out
             } else { None }
         } else { None }
@@ -563,9 +509,9 @@ impl Engine {
         // Initialize a DDB client bound to this API instance (always set; may be Null)
         #[cfg(not(target_os = "ios"))]
         {
-            let have_app = api.upgrade().expect("BingleApi dropped").lock().unwrap().get_app_id().or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-            self.ddb_client = if have_app.is_some() {
-                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone()))
+            let have_app = self.options.app_id.or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+            self.ddb_client = if let Some(app_id) = have_app {
+                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(api.clone(), app_id, self.options.algo_provider_config.clone()))
             } else {
                 std::sync::Arc::new(crate::ddb::NullDdbClient::new())
             };

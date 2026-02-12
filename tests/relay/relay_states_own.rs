@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
@@ -46,7 +46,7 @@ impl BingleApi for MockApi {
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
 
     fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
-        let ty = message.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         match (message.get("app"), ty) {
             (Some(app), "getEpoch") if app.as_str() == Some("ddb") => {
                 // Return a DDB getEpochResponse with relayIds and aligned relayEndpoints based on entries

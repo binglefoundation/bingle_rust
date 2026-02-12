@@ -43,7 +43,8 @@ fn testnet_send_ping_to_registered_node() {
     // 2) Load STUN servers and start API
     let stun_servers = common::load_stun_servers();
     let opts: StartOptions = common::make_start_options(&handle, &passphrase, &provider_cfg, network_name, app_id, asset_id, stun_servers);
-    let (api, final_state): (BingleApiImpl, EngineState) = common::start_api_and_wait(&opts);
+    use std::sync::{Arc, Mutex};
+    let (api, final_state): (Arc<Mutex<BingleApiImpl>>, EngineState) = common::start_api_and_wait(&opts);
 
     // 3) We require Registered for direct send
     assert_eq!(final_state, EngineState::Registered, "Expected Registered state before sending Ping (got {:?})", final_state);
@@ -51,7 +52,7 @@ fn testnet_send_ping_to_registered_node() {
     // 4) Compose Ping request
     let dest_id = pingable_address().expect("pingable address must resolve");
     // Validate Option returns Some where used later
-    let my_id = api.get_my_id().expect("api.get_my_id Some");
+    let my_id = api.lock().unwrap().get_my_id().expect("api.get_my_id Some");
     assert!(!my_id.is_empty(), "my id should not be empty");
 
     let ping_req = serde_json::json!({
@@ -61,7 +62,6 @@ fn testnet_send_ping_to_registered_node() {
     });
 
     // 5) Send and validate response with timing and progress
-    use std::sync::Arc;
     use std::time::Instant;
 
     // Create progress callback that logs at INFO level
@@ -71,7 +71,7 @@ fn testnet_send_ping_to_registered_node() {
 
     // Time the send_message_to_id_with_response call
     let start_time = Instant::now();
-    let resp = api
+    let resp = api.lock().unwrap()
         .send_message_to_id_with_response(&dest_id, ping_req, Some(progress_callback))
         .expect("send_message_to_id_with_response should succeed");
     let elapsed = start_time.elapsed();
@@ -81,12 +81,12 @@ fn testnet_send_ping_to_registered_node() {
     log::info!("send_message_to_id_with_response completed in {:.3} seconds", elapsed.as_secs_f64());
 
     // Expected: { app: "ping", type: "response", verifiedId: dest_id, text: "ACK: ..." }
-    let app = resp.get("app").and_then(|v| v.as_str());
+    let app = resp.get("app").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(app, Some("ping"), "response app should be 'ping': {:?}", resp);
-    let rtype = resp.get("type").and_then(|v| v.as_str());
+    let rtype = resp.get("type").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(rtype, Some("response"), "response type should be 'response': {:?}", resp);
-    let vid = resp.get("verifiedId").and_then(|v| v.as_str());
+    let vid = resp.get("verifiedId").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(vid, Some(dest_id.as_str()), "verifiedId should equal destination id: {:?}", resp);
-    let text = resp.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let text = resp.get("text").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
     assert!(text.starts_with("ACK:"), "text should be an ACK: {:?}", resp);
 }

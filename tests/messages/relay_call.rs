@@ -1,12 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::RelayCall;
 use rust_comms::turn::turn_handler::TurnHandler;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
-use std::sync::Mutex;
 
 // Minimal API stub
 struct MockApi;
@@ -86,9 +85,9 @@ fn relay_call_allocates_channel_and_maps_pair() {
     let out = router.take_outbound_response();
     assert!(out.is_some(), "expected a RelayResponse");
     let obj = out.unwrap();
-    let t = obj.get("type").and_then(|v| v.as_str());
+    let t = obj.get("type").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(t, Some("RelayResponse"));
-    let ch = obj.get("channel").and_then(|v| v.as_u64()).expect("channel");
+    let ch = obj.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel");
     let ch_u16 = ch as u16;
 
     // Verify RelayCalled was sent to callee with the same channel
@@ -96,8 +95,8 @@ fn relay_call_allocates_channel_and_maps_pair() {
     let (nsk_sent, user_id_sent, json_sent) = sent;
     assert_eq!(nsk_sent, NetworkEndpoint::new_direct(callee));
     assert_eq!(user_id_sent, "CALLEEID");
-    assert_eq!(json_sent.get("type").and_then(|v| v.as_str()), Some("RelayCalled"));
-    assert_eq!(json_sent.get("channel").and_then(|v| v.as_u64()), Some(ch));
+    assert_eq!(json_sent.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("RelayCalled"));
+    assert_eq!(json_sent.get("channel").and_then(|v: &serde_json::Value| v.as_u64()), Some(ch));
 
     // Verify internal mappings reflect (caller, callee) -> ch and ch -> caller
     let mapped_dest = turn.lookup_addr_by_channel_for_tests(ch_u16).expect("ch->addr");

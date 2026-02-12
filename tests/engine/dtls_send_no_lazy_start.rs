@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback};
 use rust_comms::engine::Engine;
 use serde_json::Value as JsonValue;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 struct DummyApi;
 impl BingleApi for DummyApi { 

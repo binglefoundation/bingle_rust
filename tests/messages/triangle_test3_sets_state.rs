@@ -1,7 +1,7 @@
 #![cfg(not(target_os = "ios"))]
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::bingle_api::{StartOptions, BingleApi};
@@ -44,11 +44,11 @@ impl Dtls for MockDtls {
 fn triangle_test3_sets_engine_state_via_internal_api() {
     // Build API with injected DTLS so Engine exists and router is configured during start
     let mock = MockDtls::new();
-    let mut api = BingleApiImpl::new_with_dtls(Box::new(mock.clone()));
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock.clone()));
 
     // Start with static IP so Engine installs DTLS handler without STUN
     let opts = StartOptions { handle: "client".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None };
-    let _ = api.start(&opts);
+    let _ = api.lock().unwrap().start(&opts);
 
     // Ensure handler was installed
     let handler = mock.get_handle_message().expect("DTLS handler not installed");
@@ -62,6 +62,6 @@ fn triangle_test3_sets_engine_state_via_internal_api() {
     handler(&mock, &from, "SOME-ISSUER", &bytes);
 
     // The message handler should have used the internal API to mark EndpointAvailable
-    let st = api.engine_state_for_tests();
+    let st = api.lock().unwrap().engine_state_for_tests();
     assert!(matches!(st, Some(EngineState::EndpointAvailable)), "state not EndpointAvailable: {:?}", st);
 }

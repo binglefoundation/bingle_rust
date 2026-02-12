@@ -43,12 +43,7 @@ pub struct DdbClientImpl {
 impl DdbClientImpl {
     /// Create a DdbClientImpl using indexer-based discovery (requires app_id configured on API or via env BINGLE_APP_ID).
     #[cfg(not(target_os = "ios"))]
-    pub fn new(api: Weak<Mutex<dyn BingleApi>>) -> Self {
-        let app_id_opt = api.upgrade().expect("BingleApi dropped").lock().unwrap()
-            .get_app_id()
-            .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-        let app_id = app_id_opt.expect("DdbClientImpl::new: app_id is required (API options.app_id or BINGLE_APP_ID)");
-        let cfg = api.upgrade().expect("BingleApi dropped").lock().unwrap().get_algo_provider_config();
+    pub fn new(api: Weak<Mutex<dyn BingleApi>>, app_id: u64, cfg: Option<crate::blockchain::algo_ops::AlgoChainConfig>) -> Self {
         let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
         Self { api, discover }
     }

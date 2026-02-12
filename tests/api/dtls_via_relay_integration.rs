@@ -78,7 +78,7 @@ fn dtls_send_via_relay_end_to_end() {
     // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun)
     let relay_port = 13000; // test_util::find_unused_loopback_port();
     let relay_addr = addr(relay_port);
-    let mut relay_api = BingleApiImpl::new(&StartOptions::default());
+    let relay_api = BingleApiImpl::new(&StartOptions::default());
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
         algo_passphrase: Some(test_util::PASSPHRASE_10MIL.to_string()),
@@ -91,7 +91,7 @@ fn dtls_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
     };
-    relay_api.start(&relay_opts).expect("start relay api");
+    relay_api.lock().unwrap().start(&relay_opts).expect("start relay api");
 
     // 3) Send RelayListen from the DTLS target node to the relay and validate registration
     let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));

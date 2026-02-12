@@ -15,8 +15,8 @@ mod setup_localnet;
 mod test_util;
 
 // Helper: start a relay node at a fixed address
-fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> BingleApiImpl {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> Arc<Mutex<BingleApiImpl>> {
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
@@ -29,13 +29,13 @@ fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> BingleApiImpl 
         asset_id: None,
         log_level: None,
     };
-    api.start(&opts).expect("relay start");
+    api.lock().unwrap().start(&opts).expect("relay start");
     api
 }
 
 // Helper: start a client node with given STUN list
-fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> BingleApiImpl {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Arc<Mutex<BingleApiImpl>> {
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
@@ -48,14 +48,14 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Bin
         asset_id: None,
         log_level: None,
     };
-    api.start(&opts).expect("client start");
+    api.lock().unwrap().start(&opts).expect("client start");
     api
 }
 
-fn wait_for_registered(api: &BingleApiImpl, timeout: Duration) -> bool {
+fn wait_for_registered(api: &Arc<Mutex<BingleApiImpl>>, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if let Some(st) = api.engine_state_for_tests() {
+        if let Some(st) = api.lock().unwrap().engine_state_for_tests() {
             if st == EngineState::Registered { return true; }
         }
         std::thread::sleep(Duration::from_millis(25));
@@ -133,8 +133,8 @@ fn bingle_api_send_message_to_id_localnet() {
     unsafe { sleep(20); }
 
     // Start two relays
-    let mut relay1 = start_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND);
-    let mut relay2 = start_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE);
+    let relay1 = start_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND);
+    let relay2 = start_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE);
 
     // Start two local STUN servers for consistency resolution
     let p1 = test_util::find_unused_loopback_port();
@@ -147,8 +147,8 @@ fn bingle_api_send_message_to_id_localnet() {
 
     // Start two clients A and B; B will receive
     let stun_list = vec![a1, a2];
-    let mut client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone());
-    let mut client_b = start_client("client_b", passphrase_b, stun_list.clone());
+    let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone());
+    let client_b = start_client("client_b", passphrase_b, stun_list.clone());
 
     // Install OnMessage handler for client B to capture delivery
     let received = Arc::new(AtomicBool::new(false));
@@ -161,19 +161,19 @@ fn bingle_api_send_message_to_id_localnet() {
             if let Ok(mut g) = payload_store.lock() { *g = Some(message); }
             received_flag.store(true, Ordering::SeqCst);
         });
-        client_b.set_on_message(Some(on_message));
+        client_b.lock().unwrap().set_on_message(Some(on_message));
     }
 
     // Wait for both clients to reach Registered
     let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));
     let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
-    assert!(ok_a, "client A did not reach Registered state (state = {:?})", client_a.engine_state_for_tests());
-    assert!(ok_b, "client B did not reach Registered state (state = {:?})", client_b.engine_state_for_tests());
+    assert!(ok_a, "client A did not reach Registered state (state = {:?})", client_a.lock().unwrap().engine_state_for_tests());
+    assert!(ok_b, "client B did not reach Registered state (state = {:?})", client_b.lock().unwrap().engine_state_for_tests());
 
     // Obtain B's user id and send a message from A -> B using send_message_to_id
-    let b_id = client_b.get_my_id().expect("client_b.get_my_id Some");
+    let b_id = client_b.lock().unwrap().get_my_id().expect("client_b.get_my_id Some");
     let msg = json!({ "text": "hello" });
-    let sent = client_a.send_message_to_id(&b_id, msg.clone(), None);
+    let sent = client_a.lock().unwrap().send_message_to_id(&b_id, msg.clone(), None);
     assert!(sent, "send_message_to_id should return true");
 
     // Wait up to 60 seconds for receipt on B
@@ -188,15 +188,15 @@ fn bingle_api_send_message_to_id_localnet() {
     if let Ok(guard) = payload_guard.lock() {
         if let Some(p) = &*guard {
             log::info!("[Test] received payload: {}", p);
-            assert_eq!(p.get("text").and_then(|v| v.as_str()), Some("hello"));
+            assert_eq!(p.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("hello"));
         }
     }
 
     // Tear down
-    relay1.stop();
-    relay2.stop();
-    client_a.stop();
-    client_b.stop();
+    relay1.lock().unwrap().stop();
+    relay2.lock().unwrap().stop();
+    client_a.lock().unwrap().stop();
+    client_b.lock().unwrap().stop();
     s1.stop();
     s2.stop();
 

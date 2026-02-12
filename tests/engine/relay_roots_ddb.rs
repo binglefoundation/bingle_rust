@@ -1,7 +1,7 @@
 #![cfg(not(target_os = "ios"))]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};

@@ -47,7 +47,7 @@ impl BingleApi for MockApi {
         if let Ok(mut c) = self.calls.lock() { *c += 1; }
         let addr = network_source_key.inet_socket_address().expect("addr required");
         // Should receive a RelayCheck
-        let is_check = message.get("type").and_then(|v| v.as_str()) == Some("Check") && message.get("app").map(|v| v.is_null()).unwrap_or(true);
+        let is_check = message.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("Check") && message.get("app").map(|v| v.is_null()).unwrap_or(true);
         if !is_check { return Err("unexpected message".to_string()); }
         // Lookup availability
         let available = self.availability.lock().ok()

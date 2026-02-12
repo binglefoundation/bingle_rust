@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
 
@@ -24,7 +24,7 @@ impl BingleApi for MockApi {
     fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not used".to_string()) }
     fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not used".to_string()) }
     fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
-        let ty = message.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let app = message.get("app");
         if ty == "Check" && app.map(|v| v.is_null()).unwrap_or(false) {
             // Respond to RelayCheck
@@ -33,7 +33,7 @@ impl BingleApi for MockApi {
             obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".into()));
             obj.insert("state".to_string(), serde_json::Value::String("available".into()));
             Ok(serde_json::Value::Object(obj))
-        } else if ty == "getEpoch" && app.and_then(|v| v.as_str()) == Some("ddb") {
+        } else if ty == "getEpoch" && app.and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
             // Respond to DdbGetEpoch with minimal EpochInfo; keep relayIds empty so client falls back to discovery
             Ok(serde_json::json!({
                 "app": "ddb",

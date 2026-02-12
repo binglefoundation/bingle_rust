@@ -100,7 +100,7 @@ fn end_to_end_turn_relay_forwards_payload() {
     });
     // Extract channel from outbound response
     let out = router.take_outbound_response().expect("RelayResponse present");
-    let ch = out.get("channel").and_then(|v| v.as_u64()).expect("channel") as u16;
+    let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
 
     // 3) Bind a raw UDP socket on B's address to receive the forwarded payload
     let recv_sock = UdpSocket::bind(b_addr).expect("bind b udp");

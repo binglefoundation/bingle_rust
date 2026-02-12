@@ -67,19 +67,19 @@ fn ddb_init_resolve_triggers_snapshot_and_dump() {
     // First should be initResponse
     let (uid0, j0) = &sent[0];
     assert_eq!(uid0, "NEWPEER");
-    assert_eq!(j0.get("app").and_then(|v| v.as_str()), Some("ddb"));
-    assert_eq!(j0.get("type").and_then(|v| v.as_str()), Some("initResponse"));
+    assert_eq!(j0.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
+    assert_eq!(j0.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("initResponse"));
     assert_eq!(j0.get("dbCount").and_then(|v| v.as_i64()), Some(2));
-    assert_eq!(j0.get("responseTag").and_then(|v| v.as_str()), Some("rt1"));
+    assert_eq!(j0.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("rt1"));
 
     // The remaining messages should be dumpResolve, count equals number of records (2)
     let dumps: Vec<&serde_json::Value> = sent.iter().skip(1).map(|(_, j)| j).collect();
     assert_eq!(dumps.len(), 2);
     for d in &dumps {
-        assert_eq!(d.get("type").and_then(|v| v.as_str()), Some("dumpResolve"));
-        assert_eq!(d.get("app").and_then(|v| v.as_str()), Some("ddb"));
+        assert_eq!(d.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("dumpResolve"));
+        assert_eq!(d.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
         // Validate record.id exists
-        let rec_id = d.get("record").and_then(|r| r.get("id")).and_then(|v| v.as_str());
+        let rec_id = d.get("record").and_then(|r| r.get("id")).and_then(|v: &serde_json::Value| v.as_str());
         assert!(rec_id == Some("A") || rec_id == Some("B"));
     }
 }

@@ -1,7 +1,7 @@
 #![cfg(not(target_os = "ios"))]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -19,14 +19,14 @@ fn ddb_client_lookup_returns_endpoint() {
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let mut relay = BingleApiImpl::new(&StartOptions::default());
-    let mut client = BingleApiImpl::new(&StartOptions::default());
+    let relay = BingleApiImpl::new(&StartOptions::default());
+    let client = BingleApiImpl::new(&StartOptions::default());
 
     let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
 
-    relay.start(&relay_opts).expect("relay start ok");
-    client.start(&client_opts).expect("client start ok");
+    relay.lock().unwrap().start(&relay_opts).expect("relay start ok");
+    client.lock().unwrap().start(&client_opts).expect("client start ok");
 
     // Use a DdbClientImpl with custom discovery that points to the relay
     #[derive(Clone)]
@@ -52,9 +52,9 @@ fn ddb_client_lookup_returns_endpoint() {
         fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
     }
 
-    let client_shared = Arc::new(std::sync::Mutex::new(client));
+    let client_shared = client.clone();
     let api_arc: Arc<dyn BingleApi> = Arc::new(ApiProxy(client_shared.clone()));
-    let relay_id = relay.get_my_id().expect("relay id");
+    let relay_id = relay.lock().unwrap().get_my_id().expect("relay id");
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr, state: None }]);
     let cli = DdbClientImpl::with_discovery(crate::util::mock_bingle_api::arc_to_weak(api_arc.clone()), discover);
 
@@ -69,6 +69,6 @@ fn ddb_client_lookup_returns_endpoint() {
     let got = nsk.inet_socket_address().expect("inet_socket_address should be Some");
     assert_eq!(got, client_addr);
 
-    relay.stop();
-    if let Ok(mut g) = client_shared.lock() { g.stop(); }
+    relay.lock().unwrap().stop();
+    client_shared.lock().unwrap().stop();
 }

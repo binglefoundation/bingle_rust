@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, UdpNetworkMux};
 

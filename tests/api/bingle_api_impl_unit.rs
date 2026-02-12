@@ -52,7 +52,7 @@ fn unit_send_message_to_network_calls_dtls_send() {
     let progress_calls: Arc<Mutex<Vec<(u8, String)>>> = Arc::new(Mutex::new(vec![]));
     let progress_calls_closure = progress_calls.clone();
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api.send_message_to_network(
+    let ok = api.lock().unwrap().send_message_to_network(
         &nsk,
         &uid,
         msg.clone(),
@@ -112,16 +112,16 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     let issuer_expected = format!("{}{}", addr, rust_comms::protocol::ISSUER_SUFFIX);
 
     let (mock, captured) = MockDtlsCapture::new();
-    let mut api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
 
     // Inject issuer directly via test-only helper
-    api.set_issuer_for_tests(issuer_expected.clone());
+    api.lock().unwrap().set_issuer_for_tests(issuer_expected.clone());
 
     // Send a message and ensure issuer is passed through
     let addr_send: SocketAddr = "127.0.0.1:45678".parse().unwrap();
     let nsk = NetworkEndpoint::new_direct(addr_send);
     let uid2 = test_util::ADDRESS_RECEIVE.to_string();
-    let ok = api.send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None);
+    let ok = api.lock().unwrap().send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None);
     assert!(ok);
     let cap = captured.lock().unwrap();
     assert_eq!(cap.len(), 1);

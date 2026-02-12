@@ -24,16 +24,16 @@ fn engine_basic_bingle_dtls_layer() {
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
     // Create server and client nodes
-    let mut server = BingleApiImpl::new(&StartOptions::default());
-    let mut client = BingleApiImpl::new(&StartOptions::default());
+    let server = BingleApiImpl::new(&StartOptions::default());
+    let client = BingleApiImpl::new(&StartOptions::default());
 
     // Install server handlers that print and signal when a message arrives
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_flag = delivered.clone();
-    server.set_on_connect(Some(Arc::new(|sender, handle| {
+    server.lock().unwrap().set_on_connect(Some(Arc::new(|sender, handle| {
         log::info!("[server][on_connect] sender={} handle={}", sender, handle);
     })));
-    server.set_on_message(Some(Arc::new(move |sender, handle, msg| {
+    server.lock().unwrap().set_on_message(Some(Arc::new(move |sender, handle, msg| {
         log::info!("[server][on_message] sender={} handle={} msg={}", sender, handle, msg);
         delivered_flag.store(true, Ordering::SeqCst);
     })));
@@ -66,9 +66,9 @@ fn engine_basic_bingle_dtls_layer() {
 
     // Start both nodes
     log::info!("[test] starting server at {}", server_addr);
-    server.start(&server_opts).expect("server start() should succeed");
+    server.lock().unwrap().start(&server_opts).expect("server start() should succeed");
     log::info!("[test] starting client at {}", client_addr);
-    client.start(&client_opts).expect("client start() should succeed");
+    client.lock().unwrap().start(&client_opts).expect("client start() should succeed");
 
     // Build direct network destination to server and send a simple plaintext JSON message.
     let dest = NetworkEndpoint::new_direct(server_addr);
@@ -81,8 +81,8 @@ fn engine_basic_bingle_dtls_layer() {
     });
 
     log::info!("[test] client sending message to {}", server_addr);
-    let uid = server.get_my_id().expect("server id Some");
-    let ok = client.send_message_to_network(&dest, &uid, payload, Some(progress));
+    let uid = server.lock().unwrap().get_my_id().expect("server id Some");
+    let ok = client.lock().unwrap().send_message_to_network(&dest, &uid, payload, Some(progress));
     assert!(ok, "client send_message_to_network should return true");
 
     // Wait for on_message to be called on the server
@@ -93,6 +93,6 @@ fn engine_basic_bingle_dtls_layer() {
     assert!(delivered.load(Ordering::SeqCst), "server on_message handler was not invoked");
 
     // Cleanup
-    server.stop();
-    client.stop();
+    server.lock().unwrap().stop();
+    client.lock().unwrap().stop();
 }

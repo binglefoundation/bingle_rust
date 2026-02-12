@@ -76,9 +76,9 @@ fn testnet_user_reaches_endpoint_available() {
     };
 
     // Start the user and wait for EndpointAvailable
-    let mut api = BingleApiImpl::new(&opts);
+    let api = BingleApiImpl::new(&opts);
 
-    api.start(&opts).expect("start api");
+    api.lock().unwrap().start(&opts).expect("start api");
 
     // Before proceeding, ensure both static endpoints are reachable: send RelayCheck and await response.
     // Use a single 120s budget to validate availability of the first two endpoints returned by indexer.
@@ -92,10 +92,10 @@ fn testnet_user_reaches_endpoint_available() {
                 let addr: std::net::SocketAddr = addr_str.parse().expect("static endpoint address parse");
                 let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
                 let payload = serde_json::json!({ "app": null, "type": "Check" });
-                match api.send_message_to_network_with_response(&nsk, &id, payload.clone(), None) {
+                match api.lock().unwrap().send_message_to_network_with_response(&nsk, &id, payload.clone(), None) {
                     Ok(resp) => {
-                        let is_ok = resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse")
-                            && resp.get("state").and_then(|v| v.as_str()) == Some("available");
+                        let is_ok = resp.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("CheckResponse")
+                            && resp.get("state").and_then(|v: &serde_json::Value| v.as_str()) == Some("available");
                         if is_ok {
                             ok[idx] = true;
                         }
@@ -155,20 +155,20 @@ fn testnet_user_reaches_endpoint_available() {
     let start = Instant::now();
     let timeout = Duration::from_secs(120); // TODO: make handshakes faster
     let final_state = loop {
-        if let Some(st) = api.engine_state_for_tests() {
+        if let Some(st) = api.lock().unwrap().engine_state_for_tests() {
             if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
         }
         if start.elapsed() > timeout {
             panic!(
                 "Timed out waiting for Registered or NATRestricted; last state: {:?}",
-                api.engine_state_for_tests()
+                api.lock().unwrap().engine_state_for_tests()
             );
         }
         std::thread::sleep(Duration::from_millis(200));
     };
 
     // Validate NAT type once final state is reached
-    let got_nat = api.engine_nat_type_for_tests().expect("nat type should be set");
+    let got_nat = api.lock().unwrap().engine_nat_type_for_tests().expect("nat type should be set");
     match final_state {
         EngineState::Registered => assert_eq!(got_nat, NatType::FullCone, "Registered implies we reached EndpointAvailable with FullCone NAT"),
         EngineState::NATRestricted => assert!(matches!(got_nat, NatType::Restricted | NatType::Symmetric), "NATRestricted should be Restricted or Symmetric (got {:?})", got_nat),
@@ -184,11 +184,11 @@ fn testnet_user_reaches_endpoint_available() {
 
     // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
     if final_state == EngineState::Registered {
-        let my_id = api.get_my_id().expect("api.get_my_id Some");
-        let nsk = api.engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
+        let my_id = api.lock().unwrap().get_my_id().expect("api.get_my_id Some");
+        let nsk = api.lock().unwrap().engine_ddb_lookup_for_tests(&my_id).expect("ddb lookup should succeed when registered");
         if got_nat == NatType::FullCone {
             let looked = nsk.inet_socket_address().expect("lookup should return a direct endpoint");
-            let ep = api.engine_last_public_addr_for_tests().expect("last public addr should be Some");
+            let ep = api.lock().unwrap().engine_last_public_addr_for_tests().expect("last public addr should be Some");
             assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
         }
         else {
@@ -197,5 +197,5 @@ fn testnet_user_reaches_endpoint_available() {
         }
     }
     
-    api.stop();
+    api.lock().unwrap().stop();
 }

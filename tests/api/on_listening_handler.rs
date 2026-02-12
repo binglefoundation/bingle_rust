@@ -1,7 +1,7 @@
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions, BingleApiInternal};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[test]
@@ -12,7 +12,7 @@ fn on_listening_handler_creates_and_deletes_sentinel() {
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Set up API and install an OnListeningHandler that mirrors CLI behavior
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
         if listening {
@@ -25,13 +25,13 @@ fn on_listening_handler_creates_and_deletes_sentinel() {
             let _ = fs::remove_file(&path_clone);
         }
     });
-    api.set_on_listening(Some(handler));
+    api.lock().unwrap().set_on_listening(Some(handler));
 
     // Notify true -> file should exist
-    rust_comms::api::bingle_api::BingleApiInternal::notify_listening(&api, true);
+    api.lock().unwrap().notify_listening(true);
     assert!(sentinel_path.exists(), "sentinel file should be created on listening=true");
 
     // Notify false -> file should be removed
-    rust_comms::api::bingle_api::BingleApiInternal::notify_listening(&api, false);
+    api.lock().unwrap().notify_listening(false);
     assert!(!sentinel_path.exists(), "sentinel file should be removed on listening=false");
 }

@@ -8,7 +8,7 @@ mod test_util;
 
 #[test]
 fn start_succeeds() {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { 
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -21,7 +21,7 @@ fn start_succeeds() {
         asset_id: None,
         log_level: None,
     };
-    let res = api.start(&opts);
+    let res = api.lock().unwrap().start(&opts);
     // Engine may fail to start depending on DTLS/PKI availability; we only require DTLS instance creation here.
     if res.is_err() {
         eprintln!("api.start returned error: {:?}", res);
@@ -34,7 +34,7 @@ fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new(&StartOptions::default());
     let nsk = NetworkEndpoint::new_relay(ADDRESS_SPEND.parse().unwrap(), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)), Some(2));
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None);
+    let ok = api.lock().unwrap().send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None);
     assert!(!ok, "Should return false when no direct address is provided");
 }
 
@@ -42,7 +42,7 @@ fn send_message_to_network_without_addr_fails_gracefully() {
 #[test]
 fn relay_check_end_to_end_on_message_receives_response() {
     use std::net::SocketAddr;
-    use std::sync::{OnceLock, Arc};
+    use std::sync::{OnceLock, Arc, Mutex};
     use std::thread;
     use std::time::{Duration};
 
@@ -106,9 +106,9 @@ fn relay_check_end_to_end_on_message_receives_response() {
     thread::sleep(Duration::from_millis(200));
 
     // Build BingleApiImpl client
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
-    let start_result = api.start(&opts);
+    let start_result = api.lock().unwrap().start(&opts);
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 
     // Prepare a direct NetworkSourceKey to server and send RelayCheck
@@ -118,11 +118,11 @@ fn relay_check_end_to_end_on_message_receives_response() {
     let payload = serde_json::json!({ "app": null, "type": "Check", "responseTag": req_tag });
 
     let uid2 = test_util::ADDRESS_SPEND.to_string();
-    let response = api.send_message_to_network_with_response(&nsk, &uid2, payload, None);
+    let response = api.lock().unwrap().send_message_to_network_with_response(&nsk, &uid2, payload, None);
     assert!(response.is_ok(), "client send failed");
 
     let response_content = response.unwrap();
     assert_eq!(response_content.get("app"), Some(&serde_json::Value::Null));
-    assert_eq!(response_content.get("type").and_then(|v| v.as_str()), Some("CheckResponse"));
-    assert_eq!(response_content.get("state").and_then(|v| v.as_str()), Some("available"));
+    assert_eq!(response_content.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("CheckResponse"));
+    assert_eq!(response_content.get("state").and_then(|v: &serde_json::Value| v.as_str()), Some("available"));
 }

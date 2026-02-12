@@ -64,5 +64,5 @@ fn on_plain_text_calls_handler_implementation() {
 
     let got = received.lock().unwrap().clone().expect("no payload captured");
     // Expect the JSON to include the text field
-    assert_eq!(got.get("text").and_then(|v| v.as_str()), Some("Hello"));
+    assert_eq!(got.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("Hello"));
 }

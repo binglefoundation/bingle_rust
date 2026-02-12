@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
