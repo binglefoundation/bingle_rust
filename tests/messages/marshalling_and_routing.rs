@@ -122,7 +122,12 @@ fn integration_decode_keep_alive() {
 fn integration_unimplemented_handler_prints_without_panic() {
     // Minimal MockApi so Router can pass an API into the handler
     struct MockApi;
-    impl rust_comms::api::bingle_api::BingleApi for MockApi {
+    impl rust_comms::api::bingle_api::BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
+    fn get_handle(&self) -> Option<String> { None } 
+    fn get_user_id(&self) -> Option<String> { None } 
+    fn debug_print_options(&self) {}
         fn get_my_id(&self) -> Option<String> { None }
         fn get_app_id(&self) -> Option<u64> { None }
         fn start(&mut self, _options: rust_comms::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }

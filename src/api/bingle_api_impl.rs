@@ -43,8 +43,10 @@ pub struct BingleApiImpl {
 impl Default for BingleApiImpl {
     fn default() -> Self {
         log::info!("[BingleApiImpl::default][enter]");
-        // Create an unbound Engine; we'll bind API/router during start().
-        let engine = Engine::new_unbound(&StartOptions::default());
+        let self_ptr = Arc::new(AtomicPtr::new(std::ptr::null_mut()));
+        let api_handle = Arc::new(BingleApiImplHandle(self_ptr.clone()));
+        // Create Engine with delegating handle; we'll bind the real API pointer during start().
+        let engine = Engine::new(&StartOptions::default(), api_handle);
         Self {
             on_message: None,
             on_connect: None,
@@ -53,7 +55,7 @@ impl Default for BingleApiImpl {
             on_listening: None,
             engine: Box::new(engine),
             router: None,
-            self_ptr: None,
+            self_ptr: Some(self_ptr),
         }
     }
 }
@@ -66,6 +68,7 @@ pub struct BingleApiImplHandle(pub Arc<AtomicPtr<BingleApiImpl>>);
 impl BingleApi for BingleApiImplHandle {
     fn debug_print_options(&self) { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return; } unsafe { (&*p).debug_print_options(); } }
     fn get_my_id(&self) -> Option<String> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_my_id() } }
+    fn get_user_id(&self) -> Option<String> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_user_id() } }
     fn get_handle(&self) -> Option<String> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_handle() } }
     fn get_app_id(&self) -> Option<u64> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_app_id() } }
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { let p = self.0.load(Ordering::SeqCst); if p.is_null() { return None; } unsafe { (&*p).get_algo_provider_config() } }
@@ -244,6 +247,9 @@ impl BingleApi for BingleApiImpl {
                 None
             }
         }
+    }
+    fn get_user_id(&self) -> Option<String> {
+        self.get_my_id()
     }
     fn get_handle(&self) -> Option<String> {
         let h = self.started_options.handle.clone();

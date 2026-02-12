@@ -6,7 +6,9 @@ use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
 
 #[derive(Clone)]
 struct MockApi;
-impl BingleApi for MockApi {
+impl BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_handle(&self) -> Option<String> { None }

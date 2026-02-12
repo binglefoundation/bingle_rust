@@ -174,7 +174,9 @@ fn bingle_api_send_via_relay_end_to_end() {
 
 // Minimal API stub for Router context in this test
 struct MockApi;
-impl rust_comms::api::bingle_api::BingleApi for MockApi {
+impl rust_comms::api::bingle_api::BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_handle(&self) -> Option<String> { None }

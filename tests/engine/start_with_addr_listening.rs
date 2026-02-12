@@ -42,7 +42,9 @@ impl Dtls for MockDtls {
 // Simple mock API required by Router; not used directly in this test.
 #[derive(Clone)]
 struct MockApi;
-impl BingleApi for MockApi {
+impl BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_handle(&self) -> Option<String> { None }
@@ -99,7 +101,7 @@ fn start_with_addr_notifies_listening_true() {
     };
 
     // Build Engine unbound and inject DTLS + Router with CaptureInternal
-    let mut eng = Engine::new_unbound(&opts);
+    let mut eng = Engine::new(&opts, Arc::new(crate::util::mock_bingle_api::MockBingleApi));
     eng.set_dtls(Box::new(MockDtls));
     let router = Arc::new(Router::new(Arc::new(MockApi)));
     let flag = Arc::new(AtomicBool::new(false));

@@ -124,7 +124,11 @@ fn end_to_end_turn_relay_forwards_payload() {
 
 // Minimal API stub for Router context in this test
 struct MockApi;
-impl rust_comms::api::bingle_api::BingleApi for MockApi {
+impl rust_comms::api::bingle_api::BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
+    fn get_handle(&self) -> Option<String> { None } 
+    fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }

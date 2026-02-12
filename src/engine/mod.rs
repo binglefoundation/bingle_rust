@@ -469,31 +469,6 @@ impl Engine {
         }
     }
 
-    /// Create an Engine without binding a BingleApi; API can be provided later via set_bingle_api.
-    pub fn new_unbound(options: &StartOptions) -> Self {
-        log::info!("[Engine::new_unbound] options={:?}", options);
-        // Use a placeholder API that returns None/false until a real API is bound.
-        struct EmptyApi;
-        impl crate::api::bingle_api::BingleApi for EmptyApi {
-            fn debug_print_options(&self) {}
-            fn get_my_id(&self) -> Option<String> { None }
-            fn get_app_id(&self) -> Option<u64> { None }
-            fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
-            fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
-            fn stop(&mut self) {}
-            fn network_change(&mut self) {}
-            fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-            fn send_message_to_handle(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-            fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { false }
-            fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
-            fn send_message_to_handle_with_response(&self, _handle: &crate::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
-            fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("not implemented".into()) }
-            fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
-            fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
-        }
-        Self::new(options, Arc::new(EmptyApi))
-    }
-
     /// Provide a pre-configured DTLS instance (with server certificate material) from the API layer.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
         self.dtls = Some(dtls);

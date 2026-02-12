@@ -145,19 +145,19 @@ impl Default for StartOptions {
 /// The Bingle API trait surface.
 /// This describes the minimal shape expected by the Bingle client per spec.
 pub trait BingleApi: Send + Sync {
-    /// Debug helper: print internal start options if available. Default no-op.
-    fn debug_print_options(&self) { /* default no-op for mocks */ }
+    /// Debug helper: print internal start options if available.
+    fn debug_print_options(&self);
     /// Returns this node's id (Algorand address), if known.
     /// Implementations should derive this from the engine issuer (issuer without suffix).
     fn get_my_id(&self) -> Option<String>;
     /// Alias for get_my_id to match external nomenclature.
-    fn get_user_id(&self) -> Option<String> { self.get_my_id() }
+    fn get_user_id(&self) -> Option<String>;
     /// Returns the configured handle, if known.
-    fn get_handle(&self) -> Option<String> { None }
+    fn get_handle(&self) -> Option<String>;
     /// Returns the configured application id, if any, from StartOptions. Preferred over env vars.
     fn get_app_id(&self) -> Option<u64>;
-    /// Returns the configured Algorand provider config from StartOptions, if any. Default: None.
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { None }
+    /// Returns the configured Algorand provider config from StartOptions, if any.
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig>;
     /// Start the node using the provided options. Implementations may spawn background tasks.
     fn start(&mut self, options: &StartOptions) -> Result<(), String>;
 
@@ -228,5 +228,5 @@ pub trait BingleApi: Send + Sync {
     fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>);
 
     /// Set or clear the onListening callback. Pass None to clear.
-    fn set_on_listening(&mut self, handler: Option<Arc<OnListeningHandler>>) { let _ = handler; }
+    fn set_on_listening(&mut self, handler: Option<Arc<OnListeningHandler>>);
 }

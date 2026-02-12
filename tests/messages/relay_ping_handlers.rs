@@ -69,7 +69,12 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
         fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
         fn notify_listening(&self, _listening: bool) {}
     }
-    impl BingleApi for MockApi {
+    impl BingleApi for MockApi { 
+    fn get_handle(&self) -> Option<String> { None } 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
+    fn get_user_id(&self) -> Option<String> { None } 
+    fn debug_print_options(&self) {}
         fn get_my_id(&self) -> Option<String> { Some("ME".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
         fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
@@ -128,7 +133,12 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
         fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
         fn notify_listening(&self, _listening: bool) {}
     }
-    impl BingleApi for MockApi {
+    impl BingleApi for MockApi { 
+    fn get_handle(&self) -> Option<String> { None } 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
+    fn get_user_id(&self) -> Option<String> { None } 
+    fn debug_print_options(&self) {}
         fn get_my_id(&self) -> Option<String> { Some("ME".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
         fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }

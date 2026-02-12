@@ -6,7 +6,10 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 struct DummyApi;
-impl BingleApi for DummyApi {
+impl BingleApi for DummyApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_handle(&self) -> Option<String> { None } 
+    fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }

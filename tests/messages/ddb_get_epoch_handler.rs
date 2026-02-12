@@ -8,7 +8,12 @@ use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoi
 // Minimal API for router context
 #[derive(Clone)]
 struct MockApi;
-impl BingleApi for MockApi {
+impl BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
+    fn get_handle(&self) -> Option<String> { None } 
+    fn get_user_id(&self) -> Option<String> { None } 
+    fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }
     fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }

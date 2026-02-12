@@ -38,6 +38,7 @@ struct CombinedApi {
 impl BingleApi for CombinedApi {
     fn debug_print_options(&self) { self.api.debug_print_options() }
     fn get_my_id(&self) -> Option<String> { self.api.get_my_id() }
+    fn get_user_id(&self) -> Option<String> { self.api.get_user_id() }
     fn get_handle(&self) -> Option<String> { self.api.get_handle() }
     fn get_app_id(&self) -> Option<u64> { self.api.get_app_id() }
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.get_algo_provider_config() }
@@ -52,6 +53,7 @@ impl BingleApi for CombinedApi {
     fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.send_message_to_network_with_response(nsk, user_id, message, progress) }
     fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
+    fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
 }
 impl BingleApiInternal for CombinedApi {
     fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) {

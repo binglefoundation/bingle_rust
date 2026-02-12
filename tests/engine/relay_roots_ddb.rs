@@ -41,7 +41,9 @@ impl Dtls for MockDtls {
 
 #[derive(Clone)]
 struct MockApi;
-impl BingleApi for MockApi {
+impl BingleApi for MockApi { 
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+    fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_handle(&self) -> Option<String> { None }
@@ -64,7 +66,7 @@ impl BingleApi for MockApi {
 fn engine_upserts_root_relays_into_backend() {
     // Engine with am_relay true
     let opts = StartOptions { handle: "eng".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
-    let mut eng = Engine::new_unbound(&opts);
+    let mut eng = Engine::new(&opts, Arc::new(crate::util::mock_bingle_api::MockBingleApi));
     eng.set_dtls(Box::new(MockDtls));
     // Need a router to avoid nulls in start; use minimal MockApi
     let router = Arc::new(rust_comms::messages::router::Router::new(Arc::new(MockApi)));
