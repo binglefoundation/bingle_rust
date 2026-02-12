@@ -4,6 +4,8 @@ use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::types::{RelayTriangleTest1Response, RelayTriangleTest3};
 use rust_comms::engine::EngineState;
 
+use crate::util::mock_api::MockApi;
+
 // Mock internal API to capture and enforce state transitions for tests without starting DTLS/Engine.
 struct MockInternal {
     state: std::sync::Mutex<Option<EngineState>>,
@@ -39,34 +41,11 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
     fn notify_listening(&self, _listening: bool) { }
 }
 
-#[derive(Clone)]
-struct MockApi;
-impl rust_comms::api::bingle_api::BingleApi for MockApi { 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
-    fn get_handle(&self) -> Option<String> { None } 
-    fn get_user_id(&self) -> Option<String> { None } 
-    fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn start(&mut self, _options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
-    fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_network_with_response(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
-}
-
 #[test]
 fn triangle_test1_response_sets_nat_restricted_when_not_available() {
     // Arrange: install a mock internal API and per-test Router
     let mock = Arc::new(MockInternal::new());
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApi)));
     // router.set_bingle_api_internal(Some(mock.clone()));
 
     // Act: route TriangleTest1Response within router context
@@ -88,7 +67,7 @@ fn triangle_test1_response_sets_nat_restricted_when_not_available() {
 fn triangle_test1_response_does_not_override_endpoint_available() {
     // Arrange: install a mock internal API and set EndpointAvailable via TriangleTest3
     let mock = Arc::new(MockInternal::new());
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApi)));
     // router.set_bingle_api_internal(Some(mock.clone()));
 
     // Make EndpointAvailable by invoking the T3 handler directly through routing
