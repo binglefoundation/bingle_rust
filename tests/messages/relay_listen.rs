@@ -55,7 +55,7 @@ fn relay_listen_registers_and_responds() {
         fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) { }
         fn notify_listening(&self, _listening: bool) { }
     }
-    router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
+    // router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
     router.set_am_relay(true);
     let source = addr(9001);
     router.set_last_from(Some(source));

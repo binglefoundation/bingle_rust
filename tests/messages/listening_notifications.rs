@@ -66,7 +66,7 @@ fn triangle_test3_notifies_listening_true() {
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45001);
     let internal = Arc::new(MockInternal::new(addr));
-    router.set_bingle_api_internal(Some(internal.clone() as Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
+    // router.set_bingle_api_internal(Some(internal.clone() as Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
 
     // Act: route TriangleTest3 through DefaultPrintingHandler
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;

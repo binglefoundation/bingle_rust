@@ -9,13 +9,12 @@ use simple_logger::SimpleLogger;
 use std::sync::Once;
 use uuid::Uuid;
 
-use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId, BingleApiInternal, BingleApiBoth};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::dtls::Dtls;
 use crate::engine::{Engine, EngineState};
-use std::sync::atomic::{AtomicPtr, Ordering};
 use crate::protocol::ISSUER_SUFFIX;
 
 /// Concrete implementation of the BingleApi trait.
@@ -37,7 +36,7 @@ pub struct BingleApiImpl {
     // Per-API router to avoid global cross-talk
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // Weak reference to ourselves for passing to components
-    this: Weak<Mutex<BingleApiImpl>>,
+    this: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
 }
 
 impl BingleApiImpl {
@@ -45,7 +44,8 @@ impl BingleApiImpl {
         log::info!("[BingleApiImpl::new][enter]");
         let initial_options = options.clone();
         Arc::<Mutex<Self>>::new_cyclic(|me| {
-            let engine = Arc::new(Mutex::new(Engine::new(&initial_options, me.clone() as Weak<Mutex<dyn BingleApi>>)));
+            let me_both = me.clone() as Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>;
+            let engine = Arc::new(Mutex::new(Engine::new(&initial_options, me_both.clone())));
             Mutex::new(Self {
                 on_message: None,
                 on_connect: None,
@@ -54,7 +54,7 @@ impl BingleApiImpl {
                 on_listening: None,
                 engine,
                 router: None,
-                this: me.clone(),
+                this: me_both,
             })
         })
     }
@@ -280,7 +280,7 @@ impl BingleApi for BingleApiImpl {
         // Start Engine using the provided StartOptions and propagate any errors
         // Create a per-API Router instance and bind delegating API handle, sender, and internal controls
         let router_arc: std::sync::Arc<crate::messages::router::Router> = {
-            let router = std::sync::Arc::new(crate::messages::router::Router::new(self.this.clone() as Weak<Mutex<dyn BingleApi>>));
+            let router = std::sync::Arc::new(crate::messages::router::Router::new(self.this.clone()));
             // Sender closure routes via the delegating API handle
             let this_weak = self.this.clone();
             let sender_cb: Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static> = Arc::new(move |nsk, uid, msg| {
@@ -295,9 +295,6 @@ impl BingleApi for BingleApiImpl {
                 }
             });
             router.set_sender(Some(sender_cb));
-            // Bind internal control adapter for engine state updates
-            let internal = crate::engine::EngineInternalHandle(self.engine.clone());
-            router.set_bingle_api_internal(Some(std::sync::Arc::new(internal)));
             router
         };
         self.router = Some(router_arc.clone());
@@ -318,7 +315,7 @@ impl BingleApi for BingleApiImpl {
             }
         })));
         // Provide the BingleApi handle to Engine for handlers and DDB client
-        self.engine.lock().unwrap().set_bingle_api(self.this.clone() as Weak<Mutex<dyn BingleApi>>);
+        self.engine.lock().unwrap().set_bingle_api(self.this.clone());
         // Provide per-API router to the Engine for routing context
         self.engine.lock().unwrap().set_router(router_arc.clone());
         self.engine.lock().unwrap().start(options)?;
@@ -360,8 +357,8 @@ impl BingleApi for BingleApiImpl {
             if let Some(app_id) = app_id_opt {
                 let cfg = self.get_algo_provider_config();
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
-                // Use self.this for RelayFinder (it's a Weak reference inside)
-                let finder = crate::relay::relay_finder::RelayFinder::new(self.this.clone() as Weak<Mutex<dyn BingleApi>>, Duration::from_secs(60), discover);
+                // Use self.this for RelayFinder
+                let finder = crate::relay::relay_finder::RelayFinder::new(self.this.clone(), Duration::from_secs(60), discover);
                 if let Some(nsk) = finder.lookup_root_id(user_id) {
                     if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
                     let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
@@ -426,9 +423,9 @@ impl BingleApi for BingleApiImpl {
                 log::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
                 if let Some(cb) = progress.as_ref() { cb(15, "Allocating relay channel".to_string()); }
 
-                // Construct RelayClient with Engine directly to break circular locking
+                // Construct RelayClient with API handle
                 let ddb = self.engine.lock().unwrap().ddb_client();
-                let relay_client = crate::relay::relay_client::RelayClient::new(self.engine.clone(), ddb);
+                let relay_client = crate::relay::relay_client::RelayClient::new(self.this.clone(), ddb);
                 match relay_client.call(&effective_nsk, user_id) {
                     Ok(updated) => {
                         effective_nsk = updated;
@@ -579,10 +576,8 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn get_relay_state(&self) -> String { self.engine.lock().unwrap().relay_state_str() }
     fn set_state(&self, state: EngineState) {
         log::info!("[BingleApiImpl::set_state][enter] state={:?}", state);
-        #[allow(unused)] {  }
         let _ = self.engine.lock().unwrap().set_state_internal(state);
         log::info!("[BingleApiImpl::set_state][exit]");
-        #[allow(unused)] {  }
     }
     fn get_state(&self) -> EngineState {
         self.engine.lock().unwrap().state()
@@ -635,5 +630,6 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.lock().unwrap().turn_relay_handle_listen(&id, &source)
     }
 }
+
 
 

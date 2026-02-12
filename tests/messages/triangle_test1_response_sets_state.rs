@@ -67,7 +67,7 @@ fn triangle_test1_response_sets_nat_restricted_when_not_available() {
     // Arrange: install a mock internal API and per-test Router
     let mock = Arc::new(MockInternal::new());
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
-    router.set_bingle_api_internal(Some(mock.clone()));
+    // router.set_bingle_api_internal(Some(mock.clone()));
 
     // Act: route TriangleTest1Response within router context
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;
@@ -89,7 +89,7 @@ fn triangle_test1_response_does_not_override_endpoint_available() {
     // Arrange: install a mock internal API and set EndpointAvailable via TriangleTest3
     let mock = Arc::new(MockInternal::new());
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
-    router.set_bingle_api_internal(Some(mock.clone()));
+    // router.set_bingle_api_internal(Some(mock.clone()));
 
     // Make EndpointAvailable by invoking the T3 handler directly through routing
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;

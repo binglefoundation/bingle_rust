@@ -1,4 +1,4 @@
-use crate::api::bingle_api::{BingleApi, BingleApiBoth};
+use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use log::warn;
@@ -12,6 +12,26 @@ pub struct FromStruct {
 
 // Adapter to allow passing the composite API where a plain BingleApi is required (e.g., RelayFinder)
 struct BothAsApi { inner: Arc<dyn BingleApiBoth> }
+impl BingleApiInternal for BothAsApi {
+    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { self.inner.mutex_handle_request(from_id, req) }
+    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { self.inner.mutex_handle_response(from_id, resp) }
+    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { self.inner.mutex_handle_release(from_id, rel) }
+    fn get_relay_state(&self) -> String { self.inner.get_relay_state() }
+    fn set_state(&self, state: crate::engine::EngineState) { self.inner.set_state(state) }
+    fn get_state(&self) -> crate::engine::EngineState { self.inner.get_state() }
+    fn set_nat_type(&self, nat: crate::engine::NatType) { self.inner.set_nat_type(nat) }
+    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { self.inner.get_last_public_addr() }
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> { self.inner.ddb_register_ip(endpoint) }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> { self.inner.ddb_register_relay(relay_id, relay_sig) }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
+    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) { self.inner.turn_client_handle_listen_response(relay_addr, relay_id) }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> { self.inner.turn_lookup_addr_by_id(id) }
+    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source, dest) }
+    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool { self.inner.turn_handle_listen(id, source) }
+    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) { self.inner.turn_handle_called(source, dest, channel) }
+    fn notify_listening(&self, listening: bool) { self.inner.notify_listening(listening) }
+    fn set_relay_state(&self, state: crate::engine::RelayState) { self.inner.set_relay_state(state) }
+}
 impl BingleApi for BothAsApi {
     fn debug_print_options(&self) { self.inner.debug_print_options() }
     fn get_my_id(&self) -> Option<String> { self.inner.get_my_id() }
@@ -266,10 +286,10 @@ impl MessageHandler for DefaultPrintingHandler {
                 router.set_outbound_response(Some(serde_json::Value::Object(obj)));
                 return;
             }
-            // Consult internal API for relay state
+            // Consult API for relay state
             let state_ok = crate::messages::router::Router::current()
-                .and_then(|r| r.get_bingle_api_internal())
-                .map(|i| i.get_relay_state() == "available")
+                .and_then(|r| r.get_bingle_api())
+                .map(|i| i.lock().unwrap().get_relay_state() == "available")
                 .unwrap_or(false);
             if !state_ok {
                 let mut obj = serde_json::Map::new();
@@ -416,8 +436,8 @@ impl MessageHandler for DefaultPrintingHandler {
                     std::sync::Arc::new(|| panic!("on_triangle_test1 (iOS): discovery not supported without indexer"))
                 }
             };
-            // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApi)
-            let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApi>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
+            // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
+            let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApiBoth>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
             let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
 
             // Obtain our id from API (derived from engine issuer)
@@ -543,8 +563,8 @@ impl MessageHandler for DefaultPrintingHandler {
                     }
                 };
 
-                // Wrap combined API as plain BingleApi for RelayFinder
-                let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApi>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
+                // Wrap combined API as plain BingleApiBoth for RelayFinder
+                let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApiBoth>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
                 let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
                 let my_id = match api_for_thread.get_my_id() {
                     Some(id) => id,

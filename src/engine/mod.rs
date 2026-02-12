@@ -3,11 +3,11 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, UserId, ProgressCallback};
+use crate::api::bingle_api::{NetworkEndpoint, StartOptions, UserId, ProgressCallback};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
-use crate::turn::turn_handler::{TurnHandler, TurnRelayHandler, TurnClientHandler};
+use crate::turn::turn_handler::TurnHandler;
 use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::distributed_mutex::DistributedMutex;
 use crate::relay::relay_finder::{RelayFinder, RelayInfo};
@@ -89,7 +89,7 @@ pub struct Engine {
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
     // Unified BingleApi handle bound to this engine instance (non-optional)
-    bingle_api: Weak<Mutex<dyn BingleApi>>,
+    bingle_api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
@@ -275,77 +275,7 @@ impl Engine {
 }
 
 // Adapter exposing minimal internal controls for handlers -> engine without referencing BingleApiImpl
-pub struct EngineInternalHandle(pub std::sync::Arc<std::sync::Mutex<Engine>>);
-impl crate::api::bingle_api::BingleApiInternal for EngineInternalHandle {
-    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) {
-        let eng = self.0.lock().unwrap();
-        if let Some(m) = &eng.relay_init_mutex {
-            m.handle_request(&from_id, &req);
-        }
-    }
-    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) {
-        let eng = self.0.lock().unwrap();
-        if let Some(m) = &eng.relay_init_mutex {
-            m.handle_reply(&from_id, &resp);
-        }
-    }
-    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) {
-        let eng = self.0.lock().unwrap();
-        if let Some(m) = &eng.relay_init_mutex {
-            m.handle_release(&from_id, &rel);
-        }
-    }
-    fn get_relay_state(&self) -> String {
-        self.0.lock().unwrap().relay_state_str()
-    }
-    fn set_relay_state(&self, state: RelayState) {
-        self.0.lock().unwrap().set_relay_state(state, "set via BingleApiInternal");
-    }
-    fn get_peer_ddb_target(&self) -> Option<usize> {
-        self.0.lock().unwrap().peer_ddb_records
-    }
-    fn set_state(&self, state: EngineState) {
-        let _ = self.0.lock().unwrap().set_state_internal(state);
-    }
-    fn get_state(&self) -> EngineState {
-        self.0.lock().unwrap().state()
-    }
-    fn set_nat_type(&self, nat: NatType) {
-        self.0.lock().unwrap().set_nat_type(nat);
-    }
-    fn get_last_public_addr(&self) -> Option<SocketAddr> {
-        self.0.lock().unwrap().last_public_addr()
-    }
-    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
-        self.0.lock().unwrap().ddb_client().register_ip(endpoint)
-    }
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
-        self.0.lock().unwrap().ddb_client().register_relay(relay_id, relay_sig)
-    }
-    fn notify_listening(&self, listening: bool) {
-        self.0.lock().unwrap().notify_listening(listening);
-    }
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
-        let eng = self.0.lock().unwrap();
-        let ok = eng.turn_handler_relay.handle_listen(&relay_id, &relay_addr);
-        if ok { Ok(()) } else { Err(format!("failed to update TURN listener mapping for {} -> {}", relay_id, relay_addr)) }
-    }
-    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
-        self.0.lock().unwrap().turn_handler_relay.lookup_addr_by_id(&id)
-    }
-    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
-        self.0.lock().unwrap().turn_handler_relay.handle_call(&source, &dest)
-    }
-    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
-        self.0.lock().unwrap().turn_handler_relay.handle_listen(&id, &source)
-    }
-    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
-        self.0.lock().unwrap().turn_handler_client.handle_called(&source, &dest, channel);
-    }
-    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
-        self.0.lock().unwrap().turn_handler_client.handle_listen_response(&relay_addr, &relay_id);
-    }
-}
+// Removed: using BingleApiBoth directly via LockingApiWrapper in Router.
 
 // Per-connection state holding a DTLS adapter bound to a specific peer
 struct ConnectionEntry {
@@ -355,7 +285,7 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new(options: &StartOptions, api: Weak<Mutex<dyn BingleApi>>) -> Self {
+    pub fn new(options: &StartOptions, api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>) -> Self {
         log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] {  }
         // Build a DDB client now (always present); choose real or null implementation
@@ -504,7 +434,7 @@ impl Engine {
     }
 
     /// Set or replace the BingleApi handle bound to this Engine instance.
-    pub fn set_bingle_api(&mut self, api: Weak<Mutex<dyn BingleApi>>) {
+    pub fn set_bingle_api(&mut self, api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>) {
         self.bingle_api = api.clone();
         // Initialize a DDB client bound to this API instance (always set; may be Null)
         #[cfg(not(target_os = "ios"))]
@@ -976,18 +906,7 @@ impl Engine {
                 self.initialize_relay();
             }
             // Static address path: once DTLS accept loop is running and any relay is available, notify that we are listening.
-            if let Some(r) = &self.router {
-                if let Some(internal) = r.get_bingle_api_internal() {
-                    log::info!("[Engine] notifying internal listeners of listening state true");
-                    internal.notify_listening(true);
-                }
-                else {
-                    log::error!("[Engine] start_with_address: no internal API");
-                }
-            }
-            else {
-                log::error!("[Engine] start_with_address: no router");
-            }
+            self.notify_listening(true);
 
         } else {
             log::error!("[Engine] start_with_address: no DTLS instance");

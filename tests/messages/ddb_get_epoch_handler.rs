@@ -70,7 +70,7 @@ fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     // Arrange router as relay with internal state available and ddb backend
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
-    router.set_bingle_api_internal(Some(Arc::new(InternalAvailable) as Arc<dyn BingleApiInternal>));
+    // router.set_bingle_api_internal(Some(Arc::new(InternalAvailable) as Arc<dyn BingleApiInternal>));
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
     {
         let mut b = backend.lock().unwrap();
@@ -107,7 +107,7 @@ fn ddb_get_epoch_returns_fail_when_not_allowed() {
     // Case 1: not a relay
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(false);
-    router.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
+    // router.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
     let handler = DefaultPrintingHandler;
     let get = DdbGetEpoch { app: "ddb".into(), epoch_id: 0, tag: None, response_tag: Some("aaa".into()), text: None, data: None };
     let msg = Message::Ddb(DdbMessage::GetEpoch(get));

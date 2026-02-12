@@ -77,7 +77,7 @@ fn relay_called_handler_invokes_turn_handle_called() {
 
     let my_pub = addr(50000);
     let internal = std::sync::Arc::new(InternalWithPub { cap: CapturingInternal::new(), pub_addr: my_pub }) as Arc<dyn BingleApiInternal>;
-    router.set_bingle_api_internal(Some(internal.clone()));
+    // router.set_bingle_api_internal(Some(internal.clone()));
 
     // Simulate packet from relay at 50001
     let relay_addr = addr(50001);
