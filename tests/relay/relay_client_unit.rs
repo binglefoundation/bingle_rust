@@ -5,6 +5,7 @@ use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, ProgressCallback, 
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::relay::relay_client::RelayClient;
 use rust_comms::ddb::client::DdbClient;
+use crate::util::mock_api::{to_weak, MockApiBoth};
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
@@ -70,11 +71,9 @@ fn call_with_address_present_returns_endpoint_with_channel() {
     let relay_addr = addr(9100);
     let nsk = NetworkEndpoint::new_relay(relay_id.clone(), Some(relay_addr), None);
 
-    let api_impl = BingleApiImpl::new(&StartOptions::default());
-    let engine = api_impl.lock().unwrap().engine_for_tests();
     let ddb = DdbMock::new(None);
 
-    let client = RelayClient::new(engine, Arc::new(ddb));
+    let client = RelayClient::new(to_weak(MockApiBoth::new()), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 
@@ -93,11 +92,11 @@ fn call_resolves_relay_address_via_ddb_when_missing() {
     let relay_addr = addr(9200);
     let nsk = NetworkEndpoint::new_relay(relay_id.clone(), None, None);
 
-    let api_impl = BingleApiImpl::new(&StartOptions::default());
-    let engine = api_impl.lock().unwrap().engine_for_tests();
+  //  let api_impl = BingleApiImpl::new(&StartOptions::default());
+  //  let engine = api_impl.lock().unwrap().engine_for_tests();
     let ddb = DdbMock::new(Some(NetworkEndpoint::new_direct(relay_addr)));
 
-    let client = RelayClient::new(engine, Arc::new(ddb));
+    let client = RelayClient::new(to_weak(MockApiBoth::new()), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 

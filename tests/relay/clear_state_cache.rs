@@ -5,7 +5,7 @@ use std::time::Duration;
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 use rust_comms::engine::RelayState;
-use crate::util::mock_api::{to_weak, InnerBingleApi};
+use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -91,7 +91,7 @@ fn clear_state_cache_resets_and_reloads() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(to_weak(api), Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
 
     // Initial load populates states
     finder.load_relay_states("MYID");

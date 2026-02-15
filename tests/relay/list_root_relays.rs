@@ -3,33 +3,17 @@ use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[derive(Clone)]
 struct MockApi;
-impl BingleApi for MockApi { 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_user_id(&self) -> Option<String> { None }
-    fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_handle(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
-    fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _nsk: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+impl InnerBingleApi for MockApi { 
     fn send_message_to_network_with_response(&self, _nsk: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
 #[test]
 fn list_root_relays_excludes_self_and_caches() {
-    let api: Arc<dyn BingleApi> = Arc::new(MockApi);
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
     let calls = Arc::new(AtomicUsize::new(0));
     let calls_clone = calls.clone();
     let discover = Arc::new(move || {
@@ -40,7 +24,7 @@ fn list_root_relays_excludes_self_and_caches() {
         ]
     });
 
-    let finder = RelayFinder::new(crate::util::mock_bingle_api::arc_to_weak(api), Duration::from_millis(2000), discover);
+    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), Duration::from_millis(2000), discover);
     let list1 = finder.list_root_relays("AAA");
     assert_eq!(list1.len(), 1, "should exclude self");
     assert_eq!(list1[0].id, "BBB");

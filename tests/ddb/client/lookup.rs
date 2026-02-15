@@ -7,6 +7,7 @@ use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
 use rust_comms::relay::relay_finder::RelayInfo;
+use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[path = "../../test_util.rs"]
 mod test_util;
@@ -31,32 +32,16 @@ fn ddb_client_lookup_returns_endpoint() {
     // Use a DdbClientImpl with custom discovery that points to the relay
     #[derive(Clone)]
     struct ApiProxy(Arc<std::sync::Mutex<BingleApiImpl>>);
-    impl BingleApi for ApiProxy { 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
-    fn get_handle(&self) -> Option<String> { None } 
-    fn get_user_id(&self) -> Option<String> { None } 
-    fn debug_print_options(&self) {}
+    impl InnerBingleApi for ApiProxy { 
         fn get_my_id(&self) -> Option<String> { self.0.lock().ok().and_then(|g| g.get_my_id()) }
-        fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
-        fn stop(&mut self) {}
-        fn network_change(&mut self) {}
-        fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-        fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-        fn send_message_to_network(&self, _nsk: &rust_comms::api::bingle_api::NetworkEndpoint, _uid: &rust_comms::api::bingle_api::UserId, _msg: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-        fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
         fn send_message_to_network_with_response(&self, nsk: &rust_comms::api::bingle_api::NetworkEndpoint, uid: &rust_comms::api::bingle_api::UserId, msg: serde_json::Value, progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.0.lock().map_err(|_| "lock".to_string()).and_then(|g| g.send_message_to_network_with_response(nsk, uid, msg, progress)) }
-        fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
-        fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
     }
 
     let client_shared = client.clone();
-    let api_arc: Arc<dyn BingleApi> = Arc::new(ApiProxy(client_shared.clone()));
+    let api_arc: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiProxy(client_shared.clone()));
     let relay_id = relay.lock().unwrap().get_my_id().expect("relay id");
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr, state: None }]);
-    let cli = DdbClientImpl::with_discovery(crate::util::mock_bingle_api::arc_to_weak(api_arc.clone()), discover);
+    let cli = DdbClientImpl::with_discovery(to_weak(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
     // First register our IP so the relay has an advert
     cli.registerIP(client_addr).expect("registerIP should succeed");

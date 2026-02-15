@@ -3,11 +3,12 @@
 use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::Engine;
+use crate::util::mock_api::MockApiBoth;
 
 #[test]
 fn engine_new_has_non_optional_ddb_client() {
     // Engine::new should construct a non-optional DDB client (NullDdbClient if no app_id)
-    let eng = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&StartOptions::default(), crate::util::mock_api::to_weak(MockApiBoth::new()));
     let cli = eng.ddb_client();
     // lookup should return an error (NullDdbClient), not panic or require Option unwraps
     let res = cli.lookup("SOME_ID");

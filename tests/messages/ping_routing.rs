@@ -6,6 +6,7 @@ use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{PingMessage, PingPing};
 
 use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use crate::util::mock_api::MockApiBoth;
 
 struct CapturingHandler {
     called: Arc<Mutex<bool>>,
@@ -52,7 +53,7 @@ fn route_invokes_on_ping_ping() {
 
     if let Some(router) = Router::current() {
         // Provide API to router so it can be passed into handler per new signature
-        router.set_bingle_api(Some(crate::util::mock_bingle_api::to_weak(MockApi)));
+        router.set_bingle_api(Some(crate::util::mock_api::to_weak(MockApiBoth::new())));
 
         let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
         let msg = Message::Ping(PingMessage::Ping(ping));
