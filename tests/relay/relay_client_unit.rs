@@ -5,7 +5,7 @@ use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, ProgressCallback, 
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::relay::relay_client::RelayClient;
 use rust_comms::ddb::client::DdbClient;
-use crate::util::mock_api::{to_weak, MockApiBoth};
+use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
@@ -24,29 +24,12 @@ impl ApiMock {
     }
 }
 
-impl BingleApi for ApiMock { 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
-    fn get_handle(&self) -> Option<String> { None } 
-    fn get_user_id(&self) -> Option<String> { None }
-    fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
-    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+impl InnerBingleApi for ApiMock { 
     fn send_message_to_network_with_response(&self, network_source_key: &NetworkEndpoint, user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
         *self.sent_nsk.lock().unwrap() = Some(network_source_key.clone());
         *self.sent_uid.lock().unwrap() = Some(user_id.clone());
         Ok(self.response.clone())
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
 #[derive(Clone)]
@@ -72,8 +55,8 @@ fn call_with_address_present_returns_endpoint_with_channel() {
     let nsk = NetworkEndpoint::new_relay(relay_id.clone(), Some(relay_addr), None);
 
     let ddb = DdbMock::new(None);
-
-    let client = RelayClient::new(to_weak(MockApiBoth::new()), Arc::new(ddb));
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiMock::new(serde_json::json!({ "type": "RelayResponse", "channel": 3456 })));
+    let client = RelayClient::new(to_weak(MockApiBoth::new_with_api_override(api)), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 
@@ -91,12 +74,10 @@ fn call_resolves_relay_address_via_ddb_when_missing() {
     let relay_id = "RELAYID123".to_string();
     let relay_addr = addr(9200);
     let nsk = NetworkEndpoint::new_relay(relay_id.clone(), None, None);
-
-  //  let api_impl = BingleApiImpl::new(&StartOptions::default());
-  //  let engine = api_impl.lock().unwrap().engine_for_tests();
+    
     let ddb = DdbMock::new(Some(NetworkEndpoint::new_direct(relay_addr)));
-
-    let client = RelayClient::new(to_weak(MockApiBoth::new()), Arc::new(ddb));
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiMock::new(serde_json::json!({ "type": "RelayResponse", "channel": 777 })));
+    let client = RelayClient::new(to_weak(MockApiBoth::new_with_api_override(api)), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 

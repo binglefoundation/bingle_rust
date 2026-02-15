@@ -56,7 +56,7 @@ fn triangle_test1_response_sets_nat_restricted_when_not_available() {
 fn triangle_test1_response_does_not_override_endpoint_available() {
     // Arrange: install a mock internal API and set EndpointAvailable via TriangleTest3
     let mock_internal = Arc::new(MockInternal::new());
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new_with_internal_override(mock_internal.clone()))));
     // router.set_bingle_api_internal(Some(mock.clone()));
 
     // Make EndpointAvailable by invoking the T3 handler directly through routing

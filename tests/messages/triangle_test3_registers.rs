@@ -6,7 +6,7 @@ use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectH
 use rust_comms::engine::EngineState;
 use rust_comms::messages::types::RelayTriangleTest3;
 use rust_comms::messages::{Message, RelayMessage};
-use crate::util::mock_api::MockApiBoth;
+use crate::util::mock_api::{MockApiBoth, InnerBingleApiInternal};
 
 // Mock internal that simulates registering our discovered IP and records state transitions
 struct MockInternal {
@@ -17,28 +17,17 @@ struct MockInternal {
 impl MockInternal {
     fn new(addr: SocketAddr) -> Self { Self { last_public_addr: addr, register_called: AtomicBool::new(false), set_registered: AtomicBool::new(false) } }
 }
-impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
-    fn get_relay_state(&self) -> String { "off".to_string() }
+impl InnerBingleApiInternal for MockInternal {
     fn set_state(&self, state: EngineState) {
         if state == EngineState::Registered { self.set_registered.store(true, Ordering::SeqCst); }
         // Accept EndpointAvailable too but do not record; test only checks final Registered
     }
-    fn get_state(&self) -> EngineState { EngineState::StunIdentify }
-    fn set_nat_type(&self, _nat: rust_comms::engine::NatType) { }
     fn get_last_public_addr(&self) -> Option<SocketAddr> { Some(self.last_public_addr) }
     fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
         assert_eq!(endpoint, self.last_public_addr, "handler should register the discovered public address");
         self.register_called.store(true, Ordering::SeqCst);
         Ok(())
     }
-    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
-    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Ok(()) }
-    fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) { }
-    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
-    fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
-    fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
-    fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) { }
-    fn notify_listening(&self, _listening: bool) { }
 }
 
 #[derive(Clone)]
@@ -67,9 +56,9 @@ impl BingleApi for MockApi {
 #[test]
 fn triangle_test3_triggers_ddb_register_and_sets_registered() {
     // Arrange: router with MockApi and MockInternal
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45000);
     let internal = Arc::new(MockInternal::new(addr));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new_with_internal_override(internal.clone()))));
     // router.set_bingle_api_internal(Some(internal.clone() as Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
 
     // Act: route TriangleTest3 through DefaultPrintingHandler
