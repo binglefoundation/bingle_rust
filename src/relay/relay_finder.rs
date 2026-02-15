@@ -45,7 +45,7 @@ struct CachedAllRelayList {
 /// - Perform RelayCheck against the preferred; if unavailable, try the alternate (next index modulo n).
 /// - Cache the successful root relay (id + address) for cache_ttl; subsequent calls return cached until it expires.
 pub struct RelayFinder {
-    api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+    api: crate::api::bingle_api::BingleApiBothType,
     cache_ttl: Duration,
     cache: Mutex<Option<CachedRelay>>, // single selected relay cache
     root_list_cache: Mutex<Option<CachedRelayList>>, // cached list of roots
@@ -58,7 +58,7 @@ pub type RootRelayInfo = RelayInfo;
 
 impl RelayFinder {
     pub fn new(
-        api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+        api: crate::api::bingle_api::BingleApiBothType,
         cache_ttl: Duration,
         discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
     ) -> Self {
@@ -146,7 +146,7 @@ impl RelayFinder {
     /// Convenience constructor: wire discovery to AlgoBingle::discover_root_relays using provided ops, app_id and candidate accounts.
     #[cfg(not(target_os = "ios"))]
     pub fn with_algo_discovery(
-        api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+        api: crate::api::bingle_api::BingleApiBothType,
         cache_ttl: Duration,
         ops: crate::blockchain::algo_ops::AlgoOps,
         app_id: u64,

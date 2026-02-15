@@ -36,20 +36,20 @@ pub trait DdbClient: Send + Sync {
 }
 
 pub struct DdbClientImpl {
-    api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+    api: crate::api::bingle_api::BingleApiBothType,
     discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
 }
 
 impl DdbClientImpl {
     /// Create a DdbClientImpl using indexer-based discovery (requires app_id configured on API or via env BINGLE_APP_ID).
     #[cfg(not(target_os = "ios"))]
-    pub fn new(api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>, app_id: u64, cfg: Option<crate::blockchain::algo_ops::AlgoChainConfig>) -> Self {
+    pub fn new(api: crate::api::bingle_api::BingleApiBothType, app_id: u64, cfg: Option<crate::blockchain::algo_ops::AlgoChainConfig>) -> Self {
         let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
         Self { api, discover }
     }
 
     /// Constructor that accepts a custom discovery closure (used by tests to avoid external dependencies).
-    pub fn with_discovery(api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>, discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>) -> Self {
+    pub fn with_discovery(api: crate::api::bingle_api::BingleApiBothType, discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>) -> Self {
         Self { api, discover }
     }
 

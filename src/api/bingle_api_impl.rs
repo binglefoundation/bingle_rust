@@ -31,12 +31,12 @@ pub struct BingleApiImpl {
     // Optional on_listening handler
     on_listening: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1).
-    engine: Arc<Mutex<Engine>>,
+    engine: crate::engine::EngineType,
 
     // Per-API router to avoid global cross-talk
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // Weak reference to ourselves for passing to components
-    this: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+    this: crate::api::bingle_api::BingleApiBothType,
 }
 
 impl BingleApiImpl {
@@ -44,7 +44,7 @@ impl BingleApiImpl {
         log::info!("[BingleApiImpl::new][enter]");
         let initial_options = options.clone();
         Arc::<Mutex<Self>>::new_cyclic(|me| {
-            let me_both = me.clone() as Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>;
+            let me_both = me.clone() as crate::api::bingle_api::BingleApiBothType;
             let engine = Arc::new(Mutex::new(Engine::new(&initial_options, me_both.clone())));
             Mutex::new(Self {
                 on_message: None,
@@ -119,7 +119,7 @@ impl BingleApiImpl {
     }
 
     /// Test-only accessor to the Engine (for white-box integration tests)
-    pub fn engine_for_tests(&self) -> Arc<Mutex<Engine>> {
+    pub fn engine_for_tests(&self) -> crate::engine::EngineType {
         self.engine.clone()
     }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {

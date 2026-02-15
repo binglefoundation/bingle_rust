@@ -15,7 +15,7 @@ thread_local! {
 #[derive(Default)]
 pub struct Router {
     sender: Mutex<Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>,
-    api: Mutex<Option<Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>>>,
+    api: Mutex<Option<crate::api::bingle_api::BingleApiBothType>>,
     last_from: Mutex<Option<SocketAddr>>,
     last_response_tag: Mutex<Option<String>>,
     on_message: Mutex<Option<Arc<crate::api::bingle_api::OnMessageHandler>>>,
@@ -75,7 +75,7 @@ impl BingleApiInternal for LockingApiWrapper {
 
 
 impl Router {
-    pub fn new(api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>) -> Self {
+    pub fn new(api: crate::api::bingle_api::BingleApiBothType) -> Self {
         Self {
             sender: Mutex::new(None),
             api: Mutex::new(Some(api)),
@@ -102,7 +102,7 @@ impl Router {
         match self.sender.lock() { Ok(g) => g.clone(), Err(_) => None }
     }
 
-    pub fn set_bingle_api(&self, api: Option<Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>>) { if let Ok(mut g) = self.api.lock() { *g = api; } }
+    pub fn set_bingle_api(&self, api: Option<crate::api::bingle_api::BingleApiBothType>) { if let Ok(mut g) = self.api.lock() { *g = api; } }
     pub fn get_bingle_api(&self) -> Option<Arc<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>> { match self.api.lock() { Ok(g) => g.as_ref().and_then(|w| w.upgrade()), Err(_) => None } }
 
     pub fn set_last_from(&self, addr: Option<SocketAddr>) { if let Ok(mut g) = self.last_from.lock() { *g = addr; } }

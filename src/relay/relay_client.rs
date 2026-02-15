@@ -19,12 +19,12 @@ use crate::messages::types::RelayCall;
 /// - Return a populated NetworkEndpoint with relay_id, relay_address and relay_channel.
 #[derive(Clone)]
 pub struct RelayClient {
-    api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+    api: crate::api::bingle_api::BingleApiBothType,
     ddb: Arc<dyn DdbClient>,
 }
 
 impl RelayClient {
-    pub fn new(api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>, ddb: Arc<dyn DdbClient>) -> Self {
+    pub fn new(api: crate::api::bingle_api::BingleApiBothType, ddb: Arc<dyn DdbClient>) -> Self {
         Self { api, ddb }
     }
 

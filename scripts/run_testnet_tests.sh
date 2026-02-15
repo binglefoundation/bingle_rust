@@ -179,7 +179,7 @@ PING_INIT_SENT="pingable_${PING_INIT_MODE}_${PINGABLE_PORT}.sentinel"
 echo "Delete sentinel ${SENT_DIR}/${PING_INIT_SENT}"
 rm -f "$SENT_DIR/$PING_INIT_SENT"
 
-docker run --platform linux/arm64 -d --rm \
+docker run --platform linux/arm64 -d \
  --name bingle_pingable \
  --network bingle_testnet \
  --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
@@ -284,7 +284,7 @@ for MODE in "${PING_MODES[@]}"; do
     PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
     echo "Removing $SENT_DIR/$PING_SENT"
     rm -f "$SENT_DIR/$PING_SENT"
-    docker run --platform linux/arm64 -d --rm \
+    docker run --platform linux/arm64 -d \
       --name bingle_pingable \
       --network bingle_testnet \
       --ip "172.18.0.$PINGABLE_IP_SUFFIX" \

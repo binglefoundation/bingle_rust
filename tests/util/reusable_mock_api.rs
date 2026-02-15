@@ -372,7 +372,7 @@ pub trait InnerBingleApiInternal {
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.
 /// This mirrors the helper used elsewhere in tests, but is scoped under `crate::util::mock_api`.
-pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> Weak<Mutex<dyn BingleApiBoth>> {
+pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::bingle_api::BingleApiBothType {
     let arc: Arc<Mutex<dyn BingleApiBoth>> = Arc::new(Mutex::new(api));
     let weak = Arc::downgrade(&arc);
 

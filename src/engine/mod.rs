@@ -72,6 +72,8 @@ pub enum RelayState {
     Own,
 }
 
+pub type EngineType = std::sync::Arc<std::sync::Mutex<Engine>>;
+
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
     // Distributed mutex used to coordinate relay initialization across peer relays
@@ -89,7 +91,7 @@ pub struct Engine {
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
     // Unified BingleApi handle bound to this engine instance (non-optional)
-    bingle_api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>,
+    bingle_api: crate::api::bingle_api::BingleApiBothType,
     // Async readiness flag: once set, engine_state_for_tests should report EndpointAvailable
     endpoint_ready: std::sync::atomic::AtomicBool,
     // Flag indicating NAT restricted state when endpoint is not yet available
@@ -285,7 +287,7 @@ struct ConnectionEntry {
 
 
 impl Engine {
-    pub fn new(options: &StartOptions, api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>) -> Self {
+    pub fn new(options: &StartOptions, api: crate::api::bingle_api::BingleApiBothType) -> Self {
         log::info!("[Engine::new] options={:?}", options);
         #[allow(unused)] {  }
         // Build a DDB client now (always present); choose real or null implementation
@@ -434,7 +436,7 @@ impl Engine {
     }
 
     /// Set or replace the BingleApi handle bound to this Engine instance.
-    pub fn set_bingle_api(&mut self, api: Weak<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>) {
+    pub fn set_bingle_api(&mut self, api: crate::api::bingle_api::BingleApiBothType) {
         self.bingle_api = api.clone();
         // Initialize a DDB client bound to this API instance (always set; may be Null)
         #[cfg(not(target_os = "ios"))]
