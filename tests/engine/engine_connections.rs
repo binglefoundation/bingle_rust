@@ -1,11 +1,9 @@
 use crate::util::reusable_mock_api::MockApiBoth;
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{StartOptions};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::dtls::{Dtls, HandleMessage};
 use rust_comms::engine::Engine;
-use serde_json::Value as JsonValue;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 #[derive(Default)]
 struct FakeDtls {
@@ -18,13 +16,13 @@ impl FakeDtls {
 }
 
 impl Dtls for FakeDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
+    fn start(&mut self, _mux: std::sync::Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
     fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
     fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address()); Ok(()) }
 
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }
-    fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
+    fn with_handle_message(self, handler: HandleMessage) -> Self where Self: Sized { let _ = self.handler.lock().map(|mut g| *g = Some(handler)); self }
 
     fn get_handle_peer_certificate(&self) -> Option<rust_comms::dtls::HandlePeerCertificate> { None }
     fn set_handle_peer_certificate(&mut self, _handler: Option<rust_comms::dtls::HandlePeerCertificate>) {}
@@ -52,28 +50,6 @@ impl Dtls for FakeDtls {
 
     fn set_app_layer_only_verification(&mut self, _enabled: bool) { }
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
-}
-
-struct DummyApi;
-impl BingleApi for DummyApi { 
-    fn get_handle(&self) -> Option<String> { None } 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_user_id(&self) -> Option<String> { None }
-    fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
-    fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("not implemented".into()) }
-    fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
 #[test]

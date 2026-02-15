@@ -12,7 +12,6 @@ struct MockInternal {
 }
 impl MockInternal {
     fn new() -> Self { Self { state: std::sync::Mutex::new(None) } }
-    fn get(&self) -> Option<EngineState> { self.state.lock().ok().and_then(|g| *g) }
 }
 impl InnerBingleApiInternal for MockInternal {
     fn set_state(&self, state: EngineState) {

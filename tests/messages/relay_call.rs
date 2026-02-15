@@ -2,34 +2,11 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{NetworkEndpoint, UserId};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::RelayCall;
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::turn::turn_handler::TurnHandler;
-
-// Minimal API stub
-struct MockApi;
-impl BingleApi for MockApi { 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
-    fn get_handle(&self) -> Option<String> { None } 
-    fn get_user_id(&self) -> Option<String> { None }
-    fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
-    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_network_with_response(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
-}
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 

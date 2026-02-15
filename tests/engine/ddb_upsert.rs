@@ -52,7 +52,7 @@ fn start_pair(server_am_relay: bool) -> (Arc<Mutex<BingleApiImpl>>, Arc<Mutex<Bi
 
 #[test]
 fn ddb_upsert_success_when_server_is_relay() {
-    let (mut server, mut client, server_addr, _client_addr) = start_pair(true);
+    let (server, client, server_addr, _client_addr) = start_pair(true);
 
     // Build a valid UpsertResolve from client where startId == record.id == client id
     let _server_id = server.lock().unwrap().get_my_id().expect("server get_my_id Some"); // Use API to ensure functions are wired
@@ -100,7 +100,7 @@ fn ddb_upsert_success_when_server_is_relay() {
 
 #[test]
 fn ddb_upsert_ignored_when_not_relay() {
-    let (mut server, client, server_addr, _client_addr) = start_pair(false);
+    let (server, client, server_addr, _client_addr) = start_pair(false);
 
     let client_id = client.lock().unwrap().get_my_id().expect("client id Some");
     let record = AdvertRecord { id: client_id.clone(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
@@ -129,7 +129,7 @@ fn ddb_upsert_ignored_when_not_relay() {
 
 #[test]
 fn ddb_upsert_rejected_on_id_mismatch() {
-    let (mut server, client, server_addr, _client_addr) = start_pair(true);
+    let (server, client, server_addr, _client_addr) = start_pair(true);
 
     let client_id = client.lock().unwrap().get_my_id().expect("client id Some");
     // Mismatch: record.id != start_id

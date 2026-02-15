@@ -4,5 +4,4 @@
 pub mod test_util;
 
 pub mod net_det;
-pub mod mock_bingle_api;
 pub mod reusable_mock_api;

@@ -122,16 +122,6 @@ impl MockApiBoth {
         }
     }
 
-    pub fn with_inner(
-        inner_bingle_api: Box<dyn InnerBingleApi + Send + Sync>,
-        inner_bingle_api_internal: Box<dyn InnerBingleApiInternal + Send + Sync>,
-    ) -> Self {
-        Self {
-            inner_bingle_api: Arc::from(inner_bingle_api),
-            inner_bingle_api_internal: Arc::from(inner_bingle_api_internal),
-        }
-    }
-
     pub fn new_with_api_override(
         inner_bingle_api: Arc<dyn InnerBingleApi + Send + Sync>,
     ) -> Self {
@@ -152,16 +142,6 @@ impl MockApiBoth {
 
         Self {
             inner_bingle_api: Arc::new(DefaultApi),
-            inner_bingle_api_internal,
-        }
-    }
-    
-    pub fn new_with_both_override(
-        inner_bingle_api: Arc<dyn InnerBingleApi + Send + Sync>,
-        inner_bingle_api_internal: Arc<dyn InnerBingleApiInternal + Send + Sync>,
-    ) -> Self {
-        Self {
-            inner_bingle_api,
             inner_bingle_api_internal,
         }
     }
