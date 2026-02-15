@@ -12,7 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::util::mock_api::MockApi;
+use crate::util::mock_api::MockApiBoth;
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -78,7 +78,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     let mux_relay = Arc::new(mux_relay);
     mux_relay.start().expect("start relay mux");
 
-    let router = Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
     router.set_am_relay(true);
     // Provide internal API exposing the shared TurnHandlerImpl
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }

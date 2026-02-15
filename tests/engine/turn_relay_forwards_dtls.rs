@@ -9,7 +9,7 @@ use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayCall, RelayListen};
 use rust_comms::turn::turn_handler::TurnHandler;
 
-use crate::util::mock_api::MockApi;
+use crate::util::mock_api::MockApiBoth;
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -71,7 +71,7 @@ fn end_to_end_turn_relay_forwards_dtls() {
     mux_relay.start().expect("start relay mux");
 
     // Prepare a Router acting as the relay to process Listen and Call messages
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
     router.set_am_relay(true);
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
@@ -90,7 +90,8 @@ fn end_to_end_turn_relay_forwards_dtls() {
         fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) { }
         fn notify_listening(&self, _listening: bool) { }
     }
-    router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
+    // TODO: May not work here
+    // router.set_bingle_api_internal(Some(std::sync::Arc::new(MockInternal { turn: turn.clone() }) as std::sync::Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
 
     let handler = DefaultPrintingHandler;
 

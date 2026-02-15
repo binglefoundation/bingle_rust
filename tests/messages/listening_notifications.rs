@@ -6,6 +6,7 @@ use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectH
 use rust_comms::engine::EngineState;
 use rust_comms::messages::types::RelayTriangleTest3;
 use rust_comms::messages::{Message, RelayMessage};
+use crate::util::mock_api::MockApiBoth;
 
 // Mock internal similar to triangle_test3_registers but records notify_listening
 struct MockInternal {
@@ -63,7 +64,7 @@ impl BingleApi for MockApi {
 #[test]
 fn triangle_test3_notifies_listening_true() {
     // Arrange: router with MockApi and MockInternal
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45001);
     let internal = Arc::new(MockInternal::new(addr));
     // router.set_bingle_api_internal(Some(internal.clone() as Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));

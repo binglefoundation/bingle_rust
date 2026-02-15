@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{Message, PlainTextMessage};
 use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use crate::util::mock_api::MockApiBoth;
 
 struct CapturingHandler {
     called: &'static AtomicBool,
@@ -49,7 +50,7 @@ fn on_plain_text_calls_handler_implementation() {
     let received = Arc::new(Mutex::new(None::<serde_json::Value>));
 
     // Provide a per-test Router with our MockApi and run the route within its context
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
 
     // Build a PlainText message and route it through a custom handler implementation
     let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };

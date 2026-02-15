@@ -5,6 +5,7 @@ use rust_comms::engine::Engine;
 use rust_comms::dtls::{Dtls, HandleMessage};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use serde_json::Value as JsonValue;
+use crate::util::mock_api::MockApiBoth;
 
 #[derive(Default)]
 struct FakeDtls {
@@ -77,7 +78,7 @@ impl BingleApi for DummyApi {
 
 #[test]
 fn engine_send_to_peer_tracks_connections_and_reuses() {
-    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_api::to_weak(MockApiBoth::new()));
     engine.set_dtls(Box::new(FakeDtls::new()));
 
     let a1: SocketAddr = "127.0.0.1:12345".parse().unwrap();

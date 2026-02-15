@@ -6,6 +6,7 @@ use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::RelayCall;
 use rust_comms::turn::turn_handler::TurnHandler;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use crate::util::mock_api::MockApiBoth;
 
 // Minimal API stub
 struct MockApi;
@@ -35,7 +36,7 @@ fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOS
 #[test]
 fn relay_call_allocates_channel_and_maps_pair() {
     // Arrange: router as relay with TURN handler and two registered peers
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl rust_comms::api::bingle_api::BingleApiInternal for MockInternal {
