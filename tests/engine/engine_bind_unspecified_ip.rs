@@ -1,3 +1,4 @@
+use rust_comms::engine::BingleAccess;
 #![cfg(not(target_os = "ios"))]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
@@ -40,14 +41,14 @@ fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
         log_level: None,
     };
 
-    api.lock().unwrap().start(&opts).expect("api.start should succeed");
+    api.access(|a: &mut BingleApiImpl| a.start(&opts)).expect("api.start should succeed");
 
     // Retrieve the actual bound address and assert it's 0.0.0.0 with the same port
-    let local = api.lock().unwrap().engine_local_bind_addr_for_tests();
+    let local = api.access(|a: &mut BingleApiImpl| a.engine_local_bind_addr_for_tests());
     assert!(local.is_some(), "engine should expose local bind addr");
     let local = local.unwrap();
     assert_eq!(local.port(), port, "bound port should match requested static port");
     assert_eq!(local.ip(), IpAddr::V4(Ipv4Addr::UNSPECIFIED), "engine should bind to 0.0.0.0");
 
-    api.lock().unwrap().stop();
+    api.access(|a: &mut BingleApiImpl| a.stop());
 }

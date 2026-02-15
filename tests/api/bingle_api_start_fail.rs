@@ -1,3 +1,4 @@
+use rust_comms::engine::BingleAccess;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -26,7 +27,7 @@ fn start_returns_err_on_invalid_passphrase() {
         log_level: None,
     };
 
-    let err = api.lock().unwrap().start(&opts).expect_err("start should fail for invalid passphrase");
+    let err = api.access(|a: &mut BingleApiImpl| a.start(&opts)).expect_err("start should fail for invalid passphrase");
     // Check that the error message includes context from private_key_bytes failure mapping
     assert!(err.contains("Failed to get private key bytes"), "Unexpected error: {err}");
 }

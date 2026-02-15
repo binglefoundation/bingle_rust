@@ -1,3 +1,4 @@
+use rust_comms::engine::BingleAccess;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -91,7 +92,7 @@ fn dtls_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
     };
-    relay_api.lock().unwrap().start(&relay_opts).expect("start relay api");
+    relay_api.access(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");
 
     // 3) Send RelayListen from the DTLS target node to the relay and validate registration
     let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));

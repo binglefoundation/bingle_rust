@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::api::bingle_api::NetworkEndpoint;
 use data_encoding::BASE32_NOPAD;
 use std::collections::HashMap;
-use crate::engine::RelayState;
+use crate::engine::{BingleAccess, RelayState};
 
 #[derive(Debug, Clone)]
 pub struct RelayInfo {
@@ -361,7 +361,7 @@ impl RelayFinder {
         let nsk = NetworkEndpoint::new_direct(addr);
         let req = json!({ "app": null, "type": "Check" });
         log::info!("[RelayFinder] relay_check: sending request via API -> nsk={} user_id={} req={}", nsk, id, req);
-        match self.api.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_network_with_response(&nsk, &id.to_string(), req, None) {
+        match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &id.to_string(), req, None)) {
             Ok(resp) => {
                 if resp.get("type").and_then(|v| v.as_str()) == Some("CheckResponse") {
                     if let Some(st_str) = resp.get("state").and_then(|v| v.as_str()) {

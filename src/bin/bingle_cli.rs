@@ -107,6 +107,8 @@ fn print_usage_and_exit(code: i32) {
     std::process::exit(code);
 }
 
+use rust_comms::engine::BingleAccess;
+
 fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -179,18 +181,12 @@ fn cmd_run(mut args: Vec<String>) {
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
         log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
     });
-    {
-        let mut guard = api.lock().unwrap();
-        guard.set_on_message(Some(on_message));
-    }
+    api.access(|a| a.set_on_message(Some(on_message)));
 
     let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
         log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
     });
-    {
-        let mut guard = api.lock().unwrap();
-        guard.set_on_connect(Some(on_connect));
-    }
+    api.access(|a| a.set_on_connect(Some(on_connect)));
 
     // Optional: install OnListening handler to manage a sentinel file
     if let Some(path) = sentinel_file.clone() {
@@ -213,11 +209,11 @@ fn cmd_run(mut args: Vec<String>) {
                 }
             }
         });
-        api.lock().unwrap().set_on_listening(Some(on_listening));
+        api.access(|a| a.set_on_listening(Some(on_listening)));
     }
 
     // Start API
-    if let Err(e) = api.lock().unwrap().start(&opts) {
+    if let Err(e) = api.access(|a| a.start(&opts)) {
         warn!("Failed to start: {}", e);
         std::process::exit(1);
     }
@@ -231,7 +227,7 @@ fn cmd_run(mut args: Vec<String>) {
     let _ = rx.recv();
 
     // Stop API
-    api.lock().unwrap().stop();
+    api.access(|a| a.stop());
     log::info!("Stopped.");
 }
 

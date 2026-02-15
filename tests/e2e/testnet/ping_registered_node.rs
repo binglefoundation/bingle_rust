@@ -11,6 +11,7 @@
 #![cfg(not(target_os = "ios"))]
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::engine::BingleAccess;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 
@@ -52,7 +53,7 @@ fn testnet_send_ping_to_registered_node() {
     // 4) Compose Ping request
     let dest_id = pingable_address().expect("pingable address must resolve");
     // Validate Option returns Some where used later
-    let my_id = api.lock().unwrap().get_my_id().expect("api.get_my_id Some");
+    let my_id = api.access(|a: &mut BingleApiImpl| a.get_my_id()).expect("api.get_my_id Some");
     assert!(!my_id.is_empty(), "my id should not be empty");
 
     let ping_req = serde_json::json!({
@@ -71,8 +72,7 @@ fn testnet_send_ping_to_registered_node() {
 
     // Time the send_message_to_id_with_response call
     let start_time = Instant::now();
-    let resp = api.lock().unwrap()
-        .send_message_to_id_with_response(&dest_id, ping_req, Some(progress_callback))
+    let resp = api.access(|a: &mut BingleApiImpl| a.send_message_to_id_with_response(&dest_id, ping_req, Some(progress_callback)))
         .expect("send_message_to_id_with_response should succeed");
     let elapsed = start_time.elapsed();
 

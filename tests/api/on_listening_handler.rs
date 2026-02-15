@@ -1,3 +1,4 @@
+use rust_comms::engine::BingleAccess;
 use std::fs;
 use std::sync::Arc;
 
@@ -25,13 +26,13 @@ fn on_listening_handler_creates_and_deletes_sentinel() {
             let _ = fs::remove_file(&path_clone);
         }
     });
-    api.lock().unwrap().set_on_listening(Some(handler));
+    api.access(|a: &mut BingleApiImpl| a.set_on_listening(Some(handler)));
 
     // Notify true -> file should exist
-    api.lock().unwrap().notify_listening(true);
+    api.access(|a: &mut BingleApiImpl| a.notify_listening(true));
     assert!(sentinel_path.exists(), "sentinel file should be created on listening=true");
 
     // Notify false -> file should be removed
-    api.lock().unwrap().notify_listening(false);
+    api.access(|a: &mut BingleApiImpl| a.notify_listening(false));
     assert!(!sentinel_path.exists(), "sentinel file should be removed on listening=false");
 }

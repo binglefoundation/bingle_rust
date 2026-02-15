@@ -1,4 +1,5 @@
 #![cfg(not(target_os = "ios"))]
+use rust_comms::engine::BingleAccess;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
@@ -45,8 +46,8 @@ fn start_pair(server_am_relay: bool) -> (Arc<Mutex<BingleApiImpl>>, Arc<Mutex<Bi
         asset_id: None,
         log_level: None,
     };
-    server.lock().unwrap().start(&server_opts).expect("server start ok");
-    client.lock().unwrap().start(&client_opts).expect("client start ok");
+    server.access(|s: &mut BingleApiImpl| s.start(&server_opts)).expect("server start ok");
+    client.access(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start ok");
     (server, client, server_addr, client_addr)
 }
 
@@ -55,8 +56,8 @@ fn ddb_upsert_success_when_server_is_relay() {
     let (server, client, server_addr, _client_addr) = start_pair(true);
 
     // Build a valid UpsertResolve from client where startId == record.id == client id
-    let _server_id = server.lock().unwrap().get_my_id().expect("server get_my_id Some"); // Use API to ensure functions are wired
-    let client_id = client.lock().unwrap().get_my_id().expect("client id Some");
+    let _server_id = server.access(|s: &mut BingleApiImpl| s.get_my_id()).expect("server get_my_id Some"); // Use API to ensure functions are wired
+    let client_id = client.access(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
 
     let record = AdvertRecord { id: client_id.clone(), endpoint: Some(InetSocketAddress{ host: "127.0.0.1".into(), port: 9999 }), am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
     let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
@@ -77,7 +78,7 @@ fn ddb_upsert_success_when_server_is_relay() {
     // Observe UpdateResponse via CLIENT on_message handler (server sends response back to client)
     let got_update = Arc::new(AtomicBool::new(false));
     let got_update_flag = got_update.clone();
-    client.lock().unwrap().set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
+    client.access(|c: &mut BingleApiImpl| c.set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
         if let Some(t) = msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) {
             if t == "updateResponse" && msg.get("app").and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
                 if msg.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()) == Some("rt1") {
@@ -85,24 +86,24 @@ fn ddb_upsert_success_when_server_is_relay() {
                 }
             }
         }
-    })));
+    }))));
 
     // Send request from client to server
     let nsk = NetworkEndpoint::new_direct(server_addr);
-    let uid = server.lock().unwrap().get_my_id().unwrap();
-    let response = client.lock().unwrap().send_message_to_network_with_response(&nsk, &uid, json, None);
+    let uid = server.access(|s: &mut BingleApiImpl| s.get_my_id()).unwrap();
+    let response = client.access(|c: &mut BingleApiImpl| c.send_message_to_network_with_response(&nsk, &uid, json, None));
     assert!(response.is_ok(), "client send ok");
 
     // Cleanup
-    server.lock().unwrap().stop();
-    client.lock().unwrap().stop();
+    server.access(|s: &mut BingleApiImpl| s.stop());
+    client.access(|c: &mut BingleApiImpl| c.stop());
 }
 
 #[test]
 fn ddb_upsert_ignored_when_not_relay() {
     let (server, client, server_addr, _client_addr) = start_pair(false);
 
-    let client_id = client.lock().unwrap().get_my_id().expect("client id Some");
+    let client_id = client.access(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
     let record = AdvertRecord { id: client_id.clone(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
     let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve { app: "ddb".into(), start_id: client_id.clone(), epoch: 1, record, original_signature: "SIG".into(), rippled: false, tag: None, response_tag: Some("r2".into()), text: None, data: None }));
 
@@ -110,20 +111,20 @@ fn ddb_upsert_ignored_when_not_relay() {
 
     let got_update = Arc::new(AtomicBool::new(false));
     let got_update_flag = got_update.clone();
-    server.lock().unwrap().set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
+    server.access(|s: &mut BingleApiImpl| s.set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
         if msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("updateResponse") { got_update_flag.store(true, Ordering::SeqCst); }
-    })));
+    }))));
 
     let nsk = NetworkEndpoint::new_direct(server_addr);
-    let uid = server.lock().unwrap().get_my_id().unwrap();
-    let ok = client.lock().unwrap().send_message_to_network(&nsk, &uid, json, None);
+    let uid = server.access(|s: &mut BingleApiImpl| s.get_my_id()).unwrap();
+    let ok = client.access(|c: &mut BingleApiImpl| c.send_message_to_network(&nsk, &uid, json, None));
     assert!(ok, "client send ok");
 
     // Give some time; expect no updateResponse because server is not a relay
     std::thread::sleep(Duration::from_millis(200));
     assert!(!got_update.load(Ordering::SeqCst), "should not receive updateResponse when server not relay");
 
-    server.lock().unwrap().stop();
+    server.access(|s: &mut BingleApiImpl| s.stop());
     drop(client);
 }
 
@@ -131,7 +132,7 @@ fn ddb_upsert_ignored_when_not_relay() {
 fn ddb_upsert_rejected_on_id_mismatch() {
     let (server, client, server_addr, _client_addr) = start_pair(true);
 
-    let client_id = client.lock().unwrap().get_my_id().expect("client id Some");
+    let client_id = client.access(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
     // Mismatch: record.id != start_id
     let record = AdvertRecord { id: format!("{}X", client_id), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
     let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve { app: "ddb".into(), start_id: client_id.clone(), epoch: 1, record, original_signature: "SIG".into(), rippled: false, tag: None, response_tag: Some("r3".into()), text: None, data: None }));
@@ -140,18 +141,18 @@ fn ddb_upsert_rejected_on_id_mismatch() {
 
     let got_update = Arc::new(AtomicBool::new(false));
     let got_update_flag = got_update.clone();
-    server.lock().unwrap().set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
+    server.access(|s: &mut BingleApiImpl| s.set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
         if msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("updateResponse") { got_update_flag.store(true, Ordering::SeqCst); }
-    })));
+    }))));
 
     let nsk = NetworkEndpoint::new_direct(server_addr);
-    let uid = server.lock().unwrap().get_my_id().unwrap();
-    let ok = client.lock().unwrap().send_message_to_network(&nsk, &uid, json, None);
+    let uid = server.access(|s: &mut BingleApiImpl| s.get_my_id()).unwrap();
+    let ok = client.access(|c: &mut BingleApiImpl| c.send_message_to_network(&nsk, &uid, json, None));
     assert!(ok, "client send ok");
 
     std::thread::sleep(Duration::from_millis(200));
     assert!(!got_update.load(Ordering::SeqCst), "should not receive updateResponse on id mismatch");
 
-    server.lock().unwrap().stop();
+    server.access(|s: &mut BingleApiImpl| s.stop());
     drop(client);
 }

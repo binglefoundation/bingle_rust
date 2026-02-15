@@ -1,5 +1,6 @@
 use log::LevelFilter;
 use rust_comms::api::bingle_api::{StartOptions, BingleApi};
+use rust_comms::engine::BingleAccess;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::util::cli_utils::{parse_node_file_with_ids, parse_stun_file};
@@ -65,19 +66,19 @@ pub fn start_api_and_wait(options: &StartOptions) -> (Arc<Mutex<BingleApiImpl>>,
     log::set_max_level(LevelFilter::Info);
 
     let api = BingleApiImpl::new(options);
-    api.lock().unwrap().start(options).expect("start api");
+    api.access(|a: &mut BingleApiImpl| a.start(options)).expect("start api");
 
     // Wait up to 120 seconds for final state: Registered OR NATRestricted
     let start = Instant::now();
     let timeout = Duration::from_secs(120);
     let final_state = loop {
-        if let Some(st) = api.lock().unwrap().engine_state_for_tests() {
+        if let Some(st) = api.access(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
             if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
         }
         if start.elapsed() > timeout {
             panic!(
                 "Timed out waiting for Registered or NATRestricted; last state: {:?}",
-                api.lock().unwrap().engine_state_for_tests()
+                api.access(|a: &mut BingleApiImpl| a.engine_state_for_tests())
             );
         }
         std::thread::sleep(Duration::from_millis(200));

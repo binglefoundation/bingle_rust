@@ -1,3 +1,4 @@
+use rust_comms::engine::BingleAccess;
 #![cfg(not(target_os = "ios"))]
 
 use std::fs;
@@ -58,7 +59,7 @@ fn engine_static_ip_triggers_on_listening_handler() {
             let _ = fs::remove_file(&path_clone);
         }
     });
-    api.lock().unwrap().set_on_listening(Some(handler));
+    api.access(|a: &mut BingleApiImpl| a.set_on_listening(Some(handler)));
 
     // Static IP with port 0 ensures start_with_addr path and ephemeral bind
     let opts = StartOptions {
@@ -75,7 +76,7 @@ fn engine_static_ip_triggers_on_listening_handler() {
     };
 
     // Start should cause Engine::start_with_addr to notify listening=true via EngineInternalPtr
-    api.lock().unwrap().start(&opts).expect("api.start");
+    api.access(|a: &mut BingleApiImpl| a.start(&opts)).expect("api.start");
 
     // Wait for sentinel to appear (up to 2s)
     let start = Instant::now();
@@ -86,6 +87,6 @@ fn engine_static_ip_triggers_on_listening_handler() {
     assert!(sentinel_path.exists(), "sentinel should be created by on_listening handler after static start");
 
     // Stop should remove sentinel
-    api.lock().unwrap().stop();
+    api.access(|a: &mut BingleApiImpl| a.stop());
     assert!(!sentinel_path.exists(), "sentinel should be removed on stop (listening=false)");
 }

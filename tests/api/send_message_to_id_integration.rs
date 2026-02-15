@@ -1,3 +1,4 @@
+use rust_comms::engine::BingleAccess;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
 use std::time::{Duration, Instant};
@@ -29,7 +30,7 @@ fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> Arc<Mutex<Bing
         asset_id: None,
         log_level: None,
     };
-    api.lock().unwrap().start(&opts).expect("relay start");
+    api.access(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
     api
 }
 
@@ -48,14 +49,14 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Arc
         asset_id: None,
         log_level: None,
     };
-    api.lock().unwrap().start(&opts).expect("client start");
+    api.access(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");
     api
 }
 
 fn wait_for_registered(api: &Arc<Mutex<BingleApiImpl>>, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if let Some(st) = api.lock().unwrap().engine_state_for_tests() {
+        if let Some(st) = api.access(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
             if st == EngineState::Registered { return true; }
         }
         std::thread::sleep(Duration::from_millis(25));
@@ -161,19 +162,19 @@ fn bingle_api_send_message_to_id_localnet() {
             if let Ok(mut g) = payload_store.lock() { *g = Some(message); }
             received_flag.store(true, Ordering::SeqCst);
         });
-        client_b.lock().unwrap().set_on_message(Some(on_message));
+        client_b.access(|c: &mut BingleApiImpl| c.set_on_message(Some(on_message)));
     }
 
     // Wait for both clients to reach Registered
     let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));
     let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
-    assert!(ok_a, "client A did not reach Registered state (state = {:?})", client_a.lock().unwrap().engine_state_for_tests());
-    assert!(ok_b, "client B did not reach Registered state (state = {:?})", client_b.lock().unwrap().engine_state_for_tests());
+    assert!(ok_a, "client A did not reach Registered state (state = {:?})", client_a.access(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
+    assert!(ok_b, "client B did not reach Registered state (state = {:?})", client_b.access(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
 
     // Obtain B's user id and send a message from A -> B using send_message_to_id
-    let b_id = client_b.lock().unwrap().get_my_id().expect("client_b.get_my_id Some");
+    let b_id = client_b.access(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b.get_my_id Some");
     let msg = json!({ "text": "hello" });
-    let sent = client_a.lock().unwrap().send_message_to_id(&b_id, msg.clone(), None);
+    let sent = client_a.access(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg.clone(), None));
     assert!(sent, "send_message_to_id should return true");
 
     // Wait up to 60 seconds for receipt on B
@@ -193,10 +194,10 @@ fn bingle_api_send_message_to_id_localnet() {
     }
 
     // Tear down
-    relay1.lock().unwrap().stop();
-    relay2.lock().unwrap().stop();
-    client_a.lock().unwrap().stop();
-    client_b.lock().unwrap().stop();
+    relay1.access(|r: &mut BingleApiImpl| r.stop());
+    relay2.access(|r: &mut BingleApiImpl| r.stop());
+    client_a.access(|c: &mut BingleApiImpl| c.stop());
+    client_b.access(|c: &mut BingleApiImpl| c.stop());
     s1.stop();
     s2.stop();
 

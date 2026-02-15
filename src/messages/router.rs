@@ -3,9 +3,10 @@ use crate::messages::types::*;
 
 use std::cell::RefCell;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, NetworkEndpoint, UserId, Handle};
+use crate::engine::BingleAccess;
 
 // Thread-local current router used to avoid globals and isolate per-API state.
 thread_local! {
@@ -27,50 +28,50 @@ pub struct Router {
 }
 
 struct LockingApiWrapper {
-    api: Arc<Mutex<dyn BingleApiBoth>>,
+    api: crate::api::bingle_api::BingleApiBothType,
 }
 
 impl BingleApi for LockingApiWrapper {
-    fn debug_print_options(&self) { self.api.lock().unwrap().debug_print_options() }
-    fn get_my_id(&self) -> Option<String> { self.api.lock().unwrap().get_my_id() }
-    fn get_user_id(&self) -> Option<String> { self.api.lock().unwrap().get_user_id() }
-    fn get_handle(&self) -> Option<String> { self.api.lock().unwrap().get_handle() }
-    fn get_app_id(&self) -> Option<u64> { self.api.lock().unwrap().get_app_id() }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.lock().unwrap().get_algo_provider_config() }
+    fn debug_print_options(&self) { self.api.access(|a| a.debug_print_options()) }
+    fn get_my_id(&self) -> Option<String> { self.api.access(|a| a.get_my_id()) }
+    fn get_user_id(&self) -> Option<String> { self.api.access(|a| a.get_user_id()) }
+    fn get_handle(&self) -> Option<String> { self.api.access(|a| a.get_handle()) }
+    fn get_app_id(&self) -> Option<u64> { self.api.access(|a| a.get_app_id()) }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.access(|a| a.get_algo_provider_config()) }
     fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported in handler context".into()) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
-    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.lock().unwrap().send_message_to_id(user_id, message, progress) }
-    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.lock().unwrap().send_message_to_handle(handle, message, progress) }
-    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.lock().unwrap().send_message_to_network(nsk, user_id, message, progress) }
-    fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.lock().unwrap().send_message_to_id_with_response(user_id, message, progress) }
-    fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.lock().unwrap().send_message_to_handle_with_response(handle, message, progress) }
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.lock().unwrap().send_message_to_network_with_response(nsk, user_id, message, progress) }
+    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_id(user_id, message, progress)) }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_handle(handle, message, progress)) }
+    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_network(nsk, user_id, message, progress)) }
+    fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.access(|a| a.send_message_to_id_with_response(user_id, message, progress)) }
+    fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.access(|a| a.send_message_to_handle_with_response(handle, message, progress)) }
+    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.api.access(|a| a.send_message_to_network_with_response(nsk, user_id, message, progress)) }
     fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
     fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
 }
 
 impl BingleApiInternal for LockingApiWrapper {
-    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { self.api.lock().unwrap().mutex_handle_request(from_id, req) }
-    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { self.api.lock().unwrap().mutex_handle_response(from_id, resp) }
-    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { self.api.lock().unwrap().mutex_handle_release(from_id, rel) }
-    fn get_relay_state(&self) -> String { self.api.lock().unwrap().get_relay_state() }
-    fn set_state(&self, state: crate::engine::EngineState) { self.api.lock().unwrap().set_state(state) }
-    fn get_state(&self) -> crate::engine::EngineState { self.api.lock().unwrap().get_state() }
-    fn set_nat_type(&self, nat: crate::engine::NatType) { self.api.lock().unwrap().set_nat_type(nat) }
-    fn get_last_public_addr(&self) -> Option<SocketAddr> { self.api.lock().unwrap().get_last_public_addr() }
-    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> { self.api.lock().unwrap().ddb_register_ip(endpoint) }
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> { self.api.lock().unwrap().ddb_register_relay(relay_id, relay_sig) }
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), String> { self.api.lock().unwrap().update_turn_listener_relay(relay_id, relay_addr) }
-    fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { self.api.lock().unwrap().turn_client_handle_listen_response(relay_addr, relay_id) }
-    fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr> { self.api.lock().unwrap().turn_lookup_addr_by_id(id) }
-    fn turn_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32 { self.api.lock().unwrap().turn_handle_call(source, dest) }
-    fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { self.api.lock().unwrap().turn_handle_listen(id, source) }
-    fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { self.api.lock().unwrap().turn_handle_called(source, dest, channel) }
-    fn notify_listening(&self, listening: bool) { self.api.lock().unwrap().notify_listening(listening) }
-    fn set_relay_state(&self, state: crate::engine::RelayState) { self.api.lock().unwrap().set_relay_state(state) }
-    fn get_peer_ddb_target(&self) -> Option<usize> { self.api.lock().unwrap().get_peer_ddb_target() }
+    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { self.api.access(|a| a.mutex_handle_request(from_id, req)) }
+    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { self.api.access(|a| a.mutex_handle_response(from_id, resp)) }
+    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { self.api.access(|a| a.mutex_handle_release(from_id, rel)) }
+    fn get_relay_state(&self) -> String { self.api.access(|a| a.get_relay_state()) }
+    fn set_state(&self, state: crate::engine::EngineState) { self.api.access(|a| a.set_state(state)) }
+    fn get_state(&self) -> crate::engine::EngineState { self.api.access(|a| a.get_state()) }
+    fn set_nat_type(&self, nat: crate::engine::NatType) { self.api.access(|a| a.set_nat_type(nat)) }
+    fn get_last_public_addr(&self) -> Option<SocketAddr> { self.api.access(|a| a.get_last_public_addr()) }
+    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> { self.api.access(|a| a.ddb_register_ip(endpoint)) }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> { self.api.access(|a| a.ddb_register_relay(relay_id, relay_sig)) }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), String> { self.api.access(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
+    fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { self.api.access(|a| a.turn_client_handle_listen_response(relay_addr, relay_id)) }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr> { self.api.access(|a| a.turn_lookup_addr_by_id(id)) }
+    fn turn_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32 { self.api.access(|a| a.turn_handle_call(source, dest)) }
+    fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { self.api.access(|a| a.turn_handle_listen(id, source)) }
+    fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { self.api.access(|a| a.turn_handle_called(source, dest, channel)) }
+    fn notify_listening(&self, listening: bool) { self.api.access(|a| a.notify_listening(listening)) }
+    fn set_relay_state(&self, state: crate::engine::RelayState) { self.api.access(|a| a.set_relay_state(state)) }
+    fn get_peer_ddb_target(&self) -> Option<usize> { self.api.access(|a| a.get_peer_ddb_target()) }
 }
 
 
@@ -129,7 +130,7 @@ impl Router {
             return;
         }
         let api_base = api_opt.unwrap();
-        let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper { api: api_base });
+        let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper { api: Arc::downgrade(&api_base) });
         let from = FromStruct { id: from_id.to_string(), network_source_key: from_ep.clone() };
         match msg {
             Message::PlainText(pt) => handler.on_plain_text(api.clone(), &from, pt),

@@ -1,9 +1,10 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
 use crate::api::bingle_api::NetworkEndpoint;
+use crate::engine::BingleAccess;
 use crate::ddb::client::DdbClient;
 use crate::messages::{Message, RelayMessage};
 use crate::messages::marshal::to_json_value;
@@ -55,9 +56,7 @@ impl RelayClient {
 
         // Send to the relay and await response
         let relay_endpoint = NetworkEndpoint::new_direct(relay_addr);
-        let resp = self
-            .api.upgrade().expect("BingleApi dropped").lock().unwrap()
-            .send_message_to_network_with_response(&relay_endpoint, &relay_id, json, None)?;
+        let resp = self.api.access(|a| a.send_message_to_network_with_response(&relay_endpoint, &relay_id, json, None))?;
 
         // Parse channel from either RelayResponse or RelayCallResponse
         let ty = resp.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");

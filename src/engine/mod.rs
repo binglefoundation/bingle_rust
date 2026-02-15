@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{NetworkEndpoint, StartOptions, UserId, ProgressCallback};
+use crate::api::bingle_api::{NetworkEndpoint, ProgressCallback, StartOptions, UserId};
 use crate::dtls::{Dtls, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
@@ -73,6 +73,33 @@ pub enum RelayState {
 }
 
 pub type EngineType = std::sync::Arc<std::sync::Mutex<Engine>>;
+
+pub trait BingleAccess<T: ?Sized> {
+    fn access<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R;
+}
+
+impl<T: ?Sized> BingleAccess<T> for std::sync::Arc<std::sync::Mutex<T>> {
+    fn access<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut guard = self.lock().unwrap();
+        f(&mut guard)
+    }
+}
+
+impl<T: ?Sized> BingleAccess<T> for std::sync::Weak<std::sync::Mutex<T>> {
+    fn access<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let arc = self.upgrade().expect("Bingle item dropped (Weak upgrade failed)");
+        let mut guard = arc.lock().unwrap();
+        f(&mut guard)
+    }
+}
 
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
@@ -709,7 +736,7 @@ impl Engine {
 
                 let cfg = self.options.algo_provider_config.clone();
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
-                let finder = RelayFinder::new(self.bingle_api.clone(), Duration::from_secs(60), discover);
+                let finder = crate::relay::relay_finder::RelayFinder::new(self.bingle_api.clone(), Duration::from_secs(60), discover);
                 log::info!("[Engine::initialize_relay] RelayFinder constructed");
 
                 // Determine our id for exclusion
@@ -760,7 +787,7 @@ impl Engine {
                             );
                         }
                     });
-                    let ok = api_weak.upgrade().expect("BingleApi dropped").lock().unwrap().send_message_to_id(&uid, json_val, Some(progress));
+                    let ok = api_weak.access(|a| a.send_message_to_id(&uid, json_val, Some(progress)));
                     if !ok { log::warn!("[Engine::initialize_relay][mutex] send_message_to_id failed for {}", dest_id); }
                 };
                 let send_request = {
@@ -980,7 +1007,7 @@ impl Engine {
                 }
             };
 
-            let finder = RelayFinder::new(api.clone(), Duration::from_secs(60), discover);
+            let finder = crate::relay::relay_finder::RelayFinder::new(api.clone(), Duration::from_secs(60), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
             let my_id: String = if let Some(iss) = self.issuer.as_deref() {
