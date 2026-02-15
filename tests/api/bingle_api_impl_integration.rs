@@ -42,7 +42,7 @@ fn send_message_to_network_without_addr_fails_gracefully() {
 #[test]
 fn relay_check_end_to_end_on_message_receives_response() {
     use std::net::SocketAddr;
-    use std::sync::{OnceLock, Arc, Mutex};
+    use std::sync::{OnceLock, Arc};
     use std::thread;
     use std::time::{Duration};
 

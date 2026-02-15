@@ -1,10 +1,6 @@
 use std::sync::{Arc, Mutex, Weak};
 
-use rust_comms::api::bingle_api::BingleApi;
-
-use rust_comms::messages::types;
-use rust_comms::api::bingle_api::{BingleApiBoth, BingleApiInternal};
-use rust_comms::{engine};
+use rust_comms::api::bingle_api::BingleApiBoth;
 
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApi` but provides defaults,
 /// so test mocks can override only the methods they care about.
@@ -396,7 +392,7 @@ pub trait InnerBingleApiInternal {
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.
 /// This mirrors the helper used elsewhere in tests, but is scoped under `crate::util::mock_api`.
-pub fn to_weak<T: BingleApiBoth + 'static>(api: T) -> Weak<Mutex<dyn BingleApiBoth>> {
+pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> Weak<Mutex<dyn BingleApiBoth>> {
     let arc: Arc<Mutex<dyn BingleApiBoth>> = Arc::new(Mutex::new(api));
     let weak = Arc::downgrade(&arc);
 

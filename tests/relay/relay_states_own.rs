@@ -1,11 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
+use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::engine::RelayState;
-use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -85,7 +85,7 @@ fn own_state_is_marked_and_not_checked() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
 
     // Load states including self
     finder.load_relay_states(&id1);

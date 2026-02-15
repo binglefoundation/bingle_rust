@@ -1,5 +1,5 @@
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions, BingleApiInternal};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;

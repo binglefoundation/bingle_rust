@@ -2,11 +2,10 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration, Instant};
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
 use rust_comms::engine::EngineState;
 use rust_comms::messages::types::RelayTriangleTest3;
 use rust_comms::messages::{Message, RelayMessage};
-use crate::util::mock_api::{InnerBingleApiInternal, MockApiBoth};
 
 // Mock internal similar to triangle_test3_registers but records notify_listening
 struct MockInternal {
@@ -33,7 +32,7 @@ fn triangle_test3_notifies_listening_true() {
     // Arrange: router with MockApi and MockInternal
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45001);
     let internal = Arc::new(MockInternal::new(addr));
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new_with_internal_override(internal.clone()))));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_internal_override(internal.clone()))));
 
     // Act: route TriangleTest3 through DefaultPrintingHandler
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;

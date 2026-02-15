@@ -1,23 +1,21 @@
-use std::net::SocketAddr;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback};
+use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::engine::Engine;
-use serde_json::Value as JsonValue;
-use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
 
+use crate::util::reusable_mock_api::MockApiBoth;
 #[cfg(not(target_os = "ios"))]
 use rust_comms::dtls::DtlsOpenSsl;
-use crate::util::mock_api::MockApiBoth;
 
 #[test]
 fn engine_dtls_is_none_before_configuration() {
-    let engine = Engine::new(&StartOptions::default(), crate::util::mock_api::to_weak(MockApiBoth::new()));
+    let engine = Engine::new(&StartOptions::default(), crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()));
     assert!(engine.dtls().is_none(), "Engine::dtls() should be None when DTLS not configured");
 }
 
 #[cfg(not(target_os = "ios"))]
 #[test]
 fn engine_dtls_send_without_start_fails() {
-    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_api::to_weak(MockApiBoth::new()));
+    let mut engine = Engine::new(&StartOptions::default(), crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()));
     // Provide a DTLS instance but DO NOT call engine.start(); ensure direct send fails.
     engine.set_dtls(Box::new(DtlsOpenSsl::new()));
 

@@ -9,7 +9,7 @@ use simple_logger::SimpleLogger;
 use std::sync::Once;
 use uuid::Uuid;
 
-use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId, BingleApiInternal, BingleApiBoth};
+use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 #[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;

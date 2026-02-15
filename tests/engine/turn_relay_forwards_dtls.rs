@@ -1,15 +1,15 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 use rust_comms::api::network_endpoint::NetworkEndpoint;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
-use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayCall, RelayListen};
+use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::turn::turn_handler::TurnHandler;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use crate::util::mock_api::{InnerBingleApiInternal, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -78,7 +78,7 @@ fn end_to_end_turn_relay_forwards_dtls() {
         fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { use rust_comms::turn::turn_handler::TurnHandler; self.turn.handle_listen(&id, &source) }
     }
     let mock_internal = Arc::new(MockInternal { turn: turn.clone() });
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new_with_internal_override(mock_internal))));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_internal_override(mock_internal))));
     router.set_am_relay(true);
 
     let handler = DefaultPrintingHandler;

@@ -1,14 +1,14 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
 mod test_util;
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 use rust_comms::engine::RelayState;
-use crate::util::mock_api::{InnerBingleApi, MockApiBoth};
 
 #[derive(Clone)]
 struct MockApi {
@@ -90,7 +90,7 @@ fn load_and_summarize_states() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(crate::util::mock_api::to_weak(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
 
     // Load states (will internally call list_all_relays which uses DDB getEpoch from preferred root)
     finder.load_relay_states("MYID");

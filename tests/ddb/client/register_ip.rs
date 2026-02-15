@@ -1,13 +1,13 @@
 #![cfg(not(target_os = "ios"))]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions, Handle, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
 use rust_comms::relay::relay_finder::RelayInfo;
-use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[path = "../../test_util.rs"]
 mod test_util;
@@ -70,7 +70,7 @@ fn ddb_client_register_ip_ok() {
     // Build a discovery closure that returns the started relay
     let relay_id = relay.lock().unwrap().get_my_id().expect("relay id");
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr, state: None }]);
-    let cli = DdbClientImpl::with_discovery(to_weak(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
+    let cli = DdbClientImpl::with_discovery(to_weak_api_both(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
     // Register the client's endpoint on the relay
     cli.registerIP(client_addr).expect("registerIP should succeed");

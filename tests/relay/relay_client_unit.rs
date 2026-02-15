@@ -1,11 +1,10 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, ProgressCallback, StartOptions, UserId, Handle, OnMessageHandler, OnConnectHandler};
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::relay::relay_client::RelayClient;
+use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::ddb::client::DdbClient;
-use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
+use rust_comms::relay::relay_client::RelayClient;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
@@ -56,7 +55,7 @@ fn call_with_address_present_returns_endpoint_with_channel() {
 
     let ddb = DdbMock::new(None);
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiMock::new(serde_json::json!({ "type": "RelayResponse", "channel": 3456 })));
-    let client = RelayClient::new(to_weak(MockApiBoth::new_with_api_override(api)), Arc::new(ddb));
+    let client = RelayClient::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 
@@ -77,7 +76,7 @@ fn call_resolves_relay_address_via_ddb_when_missing() {
     
     let ddb = DdbMock::new(Some(NetworkEndpoint::new_direct(relay_addr)));
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiMock::new(serde_json::json!({ "type": "RelayResponse", "channel": 777 })));
-    let client = RelayClient::new(to_weak(MockApiBoth::new_with_api_override(api)), Arc::new(ddb));
+    let client = RelayClient::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), Arc::new(ddb));
 
     let out = client.call(&nsk, "TARGETID").expect("call ok");
 

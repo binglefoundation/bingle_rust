@@ -1,12 +1,11 @@
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
+use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApiInternal, MockApiBoth};
+use rust_comms::messages::handlers::DefaultPrintingHandler;
+use rust_comms::messages::types::RelayListen;
 use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::turn::turn_handler::TurnHandler;
-use rust_comms::messages::handlers::DefaultPrintingHandler;
-use rust_comms::messages::types::{RelayListen};
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
-use crate::util::mock_api::{MockApiBoth, InnerBingleApiInternal, to_weak};
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
@@ -22,7 +21,7 @@ fn relay_listen_registers_and_responds() {
         fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { self.turn.handle_listen(&id, &source) }
     }
     let internal = Arc::new(MockInternal { turn: turn.clone() });
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(to_weak(MockApiBoth::new_with_internal_override(internal))));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(to_weak_api_both(MockApiBoth::new_with_internal_override(internal))));
     router.set_am_relay(true);
     let source = addr(9001);
     router.set_last_from(Some(source));

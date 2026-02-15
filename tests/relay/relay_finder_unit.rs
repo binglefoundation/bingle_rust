@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 
 // Minimal mock API that returns a positive CheckResponse for send_message_to_network_with_response
 struct MockApi;
@@ -31,8 +31,8 @@ impl InnerBingleApi for MockApi {
     }
 }
 
+use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
-use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -46,7 +46,7 @@ fn find_root_relay_rejects_self() {
         ]
     });
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
-    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_secs(30), discover);
     // my_id is ADDRESS_SPEND, ensure we do not select ourselves and get ADDRESS_RECEIVE instead
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_ok(), "should find other relay");
@@ -63,7 +63,7 @@ fn find_root_relay_only_self_errors() {
             RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12000), state: None },
         ]
     });
-    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_secs(30), discover);
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_err(), "should error when only self is present");
 }

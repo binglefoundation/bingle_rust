@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use rust_comms::messages::{Message, RelayMessage};
+use crate::util::reusable_mock_api::MockApiBoth;
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::RelayTriangleTest1Response;
-use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
-use crate::util::mock_api::MockApiBoth;
+use rust_comms::messages::{Message, RelayMessage};
 
 struct CapturingHandler { hit: Arc<Mutex<bool>> }
 impl CapturingHandler { fn new(hit: Arc<Mutex<bool>>) -> Self { Self { hit } } }
@@ -42,7 +42,7 @@ fn router_dispatches_triangle_test1_response() {
     let hit = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(hit.clone());
 
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "SENDERID");

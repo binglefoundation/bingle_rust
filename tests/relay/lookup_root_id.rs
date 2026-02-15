@@ -1,9 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
-use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -34,7 +34,7 @@ fn lookup_known_root_returns_endpoint() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_millis(200), discover);
 
     // Known id should resolve to Some(NetworkEndpoint::Direct(addr))
     let nsk_opt = finder.lookup_root_id(&id1);
@@ -57,7 +57,7 @@ fn lookup_unknown_root_returns_none() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_millis(200), discover);
 
     let nsk_opt = finder.lookup_root_id(&unknown);
     assert!(nsk_opt.is_none(), "expected None for unknown root id");

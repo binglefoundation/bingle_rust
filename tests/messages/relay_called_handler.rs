@@ -1,11 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use rust_comms::messages::{Message, RelayMessage};
+use crate::util::reusable_mock_api::MockApiBoth;
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::RelayCalled;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler, BingleApiInternal};
-use crate::util::mock_api::MockApiBoth;
+use rust_comms::messages::{Message, RelayMessage};
 
 struct MockApi;
 impl BingleApi for MockApi { 
@@ -56,7 +56,7 @@ fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOS
 
 #[test]
 fn relay_called_handler_invokes_turn_handle_called() {
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     // Internal that also reports a public address
     struct InternalWithPub { cap: CapturingInternal, pub_addr: SocketAddr }
     impl BingleApiInternal for InternalWithPub {

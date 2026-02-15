@@ -1,12 +1,12 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use rust_comms::messages::{Message, RelayMessage};
+use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::RelayCall;
+use rust_comms::messages::{Message, RelayMessage};
 use rust_comms::turn::turn_handler::TurnHandler;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, NetworkEndpoint, UserId, Handle, ProgressCallback, OnMessageHandler, OnConnectHandler};
-use crate::util::mock_api::{MockApiBoth, InnerBingleApiInternal};
 
 // Minimal API stub
 struct MockApi;
@@ -44,7 +44,7 @@ fn relay_call_allocates_channel_and_maps_pair() {
         fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { use rust_comms::turn::turn_handler::TurnHandler; self.turn.handle_listen(&id, &source) }
     }
     let mock_internal = Arc::new(MockInternal { turn: turn.clone() });
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new_with_internal_override(mock_internal))));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_internal_override(mock_internal))));
     router.set_am_relay(true);
 
     let caller = addr(9101);
