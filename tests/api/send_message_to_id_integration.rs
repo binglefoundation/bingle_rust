@@ -67,6 +67,7 @@ fn wait_for_registered(api: &Arc<Mutex<BingleApiImpl>>, timeout: Duration) -> bo
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
 #[test]
+#[ntest::timeout(60_000)]
 #[ignore]
 fn bingle_api_send_message_to_id_localnet() {
     // This test requires a running local Algorand localnet + indexer.

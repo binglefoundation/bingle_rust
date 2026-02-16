@@ -289,7 +289,7 @@ impl MessageHandler for DefaultPrintingHandler {
             // Consult API for relay state
             let state_ok = crate::messages::router::Router::current()
                 .and_then(|r| r.get_bingle_api())
-                .map(|i| i.lock().unwrap().get_relay_state() == "available")
+                .map(|i| i.get_relay_state() == "available")
                 .unwrap_or(false);
             if !state_ok {
                 let mut obj = serde_json::Map::new();
@@ -437,7 +437,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 }
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
-            let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApiBoth>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
+            let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
             let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
 
             // Obtain our id from API (derived from engine issuer)
@@ -564,7 +564,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 };
 
                 // Wrap combined API as plain BingleApiBoth for RelayFinder
-                let api_plain: std::sync::Arc<Mutex<dyn crate::api::bingle_api::BingleApiBoth>> = std::sync::Arc::new(Mutex::new(BothAsApi { inner: api_for_thread.clone() }));
+                let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
                 let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
                 let my_id = match api_for_thread.get_my_id() {
                     Some(id) => id,

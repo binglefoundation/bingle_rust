@@ -104,7 +104,12 @@ impl Router {
     }
 
     pub fn set_bingle_api(&self, api: Option<crate::api::bingle_api::BingleApiBothType>) { if let Ok(mut g) = self.api.lock() { *g = api; } }
-    pub fn get_bingle_api(&self) -> Option<Arc<Mutex<dyn crate::api::bingle_api::BingleApiBoth>>> { match self.api.lock() { Ok(g) => g.as_ref().and_then(|w| w.upgrade()), Err(_) => None } }
+    pub fn get_bingle_api(&self) -> Option<Arc<dyn crate::api::bingle_api::BingleApiBoth>> {
+        match self.api.lock() {
+            Ok(g) => g.as_ref().and_then(|w| w.upgrade()),
+            Err(_) => None,
+        }
+    }
 
     pub fn set_last_from(&self, addr: Option<SocketAddr>) { if let Ok(mut g) = self.last_from.lock() { *g = addr; } }
     pub fn get_last_from(&self) -> Option<SocketAddr> { match self.last_from.lock() { Ok(g) => *g, Err(_) => None } }
@@ -130,7 +135,9 @@ impl Router {
             return;
         }
         let api_base = api_opt.unwrap();
-        let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper { api: Arc::downgrade(&api_base) });
+        let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
+            api: Arc::downgrade(&api_base),
+        });
         let from = FromStruct { id: from_id.to_string(), network_source_key: from_ep.clone() };
         match msg {
             Message::PlainText(pt) => handler.on_plain_text(api.clone(), &from, pt),

@@ -175,18 +175,22 @@ fn cmd_run(mut args: Vec<String>) {
     }
 
     // Initialize API
-    let api = BingleApiImpl::new(&opts);
+    let mut api = BingleApiImpl::new(&opts);
 
-    // Install handlers that print args
+    // Install handlers (requires mutable access to the Arc contents; CLI owns the only strong ref here)
+    {
+        let api_mut = Arc::get_mut(&mut api)
+            .expect("CLI expects a unique Arc<BingleApiImpl>; did you clone `api` somewhere?");
+
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
         log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
     });
-    api.access(|a| a.set_on_message(Some(on_message)));
+        api_mut.set_on_message(Some(on_message));
 
     let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
         log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
     });
-    api.access(|a| a.set_on_connect(Some(on_connect)));
+        api_mut.set_on_connect(Some(on_connect));
 
     // Optional: install OnListening handler to manage a sentinel file
     if let Some(path) = sentinel_file.clone() {
@@ -209,13 +213,18 @@ fn cmd_run(mut args: Vec<String>) {
                 }
             }
         });
-        api.access(|a| a.set_on_listening(Some(on_listening)));
+            api_mut.set_on_listening(Some(on_listening));
+        }
     }
 
     // Start API
-    if let Err(e) = api.access(|a| a.start(&opts)) {
+    {
+        let api_mut = Arc::get_mut(&mut api)
+            .expect("CLI expects a unique Arc<BingleApiImpl>; did you clone `api` somewhere?");
+        if let Err(e) = api_mut.start(&opts) {
         warn!("Failed to start: {}", e);
         std::process::exit(1);
+    }
     }
 
     // Install Ctrl-C handler
@@ -227,7 +236,11 @@ fn cmd_run(mut args: Vec<String>) {
     let _ = rx.recv();
 
     // Stop API
-    api.access(|a| a.stop());
+    {
+        let api_mut = Arc::get_mut(&mut api)
+            .expect("CLI expects a unique Arc<BingleApiImpl>; did you clone `api` somewhere?");
+        api_mut.stop();
+    }
     log::info!("Stopped.");
 }
 

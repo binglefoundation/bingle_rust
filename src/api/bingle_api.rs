@@ -69,7 +69,7 @@ pub use super::network_endpoint::{NetworkEndpoint, NetworkEndpointKey};
 pub trait BingleApiBoth: BingleApi + BingleApiInternal {}
 impl<T: BingleApi + BingleApiInternal> BingleApiBoth for T {}
 
-pub type BingleApiBothType = std::sync::Weak<std::sync::Mutex<dyn BingleApiBoth>>;
+pub type BingleApiBothType = std::sync::Weak<dyn BingleApiBoth>;
 
 /// Progress callback reported during send operations.
 /// Parameters:

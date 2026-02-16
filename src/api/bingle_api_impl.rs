@@ -40,13 +40,13 @@ pub struct BingleApiImpl {
 }
 
 impl BingleApiImpl {
-    pub fn new(options: &StartOptions) -> Arc<Mutex<Self>> {
+    pub fn new(options: &StartOptions) -> Arc<Self> {
         log::info!("[BingleApiImpl::new][enter]");
         let initial_options = options.clone();
-        Arc::<Mutex<Self>>::new_cyclic(|me| {
+        Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
-            let engine = Arc::new(Mutex::new(Engine::new(&initial_options, me_both.clone())));
-            Mutex::new(Self {
+            let engine = Arc::new(Engine::new(&initial_options, me_both.clone()));
+            Self {
                 on_message: None,
                 on_connect: None,
                 started_options: initial_options,
@@ -55,29 +55,41 @@ impl BingleApiImpl {
                 engine,
                 router: None,
                 this: me_both,
-            })
+            }
         })
     }
 }
 
 impl BingleApiImpl {
     /// Test-oriented constructor to inject a custom DTLS implementation.
-    pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Mutex<Self>> {
+    pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Self> {
         log::info!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
-        let api = Self::new(&StartOptions::default());
-        api.access(|a| a.engine.access(|e| e.set_dtls(dtls)));
-        log::info!("[BingleApiImpl::new_with_dtls][exit]");
-        api
+        let initial_options = StartOptions::default();
+        Arc::<Self>::new_cyclic(|me| {
+            let me_both = me.clone();
+            let engine = Arc::new(Engine::new_with_dtls(&initial_options, me_both.clone(), dtls));
+            Self {
+                on_message: None,
+                on_connect: None,
+                started_options: initial_options,
+                shared_on_message: Arc::new(Mutex::new(None)),
+                on_listening: None,
+                engine,
+                router: None,
+                this: me_both,
+            }
+        })
     }
 
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
     pub fn set_issuer_for_tests(&mut self, issuer: String) {
         log::info!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
-        #[allow(unused)] {  }
-        self.engine.access(|e| e.set_issuer(issuer));
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).set_issuer(issuer);
+        }
         log::info!("[BingleApiImpl::set_issuer_for_tests][exit]");
-        #[allow(unused)] {  }
     }
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
@@ -124,10 +136,11 @@ impl BingleApiImpl {
     }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
-        #[allow(unused)] {  }
-        self.engine.access(|e| e.test_force_stun_consistent(addr));
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).test_force_stun_consistent(addr);
+        }
         log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
-        #[allow(unused)] {  }
     }
 
     /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
@@ -141,27 +154,13 @@ impl BingleApiImpl {
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool {
         log::info!("[BingleApiImpl::has_dtls][enter]");
-        #[allow(unused)] {  }
-        let b = self.engine.access(|e| e.dtls().is_some());
-        log::info!("[BingleApiImpl::has_dtls][exit] return={}", b);
-        #[allow(unused)] {  }
-        b
+        // Engine now always has a DTLS instance initialized in new()
+        log::info!("[BingleApiImpl::has_dtls][exit] return=true");
+        true
     }
 
     fn ensure_dtls(&mut self) {
-        // Only available on non-iOS targets.
-        #[cfg(not(target_os = "ios"))]
-        {
-            let need = self.engine.access(|e| e.dtls().is_none());
-            if need {
-                let dtls = crate::dtls::DtlsOpenSsl::new();
-                self.engine.access(|e| e.set_dtls(Box::new(dtls)));
-            }
-        }
-        #[cfg(target_os = "ios")]
-        {
-            // Placeholder for iOS where OpenSSL-backed DTLS is not available in this crate.
-        }
+        // No longer needed as Engine always has a DTLS instance.
     }
 
     fn send_over_dtls(&self, nsk: &NetworkEndpoint, message: JsonValue) -> bool {
@@ -252,22 +251,28 @@ impl BingleApi for BingleApiImpl {
                 }
             };
             let issuer = format!("{}{}", addr, ISSUER_SUFFIX);
-            self.engine.access(|e| e.set_issuer(issuer.clone()));
+            unsafe {
+                let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+                (*engine_ptr).set_issuer(issuer.clone());
+            }
 
             // Generate certificates: CA = Ed25519 self-signed using Algorand key; server/client = RSA-2048 signed by CA (SHA-512).
             match generate_pki_from_ops(&ops, &issuer) {
                 Ok((ca_pem, server_cert_pem, server_key_pem, client_cert_pem, client_key_pem)) => {
-                    self.engine.access(|e| e.with_dtls_mut(|dtls: &mut (dyn Dtls + Send + Sync)| {
-                        dtls.set_ca_cert(Some(ca_pem));
-                        dtls.set_server_signing_cert(Some(server_cert_pem));
-                        dtls.set_server_signing_private_key(Some(server_key_pem));
-                        dtls.set_client_cert(Some(client_cert_pem));
-                        dtls.set_client_private_key(Some(client_key_pem));
-                        // Install a peer certificate handler in all cases.
-                        dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
-                        // Accept during handshake and validate at the application layer for API flows
-                        dtls.set_app_layer_only_verification(false);
-                    }));
+                    unsafe {
+                        let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+                        (*engine_ptr).with_dtls_mut(|dtls: &mut (dyn Dtls + Send + Sync)| {
+                            dtls.set_ca_cert(Some(ca_pem));
+                            dtls.set_server_signing_cert(Some(server_cert_pem));
+                            dtls.set_server_signing_private_key(Some(server_key_pem));
+                            dtls.set_client_cert(Some(client_cert_pem));
+                            dtls.set_client_private_key(Some(client_key_pem));
+                            // Install a peer certificate handler in all cases.
+                            dtls.set_handle_peer_certificate(Some(crate::protocol::cert_verify::peer_certificate_handler()));
+                            // Accept during handshake and validate at the application layer for API flows
+                            dtls.set_app_layer_only_verification(false);
+                        });
+                    }
                 }
                 Err(e) => {
                     return Err(format!("PKI initialization failed: {}", e));
@@ -303,22 +308,25 @@ impl BingleApi for BingleApiImpl {
 
         // Install Engine callback to send via Bingle protocol using the delegating API handle
         let this_weak_for_engine = self.this.clone();
-        self.engine.access(|e| e.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
-            log::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
-            let progress_cb = Arc::new(|percent: u8, message: String| {
-                log::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
-            });
-            if let Some(api) = this_weak_for_engine.upgrade() {
-                api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)))
-            } else {
-                false
-            }
-        }))));
-        // Provide the BingleApi handle to Engine for handlers and DDB client
-        self.engine.access(|e| e.set_bingle_api(self.this.clone()));
-        // Provide per-API router to the Engine for routing context
-        self.engine.access(|e| e.set_router(router_arc.clone()));
-        self.engine.access(|e| e.start(options))?;
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
+                log::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
+                let progress_cb = Arc::new(|percent: u8, message: String| {
+                    log::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
+                });
+                if let Some(api) = this_weak_for_engine.upgrade() {
+                    api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)))
+                } else {
+                    false
+                }
+            })));
+            // Provide the BingleApi handle to Engine for handlers and DDB client
+            (*engine_ptr).set_bingle_api(self.this.clone());
+            // Provide per-API router to the Engine for routing context
+            (*engine_ptr).set_router(router_arc.clone());
+            (*engine_ptr).start(options)?;
+        }
 
         log::info!("[BingleApiImpl::start][exit] Ok(())");
         Ok(())
@@ -329,7 +337,10 @@ impl BingleApi for BingleApiImpl {
         // Notify listeners that we are no longer listening
         if let Some(cb) = &self.on_listening { cb(false); }
         // Stop Engine
-        self.engine.access(|e| e.stop());
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).stop();
+        }
         log::info!("[BingleApiImpl::stop][exit]");
     }
 
@@ -550,7 +561,10 @@ impl BingleApi for BingleApiImpl {
             // Store locally
             self.on_listening = handler.clone();
             // Propagate to Engine so internal notifications can reach the application
-            self.engine.access(|e| e.set_on_listening_handler(handler));
+            unsafe {
+                let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+                (*engine_ptr).set_on_listening_handler(handler);
+            }
             log::info!("[BingleApiImpl::set_on_listening][exit]");
         }
 }
