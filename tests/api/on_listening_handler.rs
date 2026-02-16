@@ -1,4 +1,4 @@
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use std::fs;
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ fn on_listening_handler_creates_and_deletes_sentinel() {
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Set up API and install an OnListeningHandler that mirrors CLI behavior
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let mut api = BingleApiImpl::new(&StartOptions::default());
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
         if listening {
@@ -26,13 +26,13 @@ fn on_listening_handler_creates_and_deletes_sentinel() {
             let _ = fs::remove_file(&path_clone);
         }
     });
-    api.access(|a: &mut BingleApiImpl| a.set_on_listening(Some(handler)));
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.set_on_listening(Some(handler)));
 
     // Notify true -> file should exist
-    api.access(|a: &mut BingleApiImpl| a.notify_listening(true));
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.notify_listening(true));
     assert!(sentinel_path.exists(), "sentinel file should be created on listening=true");
 
     // Notify false -> file should be removed
-    api.access(|a: &mut BingleApiImpl| a.notify_listening(false));
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.notify_listening(false));
     assert!(!sentinel_path.exists(), "sentinel file should be removed on listening=false");
 }

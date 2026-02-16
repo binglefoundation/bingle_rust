@@ -1,4 +1,4 @@
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -22,7 +22,7 @@ fn bingle_api_start_propagates_engine_error() {
         log_level: None,
     };
 
-    let res = api.access(|a: &mut BingleApiImpl| a.start(&opts));
+    let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(res.is_err(), "expected start() to propagate Engine error");
     let msg = res.err().unwrap().to_lowercase();
     assert!(msg.contains("stun") || msg.contains("no stun") || msg.contains("no stun servers"),

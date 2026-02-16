@@ -6,13 +6,14 @@ use std::sync::Arc;
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
 use rust_comms::relay::relay_finder::RelayInfo;
 
 #[path = "../../test_util.rs"]
 mod test_util;
 
-fn start_pair() -> (Arc<std::sync::Mutex<BingleApiImpl>>, Arc<std::sync::Mutex<BingleApiImpl>>, SocketAddr, SocketAddr) {
+fn start_pair() -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAddr) {
     let relay_port = test_util::find_unused_loopback_port();
     let client_port = test_util::find_unused_loopback_port();
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
@@ -45,8 +46,8 @@ fn start_pair() -> (Arc<std::sync::Mutex<BingleApiImpl>>, Arc<std::sync::Mutex<B
         asset_id: None,
         log_level: None,
     };
-    relay.lock().unwrap().start(&relay_opts).expect("relay start ok");
-    client.lock().unwrap().start(&client_opts).expect("client start ok");
+    relay.access_unsafe_for_tests(|r| r.start(&relay_opts)).expect("relay start ok");
+    client.access_unsafe_for_tests(|c| c.start(&client_opts)).expect("client start ok");
     (relay, client, relay_addr, client_addr)
 }
 
@@ -56,11 +57,11 @@ fn ddb_client_register_ip_ok() {
 
     // Build a proxy API that delegates to the started client instance for the methods we need
     #[derive(Clone)]
-    struct ApiProxy(Arc<std::sync::Mutex<BingleApiImpl>>);
+    struct ApiProxy(Arc<BingleApiImpl>);
     impl InnerBingleApi for ApiProxy { 
-        fn get_my_id(&self) -> Option<String> { self.0.lock().ok().and_then(|g| g.get_my_id()) }
+        fn get_my_id(&self) -> Option<String> { self.0.get_my_id() }
         fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, uid: &UserId, msg: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
-            self.0.lock().map_err(|_| "lock".to_string()).and_then(|g| g.send_message_to_network_with_response(nsk, uid, msg, progress))
+            self.0.send_message_to_network_with_response(nsk, uid, msg, progress)
         }
     }
 
@@ -68,7 +69,7 @@ fn ddb_client_register_ip_ok() {
     let api_arc: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiProxy(client_shared.clone()));
 
     // Build a discovery closure that returns the started relay
-    let relay_id = relay.lock().unwrap().get_my_id().expect("relay id");
+    let relay_id = relay.get_my_id().expect("relay id");
     let discover = Arc::new(move || vec![RelayInfo { id: relay_id.clone(), address: relay_addr, state: None }]);
     let cli = DdbClientImpl::with_discovery(to_weak_api_both(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
@@ -82,6 +83,6 @@ fn ddb_client_register_ip_ok() {
     assert_eq!(ep, client_addr);
 
     // Cleanup
-    if let Ok(mut g) = client_shared.lock() { g.stop(); }
-    if let Ok(mut rg) = relay.lock() { rg.stop(); }
+    client_shared.access_unsafe_for_tests(|g| g.stop());
+    relay.access_unsafe_for_tests(|rg| rg.stop());
 }

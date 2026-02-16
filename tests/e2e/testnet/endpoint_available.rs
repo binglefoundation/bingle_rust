@@ -12,7 +12,7 @@
 
 use log::LevelFilter;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::{EngineState, NatType};
 use rust_comms::util::cli_utils::{parse_node_file_with_ids, parse_stun_file};
@@ -79,7 +79,7 @@ fn testnet_user_reaches_endpoint_available() {
     // Start the user and wait for EndpointAvailable
     let api = BingleApiImpl::new(&opts);
 
-    api.access(|a: &mut BingleApiImpl| a.start(&opts)).expect("start api");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("start api");
 
     // Before proceeding, ensure both static endpoints are reachable: send RelayCheck and await response.
     // Use a single 120s budget to validate availability of the first two endpoints returned by indexer.
@@ -93,7 +93,7 @@ fn testnet_user_reaches_endpoint_available() {
                 let addr: std::net::SocketAddr = addr_str.parse().expect("static endpoint address parse");
                 let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
                 let payload = serde_json::json!({ "app": null, "type": "Check" });
-                match api.access(|a: &mut BingleApiImpl| a.send_message_to_network_with_response(&nsk, &id, payload.clone(), None)) {
+                match api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network_with_response(&nsk, &id, payload.clone(), None)) {
                     Ok(resp) => {
                         let is_ok = resp.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("CheckResponse")
                             && resp.get("state").and_then(|v: &serde_json::Value| v.as_str()) == Some("available");
@@ -156,13 +156,13 @@ fn testnet_user_reaches_endpoint_available() {
     let start = Instant::now();
     let timeout = Duration::from_secs(120); // TODO: make handshakes faster
     let final_state = loop {
-        if let Some(st) = api.access(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
+        if let Some(st) = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
             if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
         }
         if start.elapsed() > timeout {
             panic!(
                 "Timed out waiting for Registered or NATRestricted; last state: {:?}",
-                api.access(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+                api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
             );
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -185,11 +185,11 @@ fn testnet_user_reaches_endpoint_available() {
 
     // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
     if final_state == EngineState::Registered {
-        let my_id = api.access(|a: &mut BingleApiImpl| a.get_my_id()).expect("api.get_my_id Some");
-        let nsk = api.access(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests(&my_id)).expect("ddb lookup should succeed when registered");
+        let my_id = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.get_my_id()).expect("api.get_my_id Some");
+        let nsk = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests(&my_id)).expect("ddb lookup should succeed when registered");
         if got_nat == NatType::FullCone {
             let looked = nsk.inet_socket_address().expect("lookup should return a direct endpoint");
-            let ep = api.access(|a: &mut BingleApiImpl| a.engine_last_public_addr_for_tests()).expect("last public addr should be Some");
+            let ep = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_last_public_addr_for_tests()).expect("last public addr should be Some");
             assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
         }
         else {
@@ -198,5 +198,5 @@ fn testnet_user_reaches_endpoint_available() {
         }
     }
     
-    api.access(|a: &mut BingleApiImpl| a.stop());
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.stop());
 }

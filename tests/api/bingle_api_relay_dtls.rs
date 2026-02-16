@@ -1,4 +1,4 @@
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
@@ -110,7 +110,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
 
     // 5) Build Bingle API client (node A)
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let mut api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -123,7 +123,7 @@ fn bingle_api_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
     };
-    let start_res = api.access(|a: &mut BingleApiImpl| a.start(&opts));
+    let start_res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     if let Err(e) = start_res { eprintln!("api.start error: {}", e); }
 
     // 6) Send a message via the relay using NetworkEndpoint::new_relay
@@ -133,7 +133,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     // Retry send a few times to avoid flakiness due to startup races
     let mut ok = false;
     for _ in 0..10 {
-        if api.access(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, payload.clone(), None)) { ok = true; break; }
+        if api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, payload.clone(), None)) { ok = true; break; }
         std::thread::sleep(Duration::from_millis(100));
     }
     assert!(ok, "send_message_to_network returned false");

@@ -1,5 +1,5 @@
 #![cfg(not(target_os = "ios"))]
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 
 use crate::util::reusable_mock_api::MockApiBoth;
 use rust_comms::api::bingle_api::StartOptions;
@@ -21,6 +21,6 @@ fn bingle_api_impl_exposes_non_optional_engine_ddb_client() {
     // BingleApiImpl default (no app_id) should still expose a DDB client through engine helper
     let api = BingleApiImpl::new(&StartOptions::default());
     // The helper calls through to engine.ddb_client().lookup(); ensure it returns an Err, not panic
-    let res = api.access(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests("SOME_ID"));
+    let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests("SOME_ID"));
     assert!(res.is_err(), "engine_ddb_lookup_for_tests should return Err on missing app_id");
 }

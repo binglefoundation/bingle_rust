@@ -54,8 +54,7 @@ impl Dtls for FakeDtls {
 
 #[test]
 fn engine_send_to_peer_tracks_connections_and_reuses() {
-    let mut engine = Engine::new(&StartOptions::default(), crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()));
-    engine.set_dtls(Box::new(FakeDtls::new()));
+    let mut engine = Engine::new_with_dtls(&StartOptions::default(), crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()), Box::new(FakeDtls::new()));
 
     let a1: SocketAddr = "127.0.0.1:12345".parse().unwrap();
     let a2: SocketAddr = "127.0.0.1:23456".parse().unwrap();

@@ -1,4 +1,4 @@
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 use libc::sleep;
@@ -98,15 +98,15 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
 
     unsafe { sleep(20); }
 
-    let relay1 = BingleApiImpl::new(&StartOptions::default());
-    let relay2 = BingleApiImpl::new(&StartOptions::default());
+    let mut relay1 = BingleApiImpl::new(&StartOptions::default());
+    let mut relay2 = BingleApiImpl::new(&StartOptions::default());
 
     let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
 
     // Start relays (no assertions about DTLS; we use them only as placeholders)
-    let _ = relay1.access(|r: &mut BingleApiImpl| r.start(&r1_opts)).expect("relay1 start() failed");
-    let _ = relay2.access(|r: &mut BingleApiImpl| r.start(&r2_opts)).expect("relay2 start() failed");
+    let _ = relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&r1_opts)).expect("relay1 start() failed");
+    let _ = relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&r2_opts)).expect("relay2 start() failed");
 
     // Start two local STUN servers we will use for consistency resolution
     let p1 = test_util::find_unused_loopback_port();
@@ -118,17 +118,17 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false }).expect("start s2");
 
     // A client instance without staticEndpoint; provide the STUN server list to Engine.start
-    let client1 = BingleApiImpl::new(&StartOptions::default());
+    let mut client1 = BingleApiImpl::new(&StartOptions::default());
 
     let stun_list = vec![a1, a2];
     let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some(test_util::PASSPHRASE_10MIL.parse().unwrap()), static_ip: None, am_relay: false, stun_servers: Some(stun_list.clone()), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
 
-    client1.access(|c: &mut BingleApiImpl| c.start(&c1_opts)).expect("client1 start() failed");
+    client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&c1_opts)).expect("client1 start() failed");
 
     // Wait up to 60 seconds for client engine to enter EndpointAvailable (allow indexer/DTLS timing)
     let wait_start = Instant::now();
     while wait_start.elapsed() < Duration::from_secs(60) {
-        match client1.access(|c: &mut BingleApiImpl| c.engine_state_for_tests()) {
+        match client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()) {
             Some(EngineState::EndpointAvailable) => break,
             _ => {}
         }
@@ -136,13 +136,13 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     }
 
     // State is expected to be EndpointAvailable - do not change this!
-    let s1_state = client1.access(|c: &mut BingleApiImpl| c.engine_state_for_tests());
+    let s1_state = client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests());
     assert!(matches!(s1_state, Some(EngineState::EndpointAvailable)  ), "unexpected client1 state: {:?}", s1_state);
 
     // Stop instances and STUN servers
-    relay1.access(|r: &mut BingleApiImpl| r.stop());
-    relay2.access(|r: &mut BingleApiImpl| r.stop());
-    client1.access(|c: &mut BingleApiImpl| c.stop());
+    relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
     s1.stop();
     s2.stop();
 

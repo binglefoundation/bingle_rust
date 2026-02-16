@@ -103,7 +103,6 @@ impl<T: ?Sized> BingleAccess<T> for std::sync::Weak<T> {
     }
 }
 
-#[cfg(test)]
 pub trait BingleAccessUnsafeForTests<T: ?Sized> {
     /// Test-only escape hatch: get a mutable reference out of an `Arc`/`Weak` without locking.
     ///
@@ -111,23 +110,18 @@ pub trait BingleAccessUnsafeForTests<T: ?Sized> {
     /// This is intentionally unsafe-ish: it can create mutable aliasing if other strong/weak
     /// references are used concurrently. Use only in single-threaded tests where you control
     /// all references.
-    fn access_unsafe_for_tests<F, R>(&mut self, f: F) -> R
+    fn access_unsafe_for_tests<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R;
 }
 
-#[cfg(test)]
 impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Arc<T> {
-    fn access_unsafe_for_tests<F, R>(&mut self, f: F) -> R
+    fn access_unsafe_for_tests<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
     {
-        // Prefer the safe path when the Arc is unique.
-        if let Some(v) = std::sync::Arc::get_mut(self) {
-            return f(v);
-        }
-
-        // Otherwise, do what it says on the tin (tests only).
+        // We can't use Arc::get_mut as it requires &mut self.
+        // But this is access_unsafe_for_tests, so we just use the pointer.
         unsafe {
             let ptr = std::sync::Arc::as_ptr(self) as *mut T;
             f(&mut *ptr)
@@ -135,20 +129,14 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Arc<T> {
     }
 }
 
-#[cfg(test)]
 impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
-    fn access_unsafe_for_tests<F, R>(&mut self, f: F) -> R
+    fn access_unsafe_for_tests<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
     {
-        let mut arc = self
+        let arc = self
             .upgrade()
             .expect("Bingle item dropped (Weak upgrade failed)");
-
-        // Prefer the safe path when the Arc is unique.
-        if let Some(v) = std::sync::Arc::get_mut(&mut arc) {
-            return f(v);
-        }
 
         unsafe {
             let ptr = std::sync::Arc::as_ptr(&arc) as *mut T;

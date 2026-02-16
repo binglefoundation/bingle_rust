@@ -1,4 +1,4 @@
-use rust_comms::engine::BingleAccess;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleApi};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::SocketAddr;
@@ -28,7 +28,7 @@ fn bingle_api_relay_check_two_nodes() {
         asset_id: None,
         log_level: None,
     };
-    relay.access(|r: &mut BingleApiImpl| r.start(&relay_opts)).expect("relay start");
+    relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&relay_opts)).expect("relay start");
 
     // Install an on_message on the relay that responds to RelayCheck with RelayCheckResponse.
     // We need to send back to the client's socket address; this is provided via sender_handle (from_address string).
@@ -36,7 +36,7 @@ fn bingle_api_relay_check_two_nodes() {
     let relay_arc = relay.clone();
     let relay_for_cb = relay_arc.clone();
     let client_id = test_util::ADDRESS_SPEND.to_string();
-    relay.access(|guard: &mut BingleApiImpl| {
+    relay.access_unsafe_for_tests(|guard: &mut BingleApiImpl| {
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
             log::info!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
             // sender_handle is the peer socket address (string). Parse to SocketAddr. Fail fast if malformed.
@@ -51,7 +51,7 @@ fn bingle_api_relay_check_two_nodes() {
                 });
                 let nsk = NetworkEndpoint::new_direct(addr);
                 // Validate that locking succeeds and attempt to send the response.
-                let _ok = relay_for_cb.access(|r: &mut BingleApiImpl| r.send_message_to_network(&nsk, &client_id, resp, None));
+                let _ok = relay_for_cb.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.send_message_to_network(&nsk, &client_id, resp, None));
             }
         })));
     });
@@ -72,14 +72,14 @@ fn bingle_api_relay_check_two_nodes() {
         asset_id: None,
         log_level: None,
     };
-    client.access(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start");
+    client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start");
 
     // 3) Send RelayCheck from client to relay directly
     let nsk_relay = NetworkEndpoint::new_direct(relay_addr);
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check" });
 
-    let response = client.access(|c: &mut BingleApiImpl| c.send_message_to_network_with_response(&nsk_relay, &relay_id, payload, None));
+    let response = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network_with_response(&nsk_relay, &relay_id, payload, None));
     assert!(response.is_ok(), "client send_message_to_network should return true");
     
     let seen = response.unwrap();
@@ -88,6 +88,6 @@ fn bingle_api_relay_check_two_nodes() {
     assert_eq!(seen.get("state").and_then(|v: &serde_json::Value| v.as_str()), Some("available"));
 
     // Optional: stop nodes (best-effort)
-    relay_arc.access(|r: &mut BingleApiImpl| r.stop());
-    client.access(|c: &mut BingleApiImpl| c.stop());
+    relay_arc.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
 }
