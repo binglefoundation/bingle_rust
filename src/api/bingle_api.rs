@@ -14,7 +14,11 @@ use serde_json::Value as JsonValue;
 pub trait BingleApiInternal: Send + Sync {
     // Mutex message forwarding to Engine (default no-ops so existing tests/mocks need not implement)
     fn mutex_handle_request(&self, _from_id: String, _req: crate::messages::types::MutexRequest) {}
-    fn mutex_handle_response(&self, _from_id: String, _resp: crate::messages::types::MutexResponse) {}
+    fn mutex_handle_response(
+        &self,
+        _from_id: String,
+        _resp: crate::messages::types::MutexResponse,
+    ) {}
     fn mutex_handle_release(&self, _from_id: String, _rel: crate::messages::types::MutexRelease) {}
     /// Request the engine state to be set to the provided value. Implementations should
     /// delegate to the underlying Engine instance. Implementations may be best-effort

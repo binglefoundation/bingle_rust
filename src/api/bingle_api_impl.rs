@@ -3,10 +3,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use log::{error, info, warn, LevelFilter};
+use log::{info, warn};
 use serde_json::{Map as JsonMap, Value as JsonValue};
-use simple_logger::SimpleLogger;
-use std::sync::Once;
 use uuid::Uuid;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
@@ -213,25 +211,25 @@ impl BingleApi for BingleApiImpl {
     }
     fn start(&mut self, options: &StartOptions) -> Result<(), String> {
         // Initialize logging once (stderr + timestamps), respect options.log_level if provided.
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let default_level = if cfg!(debug_assertions) { LevelFilter::Debug } else { LevelFilter::Warn };
-            let level = options.log_level.as_deref().map(|s| match s.to_ascii_lowercase().as_str() {
-                "trace" => LevelFilter::Trace,
-                "debug" => LevelFilter::Debug,
-                "info" => LevelFilter::Info,
-                "warn" | "warning" => LevelFilter::Warn,
-                "error" => LevelFilter::Error,
-                _ => default_level,
-            }).unwrap_or(default_level);
-            let _ = SimpleLogger::new().with_level(level).init();
-            // Panic hook that logs at error! and then defers to default behavior
-            let default_hook = std::panic::take_hook();
-            std::panic::set_hook(Box::new(move |pi| {
-                error!("panic: {}", pi);
-                default_hook(pi);
-            }));
-        });
+        // static INIT: Once = Once::new();
+        // INIT.call_once(|| {
+        //     let default_level = if cfg!(debug_assertions) { LevelFilter::Debug } else { LevelFilter::Warn };
+        //     let level = options.log_level.as_deref().map(|s| match s.to_ascii_lowercase().as_str() {
+        //         "trace" => LevelFilter::Trace,
+        //         "debug" => LevelFilter::Debug,
+        //         "info" => LevelFilter::Info,
+        //         "warn" | "warning" => LevelFilter::Warn,
+        //         "error" => LevelFilter::Error,
+        //         _ => default_level,
+        //     }).unwrap_or(default_level);
+        //     let _ = SimpleLogger::new().with_level(level).init();
+        //     // Panic hook that logs at error! and then defers to default behavior
+        //     let default_hook = std::panic::take_hook();
+        //     std::panic::set_hook(Box::new(move |pi| {
+        //         error!("panic: {}", pi);
+        //         default_hook(pi);
+        //     }));
+        // });
         info!("[BingleApiImpl::start][enter] options={:?}", options);
         #[allow(unused)] {  }
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
@@ -587,6 +585,15 @@ impl BingleApiImpl {
 
 impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn get_relay_state(&self) -> String { self.engine.access(|e| e.relay_state_str()) }
+    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) {
+        let _ = self.engine.access(|e| e.mutex_handle_request(&from_id, &req));
+    }
+    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) {
+        let _ = self.engine.access(|e| e.mutex_handle_response(&from_id, &resp));
+    }
+    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) {
+        let _ = self.engine.access(|e| e.mutex_handle_release(&from_id, &rel));
+    }
     fn set_state(&self, state: EngineState) {
         log::info!("[BingleApiImpl::set_state][enter] state={:?}", state);
         let _ = self.engine.access(|e| e.set_state_internal(state));

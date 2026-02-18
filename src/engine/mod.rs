@@ -1549,4 +1549,25 @@ impl Engine {
             channel,
         );
     }
+
+    // Mutex message handlers - delegate to the distributed mutex instance if it exists
+    pub fn mutex_handle_request(&self, from_id: &str, req: &crate::messages::types::MutexRequest) {
+        if let Some(m) = &self.relay_init_mutex {
+            m.handle_request(from_id, req);
+        }
+    }
+    pub fn mutex_handle_response(
+        &self,
+        from_id: &str,
+        resp: &crate::messages::types::MutexResponse,
+    ) {
+        if let Some(m) = &self.relay_init_mutex {
+            m.handle_reply(from_id, resp);
+        }
+    }
+    pub fn mutex_handle_release(&self, from_id: &str, rel: &crate::messages::types::MutexRelease) {
+        if let Some(m) = &self.relay_init_mutex {
+            m.handle_release(from_id, rel);
+        }
+    }
 }

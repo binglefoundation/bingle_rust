@@ -1,14 +1,16 @@
 use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex, Once};
 use std::time::{Duration, Instant};
 use libc::sleep;
+use log::{error, LevelFilter};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, OnMessageHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use serde_json::json;
+use simple_logger::SimpleLogger;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -74,6 +76,19 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
 #[ntest::timeout(300_000)]
 #[ignore]
 fn bingle_api_send_message_to_id_localnet() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let default_level = if cfg!(debug_assertions) { LevelFilter::Debug } else { LevelFilter::Warn };
+        let level = LevelFilter::Debug;
+        let _ = SimpleLogger::new().with_level(level).init();
+        // Panic hook that logs at error! and then defers to default behavior
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |pi| {
+            error!("panic: {}", pi);
+            default_hook(pi);
+        }));
+    });
+
     // This test requires a running local Algorand localnet + indexer.
     // Fail fast if not available per issue requirements.
     if !test_util::should_run_localnet() {
