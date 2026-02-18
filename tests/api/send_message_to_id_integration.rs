@@ -17,6 +17,7 @@ mod test_util;
 
 // Helper: start a relay node at a fixed address
 fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> Arc<BingleApiImpl> {
+    log::info!("[Test] start_relay name={} addr={}", name, addr);
     let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: name.into(),
@@ -31,11 +32,13 @@ fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> Arc<BingleApiI
         log_level: None,
     };
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
+    log::info!("[Test] relay {} started", name);
     api
 }
 
 // Helper: start a client node with given STUN list
 fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Arc<BingleApiImpl> {
+    log::info!("[Test] start_client name={} stun_list={:?}", name, stun_list);
     let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: name.into(),
@@ -50,6 +53,7 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Arc
         log_level: None,
     };
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");
+    log::info!("[Test] client {} started", name);
     api
 }
 
@@ -67,7 +71,7 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
 #[test]
-#[ntest::timeout(60_000)]
+#[ntest::timeout(300_000)]
 #[ignore]
 fn bingle_api_send_message_to_id_localnet() {
     // This test requires a running local Algorand localnet + indexer.

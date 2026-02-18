@@ -952,10 +952,10 @@ impl Engine {
                 log::info!("[Engine::initialize_relay] cleared finder state cache");
 
                 // 1) Seed caches and load current states across the network
-                let _ = finder.list_root_relays(&my_id, true);
                 // Load states via RelayCheck for all known relays (may include self)
                 finder.load_relay_states(&my_id);
                 log::info!("[Engine::initialize_relay] loaded peer relay states");
+                let roots_all = finder.list_root_relays(&my_id, true);
 
                 // Count peer states (excluding self)
                 let (avail_cnt, starting_cnt) = count_peer_states(&finder, &my_id);
@@ -966,12 +966,11 @@ impl Engine {
                 );
 
                 // Build peer id list including self for the mutex
-                let roots_all = finder.list_root_relays(&my_id, true);
                 log::info!(
-                    "[Engine::initialize_relay] discovered {} roots (including self)",
-                    roots_all.len()
+                    "[Engine::initialize_relay] discovered {:?} roots (including self)",
+                    roots_all
                 );
-                let mut ids: Vec<String> = roots_all.iter().map(|r| r.id.clone()).collect();
+                let mut ids: Vec<String> = roots_all.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
                 ids.sort();
                 ids.dedup();
                 log::info!(

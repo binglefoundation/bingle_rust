@@ -96,20 +96,25 @@ impl RelayFinder {
                     .cloned()
                     .filter(|r| r.id != my_id_norm)
                     .collect();
-                if !candidates.is_empty() {
-                    let (pref_idx, _alt_idx) = self.select_indices(&candidates, my_id_norm);
-                    let chosen = &candidates[pref_idx];
-                    match cli.get_relays_from(chosen) {
-                        Ok(pairs) => pairs
-                            .into_iter()
-                            .filter(|(id, _addr)| id != my_id_norm)
-                            .map(|(id, addr)| RelayInfo { id, address: addr, state: None })
-                            .collect(),
-                        Err(_e) => Vec::new(),
+
+                    if candidates.len() == 1 {
+                        // Only one possible root relay to ask; just use it directly.
+                        vec![candidates[0].clone()]
                     }
-                } else {
-                    Vec::new()
-                }
+                    else if !candidates.is_empty() {
+                        let (pref_idx, _alt_idx) = self.select_indices(&candidates, my_id_norm);
+                        let chosen = &candidates[pref_idx];
+                        match cli.get_relays_from(chosen) {
+                            Ok(pairs) => pairs
+                                .into_iter()
+                                .filter(|(id, _addr)| id != my_id_norm)
+                                .map(|(id, addr)| RelayInfo { id, address: addr, state: None })
+                                .collect(),
+                            Err(_e) => Vec::new(),
+                        }
+                    } else {
+                        Vec::new()
+                    }
             } else {
                 Vec::new()
             }
@@ -303,6 +308,7 @@ impl RelayFinder {
     }
 
     fn update_cached_state(&self, id: &str, st: RelayState) {
+        log::info!("[RelayFinder] update_cached_state: relay={} state={:?}", id, st);
         if let Ok(mut g) = self.root_list_cache.lock() {
             if let Some(list) = &mut *g {
                 for r in &mut list.root_relays {
@@ -310,12 +316,18 @@ impl RelayFinder {
                 }
             }
         }
+        else {
+            log::error!("[RelayFinder] update_cached_state: root_list_cache lock poisoned");
+        }
         if let Ok(mut g) = self.all_list_cache.lock() {
             if let Some(list) = &mut *g {
                 for r in &mut list.relays {
                     if r.id == id { r.state = Some(st); }
                 }
             }
+        }
+        else {
+            log::error!("[RelayFinder] update_cached_state: all_list_cache lock poisoned");
         }
     }
 
@@ -372,7 +384,10 @@ impl RelayFinder {
                 }
                 false
             }
-            Err(_) => false,
+            Err(_) => {
+                self.update_cached_state(id, RelayState::Off);
+                false
+            },
         }
     }
 
