@@ -17,6 +17,7 @@ fn fund_test_accounts_or_panic() {
 }
 
 #[test]
+#[ignore]
 fn bingle_end_to_end_calls() {
     skip_if_no_localnet!();
     fund_test_accounts_or_panic();

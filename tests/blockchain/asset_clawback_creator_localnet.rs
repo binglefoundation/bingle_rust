@@ -8,6 +8,7 @@ mod test_util;
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
 
 #[test]
+#[ignore]
 fn asset_creation_sets_clawback_to_creator() {
     skip_if_no_localnet!();
 

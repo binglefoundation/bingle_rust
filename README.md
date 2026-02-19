@@ -74,6 +74,20 @@ Notes:
 ## 4) What the Tests Do
 The included test `RustCommsFFITests` verifies the Swift package can import the RustCommsFFI module and runs a trivial assertion. This confirms tests can run under the iOS target and that the XCFramework is discoverable.
 
+## 5) Running Localnet Integration Tests
+Integration tests that require a running Algorand localnet (via `algokit`) are marked as `#[ignore]` and skipped by default in standard `cargo test` runs.
+
+To run these tests:
+1. Ensure `algokit` is installed.
+2. Run the provided script from the repository root:
+   ```bash
+   bash scripts/run_localnet_tests.sh
+   ```
+This script will:
+- Check and start the Algorand localnet sandbox if needed.
+- Set `RUST_COMMS_RUN_LOCALNET=true` to enable localnet-dependent logic.
+- Execute all integration tests containing "localnet" in their name, including those marked as ignored.
+
 ## Troubleshooting
 - Missing framework error: Ensure you ran `bash scripts/build_ios_xcframework.sh` and that `ios/RustCommsFFI.xcframework` exists.
 - Simulator not found: Use `xcrun simctl list devices 'iOS'` to pick a valid device name and optionally boot it using `xcrun simctl boot "iPhone 15"`.

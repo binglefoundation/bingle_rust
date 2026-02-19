@@ -11,6 +11,7 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 // This test validates that register ensures the caller is opted-in to the app local state.
 // It uses localnet and will be skipped when localnet is unavailable.
 #[test]
+#[ignore]
 fn register_ensures_sender_opted_in_to_app() {
     skip_if_no_localnet!();
 

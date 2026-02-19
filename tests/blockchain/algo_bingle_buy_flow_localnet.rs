@@ -11,6 +11,7 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 use std::fs;
 
 #[test]
+#[ignore]
 fn buy_bingle_transfers_from_reserve_inner_tx() {
     skip_if_no_localnet!();
 
