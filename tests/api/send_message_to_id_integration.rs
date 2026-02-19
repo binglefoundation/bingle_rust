@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex, Once};
 use std::time::{Duration, Instant};
@@ -78,7 +78,6 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
 fn bingle_api_send_message_to_id_localnet() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let default_level = if cfg!(debug_assertions) { LevelFilter::Debug } else { LevelFilter::Warn };
         let level = LevelFilter::Debug;
         let _ = SimpleLogger::new().with_level(level).init();
         // Panic hook that logs at error! and then defers to default behavior

@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};

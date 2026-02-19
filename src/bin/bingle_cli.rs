@@ -107,7 +107,6 @@ fn print_usage_and_exit(code: i32) {
     std::process::exit(code);
 }
 
-use rust_comms::engine::BingleAccess;
 
 fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help

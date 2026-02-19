@@ -1,10 +1,10 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[test]
 fn getters_default_none() {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     // Before start(), no issuer is set so id is None
     assert!(api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.get_my_id()).is_none());
     assert!(api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.get_user_id()).is_none());
@@ -13,7 +13,7 @@ fn getters_default_none() {
 
 #[test]
 fn getters_after_start() {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     // Start with handle only (no passphrase) so id remains None; handle should be available
     let opts = StartOptions { handle: "tester".into(), ..StartOptions::default() };
     // start may succeed with minimal options due to default paths; ignore result if Err

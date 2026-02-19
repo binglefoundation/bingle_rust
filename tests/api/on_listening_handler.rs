@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::fs;
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ fn on_listening_handler_creates_and_deletes_sentinel() {
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Set up API and install an OnListeningHandler that mirrors CLI behavior
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
         if listening {

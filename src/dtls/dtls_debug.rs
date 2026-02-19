@@ -144,10 +144,9 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
     // Use current global log level
     let level = if log::log_enabled!(log::Level::Trace) {
         log::Level::Trace
-    } else if log::log_enabled!(log::Level::Debug) {
-        log::Level::Debug
     } else {
-        log::Level::Info
+        // Default to Debug summary to ensure some output for tests even without global logger setup
+        log::Level::Debug
     };
     dtls_udp_to_json_with_level(datagram, level)
 }
@@ -247,7 +246,7 @@ pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: log::Level) -> Result
 
         let packet = DtlsUdpPacketJson { records };
         return serde_json::to_string_pretty(&packet).map_err(|e| e.to_string());
-    } else if log::log_enabled!(log::Level::Debug) {
+    } else if level >= log::Level::Debug {
         // Produce a terse single-line summary without heavy parsing
         let mut i: usize = 0;
         let mut parts: Vec<String> = Vec::new();

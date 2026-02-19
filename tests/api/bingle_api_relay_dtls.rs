@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
@@ -110,7 +110,7 @@ fn bingle_api_send_via_relay_end_to_end() {
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
 
     // 5) Build Bingle API client (node A)
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),

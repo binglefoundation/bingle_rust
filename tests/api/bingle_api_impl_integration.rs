@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleApi};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -9,7 +9,7 @@ mod test_util;
 
 #[test]
 fn start_succeeds() {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { 
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -32,7 +32,7 @@ fn start_succeeds() {
 
 #[test]
 fn send_message_to_network_without_addr_fails_gracefully() {
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let nsk = NetworkEndpoint::new_relay(ADDRESS_SPEND.parse().unwrap(), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)), Some(2));
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None));
@@ -107,7 +107,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     thread::sleep(Duration::from_millis(200));
 
     // Build BingleApiImpl client
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let start_result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());

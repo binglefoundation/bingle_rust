@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -13,7 +13,7 @@ fn start_returns_err_on_invalid_passphrase() {
     // Provide a static endpoint so Engine would choose static path if we got that far; we expect early Err instead.
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
 
-    let mut api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: "tester".into(),
         algo_passphrase: Some(bad_pass),

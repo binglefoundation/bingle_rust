@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 use libc::sleep;
@@ -98,8 +98,8 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
 
     unsafe { sleep(20); }
 
-    let mut relay1 = BingleApiImpl::new(&StartOptions::default());
-    let mut relay2 = BingleApiImpl::new(&StartOptions::default());
+    let relay1 = BingleApiImpl::new(&StartOptions::default());
+    let relay2 = BingleApiImpl::new(&StartOptions::default());
 
     let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
@@ -118,7 +118,7 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
     let mut s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false }).expect("start s2");
 
     // A client instance without staticEndpoint; provide the STUN server list to Engine.start
-    let mut client1 = BingleApiImpl::new(&StartOptions::default());
+    let client1 = BingleApiImpl::new(&StartOptions::default());
 
     let stun_list = vec![a1, a2];
     let c1_opts = StartOptions { handle: "client1".into(), algo_passphrase: Some(test_util::PASSPHRASE_10MIL.parse().unwrap()), static_ip: None, am_relay: false, stun_servers: Some(stun_list.clone()), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };

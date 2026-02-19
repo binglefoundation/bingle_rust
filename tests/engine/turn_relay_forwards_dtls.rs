@@ -28,9 +28,10 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
 
 #[test]
 fn end_to_end_turn_relay_forwards_dtls() {
-    // Allocate three ports: relay, client A (ephemeral), client B (destination mux)
-    let relay_port = 13000;
-    let b_port = 14000;
+    // Allocate two free ports on loopback: relay and destination mux
+    let relay_port = test_util::find_unused_loopback_port();
+    let mut b_port = test_util::find_unused_loopback_port();
+    if b_port == relay_port { b_port = test_util::find_unused_loopback_port(); }
     assert_ne!(relay_port, 0);
     assert_ne!(b_port, 0);
 

@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -46,7 +46,7 @@ impl Dtls for MockDtls {
 #[test]
 fn unit_send_message_to_network_calls_dtls_send() {
     let (mock, sent_vec) = MockDtls::new();
-    let mut api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
     let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
     let nsk = NetworkEndpoint::new_direct(addr);
     let msg = serde_json::json!({"hello": "world"});
@@ -113,7 +113,7 @@ fn start_sets_issuer_and_passes_to_dtls_send() {
     let issuer_expected = format!("{}{}", addr, rust_comms::protocol::ISSUER_SUFFIX);
 
     let (mock, captured) = MockDtlsCapture::new();
-    let mut api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
 
     // Inject issuer directly via test-only helper
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.set_issuer_for_tests(issuer_expected.clone()));

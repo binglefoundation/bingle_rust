@@ -1,8 +1,8 @@
 #![cfg(not(target_os = "ios"))]
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration};
 
 use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};

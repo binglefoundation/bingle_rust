@@ -1,5 +1,5 @@
 #![cfg(not(target_os = "ios"))]
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 
 use crate::util::reusable_mock_api::MockApiBoth;
 use rust_comms::api::bingle_api::StartOptions;

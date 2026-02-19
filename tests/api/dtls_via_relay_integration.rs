@@ -1,4 +1,4 @@
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -79,7 +79,7 @@ fn dtls_send_via_relay_end_to_end() {
     // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun)
     let relay_port = 13000; // test_util::find_unused_loopback_port();
     let relay_addr = addr(relay_port);
-    let mut relay_api = BingleApiImpl::new(&StartOptions::default());
+    let relay_api = BingleApiImpl::new(&StartOptions::default());
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
         algo_passphrase: Some(test_util::PASSPHRASE_10MIL.to_string()),
