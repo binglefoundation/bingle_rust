@@ -150,7 +150,7 @@ fn bingle_api_send_message_to_id_localnet() {
 
     // Tell Engine/handlers to use indexer-based discovery for this app id
     unsafe { std::env::set_var("BINGLE_APP_ID", app_id.to_string()); }
-    unsafe { sleep(20); }
+    unsafe { sleep(10); }
 
     // Start two relays
     let relay1 = start_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND);
