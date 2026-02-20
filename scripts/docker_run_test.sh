@@ -110,9 +110,11 @@ run_one_mode() {
 
   # Execute the test; pass the filter as a positional arg followed by --nocapture to show logs
   set +e
-  "$TEST_BIN" "$FILTER" --nocapture 2>&1 | tee -a "$OUT_FILE"
+  echo "[runner][$mode] START TEST: $FILTER" | tee -a "$OUT_FILE"
+  stdbuf -oL -eL "$TEST_BIN" "$FILTER" --nocapture 2>&1 | tee -a "$OUT_FILE"
   local rc=${PIPESTATUS[0]}
   set -e
+  echo "[runner][$mode] END TEST: $FILTER (rc=$rc)" | tee -a "$OUT_FILE"
 
   if [[ $rc -eq 0 ]]; then
     echo "[runner][$mode] Test PASSED" | tee -a "$OUT_FILE"

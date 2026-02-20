@@ -1,4 +1,5 @@
 use log::LevelFilter;
+use simple_logger::SimpleLogger;
 use rust_comms::api::bingle_api::{StartOptions, BingleApi};
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -63,7 +64,9 @@ pub fn make_start_options(
 }
 
 pub fn start_api_and_wait(options: &StartOptions) -> (Arc<BingleApiImpl>, EngineState) {
-    log::set_max_level(LevelFilter::Info);
+    let _ = SimpleLogger::new()
+        .with_level(LevelFilter::Info)
+        .init();
 
     let api = BingleApiImpl::new(options);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(options)).expect("start api");

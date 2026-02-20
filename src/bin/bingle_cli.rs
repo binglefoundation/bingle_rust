@@ -8,6 +8,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use log::warn;
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
@@ -178,52 +179,51 @@ fn cmd_run(mut args: Vec<String>) {
 
     // Install handlers (requires mutable access to the Arc contents; CLI owns the only strong ref here)
     {
-        let api_mut = Arc::get_mut(&mut api)
-            .expect("CLI expects a unique Arc<BingleApiImpl>; did you clone `api` somewhere?");
+        api.access_unsafe_for_tests(|api_mut| {
+            let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
+                log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
+            });
+            api_mut.set_on_message(Some(on_message));
 
-    let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-        log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
-    });
-        api_mut.set_on_message(Some(on_message));
+            let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
+                log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
+            });
+            api_mut.set_on_connect(Some(on_connect));
 
-    let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
-        log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
-    });
-        api_mut.set_on_connect(Some(on_connect));
-
-    // Optional: install OnListening handler to manage a sentinel file
-    if let Some(path) = sentinel_file.clone() {
-        let p = path.clone();
-        let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
-            if listening {
-                match fs::OpenOptions::new().create(true).write(true).truncate(true).open(&p) {
-                    Ok(mut f) => {
-                        let _ = writeln!(f, "listening");
-                        log::info!("Created sentinel file: {}", p);
+            // Optional: install OnListening handler to manage a sentinel file
+            if let Some(path) = sentinel_file.clone() {
+                let p = path.clone();
+                let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
+                    if listening {
+                        match fs::OpenOptions::new().create(true).write(true).truncate(true).open(&p) {
+                            Ok(mut f) => {
+                                let _ = writeln!(f, "listening");
+                                log::info!("Created sentinel file: {}", p);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to create sentinel file '{}': {}", p, e);
+                            }
+                        }
+                    } else {
+                        match fs::remove_file(&p) {
+                            Ok(()) => log::info!("Removed sentinel file: {}", p),
+                            Err(e) => log::warn!("Failed to remove sentinel file '{}': {}", p, e),
+                        }
                     }
-                    Err(e) => {
-                        log::warn!("Failed to create sentinel file '{}': {}", p, e);
-                    }
-                }
-            } else {
-                match fs::remove_file(&p) {
-                    Ok(()) => log::info!("Removed sentinel file: {}", p),
-                    Err(e) => log::warn!("Failed to remove sentinel file '{}': {}", p, e),
-                }
+                });
+                api_mut.set_on_listening(Some(on_listening));
             }
         });
-            api_mut.set_on_listening(Some(on_listening));
-        }
     }
 
     // Start API
     {
-        let api_mut = Arc::get_mut(&mut api)
-            .expect("CLI expects a unique Arc<BingleApiImpl>; did you clone `api` somewhere?");
-        if let Err(e) = api_mut.start(&opts) {
-        warn!("Failed to start: {}", e);
-        std::process::exit(1);
-    }
+        api.access_unsafe_for_tests(|api_mut| {
+            if let Err(e) = api_mut.start(&opts) {
+                warn!("Failed to start: {}", e);
+                std::process::exit(1);
+            }
+        });
     }
 
     // Install Ctrl-C handler
@@ -236,9 +236,9 @@ fn cmd_run(mut args: Vec<String>) {
 
     // Stop API
     {
-        let api_mut = Arc::get_mut(&mut api)
-            .expect("CLI expects a unique Arc<BingleApiImpl>; did you clone `api` somewhere?");
-        api_mut.stop();
+        api.access_unsafe_for_tests(|api_mut| {
+            api_mut.stop();
+        });
     }
     log::info!("Stopped.");
 }

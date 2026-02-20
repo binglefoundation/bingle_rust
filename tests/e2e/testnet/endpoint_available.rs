@@ -11,6 +11,7 @@
 // runs when BINGLE_RUN_TESTNET=1 is set in the environment. Otherwise it exits early.
 
 use log::LevelFilter;
+use simple_logger::SimpleLogger;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -32,7 +33,9 @@ fn testnet_user_reaches_endpoint_available() {
         return;
     }
 
-    log::set_max_level(LevelFilter::Info);
+    let _ = SimpleLogger::new()
+        .with_level(LevelFilter::Info)
+        .init();
 
     // Load testnet node configuration and IDs from the bundled file.
     let node_path = "nodely_testnet_node.json";

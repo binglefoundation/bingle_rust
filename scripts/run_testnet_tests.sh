@@ -4,6 +4,7 @@ CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid e
 
 # Ensure cleanup of background containers on exit
 cleanup() {
+  local exit_code=$?
   docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -134,10 +135,14 @@ RELAY_B_SENT="relay_${RELAY_B_HANDLE}_${RELAY_B_PORT}.sentinel"
 # Remove any old sentinel files
 rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT"
 
+# Enable debug logging for relays to help diagnose connectivity issues
+RELAY_EXTRA_ARGS="--log-debug"
+
 docker run --platform linux/arm64 -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
+ -e EXTRA_ARGS="$RELAY_EXTRA_ARGS" \
  -e PASSPHRASE="$RELAY_A_PASSPHRASE" \
  -e PORT=$RELAY_A_PORT \
  -e HANDLE=$RELAY_A_HANDLE \
@@ -154,6 +159,7 @@ docker run --platform linux/arm64 -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
+ -e EXTRA_ARGS="$RELAY_EXTRA_ARGS" \
  -e PASSPHRASE="$RELAY_B_PASSPHRASE" \
  -e PORT=$RELAY_B_PORT \
  -e HANDLE=$RELAY_B_HANDLE \
@@ -179,13 +185,16 @@ PING_INIT_SENT="pingable_${PING_INIT_MODE}_${PINGABLE_PORT}.sentinel"
 echo "Delete sentinel ${SENT_DIR}/${PING_INIT_SENT}"
 rm -f "$SENT_DIR/$PING_INIT_SENT"
 
+# Enable verbose logging for the ping target to help diagnose failures
+PING_EXTRA_ARGS="--log-debug"
+
 docker run --platform linux/arm64 -d \
  --name bingle_pingable \
  --network bingle_testnet \
  --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
  --cap-add NET_ADMIN \
  -e RUST_BACKTRACE=1 \
- -e EXTRA_ARGS="--log-debug" \
+ -e EXTRA_ARGS="$PING_EXTRA_ARGS" \
  -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
  -e PORT=$PINGABLE_PORT \
  -e HANDLE=$PINGABLE_USER \
@@ -229,7 +238,7 @@ PING_OUT="$PWD/tmp/test_out/test_results_ping.out"
 # Default to All to exercise all three modes in sequence with a final summary
 NAT_MODE=${NAT_MODE:-All}
 
-docker run --platform linux/arm64 --rm \
+docker run --platform linux/arm64 -t --rm \
   --name bingle_test_runner \
   --network bingle_testnet \
   --cap-add NET_ADMIN \
@@ -289,6 +298,8 @@ for MODE in "${PING_MODES[@]}"; do
       --network bingle_testnet \
       --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
       --cap-add NET_ADMIN \
+      -e RUST_BACKTRACE=1 \
+      -e EXTRA_ARGS="$PING_EXTRA_ARGS" \
       -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
       -e PORT=$PINGABLE_PORT \
       -e HANDLE=$PINGABLE_USER \
@@ -311,9 +322,12 @@ for MODE in "${PING_MODES[@]}"; do
     fi
   fi
 
-  # Run the ping test with the sender in Direct mode; write per-mode output file inside /out
+  # Run the prebuilt test inside the dedicated tests image (streams output and waits for completion)
+  # NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted|All
+  # Default to All to exercise all three modes in sequence with a final summary
   OUT_FILE_MODE="/out/$(basename "${PING_OUT_BASE}_${MODE}.out")"
-  docker run --platform linux/arm64 --rm \
+  echo "Running ping test for mode $MODE (Output: $OUT_FILE_MODE)..."
+  docker run --platform linux/arm64 -t --rm \
     --name bingle_test_runner_ping \
     --network bingle_testnet \
     --cap-add NET_ADMIN \
@@ -463,6 +477,16 @@ if [[ "$MAIN_STATUS" == "PASS" && "$PING_STATUS" == "PASS" ]]; then
   exit 0
 else
   echo "OVERALL RESULT: FAIL"
+  
+  # echo "ERROR: Tests failed. Collecting container logs..."
+  # for container in bingle_relay_a bingle_relay_b bingle_pingable; do
+  #   if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+  #     echo "---- Logs from $container ----"
+  #     docker logs "$container" | tail -n 100
+  #     echo "------------------------------"
+  #   fi
+  # done
+
   # Prefer returning the first non-zero original RC if available
   if [[ ${MAIN_RC:-0} -ne 0 ]]; then exit ${MAIN_RC:-1}; fi
   if [[ ${PING_RC:-0} -ne 0 ]]; then exit ${PING_RC:-1}; fi
