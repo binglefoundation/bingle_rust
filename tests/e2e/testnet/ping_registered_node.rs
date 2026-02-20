@@ -89,4 +89,6 @@ fn testnet_send_ping_to_registered_node() {
     assert_eq!(vid, Some(dest_id.as_str()), "verifiedId should equal destination id: {:?}", resp);
     let text = resp.get("text").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
     assert!(text.starts_with("ACK:"), "text should be an ACK: {:?}", resp);
+
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.stop());
 }

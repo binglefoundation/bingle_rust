@@ -138,7 +138,7 @@ rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT"
 # Enable debug logging for relays to help diagnose connectivity issues
 RELAY_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -155,7 +155,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 --rm -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -188,7 +188,7 @@ rm -f "$SENT_DIR/$PING_INIT_SENT"
 # Enable verbose logging for the ping target to help diagnose failures
 PING_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 -d \
+docker run --platform linux/arm64 --rm -d \
  --name bingle_pingable \
  --network bingle_testnet \
  --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
@@ -293,7 +293,7 @@ for MODE in "${PING_MODES[@]}"; do
     PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
     echo "Removing $SENT_DIR/$PING_SENT"
     rm -f "$SENT_DIR/$PING_SENT"
-    docker run --platform linux/arm64 -d \
+    docker run --platform linux/arm64 --rm -d \
       --name bingle_pingable \
       --network bingle_testnet \
       --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
