@@ -70,12 +70,7 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
     false
 }
 
-// Localnet-style integration test for send_message_to_id using two relays and two clients.
-// Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
-#[test]
-#[ntest::timeout(300_000)]
-#[ignore]
-fn bingle_api_send_message_to_id_localnet() {
+fn init_test_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let level = LevelFilter::Debug;
@@ -87,31 +82,15 @@ fn bingle_api_send_message_to_id_localnet() {
             default_hook(pi);
         }));
     });
+}
 
-    // This test requires a running local Algorand localnet + indexer.
-    // Fail fast if not available per issue requirements.
-    if !test_util::should_run_localnet() {
-        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
-        return;
-    }
-    // Fixed relay endpoints on loopback (matches pattern in endpoint_identify_integration.rs)
-    let r1_port = test_util::find_unused_loopback_port();
-    let r2_port = test_util::find_unused_loopback_port();
-    assert_ne!(r1_port, 0);
-    assert_ne!(r2_port, 0);
-    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
-    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
-
-    log::info!("[Test] relay1_addr = {}", relay1_addr);
-    log::info!("[Test] relay2_addr = {}", relay2_addr);
-
+fn deploy_bingle_app() -> u64 {
     use rust_comms::algo_ops::AppArg;
     use std::fs;
     let cfg = test_util::localnet_config();
     // Ensure relay accounts are funded
     // id_b is in same segment as id_a
     let id_b = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
-    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
 
     setup_localnet::ensure_localnet_accounts_funded(&cfg,
                                                     &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE , id_b])
@@ -119,8 +98,6 @@ fn bingle_api_send_message_to_id_localnet() {
 
     // Build AlgoOps for two relay accounts and one creator (use SPEND as creator)
     let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let ops_relay1 = ops_creator.clone();
-    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
 
     // Deploy the BingleDapp from artifacts
     let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
@@ -131,6 +108,15 @@ fn bingle_api_send_message_to_id_localnet() {
 
     // Set Bingle price to 1 (not strictly required for endpoint registration)
     let _ = ops_creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]);
+
+    app_id
+}
+
+fn register_relays(app_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
+    let cfg = test_util::localnet_config();
+    let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let ops_relay1 = ops_creator.clone();
+    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
 
     // Create helpers bound to this app
     let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
@@ -147,6 +133,43 @@ fn bingle_api_send_message_to_id_localnet() {
     // Register endpoints for both relays
     ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
     ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+}
+
+fn setup_stun_servers(broken_nat: bool) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
+    let p1 = test_util::find_unused_loopback_port();
+    let p2 = test_util::find_unused_loopback_port();
+    let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
+    let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
+
+    let s1 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a1, attach_to: None, broken_nat }).expect("start s1");
+    let s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat }).expect("start s2");
+
+    (s1, s2, vec![a1, a2])
+}
+
+fn run_send_message_to_id_test(broken_nat: bool) {
+    init_test_logging();
+
+    // This test requires a running local Algorand localnet + indexer.
+    if !test_util::should_run_localnet() {
+        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
+        return;
+    }
+
+    // Fixed relay endpoints on loopback
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    assert_ne!(r1_port, 0);
+    assert_ne!(r2_port, 0);
+    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
+    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+
+    log::info!("[Test] relay1_addr = {}", relay1_addr);
+    log::info!("[Test] relay2_addr = {}", relay2_addr);
+
+    let app_id = deploy_bingle_app();
+
+    register_relays(app_id, relay1_addr, relay2_addr);
 
     // Tell Engine/handlers to use indexer-based discovery for this app id
     unsafe { std::env::set_var("BINGLE_APP_ID", app_id.to_string()); }
@@ -156,17 +179,11 @@ fn bingle_api_send_message_to_id_localnet() {
     let relay1 = start_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND);
     let relay2 = start_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE);
 
-    // Start two local STUN servers for consistency resolution
-    let p1 = test_util::find_unused_loopback_port();
-    let p2 = test_util::find_unused_loopback_port();
-    let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
-    let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
-
-    let mut s1 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a1, attach_to: None, broken_nat: false }).expect("start s1");
-    let mut s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false }).expect("start s2");
+    // Start two local STUN servers
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(broken_nat);
 
     // Start two clients A and B; B will receive
-    let stun_list = vec![a1, a2];
+    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
     let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone());
     let client_b = start_client("client_b", passphrase_b, stun_list.clone());
 
@@ -204,12 +221,12 @@ fn bingle_api_send_message_to_id_localnet() {
     }
     assert!(received.load(Ordering::SeqCst), "client B did not receive the message in time");
 
-    // (Optional) Validate payload shape
-    if let Ok(guard) = payload_guard.lock() {
-        if let Some(p) = &*guard {
-            log::info!("[Test] received payload: {}", p);
-            assert_eq!(p.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("hello"));
-        }
+    // Validate payload shape
+    {
+        let guard = payload_guard.lock().expect("lock payload_guard");
+        let p = guard.as_ref().expect("payload should be Some since received is true");
+        log::info!("[Test] received payload: {}", p);
+        assert_eq!(p.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("hello"));
     }
 
     // Tear down
@@ -223,4 +240,22 @@ fn bingle_api_send_message_to_id_localnet() {
     if test_util::should_run_localnet() {
         unsafe { std::env::remove_var("BINGLE_APP_ID"); }
     }
+}
+
+// Localnet-style integration test for send_message_to_id using two relays and two clients.
+// Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
+#[test]
+#[ntest::timeout(300_000)]
+#[ignore]
+fn bingle_api_send_message_to_id_localnet() {
+    run_send_message_to_id_test(false);
+}
+
+// Localnet-style integration test for send_message_to_id using two relays and two clients,
+// where both clients have broken NAT and must use relays.
+#[test]
+#[ntest::timeout(300_000)]
+#[ignore]
+fn bingle_api_send_message_to_id_relay_only_localnet() {
+    run_send_message_to_id_test(true);
 }

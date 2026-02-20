@@ -61,7 +61,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&s
             while Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(500));
                 if let Ok(b) = AlgoOps::new(None, Some(addr.to_string()), Some(cfg.clone())).account_balance() {
-                    if let Some(v) = b { if v > 900.0 { needs_fund = false; break; } }
+                    if let Some(v) = b { if v >= 900.0 { needs_fund = false; break; } }
                 }
             }
         }
