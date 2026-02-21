@@ -352,6 +352,8 @@ impl AlgoOps {
         let res = self.rt_block_on(client.account_information(&address))?;
         let info = match res { Ok(v) => v, Err(_e) => return Ok(None) };
 
+        log::debug!("Retrieved account info for address: {}: {:#?}", account_address, info);
+
         let v = serde_json::to_value(&info)
             .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
 

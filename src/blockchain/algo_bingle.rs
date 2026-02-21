@@ -264,8 +264,8 @@ impl AlgoBingle {
         let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
         for acct in accounts {
             if let Some(entries) = get_local(app_id, acct) {
-                // find RelayIP
-                if let Some((_k, v)) = entries.into_iter().find(|(k, _)| k == "RelayIP") {
+                // find static_endpoint
+                if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
                     if let Some(addr) = Self::parse_relay_ip(&v) {
                         out.push((acct.clone(), addr));
                     }

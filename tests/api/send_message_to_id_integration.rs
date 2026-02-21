@@ -1,8 +1,8 @@
 use rust_comms::engine::BingleAccessUnsafeForTests;
+use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex, Once};
 use std::time::{Duration, Instant};
-use libc::sleep;
 use log::{error, LevelFilter};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, OnMessageHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -18,42 +18,42 @@ mod setup_localnet;
 mod test_util;
 
 // Helper: start a relay node at a fixed address
-fn start_relay(name: &str, addr: SocketAddr, passphrase: &str) -> Arc<BingleApiImpl> {
-    log::info!("[Test] start_relay name={} addr={}", name, addr);
-    let api = BingleApiImpl::new(&StartOptions::default());
+fn start_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
+    log::info!("[Test] start_relay name={} addr={} app_id={}", name, addr, app_id);
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
         static_ip: Some(addr),
         am_relay: true,
         stun_servers: None,
-        algo_provider_config: None,
+        algo_provider_config: Some(cfg),
         algo_network: None,
-        app_id: None,
+        app_id: Some(app_id),
         asset_id: None,
         log_level: None,
     };
+    let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
     log::info!("[Test] relay {} started", name);
     api
 }
 
 // Helper: start a client node with given STUN list
-fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>) -> Arc<BingleApiImpl> {
-    log::info!("[Test] start_client name={} stun_list={:?}", name, stun_list);
-    let api = BingleApiImpl::new(&StartOptions::default());
+fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
+    log::info!("[Test] start_client name={} stun_list={:?} app_id={}", name, stun_list, app_id);
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
         static_ip: None,
         am_relay: false,
         stun_servers: Some(stun_list),
-        algo_provider_config: None,
+        algo_provider_config: Some(cfg),
         algo_network: None,
-        app_id: None,
+        app_id: Some(app_id),
         asset_id: None,
         log_level: None,
     };
+    let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");
     log::info!("[Test] client {} started", name);
     api
@@ -73,7 +73,7 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
 fn init_test_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let level = LevelFilter::Debug;
+        let level = LevelFilter::Info;
         let _ = SimpleLogger::new().with_level(level).init();
         // Panic hook that logs at error! and then defers to default behavior
         let default_hook = std::panic::take_hook();
@@ -133,6 +133,22 @@ fn register_relays(app_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr
     // Register endpoints for both relays
     ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
     ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+
+    // Wait for discovery to see them (using discover_root_relays as requested)
+    log::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
+    let accounts = vec![test_util::ADDRESS_SPEND.to_string(), test_util::ADDRESS_RECEIVE.to_string()];
+    let start = Instant::now();
+    let timeout = Duration::from_secs(60);
+    while start.elapsed() < timeout {
+        if let Ok(found) = ab_creator.discover_root_relays(app_id, &accounts) {
+            if found.len() == 2 {
+                log::info!("[Test] Both relays visible via discover_root_relays after {:?}", start.elapsed());
+                return;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1000));
+    }
+    panic!("Relays did not become visible via discover_root_relays within {:?}", timeout);
 }
 
 fn setup_stun_servers(broken_nat: bool) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
@@ -168,24 +184,21 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     log::info!("[Test] relay2_addr = {}", relay2_addr);
 
     let app_id = deploy_bingle_app();
+    let cfg = test_util::localnet_config();
 
     register_relays(app_id, relay1_addr, relay2_addr);
 
-    // Tell Engine/handlers to use indexer-based discovery for this app id
-    unsafe { std::env::set_var("BINGLE_APP_ID", app_id.to_string()); }
-    unsafe { sleep(10); }
-
     // Start two relays
-    let relay1 = start_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND);
-    let relay2 = start_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE);
+    let relay1 = start_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = start_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
 
     // Start two local STUN servers
     let (mut s1, mut s2, stun_list) = setup_stun_servers(broken_nat);
 
     // Start two clients A and B; B will receive
     let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
-    let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone());
-    let client_b = start_client("client_b", passphrase_b, stun_list.clone());
+    let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
+    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
 
     // Install OnMessage handler for client B to capture delivery
     let received = Arc::new(AtomicBool::new(false));
@@ -206,6 +219,45 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
     assert!(ok_a, "client A did not reach Registered state (state = {:?})", client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
     assert!(ok_b, "client B did not reach Registered state (state = {:?})", client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
+
+    // Validate DDB lookups: use DdbClientImpl::lookup (via API) to check registered endpoints
+    {
+        let id_r1 = relay1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("relay1 id");
+        let id_r2 = relay2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("relay2 id");
+        let id_a = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_a id");
+        let id_b = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b id");
+
+        log::info!("[Test] Validating DDB lookups: id_r1={}, id_r2={}, id_a={}, id_b={}", id_r1, id_r2, id_a, id_b);
+
+        // Perform lookups from client_a
+        let ep_r1 = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&id_r1)).expect("lookup relay1 succeeds");
+        let ep_r2 = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&id_r2)).expect("lookup relay2 succeeds");
+        let ep_a = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&id_a)).expect("lookup client_a succeeds");
+        let ep_b = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&id_b)).expect("lookup client_b succeeds");
+
+        log::info!("[Test] ep_r1={}, ep_r2={}, ep_a={}, ep_b={}", ep_r1, ep_r2, ep_a, ep_b);
+
+        // Relays: must have direct static endpoints
+        assert_eq!(ep_r1.inet_socket_address(), Some(relay1_addr), "relay1 lookup should return static address");
+        assert_eq!(ep_r2.inet_socket_address(), Some(relay2_addr), "relay2 lookup should return static address");
+
+        if broken_nat {
+            // Clients: should have a relay endpoint if NAT is broken
+            assert!(ep_a.is_relay(), "client_a should be registered as a relay endpoint (broken_nat=true)");
+            assert!(ep_b.is_relay(), "client_b should be registered as a relay endpoint (broken_nat=true)");
+            // Also check that it is one of our relays
+            let rid_a = ep_a.relay_id().expect("ep_a relay_id");
+            let rid_b = ep_b.relay_id().expect("ep_b relay_id");
+            assert!(rid_a == id_r1 || rid_a == id_r2, "client_a should use one of the two relays");
+            assert!(rid_b == id_r1 || rid_b == id_r2, "client_b should use one of the two relays");
+        } else {
+            // Clients: should have a direct (STUN-discovered) endpoint if NAT is okay
+            assert!(!ep_a.is_relay(), "client_a should be registered as a direct endpoint (broken_nat=false)");
+            assert!(!ep_b.is_relay(), "client_b should be registered as a direct endpoint (broken_nat=false)");
+            assert!(ep_a.inet_socket_address().is_some(), "client_a should have a public IP");
+            assert!(ep_b.inet_socket_address().is_some(), "client_b should have a public IP");
+        }
+    }
 
     // Obtain B's user id and send a message from A -> B using send_message_to_id
     let b_id = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b.get_my_id Some");
@@ -236,10 +288,6 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
     s1.stop();
     s2.stop();
-
-    if test_util::should_run_localnet() {
-        unsafe { std::env::remove_var("BINGLE_APP_ID"); }
-    }
 }
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
@@ -247,6 +295,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
 #[test]
 #[ntest::timeout(300_000)]
 #[ignore]
+#[serial]
 fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
@@ -256,6 +305,7 @@ fn bingle_api_send_message_to_id_localnet() {
 #[test]
 #[ntest::timeout(300_000)]
 #[ignore]
+#[serial]
 fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
