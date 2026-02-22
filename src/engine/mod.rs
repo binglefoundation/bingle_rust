@@ -1401,20 +1401,39 @@ impl Engine {
 
     /// Stop the engine and background tasks if started.
     pub fn stop(&mut self) {
+        log::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, self.last_public_addr);
         // First, clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
-        self.dtls.stop().expect("DTLS stop failed in Engine::stop");
+        self.dtls.stop().expect(&format!(
+            "DTLS stop failed in Engine::stop {}:{}",
+            self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
+            self.last_public_addr
+                .map(|addr| addr.to_string())
+                .unwrap_or_else(|| "None".to_string())
+        ));
 
         if let Some(mux) = &self.mux {
             mux.stop();
         }
+        else {
+            log::warn!("[Engine::stop] mux is not running at stop time {:?}:{:?}", self.issuer, self.last_public_addr);
+        }
         if let Some(stun_arc) = &self.stun {
+            log::info!("[Engine::stop] locking STUN finder");
             if let Ok(mut finder) = stun_arc.lock() {
+                log::info!("[Engine::stop] stopping STUN finder");
                 finder.stop();
             }
+            else {
+                log::error!("[Engine::stop] STUN finder lock failed {:?}:{:?}", self.issuer, self.last_public_addr);
+            }
+        }
+        else {
+            log::warn!("[Engine::stop] STUN finder is not running at stop time {:?}:{:?}", self.issuer, self.last_public_addr);
         }
         self.mux = None;
         self.stun = None;
+        log::info!("[Engine::stop] done {:?}:{:?}", self.issuer, self.last_public_addr);
     }
 
     pub fn state(&self) -> EngineState {

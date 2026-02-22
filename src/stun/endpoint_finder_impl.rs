@@ -233,9 +233,20 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
     }
 
     fn stop(&mut self) {
+        log::info!("[StunEndpointFinder] stopping background thread");
         if self.running.swap(false, Ordering::SeqCst) {
-            if let Some(h) = self.thread.take() { let _ = h.join(); }
+            if let Some(h) = self.thread.take() {
+                log::info!("[StunEndpointFinder] join on background thread, waiting for it to finish...");
+                let _ = h.join();
+            }
+            else {
+                log::warn!("[StunEndpointFinder] background thread not running, nothing to stop");
+            }
         }
+        else {
+            log::warn!("[StunEndpointFinder] stop called without start");
+        }
+        log::info!("[StunEndpointFinder] stopped background thread");
     }
 
     fn process_packet(&mut self, from: SocketAddr, data: &[u8]) {
@@ -265,5 +276,11 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
     fn set_send_packet_handler(&mut self, handler: Option<SendPacketHandler>) {
         let mut inner = self.inner.lock().unwrap();
         inner.send_packet = handler;
+    }
+}
+
+impl Drop for StunEndpointFinderImpl {
+    fn drop(&mut self) {
+        self.stop();
     }
 }

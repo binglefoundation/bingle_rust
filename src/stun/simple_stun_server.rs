@@ -137,3 +137,9 @@ impl SimpleStunServer {
         }
     }
 }
+
+impl Drop for SimpleStunServer {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}

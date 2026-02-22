@@ -827,10 +827,10 @@ pub mod non_ios {
             // Debug log inbound DTLS packet at the DTLS layer
             let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
             if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json);
+                log::trace!("[DtlsOpenSsl::accept][inbound][{} -> {}] {}", from, to_ip_str, json);
                 #[allow(unused)] {}
             } else {
-                log::info!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len());
+                log::warn!("[DtlsOpenSsl::accept][inbound][{} -> {}] <parse error> ({} bytes)", from, to_ip_str, data.len());
                 #[allow(unused)] {}
             }
             // Find or create the queue for this peer in peer_states and push the datagram
@@ -846,7 +846,7 @@ pub mod non_ios {
                     q
                 }
             };
-            log::info!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes) [{} queued b4]", from, to_ip_str, data.len(), q_arc.len());
+            log::trace!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes) [{} queued b4]", from, to_ip_str, data.len(), q_arc.len());
             #[allow(unused)] {}
             q_arc.push(data.to_vec());
 
@@ -859,7 +859,7 @@ pub mod non_ios {
                 }
             };
             if suppressed {
-                log::info!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
+                log::debug!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
                 #[allow(unused)] {}
             }
             let create_stream = {
@@ -870,7 +870,7 @@ pub mod non_ios {
             };
             if create_stream {
                 let to_ip_str = mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                log::info!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str);
+                log::debug!("[DtlsOpenSsl::accept] creating new SslStream (accept_state) for [{} -> {}]", from, to_ip_str);
                 #[allow(unused)] {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
@@ -897,7 +897,7 @@ pub mod non_ios {
                     let (issuer_prev, queue_prev) = if let Some(ps) = m.get(&key) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), Arc::new(PeerQueue::default())) };
                     let (prev_conn_flag, prev_ann_flag) = if let Some(ps) = m.get(&key) { (ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (false, false) };
                                         m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag });
-                    log::info!("[DtlsOpenSsl::accept] installed writer for {}", from);
+                    log::debug!("[DtlsOpenSsl::accept] installed writer for {}", from);
                 }
 
                 // Spawn a per-peer reader loop to deliver application data
@@ -959,23 +959,40 @@ pub mod non_ios {
         }
     }
 
+    impl Drop for DtlsOpenSsl {
+        fn drop(&mut self) {
+            let _ = self.stop();
+        }
+    }
+
     impl Dtls for DtlsOpenSsl {
         fn start(&mut self, mux: std::sync::Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
             self.start_accept_with_mux(mux)
         }
+
         fn stop(&mut self) -> Result<()> {
+            log::debug!("[DtlsOpenSsl::stop]");
             if let Some(flag) = self.stop_flag.take() {
                 use std::sync::atomic::Ordering;
                 flag.store(true, Ordering::SeqCst);
             }
+            else {
+                log::warn!("[DtlsOpenSsl::stop] already stopped");
+            }
+
             let _ = self.server_thread.take();
             // Stop any internally owned UDP mux
             if let Some(mux) = &self.owned_udp_mux {
                 mux.stop();
             }
+            else {
+                log::warn!("[DtlsOpenSsl::stop] no owned mux");
+            }
             self.owned_udp_mux = None;
+            log::debug!("[DtlsOpenSsl::stop] done");
             Ok(())
         }
+
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             // TODO: target id and relay id get confused here
             use std::io::Write;

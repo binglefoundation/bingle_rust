@@ -272,7 +272,7 @@ impl RelayFinder {
         Err("no available root relay (preferred and alternate failed RelayCheck)".to_string())
     }
 
-    fn select_indices(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
+    pub fn select_indices(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
         let n = relays.len();
         if n == 1 { return (0usize, 0usize); }
         let bucket = self.id_bucket_u32(my_id);
@@ -280,6 +280,7 @@ impl RelayFinder {
         let part_size = span / (n as u64);
         let idx = ((bucket as u64) / part_size) as usize % n;
         let alt = (idx + 1) % n;
+        log::info!("[RelayFinder] select_indices: n={} id={} idx={} alt={}", n, my_id, idx, alt);
         (idx, alt)
     }
 

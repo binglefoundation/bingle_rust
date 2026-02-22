@@ -331,7 +331,7 @@ impl BingleApi for BingleApiImpl {
     }
 
     fn stop(&mut self) {
-        log::info!("[BingleApiImpl::stop][enter]");
+        log::info!("[BingleApiImpl::stop][enter] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
         // Notify listeners that we are no longer listening
         if let Some(cb) = &self.on_listening { cb(false); }
         // Stop Engine
@@ -339,7 +339,7 @@ impl BingleApi for BingleApiImpl {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).stop();
         }
-        log::info!("[BingleApiImpl::stop][exit]");
+        log::info!("[BingleApiImpl::stop][exit] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
     }
 
     fn network_change(&mut self) {

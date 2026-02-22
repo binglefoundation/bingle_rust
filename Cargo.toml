@@ -47,6 +47,7 @@ members = [
 ]
 
 [dev-dependencies]
+env_logger = "0.10"
 bingle_test = { path = "bingle_test" }
 tempfile = "3"
 ntest = "0.9"

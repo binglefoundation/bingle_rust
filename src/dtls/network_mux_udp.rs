@@ -155,7 +155,7 @@ impl UdpNetworkMux {
                     Ok((n, from)) => {
                         if n == 0 { continue; }
                         let data = &buf[..n];
-                        log::info!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
+                        log::trace!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
                         this.process_packet(&NetworkEndpoint::new_direct(from), data);
                     }
                     Err(e) => {
@@ -183,20 +183,31 @@ impl UdpNetworkMux {
 
     /// Stop the receive loop and join the background thread.
     pub fn stop(&self) {
+        log::debug!("[UdpNetworkMux::stop]");
         self.running.store(false, Ordering::SeqCst);
         // poke the socket by setting a very short timeout so the thread wakes up soon
         let _ = self.socket.set_read_timeout(Some(Duration::from_millis(10)));
         if let Ok(mut slot) = self.rx_thread.lock() {
             if let Some(handle) = slot.take() {
+                log::debug!("[UdpNetworkMux::stop] joining rx_thread");
                 let _ = handle.join();
             }
+            else {
+                log::warn!("[UdpNetworkMux::stop] rx_thread not running");
+            }
         }
+        else {
+            log::warn!("[UdpNetworkMux::stop] rx_thread lock poisoned");
+        }
+        log::debug!("[UdpNetworkMux::stop] done");
     }
 }
 
 impl Drop for UdpNetworkMux {
     fn drop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
+        // poke the socket by setting a very short timeout so the thread wakes up soon
+        let _ = self.socket.set_read_timeout(Some(Duration::from_millis(10)));
         // We cannot join here because the JoinHandle is owned behind a Mutex<Option<..>> and
         // may already be taken or we're in drop; rely on stop() in normal flows.
     }
@@ -353,7 +364,7 @@ impl UdpNetworkMux {
         match mux_type_for(data) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                    log::info!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}", from_endpoint, to, json);
+                    log::trace!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}", from_endpoint, to, json);
                     #[allow(unused)] {  }
                 } else {
                     warn!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] <parse error> ({} bytes)", from_endpoint, to, data.len());
@@ -368,9 +379,9 @@ impl UdpNetworkMux {
                     (h)(source, from_endpoint, data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        log::info!("[UdpNetworkMux][process_packet][DTLS handler] took {}ms", elapsed.as_millis());
+                        log::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}ms", elapsed.as_millis());
                     } else if elapsed.as_micros() > 100 {
-                        log::debug!("[UdpNetworkMux][process_packet][DTLS handler] took {}μs", elapsed.as_micros());
+                        log::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}μs", elapsed.as_micros());
                     }
                 }
             }
@@ -381,9 +392,9 @@ impl UdpNetworkMux {
                     (h)(source, &from_endpoint.inet_socket_address().expect("Stun messages must originate from an IP"), data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        log::info!("[UdpNetworkMux][process_packet][STUN handler] took {}ms", elapsed.as_millis());
+                        log::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}ms", elapsed.as_millis());
                     } else if elapsed.as_micros() > 100 {
-                        log::debug!("[UdpNetworkMux][process_packet][STUN handler] took {}μs", elapsed.as_micros());
+                        log::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}μs", elapsed.as_micros());
                     }
                 }
             }
@@ -395,9 +406,9 @@ impl UdpNetworkMux {
                     (h)(source, &from_endpoint.inet_socket_address().expect("TURN messages must originate from an IP"), data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        log::info!("[UdpNetworkMux][process_packet][TURN handler] took {}ms", elapsed.as_millis());
+                        log::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}ms", elapsed.as_millis());
                     } else if elapsed.as_micros() > 100 {
-                        log::debug!("[UdpNetworkMux][process_packet][TURN handler] took {}μs", elapsed.as_micros());
+                        log::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}μs", elapsed.as_micros());
                     }
                 }
             }
