@@ -223,7 +223,7 @@ impl Engine {
         }
     }
 
-    fn set_relay_state(&mut self, new_state: RelayState, reason: &str) {
+    pub(crate) fn set_relay_state(&mut self, new_state: RelayState, reason: &str) {
         let prev = self.relay_state;
         let prev_str = Self::relay_state_to_str_static(prev);
         let new_str = Self::relay_state_to_str_static(new_state);
@@ -1451,6 +1451,25 @@ impl Engine {
     pub fn last_public_addr(&self) -> Option<SocketAddr> {
         self.last_public_addr
     }
+
+    pub fn peer_ddb_records(&self) -> Option<usize> {
+        self.peer_ddb_records
+    }
+
+    pub fn ddb_upsert_record(&self, record: AdvertRecord) {
+        if let Ok(mut b) = self.ddb_backend.lock() {
+            b.upsert(record);
+        }
+    }
+
+    pub fn ddb_backend_size(&self) -> usize {
+        if let Ok(b) = self.ddb_backend.lock() {
+            b.len()
+        } else {
+            0
+        }
+    }
+
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) {
         self.on_stun_consistent(Some(addr));
     }

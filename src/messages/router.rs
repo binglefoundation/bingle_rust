@@ -72,6 +72,8 @@ impl BingleApiInternal for LockingApiWrapper {
     fn notify_listening(&self, listening: bool) { self.api.access(|a| a.notify_listening(listening)) }
     fn set_relay_state(&self, state: crate::engine::RelayState) { self.api.access(|a| a.set_relay_state(state)) }
     fn get_peer_ddb_target(&self) -> Option<usize> { self.api.access(|a| a.get_peer_ddb_target()) }
+    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.api.access(|a| a.ddb_upsert_record(record)) }
+    fn ddb_backend_size(&self) -> usize { self.api.access(|a| a.ddb_backend_size()) }
 }
 
 
@@ -160,6 +162,7 @@ impl Router {
                 DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), &from, m),
                 DdbMessage::QueryResolve(m) => handler.on_ddb_query_resolve(api.clone(), &from, m),
                 DdbMessage::InitResolve(m) => handler.on_ddb_init_resolve(api.clone(), &from, m),
+                DdbMessage::DumpResolve(m) => handler.on_ddb_dump_resolve(api.clone(), &from, m),
                 DdbMessage::GetEpoch(m) => handler.on_ddb_get_epoch(api.clone(), &from, m),
                 _ => handler.on_unimplemented(msg),
             },

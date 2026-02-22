@@ -318,6 +318,22 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
     fn notify_listening(&self, listening: bool) {
         self.inner_bingle_api_internal.notify_listening(listening);
     }
+
+    fn set_relay_state(&self, state: rust_comms::engine::RelayState) {
+        self.inner_bingle_api_internal.set_relay_state(state);
+    }
+
+    fn get_peer_ddb_target(&self) -> Option<usize> {
+        self.inner_bingle_api_internal.get_peer_ddb_target()
+    }
+
+    fn ddb_upsert_record(&self, record: rust_comms::ddb::AdvertRecord) {
+        self.inner_bingle_api_internal.ddb_upsert_record(record);
+    }
+
+    fn ddb_backend_size(&self) -> usize {
+        self.inner_bingle_api_internal.ddb_backend_size()
+    }
 }
 
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApiInternal` but provides defaults,
@@ -368,6 +384,18 @@ pub trait InnerBingleApiInternal {
     fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
 
     fn notify_listening(&self, _listening: bool) {}
+
+    fn set_relay_state(&self, _state: rust_comms::engine::RelayState) {}
+
+    fn get_peer_ddb_target(&self) -> Option<usize> {
+        None
+    }
+
+    fn ddb_upsert_record(&self, _record: rust_comms::ddb::AdvertRecord) {}
+
+    fn ddb_backend_size(&self) -> usize {
+        0
+    }
 }
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.

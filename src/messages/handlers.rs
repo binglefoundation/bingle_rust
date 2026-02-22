@@ -31,6 +31,9 @@ impl BingleApiInternal for BothAsApi {
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) { self.inner.turn_handle_called(source, dest, channel) }
     fn notify_listening(&self, listening: bool) { self.inner.notify_listening(listening) }
     fn set_relay_state(&self, state: crate::engine::RelayState) { self.inner.set_relay_state(state) }
+    fn get_peer_ddb_target(&self) -> Option<usize> { self.inner.get_peer_ddb_target() }
+    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.inner.ddb_upsert_record(record) }
+    fn ddb_backend_size(&self) -> usize { self.inner.ddb_backend_size() }
 }
 impl BingleApi for BothAsApi {
     fn debug_print_options(&self) { self.inner.debug_print_options() }
@@ -258,6 +261,7 @@ pub trait MessageHandler {
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
     fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
     fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbInitResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone()))); }
+    fn on_ddb_dump_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DumpResolve(msg.clone()))); }
     fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetEpoch(msg.clone()))); }
 
     // Unknown
@@ -398,6 +402,15 @@ impl MessageHandler for DefaultPrintingHandler {
             );
             let json = crate::messages::marshal::to_json_value(&resp);
             router.set_outbound_response(Some(json));
+        }
+    }
+
+    fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) {
+        api.ddb_upsert_record(msg.record.clone());
+        if let Some(target) = api.get_peer_ddb_target() {
+            if target == api.ddb_backend_size() {
+                log::info!("To Be Implemented: DDB sync complete (all {} records received)", target);
+            }
         }
     }
 

@@ -65,6 +65,9 @@ pub trait DdbBackend {
         response_tag: Option<String>,
         sender: &dyn Fn(&crate::api::bingle_api::NetworkEndpoint, &str, serde_json::Value) -> bool,
     );
+
+    /// Get current number of records in the backend.
+    fn len(&self) -> usize;
 }
 
 /// Simple in-memory DDB backend backed by a HashMap
@@ -149,5 +152,9 @@ impl DdbBackend for InMemoryDdbBackend {
             let dump_json = crate::messages::marshal::to_json_value(&dump);
             let _ = sender(nsk, user_id, dump_json);
         }
+    }
+
+    fn len(&self) -> usize {
+        self.map.len()
     }
 }

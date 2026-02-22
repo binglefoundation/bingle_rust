@@ -60,6 +60,12 @@ pub trait BingleApiInternal: Send + Sync {
 
     /// If loading from a peer, return the target number of records expected from InitResponse.
     fn get_peer_ddb_target(&self) -> Option<usize> { None }
+
+    /// Insert a DDB AdvertRecord into the local backend.
+    fn ddb_upsert_record(&self, _record: crate::ddb::AdvertRecord) { /* default no-op */ }
+
+    /// Get current number of records in the DDB backend.
+    fn ddb_backend_size(&self) -> usize { 0 }
 }
 
 /// Convenience type aliases used by the Bingle API.

@@ -649,6 +649,22 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
         self.engine.access(|e| e.turn_relay_handle_listen(&id, &source))
     }
+    fn set_relay_state(&self, state: crate::engine::RelayState) {
+        log::info!("[BingleApiImpl::set_relay_state] state={:?}", state);
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).set_relay_state(state, "set_relay_state from API internal");
+        }
+    }
+    fn get_peer_ddb_target(&self) -> Option<usize> {
+        self.engine.access(|e| e.peer_ddb_records())
+    }
+    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) {
+        self.engine.access(|e| e.ddb_upsert_record(record))
+    }
+    fn ddb_backend_size(&self) -> usize {
+        self.engine.access(|e| e.ddb_backend_size())
+    }
 }
 
 
