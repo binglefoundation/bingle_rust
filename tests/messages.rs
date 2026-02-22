@@ -54,6 +54,9 @@ mod relay_called_handler;
 #[path = "messages/ddb_messages_json.rs"]
 mod ddb_messages_json;
 
+#[path = "messages/ddb_signon_handler.rs"]
+mod ddb_signon_handler;
+
 #[path = "messages/listening_notifications.rs"]
 mod listening_notifications;
 

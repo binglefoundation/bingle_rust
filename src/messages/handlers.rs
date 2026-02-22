@@ -262,6 +262,8 @@ pub trait MessageHandler {
     fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
     fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbInitResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone()))); }
     fn on_ddb_dump_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DumpResolve(msg.clone()))); }
+    fn on_ddb_signon(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignon) { self.on_unimplemented(&Message::Ddb(DdbMessage::Signon(msg.clone()))); }
+    fn on_ddb_signon_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignonResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::SignonResponse(msg.clone()))); }
     fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetEpoch(msg.clone()))); }
 
     // Unknown
@@ -409,8 +411,92 @@ impl MessageHandler for DefaultPrintingHandler {
         api.ddb_upsert_record(msg.record.clone());
         if let Some(target) = api.get_peer_ddb_target() {
             if target == api.ddb_backend_size() {
-                log::info!("To Be Implemented: DDB sync complete (all {} records received)", target);
+                log::info!("DDB sync complete (all {} records received). Sending DdbSignon.", target);
+
+                let my_id = match api.get_my_id() {
+                    Some(id) => id,
+                    None => {
+                        log::warn!("[on_ddb_dump_resolve] get_my_id returned None; cannot send Signon");
+                        return;
+                    }
+                };
+
+                let signon = DdbSignon {
+                    app: "ddb".to_string(),
+                    start_id: my_id,
+                    original_signature: None,
+                    rippled: Some(false),
+                    tag: None,
+                    response_tag: None,
+                    text: None,
+                    data: None,
+                };
+                let msg_out = Message::Ddb(DdbMessage::Signon(signon));
+                let json = crate::messages::marshal::to_json_value(&msg_out);
+
+                let nsk = _from.network_source_key.clone();
+                let peer_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+
+                let api_for_thread = api.clone();
+                std::thread::spawn(move || {
+                    log::info!("[on_ddb_dump_resolve] sending DdbSignon to {} via {}", peer_id, nsk);
+                    match api_for_thread.send_message_to_network_with_response(&nsk, &peer_id, json, None) {
+                        Ok(resp) => {
+                            log::info!("[on_ddb_dump_resolve] DdbSignonResponse received: {}", resp);
+                        }
+                        Err(e) => {
+                            log::warn!("[on_ddb_dump_resolve] DdbSignon failed: {}", e);
+                        }
+                    }
+                });
             }
+        }
+    }
+
+    fn on_ddb_signon(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignon) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() { return; }
+            log::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
+
+            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+            if msg.start_id != sender_id {
+                log::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
+                return;
+            }
+
+            // Create and insert relay record for the new peer
+            let endpoint = from.network_source_key.inet_socket_address().map(|addr| {
+                InetSocketAddress {
+                    host: match addr.ip() {
+                        std::net::IpAddr::V4(v4) => v4.to_string(),
+                        std::net::IpAddr::V6(v6) => v6.to_string(),
+                    },
+                    port: addr.port(),
+                }
+            });
+
+            let record = AdvertRecord {
+                id: msg.start_id.clone(),
+                endpoint,
+                am_relay: Some(true),
+                relay_id: None,
+                relay_sig: None,
+                date: "1970-01-01T00:00:00Z".to_string(),
+                sig: msg.original_signature.clone(),
+            };
+            api.ddb_upsert_record(record);
+            log::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
+            let response_tag = router.get_last_response_tag();
+
+            let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
+                app: "ddb".to_string(),
+                tag: None,
+                response_tag,
+                text: None,
+                data: None,
+            }));
+            let json = crate::messages::marshal::to_json_value(&resp);
+            router.set_outbound_response(Some(json));
         }
     }
 
