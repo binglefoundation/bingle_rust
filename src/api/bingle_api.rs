@@ -66,6 +66,18 @@ pub trait BingleApiInternal: Send + Sync {
 
     /// Get current number of records in the DDB backend.
     fn ddb_backend_size(&self) -> usize { 0 }
+
+    /// Initialize relay state: discover peers, coordinate, and sync DDB.
+    fn initialize_relay(&self) {}
+
+    /// Returns true if this node is configured as a relay.
+    fn is_relay(&self) -> bool { false }
+
+    /// Signal that relay signon is complete.
+    fn signal_signon_complete(&self) {}
+
+    /// Reset relay signon completion signal.
+    fn reset_signon_complete(&self) {}
 }
 
 /// Convenience type aliases used by the Bingle API.

@@ -665,6 +665,24 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn ddb_backend_size(&self) -> usize {
         self.engine.access(|e| e.ddb_backend_size())
     }
+    fn initialize_relay(&self) {
+        log::info!("[BingleApiImpl::initialize_relay]");
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).initialize_relay();
+        }
+    }
+    fn is_relay(&self) -> bool {
+        self.started_options.am_relay
+    }
+    fn signal_signon_complete(&self) {
+        log::info!("[BingleApiImpl::signal_signon_complete]");
+        self.engine.access(|e| e.signal_signon_complete());
+    }
+    fn reset_signon_complete(&self) {
+        log::info!("[BingleApiImpl::reset_signon_complete]");
+        self.engine.access(|e| e.reset_signon_complete());
+    }
 }
 
 

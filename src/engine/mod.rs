@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{NetworkEndpoint, ProgressCallback, StartOptions, UserId};
+use crate::api::bingle_api::{NetworkEndpoint, StartOptions, UserId};
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
@@ -198,6 +198,8 @@ pub struct Engine {
     >,
     // When loading DDB from a peer, store the reported record count
     peer_ddb_records: Option<usize>,
+    // Signon completion signal
+    signon_complete: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl Engine {
@@ -492,6 +494,7 @@ impl Engine {
             ),
             on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
             peer_ddb_records: None,
+            signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 
@@ -625,6 +628,45 @@ impl Engine {
         } else {
             false
         }
+    }
+
+    pub fn signal_signon_complete(&self) {
+        let (lock, cvar) = &*self.signon_complete;
+        if let Ok(mut complete) = lock.lock() {
+            log::info!("[Engine::signal_signon_complete] signaling complete=true");
+            *complete = true;
+            cvar.notify_all();
+        }
+    }
+
+    pub fn reset_signon_complete(&self) {
+        let (lock, _) = &*self.signon_complete;
+        if let Ok(mut complete) = lock.lock() {
+            log::info!("[Engine::reset_signon_complete] resetting complete=false");
+            *complete = false;
+        }
+    }
+
+    pub fn await_signon_complete(&self, timeout: Duration) -> bool {
+        let (lock, cvar) = &*self.signon_complete;
+        let mut complete = lock.lock().unwrap();
+        let start = Instant::now();
+        log::info!("[Engine::await_signon_complete] awaiting signon completion with timeout {:?}", timeout);
+        while !*complete {
+            let remaining = timeout.saturating_sub(start.elapsed());
+            if remaining.is_zero() {
+                log::warn!("[Engine::await_signon_complete] timed out");
+                return false;
+            }
+            let (new_complete, wait_res) = cvar.wait_timeout(complete, remaining).unwrap();
+            complete = new_complete;
+            if wait_res.timed_out() && !*complete {
+                log::warn!("[Engine::await_signon_complete] wait_timeout returned timed out");
+                return false;
+            }
+        }
+        log::info!("[Engine::await_signon_complete] signon complete observed");
+        true
     }
 
     /// Install a Bingle protocol sender callback for Engine-initiated messages.
@@ -907,16 +949,12 @@ impl Engine {
         Ok(())
     }
 
-    fn initialize_relay(&mut self) {
-        log::info!("[Engine] initializing relay");
+    pub(crate) fn initialize_relay(&mut self) {
+        log::info!("[Engine::initialize_relay] starts for {:?}", self.issuer);
         self.set_relay_state(
             RelayState::Off,
             "initialize_relay: starting sequence (set Off before delay)",
         );
-
-        // Before discovering peers, mark relay state as Starting
-        // self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
-        // log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting");
 
         // Build discovery closure using indexer when app_id is configured; else skip
         #[cfg(not(target_os = "ios"))]
@@ -983,20 +1021,20 @@ impl Engine {
                 let finder_arc = Arc::new(finder);
                 let send_common = move |dest_id: &str, json_val: serde_json::Value| {
                     let uid = dest_id.to_string();
-                    // Progress logger for sending
-                    let progress: Arc<ProgressCallback> = Arc::new({
-                        let uid = uid.clone();
-                        move |pct: u8, msg: String| {
-                            log::info!(
-                                "[Engine::initialize_relay][mutex] progress={} dest_id={} msg={}",
-                                pct,
-                                uid,
-                                msg
-                            );
-                        }
-                    });
+                    // // Progress logger for sending
+                    // let progress: Arc<ProgressCallback> = Arc::new({
+                    //     let uid = uid.clone();
+                    //     move |pct: u8, msg: String| {
+                    //         log::info!(
+                    //             "[Engine::initialize_relay][mutex] progress={} dest_id={} msg={}",
+                    //             pct,
+                    //             uid,
+                    //             msg
+                    //         );
+                    //     }
+                    // });
                     let ok =
-                        api_weak.access(|a| a.send_message_to_id(&uid, json_val, Some(progress)));
+                        api_weak.access(|a| a.send_message_to_id(&uid, json_val, None));
                     if !ok {
                         log::warn!(
                             "[Engine::initialize_relay][mutex] send_message_to_id failed for {}",
@@ -1057,7 +1095,7 @@ impl Engine {
                     let my_id_for_mtx = my_id.clone();
                     m.acquire(|| {
                         self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
-                        log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting");
+                        log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting: {}", my_id_for_mtx);
 
                         // Re-count peer states under the mutex to decide initialization strategy
                         finder_arc_for_mtx.clear_state_cache();
@@ -1093,12 +1131,19 @@ impl Engine {
                             let relays = finder_arc_for_mtx.list_root_relays(&my_id_for_mtx, false);
                             if let Some(first) = relays.first() {
                                 let peer_id: String = first.id.clone();
+                                // Reset signon signal before starting load
+                                self.reset_signon_complete();
                                 let count_res = self.ddb_client().start_load_from_peer(&peer_id);
                                 match count_res {
                                     Ok(n) => {
                                         self.peer_ddb_records = Some(n);
                                         self.set_relay_state(RelayState::Loading, "initialize_relay: started DDB load from peer");
                                         log::info!("[Engine::initialize_relay] started DDB load from peer {} with {} records", peer_id, n);
+
+                                        // Wait for signon to complete (signaled from MessageHandler::on_ddb_signon_response)
+                                        if !self.await_signon_complete(Duration::from_secs(60)) {
+                                            log::warn!("[Engine::initialize_relay] Timed out waiting for signon completion");
+                                        }
                                     }
                                     Err(e) => {
                                         log::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);
@@ -1108,6 +1153,8 @@ impl Engine {
                                 log::warn!("[Engine::initialize_relay] no peer selected for DDB load");
                             }
                         }
+                        // Need to await DDB load complete here and signon response
+                        log::info!("[Engine::initialize_relay] relay initialization CS complete {}", my_id_for_mtx);
                     });
                     // After critical section completes, mark as Available
                     self.set_relay_state(
@@ -1132,6 +1179,7 @@ impl Engine {
                 );
             }
         }
+        log::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
 
     fn start_with_addr(

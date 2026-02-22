@@ -334,6 +334,22 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
     fn ddb_backend_size(&self) -> usize {
         self.inner_bingle_api_internal.ddb_backend_size()
     }
+
+    fn initialize_relay(&self) {
+        self.inner_bingle_api_internal.initialize_relay();
+    }
+
+    fn is_relay(&self) -> bool {
+        self.inner_bingle_api_internal.is_relay()
+    }
+
+    fn signal_signon_complete(&self) {
+        self.inner_bingle_api_internal.signal_signon_complete();
+    }
+
+    fn reset_signon_complete(&self) {
+        self.inner_bingle_api_internal.reset_signon_complete();
+    }
 }
 
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApiInternal` but provides defaults,
@@ -396,6 +412,16 @@ pub trait InnerBingleApiInternal {
     fn ddb_backend_size(&self) -> usize {
         0
     }
+
+    fn initialize_relay(&self) {}
+
+    fn is_relay(&self) -> bool {
+        false
+    }
+
+    fn signal_signon_complete(&self) {}
+
+    fn reset_signon_complete(&self) {}
 }
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.

@@ -34,6 +34,10 @@ impl BingleApiInternal for BothAsApi {
     fn get_peer_ddb_target(&self) -> Option<usize> { self.inner.get_peer_ddb_target() }
     fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.inner.ddb_upsert_record(record) }
     fn ddb_backend_size(&self) -> usize { self.inner.ddb_backend_size() }
+    fn initialize_relay(&self) { self.inner.initialize_relay() }
+    fn is_relay(&self) -> bool { self.inner.is_relay() }
+    fn signal_signon_complete(&self) { self.inner.signal_signon_complete() }
+    fn reset_signon_complete(&self) { self.inner.reset_signon_complete() }
 }
 impl BingleApi for BothAsApi {
     fn debug_print_options(&self) { self.inner.debug_print_options() }
@@ -440,17 +444,16 @@ impl MessageHandler for DefaultPrintingHandler {
                 let api_for_thread = api.clone();
                 std::thread::spawn(move || {
                     log::info!("[on_ddb_dump_resolve] sending DdbSignon to {} via {}", peer_id, nsk);
-                    match api_for_thread.send_message_to_network_with_response(&nsk, &peer_id, json, None) {
-                        Ok(resp) => {
-                            log::info!("[on_ddb_dump_resolve] DdbSignonResponse received: {}", resp);
-                        }
-                        Err(e) => {
-                            log::warn!("[on_ddb_dump_resolve] DdbSignon failed: {}", e);
-                        }
-                    }
+                    let ok = api_for_thread.send_message_to_network(&nsk, &peer_id, json, None);
+                    log::info!("[on_ddb_dump_resolve] DdbSignon sent ok={}", ok);
                 });
             }
         }
+    }
+
+    fn on_ddb_signon_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbSignonResponse) {
+        log::info!("[on_ddb_signon_response] received SignonResponse, signaling completion");
+        api.signal_signon_complete();
     }
 
     fn on_ddb_signon(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignon) {
@@ -599,6 +602,9 @@ impl MessageHandler for DefaultPrintingHandler {
         std::thread::spawn(move || {
             // Obtain the discovered public address (including port)
             if let Some(addr) = api_for_log.get_last_public_addr() {
+                if api_for_log.is_relay() {
+                    api_for_log.initialize_relay();
+                }
                 match api_for_log.ddb_register_ip(addr) {
                     Ok(()) => {
                         // On success, mark engine state as Registered and print id/handle for debugging

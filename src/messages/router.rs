@@ -74,6 +74,10 @@ impl BingleApiInternal for LockingApiWrapper {
     fn get_peer_ddb_target(&self) -> Option<usize> { self.api.access(|a| a.get_peer_ddb_target()) }
     fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.api.access(|a| a.ddb_upsert_record(record)) }
     fn ddb_backend_size(&self) -> usize { self.api.access(|a| a.ddb_backend_size()) }
+    fn initialize_relay(&self) { self.api.access(|a| a.initialize_relay()) }
+    fn is_relay(&self) -> bool { self.api.access(|a| a.is_relay()) }
+    fn signal_signon_complete(&self) { self.api.access(|a| a.signal_signon_complete()) }
+    fn reset_signon_complete(&self) { self.api.access(|a| a.reset_signon_complete()) }
 }
 
 
