@@ -1019,9 +1019,10 @@ impl Engine {
                 // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
                 let api_weak = self.bingle_api.clone();
                 let finder_arc = Arc::new(finder);
+                let my_id_for_send = my_id.clone();
                 let send_common = move |dest_id: &str, json_val: serde_json::Value| {
                     let uid = dest_id.to_string();
-                    // // Progress logger for sending
+                    // Progress logger for sending
                     // let progress: Arc<ProgressCallback> = Arc::new({
                     //     let uid = uid.clone();
                     //     move |pct: u8, msg: String| {
@@ -1034,11 +1035,13 @@ impl Engine {
                     //     }
                     // });
                     let ok =
-                        api_weak.access(|a| a.send_message_to_id(&uid, json_val, None));
+                        api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None));
                     if !ok {
                         log::warn!(
-                            "[Engine::initialize_relay][mutex] send_message_to_id failed for {}",
-                            dest_id
+                            "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
+                            dest_id,
+                            my_id_for_send,
+                            json_val
                         );
                     }
                 };

@@ -598,22 +598,24 @@ impl MessageHandler for DefaultPrintingHandler {
         api.set_state(crate::engine::EngineState::EndpointAvailable);
         api.set_nat_type(crate::engine::NatType::FullCone);
         // After setting NAT type, start a background thread to register our discovered public endpoint in DDB.
-        let api_for_log = api.clone();
+        let api_for_thread = api.clone();
         std::thread::spawn(move || {
             // Obtain the discovered public address (including port)
-            if let Some(addr) = api_for_log.get_last_public_addr() {
-                if api_for_log.is_relay() {
-                    api_for_log.initialize_relay();
-                }
-                match api_for_log.ddb_register_ip(addr) {
+            if let Some(addr) = api_for_thread.get_last_public_addr() {
+                match api_for_thread.ddb_register_ip(addr) {
                     Ok(()) => {
+                        log::info!("[handlers::on_triangle_test3] DDB registration successful: {}", addr);
+                        if api_for_thread.is_relay() {
+                            api_for_thread.initialize_relay();
+                            log::info!("[handlers::on_triangle_test3] relay registration successful: {}", addr);
+                        }
                         // On success, mark engine state as Registered and print id/handle for debugging
-                        let uid = api_for_log.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
-                        let handle = api_for_log.get_handle().unwrap_or_else(|| "<unknown>".to_string());
+                        let uid = api_for_thread.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
+                        let handle = api_for_thread.get_handle().unwrap_or_else(|| "<unknown>".to_string());
                         log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded (user_id={}, handle={})", uid, handle);
-                        api_for_log.set_state(crate::engine::EngineState::Registered);
+                        api_for_thread.set_state(crate::engine::EngineState::Registered);
                         // Notify that we are listening now
-                        api_for_log.notify_listening(true);
+                        api_for_thread.notify_listening(true);
                     }
                     Err(e) => {
                         log::warn!("[handlers::on_triangle_test3] ddb_register_ip failed: {}", e);
