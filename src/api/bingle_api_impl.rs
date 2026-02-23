@@ -683,6 +683,10 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         log::info!("[BingleApiImpl::reset_signon_complete]");
         self.engine.access(|e| e.reset_signon_complete());
     }
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String) {
+        log::info!("[BingleApiImpl::ripple_message] originator={}", originator_id);
+        self.engine.access(|e| e.ripple_message(message, originator_id));
+    }
 }
 
 

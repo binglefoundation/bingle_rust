@@ -78,6 +78,9 @@ pub trait BingleApiInternal: Send + Sync {
 
     /// Reset relay signon completion signal.
     fn reset_signon_complete(&self) {}
+
+    /// Send a message to all known relays (except ourselves and the message originator).
+    fn ripple_message(&self, _message: JsonValue, _originator_id: String) {}
 }
 
 /// Convenience type aliases used by the Bingle API.

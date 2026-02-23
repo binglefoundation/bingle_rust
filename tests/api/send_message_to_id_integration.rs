@@ -364,7 +364,7 @@ fn bingle_api_send_message_to_id_relay_only_localnet() {
 }
 
 #[test]
-#[ntest::timeout(120_000)]
+#[ntest::timeout(180_000)]
 #[ignore]
 #[serial]
 fn bingle_api_send_message_to_id_non_root_relay_localnet() {

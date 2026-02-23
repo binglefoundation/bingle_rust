@@ -78,6 +78,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn is_relay(&self) -> bool { self.api.access(|a| a.is_relay()) }
     fn signal_signon_complete(&self) { self.api.access(|a| a.signal_signon_complete()) }
     fn reset_signon_complete(&self) { self.api.access(|a| a.reset_signon_complete()) }
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String) { self.api.access(|a| a.ripple_message(message, originator_id)) }
 }
 
 
@@ -168,6 +169,7 @@ impl Router {
                 DdbMessage::InitResolve(m) => handler.on_ddb_init_resolve(api.clone(), &from, m),
                 DdbMessage::DumpResolve(m) => handler.on_ddb_dump_resolve(api.clone(), &from, m),
                 DdbMessage::GetEpoch(m) => handler.on_ddb_get_epoch(api.clone(), &from, m),
+                DdbMessage::EpochInfo(m) => handler.on_ddb_epoch_info(api.clone(), &from, m),
                 DdbMessage::Signon(m) => handler.on_ddb_signon(api.clone(), &from, m),
                 DdbMessage::SignonResponse(m) => handler.on_ddb_signon_response(api.clone(), &from, m),
                 _ => handler.on_unimplemented(msg),

@@ -263,12 +263,14 @@ pub trait MessageHandler {
 
     // DDB messages (default to unimplemented unless overridden)
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
+    fn on_ddb_delete_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDeleteResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DeleteResolve(msg.clone()))); }
     fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
     fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbInitResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone()))); }
     fn on_ddb_dump_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DumpResolve(msg.clone()))); }
     fn on_ddb_signon(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignon) { self.on_unimplemented(&Message::Ddb(DdbMessage::Signon(msg.clone()))); }
     fn on_ddb_signon_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignonResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::SignonResponse(msg.clone()))); }
     fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetEpoch(msg.clone()))); }
+    fn on_ddb_epoch_info(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbEpochInfo) { self.on_unimplemented(&Message::Ddb(DdbMessage::EpochInfo(msg.clone()))); }
 
     // Unknown
     fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
@@ -378,7 +380,8 @@ impl MessageHandler for DefaultPrintingHandler {
             if !router.get_am_relay() { return; }
             // Validate sender id
             let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-            if up.record.id != up.start_id || up.record.id != sender_id { return; }
+            if up.record.id != up.start_id { return; }
+            if !up.rippled && up.record.id != sender_id { return; }
             // Upsert to backend
             if let Some(backend) = router.get_ddb_backend() {
                 if let Ok(mut b) = backend.lock() { b.upsert(up.record.clone()); }
@@ -391,6 +394,45 @@ impl MessageHandler for DefaultPrintingHandler {
             );
             let json = crate::messages::marshal::to_json_value(&resp);
             router.set_outbound_response(Some(json));
+
+            if !up.rippled {
+                let mut rippled_up = up.clone();
+                rippled_up.rippled = true;
+                let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
+                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+                _api.ripple_message(ripple_json, up.start_id.clone());
+            }
+        }
+    }
+
+    fn on_ddb_delete_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDeleteResolve) {
+        if let Some(router) = crate::messages::router::Router::current() {
+            if !router.get_am_relay() { return; }
+            // Validate sender id
+            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+            if !msg.rippled && msg.start_id != sender_id { return; }
+
+            // Delete from backend
+            if let Some(backend) = router.get_ddb_backend() {
+                if let Ok(mut b) = backend.lock() { b.delete(&msg.start_id); }
+            }
+
+            // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+            let resp = crate::messages::types::Message::Ddb(
+                crate::messages::types::DdbMessage::UpdateResponse(
+                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: msg.response_tag.clone(), text: None, data: None }
+                )
+            );
+            let json = crate::messages::marshal::to_json_value(&resp);
+            router.set_outbound_response(Some(json));
+
+            if !msg.rippled {
+                let mut rippled_msg = msg.clone();
+                rippled_msg.rippled = true;
+                let ripple_msg = Message::Ddb(DdbMessage::DeleteResolve(rippled_msg));
+                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+                api.ripple_message(ripple_json, msg.start_id.clone());
+            }
         }
     }
 
@@ -462,7 +504,7 @@ impl MessageHandler for DefaultPrintingHandler {
             log::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
 
             let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-            if msg.start_id != sender_id {
+            if msg.rippled != Some(true) && msg.start_id != sender_id {
                 log::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
                 return;
             }
@@ -489,6 +531,15 @@ impl MessageHandler for DefaultPrintingHandler {
             };
             api.ddb_upsert_record(record);
             log::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
+
+            if msg.rippled != Some(true) {
+                let mut rippled_msg = msg.clone();
+                rippled_msg.rippled = Some(true);
+                let ripple_msg = Message::Ddb(DdbMessage::Signon(rippled_msg));
+                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+                api.ripple_message(ripple_json, msg.start_id.clone());
+            }
+
             let response_tag = router.get_last_response_tag();
 
             let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {

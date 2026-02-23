@@ -350,6 +350,10 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
     fn reset_signon_complete(&self) {
         self.inner_bingle_api_internal.reset_signon_complete();
     }
+
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String) {
+        self.inner_bingle_api_internal.ripple_message(message, originator_id);
+    }
 }
 
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApiInternal` but provides defaults,
@@ -422,6 +426,8 @@ pub trait InnerBingleApiInternal {
     fn signal_signon_complete(&self) {}
 
     fn reset_signon_complete(&self) {}
+
+    fn ripple_message(&self, _message: serde_json::Value, _originator_id: String) {}
 }
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.

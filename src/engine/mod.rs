@@ -763,6 +763,35 @@ impl Engine {
         res
     }
 
+    /// Send a message to all known relays (except ourselves and the message originator).
+    pub fn ripple_message(&self, message: serde_json::Value, originator_id: String) {
+        log::info!("[Engine::ripple_message] originator={}", originator_id);
+        if let Some(finder) = &self.relay_finder {
+            let my_id = match self.issuer() {
+                Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
+                Err(_) => {
+                    log::warn!("[Engine::ripple_message] issuer not set, cannot ripple");
+                    return;
+                }
+            };
+            // list_all_relays(my_id, include_self=false)
+            let relays = finder.list_all_relays(&my_id, false);
+            for r in relays {
+                if r.id == originator_id {
+                    log::debug!("[Engine::ripple_message] skipping originator {}", r.id);
+                    continue;
+                }
+                log::info!("[Engine::ripple_message] sending to relay={} at {:?}", r.id, r.address);
+                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(r.address);
+                if let Some(api) = self.bingle_api.upgrade() {
+                    api.send_message_to_network(&nsk, &r.id, message.clone(), None);
+                }
+            }
+        } else {
+            log::warn!("[Engine::ripple_message] relay_finder not initialized");
+        }
+    }
+
     /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
     /// This avoids duplicating the same closure in different Engine start paths.
     fn install_dtls_handler(&mut self) -> Result<(), String> {
