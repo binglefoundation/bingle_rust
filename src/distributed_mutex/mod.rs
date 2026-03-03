@@ -97,6 +97,25 @@ impl InnerState {
     fn required_acks(&self) -> usize {
         self.dynamic_node_ids.len() / 2 + 1
     }
+
+    fn update_membership(&mut self, self_id: &str, from_id: &str, known_ids: &Option<HashSet<String>>) -> bool {
+        let mut changed = false;
+        if !self.dynamic_node_ids.contains(from_id) {
+            log::info!("[mutex:{}] adding new node to dynamic_node_ids: {}", self_id, from_id);
+            self.dynamic_node_ids.insert(from_id.to_string());
+            changed = true;
+        }
+        if let Some(known) = known_ids {
+            for id in known {
+                if !self.dynamic_node_ids.contains(id) {
+                    log::info!("[mutex:{}] adding new node from known_ids: {}", self_id, id);
+                    self.dynamic_node_ids.insert(id.clone());
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
 }
 
 impl ModifiedLamportDistributedMutex {
@@ -124,7 +143,7 @@ impl ModifiedLamportDistributedMutex {
         };
         Self {
             self_id,
-            lease_duration: Duration::from_millis(200),
+            lease_duration: Duration::from_millis(1000),
             send_request: Arc::new(send_request),
             send_reply: Arc::new(send_reply),
             send_release: Arc::new(send_release),
@@ -134,12 +153,17 @@ impl ModifiedLamportDistributedMutex {
     }
 
     fn broadcast_request(&self, ts: i64) {
-        let msg = crate::messages::types::MutexRequest {
-            app: "mutex".into(),
-            lamport_timestamp: ts,
-            response_tag: None,
+        let (ids, msg) = {
+            let st = self.inner.lock().expect("lock");
+            let ids: Vec<String> = st.dynamic_node_ids.iter().cloned().collect();
+            let msg = crate::messages::types::MutexRequest {
+                app: "mutex".into(),
+                lamport_timestamp: ts,
+                response_tag: None,
+                known_ids: Some(ids.clone().into_iter().collect()),
+            };
+            (ids, msg)
         };
-        let ids: Vec<String> = self.inner.lock().expect("lock").dynamic_node_ids.iter().cloned().collect();
         for id in ids {
             if id == self.self_id {
                 continue;
@@ -149,12 +173,38 @@ impl ModifiedLamportDistributedMutex {
     }
 
     fn broadcast_release(&self) {
-        let msg = crate::messages::types::MutexRelease { app: "mutex".into(), tag: None };
-        let ids: Vec<String> = self.inner.lock().expect("lock").dynamic_node_ids.iter().cloned().collect();
+        let (ids, msg) = {
+            let st = self.inner.lock().expect("lock");
+            let ids: Vec<String> = st.dynamic_node_ids.iter().cloned().collect();
+            let msg = crate::messages::types::MutexRelease {
+                app: "mutex".into(),
+                tag: None,
+                known_ids: Some(ids.clone().into_iter().collect()),
+            };
+            (ids, msg)
+        };
         log::info!("[mutex:{}] broadcast release: {:?}", self.self_id, ids);
         for id in ids {
             if id == self.self_id { continue; }
             (self.send_release)(&id, &msg);
+        }
+    }
+
+    fn broadcast_membership(&self) {
+        let (ids, msg) = {
+            let st = self.inner.lock().expect("lock");
+            let ids: Vec<String> = st.dynamic_node_ids.iter().cloned().collect();
+            let msg = crate::messages::types::MutexResponse {
+                app: "mutex".into(),
+                tag: Some("membership_only".into()),
+                known_ids: Some(ids.clone().into_iter().collect()),
+            };
+            (ids, msg)
+        };
+        log::debug!("[mutex:{}] broadcasting membership: {:?}", self.self_id, ids);
+        for id in ids {
+            if id == self.self_id { continue; }
+            (self.send_reply)(&id, &msg);
         }
     }
 
@@ -165,54 +215,63 @@ impl ModifiedLamportDistributedMutex {
         let mut st = self.inner.lock().expect("lock");
         st.lamport = st.lamport.max(req.lamport_timestamp) + 1;
 
-        if !st.dynamic_node_ids.contains(from_id) {
-            log::info!("[mutex:{}] adding new node to dynamic_node_ids: {}", self.self_id, from_id);
-            st.dynamic_node_ids.insert(from_id.to_string());
-            st.acks.insert(from_id.to_string());
-            if st.current_request_ts.is_some() && st.acks.len() >= st.required_acks() {
-                self.cv.notify_all();
-            }
+        let membership_changed = st.update_membership(&self.self_id, from_id, &req.known_ids);
+        if membership_changed && st.current_request_ts.is_some() {
+            self.cv.notify_all();
         }
+
+        let should_broadcast_membership = membership_changed;
+        let mut should_send_reply = false;
 
         // If we are currently inside the critical section, defer all incoming requests
         if st.in_cs {
             st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
-            return;
-        }
-
-        // Check current holder lease
-        let now = Instant::now();
-        if let Some((holder, _ts, deadline)) = &st.last_holder {
-            if *holder != from_id && *deadline > now {
-                // Defer granting while current lease valid
-                st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
-                return;
-            }
-        }
-
-        // Decide based on our own request status
-        let grant_now = match st.current_request_ts {
-            None => true,
-            Some(my_ts) => {
-                // If we are requesting, only grant if their (ts, id) < (my_ts, self_id)
-                match (req.lamport_timestamp.cmp(&my_ts), from_id.cmp(&self.self_id)) {
-                    (Ordering::Less, _) => true,
-                    (Ordering::Equal, ord_id) => ord_id == Ordering::Less,
-                    (Ordering::Greater, _) => false,
+        } else {
+            // Check current holder lease
+            let now = Instant::now();
+            let mut deferred_by_lease = false;
+            if let Some((holder, _ts, deadline)) = &st.last_holder {
+                if *holder != from_id && *deadline > now {
+                    // Defer granting while current lease valid
+                    st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
+                    deferred_by_lease = true;
                 }
             }
-        };
 
-        if grant_now {
-            // Record last holder lease for requester
-            st.last_holder = Some((from_id.to_string(), req.lamport_timestamp, Instant::now() + self.lease_duration));
-            let known_ids = Some(st.dynamic_node_ids.iter().cloned().collect());
-            drop(st);
+            if !deferred_by_lease {
+                // Decide based on our own request status
+                let grant_now = match st.current_request_ts {
+                    None => true,
+                    Some(my_ts) => {
+                        // If we are requesting, only grant if their (ts, id) < (my_ts, self_id)
+                        match (req.lamport_timestamp.cmp(&my_ts), from_id.cmp(&self.self_id)) {
+                            (Ordering::Less, _) => true,
+                            (Ordering::Equal, ord_id) => ord_id == Ordering::Less,
+                            (Ordering::Greater, _) => false,
+                        }
+                    }
+                };
+
+                if grant_now {
+                    // Record last holder lease for requester
+                    st.last_holder = Some((from_id.to_string(), req.lamport_timestamp, Instant::now() + self.lease_duration));
+                    should_send_reply = true;
+                } else {
+                    st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
+                }
+            }
+        }
+
+        let known_ids = Some(st.dynamic_node_ids.iter().cloned().collect());
+        drop(st);
+
+        if should_broadcast_membership {
+            self.broadcast_membership();
+        }
+        if should_send_reply {
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
             log::debug!("[mutex:{}] [handle_request] grant_now - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(from_id, &resp);
-        } else {
-            st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
         }
     }
 
@@ -220,45 +279,56 @@ impl ModifiedLamportDistributedMutex {
         log::debug!("[mutex:{}] handle REPLY from {}, known ids={:?}", self.self_id, from_id, resp.known_ids);
         let mut st = self.inner.lock().expect("lock");
 
-        if let Some(known) = &resp.known_ids {
-            for id in known {
-                if !st.dynamic_node_ids.contains(id) {
-                    log::info!("[mutex:{}] adding new node from known_ids in REPLY: {}", self.self_id, id);
-                    st.dynamic_node_ids.insert(id.clone());
-                    st.acks.insert(id.clone());
-                }
-            }
+        let membership_changed = st.update_membership(&self.self_id, from_id, &resp.known_ids);
+        if membership_changed && st.current_request_ts.is_some() {
+            self.cv.notify_all();
         }
 
-        if st.current_request_ts.is_some() {
+        if st.current_request_ts.is_some() && resp.tag.as_deref() != Some("membership_only") {
             st.acks.insert(from_id.to_string());
             if st.acks.len() >= st.required_acks() {
                 self.cv.notify_all();
             }
         }
+        drop(st);
+        if membership_changed {
+            self.broadcast_membership();
+        }
     }
 
-    pub fn handle_release(&self, from_id: &str, _rel: &crate::messages::types::MutexRelease) {
+    pub fn handle_release(&self, from_id: &str, rel: &crate::messages::types::MutexRelease) {
         log::debug!("[mutex:{}] handle RELEASE from {}", self.self_id, from_id);
         let mut st = self.inner.lock().expect("lock");
+        let membership_changed = st.update_membership(&self.self_id, from_id, &rel.known_ids);
+        if membership_changed && st.current_request_ts.is_some() {
+            self.cv.notify_all();
+        }
+
         if let Some((holder, _ts, _)) = &st.last_holder {
             if holder == from_id { st.last_holder = None; }
-        } else {
-            // Nothing
         }
+
+        let mut next_grant = None;
         // On release, grant only the next (earliest) deferred request to preserve majority safety
         if let Some(first) = st.deferred.iter().next().cloned() {
             st.deferred.remove(&first);
             let next_id = first.1.clone();
             let next_ts = first.0;
             st.last_holder = Some((next_id.clone(), next_ts, Instant::now() + self.lease_duration));
-            let known_ids = Some(st.dynamic_node_ids.iter().cloned().collect());
-            drop(st);
+            next_grant = Some(next_id);
+        }
+
+        let known_ids = Some(st.dynamic_node_ids.iter().cloned().collect());
+        drop(st);
+
+        if membership_changed {
+            self.broadcast_membership();
+        }
+
+        if let Some(id) = next_grant {
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
             log::debug!("[mutex:{}] [handle_release] grant deferred - send REPLY: {:?}", self.self_id, resp);
-            (self.send_reply)(&next_id, &resp);
-        } else {
-            drop(st);
+            (self.send_reply)(&id, &resp);
         }
     }
 }
@@ -281,7 +351,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
             ts
         };
 
-        debug!("[mutex:{}] Broadcasting REQUEST ts={} to peers {:?}", self.self_id, ts, self.inner.lock().expect("inner lock 2").dynamic_node_ids);
+        debug!("[mutex:{}] Broadcasting REQUEST ts={} to peers {:?}", self.self_id, ts, { let st = self.inner.lock().expect("inner lock 2"); st.dynamic_node_ids.clone() });
         self.broadcast_request(ts);
 
         // 2) Wait for majority with exponential backoff retries
@@ -344,7 +414,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                 }
             }
             // Timeout fired; retry broadcast for nodes that may have missed
-            debug!("[mutex:{}] Timeout/backoff {:?} fired; re-broadcasting REQUEST ts={} tp {:?}", self.self_id, backoff, ts, self.inner.lock().expect("inner lock 2").dynamic_node_ids);
+            debug!("[mutex:{}] Timeout/backoff {:?} fired; re-broadcasting REQUEST ts={} tp {:?}", self.self_id, backoff, ts, st2.dynamic_node_ids);
             drop(st2);
             self.broadcast_request(ts);
             // Exponential backoff up to 1s

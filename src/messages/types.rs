@@ -482,6 +482,8 @@ pub struct MutexRequest {
     pub lamport_timestamp: i64,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
+    #[serde(rename = "known_ids", default, skip_serializing_if = "Option::is_none")]
+    pub known_ids: Option<HashSet<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -498,4 +500,6 @@ pub struct MutexRelease {
     pub app: String, // must be "mutex"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "known_ids", default, skip_serializing_if = "Option::is_none")]
+    pub known_ids: Option<HashSet<String>>,
 }

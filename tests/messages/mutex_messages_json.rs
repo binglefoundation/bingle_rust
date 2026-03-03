@@ -50,7 +50,7 @@ fn unit_mutex_response_to_json() {
 
 #[test]
 fn unit_mutex_release_roundtrip() {
-    let rel = MutexRelease { app: "mutex".into(), tag: None };
+    let rel = MutexRelease { app: "mutex".into(), tag: None, known_ids: None };
     let msg = Message::Mutex(MutexMessage::Release(rel));
     let v = to_json_value(&msg);
     assert_eq!(v.get("type").and_then(|x| x.as_str()), Some("release"));

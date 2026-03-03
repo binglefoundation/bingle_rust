@@ -8,7 +8,6 @@ mod common;
 use common::TestNetwork;
 
 #[ntest::timeout(30000)]
-#[ignore]
 #[test]
 fn modified_lamport_dynamic_add_node_after_start() {
     crate::api::send_message_to_id_integration::init_test_logging();

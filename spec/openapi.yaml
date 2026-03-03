@@ -1056,6 +1056,12 @@ components:
           type: integer
           format: int64
           description: Requester's Lamport timestamp for ordering.
+        known_ids:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+          description: Unique list of node IDs known by the requester.
       required: [app, type, lamport_timestamp]
       additionalProperties: true
 
@@ -1102,5 +1108,11 @@ components:
           type: string
           nullable: true
           description: Optional correlation tag for request/response association.
+        known_ids:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+          description: Unique list of node IDs known by the holder.
       required: [app, type]
       additionalProperties: true
