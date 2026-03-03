@@ -151,6 +151,7 @@ impl ModifiedLamportDistributedMutex {
     fn broadcast_release(&self) {
         let msg = crate::messages::types::MutexRelease { app: "mutex".into(), tag: None };
         let ids: Vec<String> = self.inner.lock().expect("lock").dynamic_node_ids.iter().cloned().collect();
+        log::info!("[mutex:{}] broadcast release: {:?}", self.self_id, ids);
         for id in ids {
             if id == self.self_id { continue; }
             (self.send_release)(&id, &msg);
@@ -208,6 +209,7 @@ impl ModifiedLamportDistributedMutex {
             let known_ids = Some(st.dynamic_node_ids.iter().cloned().collect());
             drop(st);
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
+            log::debug!("[mutex:{}] [handle_request] grant_now - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(from_id, &resp);
         } else {
             st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
@@ -253,6 +255,7 @@ impl ModifiedLamportDistributedMutex {
             let known_ids = Some(st.dynamic_node_ids.iter().cloned().collect());
             drop(st);
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
+            log::debug!("[mutex:{}] [handle_release] grant deferred - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(&next_id, &resp);
         } else {
             drop(st);
@@ -268,7 +271,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
         // Start a request cycle
         // 1) set lamport, record request, send broadcast
         let ts = {
-            let mut st = self.inner.lock().expect("lock");
+            let mut st = self.inner.lock().expect("inner lock 1");
             st.lamport += 1;
             let ts = st.lamport;
             st.current_request_ts = Some(ts);
@@ -278,13 +281,13 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
             ts
         };
 
-        debug!("[mutex:{}] Broadcasting REQUEST ts={} to peers", self.self_id, ts);
+        debug!("[mutex:{}] Broadcasting REQUEST ts={} to peers {:?}", self.self_id, ts, self.inner.lock().expect("inner lock 2").dynamic_node_ids);
         self.broadcast_request(ts);
 
         // 2) Wait for majority with exponential backoff retries
         let mut backoff = Duration::from_millis(50);
         loop {
-            let mut st = self.inner.lock().expect("lock");
+            let mut st = self.inner.lock().expect("inner lock 3");
             let req_acks = st.required_acks();
             if st.acks.len() >= req_acks {
                 // Only enter if we have not granted our vote to someone else whose lease is still valid
@@ -341,7 +344,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                 }
             }
             // Timeout fired; retry broadcast for nodes that may have missed
-            debug!("[mutex:{}] Timeout/backoff {:?} fired; re-broadcasting REQUEST ts={}", self.self_id, backoff, ts);
+            debug!("[mutex:{}] Timeout/backoff {:?} fired; re-broadcasting REQUEST ts={} tp {:?}", self.self_id, backoff, ts, self.inner.lock().expect("inner lock 2").dynamic_node_ids);
             drop(st2);
             self.broadcast_request(ts);
             // Exponential backoff up to 1s
@@ -376,6 +379,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
         // Send a single reply outside the lock (if any)
         if let Some((_ts, id)) = maybe_grant {
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
+            log::debug!("[mutex:{}] [acquire] maybe_grant - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(&id, &resp);
         }
         debug!("[mutex:{}] Broadcasting RELEASE to peers", self.self_id);
