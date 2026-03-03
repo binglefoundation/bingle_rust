@@ -1076,6 +1076,12 @@ components:
           type: string
           nullable: true
           description: Optional correlation tag for request/response association.
+        known_ids:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+          description: Unique list of node IDs known by the responder.
       required: [app, type]
       additionalProperties: true
 

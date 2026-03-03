@@ -6,7 +6,7 @@ use rust_comms::messages::types::{MutexRelease, MutexRequest, MutexResponse};
 
 #[derive(Clone)]
 pub struct TestNetwork {
-    pub nodes: Arc<Mutex<HashMap<String, Arc<ModifiedLamportDistributedMutex>>>>,
+    pub nodes: Arc<Mutex<HashMap<String, Option<Arc<ModifiedLamportDistributedMutex>>>>>,
     pub down: Arc<Mutex<Vec<String>>>,
 }
 
@@ -26,7 +26,12 @@ impl TestNetwork {
         self.down.lock().expect("down lock").push(id.to_string());
     }
 
-    pub fn add_node(&self, id: &str, all_ids: Vec<String>) -> Arc<ModifiedLamportDistributedMutex> {
+    pub fn add_node(&self, id: &str) {
+        let self_id = id.to_string();
+        self.nodes.lock().expect("nodes lock").insert(self_id.clone(), None);
+    }
+
+    pub fn create_mutex(&self, id: &str, with_ids: Vec<String>) -> Arc<ModifiedLamportDistributedMutex> {
         let self_id = id.to_string();
         let net_for_req = self.nodes.clone();
         let net_for_rep = self.nodes.clone();
@@ -43,10 +48,13 @@ impl TestNetwork {
             }
             let dest_opt = {
                 let map = net_for_req.lock().expect("net");
-                map.get(dest_id).cloned()
+                map.get(dest_id).expect("Must have map entry in create_mutex").clone()
             };
             if let Some(dest) = dest_opt {
                 dest.handle_request(&self_id_for_req, req);
+            }
+            else {
+                log::warn!("REQUEST: No node with id {} in network", dest_id);
             }
         };
 
@@ -58,10 +66,13 @@ impl TestNetwork {
             }
             let dest_opt = {
                 let map = net_for_rep.lock().expect("net");
-                map.get(dest_id).cloned()
+                map.get(dest_id).expect("Must have map entry in create_mutex").clone()
             };
             if let Some(dest) = dest_opt {
                 dest.handle_reply(&self_id_for_rep, resp);
+            }
+            else {
+                log::warn!("REPLY: No node with id {} in network", dest_id);
             }
         };
 
@@ -73,15 +84,18 @@ impl TestNetwork {
             }
             let dest_opt = {
                 let map = net_for_rel.lock().expect("net");
-                map.get(dest_id).cloned()
+                map.get(dest_id).expect("Must have map entry in create_mutex").clone()
             };
             if let Some(dest) = dest_opt {
                 dest.handle_release(&self_id_for_rel, rel);
             }
+            else {
+                log::warn!("RELEASE: No node with id {} in network", dest_id);
+            }
         };
 
-        let m = Arc::new(ModifiedLamportDistributedMutex::new(self_id.clone(), all_ids, send_request, send_reply, send_release));
-        self.nodes.lock().expect("nodes").insert(self_id, m.clone());
-        m
+        let mutex = Arc::new(ModifiedLamportDistributedMutex::new(id.to_string(), with_ids, send_request, send_reply, send_release));
+        self.nodes.lock().expect("nodes lock").insert(self_id, Some(mutex.clone()));
+        mutex
     }
 }

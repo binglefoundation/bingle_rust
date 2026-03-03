@@ -1019,10 +1019,20 @@ impl Engine {
                 log::info!("[Engine::initialize_relay] cleared finder state cache");
 
                 // 1) Seed caches and load current states across the network
-                // Load states via RelayCheck for all known relays (may include self)
+                // Load states via RelayCheck for all known relays (must include self)
                 finder.load_relay_states(&my_id);
                 log::info!("[Engine::initialize_relay] loaded peer relay states");
-                let roots_all = finder.list_root_relays(&my_id, true);
+                let mut all_relays = finder.list_all_relays(&my_id, true);
+                if !all_relays.iter().any(|r| r.id == my_id) {
+                    let addr = self
+                        .last_public_addr
+                        .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
+                    all_relays.push(RelayInfo {
+                        id: my_id.clone(),
+                        address: addr,
+                        state: Some(RelayState::Starting),
+                    });
+                }
 
                 // Count peer states (excluding self)
                 let (avail_cnt, starting_cnt) = count_peer_states(&finder, &my_id);
@@ -1034,10 +1044,10 @@ impl Engine {
 
                 // Build peer id list including self for the mutex
                 log::info!(
-                    "[Engine::initialize_relay] discovered {:?} roots (including self)",
-                    roots_all
+                    "[Engine::initialize_relay] discovered {:?} relays (including self)",
+                    all_relays
                 );
-                let mut ids: Vec<String> = roots_all.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
+                let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
                 ids.sort();
                 ids.dedup();
                 log::info!(
@@ -1121,13 +1131,13 @@ impl Engine {
 
                 // Use the mutex to serialize initialization of the DDB one node at a time
                 let ddb_backend_arc = self.ddb_backend.clone();
-                let roots_copy = roots_all.clone();
+                let roots_copy = all_relays.clone();
                 if let Some(m) = self.relay_init_mutex.as_ref().cloned() {
                     let finder_arc_for_mtx = finder_arc.clone();
                     let my_id_for_mtx = my_id.clone();
                     m.acquire(|| {
                         self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
-                        log::info!("[Engine::initialize_relay] stage complete: relay state set to Starting: {}", my_id_for_mtx);
+                        log::info!("[Engine::initialize_relay] entering CS: relay state set to Starting: {}", my_id_for_mtx);
 
                         // Re-count peer states under the mutex to decide initialization strategy
                         finder_arc_for_mtx.clear_state_cache();

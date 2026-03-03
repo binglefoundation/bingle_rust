@@ -16,18 +16,36 @@ fn unit_mutex_request_from_json() {
 
 #[test]
 fn unit_mutex_response_to_json() {
+    let mut known_ids = std::collections::HashSet::new();
+    known_ids.insert("ID1".to_string());
+    known_ids.insert("ID2".to_string());
     let resp = MutexResponse {
         app: "mutex".into(),
         tag: Some("t1".into()),
+        known_ids: Some(known_ids),
     };
     let msg = Message::Mutex(MutexMessage::Response(resp));
     let v = to_json_value(&msg);
     assert_eq!(v.get("app").and_then(|x| x.as_str()), Some("mutex"));
     assert_eq!(v.get("type").and_then(|x| x.as_str()), Some("response"));
+    assert!(v.get("known_ids").is_some());
+    let ids = v.get("known_ids").and_then(|x| x.as_array()).expect("array");
+    assert_eq!(ids.len(), 2);
     // Ensure forbidden fields are absent
     assert!(v.get("responseTag").is_none());
     assert!(v.get("text").is_none());
     assert!(v.get("data").is_none());
+
+    let s = serde_json::to_string(&v).expect("serialize");
+    let back = from_json_str(&s).expect("parse back");
+    match back {
+        Message::Mutex(MutexMessage::Response(r)) => {
+            assert_eq!(r.known_ids.as_ref().unwrap().len(), 2);
+            assert!(r.known_ids.as_ref().unwrap().contains("ID1"));
+            assert!(r.known_ids.as_ref().unwrap().contains("ID2"));
+        }
+        _ => panic!("expected Mutex Response back"),
+    }
 }
 
 #[test]

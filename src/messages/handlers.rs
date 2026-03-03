@@ -386,14 +386,6 @@ impl MessageHandler for DefaultPrintingHandler {
             if let Some(backend) = router.get_ddb_backend() {
                 if let Ok(mut b) = backend.lock() { b.upsert(up.record.clone()); }
             }
-            // Prepare response JSON and stash on router for Engine/DTLS layer to send.
-            let resp = crate::messages::types::Message::Ddb(
-                crate::messages::types::DdbMessage::UpdateResponse(
-                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
-                )
-            );
-            let json = crate::messages::marshal::to_json_value(&resp);
-            router.set_outbound_response(Some(json));
 
             if !up.rippled {
                 let mut rippled_up = up.clone();
@@ -401,6 +393,15 @@ impl MessageHandler for DefaultPrintingHandler {
                 let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
                 let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
                 _api.ripple_message(ripple_json, up.start_id.clone());
+
+                // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+                let resp = crate::messages::types::Message::Ddb(
+                    crate::messages::types::DdbMessage::UpdateResponse(
+                        crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                    )
+                );
+                let json = crate::messages::marshal::to_json_value(&resp);
+                router.set_outbound_response(Some(json));
             }
         }
     }

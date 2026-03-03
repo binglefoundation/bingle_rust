@@ -91,7 +91,7 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
     false
 }
 
-fn init_test_logging() {
+pub(crate) fn init_test_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let level = LevelFilter::Debug;

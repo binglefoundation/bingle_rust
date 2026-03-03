@@ -8,3 +8,6 @@ mod modified_lamport;
 
 #[path = "dynamic_add.rs"]
 mod dynamic_add;
+
+#[path = "islanding.rs"]
+mod islanding;

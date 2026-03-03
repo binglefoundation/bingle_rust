@@ -13,7 +13,7 @@ mod pki_generate_pki_from_ops;
 mod endpoint_identify_integration;
 
 #[path = "send_message_to_id_integration.rs"]
-mod send_message_to_id_integration;
+pub(crate) mod send_message_to_id_integration;
 
 #[path = "bingle_api_start_fail.rs"]
 mod bingle_api_start_fail;

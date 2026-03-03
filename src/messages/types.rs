@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::collections::HashSet;
 
 // Re-export common DDB types for convenience
 pub use crate::ddb::{AdvertRecord, InetSocketAddress};
@@ -488,6 +489,8 @@ pub struct MutexResponse {
     pub app: String, // must be "mutex"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "known_ids", default, skip_serializing_if = "Option::is_none")]
+    pub known_ids: Option<HashSet<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
