@@ -78,8 +78,8 @@ configure_nat() {
   esac
 }
 
-# Discover external IP if not provided or blank (only when RELAY is set)
-if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]]; then
+# Discover external IP if not provided or blank (only when RELAY is set and STUN_ONLY is not set)
+if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]] && [[ -z "${STUN_ONLY:-}" ]]; then
   echo "RELAY mode enabled but EXTERNAL_IP not provided; attempting autodiscovery..."
   # Preferred: use routing lookup to a public IP to find the egress interface IP
   if command -v ip >/dev/null 2>&1; then
@@ -98,10 +98,10 @@ if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]]; then
     EXTERNAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
   fi
   if [[ -z "${EXTERNAL_IP:-}" ]]; then
-    echo "Failed to autodetect EXTERNAL_IP for relay mode. Please set EXTERNAL_IP explicitly." >&2
-    exit 2
+    echo "Failed to autodetect EXTERNAL_IP for relay mode. Relay will use STUN discovery." >&2
+  else
+    echo "Autodetected EXTERNAL_IP=${EXTERNAL_IP}"
   fi
-  echo "Autodetected EXTERNAL_IP=${EXTERNAL_IP}"
 fi
 
 if [[ ! -s "$STUN_FILE" ]]; then
@@ -125,7 +125,11 @@ CMD=("/app/bingle_cli" \
 
 # Add relay-specific parameters if RELAY flag is set
 if [[ -n "${RELAY:-}" ]]; then
-  CMD+=("--relay" "--static-ip" "${EXTERNAL_IP}:${PORT}")
+  if [[ -n "${EXTERNAL_IP:-}" ]]; then
+    CMD+=("--relay" "--static-ip" "${EXTERNAL_IP}:${PORT}")
+  else
+    CMD+=("--relay")
+  fi
 fi
 
 CMD+=("--stun-servers-file" "$STUN_FILE" "--node-file" "$NODE_FILE")

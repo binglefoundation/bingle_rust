@@ -28,7 +28,11 @@ fn route_passes_from_id_into_handler() {
 
     // Provide a per-test Router with MockApi and route within its context
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
-    let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { app: None, checking_endpoint: "127.0.0.1:5000".parse().unwrap() }));
+    let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { 
+        app: None, 
+        checking_endpoint: "127.0.0.1:5000".parse().unwrap(),
+        do_not_use_endpoints: Vec::new(),
+    }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "ALGOADDR123");
     });

@@ -60,6 +60,9 @@ mod ddb_signon_handler;
 #[path = "messages/listening_notifications.rs"]
 mod listening_notifications;
 
+#[path = "messages/relay_triangle_test1_ext.rs"]
+mod relay_triangle_test1_ext;
+
 // Some repositories include an additional test file for TriangleTest3 state setting.
 // If present in this repo, include it; otherwise harmless if missing when not referenced.
 // Note: We cannot conditionally include based on file existence in Rust at build time.

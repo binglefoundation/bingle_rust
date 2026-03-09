@@ -5,7 +5,7 @@ CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid e
 # Ensure cleanup of background containers on exit
 cleanup() {
   local exit_code=$?
-  docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
+  docker stop bingle_relay_a bingle_relay_b bingle_relay_extra bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -39,13 +39,19 @@ RELAY_B_ADDRESS=ZEBF7TPP3ZKVPBUSXDRZE2XIRLBRBYFQF6PFEXXLTFMOP6ETX3HFKG7D6Y
 RELAY_B_PASSPHRASE="design coast gift sting park tooth comic load off feed super close civil divide orbit garden mutual boat wine analyst gospel stem pipe about ritual"
 RELAY_B_PORT=20021
 
+# Extra Relay on dynamic IP
+RELAY_EXTRA_HANDLE=relayextra
+RELAY_EXTRA_ADDRESS=3RLYTSRX54G5WOPPPV4FYWRV2QXKIC5WRPM54YKXGVLTAFGUEIG2QN4DMQ
+RELAY_EXTRA_PASSPHRASE="horror stuff huge crunch green marriage parent soon hamster tonight miracle company fee cup hard media shiver emotion hybrid shiver main cube lemon about obvious";
+RELAY_EXTRA_PORT=20022
+
 TESTNET_USER=testuser10
-TESTNET_ADDRESS=SRIDWL763LIECMBL5N4WRJE6TGBBJL6SKJ6OZOMEQSGAOKW5JEBVUUH3QU
-TESTNET_PASSPHRASE="sand fantasy youth fix suggest immense stem awful piano pyramid garment wear butter setup cake finger hawk game language demise company surprise rule about during"
+TESTNET_ADDRESS=YA2UAJPUJZBY4KR2B4FBM57NSA7252PJQTVKJEGB2MOISRUECW4JGE4USM
+TESTNET_PASSPHRASE="glide crawl soda hole assault tide fault century seed tip daughter student rice swap imitate setup like card reject claim truck squeeze same able remind"
 
 PINGABLE_USER=pinguser20
-PINGABLE_ADDRESS=SRIDF3MQNHGWOKYNZOSS7VONPKJB2LM52DOZGPY7QLT5ONZ5BPUAKH3Q4A
-PINGABLE_PASSPHRASE="sudden defy hunt quick lens long slender pupil example affair select announce flower meadow refuse owner beauty write always scene kiss cage picture ability gorilla"
+PINGABLE_ADDRESS=QASXBML72DKIJEJ5GLMEBBX33KCKW3TSJW7ETFOTLEREQCDMW5BXCLXSQU
+PINGABLE_PASSPHRASE="group avocado audit dentist baby index pipe attack enough stairs fame position column media copper athlete resource noodle forward wage middle into fitness ability dragon"
 PINGABLE_PORT=30001
 
 # NAT mode for tests. Accept Direct|Full|Restricted|All (default All)
@@ -65,6 +71,13 @@ bingle_admin root $RELAY_A_ADDRESS --enable \
 bingle_admin root $RELAY_B_ADDRESS --enable \
  --node-file nodely_testnet_node.json \
  --passphrase "$CREATOR_PASSPHRASE"
+
+if [[ -n "${EXTRA_RELAY:-}" ]]; then
+  bingle_admin updateuser --handle $RELAY_EXTRA_HANDLE \
+   --passphrase "$CREATOR_PASSPHRASE" \
+   --node-file nodely_testnet_node.json \
+   --userpassphrase "$RELAY_EXTRA_PASSPHRASE"
+fi
 
 bingle_admin updateuser --handle $TESTNET_USER \
  --passphrase "$CREATOR_PASSPHRASE" \
@@ -128,17 +141,18 @@ echo "Using STUN servers: ${STUN_A_IP}:3478, ${STUN_B_IP}:3478"
 SENT_DIR="$PWD/tmp/sentinels"
 RELAY_A_SENT="relay_${RELAY_A_HANDLE}_${RELAY_A_PORT}.sentinel"
 RELAY_B_SENT="relay_${RELAY_B_HANDLE}_${RELAY_B_PORT}.sentinel"
+RELAY_EXTRA_SENT="relay_${RELAY_EXTRA_HANDLE}_${RELAY_EXTRA_PORT}.sentinel"
 
 # Start relay containers on the same docker network
 # They will autodetect EXTERNAL_IP inside the container and register static endpoints
 # reachable from other containers on this network.
 # Remove any old sentinel files
-rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT"
+rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT" "$SENT_DIR/$RELAY_EXTRA_SENT"
 
 # Enable debug logging for relays to help diagnose connectivity issues
 RELAY_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -155,7 +169,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -172,9 +186,35 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Wait for both relay sentinels before continuing
+# Wait for both relay sentinels before continuing and starting the extra relay
+# if required (needs the root relays to be up)
 wait_for_file "$SENT_DIR/$RELAY_A_SENT" 180 || exit 1
 wait_for_file "$SENT_DIR/$RELAY_B_SENT" 180 || exit 1
+
+if [[ -n "${EXTRA_RELAY:-}" ]]; then
+  docker run --platform linux/arm64 -d \
+   --name bingle_relay_extra \
+   --network bingle_testnet \
+   -e RELAY=1 \
+   -e STUN_ONLY=1 \
+   -e EXTRA_ARGS="$RELAY_EXTRA_ARGS" \
+   -e PASSPHRASE="$RELAY_EXTRA_PASSPHRASE" \
+   -e PORT=$RELAY_EXTRA_PORT \
+   -e HANDLE=$RELAY_EXTRA_HANDLE \
+   -e SENTINEL_FILE="/sentinels/$RELAY_EXTRA_SENT" \
+   -v "$PWD/tmp/sentinels":/sentinels \
+   -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+   "bingle:local"
+
+  if [ $? -ne 0 ]; then
+      echo "ERROR: Failed to start bingle_relay_extra container" >&2
+      exit 1
+  fi
+fi
+
+if [[ -n "${EXTRA_RELAY:-}" ]]; then
+  wait_for_file "$SENT_DIR/$RELAY_EXTRA_SENT" 180 || exit 1
+fi
 
 # Start the ping target
 echo "Restarting ping target mode ${PING_INIT_MODE}"
@@ -188,7 +228,7 @@ rm -f "$SENT_DIR/$PING_INIT_SENT"
 # Enable verbose logging for the ping target to help diagnose failures
 PING_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 -d \
  --name bingle_pingable \
  --network bingle_testnet \
  --ip "172.18.0.$PINGABLE_IP_SUFFIX" \

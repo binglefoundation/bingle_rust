@@ -559,7 +559,11 @@ impl MessageHandler for DefaultPrintingHandler {
         // Print options via API for debugging
         api.debug_print_options();
         // Run in a thread per requirements
-        let checking = msg.checking_endpoint;
+        let checking = msg.checking_endpoint.clone();
+        let exclusions: Vec<std::net::SocketAddr> = msg.do_not_use_endpoints.iter()
+            .cloned()
+            .map(|ie| ie.try_into().expect("valid doNotUseEndpoints"))
+            .collect();
         let api_for_thread = api.clone();
         // Clone sender context needed inside the spawned thread (avoid borrowing 'from')
         let from_nsk = from.network_source_key.clone();
@@ -599,7 +603,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 Some(id) => id,
                 None => { warn!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
             };
-            let associated_relay = match finder.find_relay(&my_id) {
+            let associated_relay = match finder.find_relay_excluding(&my_id, &exclusions) {
                 Ok(info) => info,
                 Err(e) => { warn!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
             };
@@ -634,7 +638,8 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_triangle_test2(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayTriangleTest2) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkEndpoint;
-        let endpoint = msg.checking_endpoint;
+        use std::convert::TryInto;
+        let endpoint: std::net::SocketAddr = msg.checking_endpoint.clone().try_into().expect("valid checkingEndpoint");
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);

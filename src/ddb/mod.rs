@@ -13,6 +13,36 @@ pub struct InetSocketAddress {
     pub port: u16,
 }
 
+impl From<std::net::SocketAddr> for InetSocketAddress {
+    fn from(addr: std::net::SocketAddr) -> Self {
+        Self {
+            host: addr.ip().to_string(),
+            port: addr.port(),
+        }
+    }
+}
+
+impl std::convert::TryFrom<InetSocketAddress> for std::net::SocketAddr {
+    type Error = std::net::AddrParseError;
+    fn try_from(val: InetSocketAddress) -> Result<Self, Self::Error> {
+        format!("{}:{}", val.host, val.port).parse()
+    }
+}
+
+impl std::fmt::Display for InetSocketAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
+    }
+}
+
+impl std::str::FromStr for InetSocketAddress {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let addr: std::net::SocketAddr = s.parse().map_err(|e| format!("{}", e))?;
+        Ok(Self::from(addr))
+    }
+}
+
 /// Advertisement record for a node (DDB AdvertRecord)
 /// See generated/BINGLE_SPEC.md
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

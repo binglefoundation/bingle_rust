@@ -169,30 +169,47 @@ impl RelayFinder {
 
     /// Find any relay suitable for us (root or non-root). Uses DDB getEpoch via list_all_relays.
     pub fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
-        log::info!("[RelayFinder] find_relay: my_id={}", my_id);
+        self.find_relay_excluding(my_id, &[])
+    }
+
+    /// Find any relay suitable for us (root or non-root), excluding specific addresses.
+    /// Does not use the single-relay cache if exclusions are provided.
+    pub fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
+        log::info!("[RelayFinder] find_relay_excluding: my_id={} exclude={:?}", my_id, exclude);
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        // 1) Return cached if valid AND not ourselves
-        if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
-            if Instant::now() < c.expires_at && c.id != my_id_norm {
-                log::info!("find_relay: using cached relay: {} {}", c.id, c.address);
-                return Ok(RelayInfo { id: c.id.clone(), address: c.address, state: None });
+
+        // 1) If no exclusions, try returning cached if valid AND not ourselves
+        if exclude.is_empty() {
+            if let Some(c) = self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))?.as_ref() {
+                if Instant::now() < c.expires_at && c.id != my_id_norm {
+                    log::info!("find_relay: using cached relay: {} {}", c.id, c.address);
+                    return Ok(RelayInfo { id: c.id.clone(), address: c.address, state: None });
+                }
             }
         }
+
         // 2) Get all relays (requires root cache populated; list_all_relays ensures this)
-        let relays = self.list_all_relays(my_id, false);
-        if relays.is_empty() { return Err("no relays discovered (after excluding self)".to_string()); }
+        let mut relays = self.list_all_relays(my_id, false);
+        if !exclude.is_empty() {
+            relays.retain(|r| !exclude.contains(&r.address));
+        }
+        if relays.is_empty() { return Err("no relays discovered (after excluding self and specified endpoints)".to_string()); }
         log::info!("[RelayFinder] find_relay: candidates = {:?}", relays);
+
         // 3) Choose preferred and alternate per partitioning rule
         let (pref_idx, alt_idx) = self.select_indices(&relays, my_id_norm);
+
         // 4) Try preferred then alternate via RelayCheck
         for &idx in &[pref_idx, alt_idx] {
             let cand = &relays[idx];
             if self.relay_check(my_id, &*cand.id, cand.address) {
                 log::info!("[RelayFinder] find_relay: check passed and using relay {}: {} {}", idx, cand.id, cand.address);
                 let info = RelayInfo { id: cand.id.clone(), address: cand.address, state: None };
-                // Cache selection
-                let expires = Instant::now() + self.cache_ttl;
-                *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
+                // Cache selection only if no exclusions were specified
+                if exclude.is_empty() {
+                    let expires = Instant::now() + self.cache_ttl;
+                    *self.cache.lock().map_err(|e| format!("cache lock poisoned: {}", e))? = Some(CachedRelay { id: info.id.clone(), address: info.address, expires_at: expires });
+                }
                 return Ok(info);
             } else {
                 log::info!("[RelayFinder] find_relay: relay {} failed RelayCheck: {} {}", idx, cand.id, cand.address);

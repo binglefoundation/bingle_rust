@@ -117,7 +117,9 @@ pub struct RelayTriangleTest1 {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
     #[serde(rename = "checkingEndpoint")]
-    pub checking_endpoint: SocketAddr,
+    pub checking_endpoint: InetSocketAddress,
+    #[serde(rename = "doNotUseEndpoints", default, skip_serializing_if = "Vec::is_empty")]
+    pub do_not_use_endpoints: Vec<InetSocketAddress>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,7 +129,7 @@ pub struct RelayTriangleTest2 {
     #[serde(rename = "checkingId")]
     pub checking_id: String,
     #[serde(rename = "checkingEndpoint")]
-    pub checking_endpoint: SocketAddr,
+    pub checking_endpoint: InetSocketAddress,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

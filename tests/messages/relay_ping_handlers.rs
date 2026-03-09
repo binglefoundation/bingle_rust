@@ -50,7 +50,11 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
     let handler = RelayPingHandler::new(mock.clone(), Some(peer));
 
-    let t1 = RelayTriangleTest1 { app: None, checking_endpoint: "127.0.0.1:12345".parse().unwrap() };
+    let t1 = RelayTriangleTest1 { 
+        app: None, 
+        checking_endpoint: "127.0.0.1:12345".parse().unwrap(),
+        do_not_use_endpoints: Vec::new(),
+    };
     // Construct minimal API and FromStruct
     struct MockApi;
     impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
@@ -114,7 +118,7 @@ fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     let handler = RelayPingHandler::new(mock.clone(), None);
 
     let endpoint: SocketAddr = "127.0.0.1:33333".parse().unwrap();
-    let t2 = RelayTriangleTest2 { app: None, checking_id: "id-abc".into(), checking_endpoint: endpoint };
+    let t2 = RelayTriangleTest2 { app: None, checking_id: "id-abc".into(), checking_endpoint: endpoint.into() };
     // Minimal API and FromStruct
     struct MockApi;
     impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {

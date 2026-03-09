@@ -865,6 +865,11 @@ components:
           description: TriangleTest1
         checkingEndpoint:
           $ref: '#/components/schemas/InetSocketAddress'
+        doNotUseEndpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/InetSocketAddress'
+          description: List of endpoints that should not be used as the peer relay node.
       required: [app, type, checkingEndpoint]
 
     RelayTriangleTest2:

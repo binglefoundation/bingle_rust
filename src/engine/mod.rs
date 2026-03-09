@@ -1394,7 +1394,8 @@ impl Engine {
             let checking_ep = public_addr.unwrap_or(to_addr);
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 {
                 app: None,
-                checking_endpoint: checking_ep,
+                checking_endpoint: checking_ep.into(),
+                do_not_use_endpoints: Vec::new(),
             }));
             let nsk = NetworkEndpoint::new_direct(to_addr);
             // Build JSON value for the message

@@ -32,6 +32,16 @@ impl RelayPingHandler {
 impl MessageHandler for RelayPingHandler {
     fn on_triangle_test1(&self, api: Arc<dyn crate::api::bingle_api::BingleApiBoth>, _from: &crate::messages::handlers::FromStruct, msg: &RelayTriangleTest1) {
         if let Some(to_peer) = self.peer_relay {
+            // Honor do_not_use_endpoints: if our peer_relay is excluded, do not use it.
+            let is_excluded = msg.do_not_use_endpoints.iter().any(|ie| {
+                use std::convert::TryInto;
+                ie.clone().try_into().map(|addr: std::net::SocketAddr| addr == to_peer).unwrap_or(false)
+            });
+            if is_excluded {
+                log::warn!("[RelayPingHandler::on_triangle_test1] configured peer relay {} is in do_not_use_endpoints; skipping", to_peer);
+                return;
+            }
+
             // Obtain our id from the BingleApi (derived from engine issuer). Validate Option success per guidelines.
             let my_id = match api.get_my_id() {
                 Some(id) => id,
@@ -41,7 +51,7 @@ impl MessageHandler for RelayPingHandler {
                 }
             };
             // Compose TriangleTest2 to the peer relay, echoing the checking_endpoint and using our own id
-            let t2 = RelayTriangleTest2 { app: None, checking_id: my_id, checking_endpoint: msg.checking_endpoint };
+            let t2 = RelayTriangleTest2 { app: None, checking_id: my_id, checking_endpoint: msg.checking_endpoint.clone() };
             let out = Message::Relay(RelayMessage::TriangleTest2(t2));
             self.send_json_to(to_peer, &out);
         } else {
@@ -52,8 +62,10 @@ impl MessageHandler for RelayPingHandler {
 
     fn on_triangle_test2(&self, _api: Arc<dyn crate::api::bingle_api::BingleApiBoth>, _from: &crate::messages::handlers::FromStruct, msg: &RelayTriangleTest2) {
         // Send TriangleTest3 to the node at checking_endpoint
+        use std::convert::TryInto;
+        let to_addr: std::net::SocketAddr = msg.checking_endpoint.clone().try_into().expect("valid checkingEndpoint in T2");
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
-        self.send_json_to(msg.checking_endpoint, &out);
+        self.send_json_to(to_addr, &out);
     }
 }
