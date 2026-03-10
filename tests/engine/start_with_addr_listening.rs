@@ -71,7 +71,7 @@ impl rust_comms::api::bingle_api::BingleApiInternal for CaptureInternal {
     fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
     fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
-    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr) -> Result<(), String> { Ok(()) }
+    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> { Ok(()) }
     fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> { Ok(()) }
     fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) { }

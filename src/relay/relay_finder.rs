@@ -97,11 +97,7 @@ impl RelayFinder {
                     .filter(|r| r.id != my_id_norm)
                     .collect();
 
-                    if candidates.len() == 1 {
-                        // Only one possible root relay to ask; just use it directly.
-                        vec![candidates[0].clone()]
-                    }
-                    else if !candidates.is_empty() {
+                    if !candidates.is_empty() {
                         let (pref_idx, _alt_idx) = self.select_indices(&candidates, my_id_norm);
                         let chosen = &candidates[pref_idx];
                         match cli.get_relays_from(chosen) {
@@ -119,10 +115,13 @@ impl RelayFinder {
                 Vec::new()
             }
         };
+        log::info!("[RelayFinder] list_all_relays: relays from DDB: {:?}", relays);
+
         // 3) Fallback: if none from DDB, use the cached root list
         if relays.is_empty() {
             if let Ok(g) = self.root_list_cache.lock() {
                 if let Some(roots) = &*g {
+                    log::warn!("[RelayFinder] list_all_relays: no relays from DDB, using cached root list: {:?}", roots);
                     relays = roots.root_relays.clone();
                 }
             }
@@ -145,6 +144,8 @@ impl RelayFinder {
         // 4) Cache all-relays list
         let expires = Instant::now() + self.cache_ttl;
         if let Ok(mut g) = self.all_list_cache.lock() { *g = Some(CachedAllRelayList { relays: relays.clone(), expires_at: expires }); }
+
+        log::info!("[RelayFinder] list_all_relays: returning relay list: {:?}", relays);
         relays
     }
 

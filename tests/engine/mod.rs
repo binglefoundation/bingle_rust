@@ -23,3 +23,6 @@ mod ddb_upsert;
 
 #[path = "ddb_client_non_optional.rs"]
 mod ddb_client_non_optional;
+
+#[path = "seen_endpoints.rs"]
+mod seen_endpoints;

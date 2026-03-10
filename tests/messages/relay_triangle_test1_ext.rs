@@ -110,7 +110,7 @@ fn test_relay_ping_handler_honors_exclusions() {
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _n: rust_comms::engine::NatType) {}
         fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
-        fn ddb_register_ip(&self, _e: SocketAddr) -> Result<(), String> { Err("ni".into()) }
+        fn ddb_register_ip(&self, _e: SocketAddr, _am_relay: bool) -> Result<(), String> { Err("ni".into()) }
         fn ddb_register_relay(&self, _r: String, _s: Option<String>) -> Result<(), String> { Err("ni".into()) }
         fn update_turn_listener_relay(&self, _r: String, _a: SocketAddr) -> Result<(), String> { Err("ni".into()) }
         fn turn_client_handle_listen_response(&self, _a: SocketAddr, _r: String) { }

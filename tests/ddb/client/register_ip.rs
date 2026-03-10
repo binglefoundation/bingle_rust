@@ -74,7 +74,7 @@ fn ddb_client_register_ip_ok() {
     let cli = DdbClientImpl::with_discovery(to_weak_api_both(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
     // Register the client's endpoint on the relay
-    cli.registerIP(client_addr).expect("registerIP should succeed");
+    cli.registerIP(client_addr, false).expect("registerIP should succeed");
 
     // Verify via lookup using the same DDB client
     let id = api_arc.get_my_id().expect("client id");

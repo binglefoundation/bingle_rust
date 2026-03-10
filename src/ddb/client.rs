@@ -15,10 +15,10 @@ use crate::relay::relay_finder::RelayInfo;
 /// and validate typed responses.
 pub trait DdbClient: Send + Sync {
     /// Register/update our endpoint IP:port in the DDB via a relay.
-    fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String>;
+    fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String>;
     /// Alias with camelCase to match external nomenclature.
     #[allow(non_snake_case)]
-    fn registerIP(&self, endpoint: SocketAddr) -> Result<(), String> { self.register_ip(endpoint) }
+    fn registerIP(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String> { self.register_ip(endpoint, am_relay) }
 
     /// Register/update our chosen relay association in the DDB via a relay.
     /// relay_id must be a valid Algorand base32 address (36-byte decoded).
@@ -144,7 +144,7 @@ impl NullDdbClient {
 }
 
 impl DdbClient for NullDdbClient {
-    fn register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> {
+    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> {
         Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
     }
     fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> {
@@ -290,7 +290,7 @@ impl DdbClient for DdbClientImpl {
     //     Err(last_err.unwrap_or_else(|| "no relays discovered".to_string()))
     // }
 
-    fn register_ip(&self, endpoint: SocketAddr) -> Result<(), String> {
+    fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String> {
         // 1) Find relay to talk to
         let relay = match self.find_relay() {
             Ok(r) => r,
@@ -319,8 +319,8 @@ impl DdbClient for DdbClientImpl {
         };
         let record = AdvertRecord {
             id: my_id.clone(),
-            endpoint: Some(InetSocketAddress { host: match endpoint.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() }, port: endpoint.port() }),
-            am_relay: Some(false),
+            endpoint: Some(InetSocketAddress::from(endpoint)),
+            am_relay: Some(am_relay),
             relay_id: None,
             relay_sig: None,
             date: "1970-01-01T00:00:00Z".to_string(),

@@ -21,7 +21,7 @@ impl BingleApiInternal for BothAsApi {
     fn get_state(&self) -> crate::engine::EngineState { self.inner.get_state() }
     fn set_nat_type(&self, nat: crate::engine::NatType) { self.inner.set_nat_type(nat) }
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { self.inner.get_last_public_addr() }
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> { self.inner.ddb_register_ip(endpoint) }
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), String> { self.inner.ddb_register_ip(endpoint, am_relay) }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> { self.inner.ddb_register_relay(relay_id, relay_sig) }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) { self.inner.turn_client_handle_listen_response(relay_addr, relay_id) }
@@ -659,23 +659,28 @@ impl MessageHandler for DefaultPrintingHandler {
         std::thread::spawn(move || {
             // Obtain the discovered public address (including port)
             if let Some(addr) = api_for_thread.get_last_public_addr() {
-                match api_for_thread.ddb_register_ip(addr) {
+                // Register the IP as not relay first
+                match api_for_thread.ddb_register_ip(addr, false) {
                     Ok(()) => {
-                        log::info!("[handlers::on_triangle_test3] DDB registration successful: {}", addr);
+                        log::info!("[handlers::on_triangle_test3] initial DDB registration successful: {}", addr);
                         if api_for_thread.is_relay() {
                             api_for_thread.initialize_relay();
-                            log::info!("[handlers::on_triangle_test3] relay registration successful: {}", addr);
+                            if let Err(e) = api_for_thread.ddb_register_ip(addr, true) {
+                                log::warn!("[handlers::on_triangle_test3] second ddb_register_ip(true) failed: {}", e);
+                            } else {
+                                log::info!("[handlers::on_triangle_test3] relay DDB registration successful: {}", addr);
+                            }
                         }
-                        // On success, mark engine state as Registered and print id/handle for debugging
+                        // Mark engine state as Registered and print id/handle for debugging
                         let uid = api_for_thread.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
                         let handle = api_for_thread.get_handle().unwrap_or_else(|| "<unknown>".to_string());
-                        log::info!("[handlers::on_triangle_test3] ddb_register_ip succeeded (user_id={}, handle={})", uid, handle);
+                        log::info!("[handlers::on_triangle_test3] registration process completed (user_id={}, handle={})", uid, handle);
                         api_for_thread.set_state(crate::engine::EngineState::Registered);
                         // Notify that we are listening now
                         api_for_thread.notify_listening(true);
                     }
                     Err(e) => {
-                        log::warn!("[handlers::on_triangle_test3] ddb_register_ip failed: {}", e);
+                        log::warn!("[handlers::on_triangle_test3] initial ddb_register_ip failed: {}", e);
                     }
                 }
             } else {

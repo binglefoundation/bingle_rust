@@ -23,3 +23,6 @@ mod exclude_self_from_ddb;
 
 #[path = "lookup_root_id.rs"]
 mod lookup_root_id;
+
+#[path = "list_all_relays_one_root.rs"]
+mod list_all_relays_one_root;

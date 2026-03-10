@@ -39,7 +39,7 @@ struct DdbMock {
 impl DdbMock { fn new(lookup_result: Option<NetworkEndpoint>) -> Self { Self { lookup_result } } }
 
 impl DdbClient for DdbMock {
-    fn register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("not used".into()) }
+    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Err("not used".into()) }
     fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("not used".into()) }
     fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, String> { self.lookup_result.clone().ok_or_else(|| "no lookup".into()) }
     fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, String> { Err("not used".into()) }

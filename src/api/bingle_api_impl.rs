@@ -610,10 +610,10 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
         self.engine.access(|e| e.last_public_addr())
     }
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), String> {
         let cli = self.engine.access(|e| e.ddb_client());
-        log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}", endpoint);
-        cli.register_ip(endpoint)
+        log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}, am_relay={}", endpoint, am_relay);
+        cli.register_ip(endpoint, am_relay)
     }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
         let cli = self.engine.access(|e| e.ddb_client());

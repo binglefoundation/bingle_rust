@@ -200,6 +200,8 @@ pub struct Engine {
     peer_ddb_records: Option<usize>,
     // Signon completion signal
     signon_complete: Arc<(Mutex<bool>, Condvar)>,
+    // Set of endpoints we have seen (sent to)
+    seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
 }
 
 impl Engine {
@@ -495,6 +497,7 @@ impl Engine {
             on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
+            seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
     }
 
@@ -731,6 +734,11 @@ impl Engine {
         self.connections.lock().map(|m| m.len()).unwrap_or(0)
     }
 
+    /// Testing helper: get copy of seen endpoints.
+    pub fn seen_endpoints_for_tests(&self) -> Vec<InetSocketAddress> {
+        self.seen_endpoints.lock().unwrap().iter().cloned().collect()
+    }
+
     /// Send bytes to a peer and track the connection's last_seen.
     /// If this is the first interaction with the peer, create a connection entry on successful send.
     pub fn send_to_peer(
@@ -743,6 +751,12 @@ impl Engine {
         // after a successful send.
         let res = self.dtls.send(to, data);
         if res.is_ok() {
+            // Track seen endpoints
+            if let Some(addr) = to.inet_socket_address() {
+                if let Ok(mut seen) = self.seen_endpoints.lock() {
+                    seen.insert(addr.into());
+                }
+            }
             // Track connection using NetworkEndpointKey derived from `to`
             if let Some(key) = to.get_key() {
                 if let Ok(mut m) = self.connections.lock() {
@@ -1229,6 +1243,8 @@ impl Engine {
         _options: &StartOptions,
         bind_addr: SocketAddr,
     ) -> Result<(), String> {
+        log::info!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
+
         self.last_public_addr = Some(
             self.options
                 .static_ip
@@ -1245,11 +1261,7 @@ impl Engine {
             bind_addr,
             bind_all
         );
-        log::warn!(
-            "[Engine] start_with_addr: requested={:?} binding={:?}",
-            bind_addr,
-            bind_all
-        );
+
         let mut mux0 =
             UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
         // Determine the concrete local address after bind (handles port 0)
@@ -1392,10 +1404,11 @@ impl Engine {
         if let Some(target) = relay_target {
             let to_addr = target.address;
             let checking_ep = public_addr.unwrap_or(to_addr);
+            let seen = self.seen_endpoints.lock().unwrap().iter().cloned().collect();
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 {
                 app: None,
                 checking_endpoint: checking_ep.into(),
-                do_not_use_endpoints: Vec::new(),
+                do_not_use_endpoints: seen,
             }));
             let nsk = NetworkEndpoint::new_direct(to_addr);
             // Build JSON value for the message

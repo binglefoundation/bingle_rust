@@ -61,7 +61,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn get_state(&self) -> crate::engine::EngineState { self.api.access(|a| a.get_state()) }
     fn set_nat_type(&self, nat: crate::engine::NatType) { self.api.access(|a| a.set_nat_type(nat)) }
     fn get_last_public_addr(&self) -> Option<SocketAddr> { self.api.access(|a| a.get_last_public_addr()) }
-    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String> { self.api.access(|a| a.ddb_register_ip(endpoint)) }
+    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String> { self.api.access(|a| a.ddb_register_ip(endpoint, am_relay)) }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> { self.api.access(|a| a.ddb_register_relay(relay_id, relay_sig)) }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), String> { self.api.access(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
     fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { self.api.access(|a| a.turn_client_handle_listen_response(relay_addr, relay_id)) }

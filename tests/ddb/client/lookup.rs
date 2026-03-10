@@ -45,7 +45,7 @@ fn ddb_client_lookup_returns_endpoint() {
     let cli = DdbClientImpl::with_discovery(to_weak_api_both(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
     // First register our IP so the relay has an advert
-    cli.registerIP(client_addr).expect("registerIP should succeed");
+    cli.registerIP(client_addr, false).expect("registerIP should succeed");
 
     // Now lookup our id
     let id = api_arc.get_my_id().expect("client id");

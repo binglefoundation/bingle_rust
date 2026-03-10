@@ -17,7 +17,7 @@ impl BingleApiInternal for CapturingInternal {
     fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
     fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
     fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
-    fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("ni".into()) }
+    fn ddb_register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Err("ni".into()) }
     fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("ni".into()) }
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("ni".into()) }
     fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) { }
@@ -43,7 +43,7 @@ fn relay_called_handler_invokes_turn_handle_called() {
         fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
         fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
         fn get_last_public_addr(&self) -> Option<SocketAddr> { Some(self.pub_addr) }
-        fn ddb_register_ip(&self, _endpoint: SocketAddr) -> Result<(), String> { Err("ni".into()) }
+        fn ddb_register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Err("ni".into()) }
         fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("ni".into()) }
         fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Err("ni".into()) }
         fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) { }

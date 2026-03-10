@@ -31,7 +31,7 @@ pub trait BingleApiInternal: Send + Sync {
     /// Retrieve the last discovered public address (IP:port) if available.
     fn get_last_public_addr(&self) -> Option<SocketAddr>;
     /// Register an endpoint IP:port via the engine's DDB client.
-    fn ddb_register_ip(&self, endpoint: SocketAddr) -> Result<(), String>;
+    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String>;
     /// Register a relay association via the engine's DDB client.
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String>;
 

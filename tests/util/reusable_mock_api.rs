@@ -282,8 +282,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.get_last_public_addr()
     }
 
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr) -> Result<(), String> {
-        self.inner_bingle_api_internal.ddb_register_ip(endpoint)
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), String> {
+        self.inner_bingle_api_internal.ddb_register_ip(endpoint, am_relay)
     }
 
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
@@ -375,7 +375,7 @@ pub trait InnerBingleApiInternal {
         None
     }
 
-    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr) -> Result<(), String> {
+    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> {
         Err("ni".into())
     }
 

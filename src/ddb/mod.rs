@@ -7,7 +7,7 @@ pub use client::{DdbClient, DdbClientImpl, NullDdbClient};
 
 /// InetSocketAddress as defined in BINGLE_SPEC.md
 /// Hostname/IP and UDP port number.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct InetSocketAddress {
     pub host: String,
     pub port: u16,
