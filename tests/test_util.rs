@@ -1,5 +1,7 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps};
 use std::env;
+use std::sync::Once;
+use log::LevelFilter;
 
 // Macro to skip localnet-dependent tests with a standard message.
 // Usage: skip_if_no_localnet!();
@@ -107,4 +109,21 @@ pub fn print_cwd_for_debug() {
         Ok(cwd) => eprintln!("Current working directory: {}", cwd.display()),
         Err(e) => eprintln!("Failed to get current working directory: {}", e),
     }
+}
+
+pub fn init_test_logging() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let level = LevelFilter::Debug;
+        let _ = env_logger::Builder::new()
+            .filter_level(level)
+            .format_timestamp_millis()
+            .try_init();
+        // Panic hook that logs at error! and then defers to default behavior
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |pi| {
+            log::error!("PANIC: {}", pi);
+            default_hook(pi);
+        }));
+    });
 }

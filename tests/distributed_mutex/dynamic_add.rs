@@ -6,11 +6,12 @@ use rust_comms::distributed_mutex::DistributedMutex;
 
 mod common;
 use common::TestNetwork;
+use crate::util::test_util::init_test_logging;
 
 #[ntest::timeout(30000)]
 #[test]
 fn modified_lamport_dynamic_add_node_after_start() {
-    crate::api::send_message_to_id_integration::init_test_logging();
+    init_test_logging();
     
     // Start with three nodes where only A and B are of interest; C exists but is idle.
     let net = TestNetwork::new();

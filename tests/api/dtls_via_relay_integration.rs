@@ -22,7 +22,6 @@ mod pki;
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
 #[test]
-#[ignore]
 #[cfg(not(target_os = "ios"))]
 fn dtls_send_via_relay_end_to_end() {
     // 1) Start a DTLS target node (server) with its own UDP mux and capture received payloads

@@ -1,0 +1,7 @@
+mod algo_bingle_integration_localnet;
+mod algo_ops_integration_localnet;
+mod algo_bingle_buy_flow_localnet;
+mod algo_bingle_register_opt_in_app_localnet;
+mod algo_bingle_static_endpoint_integration;
+mod asset_manager_creator_localnet;
+mod asset_clawback_creator_localnet;

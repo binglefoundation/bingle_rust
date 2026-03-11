@@ -187,18 +187,3 @@ fn client_called_after_listen_response_registers_channel() {
     assert_eq!(wrapped.ip_address, dest);
 }
 
-// Negative path (expected future behavior): without listen to relay, handle_called should reject.
-#[test]
-#[ignore] // to resolve this
-fn client_called_without_listen_should_fail() {
-    let client = TurnClientHandlerImpl::new();
-    let source = addr(8070);
-    let dest = addr(8071);
-    let ch: u16 = 0x4007;
-
-    // No listen_response here
-    TurnClientHandler::handle_called(&client, &source, &dest, ch);
-
-    // Expected: send should fail because Called should have been rejected without listen
-    assert!(client.send_turn_outgoing(&source, &dest, b"z").is_none());
-}

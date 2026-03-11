@@ -6,11 +6,12 @@ use rust_comms::distributed_mutex::DistributedMutex;
 
 mod common;
 use common::TestNetwork;
+use crate::util::test_util::init_test_logging;
 
 #[ntest::timeout(60000)]
 #[test]
 fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
-    crate::api::send_message_to_id_integration::init_test_logging();
+    init_test_logging();
 
     // Networks:
     // a: A, B

@@ -91,23 +91,6 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
     false
 }
 
-pub(crate) fn init_test_logging() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let level = LevelFilter::Debug;
-        let _ = env_logger::Builder::new()
-            .filter_level(level)
-            .format_timestamp_millis()
-            .try_init();
-        // Panic hook that logs at error! and then defers to default behavior
-        let default_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |pi| {
-            error!("PANIC: {}", pi);
-            default_hook(pi);
-        }));
-    });
-}
-
 fn deploy_bingle_app() -> u64 {
     use rust_comms::algo_ops::AppArg;
     use std::fs;
@@ -124,8 +107,8 @@ fn deploy_bingle_app() -> u64 {
     let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
 
     // Deploy the BingleDapp from artifacts
-    let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
+    let approval_src = fs::read_to_string("../../dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
+    let clear_src = fs::read_to_string("../../dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
     let approval = ops_creator.compile_teal(&approval_src).expect("compile approval teal");
     let clear = ops_creator.compile_teal(&clear_src).expect("compile clear teal");
     let app_id = ops_creator.deploy_app(&approval, &clear, None).expect("deploy app").expect("app id");
@@ -482,3 +465,4 @@ fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     s1_iso.stop();
     s2_iso.stop();
 }
+
