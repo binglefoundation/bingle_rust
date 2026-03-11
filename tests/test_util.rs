@@ -111,6 +111,7 @@ pub fn print_cwd_for_debug() {
     }
 }
 
+#[allow(dead_code)]
 pub fn init_test_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {

@@ -23,3 +23,6 @@ mod ddb_client_non_optional;
 
 #[path = "seen_endpoints.rs"]
 mod seen_endpoints;
+
+#[path = "engine_bind_unspecified_ip.rs"]
+mod engine_bind_unspecified_ip;

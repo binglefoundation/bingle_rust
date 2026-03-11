@@ -20,7 +20,7 @@ fn modified_lamport_dynamic_add_node_after_start() {
 
     let a = net.create_mutex("A", vec!["A".to_string(), "B".to_string()]);
     let b = net.create_mutex("B", vec!["A".to_string(), "B".to_string()]);
-    let c = net.create_mutex("C", vec!["A".to_string(), "B".to_string(), "C".to_string()]);
+    let _c = net.create_mutex("C", vec!["A".to_string(), "B".to_string(), "C".to_string()]);
 
     let in_cs = Arc::new(AtomicIsize::new(0));
 

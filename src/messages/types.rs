@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
 use std::collections::HashSet;
 
 // Re-export common DDB types for convenience

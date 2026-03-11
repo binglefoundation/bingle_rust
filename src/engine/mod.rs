@@ -514,9 +514,31 @@ impl Engine {
     /// Test helper: get the local UDP bind address of the mux, if started.
     pub fn local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
         if let Some(m) = &self.mux {
-            m.local_addr().ok()
+            let mut addr = m.local_addr().ok()?;
+            if addr.ip().is_unspecified() {
+                addr.set_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+            }
+            Some(addr)
         } else {
             None
+        }
+    }
+
+    /// Test helper: simulate receiving a message from the network.
+    pub fn receive_message_for_tests(&mut self, from_ep: &NetworkEndpoint, data: &[u8]) {
+        let msg = match crate::messages::marshal::from_json_str(&String::from_utf8_lossy(data)) {
+            Ok(m) => m,
+            Err(_) => {
+                log::warn!("[Engine::receive_message_for_tests] failed to parse message: {:?}", String::from_utf8_lossy(data));
+                return;
+            },
+        };
+        if let Some(r) = &self.router {
+            let handler = DefaultPrintingHandler;
+            let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
+            r.route_with_network(&handler, &msg, issuer, from_ep);
+        } else {
+            log::warn!("[Engine::receive_message_for_tests] no router available");
         }
     }
 

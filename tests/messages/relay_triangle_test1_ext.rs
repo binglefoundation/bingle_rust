@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use rust_comms::messages::types::{RelayTriangleTest1, Message, RelayMessage};
 use rust_comms::messages::marshal::{from_json_str, to_json_string};
-use rust_comms::ddb::InetSocketAddress;
 
 #[test]
 fn test_relay_triangle_test1_json_with_exclusions() {

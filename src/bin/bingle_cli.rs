@@ -175,7 +175,7 @@ fn cmd_run(mut args: Vec<String>) {
     }
 
     // Initialize API
-    let mut api = BingleApiImpl::new(&opts);
+    let api = BingleApiImpl::new(&opts);
 
     // Install handlers (requires mutable access to the Arc contents; CLI owns the only strong ref here)
     {

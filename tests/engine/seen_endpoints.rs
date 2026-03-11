@@ -40,7 +40,7 @@ fn engine_tracks_seen_endpoints() {
     let options = StartOptions::default();
     // Use MockApiBoth for engine creation (requires Arc/Weak)
     let api = Arc::new(crate::util::reusable_mock_api::MockApiBoth::new());
-    let mut engine = Engine::new_with_dtls(&options, Arc::downgrade(&api) as _, Box::new(MockDtls::default()));
+    let engine = Engine::new_with_dtls(&options, Arc::downgrade(&api) as _, Box::new(MockDtls::default()));
 
     let addr1: SocketAddr = "127.0.0.1:1111".parse().unwrap();
     let addr2: SocketAddr = "127.0.0.1:2222".parse().unwrap();

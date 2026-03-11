@@ -12,7 +12,7 @@ use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandle
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::dtls::Dtls;
-use crate::engine::{BingleAccess, Engine, EngineState, EngineType};
+use crate::engine::{BingleAccess, BingleAccessUnsafeForTests, Engine, EngineState, EngineType};
 use crate::protocol::ISSUER_SUFFIX;
 
 /// Concrete implementation of the BingleApi trait.
@@ -120,6 +120,9 @@ impl BingleApiImpl {
         log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
         #[allow(unused)] {  }
         a
+    }
+    pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
+        self.engine.access_unsafe_for_tests(|e: &mut Engine| e.receive_message_for_tests(from_ep, data));
     }
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, String> {
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);

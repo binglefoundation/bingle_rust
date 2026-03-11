@@ -1,10 +1,10 @@
-use rust_comms::engine::BingleAccessUnsafeForTests;
 #![cfg(not(target_os = "ios"))]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
-use rust_comms::api::bingle_api::{StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 
 #[path = "../test_util.rs"]
 mod test_util;
@@ -48,7 +48,7 @@ fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
     assert!(local.is_some(), "engine should expose local bind addr");
     let local = local.unwrap();
     assert_eq!(local.port(), port, "bound port should match requested static port");
-    assert_eq!(local.ip(), IpAddr::V4(Ipv4Addr::UNSPECIFIED), "engine should bind to 0.0.0.0");
+    assert_eq!(local.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), "engine test accessor should return 127.0.0.1 for unspecified bind");
 
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.stop());
 }

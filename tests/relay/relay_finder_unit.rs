@@ -33,7 +33,6 @@ impl InnerBingleApi for MockApi {
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
-use sha2::{Digest, Sha512_256};
 use simple_logger::SimpleLogger;
 
 #[path = "../test_util.rs"]

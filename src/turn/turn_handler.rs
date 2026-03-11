@@ -408,6 +408,7 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
             // Map channel to both source and destination addresses
             c2a.insert(ch, (*source, *dest));
             p2c.insert((*source, *dest), ch);
+            p2c.insert((*dest, *source), ch);
 
             // Register source and destination addresses as allowed if not already present
             if !a2id.contains_key(source) {
