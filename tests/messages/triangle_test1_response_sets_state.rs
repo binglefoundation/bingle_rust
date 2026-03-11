@@ -43,12 +43,18 @@ fn triangle_test1_response_sets_nat_restricted_when_not_available() {
         router.route(&handler, &msg, "FROMID");
     });
 
-    // Wait for 10 seconds for the spawned thread to complete the state check and setting
-    std::thread::sleep(std::time::Duration::from_secs(20));
+    // Poll for up to 20 seconds for the spawned thread to set NATRestricted
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_secs(20) {
+        let st = mock_internal.get_state();
+        if st == EngineState::NATRestricted {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 
-    // Assert: state becomes NATRestricted
     let st = mock_internal.get_state();
-    assert_eq!(st, EngineState::NATRestricted);
+    assert_eq!(st, EngineState::NATRestricted, "state did not become NATRestricted within 20s");
 }
 
 #[test]
