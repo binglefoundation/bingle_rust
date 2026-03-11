@@ -1,16 +1,15 @@
-use std::fs;
-use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
+use rust_comms::algo_ops::AlgoChainConfig;
+use serial_test::serial;
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[macro_use]
-#[path = "../test_util.rs"]
-mod test_util;
+use crate::setup_localnet;
+use crate::util::test_util;
+
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
 
 // This test validates that register ensures the caller is opted-in to the app local state.
 // It uses localnet and will be skipped when localnet is unavailable.
 #[test]
+#[serial]
 #[ignore]
 fn register_ensures_sender_opted_in_to_app() {
     skip_if_no_localnet!();
@@ -23,28 +22,10 @@ fn register_ensures_sender_opted_in_to_app() {
     // Creator ops
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
 
-    // Deploy minimal app + asset for register flow using existing helper test harness
-    // We reuse the integration test helper: create asset, deploy app, set price, etc.
-    // For brevity, we inline a minimal path similar to other localnet tests.
-    // 1) Compile and deploy contract with no asset foreign arrays yet
-    let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
-    let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval teal");
-    let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear teal");
-    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, None).expect("deploy app call").expect("app id");
+    // Deploy minimal app + asset for register flow using common helper
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 10_000);
 
-    // 2) Create ASA with reserve/clawback to app so register can transfer fees
-    let asset_id = creator
-        .create_asset_with_reserve_app("BINGLE$", 10_000, app_id)
-        .expect("create asset")
-        .expect("asset id");
-
-    // 3) Fund app with ASA so it can receive registration fees (opt-in app to asset via wrapper)
     let ab = rust_comms::blockchain::algo_bingle::AlgoBingle::new(creator.clone(), app_id, asset_id);
-    let _ = ab.opt_in_app_to_asset(app_id, asset_id).expect("opt in app to asset");
-
-    // 3a) Set price = 1 (microAlgo and unit) using creator (must be app creator)
-    let _ = creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]).expect("set_bingle_price call");
 
     // 4) Ensure test sender local state is cleared w.r.t app (if previously opted in) by closing it.
     // It's okay if clear/close fails due to not opted in; we ignore errors to keep test resilient.

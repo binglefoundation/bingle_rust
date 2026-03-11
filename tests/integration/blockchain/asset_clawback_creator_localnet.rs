@@ -1,10 +1,10 @@
 use rust_comms::algo_ops::AlgoChainConfig;
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[macro_use]
-#[path = "../test_util.rs"]
-mod test_util;
+use crate::setup_localnet;
+
+
+use crate::util::test_util;
+
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
 
 #[test]

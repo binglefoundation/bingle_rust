@@ -1,17 +1,15 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use rust_comms::algo_ops::{AlgoChainConfig, AppArg};
+use rust_comms::algo_ops::AlgoChainConfig;
+use serial_test::serial;
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[macro_use]
-#[path = "../test_util.rs"]
-mod test_util;
+use crate::setup_localnet;
+use crate::util::test_util;
+
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
-
-use std::fs;
 
 #[test]
 #[ignore]
+#[serial]
 fn buy_bingle_transfers_from_reserve_inner_tx() {
     skip_if_no_localnet!();
 
@@ -24,27 +22,12 @@ fn buy_bingle_transfers_from_reserve_inner_tx() {
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
     let buyer = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
 
-    // Deploy app first
-    let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
-    let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval");
-    let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear");
-    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, None).expect("deploy app").expect("app id");
-
-    // Create ASA that will be sold as Bingle$ with reserve set to app address
-    let asset_id = creator.create_asset_with_reserve_app("BINGLE", 1_000_000, app_id).expect("asset create").expect("asset id");
-
-    // Configure ASA: set clawback address to the application address so inner clawback can succeed and opt-in app to ASA
-    creator.set_asset_clawback_to_app(app_id, asset_id).expect("set ASA clawback to app address");
-    let _ = AlgoBingle::new(creator.clone(), app_id, asset_id).opt_in_app_to_asset(app_id, asset_id).expect("app opt-in to ASA");
+    // Deploy app and ASA for the buy flow test using common helper
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE", 1_000_000);
 
     // Stock the app account with supply to sell
     let app_addr = creator.contract_address(app_id).expect("app address");
     creator.send_asset(asset_id, 100, &app_addr).expect("fund app with ASA");
-
-    // Set global BinglePrice to 1 microAlgo
-    let _ = creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])
-        .expect("set_bingle_price call");
 
     // Buyer: ensure opted-in to ASA (required to receive inner tx)
     buyer.opt_in_to_asset(asset_id).expect("buyer opt-in to ASA");

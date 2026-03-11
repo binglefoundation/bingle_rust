@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -80,6 +80,7 @@ pub struct StunEndpointFinderImpl {
     inner: Arc<Mutex<Inner>>,
     running: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    stop_cond: Arc<Condvar>,
 }
 
 impl StunEndpointFinderImpl {
@@ -96,7 +97,7 @@ impl StunEndpointFinderImpl {
             intervals_without_two: 0,
             error_reported: false,
         };
-        Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None }
+        Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None, stop_cond: Arc::new(Condvar::new()) }
     }
 
     fn choose_interval(state: StunState, search: Duration, repeat: Duration) -> Duration {
@@ -175,6 +176,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         if self.running.swap(true, Ordering::SeqCst) { return; }
         let running = self.running.clone();
         let state = self.inner.clone();
+        let stop_cond = self.stop_cond.clone();
         self.thread = Some(thread::spawn(move || {
             loop {
                 if !running.load(Ordering::SeqCst) { break; }
@@ -226,8 +228,11 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                         }
                     }
                 }
-                // Sleep outside the lock
-                std::thread::sleep(interval);
+                // Wait for the next interval or stop signal
+                {
+                    let inner = state.lock().unwrap();
+                    let _ = stop_cond.wait_timeout(inner, interval).unwrap();
+                }
             }
         }));
     }
@@ -235,6 +240,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
     fn stop(&mut self) {
         log::info!("[StunEndpointFinder] stopping background thread");
         if self.running.swap(false, Ordering::SeqCst) {
+            self.stop_cond.notify_all();
             if let Some(h) = self.thread.take() {
                 log::info!("[StunEndpointFinder] join on background thread, waiting for it to finish...");
                 let _ = h.join();

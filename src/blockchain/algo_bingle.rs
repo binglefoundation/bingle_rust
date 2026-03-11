@@ -166,7 +166,10 @@ impl AlgoBingle {
         let call = CallApplication::new(sender, app_id)
             .app_arguments(app_args)
             .build();
-        let tx = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
+        let tx = TxnBuilder::with(&params, call)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build app call: {e}"))?;
         log::info!("register_endpoint tx: {:?}", tx);
         let signed = account
             .sign_transaction(tx)
@@ -419,7 +422,10 @@ impl AlgoBingle {
         // 1) Payment: sender -> app address for price. The app will verify this and perform
         //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
         let pay = Pay::new(sender, app_addr, MicroAlgos(price_microalgos)).build();
-        let tx_pay = TxnBuilder::with(&params, pay).build().map_err(|e| anyhow!("build pay: {e}"))?;
+        let tx_pay = TxnBuilder::with(&params, pay)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build pay: {e}"))?;
         log::info!("[buy_bingle] tx_pay: {:#?}", tx_pay);
 
         // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
@@ -457,11 +463,17 @@ impl AlgoBingle {
 
         // 1) Asset xfer: sender -> app address of `amount`
         let ax = TransferAsset::new(sender, asset_id, amount, app_addr).build();
-        let tx_ax = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build axfer: {e}"))?;
+        let tx_ax = TxnBuilder::with(&params, ax)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build axfer: {e}"))?;
 
         // 2) Payout payment: sender -> sender for `payout` (satisfies on-chain payment check)
         let pay = Pay::new(sender, sender, MicroAlgos(payout)).build();
-        let tx_pay = TxnBuilder::with(&params, pay).build().map_err(|e| anyhow!("build pay: {e}"))?;
+        let tx_pay = TxnBuilder::with(&params, pay)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build pay: {e}"))?;
 
         // 3) App call: sell_bingle(uint64)void
         let mut app_args: Vec<Vec<u8>> = Vec::new();
@@ -472,7 +484,10 @@ impl AlgoBingle {
             .app_arguments(app_args)
             .foreign_assets(vec![asset_id])
             .build();
-        let tx_app = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
+        let tx_app = TxnBuilder::with(&params, call)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build app call: {e}"))?;
 
         let mut txs = vec![tx_ax, tx_pay, tx_app];
         Self::assign_group_id(&mut txs)?;
@@ -505,7 +520,10 @@ impl AlgoBingle {
 
         // 1) ASA fee: sender -> app address amount = price_units
         let ax = TransferAsset::new(sender, asset_id, price_units, app_addr).build();
-        let tx_ax = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build axfer: {e}"))?;
+        let tx_ax = TxnBuilder::with(&params, ax)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build axfer: {e}"))?;
         // Print the full asset transfer transaction (tx_ax) with all fields for visibility
         log::info!("tx_ax: {:#?}", tx_ax);
 
@@ -524,7 +542,10 @@ impl AlgoBingle {
             .app_arguments(app_args)
             .foreign_assets(vec![asset_id])
             .build();
-        let tx_app = TxnBuilder::with(&params, call).build().map_err(|e| anyhow!("build app call: {e}"))?;
+        let tx_app = TxnBuilder::with(&params, call)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build app call: {e}"))?;
 
         let mut txs = vec![tx_ax, tx_app];
         Self::assign_group_id(&mut txs)?;
@@ -570,7 +591,10 @@ impl AlgoBingle {
         let (account, sender) = self.sender_account()?;
         // Opt-in by sending 0 units to self
         let ax = TransferAsset::new(sender, asset_id, 0, sender).build();
-        let tx = TxnBuilder::with(&params, ax).build().map_err(|e| anyhow!("build asset opt-in tx: {e}"))?;
+        let tx = TxnBuilder::with(&params, ax)
+            .note(AlgoOps::unique_note())
+            .build()
+            .map_err(|e| anyhow!("build asset opt-in tx: {e}"))?;
         let signed = account
             .sign_transaction(tx)
             .map_err(|e| anyhow!("sign asset opt-in: {e}"))?

@@ -1,21 +1,17 @@
-use rust_comms::engine::BingleAccessUnsafeForTests;
-use serial_test::serial;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex, Once};
-use std::time::{Duration, Instant};
-use log::{error, LevelFilter};
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, OnMessageHandler};
+use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
-use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use serde_json::json;
-use env_logger;
+use serial_test::serial;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::time::{Duration, Instant};
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[path = "../test_util.rs"]
-mod test_util;
+use crate::setup_localnet;
+use crate::util::test_util;
 
 // Helper: start a relay node at a fixed address
 fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
@@ -92,8 +88,6 @@ fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
 }
 
 fn deploy_bingle_app() -> u64 {
-    use rust_comms::algo_ops::AppArg;
-    use std::fs;
     let cfg = test_util::localnet_config();
     // Ensure relay accounts are funded
     // id_b is in same segment as id_a
@@ -106,17 +100,7 @@ fn deploy_bingle_app() -> u64 {
     // Build AlgoOps for two relay accounts and one creator (use SPEND as creator)
     let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
 
-    // Deploy the BingleDapp from artifacts
-    let approval_src = fs::read_to_string("../../dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("../../dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
-    let approval = ops_creator.compile_teal(&approval_src).expect("compile approval teal");
-    let clear = ops_creator.compile_teal(&clear_src).expect("compile clear teal");
-    let app_id = ops_creator.deploy_app(&approval, &clear, None).expect("deploy app").expect("app id");
-
-    // Set Bingle price to 1 (not strictly required for endpoint registration)
-    let _ = ops_creator.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)]);
-
-    app_id
+    test_util::deploy_bingle_app(&ops_creator)
 }
 
 // Helper: wait for given duration and return true if both relays are visible via discovery
@@ -189,7 +173,7 @@ fn setup_on_message(api: &Arc<BingleApiImpl>, received: &Arc<AtomicBool>, payloa
 }
 
 fn run_send_message_to_id_test(broken_nat: bool) {
-    init_test_logging();
+    test_util::init_test_logging();
 
     // This test requires a running local Algorand localnet + indexer.
     if !test_util::should_run_localnet() {
@@ -329,9 +313,8 @@ fn wait_for_indexer_visible(app_id: u64, accounts: &[String], timeout: Duration)
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
 #[test]
-#[ntest::timeout(300_000)]
+#[ntest::timeout(180_000)]
 #[ignore]
-#[serial]
 fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
@@ -339,19 +322,17 @@ fn bingle_api_send_message_to_id_localnet() {
 // Localnet-style integration test for send_message_to_id using two relays and two clients,
 // where both clients have broken NAT and must use relays.
 #[test]
-#[ntest::timeout(300_000)]
+#[ntest::timeout(180_000)]
 #[ignore]
-#[serial]
 fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
 
 #[test]
-#[ntest::timeout(180_000)]
+#[ntest::timeout(300_000)]
 #[ignore]
-#[serial]
 fn bingle_api_send_message_to_id_non_root_relay_localnet() {
-    init_test_logging();
+    test_util::init_test_logging();
     if !test_util::should_run_localnet() { return; }
 
     let relay3_id = "3RLYTSRX54G5WOPPPV4FYWRV2QXKIC5WRPM54YKXGVLTAFGUEIG2QN4DMQ";
@@ -398,7 +379,7 @@ fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     log::info!("[Test] Starting stun servers");
     let (mut s1_full, mut s2_full, stun_list_full) = setup_stun_servers(false);
-    let (mut s1_iso, mut s2_iso, stun_list_isolated) = setup_stun_servers(true);
+    let (mut s1_iso, mut s2_iso, _stun_list_isolated) = setup_stun_servers(true);
 
     // Wait for root relays to be fully ready (registered in blockchain)??
     log::info!("[Test] Waiting for root relays to register themselves in blockchain");

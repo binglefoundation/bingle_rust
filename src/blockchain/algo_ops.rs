@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use uuid::Uuid;
 use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose, Engine as _};
@@ -102,6 +103,13 @@ impl AlgoOps {
         }
 
         ops
+    }
+
+    /// Helper to generate a unique note (e.g. for avoiding "transaction already in ledger" errors)
+    pub fn unique_note() -> Vec<u8> {
+        let mut n = Vec::new();
+        n.extend_from_slice(Uuid::new_v4().as_bytes());
+        n
     }
 
     fn algod_client(&self) -> Result<algonaut::algod::v2::Algod> {
@@ -400,6 +408,7 @@ impl AlgoOps {
         let micro = (amount_algos * 1_000_000.0).round() as u64;
         let pay = algonaut::transaction::Pay::new(from, to, algonaut::core::MicroAlgos(micro)).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, pay)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build transaction: {e}"))?;
 
@@ -453,6 +462,7 @@ impl AlgoOps {
             .build();
 
         let tx = algonaut::transaction::TxnBuilder::with(&params, ca)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
 
@@ -499,6 +509,7 @@ impl AlgoOps {
             .build();
 
         let tx = algonaut::transaction::TxnBuilder::with(&params, ca)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
 
@@ -557,6 +568,7 @@ impl AlgoOps {
             .clawback(clawback)
             .build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, cfg)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
 
@@ -619,6 +631,7 @@ impl AlgoOps {
             .clawback(new_reserve)
             .build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, cfg)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
         log::info!("[change_asset_reserve_address] tx: {:#?}", tx);
@@ -677,6 +690,7 @@ impl AlgoOps {
         // Build asset transfer transaction
         let xfer = algonaut::transaction::TransferAsset::new(from, asset_id, amount, to).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, xfer)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
 
@@ -707,6 +721,7 @@ impl AlgoOps {
         // Opt-in is a zero-amount transfer from self to self
         let xfer = algonaut::transaction::TransferAsset::new(addr, asset_id, 0, addr).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, xfer)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset opt-in transaction: {e}"))?;
 
@@ -880,6 +895,7 @@ impl AlgoOps {
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![aid]); }
         let create = builder.build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, create)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build app create transaction: {e}"))?;
 
@@ -956,6 +972,7 @@ impl AlgoOps {
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![aid]); }
         let update = builder.build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, update)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build app update transaction: {e}"))?;
 
@@ -1052,6 +1069,7 @@ impl AlgoOps {
             algonaut::transaction::builder::TxnFee::zero(),
             call.clone(),
         )
+        .note(Self::unique_note())
         .build()
         .map_err(|e| anyhow!("failed to build app call transaction for fee estimation: {e}"))?;
         let est_size = tx_zero_fee
@@ -1063,6 +1081,7 @@ impl AlgoOps {
             algonaut::transaction::builder::TxnFee::Fixed(est_fee),
             call,
         )
+        .note(Self::unique_note())
         .build()
         .map_err(|e| anyhow!("failed to build app call transaction: {e}"))?;
         Ok(tx)
@@ -1088,6 +1107,7 @@ impl AlgoOps {
 
         let call = algonaut::transaction::builder::OptInApplication::new(sender, app_id).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, call)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build app opt-in transaction: {e}"))?;
 
@@ -1109,6 +1129,7 @@ impl AlgoOps {
 
         let call = algonaut::transaction::builder::ClearApplication::new(sender, app_id).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, call)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build app clear transaction: {e}"))?;
 
@@ -1130,6 +1151,7 @@ impl AlgoOps {
 
         let call = algonaut::transaction::builder::CloseApplication::new(sender, app_id).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, call)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build app close-out transaction: {e}"))?;
 
@@ -1151,6 +1173,7 @@ impl AlgoOps {
 
         let call = algonaut::transaction::builder::DeleteApplication::new(sender, app_id).build();
         let tx = algonaut::transaction::TxnBuilder::with(&params, call)
+            .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build app delete transaction: {e}"))?;
 

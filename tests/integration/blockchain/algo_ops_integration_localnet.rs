@@ -1,10 +1,10 @@
 use rust_comms::algo_ops::AlgoOps;
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[macro_use]
-#[path = "../test_util.rs"]
-mod test_util;
+use crate::setup_localnet;
+
+
+use crate::util::test_util;
+
 use test_util::{localnet_config, ADDRESS_10MIL};
 
 

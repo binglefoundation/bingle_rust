@@ -1,6 +1,6 @@
 use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 fn run_cmd(program: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(program).args(args).output().map_err(|e| format!("failed to run {program}: {e}"))?;
@@ -53,8 +53,10 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&s
         let mut needs_fund = match bal_opt { Some(b) => b < 900.0, None => true };
         if needs_fund {
             // Send 900_000_000 microalgos (~900 ALGO) as per Kotlin SetupLocalnet
+            // Add a unique note to avoid "transaction already in ledger" when multiple tests fund concurrently
             let amount = "900000000";
-            let transfer_res = run_cmd("algokit", &["goal", "clerk", "send", "-w", "unencrypted-default-wallet", "-a", amount, "-t", addr, "-f", &funded])?;
+            let note = format!("fund_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+            let transfer_res = run_cmd("algokit", &["goal", "clerk", "send", "-w", "unencrypted-default-wallet", "-a", amount, "-t", addr, "-f", &funded, "--note", &note])?;
             log::info!("algokit transfer result: {}", transfer_res);
             // Poll until balance appears
             let deadline = Instant::now() + Duration::from_secs(20);

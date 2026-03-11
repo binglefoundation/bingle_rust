@@ -1,14 +1,10 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::algo_ops::AlgoChainConfig;
 
-#[path = "../setup_localnet.rs"]
-mod setup_localnet;
-#[macro_use]
-#[path = "../test_util.rs"]
-mod test_util;
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
+use crate::setup_localnet;
+use crate::util::test_util;
 
-use std::fs;
+use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
 use std::time::{Duration, Instant};
 use std::thread;
 
@@ -36,13 +32,8 @@ fn set_allow_and_register_endpoint_then_list_and_clear() {
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
     let user = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
 
-    // Deploy the dapp from TEAL artifacts
-    test_util::print_cwd_for_debug();
-    let approval_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal").expect("read clear teal");
-    let approval_bytes = creator.compile_teal(&approval_src).expect("compile approval teal");
-    let clear_bytes = creator.compile_teal(&clear_src).expect("compile clear teal");
-    let app_id = creator.deploy_app(&approval_bytes, &clear_bytes, None).expect("deploy app call").expect("app id");
+    // Deploy the dapp from TEAL artifacts using common helper
+    let app_id = test_util::deploy_bingle_app(&creator);
 
     // User & creator opts in to the app to enable local state
     user.opt_in_app(app_id).expect("user opt-in app");

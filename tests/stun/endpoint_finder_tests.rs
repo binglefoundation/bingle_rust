@@ -272,6 +272,22 @@ fn after_two_responses_polls_resume_on_repeat_interval() {
     let s2_key = (s2.ip().to_string(), s2.port());
     assert!(any_after.iter().any(|(h, p, _)| *h == s1_key.0 && *p == s1_key.1), "expected repeat poll for s1");
     assert!(any_after.iter().any(|(h, p, _)| *h == s2_key.0 && *p == s2_key.1), "expected repeat poll for s2");
-
     finder.stop();
+}
+
+#[test]
+fn stop_stops_promptly() {
+    let mut finder = StunEndpointFinderImpl::new();
+    // Start with a long search/repeat time
+    finder.start(vec![], 5000, 5000);
+
+    // Give it a moment to actually start the thread
+    std::thread::sleep(Duration::from_millis(100));
+
+    let start = Instant::now();
+    finder.stop();
+    let elapsed = start.elapsed();
+
+    // If it takes more than 1 second, it's definitely not prompt
+    assert!(elapsed < Duration::from_millis(500), "stop() took {:?}, which is too long", elapsed);
 }

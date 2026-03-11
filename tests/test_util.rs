@@ -1,7 +1,8 @@
-use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps};
+use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg};
 use std::env;
 use std::sync::Once;
 use log::LevelFilter;
+use std::fs;
 
 // Macro to skip localnet-dependent tests with a standard message.
 // Usage: skip_if_no_localnet!();
@@ -127,4 +128,51 @@ pub fn init_test_logging() {
             default_hook(pi);
         }));
     });
+}
+
+/// Helper: Deploy the Bingle application to localnet using the TEAL artifacts in the `dapp/` folder.
+/// Returns the app_id of the deployed contract.
+/// Also sets the BinglePrice to 1 microAlgo as a default convenience.
+#[allow(dead_code)]
+pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
+    let approval_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
+    let clear_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
+
+    let approval_src = fs::read_to_string(approval_path).expect("read approval teal from artifacts");
+    let clear_src = fs::read_to_string(clear_path).expect("read clear teal from artifacts");
+
+    let approval_bytes = ops.compile_teal(&approval_src).expect("compile approval teal");
+    let clear_bytes = ops.compile_teal(&clear_src).expect("compile clear teal");
+
+    let app_id = ops.deploy_app(&approval_bytes, &clear_bytes, None)
+        .expect("deploy app call")
+        .expect("failed to get app_id after deployment");
+
+    // Default: set Bingle price to 1 microAlgo to allow registration/buy flows to work
+    let _ = ops.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])
+        .expect("set_bingle_price(1) call");
+
+    app_id
+}
+
+/// Helper: Deploy the Bingle application AND create a corresponding Bingle$ ASA.
+/// Sets the app's price to 1 and configures the ASA reserve/clawback to the app address.
+/// Returns (app_id, asset_id).
+#[allow(dead_code)]
+pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units: u64) -> (u64, u64) {
+    let app_id = deploy_bingle_app(ops);
+
+    // Create ASA with reserve/clawback set to the application address
+    let asset_id = ops.create_asset_with_reserve_app(asset_name, total_units, app_id)
+        .expect("create_asset_with_reserve_app call")
+        .expect("failed to get asset_id after creation");
+
+    // Opt the app account into the ASA so it can receive/send it
+    let ab = rust_comms::blockchain::algo_bingle::AlgoBingle::new(ops.clone(), app_id, asset_id);
+    let _ = ab.opt_in_app_to_asset(app_id, asset_id).expect("opt_in_app_to_asset call");
+
+    // Also ensure clawback is explicitly set to app if not already covered by create_asset_with_reserve_app
+    ops.set_asset_clawback_to_app(app_id, asset_id).expect("set_asset_clawback_to_app call");
+
+    (app_id, asset_id)
 }
