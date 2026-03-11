@@ -352,7 +352,8 @@ impl AlgoOps {
         let res = self.rt_block_on(client.account_information(&address))?;
         let info = match res { Ok(v) => v, Err(_e) => return Ok(None) };
 
-        log::debug!("Retrieved account info for address: {}: {:#?}", account_address, info);
+        log::debug!("Retrieved account info for address: {}", account_address);
+        log::trace!("Account info: {:#?}", info);
 
         let v = serde_json::to_value(&info)
             .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
@@ -679,7 +680,7 @@ impl AlgoOps {
             .build()
             .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
 
-        log::info!("[send_asset] tx: {:#?}", tx);
+        log::trace!("[send_asset] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -972,7 +973,8 @@ impl AlgoOps {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Build tx
         let tx = self.build_call_app_tx(app_id, asset_id, method, args)?;
-        log::warn!("[call_app] method={:?} app_id={} asset_id={:?} args_len={} tx={:#?}", method, app_id, asset_id, args.len(), tx);
+        log::info!("[call_app] method={:?} app_id={} asset_id={:?} args_len={}", method, app_id, asset_id, args.len());
+        log::trace!("[call_app] tx={:?}", tx);
         let sk = self.private_key_bytes()?;
         let client = self.algod_client()?;
         // Sign, submit, wait

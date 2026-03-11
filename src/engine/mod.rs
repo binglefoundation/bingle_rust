@@ -1318,6 +1318,7 @@ impl Engine {
 
         self.mux = Some(mux);
         log::info!("[Engine] start_with_addr: done");
+        self.set_state_internal(EngineState::Registered);
 
         Ok(())
     }

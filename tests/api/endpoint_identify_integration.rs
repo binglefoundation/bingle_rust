@@ -1,18 +1,19 @@
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use crate::util::test_util::init_test_logging;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
 #[path = "../test_util.rs"]
 mod test_util;
-
 
 // Option B integration test: use BingleApiImpl as the entry point, but mock out
 // the discovery by forcing STUN consistent on the underlying Engine. We avoid
@@ -22,6 +23,76 @@ mod test_util;
 #[test]
 #[serial]
 fn bingle_api_endpoint_identify_via_forced_stun() {
+    init_test_logging();
+
+    fn wait_for_relays_visible(
+        ab: &AlgoBingle,
+        app_id: u64,
+        accounts: &[String],
+        timeout: Duration,
+    ) {
+        log::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            if let Ok(found) = ab.discover_root_relays(app_id, accounts) {
+                if found.len() == accounts.len() {
+                    log::info!(
+                        "[Test] All {} relays visible via discover_root_relays after {:?}",
+                        accounts.len(),
+                        start.elapsed()
+                    );
+                    return;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(1000));
+        }
+        panic!(
+            "Relays did not become visible via discover_root_relays within {:?}",
+            timeout
+        );
+    }
+
+    fn register_relay_static_endpoint(
+        ops_relay: &rust_comms::blockchain::algo_ops::AlgoOps,
+        ab_creator: &AlgoBingle,
+        relay_address: &str,
+        relay_account: &str,
+        app_id: u64,
+    ) {
+        let ab_relay = AlgoBingle::new(ops_relay.clone(), app_id, 0);
+        ops_relay.opt_in_app(app_id).expect("relay opt-in app");
+        ab_creator
+            .set_allow_static(app_id, relay_account, true)
+            .expect("set_allow_static");
+        ab_relay
+            .register_endpoint(app_id, relay_address)
+            .expect("register_endpoint");
+    }
+
+    fn start_relay_and_wait_registered(
+        opts: &StartOptions,
+        name: &str,
+    ) -> Arc<BingleApiImpl> {
+        let relay = BingleApiImpl::new(opts);
+        relay
+            .access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(opts))
+            .unwrap_or_else(|e| panic!("{} start() failed: {}", name, e));
+
+        let relay_wait_start = Instant::now();
+        while relay_wait_start.elapsed() < Duration::from_secs(60) {
+            let state =
+                relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
+            if matches!(state, Some(EngineState::Registered)) {
+                return relay;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+
+        let state =
+            relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
+        panic!("unexpected {} state: {:?}", name, state);
+    }
+
     // This test requires a running local Algorand localnet + indexer.
     // Fail fast if not available per issue requirements.
     if !test_util::should_run_localnet() {
@@ -80,49 +151,50 @@ fn bingle_api_endpoint_identify_via_forced_stun() {
 
     // Create helpers bound to this app
     let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
-    let ab_r1 = AlgoBingle::new(ops_relay1.clone(), app_id, 0);
-    let ab_r2 = AlgoBingle::new(ops_relay2.clone(), app_id, 0);
 
-    // Opt relays into the app and allow static endpoints
-    ops_relay1.opt_in_app(app_id).expect("relay1 opt-in app");
-    ops_relay2.opt_in_app(app_id).expect("relay2 opt-in app");
-    // Grant allow_static for relay accounts via creator
-    ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
-    ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
+    let relay1_accounts = vec![test_util::ADDRESS_SPEND.to_string()];
+    register_relay_static_endpoint(
+        &ops_relay1,
+        &ab_creator,
+        &relay1_addr.to_string(),
+        test_util::ADDRESS_SPEND,
+        app_id,
+    );
+    wait_for_relays_visible(
+        &ab_creator,
+        app_id,
+        &relay1_accounts,
+        Duration::from_secs(60),
+    );
 
-    // Register endpoints for both relays
-    ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
-    ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
-
-    // Wait for the indexer to see them (using discover_root_relays as requested)
-    log::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
-    let accounts = vec![test_util::ADDRESS_SPEND.to_string(), test_util::ADDRESS_RECEIVE.to_string()];
-    let start_wait = Instant::now();
-    let timeout = Duration::from_secs(60);
-    let mut found_all = false;
-    while start_wait.elapsed() < timeout {
-        if let Ok(found) = ab_creator.discover_root_relays(app_id, &accounts) {
-            if found.len() == 2 {
-                log::info!("[Test] Both relays visible via discover_root_relays after {:?}", start_wait.elapsed());
-                found_all = true;
-                break;
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1000));
-    }
-    assert!(found_all, "Relays did not become visible via discover_root_relays within {:?}", timeout);
+    log::info!("[Test] Relay 1 is visible via discover_root_relays");
 
     let cfg = test_util::localnet_config();
 
     let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: Some(cfg.clone()), algo_network: None, app_id: Some(app_id), asset_id: None, log_level: None };
     let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: Some(cfg.clone()), algo_network: None, app_id: Some(app_id), asset_id: None, log_level: None };
 
-    let relay1 = BingleApiImpl::new(&r1_opts);
-    let relay2 = BingleApiImpl::new(&r2_opts);
+    let relay1 = start_relay_and_wait_registered(&r1_opts, "relay1");
 
-    // Start relays (no assertions about DTLS; we use them only as placeholders)
-    let _ = relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&r1_opts)).expect("relay1 start() failed");
-    let _ = relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&r2_opts)).expect("relay2 start() failed");
+    let relay12_accounts = vec![
+        test_util::ADDRESS_SPEND.to_string(),
+        test_util::ADDRESS_RECEIVE.to_string(),
+    ];
+    register_relay_static_endpoint(
+        &ops_relay2,
+        &ab_creator,
+        &relay2_addr.to_string(),
+        test_util::ADDRESS_RECEIVE,
+        app_id,
+    );
+    wait_for_relays_visible(
+        &ab_creator,
+        app_id,
+        &relay12_accounts,
+        Duration::from_secs(60),
+    );
+    log::info!("[Test] Relay 2 is visible via discover_root_relays");
+    let relay2 = start_relay_and_wait_registered(&r2_opts, "relay2");
 
     // Start two local STUN servers we will use for consistency resolution
     let p1 = test_util::find_unused_loopback_port();
