@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
-
+use bingle_test::api::bingle_api_impl_integration::test_util::init_test_logging;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 pub mod pki;
 #[path = "../test_util.rs"]
@@ -47,6 +47,7 @@ fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &rust_comms::api:
 #[ntest::timeout(30_000)]
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn dtls_client_echo_roundtrip() {
+    init_test_logging();
     use std::time::Instant;
 
     // Generate Ed25519 CA, server, and client credentials dynamically

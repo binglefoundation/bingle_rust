@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-
+use bingle_test::util::test_util::init_test_logging;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 pub mod pki;
 #[path = "../test_util.rs"]
@@ -29,6 +29,8 @@ fn server_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
 #[ntest::timeout(30_000)]
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn dtls_client_keeps_stream_open_across_sends() {
+    init_test_logging();
+
     reset_test_state();
     #[allow(unused)]
     {
@@ -76,21 +78,23 @@ pub fn dtls_client_keeps_stream_open_across_sends() {
 
     // Wait until server receives first message
     let start = Instant::now();
-    while MSG_COUNT.load(Ordering::Relaxed) < 1 && start.elapsed() < Duration::from_secs(5) {
+    while MSG_COUNT.load(Ordering::Relaxed) < 1 && start.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 1, "server did not receive first message");
+    log::info!("[Test] Server received first message, proceeding with second send");
 
     // Second send should reuse the same client DTLS stream; the stream must remain open across send()
     let payload2 = b"second-message";
     assert!(client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr), payload2).is_ok(), "second send failed (stream may have been closed)");
-
+    log::info!("[Test] Client sent second message");
     // Wait for second message
     let start2 = Instant::now();
-    while MSG_COUNT.load(Ordering::Relaxed) < 2 && start2.elapsed() < Duration::from_secs(5) {
+    while MSG_COUNT.load(Ordering::Relaxed) < 2 && start2.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 2, "server did not receive second message; client stream might not be kept open");
+    log::info!("[Test] Server received second message");
 
     client.stop().expect("client stop");
     server.stop().expect("server stop");

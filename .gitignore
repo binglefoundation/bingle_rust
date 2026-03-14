@@ -10,10 +10,11 @@
 /ios/BingleTestFFI.xcframework/
 /ios/Package.swift
 
-
 # Ignore generated spec artifacts
 /generated/
 
 # Ignore generated DAPP artifcats
 /dapp/smart_contracts/artifacts/
 
+/ios/
+.junie

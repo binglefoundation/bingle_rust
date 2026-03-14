@@ -4,6 +4,7 @@ use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
 use openssl::nid::Nid;
 use openssl::pkey::{PKey, Private};
+use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier};
 use openssl::x509::{X509NameBuilder, X509};
 use crate::util::test_util::ADDRESS_RECEIVE;
 
@@ -19,7 +20,8 @@ pub struct TestCerts {
 }
 
 #[allow(dead_code)]
-pub fn generate_ed25519_test_certs() -> TestCerts {
+pub fn
+generate_ed25519_test_certs() -> TestCerts {
     generate_ed25519_test_certs_with_key(ADDRESS_RECEIVE.to_string().as_str())
 }
 
@@ -50,6 +52,20 @@ fn make_ca(key: &str) -> (X509, PKey<Private>) {
     let not_after = Asn1Time::days_from_now(2).expect("not after");
     builder.set_not_after(&not_after).expect("set not after");
 
+    let bc = BasicConstraints::new().critical().ca().build().expect("bc");
+    builder.append_extension(bc).expect("append bc");
+    let ku = KeyUsage::new()
+        .critical()
+        .key_cert_sign()
+        .crl_sign()
+        .build()
+        .expect("ku");
+    builder.append_extension(ku).expect("append ku");
+    let skid = SubjectKeyIdentifier::new()
+        .build(&builder.x509v3_context(None, None))
+        .expect("skid");
+    builder.append_extension(skid).expect("append skid");
+
     builder.sign(&pkey, MessageDigest::null()).expect("sign");
     (builder.build(), pkey)
 }
@@ -75,6 +91,31 @@ fn make_ee(ca_cert: &X509, ca_key: &PKey<Private>, cn: &str) -> (X509, PKey<Priv
     builder.set_not_before(&not_before).expect("set not before");
     let not_after = Asn1Time::days_from_now(2).expect("not after");
     builder.set_not_after(&not_after).expect("set not after");
+
+    let bc = BasicConstraints::new().critical().build().expect("bc");
+    builder.append_extension(bc).expect("append bc");
+    let ku = KeyUsage::new()
+        .critical()
+        .digital_signature()
+        .key_encipherment()
+        .build()
+        .expect("ku");
+    builder.append_extension(ku).expect("append ku");
+    let eku = ExtendedKeyUsage::new()
+        .server_auth()
+        .client_auth()
+        .build()
+        .expect("eku");
+    builder.append_extension(eku).expect("append eku");
+    let skid = SubjectKeyIdentifier::new()
+        .build(&builder.x509v3_context(Some(ca_cert), None))
+        .expect("skid");
+    builder.append_extension(skid).expect("append skid");
+    let akid = AuthorityKeyIdentifier::new()
+        .keyid(true)
+        .build(&builder.x509v3_context(Some(ca_cert), None))
+        .expect("akid");
+    builder.append_extension(akid).expect("append akid");
 
     builder.sign(ca_key, MessageDigest::null()).expect("sign");
     (builder.build(), pkey)

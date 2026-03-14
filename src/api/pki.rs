@@ -14,7 +14,7 @@ pub fn generate_pki_from_ops(
     use openssl::hash::MessageDigest;
     use openssl::nid::Nid;
     use openssl::pkey::{Id, PKey};
-    use openssl::x509::extension::{BasicConstraints, SubjectKeyIdentifier};
+    use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectKeyIdentifier};
     use openssl::x509::{X509NameBuilder, X509};
 
     // 1) Build CA PKey from Algorand private key (ed25519 32 bytes)
@@ -76,6 +76,15 @@ pub fn generate_pki_from_ops(
     ca_builder
         .append_extension(bc)
         .map_err(|e| format!("append bc: {}", e))?;
+    let ku = KeyUsage::new()
+        .critical()
+        .key_cert_sign()
+        .crl_sign()
+        .build()
+        .map_err(|e| format!("ku: {}", e))?;
+    ca_builder
+        .append_extension(ku)
+        .map_err(|e| format!("append ku: {}", e))?;
     let skid = SubjectKeyIdentifier::new()
         .build(&ca_builder.x509v3_context(None, None))
         .map_err(|e| format!("skid: {}", e))?;
@@ -101,7 +110,7 @@ pub fn generate_pki_from_ops(
         use openssl::hash::MessageDigest;
         use openssl::nid::Nid;
         use openssl::rsa::Rsa;
-        use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, KeyUsage, SubjectKeyIdentifier};
+        use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier};
         use openssl::x509::{X509NameBuilder, X509};
         // Generate RSA 2048 private key
         let rsa = Rsa::generate(2048).map_err(|e| format!("rsa gen: {}", e))?;
@@ -131,8 +140,14 @@ pub fn generate_pki_from_ops(
         b.set_not_after(&na2).map_err(|e| format!("na set: {}", e))?;
         let bc = BasicConstraints::new().critical().build().map_err(|e| format!("bc: {}", e))?;
         b.append_extension(bc).map_err(|e| format!("append bc: {}", e))?;
-        let ku = KeyUsage::new().digital_signature().build().map_err(|e| format!("ku: {}", e))?;
+        let ku = KeyUsage::new().digital_signature().key_encipherment().build().map_err(|e| format!("ku: {}", e))?;
         b.append_extension(ku).map_err(|e| format!("append ku: {}", e))?;
+        let eku = ExtendedKeyUsage::new()
+            .server_auth()
+            .client_auth()
+            .build()
+            .map_err(|e| format!("eku: {}", e))?;
+        b.append_extension(eku).map_err(|e| format!("append eku: {}", e))?;
         let skid = SubjectKeyIdentifier::new()
             .build(&b.x509v3_context(Some(issuer_cert), None))
             .map_err(|e| format!("skid: {}", e))?;
