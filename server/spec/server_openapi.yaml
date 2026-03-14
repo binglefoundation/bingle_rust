@@ -1,0 +1,213 @@
+openapi: 3.0.3
+info:
+  title: Bingle Server API
+  version: 0.1.0
+  description: |
+    Local HTTP server API to allow a browser client to call the Bingle API.
+servers:
+  - url: http://localhost:8080
+    description: Local Bingle server
+paths:
+  /handleLookup:
+    get:
+      summary: Lookup an id by handle
+      parameters:
+        - name: handle
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The associated id
+          content:
+            application/json:
+              schema:
+                type: string
+        '404':
+          description: Handle not found
+  /sendMessageToId:
+    post:
+      summary: Send a message to a user id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, message]
+              properties:
+                userId:
+                  type: string
+                message:
+                  $ref: '#/components/schemas/BingleMessage'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: boolean
+  /sendMessageToHandle:
+    post:
+      summary: Send a message to a handle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle, message]
+              properties:
+                handle:
+                  type: string
+                message:
+                  $ref: '#/components/schemas/BingleMessage'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: boolean
+  /sendMessageToNetwork:
+    post:
+      summary: Send a message to a network source key and user id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [networkSourceKey, userId, message]
+              properties:
+                networkSourceKey:
+                  $ref: '#/components/schemas/NetworkSourceKey'
+                userId:
+                  type: string
+                message:
+                  $ref: '#/components/schemas/BingleMessage'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: boolean
+  /sendMessageToIdWithResponse:
+    post:
+      summary: Send a message to a user id and wait for response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, message]
+              properties:
+                userId:
+                  type: string
+                message:
+                  $ref: '#/components/schemas/BingleMessage'
+      responses:
+        '200':
+          description: The response message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+  /sendMessageToHandleWithResponse:
+    post:
+      summary: Send a message to a handle and wait for response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle, message]
+              properties:
+                handle:
+                  type: string
+                message:
+                  $ref: '#/components/schemas/BingleMessage'
+      responses:
+        '200':
+          description: The response message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+  /sendMessageToNetworkWithResponse:
+    post:
+      summary: Send a message to a network source key and user id and wait for response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [networkSourceKey, userId, message]
+              properties:
+                networkSourceKey:
+                  $ref: '#/components/schemas/NetworkSourceKey'
+                userId:
+                  type: string
+                message:
+                  $ref: '#/components/schemas/BingleMessage'
+      responses:
+        '200':
+          description: The response message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+  /queued:
+    get:
+      summary: Return all received messages queued in the server
+      responses:
+        '200':
+          description: List of queued messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BingleMessage'
+components:
+  schemas:
+    NetworkSourceKey:
+      type: object
+      description: Identifies where to send network traffic (direct or via relay).
+      properties:
+        inetSocketAddress:
+          $ref: '#/components/schemas/InetSocketAddress'
+        relayChannel:
+          type: integer
+          minimum: 0
+          maximum: 65535
+          description: TURN relay channel number if using a relay.
+        relayAddress:
+          $ref: '#/components/schemas/InetSocketAddress'
+        relayId:
+          type: string
+          description: Optional relay id (Algorand address).
+    InetSocketAddress:
+      type: object
+      required: [host, port]
+      properties:
+        host:
+          type: string
+          description: Hostname or IP address.
+        port:
+          type: integer
+          minimum: 0
+          maximum: 65535
+          description: UDP port number.
+    BingleMessage:
+      oneOf:
+        - $ref: '../../spec/openapi.yaml#/components/schemas/PlainTextMessage'
+        - $ref: '../../spec/openapi.yaml#/components/schemas/PlainTextMessageWithNulls'
+        - $ref: '../../spec/openapi.yaml#/components/schemas/TypedMessage'
+    Response:
+      $ref: '#/components/schemas/BingleMessage'
