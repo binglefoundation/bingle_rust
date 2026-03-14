@@ -39,6 +39,111 @@ pub trait TestAlgo: Sized {
     fn pk_from_addr(addr: &str) -> Result<[u8; 32], String>;
 }
 
+// ===== STUN Tests (generic) =====
+pub fn stun_tests() -> bool {
+    use std::net::SocketAddr;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+    use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
+    use rust_comms::stun::{StunEndpointFinder, StunState, StunEndpointFinderImpl};
+
+    fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
+        // Build a minimal STUN success with XOR-MAPPED-ADDRESS for IPv4
+        let mut pkt = vec![0u8; 20];
+        // Message Type: 0x0101 (Binding Success Response)
+        pkt[0] = 0x01; pkt[1] = 0x01;
+        // We'll add one attribute of length 8
+        pkt[2] = 0x00; pkt[3] = 0x0c; // 12 bytes (type+len + value)
+        // Magic Cookie
+        pkt[4] = 0x21; pkt[5] = 0x12; pkt[6] = 0xA4; pkt[7] = 0x42;
+        // Transaction ID (12 bytes arbitrary)
+        for i in 0..12 { pkt[8 + i] = i as u8; }
+        // Attribute: XOR-MAPPED-ADDRESS (0x0020), length 8
+        pkt.extend_from_slice(&[0x00, 0x20, 0x00, 0x08]);
+        // Value: 0x00 family(0x01), x-port, x-address
+        pkt.push(0x00);
+        pkt.push(0x01);
+        let xport = port ^ 0x2112;
+        pkt.extend_from_slice(&xport.to_be_bytes());
+        let mut xaddr = ip;
+        let cookie = [0x21u8, 0x12, 0xA4, 0x42];
+        for i in 0..4 { xaddr[i] ^= cookie[i]; }
+        pkt.extend_from_slice(&xaddr);
+        pkt
+    }
+
+    // --- state_transitions_consistent_and_inconsistent ---
+    {
+        let mut finder = StunEndpointFinderImpl::new();
+        let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+        let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+        finder.start(vec![s1, s2], 50, 50);
+
+        let changes = Arc::new(Mutex::new(Vec::<(StunState, Option<SocketAddr>)>::new()));
+        let changes_clone = changes.clone();
+        finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+            changes_clone.lock().unwrap().push((st, ep));
+        })));
+
+        // First response: SINGLE
+        let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+        finder.process_packet(s1, &r1);
+
+        // Second response from another server, same endpoint -> CONSISTENT
+        let r2 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+        finder.process_packet(s2, &r2);
+
+        // Now different endpoint from s2 -> INCONSISTENT
+        let r3 = make_xor_mapped_response([203, 0, 113, 10], 55001);
+        finder.process_packet(s2, &r3);
+
+        // Verify callback recorded transitions
+        let list = changes.lock().unwrap();
+        if !list.iter().any(|(st, _)| *st == StunState::Single) { return false; }
+        if !list.iter().any(|(st, _)| *st == StunState::Consistent) { return false; }
+        if !list.iter().any(|(st, _)| *st == StunState::Inconsistent) { return false; }
+
+        finder.stop();
+    }
+
+    // --- error_after_three_intervals_with_less_than_two_responders ---
+    {
+        let mut finder = StunEndpointFinderImpl::new();
+        let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+        let _s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+        finder.start(vec![s1, _s2], 5, 5);
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_clone = hits.clone();
+        finder.set_error_handler(Some(Arc::new(move |msg| {
+            if msg.contains("Fewer than 2 STUN servers responded") {
+                hits_clone.fetch_add(1, AOrdering::SeqCst);
+            }
+        })));
+        // Simulate only one server ever responding
+        let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+        finder.process_packet(s1, &r1);
+        // Wait until error handler invoked or timeout
+        let deadline = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < deadline && hits.load(AOrdering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if hits.load(AOrdering::SeqCst) < 1 { return false; }
+        finder.stop();
+    }
+
+    // --- stop_stops_promptly ---
+    {
+        let mut finder = StunEndpointFinderImpl::new();
+        finder.start(vec![], 5000, 5000);
+        std::thread::sleep(Duration::from_millis(100));
+        let start = Instant::now();
+        finder.stop();
+        if start.elapsed() >= Duration::from_millis(500) { return false; }
+    }
+
+    true
+}
+
 // ===== Test suites (generic) =====
 
 pub fn algo_ops_basic<T: TestAlgo>(passphrase: &str) -> bool {

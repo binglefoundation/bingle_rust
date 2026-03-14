@@ -5,8 +5,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 // Ensure tests for src/api are under tests/api per project guidelines.
 
-#[test]
-fn start_returns_err_on_invalid_passphrase() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn start_returns_err_on_invalid_passphrase() {
     // Passphrase that is not in the expected format (missing b64: prefix)
     let bad_pass = "this-is-not-a-valid-secret".to_string();
 

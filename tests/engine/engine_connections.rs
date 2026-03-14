@@ -52,8 +52,8 @@ impl Dtls for FakeDtls {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
-#[test]
-fn engine_send_to_peer_tracks_connections_and_reuses() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_send_to_peer_tracks_connections_and_reuses() {
     let engine = Engine::new_with_dtls(&StartOptions::default(), crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()), Box::new(FakeDtls::new()));
 
     let a1: SocketAddr = "127.0.0.1:12345".parse().unwrap();

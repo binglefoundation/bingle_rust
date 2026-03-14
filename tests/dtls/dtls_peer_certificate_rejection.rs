@@ -1,18 +1,18 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
-mod pki;
+pub mod pki;
 
 fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())
 }
 
-#[test]
-fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     // Generate test certificates
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
@@ -63,8 +63,8 @@ fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     assert!(!any_ok, "handshake unexpectedly succeeded when server rejected peer certificate");
 }
 
-#[test]
-fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
     // Generate test certificates
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();

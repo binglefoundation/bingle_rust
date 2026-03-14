@@ -8,7 +8,6 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
 use crate::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
-#[cfg(not(target_os = "ios"))]
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::dtls::Dtls;
@@ -359,8 +358,7 @@ impl BingleApi for BingleApiImpl {
         // Engine is ready
         if let Some(cb) = progress.as_ref() { cb(10, "Engine ready".to_string()); }
 
-        // 1) Try to resolve as a known root relay via RelayFinder::lookup_root_id first (non-iOS only)
-        #[cfg(not(target_os = "ios"))]
+        // 1) Try to resolve as a known root relay via RelayFinder::lookup_root_id first
         {
             if let Some(cb) = progress.as_ref() { cb(15, "Checking root relays".to_string()); }
             let app_id_opt = self

@@ -4,64 +4,64 @@
 // This resolves IDE "Module declaration missing" warnings and keeps tests organized under a single binary.
 
 #[path = "messages/marshal_unit.rs"]
-mod marshal_unit;
+pub mod marshal_unit;
 
 #[path = "messages/router_from_id.rs"]
-mod router_from_id;
+pub mod router_from_id;
 
 #[path = "messages/triangle_response_routing.rs"]
-mod triangle_response_routing;
+pub mod triangle_response_routing;
 
 #[path = "messages/marshal_triangle_response.rs"]
-mod marshal_triangle_response;
+pub mod marshal_triangle_response;
 
 #[path = "messages/on_plain_text_delegate.rs"]
-mod on_plain_text_delegate;
+pub mod on_plain_text_delegate;
 
 #[path = "messages/relay_ping_handler_unit.rs"]
-mod relay_ping_handler_unit;
+pub mod relay_ping_handler_unit;
 
 #[path = "messages/relay_ping_handlers.rs"]
-mod relay_ping_handlers;
+pub mod relay_ping_handlers;
 
 #[path = "messages/marshal_ping.rs"]
-mod marshal_ping;
+pub mod marshal_ping;
 
 #[path = "messages/mutex_messages_json.rs"]
-mod mutex_messages_json;
+pub mod mutex_messages_json;
 
 #[path = "messages/ping_routing.rs"]
-mod ping_routing;
+pub mod ping_routing;
 
 #[path = "messages/triangle_test1_response_sets_state.rs"]
-mod triangle_test1_response_sets_state;
+pub mod triangle_test1_response_sets_state;
 
 #[path = "messages/marshal_relay_call.rs"]
-mod marshal_relay_call;
+pub mod marshal_relay_call;
 
 #[path = "messages/triangle_test3_registers.rs"]
-mod triangle_test3_registers;
+pub mod triangle_test3_registers;
 
 #[path = "messages/relay_listen.rs"]
-mod relay_listen;
+pub mod relay_listen;
 
 #[path = "messages/relay_call.rs"]
-mod relay_call;
+pub mod relay_call;
 
 #[path = "messages/relay_called_handler.rs"]
-mod relay_called_handler;
+pub mod relay_called_handler;
 
 #[path = "messages/ddb_messages_json.rs"]
-mod ddb_messages_json;
+pub mod ddb_messages_json;
 
 #[path = "messages/ddb_signon_handler.rs"]
-mod ddb_signon_handler;
+pub mod ddb_signon_handler;
 
 #[path = "messages/listening_notifications.rs"]
-mod listening_notifications;
+pub mod listening_notifications;
 
 #[path = "messages/relay_triangle_test1_ext.rs"]
-mod relay_triangle_test1_ext;
+pub mod relay_triangle_test1_ext;
 
 // Some repositories include an additional test file for TriangleTest3 state setting.
 // If present in this repo, include it; otherwise harmless if missing when not referenced.

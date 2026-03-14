@@ -3,8 +3,8 @@
 
 use rust_comms::algo_bingle::AlgoBingle;
 
-#[test]
-fn test_extract_bingle_price_ok() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn test_extract_bingle_price_ok() {
     let entries = vec![
         ("SomeOtherKey".to_string(), "42".to_string()),
         ("BinglePrice".to_string(), "123456".to_string()),
@@ -14,8 +14,8 @@ fn test_extract_bingle_price_ok() {
     assert_eq!(price.unwrap(), 123456u64);
 }
 
-#[test]
-fn test_extract_bingle_price_missing() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn test_extract_bingle_price_missing() {
     let entries = vec![
         ("Another".to_string(), "1".to_string()),
         ("Yet".to_string(), "2".to_string()),

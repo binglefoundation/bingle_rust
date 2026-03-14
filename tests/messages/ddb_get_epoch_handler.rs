@@ -65,8 +65,8 @@ impl BingleApiInternal for InternalStarting {
     fn notify_listening(&self, _listening: bool) {}
 }
 
-#[test]
-fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     // Arrange router as relay with internal state available and ddb backend
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
@@ -102,8 +102,8 @@ fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     assert!(eps.len() >= 2);
 }
 
-#[test]
-fn ddb_get_epoch_returns_fail_when_not_allowed() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_get_epoch_returns_fail_when_not_allowed() {
     // Case 1: not a relay
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(false);

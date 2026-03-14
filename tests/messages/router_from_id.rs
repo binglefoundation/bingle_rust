@@ -21,8 +21,8 @@ impl MessageHandler for CapturingHandler {
 }
 
 
-#[test]
-fn route_passes_from_id_into_handler() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn route_passes_from_id_into_handler() {
     let store: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let handler = CapturingHandler::new(store.clone());
 

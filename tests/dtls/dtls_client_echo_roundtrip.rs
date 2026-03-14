@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::OnceLock;
@@ -6,9 +6,9 @@ use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-mod pki;
+pub mod pki;
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())
@@ -45,8 +45,8 @@ fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &rust_comms::api:
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_client_echo_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_client_echo_roundtrip() {
     use std::time::Instant;
 
     // Generate Ed25519 CA, server, and client credentials dynamically

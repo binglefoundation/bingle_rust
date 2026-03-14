@@ -1,13 +1,13 @@
 // Grouped tests for distributed_mutex module
 
 #[path = "basic.rs"]
-mod basic;
+pub mod basic;
 
 #[path = "modified_lamport.rs"]
-mod modified_lamport;
+pub mod modified_lamport;
 
 #[path = "dynamic_add.rs"]
-mod dynamic_add;
+pub mod dynamic_add;
 
 #[path = "islanding.rs"]
-mod islanding;
+pub mod islanding;

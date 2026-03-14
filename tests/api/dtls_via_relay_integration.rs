@@ -14,16 +14,16 @@ use rust_comms::turn::turn_handler::{TurnClientHandler, TurnHandler};
 use crate::util::test_util::{ADDRESS_10MIL, ADDRESS_RECEIVE, ADDRESS_SPEND};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 #[path = "../dtls/pki.rs"]
-mod pki;
+pub mod pki;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-#[cfg(not(target_os = "ios"))]
-fn dtls_send_via_relay_end_to_end() {
+#[cfg_attr(not(target_os = "ios"), test)]
+
+pub fn dtls_send_via_relay_end_to_end() {
     // 1) Start a DTLS target node (server) with its own UDP mux and capture received payloads
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();

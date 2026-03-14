@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -62,8 +62,8 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
-#[test]
-fn engine_upserts_root_relays_into_backend() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_upserts_root_relays_into_backend() {
     // Engine with am_relay true
     let opts = StartOptions { handle: "eng".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::mock_api_weak());

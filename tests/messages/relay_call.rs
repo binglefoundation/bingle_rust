@@ -10,8 +10,8 @@ use rust_comms::turn::turn_handler::TurnHandler;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-fn relay_call_allocates_channel_and_maps_pair() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_call_allocates_channel_and_maps_pair() {
     // Arrange: router as relay with TURN handler and two registered peers
     let turn = std::sync::Arc::new(rust_comms::turn::turn_handler::TurnHandlerImpl::new());
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }

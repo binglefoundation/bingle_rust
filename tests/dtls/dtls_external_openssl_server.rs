@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, UdpSocket};
@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-mod pki;
+pub mod pki;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok("MOCK-ISSUER".to_string())
@@ -17,8 +17,8 @@ fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<
 static CLIENT_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_openssl_external_s_server_client_send() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_openssl_external_s_server_client_send() {
     // Check that openssl CLI is available; if not, skip test gracefully.
     match Command::new("openssl").arg("version").stdout(Stdio::null()).stderr(Stdio::null()).status() {
         Ok(status) if status.success() => {}

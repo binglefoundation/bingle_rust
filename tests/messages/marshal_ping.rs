@@ -1,8 +1,8 @@
 use rust_comms::messages::marshal::{from_json_str, to_json_value};
 use rust_comms::messages::types::{Message, PingMessage};
 
-#[test]
-fn unit_ping_ping_from_json() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_ping_ping_from_json() {
     let json = r#"{"app":"ping","type":"ping","text":"hello"}"#;
     let msg = from_json_str(json).expect("decode");
     match msg {
@@ -14,8 +14,8 @@ fn unit_ping_ping_from_json() {
     }
 }
 
-#[test]
-fn unit_ping_response_to_json() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_ping_response_to_json() {
     // Build a PingResponse and ensure fields serialize per schema
     let resp = rust_comms::messages::types::PingResponse {
         app: "ping".into(),

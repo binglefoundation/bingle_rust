@@ -62,8 +62,8 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
-#[test]
-fn relay_finder_caches_successful_root_relay() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_finder_caches_successful_root_relay() {
     // Prepare two candidate relays
     let a1: SocketAddr = "127.0.0.1:40001".parse().unwrap();
     let a2: SocketAddr = "127.0.0.1:40002".parse().unwrap();

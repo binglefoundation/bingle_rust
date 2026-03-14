@@ -1,7 +1,7 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 
-#[test]
-fn discover_roots_parses_relay_ip_from_local_state() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn discover_roots_parses_relay_ip_from_local_state() {
     // Two accounts, only one has RelayIP
     let accounts = vec![
         "ADDR1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),

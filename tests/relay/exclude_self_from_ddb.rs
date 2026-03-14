@@ -7,7 +7,7 @@ use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 #[derive(Clone)]
 struct MockApi {
@@ -54,8 +54,8 @@ impl InnerBingleApi for MockApi {
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-fn list_all_relays_excludes_self_from_ddb() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn list_all_relays_excludes_self_from_ddb() {
     // my id appears in DDB list; ensure list_all_relays excludes it
     let my_id = test_util::ADDRESS_SPEND.to_string();
     let other = test_util::ADDRESS_RECEIVE.to_string();
@@ -85,8 +85,8 @@ fn list_all_relays_excludes_self_from_ddb() {
     assert!(!ids.contains(&my_id), "should NOT contain our own relay id in choices");
 }
 
-#[test]
-fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
     let my_id = test_util::ADDRESS_SPEND.to_string();
     let other = test_util::ADDRESS_RECEIVE.to_string();
     let a1 = addr(43001);

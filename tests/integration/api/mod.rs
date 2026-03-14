@@ -1,2 +1,2 @@
 #[path = "send_message_to_id_integration.rs"]
-pub(crate) mod send_message_to_id_integration;
+pub mod send_message_to_id_integration;

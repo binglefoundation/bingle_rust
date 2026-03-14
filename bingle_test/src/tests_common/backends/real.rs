@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+// #![cfg(not(target_os = "ios"))]
 
 use rust_comms::algo_ops::{self, AlgoOps};
 use crate::tests_common::TestAlgo;

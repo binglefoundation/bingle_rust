@@ -47,8 +47,8 @@ impl DdbClient for DdbMock {
 
 // ---------------- Tests ----------------
 
-#[test]
-fn call_with_address_present_returns_endpoint_with_channel() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn call_with_address_present_returns_endpoint_with_channel() {
     let relay_id = "RELAYID123".to_string();
     let relay_addr = addr(9100);
     let nsk = NetworkEndpoint::new_relay(relay_id.clone(), Some(relay_addr), None);
@@ -68,8 +68,8 @@ fn call_with_address_present_returns_endpoint_with_channel() {
     // Note: In unit test, we can check engine's tracked connections if needed
 }
 
-#[test]
-fn call_resolves_relay_address_via_ddb_when_missing() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn call_resolves_relay_address_via_ddb_when_missing() {
     let relay_id = "RELAYID123".to_string();
     let relay_addr = addr(9200);
     let nsk = NetworkEndpoint::new_relay(relay_id.clone(), None, None);

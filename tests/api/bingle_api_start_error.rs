@@ -5,8 +5,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 // Ensure that BingleApiImpl::start does not ignore Engine start errors
 // and propagates them to the caller.
-#[test]
-fn bingle_api_start_propagates_engine_error() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn bingle_api_start_propagates_engine_error() {
     let api = BingleApiImpl::new(&StartOptions::default());
     // No static_ip and empty STUN server list will cause Engine::start to error
     let opts = StartOptions {

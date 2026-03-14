@@ -20,9 +20,9 @@ fn fund_test_accounts_or_panic() {
 // - Set the environment variable RUST_COMMS_RUN_LOCALNET=true in your Run Configuration.
 // The tests will auto-skip if localnet isn’t available and the env var isn’t set.
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-fn account_balance_for_address10mil_returns_some() {
+pub fn account_balance_for_address10mil_returns_some() {
     skip_if_no_localnet!();
     fund_test_accounts_or_panic();
     let cfg = localnet_config();
@@ -32,9 +32,9 @@ fn account_balance_for_address10mil_returns_some() {
     assert!(bal.unwrap() >= 0.0);
 }
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-fn global_state_for_address10mil_returns_some_vec() {
+pub fn global_state_for_address10mil_returns_some_vec() {
     skip_if_no_localnet!();
     fund_test_accounts_or_panic();
     let cfg = localnet_config();
@@ -47,9 +47,9 @@ fn global_state_for_address10mil_returns_some_vec() {
 // This intentionally performs no heavy integration work here; it only ensures the
 // test target exists and can be executed. It will skip unless localnet is available.
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-fn algo_ops_integration_localnet_placeholder() {
+pub fn algo_ops_integration_localnet_placeholder() {
     skip_if_no_localnet!();
     // Localnet is available; keep placeholder light to avoid duplicating other tests.
     // Future: could delegate to a more comprehensive integration suite here.

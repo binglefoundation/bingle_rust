@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
@@ -7,7 +7,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn find_unused_loopback_port() -> u16 {
     let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
@@ -17,8 +17,8 @@ fn find_unused_loopback_port() -> u16 {
 }
 
 #[ntest::timeout(15_000)]
-#[test]
-fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
     // Choose a random available port by probing loopback; we use that port for static_ip.
     let port = find_unused_loopback_port();
     assert_ne!(port, 0, "probe should yield a non-zero port");

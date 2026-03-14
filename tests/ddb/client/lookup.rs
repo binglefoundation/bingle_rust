@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -11,10 +11,10 @@ use rust_comms::ddb::{DdbClient, DdbClientImpl};
 use rust_comms::relay::relay_finder::RelayInfo;
 
 #[path = "../../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[test]
-fn ddb_client_lookup_returns_endpoint() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_client_lookup_returns_endpoint() {
     // Start relay and client
     let relay_port = test_util::find_unused_loopback_port();
     let client_port = test_util::find_unused_loopback_port();

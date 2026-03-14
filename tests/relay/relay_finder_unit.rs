@@ -36,10 +36,10 @@ use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 use simple_logger::SimpleLogger;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[test]
-fn find_root_relay_rejects_self() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn find_root_relay_rejects_self() {
     let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
             RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345), state: None },
@@ -56,8 +56,8 @@ fn find_root_relay_rejects_self() {
     assert_eq!(info.address, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346));
 }
 
-#[test]
-fn select_indices_partitions_for_multiple_ids() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn select_indices_partitions_for_multiple_ids() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let _ = SimpleLogger::new().init();

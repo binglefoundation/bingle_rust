@@ -27,8 +27,8 @@ impl InnerBingleApiInternal for MockInternal {
     fn notify_listening(&self, listening: bool) { if listening { self.listening_notified.store(true, Ordering::SeqCst); } }
 }
 
-#[test]
-fn triangle_test3_notifies_listening_true() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn triangle_test3_notifies_listening_true() {
     // Arrange: router with MockApi and MockInternal
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45001);
     let internal = Arc::new(MockInternal::new(addr));

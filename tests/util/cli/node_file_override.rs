@@ -16,8 +16,8 @@ fn write_temp_nodefile(content: &str) -> PathBuf {
     p
 }
 
-#[test]
-fn parses_node_file_and_populates_start_options() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn parses_node_file_and_populates_start_options() {
     let file = write_temp_nodefile(r#"{
         "network": "testnet",
         "client_api_url": "https://testnet-api.example",
@@ -47,8 +47,8 @@ fn parses_node_file_and_populates_start_options() {
     assert_eq!(opts.algo_network.as_deref(), Some("testnet"));
 }
 
-#[test]
-fn defaults_to_localnet_when_node_file_not_provided() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn defaults_to_localnet_when_node_file_not_provided() {
     let args = vec!["--handle".into(), "user2".into()];
     let opts = parse_start_options_from_args(args).expect("should parse args");
     assert_eq!(opts.handle, "user2");

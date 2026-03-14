@@ -27,8 +27,8 @@ impl BingleApi for DummyApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
-#[test]
-fn engine_start_without_static_ip_errors() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_start_without_static_ip_errors() {
     let mut engine = Engine::new(StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let opts = StartOptions {
         handle: "tester".into(),
@@ -55,8 +55,8 @@ fn engine_start_without_static_ip_errors() {
     );
 }
 
-#[test]
-fn engine_start_with_static_ip_localhost_ok() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_start_with_static_ip_localhost_ok() {
     let mut engine = Engine::new(StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
     let opts = StartOptions {

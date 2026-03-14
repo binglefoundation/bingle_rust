@@ -5,8 +5,8 @@ use rust_comms::messages::types::{DdbMessage, DdbSignon, Message, AdvertRecord, 
 use rust_comms::api::bingle_api::{NetworkEndpoint};
 use crate::util::reusable_mock_api::{MockApiBoth, to_weak_api_both, InnerBingleApiInternal};
 
-#[test]
-fn test_on_ddb_signon_updates_backend_and_sends_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
     let handler = DefaultPrintingHandler;
     
     let upserts = Arc::new(Mutex::new(Vec::new()));

@@ -8,7 +8,7 @@
 // - wait for Registered or NATRestricted, assert Registered
 // - send Ping to pinguser20 by Algorand address and expect PingResponse
 
-#![cfg(not(target_os = "ios"))]
+
 
 use std::sync::Arc;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
@@ -17,7 +17,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 
 #[path = "common.rs"]
-mod common;
+pub mod common;
 
 fn pingable_address() -> Option<String> {
     // Prefer explicit env var if provided by runner
@@ -26,8 +26,8 @@ fn pingable_address() -> Option<String> {
     Some("SRIDF3MQNHGWOKYNZOSS7VONPKJB2LM52DOZGPY7QLT5ONZ5BPUAKH3Q4A".to_string())
 }
 
-#[test]
-fn testnet_send_ping_to_registered_node() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn testnet_send_ping_to_registered_node() {
     // Only run when explicitly enabled.
     if common::env_var("BINGLE_RUN_TESTNET").as_deref() != Some("1") {
         eprintln!("[skipped] Set BINGLE_RUN_TESTNET=1 to run testnet e2e ping test");

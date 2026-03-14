@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha512_256};
 
-#[test]
-fn print_set_allow_static_selector() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn print_set_allow_static_selector() {
     let sig = "set_allow_static(address,uint64)void";
     let mut h = Sha512_256::new();
     h.update(sig.as_bytes());

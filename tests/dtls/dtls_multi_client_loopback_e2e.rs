@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::{OnceLock, Mutex};
@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 #[path = "pki.rs"]
-mod pki;
+pub mod pki;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok("MOCK-ISSUER".to_string())
@@ -26,8 +26,8 @@ fn client2_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netw
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_openssl_multi_client_loopback_echo() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_openssl_multi_client_loopback_echo() {
     use std::time::Instant;
 
     // Generate Ed25519 CA, server, and client credentials dynamically

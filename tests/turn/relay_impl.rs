@@ -16,8 +16,8 @@ fn build_channel_data(channel: u16, data: &[u8]) -> Vec<u8> {
     out
 }
 
-#[test]
-fn relay_handle_listen_updates_allowed_entries() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_handle_listen_updates_allowed_entries() {
     let handler = TurnRelayHandlerImpl::new();
     let src = addr(41001);
     let id = "RELAY_ID_A";
@@ -49,8 +49,8 @@ fn relay_handle_listen_updates_allowed_entries() {
     assert_eq!(nep.relay_id().expect("relay id present"), id);
 }
 
-#[test]
-fn relay_handle_call_sets_mappings_and_incoming_both_directions() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_handle_call_sets_mappings_and_incoming_both_directions() {
     let handler = TurnRelayHandlerImpl::new();
     let source = addr(42000);
     let dest = addr(42001);

@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use crate::relay::relay_finder::RelayInfo;
 
-#[cfg(not(target_os = "ios"))]
 use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
-#[cfg(not(target_os = "ios"))]
 use crate::blockchain::algo_bingle::AlgoBingle;
 
 /// Build a reusable discovery closure that queries the Algorand Indexer for
@@ -13,7 +11,6 @@ use crate::blockchain::algo_bingle::AlgoBingle;
 /// The returned closure maps entries to RelayInfo items and preserves the
 /// previous behavior of panicking on failures or empty results, ensuring that
 /// callers depending on discovery success maintain the same semantics.
-#[cfg(not(target_os = "ios"))]
 pub fn indexer_discover_closure(
     app_id: u64,
     cfg: Option<AlgoChainConfig>,

@@ -13,10 +13,10 @@ fn fund_test_accounts_or_panic() {
         .expect("Failed to ensure localnet test accounts funded; install algokit and start localnet");
 }
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
 #[serial]
-fn bingle_end_to_end_calls() {
+pub fn bingle_end_to_end_calls() {
     skip_if_no_localnet!();
     fund_test_accounts_or_panic();
     let cfg: AlgoChainConfig = localnet_config();

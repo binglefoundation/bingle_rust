@@ -3,14 +3,13 @@ use std::thread;
 use std::time::Duration;
 
 use rust_comms::distributed_mutex::DistributedMutex;
-
-mod common;
+pub mod common;
 use common::TestNetwork;
 use crate::util::test_util::init_test_logging;
 
 #[ntest::timeout(30000)]
-#[test]
-fn modified_lamport_dynamic_add_node_after_start() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn modified_lamport_dynamic_add_node_after_start() {
     init_test_logging();
     
     // Start with three nodes where only A and B are of interest; C exists but is idle.

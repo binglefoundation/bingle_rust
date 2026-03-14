@@ -150,7 +150,6 @@ impl RelayFinder {
     }
 
     /// Convenience constructor: wire discovery to AlgoBingle::discover_root_relays using provided ops, app_id and candidate accounts.
-    #[cfg(not(target_os = "ios"))]
     pub fn with_algo_discovery(
         api: crate::api::bingle_api::BingleApiBothType,
         cache_ttl: Duration,

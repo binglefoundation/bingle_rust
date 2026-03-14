@@ -4,8 +4,8 @@ fn decode(input: &str) -> Message {
     from_json_str(input).expect("decode")
 }
 
-#[test]
-fn integration_decode_plain_text() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_plain_text() {
     let msg = decode("{\"text\":\"hi\"}");
     match msg {
         Message::PlainText(pt) => assert_eq!(pt.text, "hi"),
@@ -13,8 +13,8 @@ fn integration_decode_plain_text() {
     }
 }
 
-#[test]
-fn integration_decode_relay_call() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_relay_call() {
     let msg = decode("{\"app\":null,\"type\":\"Call\",\"calledId\":\"abc\"}");
     match msg {
         Message::Relay(RelayMessage::Call(m)) => assert_eq!(m.called_id, "abc"),
@@ -22,8 +22,8 @@ fn integration_decode_relay_call() {
     }
 }
 
-#[test]
-fn integration_decode_relay_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_relay_response() {
     let msg = decode("{\"app\":null,\"type\":\"RelayResponse\",\"channel\":5}");
     match msg {
         Message::Relay(RelayMessage::RelayResponse(m)) => assert_eq!(m.channel, Some(5)),
@@ -31,8 +31,8 @@ fn integration_decode_relay_response() {
     }
 }
 
-#[test]
-fn integration_decode_triangle_test1() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_triangle_test1() {
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":\"127.0.0.1:3456\"}");
     match msg {
         Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456"),
@@ -40,8 +40,8 @@ fn integration_decode_triangle_test1() {
     }
 }
 
-#[test]
-fn integration_decode_triangle_test2() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_triangle_test2() {
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest2\",\"checkingId\":\"id1\",\"checkingEndpoint\":\"10.0.0.1:1111\"}");
     match msg {
         Message::Relay(RelayMessage::TriangleTest2(m)) => {
@@ -52,8 +52,8 @@ fn integration_decode_triangle_test2() {
     }
 }
 
-#[test]
-fn integration_decode_triangle_test3() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_triangle_test3() {
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest3\"}");
     match msg {
         Message::Relay(RelayMessage::TriangleTest3(_)) => {}
@@ -61,8 +61,8 @@ fn integration_decode_triangle_test3() {
     }
 }
 
-#[test]
-fn integration_decode_listen() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_listen() {
     let msg = decode("{\"app\":null,\"type\":\"Listen\"}");
     match msg {
         Message::Relay(RelayMessage::Listen(_)) => {}
@@ -70,8 +70,8 @@ fn integration_decode_listen() {
     }
 }
 
-#[test]
-fn integration_decode_check() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_check() {
     let msg = decode("{\"app\":null,\"type\":\"Check\"}");
     match msg {
         Message::Relay(RelayMessage::Check(_)) => {}
@@ -79,8 +79,8 @@ fn integration_decode_check() {
     }
 }
 
-#[test]
-fn integration_decode_listen_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_listen_response() {
     let msg = decode("{\"app\":null,\"type\":\"ListenResponse\"}");
     match msg {
         Message::Relay(RelayMessage::ListenResponse(_)) => {}
@@ -88,8 +88,8 @@ fn integration_decode_listen_response() {
     }
 }
 
-#[test]
-fn integration_decode_check_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_check_response() {
     let msg = decode("{\"app\":null,\"type\":\"CheckResponse\",\"available\":true}");
     match msg {
         Message::Relay(RelayMessage::CheckResponse(m)) => assert!(m.available),
@@ -97,8 +97,8 @@ fn integration_decode_check_response() {
     }
 }
 
-#[test]
-fn integration_decode_call_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_call_response() {
     let msg = decode("{\"app\":null,\"type\":\"CallResponse\",\"calledId\":\"x\",\"channel\":42}");
     match msg {
         Message::Relay(RelayMessage::CallResponse(m)) => {
@@ -109,8 +109,8 @@ fn integration_decode_call_response() {
     }
 }
 
-#[test]
-fn integration_decode_keep_alive() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_decode_keep_alive() {
     let msg = decode("{\"app\":null,\"type\":\"KeepAlive\"}");
     match msg {
         Message::Relay(RelayMessage::KeepAlive(_)) => {}
@@ -118,8 +118,8 @@ fn integration_decode_keep_alive() {
     }
 }
 
-#[test]
-fn integration_unimplemented_handler_prints_without_panic() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn integration_unimplemented_handler_prints_without_panic() {
     // Minimal MockApi so Router can pass an API into the handler
     struct MockApi;
     impl rust_comms::api::bingle_api::BingleApi for MockApi { 

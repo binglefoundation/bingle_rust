@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6,15 +6,19 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-mod pki;
+pub mod pki;
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())
 }
 
 static MESSAGE_SEEN: AtomicBool = AtomicBool::new(false);
+
+fn reset_test_state() {
+    MESSAGE_SEEN.store(false, Ordering::Relaxed);
+}
 
 fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     // Record that the server received application data.
@@ -24,8 +28,9 @@ fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpo
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_openssl_udp_listener_invokes_handler() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_openssl_udp_listener_invokes_handler() {
+    reset_test_state();
     #[allow(unused)]
     {
         rust_comms::util::printing::enable_immediate_prints();
@@ -96,4 +101,9 @@ fn dtls_openssl_udp_listener_invokes_handler() {
         MESSAGE_SEEN.load(Ordering::Relaxed),
         "message handler was not invoked within the timeout"
     );
+
+    client.stop().expect("client stop");
+    server.stop().expect("server stop");
+    cmux.stop();
+    mux.stop();
 }

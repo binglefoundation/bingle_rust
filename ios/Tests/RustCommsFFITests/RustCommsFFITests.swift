@@ -18,4 +18,8 @@ final class RustCommsFFITests: XCTestCase {
     func test_asset_ops_suite() {
         XCTAssertEqual(rust_comms_run_asset_ops_tests(), UInt8(1))
     }
+    
+    func test_stun_suite() {
+        XCTAssertEqual(rust_comms_run_stun_tests(), UInt8(1))
+    }
 }

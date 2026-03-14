@@ -7,10 +7,10 @@ use crate::util::test_util;
 
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
 #[serial]
-fn buy_bingle_transfers_from_reserve_inner_tx() {
+pub fn buy_bingle_transfers_from_reserve_inner_tx() {
     skip_if_no_localnet!();
 
     // Ensure accounts are funded

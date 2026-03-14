@@ -312,26 +312,26 @@ fn wait_for_indexer_visible(app_id: u64, accounts: &[String], timeout: Duration)
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(180_000)]
 #[ignore]
-fn bingle_api_send_message_to_id_localnet() {
+pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients,
 // where both clients have broken NAT and must use relays.
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(180_000)]
 #[ignore]
-fn bingle_api_send_message_to_id_relay_only_localnet() {
+pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(300_000)]
 #[ignore]
-fn bingle_api_send_message_to_id_non_root_relay_localnet() {
+pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging();
     if !test_util::should_run_localnet() { return; }
 

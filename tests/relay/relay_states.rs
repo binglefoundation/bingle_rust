@@ -6,7 +6,7 @@ use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 use rust_comms::engine::RelayState;
 
@@ -64,8 +64,8 @@ impl InnerBingleApi for MockApi {
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-fn load_and_summarize_states() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn load_and_summarize_states() {
     let a1 = addr(41001);
     let a2 = addr(41002);
     let a3 = addr(41003);

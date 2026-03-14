@@ -30,8 +30,8 @@ impl InnerBingleApiInternal for MockInternal {
     }
 }
 
-#[test]
-fn triangle_test3_triggers_ddb_register_and_sets_registered() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn triangle_test3_triggers_ddb_register_and_sets_registered() {
     // Arrange: router with MockApi and MockInternal
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45000);
     let internal = Arc::new(MockInternal::new(addr));
@@ -55,8 +55,8 @@ fn triangle_test3_triggers_ddb_register_and_sets_registered() {
     assert!(internal.set_registered.load(Ordering::SeqCst), "engine state should be set to Registered");
 }
 
-#[test]
-fn triangle_test3_triggers_relay_registration_sequence() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn triangle_test3_triggers_relay_registration_sequence() {
     // Mock that records call order
     #[derive(Default)]
     struct RelayMockInternal {

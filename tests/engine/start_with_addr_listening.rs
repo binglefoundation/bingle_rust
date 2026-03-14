@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
@@ -83,8 +83,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for CaptureInternal {
 }
 
 // Verifies that when starting with a static address, the engine notifies listening=true as soon as DTLS accept loop is started.
-#[test]
-fn start_with_addr_notifies_listening_true() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn start_with_addr_notifies_listening_true() {
     // Prepare start options with a static external address; local bind uses 0.0.0.0:<port>
     let static_addr: SocketAddr = "127.0.0.1:0".parse().expect("parse static addr");
     let opts = StartOptions {

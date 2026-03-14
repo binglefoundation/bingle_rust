@@ -1,5 +1,5 @@
 use rust_comms::engine::BingleAccessUnsafeForTests;
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -41,8 +41,8 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
 }
 
-#[test]
-fn triangle_test3_sets_engine_state_via_internal_api() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn triangle_test3_sets_engine_state_via_internal_api() {
     // Build API with injected DTLS so Engine exists and router is configured during start
     let mock = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock.clone()));

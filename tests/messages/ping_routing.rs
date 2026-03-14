@@ -23,8 +23,8 @@ impl MessageHandler for CapturingHandler {
     }
 }
 
-#[test]
-fn route_invokes_on_ping_ping() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn route_invokes_on_ping_ping() {
     let flag = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(flag.clone());
 

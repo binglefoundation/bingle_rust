@@ -44,8 +44,8 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
 }
 
-#[test]
-fn on_triangle_test1_sends_triangle_test2_to_peer() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let mock = Arc::new(MockDtls::default());
     let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
     let handler = RelayPingHandler::new(mock.clone(), Some(peer));
@@ -112,8 +112,8 @@ fn on_triangle_test1_sends_triangle_test2_to_peer() {
     }
 }
 
-#[test]
-fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     let mock = Arc::new(MockDtls::default());
     let handler = RelayPingHandler::new(mock.clone(), None);
 

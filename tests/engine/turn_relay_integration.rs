@@ -12,7 +12,7 @@ use rust_comms::turn::turn_handler::TurnHandler;
 use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
@@ -26,8 +26,8 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
     out
 }
 
-#[test]
-fn end_to_end_turn_relay_forwards_payload() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn end_to_end_turn_relay_forwards_payload() {
     // Allocate three ports: relay, client A, client B
     let relay_port = test_util::find_unused_loopback_port();
     let a_port = test_util::find_unused_loopback_port();

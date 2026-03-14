@@ -3,12 +3,12 @@ use rust_comms::engine::Engine;
 use std::net::SocketAddr;
 
 use crate::util::reusable_mock_api::MockApiBoth;
-#[cfg(not(target_os = "ios"))]
+
 use rust_comms::dtls::DtlsOpenSsl;
 
-#[cfg(not(target_os = "ios"))]
-#[test]
-fn engine_dtls_send_without_start_fails() {
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_dtls_send_without_start_fails() {
     let engine = Engine::new_with_dtls(&StartOptions::default(), 
                                  crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()), Box::new(DtlsOpenSsl::new()));
     // Provide a DTLS instance but DO NOT call engine.start(); ensure direct send fails.

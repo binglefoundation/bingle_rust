@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -80,8 +80,8 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
-#[test]
-fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     // Arrange
     let (mock_dtls, sends) = MockDtls::new();
     let handler = RelayPingHandler::new(Arc::new(mock_dtls), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 34567)));

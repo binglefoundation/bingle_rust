@@ -29,7 +29,7 @@ What this does:
 2) List Available Schemes and Simulators
 - Schemes: The Swift Package exposes auto-generated schemes. From the ios directory, list schemes with:
   xcodebuild -list -json | sed 's/\\n/\n/g'
-  Tip: Prefer the scheme named "RustCommsFFITests" for running tests. If that scheme is not present, use whatever test scheme your Xcode generates (names vary by version), or open Package.swift in Xcode once to generate schemes.
+  Tip: Prefer the scheme named "RustCommsFFI-Package" for running tests. If that scheme is not present, use whatever test scheme your Xcode generates (names vary by version), or open Package.swift in Xcode once to generate schemes.
 
 - Simulators: List simulators and their availability:
   xcrun simctl list devices

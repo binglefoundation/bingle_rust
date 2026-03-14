@@ -7,7 +7,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use rust_comms::blockchain::algo_ops::byte_key_to_address;
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 #[derive(Clone)]
 struct MockDtls {
@@ -43,8 +43,8 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
 }
 
-#[test]
-fn unit_send_message_to_network_calls_dtls_send() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_send_message_to_network_calls_dtls_send() {
     let (mock, sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
     let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
@@ -68,8 +68,8 @@ fn unit_send_message_to_network_calls_dtls_send() {
 }
 
 
-#[test]
-fn start_sets_issuer_and_passes_to_dtls_send() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn start_sets_issuer_and_passes_to_dtls_send() {
     // Mock DTLS that captures the issuer parameter
     #[derive(Clone)]
     struct MockDtlsCapture {

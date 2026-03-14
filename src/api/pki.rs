@@ -5,7 +5,6 @@ use crate::blockchain::algo_ops::AlgoOps;
 /// - Server certificate + private key (PEM), RSA 2048 signed by CA
 /// - Client certificate + private key (PEM), RSA 2048 signed by CA
 /// The issuer_cn will be truncated to 64 characters for end-entity CNs.
-#[cfg(not(target_os = "ios"))]
 pub fn generate_pki_from_ops(
     ops: &AlgoOps,
     issuer_cn: &str,
@@ -178,7 +177,3 @@ pub fn generate_pki_from_ops(
     ))
 }
 
-#[cfg(target_os = "ios")]
-pub fn generate_pki_from_ops(_ops: &AlgoOps, _issuer_cn: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
-    Err("PKI generation not available on iOS".to_string())
-}

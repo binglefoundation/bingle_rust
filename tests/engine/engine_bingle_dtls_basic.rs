@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 use rust_comms::engine::BingleAccessUnsafeForTests;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -9,12 +9,12 @@ use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 
 #[ntest::timeout(30_000)]
-#[test]
-fn engine_basic_bingle_dtls_layer() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_basic_bingle_dtls_layer() {
     // Allocate two free loopback ports for server and client static endpoints.
     let server_port = test_util::find_unused_loopback_port();
     let client_port = test_util::find_unused_loopback_port();

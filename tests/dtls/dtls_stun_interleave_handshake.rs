@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex, OnceLock};
@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-mod pki;
+pub mod pki;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok("MOCK-ISSUER".to_string())
@@ -27,8 +27,8 @@ fn server_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Ne
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn stun_response_does_not_interfere_with_dtls_flow() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn stun_response_does_not_interfere_with_dtls_flow() {
     // Reset global state
     CLIENT_ECHO_COUNT.store(0, Ordering::Relaxed);
     if let Some(m) = CLIENT_ECHOS.get() { m.lock().unwrap().clear(); }

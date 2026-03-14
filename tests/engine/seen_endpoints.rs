@@ -35,8 +35,8 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
 }
 
-#[test]
-fn engine_tracks_seen_endpoints() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_tracks_seen_endpoints() {
     let options = StartOptions::default();
     // Use MockApiBoth for engine creation (requires Arc/Weak)
     let api = Arc::new(crate::util::reusable_mock_api::MockApiBoth::new());

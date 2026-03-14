@@ -28,8 +28,8 @@ impl InnerBingleApiInternal for MockInternal {
     }
 }
 
-#[test]
-fn triangle_test1_response_sets_nat_restricted_when_not_available() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn triangle_test1_response_sets_nat_restricted_when_not_available() {
     // Arrange: install a mock internal API and per-test Router
     let mock_internal = Arc::new(MockInternal::new());
     let mock = MockApiBoth::new_with_internal_override(mock_internal.clone());
@@ -57,8 +57,8 @@ fn triangle_test1_response_sets_nat_restricted_when_not_available() {
     assert_eq!(st, EngineState::NATRestricted, "state did not become NATRestricted within 20s");
 }
 
-#[test]
-fn triangle_test1_response_does_not_override_endpoint_available() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn triangle_test1_response_does_not_override_endpoint_available() {
     // Arrange: install a mock internal API and set EndpointAvailable via TriangleTest3
     let mock_internal = Arc::new(MockInternal::new());
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_internal_override(mock_internal.clone()))));

@@ -64,6 +64,9 @@ if [[ -z "${ACTIVE_TOOLCHAIN:-}" ]]; then
   exit 1
 fi
 
+# Set deployment target to ensure compatibility and correct symbols (like ___chkstk_darwin) on modern SDKs
+export IPHONEOS_DEPLOYMENT_TARGET=13.0
+
 RUSTUP_CARGO_PATH="$(rustup which cargo 2>/dev/null || true)"
 SYSTEM_CARGO_PATH="$(command -v cargo || true)"
 if [[ -n "$SYSTEM_CARGO_PATH" && -n "$RUSTUP_CARGO_PATH" && "$SYSTEM_CARGO_PATH" != "$RUSTUP_CARGO_PATH" ]]; then
@@ -88,10 +91,10 @@ if "${RUSTC_CMD[@]}" --print target-list | grep -q "^x86_64-apple-ios$"; then
 fi
 
 # Build release static libraries for each target via rustup toolchain
-"${CARGO_CMD[@]}" build --release --target aarch64-apple-ios
-"${CARGO_CMD[@]}" build --release --target aarch64-apple-ios-sim
+"${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios
+"${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios-sim
 if "${RUSTC_CMD[@]}" --print target-list | grep -q "^x86_64-apple-ios$"; then
-  "${CARGO_CMD[@]}" build --release --target x86_64-apple-ios || true
+  "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target x86_64-apple-ios || true
 fi
 
 LIB_DEVICE="$BUILD_DIR/aarch64-apple-ios/release/lib${CRATE_NAME}.a"
@@ -140,10 +143,10 @@ echo "Created $XCFRAMEWORK_PATH"
 TEST_CRATE_NAME="bingle_test"
 
 # Build bingle_test for the same targets
-"${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --release --target aarch64-apple-ios
-"${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --release --target aarch64-apple-ios-sim
+"${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --lib --release --target aarch64-apple-ios
+"${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --lib --release --target aarch64-apple-ios-sim
 if "${RUSTC_CMD[@]}" --print target-list | grep -q "^x86_64-apple-ios$"; then
-  "${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --release --target x86_64-apple-ios || true
+  "${CARGO_CMD[@]}" build -p "$TEST_CRATE_NAME" --lib --release --target x86_64-apple-ios || true
 fi
 
 LIB_DEVICE_TEST="$BUILD_DIR/aarch64-apple-ios/release/lib${TEST_CRATE_NAME}.a"

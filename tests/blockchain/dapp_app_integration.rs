@@ -2,13 +2,13 @@ use rust_comms::algo_ops::AppArg;
 use std::fs;
 
 #[path = "../setup_localnet.rs"]
-mod setup_localnet;
+pub mod setup_localnet;
 #[macro_use]
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[test]
-fn deploy_call_validate_and_delete_teal_app() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn deploy_call_validate_and_delete_teal_app() {
     skip_if_no_localnet!();
     let cfg = test_util::localnet_config();
     // Ensure creator account funded

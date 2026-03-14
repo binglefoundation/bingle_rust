@@ -33,8 +33,8 @@ impl Dtls for DummyDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
 }
 
-#[test]
-fn dtls_send_takes_no_issuer() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_send_takes_no_issuer() {
     let d = DummyDtls::default();
     let to: SocketAddr = "127.0.0.1:9000".parse().unwrap();
     let data = b"hello";

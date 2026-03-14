@@ -1,8 +1,8 @@
 use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
 
-#[test]
-fn ddb_upsert_serde_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_upsert_serde_roundtrip() {
     let rec = AdvertRecord { id: "ID".into(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
     let msg = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
         app: "ddb".into(),
@@ -21,8 +21,8 @@ fn ddb_upsert_serde_roundtrip() {
     assert_eq!(msg, back);
 }
 
-#[test]
-fn ddb_query_and_response_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_query_and_response_roundtrip() {
     let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {
         app: "ddb".into(),
         id: "ID123".into(),
@@ -49,8 +49,8 @@ fn ddb_query_and_response_roundtrip() {
     assert_eq!(resp, r2);
 }
 
-#[test]
-fn ddb_update_and_delete_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_update_and_delete_roundtrip() {
     let upd = Message::Ddb(DdbMessage::UpdateResponse(DdbUpdateResponse { app: "ddb".into(), tag: None, response_tag: None, text: None, data: None }));
     let ju = marshal::to_json_string(&upd);
     let u2 = marshal::from_json_str(&ju).unwrap();
@@ -73,8 +73,8 @@ fn ddb_update_and_delete_roundtrip() {
 }
 
 
-#[test]
-fn ddb_signon_and_response_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_signon_and_response_roundtrip() {
     let signon = Message::Ddb(DdbMessage::Signon(DdbSignon {
         app: "ddb".into(),
         start_id: "NEWNODE".into(),
@@ -101,8 +101,8 @@ fn ddb_signon_and_response_roundtrip() {
     assert_eq!(signon_resp, r2);
 }
 
-#[test]
-fn ddb_get_epoch_and_info_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_get_epoch_and_info_roundtrip() {
     let get = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch {
         app: "ddb".into(),
         epoch_id: -1,
@@ -131,8 +131,8 @@ fn ddb_get_epoch_and_info_roundtrip() {
     assert_eq!(info, i2);
 }
 
-#[test]
-fn ddb_init_and_dump_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_init_and_dump_roundtrip() {
     let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve {
         app: "ddb".into(),
         tag: None,

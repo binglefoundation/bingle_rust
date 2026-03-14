@@ -1,7 +1,6 @@
 use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 
-#[cfg(not(target_os = "ios"))]
-pub mod non_ios {
+pub mod openssl_impl {
     use super::*;
     use crate::dtls::network_mux_trait::NetworkMux;
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
@@ -980,6 +979,13 @@ pub mod non_ios {
                 log::warn!("[DtlsOpenSsl::stop] already stopped");
             }
 
+            // Clear peer states and close their queues to signal EOF to background reader threads
+            if let Ok(mut map) = self.peer_states.lock() {
+                for (_, ps) in map.drain() {
+                    ps.queue.close();
+                }
+            }
+
             let _ = self.server_thread.take();
             // Stop any internally owned UDP mux
             if let Some(mux) = &self.owned_udp_mux {
@@ -1332,9 +1338,5 @@ pub mod non_ios {
     }
 }
 
-#[cfg(target_os = "ios")]
-mod ios_placeholder {
-    // Empty module to keep file compiling when conditionally included elsewhere.
-}
 
 

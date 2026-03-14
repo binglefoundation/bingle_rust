@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -6,16 +6,19 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
-
-mod pki;
+pub mod pki;
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())
 }
 
 static MSG_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+fn reset_test_state() {
+    MSG_COUNT.store(0, Ordering::Relaxed);
+}
 
 fn server_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
     if !data.is_empty() {
@@ -24,8 +27,9 @@ fn server_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_client_keeps_stream_open_across_sends() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_client_keeps_stream_open_across_sends() {
+    reset_test_state();
     #[allow(unused)]
     {
         rust_comms::util::printing::enable_immediate_prints();
@@ -87,4 +91,9 @@ fn dtls_client_keeps_stream_open_across_sends() {
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 2, "server did not receive second message; client stream might not be kept open");
+
+    client.stop().expect("client stop");
+    server.stop().expect("server stop");
+    cmux.stop();
+    mux.stop();
 }

@@ -438,7 +438,6 @@ impl Engine {
         #[allow(unused)]
         {}
         // Build a DDB client now (always present); choose real or null implementation
-        #[cfg(not(target_os = "ios"))]
         let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = {
             let have_app = options.app_id.or_else(|| {
                 std::env::var("BINGLE_APP_ID")
@@ -458,10 +457,6 @@ impl Engine {
                 std::sync::Arc::new(crate::ddb::NullDdbClient::new())
             }
         };
-
-        #[cfg(target_os = "ios")]
-        let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> =
-            std::sync::Arc::new(crate::ddb::NullDdbClient::new());
 
         Self {
             relay_init_mutex: None,
@@ -706,7 +701,6 @@ impl Engine {
     pub fn set_bingle_api(&mut self, api: crate::api::bingle_api::BingleApiBothType) {
         self.bingle_api = api.clone();
         // Initialize a DDB client bound to this API instance (always set; may be Null)
-        #[cfg(not(target_os = "ios"))]
         {
             let have_app = self.options.app_id.or_else(|| {
                 std::env::var("BINGLE_APP_ID")
@@ -722,10 +716,6 @@ impl Engine {
             } else {
                 std::sync::Arc::new(crate::ddb::NullDdbClient::new())
             };
-        }
-        #[cfg(target_os = "ios")]
-        {
-            self.ddb_client = std::sync::Arc::new(crate::ddb::NullDdbClient::new());
         }
     }
 
@@ -1022,7 +1012,6 @@ impl Engine {
         );
 
         // Build discovery closure using indexer when app_id is configured; else skip
-        #[cfg(not(target_os = "ios"))]
         {
             let app_id_opt = self.options.app_id.or_else(|| {
                 std::env::var("BINGLE_APP_ID")
@@ -1358,33 +1347,19 @@ impl Engine {
             // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
             // Prefer app_id from StartOptions; fallback to env var for legacy tests; else use built-in localhost relays.
             let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                #[cfg(not(target_os = "ios"))]
-                {
-                    // Capture app_id and provider config from options
-                    let opt_app_id = self.options.app_id;
-                    let opt_cfg = self.options.algo_provider_config.clone();
-                    let app_id_opt = opt_app_id.or_else(|| {
-                        std::env::var("BINGLE_APP_ID")
-                            .ok()
-                            .and_then(|s| s.parse::<u64>().ok())
-                    });
-                    log::info!("[Engine] indexer discovery app_id={:?}", app_id_opt);
-                    if let Some(app_id) = app_id_opt {
-                        crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg)
-                    } else {
-                        // No app id set
-                        panic!("[Engine] indexer discovery has no app id");
-                    }
-                }
-                #[cfg(target_os = "ios")]
-                {
-                    Arc::new(|| {
-                        vec![RelayInfo {
-                            id: "IOS-DUMMY".to_string(),
-                            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345),
-                            state: None,
-                        }]
-                    })
+                // Capture app_id and provider config from options
+                let opt_app_id = self.options.app_id;
+                let opt_cfg = self.options.algo_provider_config.clone();
+                let app_id_opt = opt_app_id.or_else(|| {
+                    std::env::var("BINGLE_APP_ID")
+                        .ok()
+                        .and_then(|s| s.parse::<u64>().ok())
+                });
+                if let Some(app_id) = app_id_opt {
+                    crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg)
+                } else {
+                    // No app id set
+                    panic!("[Engine] indexer discovery has no app id");
                 }
             };
 

@@ -4,7 +4,7 @@ use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 struct GetRelaysMockApi {
     pub call_count: Arc<std::sync::atomic::AtomicUsize>,
@@ -34,8 +34,8 @@ impl InnerBingleApi for GetRelaysMockApi {
     }
 }
 
-#[test]
-fn list_all_relays_queries_root_even_if_only_one() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn list_all_relays_queries_root_even_if_only_one() {
     let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let api_inner = Arc::new(GetRelaysMockApi { call_count: call_count.clone() });
     let api = to_weak_api_both(MockApiBoth::new_with_api_override(api_inner));

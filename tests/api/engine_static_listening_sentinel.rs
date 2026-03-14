@@ -1,5 +1,5 @@
 use rust_comms::engine::BingleAccessUnsafeForTests;
-#![cfg(not(target_os = "ios"))]
+
 
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -39,8 +39,8 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
 }
 
-#[test]
-fn engine_static_ip_triggers_on_listening_handler() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_static_ip_triggers_on_listening_handler() {
     // Prepare a temp sentinel path
     let dir = tempfile::tempdir().expect("tempdir");
     let sentinel_path = dir.path().join("engine_listening.sentinel");

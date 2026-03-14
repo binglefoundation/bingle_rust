@@ -574,25 +574,13 @@ impl MessageHandler for DefaultPrintingHandler {
             use std::time::Duration;
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
             let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                #[cfg(not(target_os = "ios"))]
-                {
-                    // Prefer app_id from API options; fallback to env var for legacy
-                    let app_id_opt = api_for_thread
-                        .get_app_id()
-                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                    let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
-                    let cfg = api_for_thread.get_algo_provider_config();
-                    crate::relay::discovery::indexer_discover_closure(app_id, cfg)
-                }
-                #[cfg(target_os = "ios")]
-                {
-                    // On iOS we also require proper discovery via indexer; panic if not configured
-                    let _ = api_for_thread
-                        .get_app_id()
-                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
-                        .expect("on_triangle_test1 (iOS): app_id is required");
-                    std::sync::Arc::new(|| panic!("on_triangle_test1 (iOS): discovery not supported without indexer"))
-                }
+                // Prefer app_id from API options; fallback to env var for legacy
+                let app_id_opt = api_for_thread
+                    .get_app_id()
+                    .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
+                let cfg = api_for_thread.get_algo_provider_config();
+                crate::relay::discovery::indexer_discover_closure(app_id, cfg)
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
             let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
@@ -710,26 +698,15 @@ impl MessageHandler for DefaultPrintingHandler {
 
                 // Build discovery closure similar to on_triangle_test1
                 let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                    #[cfg(not(target_os = "ios"))]
-                    {
-                        let app_id_opt = api_for_thread
-                            .get_app_id()
-                            .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                        let app_id = match app_id_opt {
-                            Some(v) => v,
-                            None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
-                        };
-                        let cfg = api_for_thread.get_algo_provider_config();
-                        crate::relay::discovery::indexer_discover_closure(app_id, cfg)
-                    }
-                    #[cfg(target_os = "ios")]
-                    {
-                        let _ = api_for_thread
-                            .get_app_id()
-                            .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
-                            .expect("on_triangle_test1_response (iOS): app_id is required");
-                        std::sync::Arc::new(|| panic!("on_triangle_test1_response (iOS): discovery not supported without indexer"))
-                    }
+                    let app_id_opt = api_for_thread
+                        .get_app_id()
+                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                    let app_id = match app_id_opt {
+                        Some(v) => v,
+                        None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
+                    };
+                    let cfg = api_for_thread.get_algo_provider_config();
+                    crate::relay::discovery::indexer_discover_closure(app_id, cfg)
                 };
 
                 // Wrap combined API as plain BingleApiBoth for RelayFinder

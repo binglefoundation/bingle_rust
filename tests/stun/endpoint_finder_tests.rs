@@ -31,8 +31,8 @@ fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
     pkt
 }
 
-#[test]
-fn state_transitions_consistent_and_inconsistent() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn state_transitions_consistent_and_inconsistent() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -65,8 +65,8 @@ fn state_transitions_consistent_and_inconsistent() {
     finder.stop();
 }
 
-#[test]
-fn error_after_three_intervals_with_less_than_two_responders() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn error_after_three_intervals_with_less_than_two_responders() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -89,8 +89,8 @@ fn error_after_three_intervals_with_less_than_two_responders() {
     finder.stop();
 }
 
-#[test]
-fn single_response_triggers_single_and_callback_without_ip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn single_response_triggers_single_and_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -115,8 +115,8 @@ fn single_response_triggers_single_and_callback_without_ip() {
     finder.stop();
 }
 
-#[test]
-fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -141,8 +141,8 @@ fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     finder.stop();
 }
 
-#[test]
-fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -166,8 +166,8 @@ fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     finder.stop();
 }
 
-#[test]
-fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callback_without_ip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -198,8 +198,8 @@ fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callback_wi
     finder.stop();
 }
 
-#[test]
-fn nonresponsive_server_removed_after_three_search_polls() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn nonresponsive_server_removed_after_three_search_polls() {
     use std::collections::HashMap;
 
     let mut finder = StunEndpointFinderImpl::new();
@@ -238,8 +238,8 @@ fn nonresponsive_server_removed_after_three_search_polls() {
     finder.stop();
 }
 
-#[test]
-fn after_two_responses_polls_resume_on_repeat_interval() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn after_two_responses_polls_resume_on_repeat_interval() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
@@ -275,8 +275,8 @@ fn after_two_responses_polls_resume_on_repeat_interval() {
     finder.stop();
 }
 
-#[test]
-fn stop_stops_promptly() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn stop_stops_promptly() {
     let mut finder = StunEndpointFinderImpl::new();
     // Start with a long search/repeat time
     finder.start(vec![], 5000, 5000);

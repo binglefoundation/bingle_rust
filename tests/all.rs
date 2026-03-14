@@ -4,21 +4,21 @@
 
 // Existing grouped messages crate (kept as a submodule of this crate too)
 #[path = "messages.rs"]
-mod messages;
+pub mod messages;
 
 // Grouped directories
-mod api;
-mod blockchain;
-mod dtls;
-mod engine;
-mod protocol;
-mod relay;
-mod stun;
-mod cli;
+pub mod api;
+pub mod blockchain;
+pub mod dtls;
+pub mod engine;
+pub mod protocol;
+pub mod relay;
+pub mod stun;
+pub mod cli;
 #[macro_use]
-mod util;
-mod ddb;
-mod turn;
-mod distributed_mutex;
-mod integration;
-mod setup_localnet;
+pub mod util;
+pub mod ddb;
+pub mod turn;
+pub mod distributed_mutex;
+pub mod integration;
+pub mod setup_localnet;

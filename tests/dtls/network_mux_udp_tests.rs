@@ -45,8 +45,8 @@ fn wait_for_records<F: Fn() -> bool>(timeout_ms: u64, predicate: F) -> bool {
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dispatches_stun_dtls_turn() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dispatches_stun_dtls_turn() {
     let _g = TEST_GUARD.get_or_init(|| Mutex::new(())).lock().unwrap();
     clear_all_records();
 
@@ -82,8 +82,8 @@ fn dispatches_stun_dtls_turn() {
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn ignores_zrtp_rtp_unknown() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ignores_zrtp_rtp_unknown() {
     let _g = TEST_GUARD.get_or_init(|| Mutex::new(())).lock().unwrap();
     clear_all_records();
 
@@ -118,8 +118,8 @@ fn ignores_zrtp_rtp_unknown() {
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn write_sends_payload() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn write_sends_payload() {
     // Receiver socket to capture payload
     let receiver = UdpSocket::bind(("127.0.0.1", 0)).expect("bind receiver");
     receiver.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
@@ -137,8 +137,8 @@ fn write_sends_payload() {
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn write_relay_wraps_payload_in_turn_channel_data() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn write_relay_wraps_payload_in_turn_channel_data() {
     // Receiver socket simulating the relay endpoint
     let receiver = UdpSocket::bind(("127.0.0.1", 0)).expect("bind receiver");
     receiver.set_read_timeout(Some(Duration::from_millis(500))).unwrap();

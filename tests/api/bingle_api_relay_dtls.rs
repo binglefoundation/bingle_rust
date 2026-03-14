@@ -16,18 +16,18 @@ use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
 use crate::util::test_util::ADDRESS_SPEND;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[cfg(not(target_os = "ios"))]
+
 #[path = "../dtls/pki.rs"]
-mod pki;
+pub mod pki;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(30_000)]
-#[cfg(not(target_os = "ios"))]
-fn bingle_api_send_via_relay() {
+
+pub fn bingle_api_send_via_relay() {
     test_util::init_test_logging();
 
     let b_id = ADDRESS_SPEND;

@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{OnceLock, Mutex};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
 
 #[path = "pki.rs"]
-mod pki;
+pub mod pki;
 
 // Helpers to parse CN from a PEM cert
 fn extract_subject_cn(pem: &[u8]) -> String {
@@ -51,8 +51,8 @@ fn client_capture(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
     let _ = CLIENT_SEEN_DATA.set(data.to_vec());
 }
 
-#[test]
-fn issuer_mapping_basic_send_and_reply() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn issuer_mapping_basic_send_and_reply() {
     // Generate a normal server cert/key/ca and a client cert/key; we'll override CN for client to "A"
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
@@ -160,8 +160,8 @@ fn make_self_signed_rsa_cert_with_cn(cn: &str) -> (Vec<u8>, Vec<u8>) {
     (cert_pem, key_pem)
 }
 
-#[test]
-fn multiple_clients_to_server_have_correct_issuers() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn multiple_clients_to_server_have_correct_issuers() {
     // Server using normal certs; peer cert handler extracts CN from client certs
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();

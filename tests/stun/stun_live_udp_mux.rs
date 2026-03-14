@@ -20,7 +20,7 @@ fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
     (host, port).to_socket_addrs().ok()?.next()
 }
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore] // Live network test; run explicitly with `cargo test -- --ignored`
 fn live_stun_endpoint_finder_with_udp_mux() {
     // Choose three public STUN servers (widely used and generally responsive)

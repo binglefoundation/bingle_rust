@@ -5,7 +5,6 @@ use std::str::FromStr;
 
 use crate::blockchain::algo_ops::{AlgoOps, AppArg};
 
-#[cfg(not(target_os = "ios"))]
 use algonaut::{
     algod::v2::Algod,
     core::{Address, MicroAlgos, ToMsgPack},
@@ -59,7 +58,6 @@ impl AlgoBingle {
     /// Fetch the current Bingle price from the application's global state under key "BinglePrice".
     /// The price is stored as a uint in global state (microAlgos per Bingle unit).
     /// Errors if the key is not set or the application cannot be queried.
-    #[cfg(not(target_os = "ios"))]
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let client = self.algod_client()?;
@@ -83,7 +81,6 @@ impl AlgoBingle {
         }
     }
 
-    #[cfg(not(target_os = "ios"))]
     fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
         use base64::Engine as _;
         let mut kvs: Vec<(String, String)> = Vec::new();
@@ -204,7 +201,6 @@ impl AlgoBingle {
 
     /// Use the Indexer API to list accounts that have a non-empty "static_endpoint" in local state for the given app_id.
     /// Returns Vec of (account_address, static_endpoint_value).
-    #[cfg(not(target_os = "ios"))]
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
         log::info!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);

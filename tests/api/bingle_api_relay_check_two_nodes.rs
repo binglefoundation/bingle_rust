@@ -5,11 +5,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[cfg(not(target_os = "ios"))]
-#[test]
-fn bingle_api_relay_check_two_nodes() {
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn bingle_api_relay_check_two_nodes() {
 
 
     // 1) Start relay node on an unused port with PASSPHRASE_RECEIVE and id ADDRESS_RECEIVE

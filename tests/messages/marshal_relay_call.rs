@@ -3,8 +3,8 @@ use serde_json::Value;
 
 fn as_json_value(msg: &Message) -> Value { to_json_value(msg) }
 
-#[test]
-fn unit_serialize_relay_call_and_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_serialize_relay_call_and_roundtrip() {
     let msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "abc".to_string() }));
     let val = as_json_value(&msg);
     // Ensure shape
@@ -25,8 +25,8 @@ fn unit_serialize_relay_call_and_roundtrip() {
     }
 }
 
-#[test]
-fn unit_serialize_relay_listen() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_serialize_relay_listen() {
     let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
     let val = as_json_value(&msg);
     let obj = val.as_object().expect("obj");
@@ -34,8 +34,8 @@ fn unit_serialize_relay_listen() {
     assert!(obj.get("app").expect("app").is_null());
 }
 
-#[test]
-fn unit_serialize_relay_listen_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_serialize_relay_listen_response() {
     let msg = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None }));
     let val = as_json_value(&msg);
     let obj = val.as_object().expect("obj");
@@ -43,8 +43,8 @@ fn unit_serialize_relay_listen_response() {
     assert!(obj.get("app").expect("app").is_null());
 }
 
-#[test]
-fn unit_serialize_relay_call_response_and_roundtrip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_serialize_relay_call_response_and_roundtrip() {
     let msg = Message::Relay(RelayMessage::CallResponse(RelayCallResponse { app: None, called_id: "callee".to_string(), channel: 42 }));
     let val = as_json_value(&msg);
     let obj = val.as_object().expect("obj");

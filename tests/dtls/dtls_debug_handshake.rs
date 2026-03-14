@@ -1,12 +1,12 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use serde_json::Value;
 use std::sync::Once;
 
 static INIT_LOG: Once = Once::new();
 
-#[test]
-fn dtls_debug_parses_handshake_type_and_extensions() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_debug_parses_handshake_type_and_extensions() {
     // Ensure logging is initialized at TRACE so dtls_udp_to_json performs full decode
     INIT_LOG.call_once(|| {
         let _ = simple_logger::SimpleLogger::new()

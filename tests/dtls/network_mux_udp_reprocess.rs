@@ -28,8 +28,8 @@ fn clear() {
     if let Some(m) = TURN_REC.get() { m.lock().unwrap().clear(); }
 }
 
-#[test]
-fn reprocess_dispatches_and_enqueues_dtls() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn reprocess_dispatches_and_enqueues_dtls() {
     clear();
     // Create a mux and install handlers
     let mut mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");

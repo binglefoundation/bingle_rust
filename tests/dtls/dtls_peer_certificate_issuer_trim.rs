@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock, atomic::{AtomicBool, Ordering}};
@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
-#[test]
-fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     // Build a minimal CA (Ed25519) with CN = VIRTUAL_CA and a server cert + client cert.
     use openssl::asn1::Asn1Time;
     use openssl::bn::BigNum;

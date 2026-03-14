@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 use rust_comms::engine::BingleAccessUnsafeForTests;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -11,7 +11,7 @@ use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAddr) {
     let server_port = test_util::find_unused_loopback_port();
@@ -51,8 +51,8 @@ fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>,
     (server, client, server_addr, client_addr)
 }
 
-#[test]
-fn ddb_upsert_success_when_server_is_relay() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_upsert_success_when_server_is_relay() {
     let (server, client, server_addr, _client_addr) = start_pair(true);
 
     // Build a valid UpsertResolve from client where startId == record.id == client id
@@ -99,8 +99,8 @@ fn ddb_upsert_success_when_server_is_relay() {
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
 }
 
-#[test]
-fn ddb_upsert_ignored_when_not_relay() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_upsert_ignored_when_not_relay() {
     let (server, client, server_addr, _client_addr) = start_pair(false);
 
     let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
@@ -128,8 +128,8 @@ fn ddb_upsert_ignored_when_not_relay() {
     drop(client);
 }
 
-#[test]
-fn ddb_upsert_rejected_on_id_mismatch() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_upsert_rejected_on_id_mismatch() {
     let (server, client, server_addr, _client_addr) = start_pair(true);
 
     let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");

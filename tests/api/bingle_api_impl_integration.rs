@@ -5,10 +5,10 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use crate::api::bingle_api_impl_integration::test_util::ADDRESS_SPEND;
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[test]
-fn start_succeeds() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn start_succeeds() {
     let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions { 
         handle: Handle::from("alice"),
@@ -30,8 +30,8 @@ fn start_succeeds() {
     // DTLS instance is now created only on Engine
 }
 
-#[test]
-fn send_message_to_network_without_addr_fails_gracefully() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new(&StartOptions::default());
     let nsk = NetworkEndpoint::new_relay(ADDRESS_SPEND.parse().unwrap(), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)), Some(2));
     let uid = test_util::ADDRESS_SPEND.to_string();
@@ -39,9 +39,9 @@ fn send_message_to_network_without_addr_fails_gracefully() {
     assert!(!ok, "Should return false when no direct address is provided");
 }
 
-#[cfg(not(target_os = "ios"))]
-#[test]
-fn relay_check_end_to_end_on_message_receives_response() {
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_check_end_to_end_on_message_receives_response() {
     use std::net::SocketAddr;
     use std::sync::{OnceLock, Arc};
     use std::thread;
@@ -50,7 +50,7 @@ fn relay_check_end_to_end_on_message_receives_response() {
     use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 
     #[path = "../dtls/pki.rs"]
-    mod pki;
+pub mod pki;
 
     fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
         Ok(test_util::ADDRESS_SPEND.to_string())

@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use rust_comms::api::pki::generate_pki_from_ops;
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
@@ -7,10 +7,10 @@ use rust_comms::blockchain::algo_ops::AlgoOps;
 
 // Import predefined test passphrases and addresses
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
-#[test]
-fn generate_pki_from_ops_produces_valid_chain_and_expected_cns() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn generate_pki_from_ops_produces_valid_chain_and_expected_cns() {
     // Initialize AlgoOps using predefined mnemonic and address
     let passphrase = test_util::PASSPHRASE_SPEND.to_string();
     let address = test_util::ADDRESS_SPEND.to_string();

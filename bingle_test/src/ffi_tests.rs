@@ -13,3 +13,7 @@ pub(crate) fn run_algo_ops_more_tests() -> bool {
 pub(crate) fn run_asset_ops_tests() -> bool {
     tests_common::asset_ops::<SimpleBackend>(PASSPHRASE_PLACEHOLDER)
 }
+
+pub(crate) fn run_stun_tests() -> bool {
+    tests_common::stun_tests()
+}

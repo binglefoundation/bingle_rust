@@ -28,8 +28,8 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
-#[test]
-fn ddb_init_resolve_triggers_snapshot_and_dump() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
     // Prepare router and context
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     // Capture sent messages

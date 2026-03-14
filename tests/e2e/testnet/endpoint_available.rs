@@ -25,8 +25,8 @@ fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-#[test]
-fn testnet_user_reaches_endpoint_available() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn testnet_user_reaches_endpoint_available() {
     // Only run when explicitly enabled.
     if env_var("BINGLE_RUN_TESTNET").as_deref() != Some("1") {
         eprintln!("[skipped] Set BINGLE_RUN_TESTNET=1 to run testnet integration test");

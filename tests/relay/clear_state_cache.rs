@@ -8,7 +8,7 @@ use rust_comms::engine::RelayState;
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 #[derive(Clone)]
 struct MockApi {
@@ -64,8 +64,8 @@ impl InnerBingleApi for MockApi {
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-fn clear_state_cache_resets_and_reloads() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn clear_state_cache_resets_and_reloads() {
     let a1 = addr(41201);
     let a2 = addr(41202);
     let a3 = addr(41203);

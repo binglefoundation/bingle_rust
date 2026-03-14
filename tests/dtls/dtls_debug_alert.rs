@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use rust_comms::dtls::dtls_debug::dtls_udp_to_json;
 
@@ -21,8 +21,8 @@ fn build_dtls_record(ct: u8, epoch: u16, seq: u64, version: [u8; 2], payload: &[
     out
 }
 
-#[test]
-fn dtls_debug_includes_alert_level_and_description() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_debug_includes_alert_level_and_description() {
     // DTLS alert: level=2 (fatal), description=40 (handshake_failure)
     let alert_payload = [2u8, 40u8];
     let datagram = build_dtls_record(21, 0, 1, [254, 253], &alert_payload);

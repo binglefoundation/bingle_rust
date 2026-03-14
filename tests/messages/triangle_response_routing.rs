@@ -15,8 +15,8 @@ impl MessageHandler for CapturingHandler {
     }
 }
 
-#[test]
-fn router_dispatches_triangle_test1_response() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn router_dispatches_triangle_test1_response() {
     let hit = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(hit.clone());
 

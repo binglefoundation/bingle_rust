@@ -6,7 +6,7 @@ use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
 
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 #[derive(Clone)]
 struct MockApi;
@@ -16,8 +16,8 @@ impl InnerBingleApi for MockApi {
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-fn lookup_known_root_returns_endpoint() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn lookup_known_root_returns_endpoint() {
     let a1 = addr(45001);
     let a2 = addr(45002);
 
@@ -45,8 +45,8 @@ fn lookup_known_root_returns_endpoint() {
     assert_eq!(direct.unwrap(), a1);
 }
 
-#[test]
-fn lookup_unknown_root_returns_none() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn lookup_unknown_root_returns_none() {
     let a1 = addr(45011);
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let unknown = test_util::ADDRESS_10MIL.to_string();

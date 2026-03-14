@@ -8,9 +8,9 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 use std::time::{Duration, Instant};
 use std::thread;
 
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-fn set_allow_and_register_endpoint_then_list_and_clear() {
+pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     skip_if_no_localnet!();
     // Ensure test accounts are funded
     let cfg: AlgoChainConfig = localnet_config();

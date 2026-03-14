@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
@@ -6,8 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
-
-mod pki;
+pub mod pki;
 
 fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())
@@ -18,8 +17,8 @@ fn accept_all_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds() {
     // Generate test certificates (CA + server/client certs and keys)
     let certs = pki::generate_ed25519_test_certs();
 
@@ -70,8 +69,8 @@ fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds() {
 }
 
 #[ntest::timeout(45_000)]
-#[test]
-fn dtls_app_layer_verification_accept_all_delivers_application_data() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_app_layer_verification_accept_all_delivers_application_data() {
     let certs = pki::generate_ed25519_test_certs();
 
     let smux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind server mux");

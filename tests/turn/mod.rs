@@ -3,24 +3,24 @@ use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl, TurnRelayHand
 
 // Include additional TURN tests in this directory
 #[path = "handle_listen_validation.rs"]
-mod handle_listen_validation;
+pub mod handle_listen_validation;
 
 // Client-side tests
 #[path = "client_impl.rs"]
-mod client_impl;
+pub mod client_impl;
 
 // Relay-side tests
 #[path = "relay_impl.rs"]
-mod relay_impl;
+pub mod relay_impl;
 
 // Client handler (impl split) tests
 #[path = "client_handler_impl.rs"]
-mod client_handler_impl;
+pub mod client_handler_impl;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[test]
-fn unit_turn_handle_call_allocates_in_range_and_reuses() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     let handler = TurnHandlerImpl::new();
     let peer = addr(5000);
 
@@ -33,8 +33,8 @@ fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     assert_eq!(ch1, ch2, "channel must be reused for same (source,dest)");
 }
 
-#[test]
-fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     let handler = TurnHandlerImpl::new();
     let src = addr(6001);
     let dst = addr(6000);
@@ -67,8 +67,8 @@ fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     assert_eq!(incoming.message, payload);
 }
 
-#[test]
-fn unit_turn_incoming_invalid_packets_return_none() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unit_turn_incoming_invalid_packets_return_none() {
     let handler = TurnHandlerImpl::new();
     // Too short
     assert!(handler.handle_turn_incoming(Some(&addr(1)), Some(addr(2)), &[0x40]).is_none());

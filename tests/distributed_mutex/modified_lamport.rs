@@ -90,8 +90,8 @@ impl TestNetwork {
 }
 
 #[ntest::timeout(30000)]
-#[test]
-fn modified_lamport_mutual_exclusion_3_nodes() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn modified_lamport_mutual_exclusion_3_nodes() {
     let net = TestNetwork::new();
     let ids = vec!["A".to_string(), "B".to_string(), "C".to_string()];
 
@@ -136,8 +136,8 @@ fn modified_lamport_mutual_exclusion_3_nodes() {
     assert!(r1 == 1 || r2 == 2); // both ran
 }
 
-#[test]
-fn modified_lamport_majority_with_one_down() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn modified_lamport_majority_with_one_down() {
     let net = TestNetwork::new();
     let ids = vec!["A".to_string(), "B".to_string(), "C".to_string()];
 

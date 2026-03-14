@@ -1,7 +1,6 @@
 use crate::dtls::dtls_trait::{HandlePeerCertificate, Result};
 use crate::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
-#[cfg(not(target_os = "ios"))]
 pub fn dump_ca_public_key_debug(ca_pub: &openssl::pkey::PKey<openssl::pkey::Public>) {
     use openssl::hash::MessageDigest;
     // Dump PEM of the public key and a SHA-256 fingerprint over its DER (SPKI)
@@ -71,7 +70,6 @@ pub fn dump_ca_public_key_debug(ca_pub: &openssl::pkey::PKey<openssl::pkey::Publ
     );
 }
 
-#[cfg(not(target_os = "ios"))]
 pub fn peer_certificate_handler() -> HandlePeerCertificate {
     fn handler(cert_pem: &[u8], ca_pem: &[u8]) -> Result<String> {
         use openssl::nid::Nid;
@@ -205,7 +203,6 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
     handler
 }
 
-#[cfg(not(target_os = "ios"))]
 pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
     fn handler(cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> {
         log::info!("[cert_verify] accept_all handler called: cert_len={}", cert_pem.len());
@@ -215,20 +212,7 @@ pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
     handler
 }
 
-#[cfg(target_os = "ios")]
-pub fn peer_certificate_handler() -> HandlePeerCertificate {
-    fn handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> { Err("peer cert handler not available on iOS".to_string()) }
-    handler
-}
 
-#[cfg(target_os = "ios")]
-pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
-    fn handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> { Ok("accept-all".to_string()) }
-    handler
-}
-
-
-#[cfg(not(target_os = "ios"))]
 pub fn dump_cert_debug(tag: &str, cert: &openssl::x509::X509) {
     use openssl::hash::MessageDigest;
     let cert_text: String = cert

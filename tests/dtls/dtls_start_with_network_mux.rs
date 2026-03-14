@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
-mod pki;
+pub mod pki;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok("MOCK-ISSUER".to_string())
@@ -21,8 +21,8 @@ fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpo
 }
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_start_accepts_external_network_mux_udp() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_start_accepts_external_network_mux_udp() {
     // Generate test certs
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();

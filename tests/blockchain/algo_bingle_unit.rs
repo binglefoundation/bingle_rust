@@ -1,8 +1,8 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::algo_ops::{AlgoOps};
 
-#[test]
-fn algo_bingle_param_validation() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn algo_bingle_param_validation() {
     // Minimal ops; methods should fail fast on invalid params without network access
     let ops = AlgoOps::new(None, Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()), None);
     let ab = AlgoBingle::new(ops, 1, 1);

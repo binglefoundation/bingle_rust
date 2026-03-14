@@ -12,8 +12,8 @@ fn sample_record(id: &str) -> AdvertRecord {
     }
 }
 
-#[test]
-fn upsert_then_lookup_returns_same_record() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn upsert_then_lookup_returns_same_record() {
     let mut db = InMemoryDdbBackend::new();
     let rec = sample_record("ID1");
     db.upsert(rec.clone());
@@ -22,8 +22,8 @@ fn upsert_then_lookup_returns_same_record() {
     assert_eq!(rec, roundtrip.unwrap());
 }
 
-#[test]
-fn upsert_updates_existing() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn upsert_updates_existing() {
     let mut db = InMemoryDdbBackend::new();
     let mut rec = sample_record("ID2");
     db.upsert(rec.clone());
@@ -38,8 +38,8 @@ fn upsert_updates_existing() {
     assert_eq!(rec, got.unwrap());
 }
 
-#[test]
-fn delete_then_lookup_none() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn delete_then_lookup_none() {
     let mut db = InMemoryDdbBackend::new();
     db.upsert(sample_record("ID3"));
 

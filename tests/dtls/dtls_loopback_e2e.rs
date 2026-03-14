@@ -1,28 +1,36 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::SocketAddr;
-use std::sync::OnceLock;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-mod pki;
+pub mod pki;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok("MOCK-ISSUER".to_string())
 }
 
-static SERVER_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
-static CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
+static SERVER_ECHOED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
+static CLIENT_ECHOED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
+
+fn reset_test_state() {
+    if let Ok(mut g) = SERVER_ECHOED.lock() { *g = None; }
+    if let Ok(mut g) = CLIENT_ECHOED.lock() { *g = None; }
+}
 
 fn client_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    let _ = CLIENT_ECHOED.set(data.to_vec());
+    if let Ok(mut g) = CLIENT_ECHOED.lock() {
+        *g = Some(data.to_vec());
+    }
 }
 
 
 #[ntest::timeout(30_000)]
-#[test]
-fn dtls_openssl_end_to_end_loopback_echo() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn dtls_openssl_end_to_end_loopback_echo() {
+    reset_test_state();
     use std::time::Instant;
     // Generate Ed25519 CA, server, and client credentials dynamically
     let certs = pki::generate_ed25519_test_certs();
@@ -44,7 +52,7 @@ fn dtls_openssl_end_to_end_loopback_echo() {
                 return;
             }
         }
-        let _ = SERVER_ECHOED.set(data.to_vec());
+        let _ = SERVER_ECHOED.lock().unwrap().replace(data.to_vec());
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
         let _ = server.send(from, &echoed);
@@ -95,19 +103,19 @@ fn dtls_openssl_end_to_end_loopback_echo() {
 
     // Wait for the client handler to capture the echoed payload.
     let start = Instant::now();
-    while CLIENT_ECHOED.get().is_none() && start.elapsed() < Duration::from_secs(2) {
+    while CLIENT_ECHOED.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(2) {
         thread::sleep(Duration::from_millis(10));
     }
-    let echoed = CLIENT_ECHOED.get().expect("client did not capture echoed payload within timeout");
+    let echoed = CLIENT_ECHOED.lock().unwrap().clone().expect("client did not capture echoed payload within timeout");
     let mut expected = b"ECHOED: ".to_vec();
     expected.extend_from_slice(payload);
     assert_eq!(echoed.as_slice(), expected.as_slice(), "client captured echoed payload mismatch with prefix");
 
     // Also ensure the server echo handler recorded the original payload.
     let start = Instant::now();
-    while SERVER_ECHOED.get().is_none() && start.elapsed() < Duration::from_secs(2) {
+    while SERVER_ECHOED.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(2) {
         thread::sleep(Duration::from_millis(10));
     }
-    let server_echoed = SERVER_ECHOED.get().expect("server did not record payload within timeout");
+    let server_echoed = SERVER_ECHOED.lock().unwrap().clone().expect("server did not record payload within timeout");
     assert_eq!(server_echoed.as_slice(), payload, "server recorded payload mismatch");
 }

@@ -1,8 +1,8 @@
 use rust_comms::util::cli_utils::parse_start_options_from_args;
 use std::net::SocketAddr;
 
-#[test]
-fn parse_positional_handle_and_flags() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn parse_positional_handle_and_flags() {
     let args = vec![
         "myhandle".to_string(),
         "--passphrase".to_string(), "secret words".to_string(),
@@ -14,8 +14,8 @@ fn parse_positional_handle_and_flags() {
     assert!(opts.am_relay);
 }
 
-#[test]
-fn parse_handle_flag_and_static_ip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn parse_handle_flag_and_static_ip() {
     let args = vec![
         "--handle".to_string(), "bob".to_string(),
         "--static-ip".to_string(), "127.0.0.1:12345".to_string(),
@@ -25,8 +25,8 @@ fn parse_handle_flag_and_static_ip() {
     assert_eq!(opts.static_ip, Some("127.0.0.1:12345".parse::<SocketAddr>().unwrap()));
 }
 
-#[test]
-fn parse_stun_servers_list() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn parse_stun_servers_list() {
     let args = vec![
         "alice".to_string(),
         "--stun-servers".to_string(), "1.2.3.4:3478, 5.6.7.8:3478".to_string(),
@@ -38,8 +38,8 @@ fn parse_stun_servers_list() {
     assert_eq!(list[1], "5.6.7.8:3478".parse::<SocketAddr>().unwrap());
 }
 
-#[test]
-fn parse_stun_servers_file() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn parse_stun_servers_file() {
     let mut tf = tempfile::NamedTempFile::new().expect("tempfile");
     use std::io::Write;
     writeln!(tf, "10.0.0.1:3478\n10.0.0.2:3478").unwrap();
@@ -56,15 +56,15 @@ fn parse_stun_servers_file() {
     assert_eq!(list[1], "10.0.0.2:3478".parse::<SocketAddr>().unwrap());
 }
 
-#[test]
-fn error_on_missing_handle() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn error_on_missing_handle() {
     let args = vec!["--relay".to_string()];
     let err = parse_start_options_from_args(args).unwrap_err();
     assert!(err.contains("Missing handle"));
 }
 
-#[test]
-fn error_on_invalid_static_ip() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn error_on_invalid_static_ip() {
     let args = vec![
         "dave".to_string(),
         "--static-ip".to_string(), "bad".to_string(),
@@ -73,8 +73,8 @@ fn error_on_invalid_static_ip() {
     assert!(err.contains("Invalid --static-ip"));
 }
 
-#[test]
-fn error_on_unknown_option() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn error_on_unknown_option() {
     let args = vec!["erin".to_string(), "--unknown".to_string()];
     let err = parse_start_options_from_args(args).unwrap_err();
     assert!(err.contains("Unknown option"));

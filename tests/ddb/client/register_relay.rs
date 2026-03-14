@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "ios"))]
+
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use rust_comms::ddb::{DdbClient, DdbClientImpl};
 use rust_comms::relay::relay_finder::RelayInfo;
 
 #[path = "../../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 fn start_pair() -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAddr) {
     let relay_port = test_util::find_unused_loopback_port();
@@ -51,8 +51,8 @@ fn start_pair() -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAd
     (relay, client, relay_addr, client_addr)
 }
 
-#[test]
-fn ddb_client_register_relay_ok_and_persisted() {
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn ddb_client_register_relay_ok_and_persisted() {
     let (relay, client, relay_addr, _client_addr) = start_pair();
 
     // Proxy to use client's API methods for send-with-response against relay

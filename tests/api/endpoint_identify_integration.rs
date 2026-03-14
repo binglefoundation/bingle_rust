@@ -11,18 +11,18 @@ use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use crate::util::test_util::init_test_logging;
 
 #[path = "../setup_localnet.rs"]
-mod setup_localnet;
+pub mod setup_localnet;
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 // Option B integration test: use BingleApiImpl as the entry point, but mock out
 // the discovery by forcing STUN consistent on the underlying Engine. We avoid
 // a real Algorand localnet and real relays; instead, we start two relay instances
 // (static endpoints) and two client instances, then validate that the clients reach
 // EndpointAvailable with the expected public address.
-#[test]
+#[cfg_attr(not(target_os = "ios"), test)]
 #[serial]
-fn bingle_api_endpoint_identify_via_forced_stun() {
+pub fn bingle_api_endpoint_identify_via_forced_stun() {
     init_test_logging();
 
     fn wait_for_relays_visible(
