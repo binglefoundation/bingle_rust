@@ -5,7 +5,6 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use serde_json::json;
-use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
