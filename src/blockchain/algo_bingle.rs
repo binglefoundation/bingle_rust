@@ -202,6 +202,17 @@ impl AlgoBingle {
     /// Use the Indexer API to list accounts that have a non-empty "static_endpoint" in local state for the given app_id.
     /// Returns Vec of (account_address, static_endpoint_value).
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return std::thread::scope(|s| {
+                s.spawn(|| self.list_static_endpoints_via_indexer_sync(app_id))
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
+            });
+        }
+        self.list_static_endpoints_via_indexer_sync(app_id)
+    }
+
+    fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
         log::info!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
         #[allow(unused)] {  }
@@ -307,7 +318,22 @@ impl AlgoBingle {
         Ok((account, addr))
     }
 
-    fn rt_block_on<T>(&self, fut: impl Future<Output = T>) -> Result<T> {
+    fn rt_block_on<T: Send>(&self, fut: impl Future<Output = T> + Send) -> Result<T> {
+        // If we are already in a tokio runtime, we must avoid nested block_on and 
+        // the "cannot drop runtime" panic during unwinding/drop.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return std::thread::scope(|s| {
+                let handle = s.spawn(|| {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("failed to build temporary tokio runtime");
+                    rt.block_on(fut)
+                });
+                handle.join().map_err(|_| anyhow!("rt_block_on thread panicked"))
+            });
+        }
+
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

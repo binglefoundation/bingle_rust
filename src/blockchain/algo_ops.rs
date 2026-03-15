@@ -122,7 +122,22 @@ impl AlgoOps {
     }
 
     // Helper: run an async future on a fresh current-thread Tokio runtime.
-    fn rt_block_on<T>(&self, fut: impl Future<Output = T>) -> Result<T> {
+    fn rt_block_on<T: Send>(&self, fut: impl std::future::Future<Output = T> + Send) -> Result<T> {
+        // If we are already in a tokio runtime, we must avoid nested block_on and 
+        // the "cannot drop runtime" panic during unwinding/drop.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return std::thread::scope(|s| {
+                let handle = s.spawn(|| {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("failed to build temporary tokio runtime");
+                    rt.block_on(fut)
+                });
+                handle.join().map_err(|_| anyhow!("rt_block_on thread panicked"))
+            });
+        }
+
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

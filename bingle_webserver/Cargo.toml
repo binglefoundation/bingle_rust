@@ -1,0 +1,26 @@
+[package]
+name = "bingle_webserver"
+version = "0.1.0"
+edition = "2024"
+autotests = false
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors"] }
+anyhow = "1"
+log = "0.4"
+simple_logger = "4"
+rust_comms = { path = ".." }
+
+[dev-dependencies]
+reqwest = { version = "0.11", features = ["json"] }
+ntest = "0.9"
+serial_test = "3"
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

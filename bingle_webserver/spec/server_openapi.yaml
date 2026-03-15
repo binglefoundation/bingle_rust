@@ -5,7 +5,7 @@ info:
   description: |
     Local HTTP server API to allow a browser client to call the Bingle API.
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:12121
     description: Local Bingle server
 paths:
   /handleLookup:

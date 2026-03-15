@@ -88,6 +88,32 @@ ENV OUT_FILE="/out/test_results.txt" \
 ENTRYPOINT ["/app/run_test.sh"]
 
 # ------------------------
+# Webserver stage: package the prebuilt bingle_webserver and start script
+# ------------------------
+FROM base AS webserver
+
+# Path to the prebuilt binary within the build context
+ARG WEB_BIN_PATH=target/aarch64-unknown-linux-musl/debug/bingle_webserver
+
+# Copy the prebuilt binary and startup script
+COPY ${WEB_BIN_PATH} /app/bingle_webserver
+COPY scripts/docker_webserver_start.sh /app/docker_webserver_start.sh
+
+# Ensure the start script and binary are executable
+RUN chmod +x /app/docker_webserver_start.sh /app/bingle_webserver
+
+# Default environment variables (can be overridden at runtime)
+ENV PORT=12121 \
+    ADDRESS="0.0.0.0" \
+    PASSPHRASE="" \
+    HANDLE="" \
+    STUN_FILE="/app/stunservers.txt" \
+    NODE_FILE="/app/nodely_testnet_node.json"
+
+# ENTRYPOINT to the startup script which launches /app/bingle_webserver ...
+ENTRYPOINT ["/app/docker_webserver_start.sh"]
+
+# ------------------------
 # Default final image is the CLI runtime, to preserve previous behavior
 # ------------------------
 FROM cli
