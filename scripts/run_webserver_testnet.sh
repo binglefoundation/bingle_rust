@@ -121,10 +121,17 @@ sleep 10
 
 # 8) Verification
 echo "Verifying webserver..."
-if curl -s "http://localhost:12121/handleLookup?handle=$PINGABLE_USER" | grep -q "$PINGABLE_ADDRESS"; then
-  echo "Verification PASSED: Handle lookup for $PINGABLE_USER returned $PINGABLE_ADDRESS"
+EXPECTED_BUILD=$(cat .build_number)
+ACTUAL_VERSION_JSON=$(curl -s "http://localhost:12121/version" || true)
+ACTUAL_BUILD=$(echo "$ACTUAL_VERSION_JSON" | jq -r '.buildNumber' 2>/dev/null || echo "unknown")
+
+if [ "$ACTUAL_BUILD" == "$EXPECTED_BUILD" ]; then
+  echo "Verification PASSED: Webserver version confirmed. Build number: $ACTUAL_BUILD"
 else
-  echo "Verification FAILED or returned unexpected result"
+  echo "Verification FAILED: Build number mismatch or could not reach webserver."
+  echo "Expected build: $EXPECTED_BUILD"
+  echo "Actual build:   $ACTUAL_BUILD"
+  echo "Full version info: $ACTUAL_VERSION_JSON"
   # docker logs bingle_webserver
   exit 1
 fi
