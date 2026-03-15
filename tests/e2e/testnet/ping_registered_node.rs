@@ -77,8 +77,8 @@ pub fn testnet_send_ping_to_registered_node() {
     let elapsed = start_time.elapsed();
 
     // Output timing clearly
-    println!("TIMING: send_message_to_id_with_response took {:.3} seconds", elapsed.as_secs_f64());
-    log::info!("send_message_to_id_with_response completed in {:.3} seconds", elapsed.as_secs_f64());
+    println!("TIMING: send_message_to_id_with_response took {:.3}s", elapsed.as_secs_f64());
+    log::info!("send_message_to_id_with_response completed in {:.3}s", elapsed.as_secs_f64());
 
     // Expected: { app: "ping", type: "response", verifiedId: dest_id, text: "ACK: ..." }
     let app = resp.get("app").and_then(|v: &serde_json::Value| v.as_str());

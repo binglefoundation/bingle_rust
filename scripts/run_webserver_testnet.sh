@@ -9,9 +9,9 @@ CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid e
 # Ensure cleanup of background containers on exit
 cleanup() {
   local exit_code=$?
-  # echo "Stopping containers..."
-  # docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
-  # docker stop bingle_webserver
+  echo "Stopping containers..."
+  docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
+  docker stop bingle_webserver
 }
 trap cleanup EXIT
 
@@ -111,7 +111,7 @@ wait_for_file "$SENT_DIR/pingable.sentinel" 180
 
 # 7) Start Webserver
 echo "Starting bingle_webserver as $TESTNET_USER..."
-docker run --platform linux/arm64 -d --name bingle_webserver --network bingle_testnet \
+docker run --platform linux/arm64 -d --rm --name bingle_webserver --network bingle_testnet \
  -p 12121:12121 -e HANDLE=$TESTNET_USER -e PASSPHRASE="$TESTNET_PASSPHRASE" \
  -e RUST_BACKTRACE=1 \
  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle-webserver:local"
