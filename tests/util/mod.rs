@@ -6,3 +6,4 @@ pub mod test_util;
 
 pub mod net_det;
 pub mod reusable_mock_api;
+pub mod version;

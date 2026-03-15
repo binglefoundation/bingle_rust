@@ -45,6 +45,9 @@ tempfile = "3"
 ntest = "0.9"
 serial_test = "3"
 
+[build-dependencies]
+vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }
+
 # Consolidated integration tests: single crate for all tests under tests/
 [[test]]
 name = "all"

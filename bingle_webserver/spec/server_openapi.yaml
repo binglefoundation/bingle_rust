@@ -174,8 +174,31 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/BingleMessage'
+  /version:
+    get:
+      summary: Get current server version information
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
 components:
   schemas:
+    VersionInfo:
+      type: object
+      required: [version, buildTimestamp, buildNumber]
+      properties:
+        version:
+          type: string
+        gitSha:
+          type: string
+          nullable: true
+        buildTimestamp:
+          type: string
+        buildNumber:
+          type: string
     NetworkSourceKey:
       type: object
       description: Identifies where to send network traffic (direct or via relay).

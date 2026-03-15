@@ -87,3 +87,8 @@ pub async fn get_queued(State(state): State<AppState>) -> impl IntoResponse {
     let messages = state.messages.lock().unwrap();
     Json(messages.clone()).into_response()
 }
+
+pub async fn handle_version() -> impl IntoResponse {
+    let version_info = rust_comms::util::version::get_version_info();
+    Json(version_info).into_response()
+}

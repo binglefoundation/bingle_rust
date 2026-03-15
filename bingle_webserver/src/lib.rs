@@ -27,6 +27,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/sendMessageToHandleWithResponse", post(handlers::send_message_to_handle_with_response))
         .route("/sendMessageToNetworkWithResponse", post(handlers::send_message_to_network_with_response))
         .route("/queued", get(handlers::get_queued))
+        .route("/version", get(handlers::handle_version))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

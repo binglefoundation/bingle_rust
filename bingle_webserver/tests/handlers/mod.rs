@@ -44,3 +44,9 @@ async fn test_send_message_to_id() {
     let response = send_message_to_id(State(state), request).await.into_response();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_handle_version() {
+    let response = bingle_webserver::handlers::handle_version().await.into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+}
