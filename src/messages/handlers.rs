@@ -128,7 +128,28 @@ pub trait MessageHandler {
             }
         }
     }
-    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &PingResponse) { self.on_unimplemented(&Message::Ping(PingMessage::Response(_msg.clone()))); }
+    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &PingResponse) {
+        if msg.tag.is_none() && msg.response_tag.is_none() {
+            // Build JSON for callback
+            let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"verifiedId": msg.verified_id}));
+            // Delegate to API on_message via the per-API Router if installed
+            if let Some(router) = crate::messages::router::Router::current() {
+                if let Some(cb) = router.get_on_message() {
+                    // Normalize sender id: issuer without suffix
+                    let sender_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                    // Use direct socket address as sender_handle when available
+                    let sender_handle = _from
+                        .network_source_key
+                        .inet_socket_address()
+                        .map(|a: std::net::SocketAddr| a.to_string())
+                        .unwrap_or_else(|| "".to_string());
+                    cb(sender_id, sender_handle, json);
+                    return;
+                }
+            }
+        }
+        self.on_unimplemented(&Message::Ping(PingMessage::Response(msg.clone())));
+    }
 
     // Relay messages
     fn on_relay_call(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCall) {
