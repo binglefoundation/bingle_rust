@@ -4,11 +4,11 @@ use std::net::SocketAddr;
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
-use bingle_test::api::bingle_api_impl_integration::test_util::init_test_logging;
-use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-pub mod pki;
 #[path = "../test_util.rs"]
 pub mod test_util;
+pub mod pki;
+use test_util::init_test_logging;
+use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())

@@ -15,7 +15,7 @@ pub fn discover_roots_parses_relay_ip_from_local_state() {
         match acct {
             "ADDR1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" => Some(vec![
                 ("Handle".to_string(), "alice".to_string()),
-                ("RelayIP".to_string(), "127.0.0.1:45000".to_string()),
+                ("static_endpoint".to_string(), "127.0.0.1:45000".to_string()),
             ]),
             "ADDR2BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" => Some(vec![
                 ("Handle".to_string(), "bob".to_string()),

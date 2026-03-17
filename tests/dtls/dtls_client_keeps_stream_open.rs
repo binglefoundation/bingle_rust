@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use bingle_test::util::test_util::init_test_logging;
-use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
-pub mod pki;
 #[path = "../test_util.rs"]
 pub mod test_util;
+pub mod pki;
+use test_util::init_test_logging;
+use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())

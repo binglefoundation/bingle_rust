@@ -26,49 +26,64 @@ pub extern "C" fn rust_comms_run_stun_tests() -> u8 {
 }
 
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/api/mod.rs"]
 pub mod api;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/blockchain/mod.rs"]
 pub mod blockchain;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/dtls/mod.rs"]
 pub mod dtls;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/engine/mod.rs"]
 pub mod engine;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/protocol/mod.rs"]
 pub mod protocol;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/relay/mod.rs"]
 pub mod relay;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/stun/mod.rs"]
 pub mod stun;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/cli/mod.rs"]
 pub mod cli;
 
+#[cfg(target_os = "ios")]
 #[macro_use]
 #[path = "../../tests/util/mod.rs"]
 pub mod util;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/ddb.rs"]
 pub mod ddb;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/turn/mod.rs"]
 pub mod turn;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/distributed_mutex/mod.rs"]
 pub mod distributed_mutex;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/integration/mod.rs"]
 pub mod integration;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/setup_localnet.rs"]
 pub mod setup_localnet;
 
+#[cfg(target_os = "ios")]
 #[path = "../../tests/messages.rs"]
 pub mod messages;
 
