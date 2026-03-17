@@ -79,5 +79,5 @@ pub mod marshalling_and_routing;
 // If present in this repo, include it; otherwise harmless if missing when not referenced.
 // Note: We cannot conditionally include based on file existence in Rust at build time.
 // If this file does not exist in your checkout, comment out the following line.
-// #[path = "messages/triangle_test3_sets_state.rs"]
-// mod triangle_test3_sets_state;
+#[path = "messages/triangle_test3_sets_state.rs"]
+pub mod triangle_test3_sets_state;

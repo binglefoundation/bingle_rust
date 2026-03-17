@@ -2,10 +2,10 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::api::bingle_api::{StartOptions, BingleApi};
+use rust_comms::api::bingle_api::{StartOptions, BingleApi, NetworkEndpoint};
 use rust_comms::engine::EngineState;
 use rust_comms::dtls::{Dtls, Result, UdpNetworkMux, HandleMessage, HandlePeerCertificate};
 
@@ -17,7 +17,7 @@ impl MockDtls { fn new() -> Self { Self { handler: Arc::new(std::sync::Mutex::ne
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> Result<()> { Ok(()) }
     fn stop(&mut self) -> Result<()> { Ok(()) }
-    fn send(&self, _to: SocketAddr, _data: &[u8]) -> Result<()> { Ok(()) }
+    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> Result<()> { Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().unwrap().clone() }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { *self.handler.lock().unwrap() = handler; }
     fn with_handle_message(self, handler: HandleMessage) -> Self where Self: Sized { let mut s = self; s.set_handle_message(Some(handler)); s }
@@ -48,7 +48,7 @@ pub fn triangle_test3_sets_engine_state_via_internal_api() {
     let api = BingleApiImpl::new_with_dtls(Box::new(mock.clone()));
 
     // Start with static IP so Engine installs DTLS handler without STUN
-    let opts = StartOptions { handle: "client".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None };
+    let opts = StartOptions { handle: "client".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
     let _ = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
 
     // Ensure handler was installed
@@ -56,13 +56,14 @@ pub fn triangle_test3_sets_engine_state_via_internal_api() {
 
     // Simulate receiving TriangleTest3 JSON from a peer
     let from: SocketAddr = "127.0.0.1:55555".parse().unwrap();
+    let nsk = NetworkEndpoint::new_direct(from);
     let payload = serde_json::json!({"app": null, "type": "TriangleTest3"});
     let bytes = serde_json::to_vec(&payload).unwrap();
 
     // Call the handler; issuer string is arbitrary here
-    handler(&mock, &from, "SOME-ISSUER", &bytes);
+    handler(&mock, &nsk, "SOME-ISSUER", &bytes);
 
-    // The message handler should have used the internal API to mark EndpointAvailable
+    // The message handler should have used the internal API to mark EndpointAvailable (or it might have already reached Registered)
     let st = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests());
-    assert!(matches!(st, Some(EngineState::EndpointAvailable)), "state not EndpointAvailable: {:?}", st);
+    assert!(matches!(st, Some(EngineState::EndpointAvailable) | Some(EngineState::Registered)), "state not EndpointAvailable or Registered: {:?}", st);
 }

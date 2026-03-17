@@ -36,7 +36,7 @@ pub fn integration_decode_relay_response() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn integration_decode_triangle_test1() {
     init_test_logging();
-    let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":\"127.0.0.1:3456\"}");
+    let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":{\"host\":\"127.0.0.1\",\"port\":3456}}");
     log::debug!("{:?}", msg);
     match msg {
         Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456"),
@@ -46,7 +46,7 @@ pub fn integration_decode_triangle_test1() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn integration_decode_triangle_test2() {
-    let msg = decode("{\"app\":null,\"type\":\"TriangleTest2\",\"checkingId\":\"id1\",\"checkingEndpoint\":\"10.0.0.1:1111\"}");
+    let msg = decode("{\"app\":null,\"type\":\"TriangleTest2\",\"checkingId\":\"id1\",\"checkingEndpoint\":{\"host\":\"10.0.0.1\",\"port\":1111}}");
     match msg {
         Message::Relay(RelayMessage::TriangleTest2(m)) => {
             assert_eq!(m.checking_id, "id1");

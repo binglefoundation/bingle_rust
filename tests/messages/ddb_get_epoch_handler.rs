@@ -108,6 +108,7 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
 
     // Act: route GetEpoch
     let get = DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, response_tag: Some("rt1".into()), text: None, data: None };
+    router.set_last_response_tag(Some("rt1".to_string()));
     let msg = Message::Ddb(DdbMessage::GetEpoch(get));
 
     let handler = DefaultPrintingHandler;

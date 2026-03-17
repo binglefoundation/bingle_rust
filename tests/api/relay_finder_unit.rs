@@ -93,10 +93,12 @@ pub fn relay_finder_caches_successful_root_relay() {
     let api_arc: Arc<dyn rust_comms::api::bingle_api::BingleApiBoth> = Arc::new(api);
     let api_weak = Arc::downgrade(&api_arc);
 
+    let id1 = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A".to_string();
+    let id2 = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string();
     // Discovery closure
     let discover = Arc::new(move || vec![
-        RootRelayInfo { id: "ADDR1".to_string(), address: a1, state: None },
-        RootRelayInfo { id: "ADDR2".to_string(), address: a2, state: None },
+        RootRelayInfo { id: id1.clone(), address: a1, state: None },
+        RootRelayInfo { id: id2.clone(), address: a2, state: None },
     ]);
 
     let finder = RelayFinder::new(api_weak, Duration::from_millis(200), discover);
