@@ -35,8 +35,7 @@ pub fn simple_stun_mixed_servers_inconsistent() {
             let _ = src.as_any();
             if let Ok(mut f) = finder_clone.lock() { f.process_packet(*from, data); }
         });
-        let mut owned = (*Arc::clone(&mux)).clone();
-        owned.set_handle_stun(Some(handler));
+        mux.set_handle_stun_arc(Some(handler));
     }
 
     mux.start().expect("start mux");

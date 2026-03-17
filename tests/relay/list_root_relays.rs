@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
-use crate::util::mock_api::{to_weak, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[derive(Clone)]
 struct MockApi;
@@ -25,12 +25,12 @@ pub fn list_root_relays_excludes_self_and_caches() {
     });
 
     let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), Duration::from_millis(2000), discover);
-    let list1 = finder.list_root_relays("AAA");
+    let list1 = finder.list_root_relays("AAA", false);
     assert_eq!(list1.len(), 1, "should exclude self");
     assert_eq!(list1[0].id, "BBB");
 
     // Second call should use cache (no extra discover invocations)
-    let list2 = finder.list_root_relays("AAA");
+    let list2 = finder.list_root_relays("AAA", false);
     assert_eq!(list2.len(), 1);
     assert_eq!(calls.load(Ordering::SeqCst), 1, "discover should be called only once due to cache");
 }

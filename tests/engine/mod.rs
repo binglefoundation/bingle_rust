@@ -26,3 +26,12 @@ pub mod seen_endpoints;
 
 #[path = "engine_bind_unspecified_ip.rs"]
 pub mod engine_bind_unspecified_ip;
+
+#[path = "engine_start.rs"]
+pub mod engine_start;
+
+#[path = "relay_roots_ddb.rs"]
+pub mod relay_roots_ddb;
+
+#[path = "start_with_addr_listening.rs"]
+pub mod start_with_addr_listening;

@@ -352,6 +352,20 @@ impl BingleApi for BingleApiImpl {
         #[allow(unused)] {  }
     }
 
+    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
+        log::info!("[BingleApiImpl::handle_lookup][enter] handle={}", handle);
+        let app_id = self.get_app_id().ok_or("app_id not configured")?;
+        let config = self.get_algo_provider_config().ok_or("algo_provider_config not configured")?;
+
+        // Indexer queries are public; use self id or a dummy if not available yet to satisfy AlgoOps::new requirements
+        let addr = self.get_my_id().or_else(|| Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ".to_string()));
+        let ops = AlgoOps::new(self.started_options.algo_passphrase.clone(), addr, Some(config));
+        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
+        let res = ab.handle_lookup(handle).map_err(|e| e.to_string());
+        log::info!("[BingleApiImpl::handle_lookup][exit] return={:?}", res);
+        res
+    }
+
     fn send_message_to_id(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
         log::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         if let Some(cb) = progress.as_ref() { cb(5, "Starting lookup".to_string()); }

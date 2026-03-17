@@ -1,4 +1,6 @@
+use crate::util::reusable_mock_api::MockApiBoth;
 use rust_comms::messages::*;
+use crate::util::test_util::init_test_logging;
 
 fn decode(input: &str) -> Message {
     from_json_str(input).expect("decode")
@@ -33,7 +35,9 @@ pub fn integration_decode_relay_response() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn integration_decode_triangle_test1() {
+    init_test_logging();
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":\"127.0.0.1:3456\"}");
+    log::debug!("{:?}", msg);
     match msg {
         Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456"),
         _ => panic!("expected TriangleTest1"),
@@ -90,9 +94,9 @@ pub fn integration_decode_listen_response() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn integration_decode_check_response() {
-    let msg = decode("{\"app\":null,\"type\":\"CheckResponse\",\"available\":true}");
+    let msg = decode("{\"app\":null,\"type\":\"CheckResponse\",\"state\":\"available\"}");
     match msg {
-        Message::Relay(RelayMessage::CheckResponse(m)) => assert!(m.available),
+        Message::Relay(RelayMessage::CheckResponse(m)) => assert_eq!(m.relay_state, "available"),
         _ => panic!("expected CheckResponse"),
     }
 }
@@ -130,9 +134,10 @@ pub fn integration_unimplemented_handler_prints_without_panic() {
     fn debug_print_options(&self) {}
         fn get_my_id(&self) -> Option<String> { None }
         fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _options: rust_comms::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }
+        fn start(&mut self, _options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), String> { Ok(()) }
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
+        fn handle_lookup(&self, _handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, String> { Ok(None) }
         fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
         fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
         fn send_message_to_network(&self, _network_source_key: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<std::sync::Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
@@ -148,7 +153,7 @@ pub fn integration_unimplemented_handler_prints_without_panic() {
     let _json = to_json_string(&msg);
     let handler = DefaultPrintingHandler;
     // Should simply print unimplemented message; we just ensure it runs
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::mock_api::to_weak(MockApiBoth::new())));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak(MockApiBoth::new())));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
     });

@@ -191,8 +191,13 @@ pub trait BingleApi: Send + Sync {
     /// Stop all threads/tasks and release resources.
     fn stop(&mut self);
 
-    /// Indicates the network connection has changed and we need to rescan for IP address/port.
+    /// indicates the network connection has changed and we need to rescan for IP address/port.
     fn network_change(&mut self);
+
+    /// Lookup the handle in the Algorand blockchain and return the associated id.
+    /// If multiple entries exist, the oldest one is returned.
+    /// Returns Ok(Some(id)) if found, Ok(None) if not found, or Err on failure.
+    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String>;
 
     // Outgoing message transfer methods (see BINGLE_SPEC.md - Outgoing message transfer):
 

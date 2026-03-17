@@ -19,6 +19,9 @@ pub mod algo_ops_more_test;
 #[path = "algo_bingle/get_bingle_price.rs"]
 pub mod get_bingle_price;
 
+#[path = "algo_bingle/handle_lookup.rs"]
+pub mod handle_lookup;
+
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
 
@@ -27,4 +30,7 @@ pub mod algo_ops_address_derivation_test;
 
 #[path = "algo_ops_reserve_helpers.rs"]
 pub mod algo_ops_reserve_helpers;
+
+#[path = "discover_roots_unit.rs"]
+pub mod discover_roots_unit;
 

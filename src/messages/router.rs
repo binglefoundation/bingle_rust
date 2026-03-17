@@ -41,6 +41,7 @@ impl BingleApi for LockingApiWrapper {
     fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported in handler context".into()) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
+    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> { self.api.access(|a| a.handle_lookup(handle)) }
     fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_id(user_id, message, progress)) }
     fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_handle(handle, message, progress)) }
     fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_network(nsk, user_id, message, progress)) }

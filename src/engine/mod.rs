@@ -501,6 +501,11 @@ impl Engine {
         self.router = Some(router);
     }
 
+    /// Test helper: Inject a custom DTLS implementation.
+    pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
+        self.dtls = dtls;
+    }
+
     /// Access the configured DTLS instance, if any (read-only).
     pub fn dtls(&self) -> &(dyn Dtls + Send + Sync) {
         self.dtls.as_ref()

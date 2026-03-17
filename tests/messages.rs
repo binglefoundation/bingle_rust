@@ -66,6 +66,15 @@ pub mod relay_triangle_test1_ext;
 #[path = "messages/ping_response_handler.rs"]
 pub mod ping_response_handler;
 
+#[path = "messages/ddb_get_epoch_handler.rs"]
+pub mod ddb_get_epoch_handler;
+
+#[path = "messages/ddb_init_handler.rs"]
+pub mod ddb_init_handler;
+
+#[path = "messages/marshalling_and_routing.rs"]
+pub mod marshalling_and_routing;
+
 // Some repositories include an additional test file for TriangleTest3 state setting.
 // If present in this repo, include it; otherwise harmless if missing when not referenced.
 // Note: We cannot conditionally include based on file existence in Rust at build time.

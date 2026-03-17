@@ -17,6 +17,7 @@ impl BingleApi for DummyApi {
     fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
+    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
@@ -27,9 +28,26 @@ impl BingleApi for DummyApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
+impl rust_comms::api::bingle_api::BingleApiInternal for DummyApi {
+    fn set_state(&self, _state: rust_comms::engine::EngineState) {}
+    fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
+    fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
+    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
+    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> { Ok(()) }
+    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
+    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> { Ok(()) }
+    fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
+    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> { None }
+    fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
+    fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
+    fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
+    fn notify_listening(&self, _listening: bool) {}
+    fn get_relay_state(&self) -> String { "off".into() }
+}
+
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_start_without_static_ip_errors() {
-    let mut engine = Engine::new(StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let opts = StartOptions {
         handle: "tester".into(),
         algo_passphrase: Some("pass".into()),
@@ -57,7 +75,7 @@ pub fn engine_start_without_static_ip_errors() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_start_with_static_ip_localhost_ok() {
-    let mut engine = Engine::new(StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
+    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
     let opts = StartOptions {
         handle: "tester".into(),

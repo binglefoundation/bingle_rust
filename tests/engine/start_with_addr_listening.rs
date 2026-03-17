@@ -39,9 +39,9 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
 }
 
-// Simple mock API required by Router; not used directly in this test.
+// Simple mock API required by Router; captures notify_listening(true).
 #[derive(Clone)]
-struct MockApi;
+struct MockApi { pub notified: Arc<AtomicBool> }
 impl BingleApi for MockApi { 
     fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
     fn get_user_id(&self) -> Option<String> { None }
@@ -53,19 +53,18 @@ impl BingleApi for MockApi {
     fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
-    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<dyn rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<dyn rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<dyn rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<dyn rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<dyn rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<dyn rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-    fn set_on_message(&mut self, _handler: Option<Arc<dyn rust_comms::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<dyn rust_comms::api::bingle_api::OnConnectHandler>>) {}
+    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
+    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
+    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+    fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
+    fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
 }
 
-// Internal capture to assert notify_listening(true) gets called.
-struct CaptureInternal { pub notified: Arc<AtomicBool> }
-impl rust_comms::api::bingle_api::BingleApiInternal for CaptureInternal {
+impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn get_relay_state(&self) -> String { "off".to_string() }
     fn set_state(&self, _state: rust_comms::engine::EngineState) {}
     fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
@@ -100,12 +99,12 @@ pub fn start_with_addr_notifies_listening_true() {
         log_level: None,
     };
 
-    // Build Engine unbound and inject DTLS + Router with CaptureInternal
-    let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::mock_api_weak());
-    eng.set_dtls(Box::new(MockDtls));
-    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
+    // Build Engine unbound and inject DTLS + Router with MockApi
     let flag = Arc::new(AtomicBool::new(false));
-    router.set_bingle_api_internal(Some(Arc::new(CaptureInternal { notified: flag.clone() }) as Arc<dyn rust_comms::api::bingle_api::BingleApiInternal>));
+    let mock_api = MockApi { notified: flag.clone() };
+    let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::to_weak(mock_api.clone()));
+    eng.set_dtls(Box::new(MockDtls));
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(mock_api)));
     eng.set_router(router);
 
     // Act

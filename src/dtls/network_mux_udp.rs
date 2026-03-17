@@ -356,6 +356,11 @@ impl UdpNetworkMux {
         if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; }
     }
 
+    /// Arc-friendly setter for STUN handler to allow installing from Arc<UdpNetworkMux>.
+    pub fn set_handle_stun_arc(self: &std::sync::Arc<Self>, handler: Option<HandleStun>) {
+        if let Ok(mut g) = self.handle_stun.lock() { *g = handler; }
+    }
+
     /// Shared handler that processes a datagram as if received on the socket.
     /// Classifies, logs, enqueues DTLS payloads, and invokes installed handlers.
     pub fn process_packet(&self, from_endpoint: &NetworkEndpoint, data: &[u8]) {

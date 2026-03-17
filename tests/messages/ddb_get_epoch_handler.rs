@@ -4,6 +4,8 @@ use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
 use rust_comms::messages::router::Router;
 use rust_comms::messages::types::*;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler, BingleApiInternal};
+use rust_comms::ddb::DdbBackend;
+use crate::util::reusable_mock_api::MockApiBoth;
 
 // Minimal API for router context
 #[derive(Clone)]
@@ -19,6 +21,7 @@ impl BingleApi for MockApi {
     fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
+    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
     fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
     fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
@@ -29,7 +32,27 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
+impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
+    fn set_state(&self, _s: rust_comms::engine::EngineState) {}
+    fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
+    fn set_nat_type(&self, _n: rust_comms::engine::NatType) {}
+    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
+    fn ddb_register_ip(&self, _e: std::net::SocketAddr, _a: bool) -> Result<(), String> { Ok(()) }
+    fn ddb_register_relay(&self, _r: String, _s: Option<String>) -> Result<(), String> { Ok(()) }
+    fn update_turn_listener_relay(&self, _r: String, _a: std::net::SocketAddr) -> Result<(), String> { Ok(()) }
+    fn turn_client_handle_listen_response(&self, _a: std::net::SocketAddr, _r: String) {}
+    fn turn_lookup_addr_by_id(&self, _i: String) -> Option<std::net::SocketAddr> { None }
+    fn turn_handle_call(&self, _s: std::net::SocketAddr, _d: std::net::SocketAddr) -> i32 { -1 }
+    fn turn_handle_listen(&self, _i: String, _s: std::net::SocketAddr) -> bool { false }
+    fn turn_handle_called(&self, _s: std::net::SocketAddr, _d: std::net::SocketAddr, _c: u16) {}
+    fn notify_listening(&self, _l: bool) {}
+    fn get_relay_state(&self) -> String { "off".into() }
+}
+
 struct InternalAvailable;
+impl crate::util::reusable_mock_api::InnerBingleApiInternal for InternalAvailable {
+    fn get_relay_state(&self) -> String { "available".into() }
+}
 impl BingleApiInternal for InternalAvailable {
     fn get_relay_state(&self) -> String { "available".into() }
     fn set_state(&self, _state: rust_comms::engine::EngineState) {}
@@ -48,6 +71,9 @@ impl BingleApiInternal for InternalAvailable {
 }
 
 struct InternalStarting;
+impl crate::util::reusable_mock_api::InnerBingleApiInternal for InternalStarting {
+    fn get_relay_state(&self) -> String { "starting".into() }
+}
 impl BingleApiInternal for InternalStarting {
     fn get_relay_state(&self) -> String { "starting".into() }
     fn set_state(&self, _state: rust_comms::engine::EngineState) {}
@@ -70,7 +96,7 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     // Arrange router as relay with internal state available and ddb backend
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
-    // router.set_bingle_api_internal(Some(Arc::new(InternalAvailable) as Arc<dyn BingleApiInternal>));
+    router.set_bingle_api(Some(crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(Arc::new(InternalAvailable)))));
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
     {
         let mut b = backend.lock().unwrap();
@@ -118,7 +144,7 @@ pub fn ddb_get_epoch_returns_fail_when_not_allowed() {
     // Case 2: relay but not available
     let router2 = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router2.set_am_relay(true);
-    router2.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
+    router2.set_bingle_api(Some(crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(Arc::new(InternalStarting)))));
     Router::with_current_router(router2.clone(), || { router2.route(&handler, &msg, "SENDER."); });
     let out2 = router2.take_outbound_response().expect("response");
     assert_eq!(out2.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("fail"));

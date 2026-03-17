@@ -41,6 +41,10 @@ pub trait InnerBingleApi {
 
     fn network_change(&self) {}
 
+    fn handle_lookup(&self, _handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, String> {
+        Ok(None)
+    }
+
     fn send_message_to_id(
         &self,
         _user_id: &rust_comms::api::bingle_api::UserId,
@@ -190,6 +194,10 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
 
     fn network_change(&mut self) {
         self.inner_bingle_api.network_change();
+    }
+
+    fn handle_lookup(&self, handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, String> {
+        self.inner_bingle_api.handle_lookup(handle)
     }
 
     fn send_message_to_id(
@@ -431,7 +439,7 @@ pub trait InnerBingleApiInternal {
 }
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.
-/// This mirrors the helper used elsewhere in tests, but is scoped under `crate::util::mock_api`.
+/// This mirrors the helper used elsewhere in tests, but is scoped under `crate::util::reusable_mock_api`.
 pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::bingle_api::BingleApiBothType {
     let arc: Arc<dyn BingleApiBoth> = Arc::new(api);
     let weak = Arc::downgrade(&arc);
@@ -440,4 +448,8 @@ pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::
     Box::leak(Box::new(arc));
 
     weak
+}
+
+pub fn to_weak<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::bingle_api::BingleApiBothType {
+    to_weak_api_both(api)
 }

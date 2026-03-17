@@ -5,5 +5,30 @@
 pub mod test_util;
 
 pub mod net_det;
+pub mod mock_bingle_api;
 pub mod reusable_mock_api;
 pub mod version;
+
+#[path = "cli_parse_test.rs"]
+pub mod cli_parse_test;
+
+#[path = "cli/debug_flag.rs"]
+pub mod cli_debug_flag;
+
+#[path = "cli/node_file_ids.rs"]
+pub mod cli_node_file_ids;
+
+#[path = "cli/node_file_null_and_missing.rs"]
+pub mod cli_node_file_null_and_missing;
+
+#[path = "cli/node_file_override.rs"]
+pub mod cli_node_file_override;
+
+#[path = "price_parse.rs"]
+pub mod price_parse;
+
+#[path = "printing_enable.rs"]
+pub mod printing_enable;
+
+#[path = "stun/comments.rs"]
+pub mod stun_comments;

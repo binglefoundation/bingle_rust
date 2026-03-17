@@ -88,6 +88,31 @@ This script will:
 - Set `RUST_COMMS_RUN_LOCALNET=true` to enable localnet-dependent logic.
 - Execute all integration tests containing "localnet" in their name, including those marked as ignored.
 
+## 6) Running All Rust Tests
+To run all tests in the project (including unit tests, workspace members, and all integration tests in the `tests/` folder), use the provided helper script:
+
+```bash
+bash scripts/run_all_tests.sh
+```
+
+This script runs:
+1. `cargo test --workspace`: Executes all standard tests.
+2. `cargo test --workspace -- --ignored`: Executes tests that are skipped by default (e.g., slow or environment-dependent integration tests).
+
+Alternatively, you can run `cargo test --workspace` directly for standard tests.
+
+### Running from RustRover (JetBrains)
+Pre-configured Run Configurations are provided in the `.run` directory. These will automatically appear in your RustRover / IntelliJ UI:
+
+- **All Tests (Standard)**: Runs standard tests with full reporting.
+- **All Tests (Ignored)**: Runs only the ignored tests.
+- **All Tests (Complete Suite)**: Runs standard tests after the ignored ones have finished (sequential).
+
+To run these with nice UI reporting:
+1. Select the desired configuration from the dropdown at the top right.
+2. Click the green **Run** button.
+3. Results will appear in the **Run** or **Services** tool window with a hierarchical tree view of all passed and failed tests.
+
 ## Troubleshooting
 - Missing framework error: Ensure you ran `bash scripts/build_ios_xcframework.sh` and that `ios/RustCommsFFI.xcframework` exists.
 - Simulator not found: Use `xcrun simctl list devices 'iOS'` to pick a valid device name and optionally boot it using `xcrun simctl boot "iPhone 15"`.
@@ -148,6 +173,11 @@ You can also open the package in Xcode to run tests interactively:
 - Cleanup:
   - Removed plaintext UDP fallback paths and unused scaffolding types; warnings reduced.
   - Centralized client context preparation; tests pass locally.
+
+2026-03-16
+- Added `scripts/run_all_tests.sh` to provide a single command for running all tests in the workspace and `tests/` folder.
+- Fixed several orphaned test files in the `tests/` tree that were not being executed by standard `cargo test`.
+- Consolidated all integration tests into the `all` test target.
 
 Notes
 - For simplicity in tests, peer verification is currently disabled (SslVerifyMode::NONE). The HandlePeerCertificate callback API exists and can be re‑enabled for strict verification when needed.

@@ -49,6 +49,7 @@ impl BingleApi for BothAsApi {
     fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported".into()) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
+    fn handle_lookup(&self, _handle: &crate::api::bingle_api::Handle) -> Result<Option<crate::api::bingle_api::UserId>, String> { self.inner.handle_lookup(_handle) }
     fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_id(user_id, message, progress) }
     fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_handle(handle, message, progress) }
     fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_network(nsk, user_id, message, progress) }

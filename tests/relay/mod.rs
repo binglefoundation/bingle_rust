@@ -26,3 +26,6 @@ pub mod lookup_root_id;
 
 #[path = "list_all_relays_one_root.rs"]
 pub mod list_all_relays_one_root;
+
+#[path = "list_root_relays.rs"]
+pub mod list_root_relays;

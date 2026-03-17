@@ -44,3 +44,18 @@ pub mod dtls_debug_sequence;
 
 #[path = "pki.rs"]
 pub mod pki;
+
+#[path = "dtls_app_layer_verification.rs"]
+pub mod dtls_app_layer_verification;
+
+#[path = "dtls_debug_handshake.rs"]
+pub mod dtls_debug_handshake;
+
+#[path = "dtls_issuer_mapping.rs"]
+pub mod dtls_issuer_mapping;
+
+#[path = "dtls_peer_certificate_issuer_trim.rs"]
+pub mod dtls_peer_certificate_issuer_trim;
+
+#[path = "dtls_send_signature.rs"]
+pub mod dtls_send_signature;

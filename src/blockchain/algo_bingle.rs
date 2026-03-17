@@ -215,12 +215,37 @@ impl AlgoBingle {
     fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
         log::info!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
-        #[allow(unused)] {  }
+        let mut results: Vec<(String, String)> = Vec::new();
+        self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+            let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
+                for st in als {
+                    let id = st.get("id").and_then(|x| x.as_u64());
+                    if id == Some(app_id) {
+                        let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                        let kvs = Self::decode_state_entries(&keyvals);
+                        if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
+                            if !val.is_empty() {
+                                results.push((addr.clone(), val));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        Ok(results)
+    }
+
+    /// Helper to query all accounts opted into the given app_id via the indexer.
+    fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mut f: F) -> Result<()>
+    where
+        F: FnMut(&serde_json::Value) -> Result<()>,
+    {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
         let client = reqwest::blocking::Client::new();
         let mut next: Option<String> = None;
-        let mut results: Vec<(String, String)> = Vec::new();
         loop {
             let mut req = client.get(&base)
                 .query(&[("application-id", app_id.to_string()), ("limit", "1000".to_string())]);
@@ -238,27 +263,68 @@ impl AlgoBingle {
             log::trace!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
             let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
             for acct in accounts {
-                let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                // find local state for this app id
-                if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
-                    for st in als {
-                        let id = st.get("id").and_then(|x| x.as_u64());
-                        if id == Some(app_id) {
-                            let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
-                            let kvs = Self::decode_state_entries(&keyvals);
-                            if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
-                                if !val.is_empty() {
-                                    results.push((addr.clone(), val));
-                                }
-                            }
-                        }
-                    }
-                }
+                f(&acct)?;
             }
             next = v.get("next-token").and_then(|x| x.as_str()).map(|s| s.to_string());
             if next.is_none() { break; }
         }
-        Ok(results)
+        Ok(())
+    }
+
+    /// Lookup a Bingle handle on-chain using the Indexer.
+    /// Returns the address of the oldest account that has this handle registered in its local state.
+    pub fn handle_lookup(&self, handle: &str) -> Result<Option<String>> {
+        let app_id = self.ops.config.app_id.ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?;
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return std::thread::scope(|s| {
+                s.spawn(|| self.handle_lookup_sync(app_id, handle))
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
+            });
+        }
+        self.handle_lookup_sync(app_id, handle)
+    }
+
+    fn handle_lookup_sync(&self, app_id: u64, handle: &str) -> Result<Option<String>> {
+        let mut matches: Vec<(String, u64)> = Vec::new();
+        self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+            Self::extract_handle_match(acct, app_id, handle, &mut matches);
+            Ok(())
+        })?;
+        Ok(Self::pick_oldest_match(matches))
+    }
+
+    /// Extracted logic to find a handle match in an account's local state and append to matches list.
+    pub fn extract_handle_match(acct: &serde_json::Value, app_id: u64, handle: &str, matches: &mut Vec<(String, u64)>) {
+        let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        // Find local state for this app id
+        if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
+            for st in als {
+                let id = st.get("id").and_then(|x| x.as_u64());
+                if id == Some(app_id) {
+                    let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                    let kvs = Self::decode_state_entries(&keyvals);
+                    if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle") {
+                        if h == handle {
+                            let time = kvs.iter().find(|(k, _)| k == "HandleTime")
+                                .and_then(|(_, v)| v.parse::<u64>().ok())
+                                .unwrap_or(0);
+                            matches.push((addr.clone(), time));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Picks the oldest account (smallest HandleTime) from a list of matches.
+    pub fn pick_oldest_match(mut matches: Vec<(String, u64)>) -> Option<String> {
+        if matches.is_empty() {
+            None
+        } else {
+            matches.sort_by(|a, b| a.1.cmp(&b.1));
+            Some(matches[0].0.clone())
+        }
     }
 
     /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "RelayIP".

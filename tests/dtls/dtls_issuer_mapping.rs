@@ -1,7 +1,7 @@
 
 
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{OnceLock, Mutex};
+use std::sync::{OnceLock, Mutex, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -62,7 +62,7 @@ pub fn issuer_mapping_basic_send_and_reply() {
     // Build server
     let mut server = DtlsOpenSsl::new()
         .with_handle_peer_certificate(server_peer_cert_return_cn)
-        .with_handle_message(server_assert_and_reply)
+        .with_handle_message(Arc::new(server_assert_and_reply))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
@@ -80,7 +80,7 @@ pub fn issuer_mapping_basic_send_and_reply() {
     let certs_b = pki::generate_ed25519_test_certs();
     let mut client = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
-        .with_handle_message(client_capture)
+        .with_handle_message(Arc::new(client_capture))
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
@@ -171,7 +171,7 @@ pub fn multiple_clients_to_server_have_correct_issuers() {
     // Server
     let mut server = DtlsOpenSsl::new()
         .with_handle_peer_certificate(server_peer_cert_return_cn)
-        .with_handle_message(server_collect_issuers)
+        .with_handle_message(Arc::new(server_collect_issuers))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
@@ -198,7 +198,7 @@ pub fn multiple_clients_to_server_have_correct_issuers() {
         .with_client_private_key(a_key.clone())
         .with_server_signing_cert(certs_a_srv.server_crt.clone())
         .with_server_signing_private_key(certs_a_srv.server_key.clone())
-        .with_ca_cert(certs_b.ca_crt.clone());
+        .with_ca_cert(certs_a_srv.ca_crt.clone());
     let certs_b_srv = pki::generate_ed25519_test_certs();
     let mut client_b = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)

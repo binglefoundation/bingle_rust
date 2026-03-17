@@ -35,12 +35,7 @@ pub fn simple_stun_two_servers_consistent() {
             let _ = src.as_any();
             if let Ok(mut f) = finder_clone.lock() { f.process_packet(*from, data); }
         });
-        // Set the STUN handler before cloning the Arc, using Arc::get_mut while we have unique ownership
-        if let Some(inner) = Arc::get_mut(&mut mux) {
-            inner.set_handle_stun(Some(handler));
-        } else {
-            panic!("expected unique Arc for mux when setting handler");
-        }
+        mux.set_handle_stun_arc(Some(handler));
     }
 
     mux.start().expect("start mux");

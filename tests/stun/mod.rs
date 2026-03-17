@@ -11,3 +11,6 @@ pub mod stun_live_udp_mux;
 
 #[path = "simple_server_consistent.rs"]
 pub mod simple_server_consistent;
+
+#[path = "simple_server_inconsistent.rs"]
+pub mod simple_server_inconsistent;
