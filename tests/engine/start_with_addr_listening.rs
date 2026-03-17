@@ -1,13 +1,12 @@
-
-
 use std::net::SocketAddr;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration, Instant};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions, UserId};
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use rust_comms::engine::Engine;
 use rust_comms::messages::router::Router;
+use crate::engine::ddb_upsert::test_util::init_test_logging;
 
 // Minimal DTLS mock: starts/stops successfully and never sends/receives anything.
 #[derive(Clone)]
@@ -39,11 +38,11 @@ impl Dtls for MockDtls {
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
 }
 
-// Simple mock API required by Router; captures notify_listening(true).
+// Simple mock API required by Router.
 #[derive(Clone)]
-struct MockApi { pub notified: Arc<AtomicBool> }
-impl BingleApi for MockApi { 
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
+struct MockApi;
+impl BingleApi for MockApi {
+    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {}
     fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
@@ -78,12 +77,14 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _id: std::string::String, _source: std::net::SocketAddr) -> bool { false }
     fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) { }
-    fn notify_listening(&self, listening: bool) { if listening { self.notified.store(true, Ordering::SeqCst); } }
+    fn notify_listening(&self, _listening: bool) {}
 }
 
-// Verifies that when starting with a static address, the engine notifies listening=true as soon as DTLS accept loop is started.
+// Verifies that when starting with a static address, the engine invokes the listening handler with true.
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn start_with_addr_notifies_listening_true() {
+    init_test_logging();
+
     // Prepare start options with a static external address; local bind uses 0.0.0.0:<port>
     let static_addr: SocketAddr = "127.0.0.1:0".parse().expect("parse static addr");
     let opts = StartOptions {
@@ -101,22 +102,29 @@ pub fn start_with_addr_notifies_listening_true() {
 
     // Build Engine unbound and inject DTLS + Router with MockApi
     let flag = Arc::new(AtomicBool::new(false));
-    let mock_api = MockApi { notified: flag.clone() };
+    let mock_api = MockApi;
     let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::to_weak(mock_api.clone()));
     eng.set_dtls(Box::new(MockDtls));
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(mock_api)));
     eng.set_router(router);
 
+    let listening_flag = flag.clone();
+    eng.set_on_listening_handler(Some(Arc::new(move |listening| {
+        if listening {
+            listening_flag.store(true, Ordering::SeqCst);
+        }
+    })));
+
     // Act
     eng.start(&opts).expect("engine.start should succeed");
 
-    // Assert: the notification should arrive quickly
+    // Assert: the handler should be invoked quickly
     let start = Instant::now();
     let timeout = Duration::from_secs(2);
     while !flag.load(Ordering::SeqCst) && start.elapsed() < timeout {
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(flag.load(Ordering::SeqCst), "notify_listening(true) should be called for static-ip start");
+    assert!(flag.load(Ordering::SeqCst), "OnListening handler should be called with true for static-ip start");
 
     // Validate Option-returning helpers where applicable
     let local = eng.local_bind_addr_for_tests();
