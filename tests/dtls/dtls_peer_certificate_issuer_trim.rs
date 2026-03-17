@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
+use crate::util::test_util::init_test_logging;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
@@ -18,6 +19,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     use openssl::rsa::Rsa;
     use openssl::x509::{X509NameBuilder, X509};
 
+    init_test_logging();
     // CA key + cert (Ed25519, self-signed, CN=VIRTUAL_CA)
     let ca_pkey: PKey<Private> = PKey::generate_ed25519().expect("generate ed25519");
     let mut ca_name_b = X509NameBuilder::new().expect("name builder");
@@ -44,7 +46,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let server_rsa = Rsa::generate(2048).expect("rsa gen");
     let server_key = PKey::from_rsa(server_rsa).expect("pkey from rsa");
     let mut server_name_b = X509NameBuilder::new().expect("srv name builder");
-    server_name_b.append_entry_by_nid(Nid::COMMONNAME, "server").expect("srv cn");
+    server_name_b.append_entry_by_nid(Nid::COMMONNAME, "server.").expect("srv cn");
     let server_name = server_name_b.build();
     let mut server_b = X509::builder().expect("srv x509 builder");
     let mut s_serial = BigNum::new().expect("serial");
@@ -114,6 +116,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     cmux.start().expect("cmux start");
     let mut client = DtlsOpenSsl::new()
         .with_null_encryption()
+        .with_handle_peer_certificate(rust_comms::protocol::cert_verify::peer_certificate_handler())
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_server_signing_cert(server_cert_pem.clone())
@@ -123,7 +126,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
 
     // Send a small JSON payload to trigger delivery
     let payload = br#"{\"hello\":\"world\"}"#;
-    let _ = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload);
+    let _ = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload).expect("client send");
 
     // Wait for server to capture issuer
     let start = Instant::now();
