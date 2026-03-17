@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
+use crate::relay::lookup_root_id::test_util::init_test_logging;
 
 #[path = "pki.rs"]
 pub mod pki;
@@ -40,19 +41,21 @@ static CLIENT_SEEN_DATA: OnceLock<Vec<u8>> = OnceLock::new();
 
 fn server_assert_and_reply(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, issuer: &str, data: &[u8]) {
     // Record issuer and data we saw
-    let _ = SERVER_SEEN_ISSUER.set(issuer.to_string());
+    let _ = SERVER_SEEN_ISSUER.set(format!("{}.", issuer.to_string()));
     let _ = SERVER_SEEN_DATA.set(data.to_vec());
     // Reply
     let _ = server.send(from, b"hi-from-server");
 }
 
 fn client_capture(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, issuer: &str, data: &[u8]) {
-    let _ = CLIENT_SEEN_ISSUER.set(issuer.to_string());
+    let _ = CLIENT_SEEN_ISSUER.set(format!("{}.", issuer.to_string()));
     let _ = CLIENT_SEEN_DATA.set(data.to_vec());
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn issuer_mapping_basic_send_and_reply() {
+    init_test_logging();
+    
     // Generate a normal server cert/key/ca and a client cert/key; we'll override CN for client to "A"
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
@@ -76,16 +79,15 @@ pub fn issuer_mapping_basic_send_and_reply() {
     server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
-    // Client uses provided client cert (CN may be anything); issuer mapping will return server CN on client side and client CN on server side
-    let certs_b = pki::generate_ed25519_test_certs();
+    // Client uses provided client cert
     let mut client = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_handle_message(Arc::new(client_capture))
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
-        .with_server_signing_cert(certs_b.server_crt.clone())
-        .with_server_signing_private_key(certs_b.server_key.clone())
-        .with_ca_cert(certs_b.ca_crt.clone());
+        .with_server_signing_cert(certs.server_crt.clone())
+        .with_server_signing_private_key(certs.server_key.clone())
+        .with_ca_cert(certs.ca_crt.clone());
 
     // Start client mux and DTLS
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
@@ -109,14 +111,16 @@ pub fn issuer_mapping_basic_send_and_reply() {
     while SERVER_SEEN_DATA.get().is_none() && start.elapsed() < Duration::from_secs(3) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(SERVER_SEEN_ISSUER.get().cloned().unwrap_or_default(), client_cn, "server did not map client's issuer correctly");
+    let expected_client_issuer = client_cn.to_string();
+    assert_eq!(SERVER_SEEN_ISSUER.get().cloned().unwrap_or_default(), expected_client_issuer, "server did not map client's issuer correctly");
 
     // Wait for client to see reply
     let start2 = Instant::now();
     while CLIENT_SEEN_DATA.get().is_none() && start2.elapsed() < Duration::from_secs(3) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(CLIENT_SEEN_ISSUER.get().cloned().unwrap_or_default(), server_cn, "client did not map server's issuer correctly");
+    let expected_server_issuer = server_cn.to_string();
+    assert_eq!(CLIENT_SEEN_ISSUER.get().cloned().unwrap_or_default(), expected_server_issuer, "client did not map server's issuer correctly");
 }
 
 // -------------- Multiple clients A,B,C -> Z ---------------
@@ -125,48 +129,20 @@ static SERVER_ALL_ISSUERS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 fn server_collect_issuers(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, issuer: &str, data: &[u8]) {
     if !data.is_empty() {
         let v = SERVER_ALL_ISSUERS.get_or_init(|| Mutex::new(Vec::new()));
-        if let Ok(mut list) = v.lock() { list.push(issuer.to_string()); }
+        if let Ok(mut list) = v.lock() { list.push(format!("{}.", issuer)); }
     }
-}
-
-fn make_self_signed_rsa_cert_with_cn(cn: &str) -> (Vec<u8>, Vec<u8>) {
-    use openssl::x509::{X509, X509NameBuilder};
-    use openssl::nid::Nid;
-    use openssl::pkey::PKey;
-    use openssl::rsa::Rsa;
-    use openssl::hash::MessageDigest;
-    use openssl::asn1::Asn1Time;
-
-    let rsa = Rsa::generate(2048).expect("rsa gen");
-    let pkey = PKey::from_rsa(rsa).expect("pkey");
-
-    let mut name = X509NameBuilder::new().unwrap();
-    name.append_entry_by_nid(Nid::COMMONNAME, cn).unwrap();
-    let name = name.build();
-
-    let mut b = X509::builder().unwrap();
-    b.set_version(2).unwrap();
-    b.set_subject_name(&name).unwrap();
-    b.set_issuer_name(&name).unwrap();
-    b.set_pubkey(&pkey).unwrap();
-    let nb = Asn1Time::days_from_now(0).unwrap();
-    b.set_not_before(&nb).unwrap();
-    let na = Asn1Time::days_from_now(365).unwrap();
-    b.set_not_after(&na).unwrap();
-    b.sign(&pkey, MessageDigest::sha256()).unwrap();
-    let cert = b.build();
-    let cert_pem = cert.to_pem().unwrap();
-    let key_pem = pkey.private_key_to_pem_pkcs8().unwrap();
-    (cert_pem, key_pem)
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn multiple_clients_to_server_have_correct_issuers() {
-    // Server using normal certs; peer cert handler extracts CN from client certs
-    let certs = pki::generate_ed25519_test_certs();
-    let server_cert_pem: Vec<u8> = certs.server_crt.clone();
-    let server_key_pem: Vec<u8> = certs.server_key.clone();
-    let ca_pem: Vec<u8> = certs.ca_crt.clone();
+    init_test_logging();
+
+    // Generate CA and server cert signed by CA
+    let (ca_cert, ca_key) = pki::make_ca(crate::util::test_util::ADDRESS_RECEIVE);
+    let ca_pem = ca_cert.to_pem().expect("ca pem");
+    let (server_cert, server_key) = pki::make_ee(&ca_cert, &ca_key, "server");
+    let server_cert_pem = server_cert.to_pem().expect("server pem");
+    let server_key_pem = server_key.private_key_to_pem_pkcs8().expect("server key pem");
 
     // Server
     let mut server = DtlsOpenSsl::new()
@@ -185,36 +161,41 @@ pub fn multiple_clients_to_server_have_correct_issuers() {
     server.start(mux.clone()).expect("server start");
     thread::sleep(Duration::from_millis(200));
 
-    // Create three distinct client certs with CN A,B,C
-    let (a_crt, a_key) = make_self_signed_rsa_cert_with_cn("A");
-    let (b_crt, b_key) = make_self_signed_rsa_cert_with_cn("B");
-    let (c_crt, c_key) = make_self_signed_rsa_cert_with_cn("C");
+    // Create three distinct client certs with CN A,B,C, signed by the same CA
+    let (a_cert, a_key_obj) = pki::make_ee(&ca_cert, &ca_key, "A.");
+    let a_crt = a_cert.to_pem().expect("a pem");
+    let a_key = a_key_obj.private_key_to_pem_pkcs8().expect("a key pem");
 
-    // Clients (each extracts server CN for mapping on their side, but we only assert server-side issuers here)
-    let certs_a_srv = pki::generate_ed25519_test_certs();
+    let (b_cert, b_key_obj) = pki::make_ee(&ca_cert, &ca_key, "B.");
+    let b_crt = b_cert.to_pem().expect("b pem");
+    let b_key = b_key_obj.private_key_to_pem_pkcs8().expect("b key pem");
+
+    let (c_cert, c_key_obj) = pki::make_ee(&ca_cert, &ca_key, "C.");
+    let c_crt = c_cert.to_pem().expect("c pem");
+    let c_key = c_key_obj.private_key_to_pem_pkcs8().expect("c key pem");
+
+    // Clients
     let mut client_a = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_client_cert(a_crt.clone())
         .with_client_private_key(a_key.clone())
-        .with_server_signing_cert(certs_a_srv.server_crt.clone())
-        .with_server_signing_private_key(certs_a_srv.server_key.clone())
-        .with_ca_cert(certs_a_srv.ca_crt.clone());
-    let certs_b_srv = pki::generate_ed25519_test_certs();
+        .with_server_signing_cert(server_cert_pem.clone())
+        .with_server_signing_private_key(server_key_pem.clone())
+        .with_ca_cert(ca_pem.clone());
     let mut client_b = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_client_cert(b_crt.clone())
         .with_client_private_key(b_key.clone())
-        .with_server_signing_cert(certs_b_srv.server_crt.clone())
-        .with_server_signing_private_key(certs_b_srv.server_key.clone())
-        .with_ca_cert(certs_b_srv.ca_crt.clone());
-    let certs_c_srv = pki::generate_ed25519_test_certs();
+        .with_server_signing_cert(server_cert_pem.clone())
+        .with_server_signing_private_key(server_key_pem.clone())
+        .with_ca_cert(ca_pem.clone());
     let mut client_c = DtlsOpenSsl::new()
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_client_cert(c_crt.clone())
         .with_client_private_key(c_key.clone())
-        .with_server_signing_cert(certs_c_srv.server_crt.clone())
-        .with_server_signing_private_key(certs_c_srv.server_key.clone())
-        .with_ca_cert(certs_c_srv.ca_crt.clone());
+        .with_server_signing_cert(server_cert_pem.clone())
+        .with_server_signing_private_key(server_key_pem.clone())
+        .with_ca_cert(ca_pem.clone());
 
     // Start muxes for each client and initialize DTLS
     let cmux_a0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client_a mux");
@@ -244,8 +225,8 @@ pub fn multiple_clients_to_server_have_correct_issuers() {
     while SERVER_ALL_ISSUERS.get().and_then(|m| m.lock().ok()).map(|v| v.len()).unwrap_or(0) < 3 && start.elapsed() < Duration::from_secs(4) {
         thread::sleep(Duration::from_millis(50));
     }
-    let issuers: Vec<String> = SERVER_ALL_ISSUERS.get().and_then(|m| m.lock().ok()).map(|v| v.clone()).unwrap_or_default();
-    assert!(issuers.iter().any(|s| s == "A"), "missing issuer A");
-    assert!(issuers.iter().any(|s| s == "B"), "missing issuer B");
-    assert!(issuers.iter().any(|s| s == "C"), "missing issuer C");
+    let issuers: Vec<String> = SERVER_ALL_ISSUERS.get().expect("issuers init").lock().expect("lock").clone();
+    assert!(issuers.iter().any(|s| s == "A."), "missing issuer A");
+    assert!(issuers.iter().any(|s| s == "B."), "missing issuer B");
+    assert!(issuers.iter().any(|s| s == "C."), "missing issuer C");
 }

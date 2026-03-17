@@ -32,8 +32,7 @@ fn make_serial() -> BigNum {
     serial
 }
 
-#[allow(dead_code)]
-fn make_ca(key: &str) -> (X509, PKey<Private>) {
+pub fn make_ca(key: &str) -> (X509, PKey<Private>) {
     let pkey = PKey::generate_ed25519().expect("ed25519 gen");
     let mut name = X509NameBuilder::new().expect("name builder");
     name.append_entry_by_nid(Nid::COMMONNAME, "virtual.bingle.home.arpa").expect("cn");
@@ -70,8 +69,7 @@ fn make_ca(key: &str) -> (X509, PKey<Private>) {
     (builder.build(), pkey)
 }
 
-#[allow(dead_code)]
-fn make_ee(ca_cert: &X509, ca_key: &PKey<Private>, cn: &str) -> (X509, PKey<Private>) {
+pub fn make_ee(ca_cert: &X509, ca_key: &PKey<Private>, cn: &str) -> (X509, PKey<Private>) {
     let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).expect("ecgroup");
     let ec_key = EcKey::generate(&group).expect("eckey gen");
     let pkey = PKey::from_ec_key(ec_key).expect("pkey from ec");
