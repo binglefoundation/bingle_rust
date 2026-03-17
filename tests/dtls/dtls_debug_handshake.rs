@@ -1,19 +1,10 @@
 
 
 use serde_json::Value;
-use std::sync::Once;
-
-static INIT_LOG: Once = Once::new();
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn dtls_debug_parses_handshake_type_and_extensions() {
-    // Ensure logging is initialized at TRACE so dtls_udp_to_json performs full decode
-    INIT_LOG.call_once(|| {
-        let _ = simple_logger::SimpleLogger::new()
-            .with_level(log::LevelFilter::Trace)
-            .init();
-    });
-    use rust_comms::dtls::dtls_debug::{dtls_udp_to_json, json_to_dtls_udp};
+    use rust_comms::dtls::dtls_debug::{dtls_udp_to_json_with_level, json_to_dtls_udp};
 
     // Build a minimal DTLS Handshake (ClientHello) record with two extensions: server_name (0x0000) and key_share (0x0033).
     // Handshake header (DTLS): type(1)=1, length(3), message_seq(2)=0, fragment_offset(3)=0, fragment_length(3)=length
@@ -68,8 +59,8 @@ pub fn dtls_debug_parses_handshake_type_and_extensions() {
     datagram.extend_from_slice(&(hs.len() as u16).to_be_bytes());
     datagram.extend_from_slice(&hs);
 
-    let json = dtls_udp_to_json(&datagram).expect("dtls_udp_to_json ok");
-
+    let json = dtls_udp_to_json_with_level(&datagram, log::Level::Trace).expect("dtls_udp_to_json ok");
+    log::debug!("json: {}", json);
     // Validate JSON contains handshake type name and extension names
     let v: Value = serde_json::from_str(&json).expect("json parse");
     let records = v.get("records").and_then(|r| r.as_array()).expect("records array");
