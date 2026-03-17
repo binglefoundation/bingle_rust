@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use rust_comms::messages::types::*;
-use rust_comms::messages::handlers::{MessageHandler, DefaultPrintingHandler};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::ddb::DdbBackend;
+use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::router::Router;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler};
+use rust_comms::messages::types::*;
 
 // Minimal API impl so router can pass an API into the handler
 struct MockApi;

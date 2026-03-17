@@ -24,7 +24,7 @@ pub fn simple_stun_two_servers_consistent() {
     let s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false }).expect("start s2");
 
     // Mux bound to 0 that will send to both servers from the same local socket
-    let mut mux = Arc::new(UdpNetworkMux::bind(("0.0.0.0", 0)).expect("bind mux"));
+    let mux = Arc::new(UdpNetworkMux::bind(("0.0.0.0", 0)).expect("bind mux"));
     mux.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
 
     // Wire mux STUN handler to forward packets into our finder

@@ -1,13 +1,9 @@
-
-
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use rust_comms::engine::Engine;
 use rust_comms::relay::relay_finder::RootRelayInfo;
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 
 // Minimal DTLS mock
 #[derive(Clone)]

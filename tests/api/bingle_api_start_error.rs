@@ -1,7 +1,6 @@
-use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 
 // Ensure that BingleApiImpl::start does not ignore Engine start errors
 // and propagates them to the caller.

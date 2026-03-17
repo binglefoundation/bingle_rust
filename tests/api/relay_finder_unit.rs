@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
@@ -19,7 +19,7 @@ impl MockApi {
         let api = Self { availability: Arc::new(Mutex::new(vec![])), calls: calls.clone() };
         (api, calls)
     }
-    fn with_availability(mut self, pairs: Vec<(SocketAddr, bool)>) -> Self {
+    fn with_availability(self, pairs: Vec<(SocketAddr, bool)>) -> Self {
         if let Ok(mut v) = self.availability.lock() { *v = pairs; }
         self
     }

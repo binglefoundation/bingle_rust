@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 
-use rust_comms::messages::handlers::{DefaultPrintingHandler, MessageHandler};
+use crate::util::reusable_mock_api::MockApiBoth;
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use rust_comms::ddb::DdbBackend;
+use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::router::Router;
 use rust_comms::messages::types::*;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, Handle, NetworkEndpoint, UserId, ProgressCallback, OnMessageHandler, OnConnectHandler, BingleApiInternal};
-use rust_comms::ddb::DdbBackend;
-use crate::util::reusable_mock_api::MockApiBoth;
 
 // Minimal API for router context
 #[derive(Clone)]

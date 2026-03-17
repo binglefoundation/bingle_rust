@@ -2,7 +2,7 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 
 
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use std::time::{Duration, Instant};
 
 use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions};
@@ -47,7 +47,7 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Build API with mock DTLS and install sentinel creator handler
-    let mut api = BingleApiImpl::new_with_dtls(Box::new(MockDtls));
+    let api = BingleApiImpl::new_with_dtls(Box::new(MockDtls));
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
         if listening {
