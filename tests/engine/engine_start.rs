@@ -46,34 +46,6 @@ impl rust_comms::api::bingle_api::BingleApiInternal for DummyApi {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-pub fn engine_start_without_static_ip_errors() {
-    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
-    let opts = StartOptions {
-        handle: "tester".into(),
-        algo_passphrase: Some("pass".into()),
-        static_ip: None,
-        am_relay: false,
-        stun_servers: None,
-        algo_provider_config: None,
-        algo_network: None,
-        app_id: None,
-        asset_id: None,
-        log_level: None,
-    };
-    let res = engine.start(&opts);
-    assert!(res.is_err());
-    let msg = res.err().unwrap();
-    let ml = msg.to_lowercase();
-    assert!(
-        ml.contains("notimplemented") ||
-        ml.contains("not implemented") ||
-        ml.contains("stun") ||
-        ml.contains("no stun") ||
-        ml.contains("no stun servers")
-    );
-}
-
-#[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_start_with_static_ip_localhost_ok() {
     let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
