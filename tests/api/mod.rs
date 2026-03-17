@@ -39,3 +39,6 @@ pub mod relay_finder_unit;
 
 #[path = "turn_update_listener_relay.rs"]
 pub mod turn_update_listener_relay;
+
+#[path = "bingle_api_handle_tests.rs"]
+pub mod bingle_api_handle_tests;

@@ -511,6 +511,11 @@ impl Engine {
         self.dtls.as_ref()
     }
 
+    /// Test helper: Inject a custom DDB client.
+    pub fn set_ddb_client_for_tests(&mut self, ddb: Arc<dyn crate::ddb::DdbClient>) {
+        self.ddb_client = ddb;
+    }
+
     /// Test helper: get the local UDP bind address of the mux, if started.
     pub fn local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
         if let Some(m) = &self.mux {

@@ -34,6 +34,7 @@ pub struct BingleApiImpl {
     router: Option<std::sync::Arc<crate::messages::router::Router>>,
     // Weak reference to ourselves for passing to components
     this: crate::api::bingle_api::BingleApiBothType,
+    handle_lookup_mock: Mutex<Option<Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>>>,
 }
 
 impl BingleApiImpl {
@@ -52,6 +53,7 @@ impl BingleApiImpl {
                 engine,
                 router: None,
                 this: me_both,
+                handle_lookup_mock: Mutex::new(None),
             }
         })
     }
@@ -74,6 +76,7 @@ impl BingleApiImpl {
                 engine,
                 router: None,
                 this: me_both,
+                handle_lookup_mock: Mutex::new(None),
             }
         })
     }
@@ -128,6 +131,19 @@ impl BingleApiImpl {
         let res = self.engine.access(|e| e.ddb_client().lookup(id));
         log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
         res
+    }
+
+    pub fn engine_set_ddb_client_for_tests(&self, ddb: Arc<dyn crate::ddb::DdbClient>) {
+        log::info!("[BingleApiImpl::engine_set_ddb_client_for_tests][enter]");
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).set_ddb_client_for_tests(ddb);
+        }
+    }
+
+    pub fn set_handle_lookup_mock_for_tests(&self, mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>) {
+        let mut m = self.handle_lookup_mock.lock().unwrap();
+        *m = Some(mock);
     }
 
     /// Test-only accessor to the Engine (for white-box integration tests)
@@ -354,6 +370,14 @@ impl BingleApi for BingleApiImpl {
 
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
         log::info!("[BingleApiImpl::handle_lookup][enter] handle={}", handle);
+
+        {
+            let mock = self.handle_lookup_mock.lock().unwrap();
+            if let Some(m) = mock.as_ref() {
+                return m(handle);
+            }
+        }
+
         let app_id = self.get_app_id().ok_or("app_id not configured")?;
         let config = self.get_algo_provider_config().ok_or("algo_provider_config not configured")?;
 
@@ -415,12 +439,26 @@ impl BingleApi for BingleApiImpl {
 
     fn send_message_to_handle(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
         log::info!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
-        #[allow(unused)] {  }
-        // Not implemented yet
-        let __ret = false;
-        log::info!("[BingleApiImpl::send_message_to_handle][exit] return={}", __ret);
-        #[allow(unused)] {  }
-        __ret
+        let user_id_opt = match self.handle_lookup(handle) {
+            Ok(uid) => uid,
+            Err(e) => {
+                warn!("[BingleApiImpl::send_message_to_handle] handle lookup failed for handle {}: {}", handle, e);
+                if let Some(cb) = progress.as_ref() { cb(100, format!("Handle lookup failed: {}", e)); }
+                return false;
+            }
+        };
+
+        if let Some(user_id) = user_id_opt {
+            if let Some(cb) = progress.as_ref() { cb(10, format!("Handle {} resolved to {}", handle, user_id)); }
+            let ok = self.send_message_to_id(&user_id, message, progress);
+            log::info!("[BingleApiImpl::send_message_to_handle][exit] return={}", ok);
+            ok
+        } else {
+            warn!("[BingleApiImpl::send_message_to_handle] handle not found: {}", handle);
+            if let Some(cb) = progress.as_ref() { cb(100, format!("Handle not found: {}", handle)); }
+            log::info!("[BingleApiImpl::send_message_to_handle][exit] return=false");
+            false
+        }
     }
 
     fn send_message_to_network(
@@ -492,11 +530,12 @@ impl BingleApi for BingleApiImpl {
 
     fn send_message_to_handle_with_response(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
         log::info!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
-        #[allow(unused)] {  }
-        let err = "not implemented".to_string();
-        log::info!("[BingleApiImpl::send_message_to_handle_with_response][exit] Err({})", err);
-        #[allow(unused)] {  }
-        Err(err)
+        let user_id = self.handle_lookup(handle)?
+            .ok_or_else(|| format!("Handle not found: {}", handle))?;
+        if let Some(cb) = progress.as_ref() { cb(10, format!("Handle {} resolved to {}", handle, user_id)); }
+        let res = self.send_message_to_id_with_response(&user_id, message, progress);
+        log::info!("[BingleApiImpl::send_message_to_handle_with_response][exit] result={:?}", res.as_ref().ok());
+        res
     }
 
     fn send_message_to_network_with_response(
