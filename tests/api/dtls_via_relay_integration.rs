@@ -11,6 +11,7 @@ use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::messages::{Message, PlainTextMessage, RelayMessage};
 use rust_comms::messages::types::{RelayCall, RelayListen};
 use rust_comms::turn::turn_handler::{TurnClientHandler, TurnHandler};
+use crate::relay::relay_states::test_util::init_test_logging;
 use crate::util::test_util::{ADDRESS_10MIL, ADDRESS_RECEIVE, ADDRESS_SPEND};
 
 #[path = "../test_util.rs"]
@@ -24,6 +25,8 @@ fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOS
 #[cfg_attr(not(target_os = "ios"), test)]
 
 pub fn dtls_send_via_relay_end_to_end() {
+    init_test_logging();
+
     // 1) Start a DTLS target node (server) with its own UDP mux and capture received payloads
     let certs = pki::generate_ed25519_test_certs();
     let server_cert_pem: Vec<u8> = certs.server_crt.clone();
@@ -78,7 +81,6 @@ pub fn dtls_send_via_relay_end_to_end() {
     // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun)
     let relay_port = 13000; // test_util::find_unused_loopback_port();
     let relay_addr = addr(relay_port);
-    let relay_api = BingleApiImpl::new(&StartOptions::default());
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
         algo_passphrase: Some(test_util::PASSPHRASE_10MIL.to_string()),
@@ -91,6 +93,7 @@ pub fn dtls_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
     };
+    let relay_api = BingleApiImpl::new(&relay_opts);
     relay_api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");
 
     // 3) Send RelayListen from the DTLS target node to the relay and validate registration

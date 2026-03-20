@@ -19,11 +19,19 @@ use rust_comms::engine::EngineState;
 #[path = "common.rs"]
 pub mod common;
 
+// synced with scripts/run_testnet_tests.sh
 fn pingable_address() -> Option<String> {
     // Prefer explicit env var if provided by runner
     if let Some(addr) = common::env_var("PINGABLE_ADDRESS") { return Some(addr); }
     // Fallback to the known address used by scripts/run_testnet_tests.sh
-    Some("SRIDF3MQNHGWOKYNZOSS7VONPKJB2LM52DOZGPY7QLT5ONZ5BPUAKH3Q4A".to_string())
+    Some("EK2KRWCCCI4DRMSQIDYAING2NURDMDBVWDK6VCCDGQNBQ5DMGFPKRTAFGY".to_string())
+}
+
+fn pingable_handle() -> Option<String> {
+    // Prefer explicit env var if provided by runner
+    if let Some(handle) = common::env_var("PINGABLE_USER") { return Some(handle); }
+    // Fallback to the known handle used by scripts/run_testnet_tests.sh
+    Some("pinguser21".to_string())
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -72,7 +80,7 @@ pub fn testnet_send_ping_to_registered_node() {
 
     // Time the send_message_to_id_with_response call
     let start_time = Instant::now();
-    let resp = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_id_with_response(&dest_id, ping_req, Some(progress_callback)))
+    let resp = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_id_with_response(&dest_id, ping_req.clone(), Some(progress_callback.clone())))
         .expect("send_message_to_id_with_response should succeed");
     let elapsed = start_time.elapsed();
 
@@ -89,6 +97,30 @@ pub fn testnet_send_ping_to_registered_node() {
     assert_eq!(vid, Some(dest_id.as_str()), "verifiedId should equal destination id: {:?}", resp);
     let text = resp.get("text").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
     assert!(text.starts_with("ACK:"), "text should be an ACK: {:?}", resp);
+
+    // 6) Send Ping to handle and validate response
+    let dest_handle = pingable_handle().expect("pingable handle must resolve");
+    log::info!("Starting ping to handle: {}", dest_handle);
+
+    // Time the send_message_to_handle_with_response call
+    let start_time_handle = Instant::now();
+    let resp_handle = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_handle_with_response(&dest_handle, ping_req.clone(), Some(progress_callback.clone())))
+        .expect("send_message_to_handle_with_response should succeed");
+    let elapsed_handle = start_time_handle.elapsed();
+
+    // Output timing clearly
+    println!("TIMING: send_message_to_handle_with_response took {:.3}s", elapsed_handle.as_secs_f64());
+    log::info!("send_message_to_handle_with_response completed in {:.3}s", elapsed_handle.as_secs_f64());
+
+    // Expected: { app: "ping", type: "response", verifiedId: dest_id, text: "ACK: ..." }
+    let app_h = resp_handle.get("app").and_then(|v: &serde_json::Value| v.as_str());
+    assert_eq!(app_h, Some("ping"), "handle response app should be 'ping': {:?}", resp_handle);
+    let rtype_h = resp_handle.get("type").and_then(|v: &serde_json::Value| v.as_str());
+    assert_eq!(rtype_h, Some("response"), "handle response type should be 'response': {:?}", resp_handle);
+    let vid_h = resp_handle.get("verifiedId").and_then(|v: &serde_json::Value| v.as_str());
+    assert_eq!(vid_h, Some(dest_id.as_str()), "verifiedId should equal destination id even when sending by handle: {:?}", resp_handle);
+    let text_h = resp_handle.get("text").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+    assert!(text_h.starts_with("ACK:"), "handle response text should be an ACK: {:?}", resp_handle);
 
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.stop());
 }

@@ -291,6 +291,7 @@ impl AlgoBingle {
             Self::extract_handle_match(acct, app_id, handle, &mut matches);
             Ok(())
         })?;
+        log::info!("[handle_lookup_sync] handle={} matches={:?}", handle, matches);
         Ok(Self::pick_oldest_match(matches))
     }
 
@@ -304,6 +305,7 @@ impl AlgoBingle {
                 if id == Some(app_id) {
                     let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                     let kvs = Self::decode_state_entries(&keyvals);
+                    log::debug!("[extract_handle_match] address={} decoded_state={:?}", addr, kvs);
                     if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle") {
                         if h == handle {
                             let time = kvs.iter().find(|(k, _)| k == "HandleTime")

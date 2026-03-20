@@ -99,7 +99,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
-        log::info!("[TurnRelayHandlerImpl::handle_turn_incoming] {} bytes from {:?}:", packet.len(), sender_address);
+        log::info!("[TurnRelayHandlerImpl::handle_turn_incoming] {} bytes from {:?}, local_public_address={:?}", packet.len(), sender_address, local_public_address);
         let (ch, len, _pad) = parse_channel_data_header(packet)?;
 
         let (source_addr, dest_addr) = {

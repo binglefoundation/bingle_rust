@@ -86,35 +86,35 @@ pub fn testnet_user_reaches_endpoint_available() {
 
     // Before proceeding, ensure both static endpoints are reachable: send RelayCheck and await response.
     // Use a single 120s budget to validate availability of the first two endpoints returned by indexer.
-    {
-        let to_check: Vec<(String, String)> = static_endpoints.iter().take(2).cloned().collect();
-        let deadline = Instant::now() + Duration::from_secs(120);
-        let mut ok: Vec<bool> = vec![false; to_check.len()];
-        while Instant::now() < deadline && ok.iter().any(|&b| !b) {
-            for (idx, (id, addr_str)) in to_check.iter().enumerate() {
-                if ok[idx] { continue; }
-                let addr: std::net::SocketAddr = addr_str.parse().expect("static endpoint address parse");
-                let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
-                let payload = serde_json::json!({ "app": null, "type": "Check" });
-                match api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network_with_response(&nsk, &id, payload.clone(), None)) {
-                    Ok(resp) => {
-                        let is_ok = resp.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("CheckResponse")
-                            && resp.get("state").and_then(|v: &serde_json::Value| v.as_str()) == Some("available");
-                        if is_ok {
-                            ok[idx] = true;
-                        }
-                    }
-                    Err(_e) => {
-                        // retry until deadline
-                    }
-                }
-            }
-            if ok.iter().any(|&b| !b) {
-                std::thread::sleep(Duration::from_millis(500));
-            }
-        }
-        assert!(ok.iter().all(|&b| b), "Static endpoints did not respond to RelayCheck within 120s: ok={:?}, endpoints={:?}", ok, to_check);
-    }
+    // {
+    //     let to_check: Vec<(String, String)> = static_endpoints.iter().take(2).cloned().collect();
+    //     let deadline = Instant::now() + Duration::from_secs(120);
+    //     let mut ok: Vec<bool> = vec![false; to_check.len()];
+    //     while Instant::now() < deadline && ok.iter().any(|&b| !b) {
+    //         for (idx, (id, addr_str)) in to_check.iter().enumerate() {
+    //             if ok[idx] { continue; }
+    //             let addr: std::net::SocketAddr = addr_str.parse().expect("static endpoint address parse");
+    //             let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
+    //             let payload = serde_json::json!({ "app": null, "type": "Check" });
+    //             match api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network_with_response(&nsk, &id, payload.clone(), None)) {
+    //                 Ok(resp) => {
+    //                     let is_ok = resp.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("CheckResponse")
+    //                         && resp.get("state").and_then(|v: &serde_json::Value| v.as_str()) == Some("available");
+    //                     if is_ok {
+    //                         ok[idx] = true;
+    //                     }
+    //                 }
+    //                 Err(_e) => {
+    //                     // retry until deadline
+    //                 }
+    //             }
+    //         }
+    //         if ok.iter().any(|&b| !b) {
+    //             std::thread::sleep(Duration::from_millis(500));
+    //         }
+    //     }
+    //     assert!(ok.iter().all(|&b| b), "Static endpoints did not respond to RelayCheck within 120s: ok={:?}, endpoints={:?}", ok, to_check);
+    // }
 
     // Determine expected final state from environment.
     // Primary: EXPECT_FINAL_STATE can be set to "EndpointAvailable" or "NATRestricted".

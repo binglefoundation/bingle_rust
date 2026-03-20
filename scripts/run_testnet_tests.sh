@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+# LEAVE_CONTAINERS=1 keeps docker run containers around after exit (no --rm)
+LEAVE_CONTAINERS=${LEAVE_CONTAINERS:-0}
+
+DOCKER_RUN_RM=()
+if [[ "$LEAVE_CONTAINERS" != "1" ]]; then
+  DOCKER_RUN_RM=(--rm)
+fi
+
 CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid else pupil alcohol marine attitude extra favorite mass move midnight symbol sibling latin language able borrow"
 
 # Ensure cleanup of background containers on exit
@@ -49,9 +57,10 @@ TESTNET_USER=testuser10
 TESTNET_ADDRESS=YA2UAJPUJZBY4KR2B4FBM57NSA7252PJQTVKJEGB2MOISRUECW4JGE4USM
 TESTNET_PASSPHRASE="glide crawl soda hole assault tide fault century seed tip daughter student rice swap imitate setup like card reject claim truck squeeze same able remind"
 
-PINGABLE_USER=pinguser20
-PINGABLE_ADDRESS=QASXBML72DKIJEJ5GLMEBBX33KCKW3TSJW7ETFOTLEREQCDMW5BXCLXSQU
-PINGABLE_PASSPHRASE="group avocado audit dentist baby index pipe attack enough stairs fame position column media copper athlete resource noodle forward wage middle into fitness ability dragon"
+# Sync with ping_registered_node.rs when changing
+PINGABLE_USER=pinguser21
+PINGABLE_ADDRESS=EK2KRWCCCI4DRMSQIDYAING2NURDMDBVWDK6VCCDGQNBQ5DMGFPKRTAFGY
+PINGABLE_PASSPHRASE="scare much guide patch report explain collect feel climb mansion cluster child muscle split jewel crush wisdom length merry diary quote axis foil abstract escape"
 PINGABLE_PORT=30001
 
 # NAT mode for tests. Accept Direct|Full|Restricted|All (default All)
@@ -71,23 +80,6 @@ bingle_admin root $RELAY_A_ADDRESS --enable \
 bingle_admin root $RELAY_B_ADDRESS --enable \
  --node-file nodely_testnet_node.json \
  --passphrase "$CREATOR_PASSPHRASE"
-
-if [[ -n "${EXTRA_RELAY:-}" ]]; then
-  bingle_admin updateuser --handle $RELAY_EXTRA_HANDLE \
-   --passphrase "$CREATOR_PASSPHRASE" \
-   --node-file nodely_testnet_node.json \
-   --userpassphrase "$RELAY_EXTRA_PASSPHRASE"
-fi
-
-bingle_admin updateuser --handle $TESTNET_USER \
- --passphrase "$CREATOR_PASSPHRASE" \
- --node-file nodely_testnet_node.json \
- --userpassphrase "$TESTNET_PASSPHRASE"
-
-bingle_admin updateuser --handle $PINGABLE_USER \
- --passphrase "$CREATOR_PASSPHRASE" \
- --node-file nodely_testnet_node.json \
- --userpassphrase "$PINGABLE_PASSPHRASE"
 
 # Ensure a dedicated test network exists with custom subnet for IP assignment
 if ! docker network inspect bingle_testnet >/dev/null 2>&1; then
@@ -152,7 +144,7 @@ rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT" "$SENT_DIR/$RELAY_EXTR
 # Enable debug logging for relays to help diagnose connectivity issues
 RELAY_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -169,7 +161,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -192,7 +184,7 @@ wait_for_file "$SENT_DIR/$RELAY_A_SENT" 180 || exit 1
 wait_for_file "$SENT_DIR/$RELAY_B_SENT" 180 || exit 1
 
 if [[ -n "${EXTRA_RELAY:-}" ]]; then
-  docker run --platform linux/arm64 --rm -d \
+  docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
    --name bingle_relay_extra \
    --network bingle_testnet \
    -e RELAY=1 \
@@ -228,7 +220,7 @@ rm -f "$SENT_DIR/$PING_INIT_SENT"
 # Enable verbose logging for the ping target to help diagnose failures
 PING_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 --rm -d \
+docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
  --name bingle_pingable \
  --network bingle_testnet \
  --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
@@ -277,151 +269,161 @@ PING_OUT="$PWD/tmp/test_out/test_results_ping.out"
 # NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted|All
 # Default to All to exercise all three modes in sequence with a final summary
 NAT_MODE=${NAT_MODE:-All}
+# RUN_TESTS can be set by the caller to control which test groups run:
+#   All  -> run main + ping (default)
+#   Init -> run only the main init test
+#   Ping -> run only the ping tests
+RUN_TESTS=${RUN_TESTS:-All}
 
-docker run --platform linux/arm64 -t --rm \
-  --name bingle_test_runner \
-  --network bingle_testnet \
-  --cap-add NET_ADMIN \
-  -e NAT_MODE="$NAT_MODE" \
-  -e TESTNET_USER="$TESTNET_USER" \
-  -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
-  -e OUT_FILE="/out/$(basename "$MAIN_OUT")" \
-  -v "$PWD/tmp/test_out":/out \
-  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
-  "bingle-tests:local"
-MAIN_RC=$?
+MAIN_RC=0
+PING_RC=0
+PING_MODES=()
 
-if [ $MAIN_RC -ne 0 ]; then
-    echo "ERROR: Main test container failed with exit code $MAIN_RC" >&2
-    # Don't exit here - we want to collect results and run the ping test
-fi
-
-# Build image for ping_registered_node test once
-scripts/build_tests_image.sh --tag bingle-tests:ping --test ping_registered_node
-
-# Set explicit filter to the ping test function
-PING_FILTER="testnet_send_ping_to_registered_node"
-
-# Decide which pingable NAT modes to exercise
-if [ "$NAT_MODE" = "All" ] || [ "$NAT_MODE" = "all" ]; then
-  PING_MODES=("Direct" "Full" "Restricted")
-else
-  PING_MODES=("$PING_INIT_MODE")
-fi
-
-PING_OUT_BASE="$PWD/tmp/test_out/test_results_ping"
-PING_ANY_FAIL=0
-FIRST_MODE=1
-
-for MODE in "${PING_MODES[@]}"; do
-  # Restart pingable for subsequent modes
-  if [ $FIRST_MODE -eq 0 ]; then
-    echo "Restarting bingle_pingable with NAT_MODE=$MODE..."
-    docker stop bingle_pingable >/dev/null 2>&1 || true
-    # Wait for container to be fully stopped and removed
-    timeout=10
-    elapsed=0
-    while docker ps -a --format '{{.Names}}' | grep -q "^bingle_pingable$" && [ $elapsed -lt $timeout ]; do
-      sleep 0.5
-      elapsed=$((elapsed + 1))
-    done
-    # Force remove if still exists
-    docker rm -f bingle_pingable >/dev/null 2>&1 || true
-    # Increment IP address for new container
-    PINGABLE_IP_SUFFIX=$((PINGABLE_IP_SUFFIX + 1))
-    echo "Using IP address 172.18.0.$PINGABLE_IP_SUFFIX for bingle_pingable restart"
-    PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
-    echo "Removing $SENT_DIR/$PING_SENT"
-    rm -f "$SENT_DIR/$PING_SENT"
-    docker run --platform linux/arm64 --rm -d \
-      --name bingle_pingable \
-      --network bingle_testnet \
-      --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
-      --cap-add NET_ADMIN \
-      -e RUST_BACKTRACE=1 \
-      -e EXTRA_ARGS="$PING_EXTRA_ARGS" \
-      -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
-      -e PORT=$PINGABLE_PORT \
-      -e HANDLE=$PINGABLE_USER \
-      -e NAT_MODE="$MODE" \
-      -e SENTINEL_FILE="/sentinels/$PING_SENT" \
-      -v "$PWD/tmp/sentinels":/sentinels \
-      -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
-      "bingle:local"
-    if [ $? -ne 0 ]; then
-      echo "ERROR: Failed to start bingle_pingable container for mode $MODE" >&2
-      PING_ANY_FAIL=1
-      continue
-    fi
-    # Wait for per-mode pingable listening sentinel
-    echo "Waiting for $SENT_DIR/$PING_SENT"
-    if ! wait_for_file "$SENT_DIR/$PING_SENT" 240; then
-      echo "ERROR: Pingable did not signal listening for mode $MODE within timeout" >&2
-      PING_ANY_FAIL=1
-      continue
-    fi
-  fi
-
-  # Run the prebuilt test inside the dedicated tests image (streams output and waits for completion)
-  # NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted|All
-  # Default to All to exercise all three modes in sequence with a final summary
-  OUT_FILE_MODE="/out/$(basename "${PING_OUT_BASE}_${MODE}.out")"
-  echo "Running ping test for mode $MODE (Output: $OUT_FILE_MODE)..."
-  docker run --platform linux/arm64 -t --rm \
-    --name bingle_test_runner_ping \
+if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Init" || "$RUN_TESTS" == "init" ]]; then
+  docker run --platform linux/arm64 -t "${DOCKER_RUN_RM[@]}" \
+    --name bingle_test_runner \
     --network bingle_testnet \
     --cap-add NET_ADMIN \
-    -e NAT_MODE="Direct" \
-    -e TEST_FILTER="$PING_FILTER" \
+    -e NAT_MODE="$NAT_MODE" \
     -e TESTNET_USER="$TESTNET_USER" \
     -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
-    -e PINGABLE_ADDRESS="$PINGABLE_ADDRESS" \
-    -e OUT_FILE="$OUT_FILE_MODE" \
+    -e TEST_FILTER="testnet_user_reaches_endpoint_available" \
+    -e OUT_FILE="/out/$(basename "$MAIN_OUT")" \
     -v "$PWD/tmp/test_out":/out \
     -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
-    "bingle-tests:ping"
-  rc=$?
-  if [ $rc -ne 0 ]; then
-    echo "ERROR: Ping test container failed in mode $MODE with exit code $rc" >&2
-    PING_ANY_FAIL=1
+    "bingle-tests:local"
+  MAIN_RC=$?
+
+  if [ $MAIN_RC -ne 0 ]; then
+      echo "ERROR: Main test container failed with exit code $MAIN_RC" >&2
+      # Don't exit here - we want to collect results and run the ping test
   fi
-  # Append a clear per-mode result line to the host file
-  host_file="${PING_OUT_BASE}_${MODE}.out"
-  if [ $rc -eq 0 ]; then
-    echo "[runner][$MODE] Test PASSED" >> "$host_file"
-  else
-    echo "[runner][$MODE] Test FAILED with exit code $rc" >> "$host_file"
-  fi
-
-  FIRST_MODE=0
-  # Ensure the runner container is not lingering
-  docker stop bingle_test_runner_ping >/dev/null 2>&1 || true
-
-done
-
-# Combine all per-mode ping outputs into the canonical PING_OUT file
-: > "$PING_OUT"
-for MODE in "${PING_MODES[@]}"; do
-  host_file="${PING_OUT_BASE}_${MODE}.out"
-  if [ -f "$host_file" ]; then
-    echo "" >> "$PING_OUT"
-    echo "==== Ping mode $MODE ====" >> "$PING_OUT"
-    cat "$host_file" >> "$PING_OUT"
-  fi
-done
-
-# Set overall PING_RC for later summary
-if [ $PING_ANY_FAIL -ne 0 ]; then
-  PING_RC=1
-else
-  PING_RC=0
 fi
 
-# ---------------------------
-# Extract and consolidate results
-# ---------------------------
-echo ""
-echo "================ Consolidated Test Results ================"
+if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" || "$RUN_TESTS" == "ping" ]]; then
+  # Build image for ping_registered_node test once
+  scripts/build_tests_image.sh --tag bingle-tests:ping --test ping_registered_node
+
+  # Set explicit filter to the ping test function
+  PING_FILTER="testnet_send_ping_to_registered_node"
+
+  # Decide which pingable NAT modes to exercise
+  if [ "$NAT_MODE" = "All" ] || [ "$NAT_MODE" = "all" ]; then
+    PING_MODES=("Direct" "Full" "Restricted")
+  else
+    PING_MODES=("$PING_INIT_MODE")
+  fi
+
+  PING_OUT_BASE="$PWD/tmp/test_out/test_results_ping"
+  PING_ANY_FAIL=0
+  FIRST_MODE=1
+
+  for MODE in "${PING_MODES[@]}"; do
+    # Restart pingable for subsequent modes
+    if [ $FIRST_MODE -eq 0 ]; then
+      echo "Restarting bingle_pingable with NAT_MODE=$MODE..."
+      docker stop bingle_pingable >/dev/null 2>&1 || true
+      # Wait for container to be fully stopped and removed
+      timeout=10
+      elapsed=0
+      while docker ps -a --format '{{.Names}}' | grep -q "^bingle_pingable$" && [ $elapsed -lt $timeout ]; do
+        sleep 0.5
+        elapsed=$((elapsed + 1))
+      done
+      # Force remove if still exists
+      docker rm -f bingle_pingable >/dev/null 2>&1 || true
+      # Increment IP address for new container
+      PINGABLE_IP_SUFFIX=$((PINGABLE_IP_SUFFIX + 1))
+      echo "Using IP address 172.18.0.$PINGABLE_IP_SUFFIX for bingle_pingable restart"
+      PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
+      echo "Removing $SENT_DIR/$PING_SENT"
+      rm -f "$SENT_DIR/$PING_SENT"
+      docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
+        --name bingle_pingable \
+        --network bingle_testnet \
+        --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
+        --cap-add NET_ADMIN \
+        -e RUST_BACKTRACE=1 \
+        -e EXTRA_ARGS="$PING_EXTRA_ARGS" \
+        -e PASSPHRASE="$PINGABLE_PASSPHRASE" \
+        -e PORT=$PINGABLE_PORT \
+        -e HANDLE=$PINGABLE_USER \
+        -e NAT_MODE="$MODE" \
+        -e SENTINEL_FILE="/sentinels/$PING_SENT" \
+        -v "$PWD/tmp/sentinels":/sentinels \
+        -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+        "bingle:local"
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to start bingle_pingable container for mode $MODE" >&2
+        PING_ANY_FAIL=1
+        continue
+      fi
+      # Wait for per-mode pingable listening sentinel
+      echo "Waiting for $SENT_DIR/$PING_SENT"
+      if ! wait_for_file "$SENT_DIR/$PING_SENT" 240; then
+        echo "ERROR: Pingable did not signal listening for mode $MODE within timeout" >&2
+        PING_ANY_FAIL=1
+        continue
+      fi
+    fi
+
+    # Run the prebuilt test inside the dedicated tests image (streams output and waits for completion)
+    # NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted|All
+    # Default to All to exercise all three modes in sequence with a final summary
+    # (Nat mode for the caller is always Direct, the nat mode for the target changes)
+    OUT_FILE_MODE="/out/$(basename "${PING_OUT_BASE}_${MODE}.out")"
+    echo "Starting ping test for mode $MODE (Output: $OUT_FILE_MODE)..."
+    docker run --platform linux/arm64 -t "${DOCKER_RUN_RM[@]}" \
+      --name bingle_test_runner_ping \
+      --network bingle_testnet \
+      --cap-add NET_ADMIN \
+      -e NAT_MODE="Direct" \
+      -e TEST_FILTER="$PING_FILTER" \
+      -e TESTNET_USER="$TESTNET_USER" \
+      -e TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE" \
+      -e PINGABLE_USER="$PINGABLE_USER" \
+      -e PINGABLE_ADDRESS="$PINGABLE_ADDRESS" \
+      -e OUT_FILE="$OUT_FILE_MODE" \
+      -v "$PWD/tmp/test_out":/out \
+      -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+      "bingle-tests:ping"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      echo "ERROR: Ping test container failed in mode $MODE with exit code $rc" >&2
+      PING_ANY_FAIL=1
+    fi
+    # Append a clear per-mode result line to the host file
+    host_file="${PING_OUT_BASE}_${MODE}.out"
+    if [ $rc -eq 0 ]; then
+      echo "[runner][$MODE] Test PASSED" >> "$host_file"
+    else
+      echo "[runner][$MODE] Test FAILED with exit code $rc" >> "$host_file"
+    fi
+
+    FIRST_MODE=0
+    # Ensure the runner container is not lingering
+    docker stop bingle_test_runner_ping >/dev/null 2>&1 || true
+
+  done
+
+  # Combine all per-mode ping outputs into the canonical PING_OUT file
+  : > "$PING_OUT"
+  for MODE in "${PING_MODES[@]}"; do
+    host_file="${PING_OUT_BASE}_${MODE}.out"
+    if [ -f "$host_file" ]; then
+      echo "" >> "$PING_OUT"
+      echo "==== Ping mode $MODE ====" >> "$PING_OUT"
+      cat "$host_file" >> "$PING_OUT"
+    fi
+  done
+
+  # Set overall PING_RC for later summary
+  if [ $PING_ANY_FAIL -ne 0 ]; then
+    PING_RC=1
+  else
+      PING_RC=0
+    fi
+  fi
 
 # Show individual results from the main run
 if [[ -f "$MAIN_OUT" ]]; then
@@ -512,24 +514,34 @@ echo "-- Overall --"
 echo "Main run: $MAIN_STATUS"
 echo "Ping run: $PING_STATUS"
 
-if [[ "$MAIN_STATUS" == "PASS" && "$PING_STATUS" == "PASS" ]]; then
-  echo "OVERALL RESULT: PASS"
-  exit 0
+if [[ "$RUN_TESTS" == "Init" || "$RUN_TESTS" == "init" ]]; then
+  if [[ "$MAIN_STATUS" == "PASS" ]]; then
+    echo "OVERALL RESULT: PASS"
+    exit 0
+  else
+    echo "OVERALL RESULT: FAIL"
+    if [[ ${MAIN_RC:-0} -ne 0 ]]; then exit ${MAIN_RC:-1}; fi
+    exit 1
+  fi
+elif [[ "$RUN_TESTS" == "Ping" || "$RUN_TESTS" == "ping" ]]; then
+  if [[ "$PING_STATUS" == "PASS" ]]; then
+    echo "OVERALL RESULT: PASS"
+    exit 0
+  else
+    echo "OVERALL RESULT: FAIL"
+    if [[ ${PING_RC:-0} -ne 0 ]]; then exit ${PING_RC:-1}; fi
+    exit 1
+  fi
 else
-  echo "OVERALL RESULT: FAIL"
-  
-  # echo "ERROR: Tests failed. Collecting container logs..."
-  # for container in bingle_relay_a bingle_relay_b bingle_pingable; do
-  #   if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
-  #     echo "---- Logs from $container ----"
-  #     docker logs "$container" | tail -n 100
-  #     echo "------------------------------"
-  #   fi
-  # done
+  if [[ "$MAIN_STATUS" == "PASS" && "$PING_STATUS" == "PASS" ]]; then
+    echo "OVERALL RESULT: PASS"
+    exit 0
+  else
+    echo "OVERALL RESULT: FAIL"
+  fi
 
   # Prefer returning the first non-zero original RC if available
   if [[ ${MAIN_RC:-0} -ne 0 ]]; then exit ${MAIN_RC:-1}; fi
   if [[ ${PING_RC:-0} -ne 0 ]]; then exit ${PING_RC:-1}; fi
   exit 1
 fi
-

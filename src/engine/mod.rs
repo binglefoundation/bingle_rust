@@ -1,3 +1,4 @@
+
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
@@ -157,6 +158,7 @@ pub struct Engine {
     state: EngineState,
     relay_state: RelayState,
     last_public_addr: Option<SocketAddr>,
+    last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
     stun: Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>, // background STUN
     relay_finder: Option<Arc<RelayFinder>>, // used to locate peer relay
     triangle_wait: Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>, // wait for TriangleTest3
@@ -343,10 +345,15 @@ impl Engine {
     ) -> std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
         let am_relay = self.options.am_relay;
         let turn: std::sync::Arc<dyn TurnHandler + Send + Sync> = self.get_approp_turn_handler();
+        let last_public_addr_shared = self.last_public_addr_shared.clone();
 
-        let local_public_addr = self.last_public_addr().clone();
         Arc::new(
             move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+                let local_public_addr = last_public_addr_shared
+                    .lock()
+                    .ok()
+                    .and_then(|g| *g);
+
                 // Parse/unwrap the TURN ChannelData using our handler
                 if let Some(wrapped) =
                     turn.handle_turn_incoming(Some(from), local_public_addr, packet)
@@ -466,6 +473,7 @@ impl Engine {
             state: EngineState::StunIdentify,
             relay_state: RelayState::Off,
             last_public_addr: options.static_ip.clone(),
+            last_public_addr_shared: Arc::new(Mutex::new(options.static_ip.clone())),
             stun: None,
             relay_finder: None,
             triangle_wait: None,
@@ -1335,6 +1343,7 @@ impl Engine {
         log::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
         self.last_public_addr = public_addr;
+        self.last_public_addr_shared = Arc::new(Mutex::new(public_addr));
 
         // Transition to TrianglePing and perform relay triangle test
         let prev = self.state;
