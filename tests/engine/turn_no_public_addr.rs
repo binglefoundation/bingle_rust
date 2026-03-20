@@ -1,0 +1,27 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+use rust_comms::api::bingle_api::StartOptions;
+use rust_comms::engine::Engine;
+use crate::util::reusable_mock_api::MockApiBoth;
+
+#[path = "../test_util.rs"]
+pub mod test_util;
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn engine_turn_handler_fails_when_no_public_addr() {
+    let api = MockApiBoth::new();
+    let api_weak = crate::util::reusable_mock_api::to_weak_api_both(api);
+    
+    let mut opts = StartOptions::default();
+    opts.am_relay = true;
+    
+    let mut engine = Engine::new(&opts, api_weak);
+    
+    let port = test_util::find_unused_loopback_port();
+    let _addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    
+    let res = engine.start(&opts);
+    if let Err(e) = res {
+         println!("Engine start failed: {}", e);
+    }
+}

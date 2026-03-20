@@ -35,3 +35,9 @@ pub mod relay_roots_ddb;
 
 #[path = "start_with_addr_listening.rs"]
 pub mod start_with_addr_listening;
+
+#[path = "turn_no_public_addr.rs"]
+pub mod turn_no_public_addr;
+
+#[path = "set_public_addr.rs"]
+pub mod set_public_addr;

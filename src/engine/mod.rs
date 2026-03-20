@@ -250,6 +250,17 @@ impl Engine {
         self.relay_state = new_state;
     }
 
+    pub fn set_last_public_addr(&mut self, addr: Option<SocketAddr>) {
+        log::info!("[Engine] set_last_public_addr: {:?}", addr);
+        self.last_public_addr = addr;
+        if let Ok(mut g) = self.last_public_addr_shared.lock() {
+            *g = addr;
+        } else {
+            log::error!("[Engine] last_public_addr_shared lock failed; replacing Arc");
+            self.last_public_addr_shared = Arc::new(Mutex::new(addr));
+        }
+    }
+
     /// Return the appropriate TURN handler for current role (client vs relay)
     pub fn get_approp_turn_handler(&self) -> std::sync::Arc<dyn TurnHandler + Send + Sync> {
         if self.options.am_relay {
@@ -349,14 +360,24 @@ impl Engine {
 
         Arc::new(
             move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-                let local_public_addr = last_public_addr_shared
-                    .lock()
-                    .ok()
-                    .and_then(|g| *g);
+                let local_public_addr = match last_public_addr_shared.lock() {
+                    Ok(g) => match *g {
+                        Some(addr) => addr,
+                        None => {
+                            log::error!("[Engine][TURN] no last_public_addr_shared; cannot handle TURN packet");
+                            return;
+                        }
+                    },
+                    Err(_) => {
+                        log::error!("[Engine][TURN] failed to lock last_public_addr_shared; cannot handle TURN packet");
+                        return;
+                    }
+                };
+
 
                 // Parse/unwrap the TURN ChannelData using our handler
                 if let Some(wrapped) =
-                    turn.handle_turn_incoming(Some(from), local_public_addr, packet)
+                    turn.handle_turn_incoming(Some(from), Some(local_public_addr), packet)
                 {
                     if am_relay {
                         log::info!(
@@ -465,15 +486,15 @@ impl Engine {
             }
         };
 
-        Self {
+        let mut eng = Self {
             relay_init_mutex: None,
             options: options.clone(),
             mux: None,
             dtls,
             state: EngineState::StunIdentify,
             relay_state: RelayState::Off,
-            last_public_addr: options.static_ip.clone(),
-            last_public_addr_shared: Arc::new(Mutex::new(options.static_ip.clone())),
+            last_public_addr: None,
+            last_public_addr_shared: Arc::new(Mutex::new(None)),
             stun: None,
             relay_finder: None,
             triangle_wait: None,
@@ -501,7 +522,9 @@ impl Engine {
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        }
+        };
+        eng.set_last_public_addr(options.static_ip.clone());
+        eng
     }
 
     /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
@@ -1274,12 +1297,12 @@ impl Engine {
     ) -> Result<(), String> {
         log::info!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
 
-        self.last_public_addr = Some(
+        self.set_last_public_addr(Some(
             self.options
                 .static_ip
                 .clone()
                 .expect("start_with_address when no static address"),
-        );
+        ));
 
         // Always bind UDP to 0.0.0.0:<port> so that we listen on all interfaces, even when a static external IP is configured.
         // The static address is used for signaling and routing outside any firewall, not for local bind.
@@ -1342,8 +1365,7 @@ impl Engine {
     fn stun_consistent_process(&mut self, public_addr: Option<SocketAddr>) {
         log::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
-        self.last_public_addr = public_addr;
-        self.last_public_addr_shared = Arc::new(Mutex::new(public_addr));
+        self.set_last_public_addr(public_addr);
 
         // Transition to TrianglePing and perform relay triangle test
         let prev = self.state;
@@ -1571,6 +1593,10 @@ impl Engine {
     }
     pub fn last_public_addr(&self) -> Option<SocketAddr> {
         self.last_public_addr
+    }
+
+    pub fn last_public_addr_shared_for_tests(&self) -> Option<SocketAddr> {
+        self.last_public_addr_shared.lock().ok().and_then(|g| *g)
     }
 
     pub fn peer_ddb_records(&self) -> Option<usize> {
