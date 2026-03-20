@@ -5,6 +5,8 @@
 set -euo pipefail
 
 CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid else pupil alcohol marine attitude extra favorite mass move midnight symbol sibling latin language able borrow"
+# => CFVNZNLYF34AL53MZBYKJNMNBKDACWCNZEBFDYWDSTR4X7IRNJON2IIRYA
+# (so fund this)
 
 # Ensure cleanup of background containers on exit
 cleanup() {
@@ -48,9 +50,9 @@ TESTNET_USER=testuser10
 TESTNET_ADDRESS=YA2UAJPUJZBY4KR2B4FBM57NSA7252PJQTVKJEGB2MOISRUECW4JGE4USM
 TESTNET_PASSPHRASE="glide crawl soda hole assault tide fault century seed tip daughter student rice swap imitate setup like card reject claim truck squeeze same able remind"
 
-PINGABLE_USER=pinguser20
-PINGABLE_ADDRESS=QASXBML72DKIJEJ5GLMEBBX33KCKW3TSJW7ETFOTLEREQCDMW5BXCLXSQU
-PINGABLE_PASSPHRASE="group avocado audit dentist baby index pipe attack enough stairs fame position column media copper athlete resource noodle forward wage middle into fitness ability dragon"
+PINGABLE_USER=pinguser21
+PINGABLE_ADDRESS=EK2KRWCCCI4DRMSQIDYAING2NURDMDBVWDK6VCCDGQNBQ5DMGFPKRTAFGY
+PINGABLE_PASSPHRASE="scare much guide patch report explain collect feel climb mansion cluster child muscle split jewel crush wisdom length merry diary quote axis foil abstract escape"
 PINGABLE_PORT=30001
 
 # 1) Admin setup: Ensure users are opted in and enabled on testnet
