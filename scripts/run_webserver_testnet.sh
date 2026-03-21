@@ -37,6 +37,14 @@ wait_for_file() {
 
 # Configuration from run_testnet_tests.sh
 RELAY_A_HANDLE=relay20
+MEASURE_MEMORY=${MEASURE_MEMORY:-0}
+
+# Common docker run flags
+COMMON_ARGS=()
+if [[ "$MEASURE_MEMORY" == "1" ]]; then
+  COMMON_ARGS+=("-e" "MEASURE_MEMORY=1")
+fi
+
 RELAY_A_ADDRESS=J3GHIF4QBJT7PEQHJ7YNJXP64RY7Q27GRB6HEFJ7O5E6JULGNSPVP546N4
 RELAY_A_PASSPHRASE="parent diamond bring another suggest rice diamond gravity bench violin hover fat relax annual repeat keen use moon senior display laundry asthma trend absorb grab"
 RELAY_A_PORT=20020
@@ -91,11 +99,11 @@ scripts/build_webserver_image.sh
 
 # 5) Start Relays
 echo "Starting relays..."
-docker run --platform linux/arm64 --rm -d --name bingle_relay_a --network bingle_testnet \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" --rm -d --name bingle_relay_a --network bingle_testnet \
  -e RELAY=1 -e PASSPHRASE="$RELAY_A_PASSPHRASE" -e PORT=$RELAY_A_PORT -e HANDLE=$RELAY_A_HANDLE \
  -e SENTINEL_FILE="/sentinels/relay_a.sentinel" -v "$SENT_DIR":/sentinels "bingle:local"
 
-docker run --platform linux/arm64 --rm -d --name bingle_relay_b --network bingle_testnet \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" --rm -d --name bingle_relay_b --network bingle_testnet \
  -e RELAY=1 -e PASSPHRASE="$RELAY_B_PASSPHRASE" -e PORT=$RELAY_B_PORT -e HANDLE=$RELAY_B_HANDLE \
  -e SENTINEL_FILE="/sentinels/relay_b.sentinel" -v "$SENT_DIR":/sentinels "bingle:local"
 
@@ -104,7 +112,7 @@ wait_for_file "$SENT_DIR/relay_b.sentinel" 180
 
 # 5) Start Pingable Target
 echo "Starting pingable target..."
-docker run --platform linux/arm64 --rm -d --name bingle_pingable --network bingle_testnet \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" --rm -d --name bingle_pingable --network bingle_testnet \
  --ip "172.18.0.100" --cap-add NET_ADMIN -e PASSPHRASE="$PINGABLE_PASSPHRASE" -e PORT=$PINGABLE_PORT \
  -e HANDLE=$PINGABLE_USER -e NAT_MODE="Direct" -e SENTINEL_FILE="/sentinels/pingable.sentinel" \
  -v "$SENT_DIR":/sentinels -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle:local"
@@ -113,7 +121,7 @@ wait_for_file "$SENT_DIR/pingable.sentinel" 180
 
 # 7) Start Webserver
 echo "Starting bingle_webserver as $TESTNET_USER..."
-docker run --platform linux/arm64 -d --rm --name bingle_webserver --network bingle_testnet \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" -d --rm --name bingle_webserver --network bingle_testnet \
  -p 12121:12121 -e HANDLE=$TESTNET_USER -e PASSPHRASE="$TESTNET_PASSPHRASE" \
  -e RUST_BACKTRACE=1 \
  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle-webserver:local"

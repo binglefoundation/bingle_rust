@@ -65,6 +65,7 @@ DOCKER_BUILDKIT=1 docker buildx build --platform "$DOCKER_PLATFORM" \
   --target cli \
   -t "$TAG" \
   --build-arg BIN_PATH="$BIN_PATH" \
+  -f Dockerfile \
   .
 
 echo "[build-cli-image] Done. Image: $TAG"

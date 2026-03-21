@@ -113,6 +113,64 @@ To run these with nice UI reporting:
 2. Click the green **Run** button.
 3. Results will appear in the **Run** or **Services** tool window with a hierarchical tree view of all passed and failed tests.
 
+## 7) Docker Support
+
+This project provides separate Dockerfiles for the application and integration tests:
+- `Dockerfile`: Contains `base`, `cli`, and `webserver` stages.
+- `Dockerfile.tests`: Contains the `tests` stage for running integration tests in an environment that matches the runtime.
+
+All Docker builds are "runtime-only", meaning they expect the Rust binaries to be prebuilt on the host (e.g., using `cargo zigbuild` for cross-compilation to Linux musl).
+
+### Build the Application Image
+To build the CLI or Webserver images, use the provided scripts. By default, they target `aarch64-unknown-linux-musl` and use `cargo-zigbuild`.
+
+```bash
+# Build the CLI image (bingle:local)
+bash scripts/build_cli_image.sh
+
+# Build the Webserver image (bingle-webserver:local)
+bash scripts/build_webserver_image.sh
+```
+
+### Build the Test Image
+To build the integration test image, use:
+
+```bash
+# Build the test image (bingle-tests:local)
+bash scripts/build_tests_image.sh --test <test_name>
+```
+
+Example: `bash scripts/build_tests_image.sh --test endpoint_available`
+
+### Running Testnet Integration Tests
+For a full end-to-end test run involving multiple Docker containers (relays, STUN servers, and the test runner), use:
+
+```bash
+bash scripts/run_testnet_tests.sh
+```
+
+### Measuring Peak Memory Usage
+You can measure the peak memory usage of any container over its lifetime using two methods:
+
+#### 1) Container-Side (Automatic)
+The `cli`, `webserver`, and `tests` Docker containers can report their own peak memory usage just before they exit. To enable this, set the `MEASURE_MEMORY=1` environment variable when running the container:
+
+```bash
+docker run --rm -e MEASURE_MEMORY=1 bingle:local
+```
+
+For the test suite, this is useful to see how much memory each test stage consumes.
+
+#### 2) Host-Side Monitoring
+A standalone script is provided to monitor any running container from the host by polling `docker stats`. This is useful for long-running containers or those you don't want to modify:
+
+```bash
+# Monitor a container named 'bingle_webserver' with 0.5s polling interval
+bash scripts/measure_memory.sh bingle_webserver 0.5
+```
+
+The script will track and display the highest memory usage observed until the container stops or you press Ctrl+C.
+
 ## Troubleshooting
 - Missing framework error: Ensure you ran `bash scripts/build_ios_xcframework.sh` and that `ios/RustCommsFFI.xcframework` exists.
 - Simulator not found: Use `xcrun simctl list devices 'iOS'` to pick a valid device name and optionally boot it using `xcrun simctl boot "iPhone 15"`.

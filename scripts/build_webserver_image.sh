@@ -65,6 +65,7 @@ DOCKER_BUILDKIT=1 docker buildx build --platform "$DOCKER_PLATFORM" \
   --target webserver \
   -t "$TAG" \
   --build-arg WEB_BIN_PATH="$WEB_BIN_PATH" \
+  -f Dockerfile \
   .
 
 echo "[build-webserver-image] Done. Image: $TAG"
