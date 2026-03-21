@@ -95,6 +95,24 @@ expected_for_mode() {
   esac
 }
 
+# Function to report peak memory usage from cgroups
+report_peak_memory() {
+  local peak_file=""
+  if [[ -f "/sys/fs/cgroup/memory.peak" ]]; then
+    peak_file="/sys/fs/cgroup/memory.peak"
+  elif [[ -f "/sys/fs/cgroup/memory/memory.max_usage_in_bytes" ]]; then
+    peak_file="/sys/fs/cgroup/memory/memory.max_usage_in_bytes"
+  fi
+
+  if [[ -n "$peak_file" ]]; then
+    local bytes
+    bytes=$(cat "$peak_file")
+    local mb
+    mb=$(awk "BEGIN {printf \"%.2f\", $bytes / 1024 / 1024}" 2>/dev/null || echo "unknown")
+    echo "[runner] Peak memory usage (container life): ${mb} MB (${bytes} bytes)" | tee -a "$OUT_FILE"
+  fi
+}
+
 # Run the test once for a given mode; returns exit code
 run_one_mode() {
   local mode="$1"
@@ -176,6 +194,7 @@ if [[ "$NAT_MODE" == "All" || "$NAT_MODE" == "all" ]]; then
       echo "[runner][summary] $m: FAILED" | tee -a "$OUT_FILE"
     fi
   done
+  report_peak_memory
   exit $overall_rc
 fi
 
@@ -187,7 +206,9 @@ fi
 
 # Run once in the requested mode
 if run_one_mode "$NAT_MODE"; then
+  report_peak_memory
   exit 0
 else
+  report_peak_memory
   exit 1
 fi

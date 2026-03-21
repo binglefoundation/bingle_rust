@@ -65,6 +65,14 @@ PINGABLE_PORT=30001
 
 # NAT mode for tests. Accept Direct|Full|Restricted|All (default All)
 NAT_MODE=${NAT_MODE:-All}
+MEASURE_MEMORY=${MEASURE_MEMORY:-0}
+
+# Common docker run flags
+COMMON_ARGS=()
+if [[ "$MEASURE_MEMORY" == "1" ]]; then
+  COMMON_ARGS+=("-e" "MEASURE_MEMORY=1")
+fi
+
 # Determine initial NAT mode for the pingable container
 if [ "$NAT_MODE" = "All" ] || [ "$NAT_MODE" = "all" ]; then
   PING_INIT_MODE="Direct"
@@ -144,7 +152,7 @@ rm -f "$SENT_DIR/$RELAY_A_SENT" "$SENT_DIR/$RELAY_B_SENT" "$SENT_DIR/$RELAY_EXTR
 # Enable debug logging for relays to help diagnose connectivity issues
 RELAY_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}" -d \
  --name bingle_relay_a \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -161,7 +169,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}" -d \
  --name bingle_relay_b \
  --network bingle_testnet \
  -e RELAY=1 \
@@ -184,7 +192,7 @@ wait_for_file "$SENT_DIR/$RELAY_A_SENT" 180 || exit 1
 wait_for_file "$SENT_DIR/$RELAY_B_SENT" 180 || exit 1
 
 if [[ -n "${EXTRA_RELAY:-}" ]]; then
-  docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
+  docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}"  -d \
    --name bingle_relay_extra \
    --network bingle_testnet \
    -e RELAY=1 \
@@ -220,7 +228,7 @@ rm -f "$SENT_DIR/$PING_INIT_SENT"
 # Enable verbose logging for the ping target to help diagnose failures
 PING_EXTRA_ARGS="--log-debug"
 
-docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
+docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}"  -d \
  --name bingle_pingable \
  --network bingle_testnet \
  --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
@@ -246,12 +254,12 @@ echo "Waiting for ${SENT_DIR}/${PING_INIT_SENT}"
 wait_for_file "$SENT_DIR/$PING_INIT_SENT" 180 || exit 1
 echo "Ping target restarted"
 
-# Build or refresh the tests image (uses Dockerfile tests stage and prebuilt test binary)
+# Ensure the latest application and tests images are built from the current workspace
 export BINGLE_RUN_TESTNET=1
 export TESTNET_USER=$TESTNET_USER
 export TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE"
 
-# Ensure the latest tests image is built from the current workspace
+scripts/build_cli_image.sh --tag bingle:local
 scripts/build_tests_image.sh --tag bingle-tests:local
 
 # Prepare output directory to collect results from the container
@@ -280,7 +288,7 @@ PING_RC=0
 PING_MODES=()
 
 if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Init" || "$RUN_TESTS" == "init" ]]; then
-  docker run --platform linux/arm64 -t "${DOCKER_RUN_RM[@]}" \
+  docker run --platform linux/arm64 -t "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}" \
     --name bingle_test_runner \
     --network bingle_testnet \
     --cap-add NET_ADMIN \
@@ -338,7 +346,7 @@ if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" |
       PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
       echo "Removing $SENT_DIR/$PING_SENT"
       rm -f "$SENT_DIR/$PING_SENT"
-      docker run --platform linux/arm64 "${DOCKER_RUN_RM[@]}" -d \
+      docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}" -d \
         --name bingle_pingable \
         --network bingle_testnet \
         --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
@@ -373,7 +381,7 @@ if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" |
     # (Nat mode for the caller is always Direct, the nat mode for the target changes)
     OUT_FILE_MODE="/out/$(basename "${PING_OUT_BASE}_${MODE}.out")"
     echo "Starting ping test for mode $MODE (Output: $OUT_FILE_MODE)..."
-    docker run --platform linux/arm64 -t "${DOCKER_RUN_RM[@]}" \
+    docker run --platform linux/arm64 -t "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}" \
       --name bingle_test_runner_ping \
       --network bingle_testnet \
       --cap-add NET_ADMIN \
@@ -477,6 +485,13 @@ else
 fi
 
 # Extract and display timing information
+echo "-- Peak Memory Usage --"
+if [[ -f "$MAIN_OUT" ]]; then
+  echo "Main run (test runner):"
+  grep "Peak memory usage" "$MAIN_OUT" | sed 's/^/  /' || echo "  (not reported)"
+fi
+
+# Timings
 echo "-- Timing Summary --"
 if [[ -f "$MAIN_OUT" ]]; then
   echo "Main run timings (NAT_MODE=$NAT_MODE):"

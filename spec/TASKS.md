@@ -97,16 +97,16 @@
 
 # endpoint_identify
 
-- Implement the path in Engine startup when staticEndpoint is not set
-- Set the initial engine state to StunIdentify
-- Create an EndpointFinder and associate this with our NetworkMuxUDP to handle STUN messages. Pass the StunServers config field
-- When the STUN stateChangeHandler is called with Consistent
--- set the engine state to TrianglePing
--- find our peer relay node
--- send a RelayTriangleTest1 message to our peer relay node
--- await an inbound RelayTriangleTest3 message
--- If we receive a RelayTriangleTest3 message, set the engine state to EndpointAvailable
-- When the STUN stateChangeHandler is called with Stale
-- If we don't receive a message in 10 seconds, raise a non implemented error
-- When the STUN stateChangeHandler is called with Inconsistent
--- raise a non implemented error
+- ~~Implement the path in Engine startup when staticEndpoint is not set~~
+- ~~Set the initial engine state to StunIdentify~~
+- ~~Create an EndpointFinder and associate this with our NetworkMuxUDP to handle STUN messages. Pass the StunServers config field~~
+- ~~When the STUN stateChangeHandler is called with Consistent~~
+-- ~~set the engine state to TrianglePing~~
+-- ~~find our peer relay node~~
+-- ~~send a RelayTriangleTest1 message to our peer relay node~~
+-- ~~await an inbound RelayTriangleTest3 message~~
+-- ~~If we receive a RelayTriangleTest3 message, set the engine state to EndpointAvailable~~
+- ~~When the STUN stateChangeHandler is called with Stale~~
+- ~~If we don't receive a message in 10 seconds, raise a non implemented error~~
+- ~~When the STUN stateChangeHandler is called with Inconsistent~~
+-- ~~raise a non implemented error~~

@@ -30,6 +30,24 @@ CMD=("/app/bingle_webserver" \
   "--node-file" "$NODE_FILE"
 )
 
+# Function to report peak memory usage from cgroups
+report_peak_memory() {
+  local peak_file=""
+  if [[ -f "/sys/fs/cgroup/memory.peak" ]]; then
+    peak_file="/sys/fs/cgroup/memory.peak"
+  elif [[ -f "/sys/fs/cgroup/memory/memory.max_usage_in_bytes" ]]; then
+    peak_file="/sys/fs/cgroup/memory/memory.max_usage_in_bytes"
+  fi
+
+  if [[ -n "$peak_file" ]]; then
+    local bytes
+    bytes=$(cat "$peak_file")
+    local mb
+    mb=$(awk "BEGIN {printf \"%.2f\", $bytes / 1024 / 1024}" 2>/dev/null || echo "unknown")
+    echo "[docker_webserver_start] Peak memory usage: ${mb} MB (${bytes} bytes)"
+  fi
+}
+
 if [[ -n "${EXTRA_ARGS:-}" ]]; then
   # shellcheck disable=SC2206
   EXTRA_ARR=( ${EXTRA_ARGS} )
@@ -37,4 +55,13 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
 fi
 
 echo "Starting webserver: ${CMD[*]}"
-exec "${CMD[@]}"
+
+if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then
+  "${CMD[@]}" &
+  CHILD_PID=$!
+  trap 'kill -TERM $CHILD_PID 2>/dev/null' SIGTERM SIGINT
+  wait $CHILD_PID || true
+  report_peak_memory
+else
+  exec "${CMD[@]}"
+fi

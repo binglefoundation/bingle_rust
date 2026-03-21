@@ -1,7 +1,7 @@
 # Multi-target runtime Dockerfile (no in-container build)
 # - base: Common runtime dependencies and assets
 # - cli:  Runs the prebuilt bingle_cli binary with docker_start.sh
-# - tests: Runs the prebuilt Rust test binary (endpoint_available or ping_registered_node) and writes results to a mounted host file
+# - webserver: package the prebuilt bingle_webserver and start script
 
 # Allow selecting target platform when building multi-arch images
 ARG TARGETPLATFORM=linux/arm64
@@ -60,32 +60,6 @@ ENV PASSPHRASE="" \
 
 # ENTRYPOINT to the startup script which launches /app/bingle_cli run ...
 ENTRYPOINT ["/app/docker_start.sh"]
-
-# ------------------------
-# Tests stage: package a prebuilt test binary and a small runner that writes results to /out
-# ------------------------
-FROM base AS tests
-
-# Path to the prebuilt test binary (must be provided or match your host build). Example:
-#   target/aarch64-unknown-linux-musl/debug/deps/api_testnet_endpoint_available-<hash>
-ARG TEST_BIN_PATH
-
-# Copy test runner script and the test binary
-COPY scripts/docker_run_test.sh /app/run_test.sh
-# Force TEST_BIN_PATH to be provided; if not, COPY will fail and prompt the user to pass it.
-COPY ${TEST_BIN_PATH} /app/test_bin
-
-RUN chmod +x /app/run_test.sh /app/test_bin
-
-# Environment controlling the test run
-# - OUT_FILE: where to write combined test output (mount /out to collect on host)
-# - TEST_FILTER: which test to run from the binary
-# - TESTNET_USER / TESTNET_PASSPHRASE must be provided at runtime
-ENV OUT_FILE="/out/test_results.txt" \
-    TEST_FILTER="testnet_user_reaches_endpoint_available"
-
-# The runner will export BINGLE_RUN_TESTNET=1 and execute the test binary with filter
-ENTRYPOINT ["/app/run_test.sh"]
 
 # ------------------------
 # Webserver stage: package the prebuilt bingle_webserver and start script
