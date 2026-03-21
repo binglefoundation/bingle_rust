@@ -157,7 +157,6 @@ pub struct Engine {
     dtls: Box<dyn Dtls + Send + Sync>,
     state: EngineState,
     relay_state: RelayState,
-    last_public_addr: Option<SocketAddr>,
     last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
     stun: Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>, // background STUN
     relay_finder: Option<Arc<RelayFinder>>, // used to locate peer relay
@@ -252,7 +251,6 @@ impl Engine {
 
     pub fn set_last_public_addr(&mut self, addr: Option<SocketAddr>) {
         log::info!("[Engine] set_last_public_addr: {:?}", addr);
-        self.last_public_addr = addr;
         if let Ok(mut g) = self.last_public_addr_shared.lock() {
             *g = addr;
         } else {
@@ -493,7 +491,6 @@ impl Engine {
             dtls,
             state: EngineState::StunIdentify,
             relay_state: RelayState::Off,
-            last_public_addr: None,
             last_public_addr_shared: Arc::new(Mutex::new(None)),
             stun: None,
             relay_finder: None,
@@ -1091,7 +1088,7 @@ impl Engine {
                 let mut all_relays = finder.list_all_relays(&my_id, true);
                 if !all_relays.iter().any(|r| r.id == my_id) {
                     let addr = self
-                        .last_public_addr
+                        .last_public_addr()
                         .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
                     all_relays.push(RelayInfo {
                         id: my_id.clone(),
@@ -1544,13 +1541,14 @@ impl Engine {
 
     /// Stop the engine and background tasks if started.
     pub fn stop(&mut self) {
-        log::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, self.last_public_addr);
+        let last_addr = self.last_public_addr();
+        log::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
         // First, clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
         self.dtls.stop().expect(&format!(
             "DTLS stop failed in Engine::stop {}:{}",
             self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
-            self.last_public_addr
+            last_addr
                 .map(|addr| addr.to_string())
                 .unwrap_or_else(|| "None".to_string())
         ));
@@ -1559,7 +1557,7 @@ impl Engine {
             mux.stop();
         }
         else {
-            log::warn!("[Engine::stop] mux is not running at stop time {:?}:{:?}", self.issuer, self.last_public_addr);
+            log::warn!("[Engine::stop] mux is not running at stop time {:?}:{:?}", self.issuer, last_addr);
         }
         if let Some(stun_arc) = &self.stun {
             log::info!("[Engine::stop] locking STUN finder");
@@ -1568,15 +1566,15 @@ impl Engine {
                 finder.stop();
             }
             else {
-                log::error!("[Engine::stop] STUN finder lock failed {:?}:{:?}", self.issuer, self.last_public_addr);
+                log::error!("[Engine::stop] STUN finder lock failed {:?}:{:?}", self.issuer, last_addr);
             }
         }
         else {
-            log::warn!("[Engine::stop] STUN finder is not running at stop time {:?}:{:?}", self.issuer, self.last_public_addr);
+            log::warn!("[Engine::stop] STUN finder is not running at stop time {:?}:{:?}", self.issuer, last_addr);
         }
         self.mux = None;
         self.stun = None;
-        log::info!("[Engine::stop] done {:?}:{:?}", self.issuer, self.last_public_addr);
+        log::info!("[Engine::stop] done {:?}:{:?}", self.issuer, last_addr);
     }
 
     pub fn state(&self) -> EngineState {
@@ -1592,7 +1590,7 @@ impl Engine {
         }
     }
     pub fn last_public_addr(&self) -> Option<SocketAddr> {
-        self.last_public_addr
+        self.last_public_addr_shared.lock().ok().and_then(|g| *g)
     }
 
     pub fn last_public_addr_shared_for_tests(&self) -> Option<SocketAddr> {
