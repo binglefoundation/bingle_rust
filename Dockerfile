@@ -21,6 +21,8 @@ RUN dnf install -y \
     iproute \
     iptables \
     iptables-nft \
+    gawk \
+    procps-ng \
   && dnf clean all \
   && update-ca-trust
 

@@ -12,8 +12,33 @@ CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid e
 cleanup() {
   local exit_code=$?
   echo "Stopping containers..."
-  docker stop bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable >/dev/null 2>&1 || true
-  docker stop bingle_webserver
+  docker stop --time 30 bingle_relay_a bingle_relay_b bingle_stun_a bingle_stun_b bingle_pingable bingle_webserver >/dev/null 2>&1 || true
+
+  if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then
+    echo "-- Peak Memory Usage --"
+    report_file() {
+      local label="$1"
+      local file="$2"
+      if [[ -f "$file" ]]; then
+        local line
+        line=$(grep "Peak memory usage" "$file" | tail -n 1) || true
+        if [[ -n "$line" ]]; then
+          local val
+          val=$(echo "$line" | sed 's/.*Peak memory usage: //; s/ \[.*//')
+          echo "$label $val"
+        else
+          echo "$label (no report found)"
+        fi
+      else
+        echo "$label (missing)"
+      fi
+    }
+
+    report_file "Relay A:" "tmp/test_out/relay_a_web.out"
+    report_file "Relay B:" "tmp/test_out/relay_b_web.out"
+    report_file "Pingable:" "tmp/test_out/pingable_web.out"
+    report_file "Webserver:" "tmp/test_out/webserver.out"
+  fi
 }
 trap cleanup EXIT
 
@@ -83,7 +108,9 @@ docker run --rm -d --name bingle_stun_b --network bingle_testnet instrumentisto/
 STUN_A_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' bingle_stun_a)
 STUN_B_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' bingle_stun_b)
 
-mkdir -p tmp tmp/sentinels
+mkdir -p tmp tmp/sentinels tmp/test_out
+# Clear previous memory reports if any
+rm -f tmp/test_out/relay_a_web.out tmp/test_out/relay_b_web.out tmp/test_out/pingable_web.out tmp/test_out/webserver.out
 cat > tmp/stunservers.txt <<EOF
 ${STUN_A_IP}:3478
 ${STUN_B_IP}:3478
@@ -101,11 +128,13 @@ scripts/build_webserver_image.sh
 echo "Starting relays..."
 docker run --platform linux/arm64 "${COMMON_ARGS[@]}" --rm -d --name bingle_relay_a --network bingle_testnet \
  -e RELAY=1 -e PASSPHRASE="$RELAY_A_PASSPHRASE" -e PORT=$RELAY_A_PORT -e HANDLE=$RELAY_A_HANDLE \
- -e SENTINEL_FILE="/sentinels/relay_a.sentinel" -v "$SENT_DIR":/sentinels "bingle:local"
+ -e SENTINEL_FILE="/sentinels/relay_a.sentinel" -e OUT_FILE="/out/relay_a_web.out" \
+ -v "$SENT_DIR":/sentinels -v "$PWD/tmp/test_out":/out "bingle:local"
 
 docker run --platform linux/arm64 "${COMMON_ARGS[@]}" --rm -d --name bingle_relay_b --network bingle_testnet \
  -e RELAY=1 -e PASSPHRASE="$RELAY_B_PASSPHRASE" -e PORT=$RELAY_B_PORT -e HANDLE=$RELAY_B_HANDLE \
- -e SENTINEL_FILE="/sentinels/relay_b.sentinel" -v "$SENT_DIR":/sentinels "bingle:local"
+ -e SENTINEL_FILE="/sentinels/relay_b.sentinel" -e OUT_FILE="/out/relay_b_web.out" \
+ -v "$SENT_DIR":/sentinels -v "$PWD/tmp/test_out":/out "bingle:local"
 
 wait_for_file "$SENT_DIR/relay_a.sentinel" 180
 wait_for_file "$SENT_DIR/relay_b.sentinel" 180
@@ -115,7 +144,8 @@ echo "Starting pingable target..."
 docker run --platform linux/arm64 "${COMMON_ARGS[@]}" --rm -d --name bingle_pingable --network bingle_testnet \
  --ip "172.18.0.100" --cap-add NET_ADMIN -e PASSPHRASE="$PINGABLE_PASSPHRASE" -e PORT=$PINGABLE_PORT \
  -e HANDLE=$PINGABLE_USER -e NAT_MODE="Direct" -e SENTINEL_FILE="/sentinels/pingable.sentinel" \
- -v "$SENT_DIR":/sentinels -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle:local"
+ -e OUT_FILE="/out/pingable_web.out" \
+ -v "$SENT_DIR":/sentinels -v "$PWD/tmp/test_out":/out -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle:local"
 
 wait_for_file "$SENT_DIR/pingable.sentinel" 180
 
@@ -123,8 +153,8 @@ wait_for_file "$SENT_DIR/pingable.sentinel" 180
 echo "Starting bingle_webserver as $TESTNET_USER..."
 docker run --platform linux/arm64 "${COMMON_ARGS[@]}" -d --rm --name bingle_webserver --network bingle_testnet \
  -p 12121:12121 -e HANDLE=$TESTNET_USER -e PASSPHRASE="$TESTNET_PASSPHRASE" \
- -e RUST_BACKTRACE=1 \
- -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle-webserver:local"
+ -e RUST_BACKTRACE=1 -e OUT_FILE="/out/webserver.out" \
+ -v "$PWD/tmp/test_out":/out -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro "bingle-webserver:local"
 
 # Wait a few seconds for webserver to initialize
 sleep 10

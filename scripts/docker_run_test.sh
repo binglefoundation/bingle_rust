@@ -95,21 +95,41 @@ expected_for_mode() {
   esac
 }
 
-# Function to report peak memory usage from cgroups
+# Global peak tracking for the current process
+PEAK_BYTES=0
+
+# Function to report peak memory usage using 'free'
 report_peak_memory() {
-  local peak_file=""
-  if [[ -f "/sys/fs/cgroup/memory.peak" ]]; then
-    peak_file="/sys/fs/cgroup/memory.peak"
-  elif [[ -f "/sys/fs/cgroup/memory/memory.max_usage_in_bytes" ]]; then
-    peak_file="/sys/fs/cgroup/memory/memory.max_usage_in_bytes"
+  local type="${1:-FINAL}"
+  if ! command -v free >/dev/null 2>&1; then
+    echo "[runner][WARN] 'free' command not found; skipping memory measurement." | tee -a "$OUT_FILE"
+    return 0
   fi
 
-  if [[ -n "$peak_file" ]]; then
-    local bytes
-    bytes=$(cat "$peak_file")
+  local current_bytes
+  current_bytes=$(free -b | awk '/^Mem:/ {print $3}')
+  
+  if [[ -z "$current_bytes" ]]; then
+    echo "[runner][WARN] Could not extract memory usage from 'free'." | tee -a "$OUT_FILE"
+    return 0
+  fi
+
+  local is_new_peak=0
+  if (( current_bytes > PEAK_BYTES )); then
+    PEAK_BYTES=$current_bytes
+    is_new_peak=1
+  fi
+
+  if [[ "$type" == "FINAL" ]] || [[ "$is_new_peak" == "1" ]]; then
     local mb
-    mb=$(awk "BEGIN {printf \"%.2f\", $bytes / 1024 / 1024}" 2>/dev/null || echo "unknown")
-    echo "[runner] Peak memory usage (container life): ${mb} MB (${bytes} bytes)" | tee -a "$OUT_FILE"
+    mb=$(gawk "BEGIN {printf \"%.2f\", $PEAK_BYTES / 1024 / 1024}" 2>/dev/null || awk "BEGIN {printf \"%.2f\", $PEAK_BYTES / 1024 / 1024}" 2>/dev/null || echo "unknown")
+    local msg="[runner] Peak memory usage (container life): ${mb} MB (${PEAK_BYTES} bytes) [from free] [${type}]"
+    echo "$msg"
+    if [[ -n "${OUT_FILE:-}" ]]; then
+      # Ensure parent directory exists for OUT_FILE
+      mkdir -p "$(dirname "$OUT_FILE")"
+      echo "$msg" >> "$OUT_FILE"
+    fi
   fi
 }
 
@@ -158,6 +178,21 @@ if [[ -z "${TESTNET_USER:-}" || -z "${TESTNET_PASSPHRASE:-}" ]]; then
   exit 3
 fi
 
+# Periodic memory reporting in case of hard kill
+REPORTER_PID=""
+if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then
+  (
+    while true; do
+      sleep 10
+      report_peak_memory "PERIODIC"
+    done
+  ) &
+  REPORTER_PID=$!
+  
+  # Ensure we report memory even if the script is interrupted
+  trap 'echo "[runner] Caught signal, stopping..."; if [[ -n "$REPORTER_PID" ]]; then kill "$REPORTER_PID" 2>/dev/null || true; fi; report_peak_memory "FINAL"; exit 1' SIGTERM SIGINT
+fi
+
 # Force-enable the testnet integration test execution
 export BINGLE_RUN_TESTNET=1
 export RUST_BACKTRACE=1
@@ -194,7 +229,10 @@ if [[ "$NAT_MODE" == "All" || "$NAT_MODE" == "all" ]]; then
       echo "[runner][summary] $m: FAILED" | tee -a "$OUT_FILE"
     fi
   done
-  report_peak_memory
+  if [[ -n "$REPORTER_PID" ]]; then
+    kill "$REPORTER_PID" 2>/dev/null || true
+  fi
+  report_peak_memory "FINAL"
   exit $overall_rc
 fi
 
@@ -206,9 +244,15 @@ fi
 
 # Run once in the requested mode
 if run_one_mode "$NAT_MODE"; then
-  report_peak_memory
+  if [[ -n "$REPORTER_PID" ]]; then
+    kill "$REPORTER_PID" 2>/dev/null || true
+  fi
+  report_peak_memory "FINAL"
   exit 0
 else
-  report_peak_memory
+  if [[ -n "$REPORTER_PID" ]]; then
+    kill "$REPORTER_PID" 2>/dev/null || true
+  fi
+  report_peak_memory "FINAL"
   exit 1
 fi

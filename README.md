@@ -159,7 +159,7 @@ The `cli`, `webserver`, and `tests` Docker containers can report their own peak 
 docker run --rm -e MEASURE_MEMORY=1 bingle:local
 ```
 
-For the test suite, this is useful to see how much memory each test stage consumes.
+For the test suite scripts (`scripts/run_testnet_tests.sh` and `scripts/run_webserver_testnet.sh`), setting `MEASURE_MEMORY=1` will propagate this setting to all started containers (relays, pingable, webserver, and test runners) and consolidate their peak memory reports into a single summary at the end of the run.
 
 #### 2) Host-Side Monitoring
 A standalone script is provided to monitor any running container from the host by polling `docker stats`. This is useful for long-running containers or those you don't want to modify:
