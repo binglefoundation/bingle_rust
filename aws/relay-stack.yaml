@@ -1,0 +1,349 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bingle Relay Server ECS Cluster and Service'
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.nano
+    Description: 'EC2 instance type for the ECS cluster'
+  RelayPort:
+    Type: String
+    Default: '12121'
+    Description: 'UDP port for the relay server'
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+  SubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+  ImageUri:
+    Type: String
+    Description: 'Full URI of the Docker image in ECR'
+  Handle:
+    Type: String
+    Description: 'Relay handle'
+  Passphrase:
+    Type: String
+    NoEcho: true
+    Description: 'Relay passphrase'
+  NatMode:
+    Type: String
+    Default: 'Direct'
+    AllowedValues: [ 'Direct', 'Full', 'Restricted' ]
+  NodeFile:
+    Type: String
+    Default: '/app/nodely_staging_testnet_node.json'
+    Description: 'Path to node configuration file'
+  CostTag:
+    Type: String
+    Default: 'bingle_dev'
+    Description: 'Cost allocation tag'
+
+  LatestECSAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ecs/optimized-ami/amazon-linux-2023/arm64/recommended/image_id'
+
+Resources:
+  # Infrastructure
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: BingleRelayVPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: BingleRelayIGW
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref SubnetCIDR
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: BingleRelaySubnet
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: BingleRelayRT
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+
+  # Security Groups
+  RelaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Bingle Relay
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: !Ref RelayPort
+          ToPort: !Ref RelayPort
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Restricted access would be better in production
+      Tags:
+        - Key: Name
+          Value: BingleRelaySG
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AWS::StackName}-Cluster"
+      Tags:
+        - Key: CostCenter
+          Value: !Ref CostTag
+
+  # IAM Roles
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ECSPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTasks
+                  - ecs:ListTasks
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                Resource: "*"
+
+  ECSInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  ECSInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ECSInstanceRole
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: GetSecretsAndParams
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - ssm:GetParameters
+                Resource:
+                  - !Ref RelayPassphraseSecret
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/bingle/relay/*'
+
+  # EC2 Infrastructure (ASG)
+  ECSLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestECSAMI
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt ECSInstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref RelaySecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref Subnet
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ECSLaunchTemplate
+        Version: !GetAtt ECSLaunchTemplate.LatestVersionNumber
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+
+  # Secrets and Parameters
+  RelayPassphraseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/passphrase"
+      SecretString: !Ref Passphrase
+
+  RelayHandleParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/handle"
+      Type: String
+      Value: !Ref Handle
+
+  RelayPortParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/port"
+      Type: String
+      Value: !Ref RelayPort
+
+  RelayNatModeParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/nat_mode"
+      Type: String
+      Value: !Ref NatMode
+
+  RelayNodeFileParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/node_file"
+      Type: String
+      Value: !Ref NodeFile
+
+  # ECS Task Definition and Service
+  RelayTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: bingle-relay
+      NetworkMode: host
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: relay
+          Image: !Ref ImageUri
+          Memory: 480 # Slightly less than 512MiB to allow for OS overhead on t4g.nano
+          Essential: true
+          Environment:
+            - Name: RELAY
+              Value: '1'
+            - Name: AWS
+              Value: '1'
+          Secrets:
+            - Name: PASSPHRASE
+              ValueFrom: !Ref RelayPassphraseSecret
+            - Name: HANDLE
+              ValueFrom: !Ref RelayHandleParam
+            - Name: PORT
+              ValueFrom: !Ref RelayPortParam
+            - Name: NAT_MODE
+              ValueFrom: !Ref RelayNatModeParam
+            - Name: NODE_FILE
+              ValueFrom: !Ref RelayNodeFileParam
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RelayLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: relay
+
+  RelayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/bingle/relay/${AWS::StackName}"
+      RetentionInDays: 7
+
+  RelayService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref RelayTaskDefinition
+      DesiredCount: 1
+      LaunchType: EC2
+
+  RelayDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${AWS::StackName}-Dashboard"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ECS", "CPUUtilization", "ClusterName", "${ECSCluster}", "ServiceName", "${RelayService.Name}" ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "CPU Utilization"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ECS", "MemoryUtilization", "ClusterName", "${ECSCluster}", "ServiceName", "${RelayService.Name}" ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Memory Utilization"
+              }
+            }
+          ]
+        }

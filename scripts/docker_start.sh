@@ -20,7 +20,7 @@ set -euo pipefail
 : "${HANDLE:?Environment variable HANDLE must be set}"
 
 STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
-NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
+NODE_FILE=${NODE_FILE:-/app/nodely_staging_testnet_node.json}
 SENTINEL_FILE=${SENTINEL_FILE:-}
 NAT_MODE=${NAT_MODE:-Direct}
 
@@ -81,8 +81,17 @@ configure_nat() {
 # Discover external IP if not provided or blank (only when RELAY is set and STUN_ONLY is not set)
 if [[ -n "${RELAY:-}" ]] && [[ -z "${EXTERNAL_IP:-}" ]] && [[ -z "${STUN_ONLY:-}" ]]; then
   echo "RELAY mode enabled but EXTERNAL_IP not provided; attempting autodiscovery..."
+
+  if [[ "${AWS:-0}" == "1" ]]; then
+    echo "AWS mode enabled; fetching public IP from checkip.amazonaws.com..."
+    EXTERNAL_IP=$(curl -s http://checkip.amazonaws.com) || true
+    if [[ -n "${EXTERNAL_IP}" ]]; then
+      echo "AWS autodetected EXTERNAL_IP=${EXTERNAL_IP}"
+    fi
+  fi
+
   # Preferred: use routing lookup to a public IP to find the egress interface IP
-  if command -v ip >/dev/null 2>&1; then
+  if [[ -z "${EXTERNAL_IP:-}" ]] && command -v ip >/dev/null 2>&1; then
     EXTERNAL_IP=$(ip -o -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}') || true
     if [[ -z "${EXTERNAL_IP}" ]]; then
       # Fallback: first global IPv4 address

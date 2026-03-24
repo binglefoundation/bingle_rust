@@ -171,6 +171,74 @@ bash scripts/measure_memory.sh bingle_webserver 0.5
 
 The script will track and display the highest memory usage observed until the container stops or you press Ctrl+C.
 
+### 8) AWS Deployment
+
+You can deploy the Bingle Relay server to AWS using the provided CloudFormation templates and deployment script.
+
+#### Prerequisites
+- AWS CLI configured with appropriate permissions.
+- Docker installed and running.
+
+#### Deploying a Relay
+To deploy a relay server to AWS ECS (using an EC2 cluster with Graviton `t4g.nano` by default):
+
+```bash
+bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase"
+```
+
+#### Express Mode (Faster Deployment)
+If you want a faster and simpler deployment, you can use the `--express` flag. This uses **AWS Fargate** instead of EC2, which skips the time-consuming process of provisioning EC2 instances and waiting for them to join the cluster.
+
+```bash
+bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase" --express
+```
+
+**Why use Express Mode?**
+- **Speed**: Deploys in minutes rather than 10-15 minutes.
+- **Simplicity**: Fewer AWS resources to manage (no ASGs, Launch Templates, or Instance Profiles).
+- **Cost**: For low-traffic relays, Fargate is often more cost-effective as you only pay for the exact CPU/Memory used by the container.
+
+Options:
+- `--express`: Use Fargate-based deployment (recommended for rapid setup).
+- `--instance-type`: EC2 instance type (default: `t4g.nano`, only used if NOT in express mode).
+- `--port`: UDP port to expose (default: `12121`).
+- `--stack-name`: CloudFormation stack name.
+- `--region`: AWS region.
+
+The script will:
+1. Build the relay Docker image for the `linux/arm64` platform.
+2. Create an ECR repository and push the image.
+3. Deploy a CloudFormation stack containing a VPC, ECS Cluster, IAM roles, Secrets Manager secret, SSM parameters, and the ECS Service.
+4. Create a CloudWatch Dashboard for monitoring CPU and Memory.
+
+#### Redeploying after a change
+If you have made changes to the code and want to redeploy the relay:
+
+1. **Full redeploy** (re-runs CloudFormation):
+   ```bash
+   bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase"
+   ```
+   By default, the script uses the build number from `.build_number` as the image tag, which ensures CloudFormation detects a change in the `ImageUri` and updates the ECS service.
+
+2. **Quick redeploy** (updates image and forces ECS restart, skipping CloudFormation):
+   ```bash
+   bash aws/deploy_relay.sh --handle "my-relay" --passphrase "my-secret-passphrase" --redeploy-only
+   ```
+   This is faster if you only changed the code and don't need to update any AWS infrastructure.
+
+#### Shutting Down and Deleting Resources
+To shut down the relay and delete all AWS resources created by the CloudFormation stack:
+```bash
+bash aws/destroy_relay.sh --stack-name "bingle-relay"
+```
+Options:
+- `--stack-name`: The name of the stack to delete (default: `bingle-relay`).
+- `--region`: AWS region.
+- `--delete-repo`: Also delete the ECR repository (useful for a complete cleanup).
+
+#### Monitoring
+Logs are available in CloudWatch Logs under the group `/bingle/relay`. A dashboard named `<stack-name>-Dashboard` is also created in CloudWatch.
+
 ## Troubleshooting
 - Missing framework error: Ensure you ran `bash scripts/build_ios_xcframework.sh` and that `ios/RustCommsFFI.xcframework` exists.
 - Simulator not found: Use `xcrun simctl list devices 'iOS'` to pick a valid device name and optionally boot it using `xcrun simctl boot "iPhone 15"`.

@@ -1,0 +1,221 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bingle Relay Server - Express Mode (Fargate)'
+
+Parameters:
+  RelayPort:
+    Type: String
+    Default: '12121'
+  ImageUri:
+    Type: String
+  Handle:
+    Type: String
+  Passphrase:
+    Type: String
+    NoEcho: true
+  NatMode:
+    Type: String
+    Default: 'Direct'
+  NodeFile:
+    Type: String
+    Default: '/app/nodely_staging_testnet_node.json'
+  CostTag:
+    Type: String
+    Default: 'bingle_dev'
+
+Resources:
+  # Simple VPC setup (using a single public subnet for 'express')
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+
+  # Security Group
+  RelaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Bingle Relay (Express)
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: !Ref RelayPort
+          ToPort: !Ref RelayPort
+          CidrIp: 0.0.0.0/0
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AWS::StackName}-Cluster"
+      Tags:
+        - Key: CostCenter
+          Value: !Ref CostTag
+
+  # IAM Roles
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ECSPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTasks
+                  - ecs:ListTasks
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                Resource: "*"
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: GetSecretsAndParams
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - ssm:GetParameters
+                Resource:
+                  - !Ref RelayPassphraseSecret
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/bingle/relay/*'
+
+  # Secrets and Parameters
+  RelayPassphraseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/passphrase"
+      SecretString: !Ref Passphrase
+
+  RelayHandleParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/bingle/relay/${AWS::StackName}/handle"
+      Type: String
+      Value: !Ref Handle
+
+  # Task Definition (Fargate)
+  RelayTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-Task"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: relay
+          Image: !Ref ImageUri
+          Essential: true
+          Environment:
+            - Name: RELAY
+              Value: '1'
+            - Name: AWS
+              Value: '1'
+            - Name: PORT
+              Value: !Ref RelayPort
+            - Name: NAT_MODE
+              Value: !Ref NatMode
+            - Name: NODE_FILE
+              Value: !Ref NodeFile
+          Secrets:
+            - Name: PASSPHRASE
+              ValueFrom: !Ref RelayPassphraseSecret
+            - Name: HANDLE
+              ValueFrom: !Ref RelayHandleParam
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RelayLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: relay
+
+  RelayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/bingle/relay/${AWS::StackName}"
+      RetentionInDays: 7
+
+  RelayService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref RelayTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref Subnet
+          SecurityGroups:
+            - !Ref RelaySecurityGroup
+
+Outputs:
+  ClusterName:
+    Value: !Ref ECSCluster
+  ServiceName:
+    Value: !GetAtt RelayService.Name

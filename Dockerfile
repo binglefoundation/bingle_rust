@@ -32,6 +32,7 @@ WORKDIR /app
 # Copy common runtime assets
 COPY stunservers.txt /app/stunservers.txt
 COPY nodely_testnet_node.json /app/nodely_testnet_node.json
+COPY nodely_staging_testnet_node.json /app/nodely_staging_testnet_node.json
 
 # Create output directory for test logs (mounted at runtime)
 RUN mkdir -p /out /sentinels
@@ -58,7 +59,7 @@ ENV PASSPHRASE="" \
     EXTERNAL_IP="" \
     PORT="" \
     STUN_FILE="/app/stunservers.txt" \
-    NODE_FILE="/app/nodely_testnet_node.json"
+    NODE_FILE="/app/nodely_staging_testnet_node.json"
 
 # ENTRYPOINT to the startup script which launches /app/bingle_cli run ...
 ENTRYPOINT ["/app/docker_start.sh"]
@@ -84,7 +85,7 @@ ENV PORT=12121 \
     PASSPHRASE="" \
     HANDLE="" \
     STUN_FILE="/app/stunservers.txt" \
-    NODE_FILE="/app/nodely_testnet_node.json"
+    NODE_FILE="/app/nodely_staging_testnet_node.json"
 
 # ENTRYPOINT to the startup script which launches /app/bingle_webserver ...
 ENTRYPOINT ["/app/docker_webserver_start.sh"]
