@@ -26,7 +26,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&relay_opts)).expect("relay start");
 
@@ -70,7 +70,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start");
 

@@ -59,7 +59,7 @@ pub fn engine_start_with_static_ip_localhost_ok() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     let res = engine.start(&opts);
     // Engine may fail to start DTLS due to lack of certificates; however, our DTLS implementation only

@@ -134,6 +134,7 @@ where
     let mut node_app_id: Option<u64> = None;
     let mut node_asset_id: Option<u64> = None;
     let mut log_level: Option<String> = None;
+    let mut handle_cache_expiry: Option<std::time::Duration> = None;
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -183,6 +184,11 @@ where
                 let v = it.next().ok_or("--asset-id requires a value")?;
                 cli_asset_id = Some(v.parse::<u64>().map_err(|e| format!("Invalid --asset-id '{}': {}", v, e))?);
             }
+            "--handle-cache-expiry-secs" => {
+                let v = it.next().ok_or("--handle-cache-expiry-secs requires a <seconds> value")?;
+                let secs = v.parse::<u64>().map_err(|e| format!("Invalid --handle-cache-expiry-secs '{}': {}", v, e))?;
+                handle_cache_expiry = Some(std::time::Duration::from_secs(secs));
+            }
             "--debug" => {
                 // Accept a --debug flag. The binary may use this to enable verbose output.
                 // Intentionally no-op here to keep StartOptions stable for existing tests.
@@ -220,6 +226,7 @@ where
         app_id: app_id_opt,
         asset_id: asset_id_opt,
         log_level,
+        handle_cache_expiry,
     })
 }
 

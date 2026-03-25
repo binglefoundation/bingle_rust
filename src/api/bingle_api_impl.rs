@@ -1,7 +1,7 @@
 use data_encoding::BASE32_NOPAD;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use log::{info, warn};
 use serde_json::{Map as JsonMap, Value as JsonValue};
@@ -35,6 +35,7 @@ pub struct BingleApiImpl {
     // Weak reference to ourselves for passing to components
     this: crate::api::bingle_api::BingleApiBothType,
     handle_lookup_mock: Mutex<Option<Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>>>,
+    handle_cache: Mutex<std::collections::HashMap<Handle, (UserId, Instant)>>,
 }
 
 impl BingleApiImpl {
@@ -54,12 +55,21 @@ impl BingleApiImpl {
                 router: None,
                 this: me_both,
                 handle_lookup_mock: Mutex::new(None),
+                handle_cache: Mutex::new(std::collections::HashMap::new()),
             }
         })
     }
 }
 
 impl BingleApiImpl {
+    /// Apply a closure to the Engine instance (test-only).
+    pub fn with_engine_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Engine) -> R,
+    {
+        self.engine.access_unsafe_for_tests(f)
+    }
+
     /// Test-oriented constructor to inject a custom DTLS implementation.
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Self> {
         log::info!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
@@ -77,6 +87,7 @@ impl BingleApiImpl {
                 router: None,
                 this: me_both,
                 handle_lookup_mock: Mutex::new(None),
+                handle_cache: Mutex::new(std::collections::HashMap::new()),
             }
         })
     }
@@ -371,10 +382,33 @@ impl BingleApi for BingleApiImpl {
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
         log::info!("[BingleApiImpl::handle_lookup][enter] handle={}", handle);
 
+        let expiry_duration = self.started_options.handle_cache_expiry.unwrap_or(Duration::from_secs(600)); // Default 10 minutes
+
+        // Check cache
+        if let Ok(mut cache) = self.handle_cache.lock() {
+            if let Some((user_id, timestamp)) = cache.get(handle) {
+                if timestamp.elapsed() < expiry_duration {
+                    log::info!("[BingleApiImpl::handle_lookup] cache hit for handle {}: {}", handle, user_id);
+                    return Ok(Some(user_id.clone()));
+                } else {
+                    log::info!("[BingleApiImpl::handle_lookup] cache expired for handle {}", handle);
+                    cache.remove(handle);
+                }
+            }
+        }
+
         {
             let mock = self.handle_lookup_mock.lock().unwrap();
             if let Some(m) = mock.as_ref() {
-                return m(handle);
+                let res = m(handle);
+                // Update cache on success from mock too
+                if let Ok(Some(ref user_id)) = res {
+                    if let Ok(mut cache) = self.handle_cache.lock() {
+                        cache.insert(handle.clone(), (user_id.clone(), Instant::now()));
+                        log::info!("[BingleApiImpl::handle_lookup] cache updated from mock for handle {}: {}", handle, user_id);
+                    }
+                }
+                return res;
             }
         }
 
@@ -386,6 +420,15 @@ impl BingleApi for BingleApiImpl {
         let ops = AlgoOps::new(self.started_options.algo_passphrase.clone(), addr, Some(config));
         let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
         let res = ab.handle_lookup(handle).map_err(|e| e.to_string());
+        
+        // Update cache on success
+        if let Ok(Some(ref user_id)) = res {
+            if let Ok(mut cache) = self.handle_cache.lock() {
+                cache.insert(handle.clone(), (user_id.clone(), Instant::now()));
+                log::info!("[BingleApiImpl::handle_lookup] cache updated for handle {}: {}", handle, user_id);
+            }
+        }
+
         log::info!("[BingleApiImpl::handle_lookup][exit] return={:?}", res);
         res
     }

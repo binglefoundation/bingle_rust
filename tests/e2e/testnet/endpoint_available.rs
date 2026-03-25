@@ -76,7 +76,7 @@ pub fn testnet_user_reaches_endpoint_available() {
         algo_network: network_name.clone(),
         app_id: Some(app_id),
         asset_id: node_asset_id,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
 
     // Start the user and wait for EndpointAvailable

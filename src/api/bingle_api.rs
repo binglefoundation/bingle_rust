@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::net::SocketAddr;
 
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -150,6 +151,9 @@ pub struct StartOptions {
     /// Optional log level override (trace|debug|info|warn|error). If None, defaults to debug on debug builds and warn on release.
     #[serde(default)]
     pub log_level: Option<String>,
+    /// Optional cache expiry for handle => id lookups.
+    #[serde(default)]
+    pub handle_cache_expiry: Option<Duration>,
 }
 
 impl Default for StartOptions {
@@ -165,6 +169,7 @@ impl Default for StartOptions {
             app_id: None,
             asset_id: None,
             log_level: None,
+            handle_cache_expiry: None,
         }
     }
 }

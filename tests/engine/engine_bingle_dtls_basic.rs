@@ -50,7 +50,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -62,7 +62,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
 
     // Start both nodes

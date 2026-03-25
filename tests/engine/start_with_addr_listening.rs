@@ -97,7 +97,7 @@ pub fn start_with_addr_notifies_listening_true() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
 
     // Build Engine unbound and inject DTLS + Router with MockApi

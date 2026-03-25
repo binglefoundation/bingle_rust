@@ -18,7 +18,7 @@ pub fn bingle_api_start_propagates_engine_error() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
 
     let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
