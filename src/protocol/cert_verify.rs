@@ -1,7 +1,7 @@
 use crate::dtls::dtls_trait::{HandlePeerCertificate, Result};
 use crate::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
-pub fn dump_ca_public_key_debug(ca_pub: &openssl::pkey::PKey<openssl::pkey::Public>) {
+pub fn dump_ca_public_key_info(ca_pub: &openssl::pkey::PKey<openssl::pkey::Public>) {
     use openssl::hash::MessageDigest;
     // Dump PEM of the public key and a SHA-256 fingerprint over its DER (SPKI)
     let ca_pub_pem: String = ca_pub
@@ -102,9 +102,9 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             }
         };
 
-        // Human-readable dumps of certificates for diagnostics
-        dump_cert_debug("peer", &cert);
-        dump_cert_debug("ca", &ca);
+        // Dumps of certificates for diagnostics (emit PEM)
+        dump_cert_info("peer", &cert, true);
+        dump_cert_info("ca", &ca, true);
 
         // Extract CA issuer/subject CN (self-signed)
         let ca_cn = match ca
@@ -136,7 +136,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         }
 
         // Human-readable dump of the CA public key for diagnostics
-        dump_ca_public_key_debug(&ca_pub);
+        dump_ca_public_key_info(&ca_pub);
 
         if !ca.verify(&ca_pub).unwrap_or(false) {
             return log_fail("CA self-signature verification failed".to_string());
@@ -159,6 +159,8 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             return log_fail(format!("end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA));
         }
         if !cert.verify(&ca_pub).unwrap_or(false) {
+            log::info!("[cert_verify][fail] verification failed with cert/PK/ca cert");
+
             return log_fail("end-entity certificate signature verification failed".to_string());
         }
 
@@ -213,12 +215,9 @@ pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
 }
 
 
-pub fn dump_cert_debug(tag: &str, cert: &openssl::x509::X509) {
+pub fn dump_cert_info(tag: &str, cert: &openssl::x509::X509, use_pem: bool) {
     use openssl::hash::MessageDigest;
-    let cert_text: String = cert
-        .to_text()
-        .map(|v| String::from_utf8_lossy(&v).into_owned())
-        .unwrap_or_else(|_| "<x509 to_text failed>".to_string());
+
     let cert_fp = cert
         .digest(MessageDigest::sha256())
         .ok()
@@ -229,8 +228,22 @@ pub fn dump_cert_debug(tag: &str, cert: &openssl::x509::X509) {
         "[cert_verify][dump][{}] sha256={} len={} bytes",
         tag, cert_fp, der_len
     );
-    log::debug!(
-        "[cert_verify][dump][{}] BEGIN CERT\n{}\n[cert_verify][dump][{}] END CERT",
-        tag, cert_text, tag
-    );
+
+    if use_pem {
+        let pem: String = cert
+            .to_pem()
+            .map(|v| String::from_utf8_lossy(&v).into_owned())
+            .unwrap_or_else(|_| "<x509 to_pem failed>".to_string());
+        // Already includes proper -----BEGIN/END CERTIFICATE----- markers
+        log::info!("[cert_verify][dump][{}] PEM\n{}", tag, pem);
+    } else {
+        let cert_text: String = cert
+            .to_text()
+            .map(|v| String::from_utf8_lossy(&v).into_owned())
+            .unwrap_or_else(|_| "<x509 to_text failed>".to_string());
+        log::info!(
+            "[cert_verify][dump][{}] BEGIN CERT\n{}\n[cert_verify][dump][{}] END CERT",
+            tag, cert_text, tag
+        );
+    }
 }

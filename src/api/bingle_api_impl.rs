@@ -273,7 +273,7 @@ impl BingleApi for BingleApiImpl {
             }
 
             // Generate certificates: CA = Ed25519 self-signed using Algorand key; server/client = RSA-2048 signed by CA (SHA-512).
-            match generate_pki_from_ops(&ops, &issuer) {
+            match generate_pki_from_ops(&ops) {
                 Ok((ca_pem, server_cert_pem, server_key_pem, client_cert_pem, client_key_pem)) => {
                     unsafe {
                         let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;

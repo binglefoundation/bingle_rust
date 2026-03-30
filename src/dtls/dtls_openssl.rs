@@ -184,8 +184,17 @@ pub mod openssl_impl {
                                                     if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
                                                     m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
                                                 }
-                                                _ => {
-                                                    log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] validation failed (empty issuer or error)", log_tag, from);
+                                                res => {
+                                                    let err_msg = match res {
+                                                        Err(e) => e,
+                                                        Ok(_) => "empty issuer".to_string(),
+                                                    };
+                                                    log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] validation failed: {}", log_tag, from, err_msg);
+                                                    let dump = match openssl::x509::X509::from_pem(&cert_pem) {
+                                                        Ok(x) => String::from_utf8_lossy(&x.to_text().unwrap_or_default()).to_string(),
+                                                        Err(_) => String::from_utf8_lossy(&cert_pem).to_string(),
+                                                    };
+                                                    log::info!("[DtlsOpenSsl{}][peer_cert_handler][first-data][{}] certificate dump:\n{}", log_tag, from, dump);
                                                     break;
                                                 }
                                             }
@@ -311,6 +320,7 @@ pub mod openssl_impl {
             );
             // Only evaluate the leaf certificate (depth 0)
             if x509_ctx.error_depth() != 0 {
+                log::debug!("[DtlsOpenSsl][verify][client] callback: Skipping non-leaf certificate verification at depth {}", x509_ctx.error_depth());
                 return true;
             }
             // Determine peer CA certificate to pass to handler:
@@ -330,7 +340,8 @@ pub mod openssl_impl {
                 log::info!("[DtlsOpenSsl][verify][client] no peer CA certificate in presented chain; rejecting per policy");
                 return false;
             }
-            if let Some(cert) = x509_ctx.current_cert() {
+
+            let cert_verify_status = if let Some(cert) = x509_ctx.current_cert() {
                 match cert.to_pem() {
                     Ok(pem) => {
                         let ca_vec = peer_ca_pem.unwrap();
@@ -338,7 +349,7 @@ pub mod openssl_impl {
                             Ok(_issuer) => true,
                             Err(e) => {
                                 log::info!("[DtlsOpenSsl][verify][client] handler rejected server cert: {}", e);
-                                false
+                                return false
                             }
                         }
                     }
@@ -351,7 +362,10 @@ pub mod openssl_impl {
                 // No certificate presented by server; reject.
                 log::info!("[DtlsOpenSsl][verify][client] no server certificate presented");
                 false
-            }
+            };
+
+            log::info!("[DtlsOpenSsl][verify][client] callback: Finished processing server certificate verification, result {}", cert_verify_status);
+            cert_verify_status
         });
     }
 
@@ -819,7 +833,6 @@ pub mod openssl_impl {
             peers: PeerStates,
             handle_message: Option<HandleMessage>,
             peer_cert_handler: Option<HandlePeerCertificate>,
-            ca_bytes: Arc<Vec<u8>>,
             from: &NetworkEndpoint,
             data: &[u8],
         ) {
@@ -903,7 +916,6 @@ pub mod openssl_impl {
                 let peers2 = peers.clone();
                 let handle_message2 = handle_message.clone();
                 let from2 = from.clone();
-                let ca_bytes_for_thread = ca_bytes.clone();
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc.clone(),
@@ -911,7 +923,7 @@ pub mod openssl_impl {
                         peers2.clone(),
                         handle_message2.clone(),
                         peer_cert_handler,
-                        CaMode::UseLocal(ca_bytes_for_thread.clone()),
+                        CaMode::PeerChain,
                         true,   // support_cert_announce (server)
                         true,   // trim_issuer_suffix (record ids)
                         "::accept",
@@ -937,7 +949,6 @@ pub mod openssl_impl {
             let peers: PeerStates = self.peer_states.clone();
             let handle_message = self.handle_message.clone();
             let peer_cert_handler = self.handle_peer_certificate;
-            let ca_bytes = std::sync::Arc::new(self.ca_cert.clone().unwrap_or_default());
             // Connecting peer suppression now tracked per-peer in PeerState.is_connecting_peer
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
@@ -948,7 +959,6 @@ pub mod openssl_impl {
                     peers.clone(),
                     handle_message.clone(),
                     peer_cert_handler,
-                    ca_bytes.clone(),
                     from,
                     data,
                 );

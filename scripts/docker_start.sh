@@ -192,6 +192,8 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
   CMD+=("${EXTRA_ARR[@]}")
 fi
 
+openssl --version
+
 echo "Starting: ${CMD[*]}"
 
 if [[ "${MEASURE_MEMORY:-0}" == "1" ]]; then

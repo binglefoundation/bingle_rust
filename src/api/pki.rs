@@ -1,14 +1,11 @@
 use crate::blockchain::algo_ops::AlgoOps;
+use crate::protocol::ISSUER_SUFFIX;
 
 /// Generate a PKI set from AlgoOps secret:
 /// - CA certificate (PEM) signed by Ed25519 key derived from AlgoOps private key
 /// - Server certificate + private key (PEM), RSA 2048 signed by CA
 /// - Client certificate + private key (PEM), RSA 2048 signed by CA
-/// The issuer_cn will be truncated to 64 characters for end-entity CNs.
-pub fn generate_pki_from_ops(
-    ops: &AlgoOps,
-    issuer_cn: &str,
-) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
+pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
     use openssl::asn1::Asn1Time;
     use openssl::bn::BigNum;
     use openssl::hash::MessageDigest;
@@ -16,6 +13,8 @@ pub fn generate_pki_from_ops(
     use openssl::pkey::{Id, PKey};
     use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectKeyIdentifier};
     use openssl::x509::{X509NameBuilder, X509};
+
+    log::info!("[generate_pki_from_ops] Generated {:?} secret {:?}", ops.address, ops.passphrase);
 
     // 1) Build CA PKey from Algorand private key (ed25519 32 bytes)
     let sk = ops
@@ -33,12 +32,12 @@ pub fn generate_pki_from_ops(
         .append_entry_by_nid(Nid::COMMONNAME, crate::protocol::VIRTUAL_CA)
         .map_err(|e| format!("set CN: {}", e))?;
     // Add OrganizationName (O) as the base32 Algorand address from AlgoOps, if available
-    let ca_org = ops
+    let issuer_address = ops
         .address
         .as_ref()
         .ok_or_else(|| "AlgoOps has no address; cannot set CA ORGANIZATIONNAME".to_string())?;
     name_builder
-        .append_entry_by_nid(Nid::ORGANIZATIONNAME, ca_org)
+        .append_entry_by_nid(Nid::ORGANIZATIONNAME, issuer_address)
         .map_err(|e| format!("set O: {}", e))?;
     let ca_name = name_builder.build();
 
@@ -165,9 +164,9 @@ pub fn generate_pki_from_ops(
     }
 
     let issuer_name = ca_cert.subject_name();
-    let ee_cn = if issuer_cn.len() > 64 { &issuer_cn[..64] } else { issuer_cn };
-    let (server_cert, server_pkey) = make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn)?;
-    let (client_cert, client_pkey) = make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn)?;
+    let ee_cn = format!("{}{}", if issuer_address.len() > 64 { &issuer_address[..64] } else { issuer_address }, ISSUER_SUFFIX);
+    let (server_cert, server_pkey) = make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn.as_str())?;
+    let (client_cert, client_pkey) = make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn.as_str())?;
 
     // PEM outputs
     let server_cert_pem = server_cert
