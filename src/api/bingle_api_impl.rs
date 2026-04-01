@@ -95,10 +95,8 @@ impl BingleApiImpl {
     /// Test helpers to access the Engine from integration tests (not part of stable API).
     pub fn engine_state_for_tests(&self) -> Option<EngineState> {
         log::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
-        #[allow(unused)] {  }
         let s = Some(self.engine.access(|e| e.state()));
         log::trace!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
-        #[allow(unused)] {  }
         s
     }
     pub fn engine_nat_type_for_tests(&self) -> Option<crate::engine::NatType> {
@@ -109,18 +107,14 @@ impl BingleApiImpl {
     }
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
         log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
-        #[allow(unused)] {  }
         let a = self.engine.access(|e| e.last_public_addr());
         log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a);
-        #[allow(unused)] {  }
         a
     }
     pub fn engine_local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
         log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
-        #[allow(unused)] {  }
         let a = self.engine.access(|e| e.local_bind_addr_for_tests());
         log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
-        #[allow(unused)] {  }
         a
     }
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
@@ -202,7 +196,6 @@ impl Drop for BingleApiImpl {
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
         log::info!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
-        #[allow(unused)] {  }
     }
     fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
         log::info!("[BingleApiImpl::list_all_relays] include_self={}", include_self);
@@ -256,7 +249,6 @@ impl BingleApi for BingleApiImpl {
         //     }));
         // });
         info!("[BingleApiImpl::start][enter] options={:?}", options);
-        #[allow(unused)] {  }
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
         self.started_options = options.clone();
         self.ensure_dtls();
@@ -369,10 +361,8 @@ impl BingleApi for BingleApiImpl {
 
     fn network_change(&mut self) {
         log::info!("[BingleApiImpl::network_change][enter]");
-        #[allow(unused)] {  }
         // Placeholder: in a full implementation, we would rescan STUN/static IP and update listeners.
         log::info!("[BingleApiImpl::network_change][exit]");
-        #[allow(unused)] {  }
     }
 
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
@@ -476,7 +466,6 @@ impl BingleApi for BingleApiImpl {
         progress: Option<Arc<ProgressCallback>>,
     ) -> bool {
         log::info!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
-        #[allow(unused)] {  }
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
         // Validate user_id is an Algorand address (base32 without padding) that decodes to 36 bytes
         let user_id_valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {

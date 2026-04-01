@@ -42,7 +42,6 @@ impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
         log::info!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
-        #[allow(unused)] {  }
         Self { ops, app_id, asset_id }
     }
 

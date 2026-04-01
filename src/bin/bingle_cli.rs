@@ -455,7 +455,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
                 times.sort();
                 let p50 = times.get((times.len().saturating_sub(1))/2).copied().unwrap_or(0);
                 let p95 = if !times.is_empty() { let idx = ((times.len() as f64)*0.95).ceil() as usize - 1; *times.get(idx.min(times.len()-1)).unwrap_or(&0) } else { 0 };
-                let avg = if !times.is_empty() { (times.iter().sum::<u128>() as f64 / times.len() as f64) } else { 0.0 };
+                let avg = if !times.is_empty() { times.iter().sum::<u128>() as f64 / times.len() as f64 } else { 0.0 };
                 let rate = if ok + fail > 0 { fail as f64 / (ok + fail) as f64 } else { 1.0 };
                 println!(
                     "relay {} @ {} -> ok={} fail={} fail_rate={:.0}% avg={:.1}ms p50={}ms p95={}ms",

@@ -78,7 +78,6 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 
         // Entry log
         log::info!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len());
-        #[allow(unused)] {  }
         
         // Small helper to log a failure reason and return Err(msg) consistently.
         #[inline]

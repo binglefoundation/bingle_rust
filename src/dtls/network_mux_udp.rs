@@ -148,7 +148,6 @@ impl UdpNetworkMux {
             let mut buf = [0u8; 2048];
 
             warn!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
-            #[allow(unused)] {  }
 
             while this.running.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
@@ -165,7 +164,6 @@ impl UdpNetworkMux {
                         } else {
                             // If socket error, stop running
                             warn!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e);
-                            #[allow(unused)] {  }
 
                             this.running.store(false, Ordering::SeqCst);
                         }
@@ -173,7 +171,6 @@ impl UdpNetworkMux {
                 }
             }
             warn!("[UdpNetworkMux][receive][loop on {:?}] done", to);
-            #[allow(unused)] {  }
 
         });
         let mut slot = self.rx_thread.lock().unwrap();

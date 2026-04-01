@@ -31,6 +31,7 @@ pub mod openssl_impl {
     // Common helpers and adapters shared by client/server paths to reduce duplication.
     #[derive(Clone)]
     enum CaMode {
+        #[allow(dead_code)]
         UseLocal(std::sync::Arc<Vec<u8>>),
         PeerChain,
         #[allow(dead_code)]
@@ -554,7 +555,6 @@ pub mod openssl_impl {
                 Err(e) => {
                     let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     log::warn!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, peer_str, e);
-                    #[allow(unused)] {}
                     Err(std::io::Error::new(std::io::ErrorKind::Other, format!("mux write failed: {}", e)))
                 }
             }
