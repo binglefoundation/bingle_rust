@@ -306,6 +306,10 @@ impl BingleApi for BingleApiImpl {
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
         self.started_options.algo_provider_config.clone()
     }
+    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
+        // Delegate to inherent reverse-lookup with caching/blockchain fallback
+        BingleApiImpl::handle_lookup_by_id(self, user_id)
+    }
     fn start(&mut self, options: &StartOptions) -> Result<(), String> {
         // Initialize logging once (stderr + timestamps), respect options.log_level if provided.
         // static INIT: Once = Once::new();

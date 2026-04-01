@@ -42,6 +42,7 @@ impl BingleApi for LockingApiWrapper {
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> { self.api.access(|a| a.handle_lookup(handle)) }
+    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> { self.api.access(|a| a.handle_lookup_by_id(user_id)) }
     fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_id(user_id, message, progress)) }
     fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_handle(handle, message, progress)) }
     fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.api.access(|a| a.send_message_to_network(nsk, user_id, message, progress)) }

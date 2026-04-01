@@ -204,6 +204,10 @@ pub trait BingleApi: Send + Sync {
     /// Returns Ok(Some(id)) if found, Ok(None) if not found, or Err on failure.
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String>;
 
+    /// Reverse lookup: given a user id (Algorand address), obtain the corresponding handle if known.
+    /// Implementations may consult an in-memory cache and/or blockchain local state.
+    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle>;
+
     // Outgoing message transfer methods (see BINGLE_SPEC.md - Outgoing message transfer):
 
     /// Send a message when we have the id and don't need a response.

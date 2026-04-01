@@ -50,6 +50,7 @@ impl BingleApi for BothAsApi {
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
     fn handle_lookup(&self, _handle: &crate::api::bingle_api::Handle) -> Result<Option<crate::api::bingle_api::UserId>, String> { self.inner.handle_lookup(_handle) }
+    fn handle_lookup_by_id(&self, user_id: &crate::api::bingle_api::UserId) -> Option<crate::api::bingle_api::Handle> { self.inner.handle_lookup_by_id(user_id) }
     fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_id(user_id, message, progress) }
     fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_handle(handle, message, progress) }
     fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_network(nsk, user_id, message, progress) }
@@ -71,13 +72,16 @@ pub trait MessageHandler {
             if let Some(cb) = router.get_on_message() {
                 // Normalize sender id: issuer without suffix
                 let sender_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                // Use direct socket address as sender_handle when available
-                let sender_handle = _from
-                    .network_source_key
-                    .inet_socket_address()
-                    .map(|a: std::net::SocketAddr| a.to_string())
-                    .unwrap_or_else(|| "".to_string());
-                cb(sender_id, sender_handle, json);
+                // Look up the sender's handle by id via the API. If not found, log an error and abort.
+                match _api.handle_lookup_by_id(&sender_id) {
+                    Some(sender_handle) => cb(sender_id, sender_handle, json),
+                    None => {
+                        log::error!(
+                            "[MessageHandler::on_plain_text] failed to resolve handle for sender id {}",
+                            sender_id
+                        );
+                    }
+                }
                 return;
             }
         }

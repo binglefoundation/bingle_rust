@@ -28,6 +28,9 @@ pub fn engine_basic_bingle_dtls_layer() {
     let server = BingleApiImpl::new(&StartOptions::default());
     let client = BingleApiImpl::new(&StartOptions::default());
 
+    // Reverse-lookup seam: ensure on_plain_text can resolve sender handle by id in this test environment
+    server.set_id_to_handle_lookup_mock_for_tests(Box::new(|_uid| Ok(Some("client".to_string()))));
+
     // Install server handlers that print and signal when a message arrives
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_flag = delivered.clone();
