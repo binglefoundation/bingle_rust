@@ -14,6 +14,65 @@ use crate::dtls::Dtls;
 use crate::engine::{BingleAccess, BingleAccessUnsafeForTests, Engine, EngineState, EngineType};
 use crate::protocol::ISSUER_SUFFIX;
 
+// Simple bidirectional cache for handle <-> user_id with per-entry timestamps
+// Not exposed publicly; guarded by the encompassing Mutex in BingleApiImpl
+struct HandleCacheBi {
+    handle_to_id: std::collections::HashMap<Handle, (UserId, Instant)>,
+    id_to_handle: std::collections::HashMap<UserId, (Handle, Instant)>,
+}
+
+impl HandleCacheBi {
+    fn new() -> Self {
+        Self {
+            handle_to_id: std::collections::HashMap::new(),
+            id_to_handle: std::collections::HashMap::new(),
+        }
+    }
+
+    fn insert(&mut self, handle: Handle, user_id: UserId, now: Instant) {
+        // Remove any previous reverse mapping for this handle
+        if let Some((old_uid, _)) = self.handle_to_id.remove(&handle) {
+            if let Some((h2, _)) = self.id_to_handle.get(&old_uid) {
+                if *h2 == handle { self.id_to_handle.remove(&old_uid); }
+            }
+        }
+        // If this user_id was mapped to a different handle, remove that handle mapping
+        if let Some((old_handle, _)) = self.id_to_handle.remove(&user_id) {
+            if let Some((h_uid, _)) = self.handle_to_id.get(&old_handle) {
+                if *h_uid == user_id { self.handle_to_id.remove(&old_handle); }
+            }
+        }
+        self.handle_to_id.insert(handle.clone(), (user_id.clone(), now));
+        self.id_to_handle.insert(user_id, (handle, now));
+    }
+
+    fn get_id_by_handle(&mut self, handle: &Handle, expiry: Duration) -> Option<UserId> {
+        if let Some((uid, ts)) = self.handle_to_id.get(handle) {
+            if ts.elapsed() < expiry { return Some(uid.clone()); }
+            // expired: remove both directions
+            let uid = uid.clone();
+            self.handle_to_id.remove(handle);
+            if let Some((h, _)) = self.id_to_handle.get(&uid) {
+                if h == handle { self.id_to_handle.remove(&uid); }
+            }
+        }
+        None
+    }
+
+    fn get_handle_by_id(&mut self, user_id: &UserId, expiry: Duration) -> Option<Handle> {
+        if let Some((handle, ts)) = self.id_to_handle.get(user_id) {
+            if ts.elapsed() < expiry { return Some(handle.clone()); }
+            // expired: remove both directions
+            let handle = handle.clone();
+            self.id_to_handle.remove(user_id);
+            if let Some((uid, _)) = self.handle_to_id.get(&handle) {
+                if uid == user_id { self.handle_to_id.remove(&handle); }
+            }
+        }
+        None
+    }
+}
+
 /// Concrete implementation of the BingleApi trait.
 ///
 /// Minimal functionality implemented per task requirements:
@@ -35,7 +94,9 @@ pub struct BingleApiImpl {
     // Weak reference to ourselves for passing to components
     this: crate::api::bingle_api::BingleApiBothType,
     handle_lookup_mock: Mutex<Option<Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>>>,
-    handle_cache: Mutex<std::collections::HashMap<Handle, (UserId, Instant)>>,
+    // Test seam for reverse lookup (id -> handle) without network
+    id_to_handle_lookup_mock: Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
+    handle_cache: Mutex<HandleCacheBi>,
 }
 
 impl BingleApiImpl {
@@ -55,7 +116,8 @@ impl BingleApiImpl {
                 router: None,
                 this: me_both,
                 handle_lookup_mock: Mutex::new(None),
-                handle_cache: Mutex::new(std::collections::HashMap::new()),
+                id_to_handle_lookup_mock: Mutex::new(None),
+                handle_cache: Mutex::new(HandleCacheBi::new()),
             }
         })
     }
@@ -87,7 +149,8 @@ impl BingleApiImpl {
                 router: None,
                 this: me_both,
                 handle_lookup_mock: Mutex::new(None),
-                handle_cache: Mutex::new(std::collections::HashMap::new()),
+                id_to_handle_lookup_mock: Mutex::new(None),
+                handle_cache: Mutex::new(HandleCacheBi::new()),
             }
         })
     }
@@ -154,6 +217,11 @@ impl BingleApiImpl {
 
     pub fn set_handle_lookup_mock_for_tests(&self, mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>) {
         let mut m = self.handle_lookup_mock.lock().unwrap();
+        *m = Some(mock);
+    }
+
+    pub fn set_id_to_handle_lookup_mock_for_tests(&self, mock: Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>) {
+        let mut m = self.id_to_handle_lookup_mock.lock().unwrap();
         *m = Some(mock);
     }
 
@@ -386,14 +454,9 @@ impl BingleApi for BingleApiImpl {
 
         // Check cache
         if let Ok(mut cache) = self.handle_cache.lock() {
-            if let Some((user_id, timestamp)) = cache.get(handle) {
-                if timestamp.elapsed() < expiry_duration {
-                    log::info!("[BingleApiImpl::handle_lookup] cache hit for handle {}: {}", handle, user_id);
-                    return Ok(Some(user_id.clone()));
-                } else {
-                    log::info!("[BingleApiImpl::handle_lookup] cache expired for handle {}", handle);
-                    cache.remove(handle);
-                }
+            if let Some(user_id) = cache.get_id_by_handle(handle, expiry_duration) {
+                log::info!("[BingleApiImpl::handle_lookup] cache hit for handle {}: {}", handle, user_id);
+                return Ok(Some(user_id));
             }
         }
 
@@ -404,7 +467,7 @@ impl BingleApi for BingleApiImpl {
                 // Update cache on success from mock too
                 if let Ok(Some(ref user_id)) = res {
                     if let Ok(mut cache) = self.handle_cache.lock() {
-                        cache.insert(handle.clone(), (user_id.clone(), Instant::now()));
+                        cache.insert(handle.clone(), user_id.clone(), Instant::now());
                         log::info!("[BingleApiImpl::handle_lookup] cache updated from mock for handle {}: {}", handle, user_id);
                     }
                 }
@@ -424,7 +487,7 @@ impl BingleApi for BingleApiImpl {
         // Update cache on success
         if let Ok(Some(ref user_id)) = res {
             if let Ok(mut cache) = self.handle_cache.lock() {
-                cache.insert(handle.clone(), (user_id.clone(), Instant::now()));
+                cache.insert(handle.clone(), user_id.clone(), Instant::now());
                 log::info!("[BingleApiImpl::handle_lookup] cache updated for handle {}: {}", handle, user_id);
             }
         }
@@ -670,12 +733,82 @@ impl BingleApiImpl {
     pub fn handle_incoming_network_message(&self, sender: UserId, sender_handle: Handle, message: JsonValue) {
         log::info!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message);
         #[allow(unused)] {  }
+        // Opportunistically update the cache mapping for reverse lookups
+        if let Ok(mut cache) = self.handle_cache.lock() {
+            cache.insert(sender_handle.clone(), sender.clone(), Instant::now());
+        }
         // Engine now fulfills tagged responses; just forward application messages.
         if let Some(cb) = &self.on_message {
             cb(sender, sender_handle, message);
         }
         log::info!("[BingleApiImpl::handle_incoming_network_message][exit]");
         #[allow(unused)] {  }
+    }
+}
+
+impl BingleApiImpl {
+    /// Lookup a handle by user id using the local cache. Returns None if not present or expired.
+    pub fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
+        let expiry_duration = self.started_options.handle_cache_expiry.unwrap_or(Duration::from_secs(600));
+        // 1) Check cache first
+        if let Ok(mut cache) = self.handle_cache.lock() {
+            if let Some(h) = cache.get_handle_by_id(user_id, expiry_duration) {
+                return Some(h);
+            }
+        }
+
+        // 2) Test seam: allow injection for unit/integration tests to avoid network
+        if let Ok(m) = self.id_to_handle_lookup_mock.lock() {
+            if let Some(cb) = m.as_ref() {
+                match cb(user_id) {
+                    Ok(Some(handle)) => {
+                        if let Ok(mut cache) = self.handle_cache.lock() {
+                            cache.insert(handle.clone(), user_id.clone(), Instant::now());
+                        }
+                        return Some(handle);
+                    }
+                    Ok(None) => { /* fall through to blockchain (or ultimately None) */ }
+                    Err(e) => {
+                        log::warn!("[BingleApiImpl::handle_lookup_by_id] test seam error: {}", e);
+                        // fall through
+                    }
+                }
+            }
+        }
+
+        // 3) Fallback: query blockchain local storage via AlgoOps/AlgoBingle to extract 'Handle'
+        let app_id = match self.get_app_id() {
+            Some(a) => a,
+            None => { log::warn!("[BingleApiImpl::handle_lookup_by_id] app_id not configured"); return None; }
+        };
+        let config = match self.get_algo_provider_config() {
+            Some(c) => c,
+            None => { log::warn!("[BingleApiImpl::handle_lookup_by_id] algo_provider_config not configured"); return None; }
+        };
+
+        // Build AlgoOps with provided config; no passphrase or address needed for read-only queries
+        let ops = AlgoOps::new(None, None, Some(config));
+        match ops.local_state_for_account(app_id, user_id) {
+            Ok(Some(entries)) => {
+                if let Some((_k, h)) = entries.into_iter().find(|(k, _)| k == "Handle") {
+                    // Update cache and return
+                    if let Ok(mut cache) = self.handle_cache.lock() {
+                        cache.insert(h.clone(), user_id.clone(), Instant::now());
+                    }
+                    return Some(h);
+                }
+                log::info!("[BingleApiImpl::handle_lookup_by_id] no Handle key in local state for {}", user_id);
+                None
+            }
+            Ok(None) => {
+                log::info!("[BingleApiImpl::handle_lookup_by_id] user not opted in or no local state for {}", user_id);
+                None
+            }
+            Err(e) => {
+                log::warn!("[BingleApiImpl::handle_lookup_by_id] blockchain query failed: {}", e);
+                None
+            }
+        }
     }
 }
 
