@@ -7,6 +7,7 @@ use std::sync::{Arc};
 
 struct DummyApi;
 impl BingleApi for DummyApi { 
+    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
     fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
     fn get_handle(&self) -> Option<String> { None } 
     fn get_user_id(&self) -> Option<String> { None }

@@ -204,6 +204,13 @@ impl BingleApi for BingleApiImpl {
         log::info!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
         #[allow(unused)] {  }
     }
+    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
+        log::info!("[BingleApiImpl::list_all_relays] include_self={}", include_self);
+        // Delegate to Engine's relay_finder-backed implementation
+        let res = self.engine.access(|e| e.list_all_relays(include_self));
+        log::info!("[BingleApiImpl::list_all_relays] return={:?}", res);
+        res
+    }
     fn get_my_id(&self) -> Option<String> {
         // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
         match self.engine.access(|e| e.issuer().map(|iss| iss.to_string())) {

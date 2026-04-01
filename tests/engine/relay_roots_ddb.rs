@@ -38,6 +38,7 @@ impl Dtls for MockDtls {
 #[derive(Clone)]
 struct MockApi;
 impl BingleApi for MockApi { 
+    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
     fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
     fn get_user_id(&self) -> Option<String> { None }
     fn debug_print_options(&self) {}

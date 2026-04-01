@@ -33,6 +33,7 @@ struct LockingApiWrapper {
 
 impl BingleApi for LockingApiWrapper {
     fn debug_print_options(&self) { self.api.access(|a| a.debug_print_options()) }
+    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> { self.api.access(|a| a.list_all_relays(include_self)) }
     fn get_my_id(&self) -> Option<String> { self.api.access(|a| a.get_my_id()) }
     fn get_user_id(&self) -> Option<String> { self.api.access(|a| a.get_user_id()) }
     fn get_handle(&self) -> Option<String> { self.api.access(|a| a.get_handle()) }

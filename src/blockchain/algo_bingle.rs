@@ -202,21 +202,29 @@ impl AlgoBingle {
     /// Use the Indexer API to list accounts that have a non-empty "static_endpoint" in local state for the given app_id.
     /// Returns Vec of (account_address, static_endpoint_value).
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+        log::info!("[AlgoBingle::list_static_endpoints_via_indexer] app_id={}", app_id);
         if tokio::runtime::Handle::try_current().is_ok() {
-            return std::thread::scope(|s| {
+            log::info!("[AlgoBingle::list_static_endpoints_via_indexer] running in tokio runtime, spawning thread");
+            let thread_result = std::thread::scope(|s| {
                 s.spawn(|| self.list_static_endpoints_via_indexer_sync(app_id))
                     .join()
                     .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
             });
+            log::info!("[AlgoBingle::list_static_endpoints_via_indexer] thread result={:?}", thread_result);
+            return thread_result;
         }
-        self.list_static_endpoints_via_indexer_sync(app_id)
+
+        log::info!("[AlgoBingle::list_static_endpoints_via_indexer] not running in tokio runtime, calling sync");
+        let sync_result = self.list_static_endpoints_via_indexer_sync(app_id);
+        log::info!("[AlgoBingle::list_static_endpoints_via_indexer] sync result={:?}", sync_result);
+        sync_result
     }
 
-    fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+    pub(crate) fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
-        log::info!("[AlgoBingle::list_static_endpoints_via_indexer] ops.config={:?}", self.ops.config);
+        log::info!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
-        self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
             if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
                 for st in als {
@@ -233,8 +241,16 @@ impl AlgoBingle {
                 }
             }
             Ok(())
-        })?;
-        Ok(results)
+        });
+
+        if let Err(e) = indexer_query_result {
+            log::error!("[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync failed: {}", e);
+            Err(e)
+        }
+        else {
+            log::info!("[AlgoBingle::list_static_endpoints_via_indexer_sync] results={:?}", results);
+            Ok(results)
+        }
     }
 
     /// Helper to query all accounts opted into the given app_id via the indexer.
@@ -242,6 +258,7 @@ impl AlgoBingle {
     where
         F: FnMut(&serde_json::Value) -> Result<()>,
     {
+        log::info!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={}", app_id);
         if app_id == 0 { bail!("app_id must be > 0"); }
         let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
         let client = reqwest::blocking::Client::new();
@@ -255,19 +272,48 @@ impl AlgoBingle {
                 req = req.header("X-Indexer-API-Token", tok.clone())
                          .header(self.ops.config.token_key.clone().unwrap_or_else(|| "X-Algo-API-Token".to_string()), tok.clone());
             }
-            log::info!("Sending indexer request {:?}", req);
-            let resp = req.send().map_err(|e| anyhow!("indexer request failed: {e}"))?;
+            log::info!("[indexer_query_opted_in_accounts_sync] Sending indexer request {:?}", req);
+            let resp = match req.send() {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer request failed: {}",
+                        e
+                    );
+                    return Err(anyhow!("indexer request failed: {e}"));
+                }
+            };
+            log::info!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);
             if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
-            let v: serde_json::Value = resp.json().map_err(|e| anyhow!("indexer json parse failed: {e}"))?;
+            let v: serde_json::Value = match resp.json() {
+                Ok(v) => v,
+                Err(e) => {
+                    log::error!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer json parse failed: {}",
+                        e
+                    );
+                    return Err(anyhow!("indexer json parse failed: {e}"));
+                }
+            };
             // Debug: dump the full JSON returned from /v2/accounts for visibility
-            log::trace!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
+            log::info!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
             let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
             for acct in accounts {
-                f(&acct)?;
+                log::debug!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", acct);
+                if let Err(e) = f(&acct) {
+                    // Log explicit error rather than propagating implicitly with '?'
+                    log::error!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] failed to process account: {}",
+                        e
+                    );
+                    return Err(e);
+                }
             }
             next = v.get("next-token").and_then(|x| x.as_str()).map(|s| s.to_string());
             if next.is_none() { break; }
         }
+
+        log::info!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done");
         Ok(())
     }
 
@@ -329,7 +375,7 @@ impl AlgoBingle {
         }
     }
 
-    /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "RelayIP".
+    /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "static_endpoint".
     /// This variant uses an injected local-state getter for testability.
     pub fn discover_root_relays_with<F>(
         app_id: u64,

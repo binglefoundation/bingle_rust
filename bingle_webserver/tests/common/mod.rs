@@ -7,6 +7,7 @@ pub struct MockBingleApi;
 
 impl BingleApi for MockBingleApi {
     fn debug_print_options(&self) {}
+    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
     fn get_my_id(&self) -> Option<String> { None }
     fn get_user_id(&self) -> Option<String> { None }
     fn get_handle(&self) -> Option<String> { None }

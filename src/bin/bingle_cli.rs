@@ -94,6 +94,7 @@ fn main() {
         "register" => cmd_register(args),
         "buybingle" => cmd_buybingle(args),
         "sellbingle" => cmd_sellbingle(args),
+        "checkrelays" => cmd_checkrelays(args),
         "--help" | "-h" => print_usage_and_exit(0),
         other => {
             warn!("Unknown subcommand: {}", other);
@@ -103,7 +104,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle> [options]\n  Global logging: --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>]";
     if code == 0 { log::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
@@ -243,6 +244,234 @@ fn cmd_run(mut args: Vec<String>) {
     log::info!("Stopped.");
 }
 
+use rust_comms::api::network_endpoint::NetworkEndpoint;
+use serde_json::json;
+use std::net::SocketAddr;
+use std::time::Instant;
+use std::time::Duration;
+
+fn cmd_checkrelays(mut args: Vec<String>) {
+    // Support subcommand help
+    if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
+        warn!("Usage: bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--once] [--stun-servers <list>] [--stun-servers-file <file>]\n\
+              Notes: by default this command repeats indefinitely, sleeping --interval-ms between runs. Use --once to run a single iteration.");
+        std::process::exit(0);
+    }
+
+    // Extract optional --interval-ms <n>
+    let mut interval_ms: u64 = 5000;
+    let mut once: bool = false;
+    let mut i = 0usize;
+    while i < args.len() {
+        if args[i] == "--interval-ms" {
+            if i + 1 >= args.len() {
+                warn!("--interval-ms requires a value");
+                std::process::exit(2);
+            }
+            match args[i + 1].parse::<u64>() {
+                Ok(v) => interval_ms = v,
+                Err(e) => { warn!("invalid --interval-ms: {}", e); std::process::exit(2); }
+            }
+            args.remove(i); // flag
+            args.remove(i); // value
+            continue;
+        } else if args[i] == "--once" {
+            once = true;
+            args.remove(i);
+            continue;
+        }
+        i += 1;
+    }
+
+    // Manually parse only the options needed for checkrelays (no handle required)
+    let mut passphrase: Option<String> = None;
+    let mut node_file: Option<String> = None;
+    let mut cli_app_id: Option<u64> = None;
+    let mut cli_asset_id: Option<u64> = None;
+    let mut stun_servers: Option<Vec<SocketAddr>> = None;
+
+    // Remaining args after --interval-ms extraction
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--passphrase" => {
+                let p = it.next().unwrap_or_else(|| {
+                    warn!("--passphrase requires a value");
+                    std::process::exit(2);
+                });
+                passphrase = Some(p);
+            }
+            "--node-file" => {
+                let nf = it.next().unwrap_or_else(|| {
+                    warn!("--node-file requires a <file> value");
+                    std::process::exit(2);
+                });
+                node_file = Some(nf);
+            }
+            "--app-id" => {
+                let v = it.next().unwrap_or_else(|| {
+                    warn!("--app-id requires a value");
+                    std::process::exit(2);
+                });
+                match v.parse::<u64>() {
+                    Ok(id) => cli_app_id = Some(id),
+                    Err(e) => { warn!("Invalid --app-id '{}': {}", v, e); std::process::exit(2); }
+                }
+            }
+            "--asset-id" => {
+                let v = it.next().unwrap_or_else(|| {
+                    warn!("--asset-id requires a value");
+                    std::process::exit(2);
+                });
+                match v.parse::<u64>() {
+                    Ok(id) => cli_asset_id = Some(id),
+                    Err(e) => { warn!("Invalid --asset-id '{}': {}", v, e); std::process::exit(2); }
+                }
+            }
+            "--stun-servers" => {
+                let v = it.next().unwrap_or_else(|| {
+                    warn!("--stun-servers requires a value");
+                    std::process::exit(2);
+                });
+                match rust_comms::util::cli_utils::parse_stun_list(&v) {
+                    Ok(list) => stun_servers = Some(list),
+                    Err(e) => { warn!("{}", e); std::process::exit(2); }
+                }
+            }
+            "--stun-servers-file" => {
+                let v = it.next().unwrap_or_else(|| {
+                    warn!("--stun-servers-file requires a <file> value");
+                    std::process::exit(2);
+                });
+                match rust_comms::util::cli_utils::parse_stun_file(&v) {
+                    Ok(list) => stun_servers = Some(list),
+                    Err(e) => { warn!("{}", e); std::process::exit(2); }
+                }
+            }
+            s if s.starts_with('-') => {
+                warn!("Unknown option: {}", s);
+                std::process::exit(2);
+            }
+            other => {
+                // Positional arguments are not expected for checkrelays
+                warn!("Unexpected positional argument: {}", other);
+                std::process::exit(2);
+            }
+        }
+    }
+
+    // Require passphrase so we can derive our id and access blockchain if needed
+    let pass = match passphrase { Some(p) if !p.is_empty() => p, _ => { warn!("--passphrase is required"); std::process::exit(2); } };
+
+    // Load node file config if provided
+    let (algo_network, algo_provider_config, node_app_id, node_asset_id) = if let Some(nf) = node_file.clone() {
+        match parse_node_file_with_ids(&nf) {
+            Ok((net, cfg, a, b)) => (net, Some(cfg), a, b),
+            Err(e) => { warn!("{}", e); std::process::exit(2); }
+        }
+    } else { (None, None, None, None) };
+
+    // Resolve app/asset ids (prefer values from node file or CLI; else environment)
+    let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id) {
+        Ok((a, b)) => (a, b),
+        Err(e) => { warn!("{}", e); std::process::exit(2); }
+    };
+
+    // Build AlgoOps for discovery using same config
+    let ops = AlgoOps::new(Some(pass.clone()), None, algo_provider_config.clone());
+    let my_address = match &ops.address { Some(a) => a.clone(), None => { warn!("Unable to derive address from passphrase"); std::process::exit(2); } };
+
+    // Construct minimal StartOptions without requiring user-provided handle
+    let opts = rust_comms::api::bingle_api::StartOptions {
+        handle: my_address.clone(), // synthetic handle: use our address to satisfy Engine
+        algo_passphrase: Some(pass.clone()),
+        static_ip: None,
+        am_relay: false,
+        stun_servers,
+        algo_provider_config: algo_provider_config.clone(),
+        algo_network,
+        app_id: Some(app_id),
+        asset_id: Some(asset_id),
+        log_level: None,
+    };
+
+    // Create API and start engine minimal
+    let api = BingleApiImpl::new(&opts);
+    {
+        api.access_unsafe_for_tests(|api_mut| {
+            if let Err(e) = api_mut.start(&opts) {
+                warn!("Failed to start API: {}", e);
+                std::process::exit(2);
+            }
+        });
+    }
+
+    // After starting, wait for Engine to reach Registered state to ensure discovery is ready
+    let api_both: Arc<dyn rust_comms::api::bingle_api::BingleApiBoth> = api.clone();
+    let wait_start = Instant::now();
+    let wait_timeout = Duration::from_secs(5);
+    while wait_start.elapsed() < wait_timeout {
+        let st = api_both.get_state();
+        if st == rust_comms::engine::EngineState::Registered {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // Helper for a single check that returns Ok(duration_ms) or Err(()) using Ping/PingResponse
+    let do_check = |relay_id: &str, addr: SocketAddr| -> Result<u128, ()> {
+        let nsk = NetworkEndpoint::new_direct(addr);
+        // Send a Ping with text and expect a PingResponse with ACK text
+        let req = json!({ "app": "ping", "type": "ping", "text": "bingle-cli probe" });
+        let start = Instant::now();
+        match api.send_message_to_network_with_response(&nsk, &relay_id.to_string(), req, None) {
+            Ok(resp) => {
+                let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ping");
+                let type_ok = resp.get("type").and_then(|v| v.as_str()) == Some("response");
+                let text_ok = resp.get("text").and_then(|v| v.as_str()).map(|s| s.starts_with("ACK:")).unwrap_or(false);
+                if app_ok && type_ok && text_ok { Ok(start.elapsed().as_millis()) } else { Err(()) }
+            }
+            Err(_) => Err(())
+        }
+    };
+
+    // Repeat loop (unless --once)
+    loop {
+        let relays = api.list_all_relays(false);
+
+        if relays.is_empty() {
+            log::warn!("No relays discovered; nothing to check");
+        } else {
+            for r in &relays {
+                let mut ok: u32 = 0;
+                let mut fail: u32 = 0;
+                let mut times: Vec<u128> = Vec::new();
+                for _ in 0..5 {
+                    match do_check(&r.id, r.address) {
+                        Ok(ms) => { ok += 1; times.push(ms); }
+                        Err(()) => { fail += 1; }
+                    }
+                }
+                times.sort();
+                let p50 = times.get((times.len().saturating_sub(1))/2).copied().unwrap_or(0);
+                let p95 = if !times.is_empty() { let idx = ((times.len() as f64)*0.95).ceil() as usize - 1; *times.get(idx.min(times.len()-1)).unwrap_or(&0) } else { 0 };
+                let avg = if !times.is_empty() { (times.iter().sum::<u128>() as f64 / times.len() as f64) } else { 0.0 };
+                let rate = if ok + fail > 0 { fail as f64 / (ok + fail) as f64 } else { 1.0 };
+                println!(
+                    "relay {} @ {} -> ok={} fail={} fail_rate={:.0}% avg={:.1}ms p50={}ms p95={}ms",
+                    r.id, r.address, ok, fail, rate*100.0, avg, p50, p95
+                );
+            }
+        }
+
+        if once { break; }
+        std::thread::sleep(Duration::from_millis(interval_ms));
+    }
+
+    // Stop API before exit
+    api.access_unsafe_for_tests(|api_mut| api_mut.stop());
+}
+
 fn cmd_register(args: Vec<String>) {
     // Simple manual parsing to keep dependencies minimal
     let mut it = args.into_iter();
@@ -255,7 +484,7 @@ fn cmd_register(args: Vec<String>) {
 
     if let Some(arg) = it.clone().next() {
         if arg == "--help" || arg == "-h" {
-            warn!("Usage: bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>]");
+            warn!("Usage: bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]");
             std::process::exit(0);
         }
     }
@@ -268,6 +497,9 @@ fn cmd_register(args: Vec<String>) {
             "--asset-id" => { asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id")); }
             "--price-units" => { price_units = Some(parse_u64(req_value(&mut it, "--price-units"), "--price-units")); }
             "--node-file" => { node_file = Some(req_value(&mut it, "--node-file")); }
+            // Accept common STUN options for consistency across commands; ignored for register
+            "--stun-servers" => { let _ = req_value(&mut it, "--stun-servers"); }
+            "--stun-servers-file" => { let _ = req_value(&mut it, "--stun-servers-file"); }
             s => {
                 warn!("Unknown option for register: {}", s);
                 std::process::exit(2);
@@ -338,7 +570,7 @@ fn cmd_register(args: Vec<String>) {
 fn cmd_buybingle(args: Vec<String>) {
     // Usage help
     if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        warn!("Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]");
+        warn!("Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]");
         std::process::exit(if args.is_empty() { 2 } else { 0 });
     }
 
@@ -358,6 +590,9 @@ fn cmd_buybingle(args: Vec<String>) {
             "--asset-id" => { asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id")); }
             "--node-file" => { node_file = Some(req_value(&mut it, "--node-file")); }
             "--passphrase" => { passphrase = Some(req_value(&mut it, "--passphrase")); }
+            // Accept common STUN options for consistency across commands; ignored for buybingle
+            "--stun-servers" => { let _ = req_value(&mut it, "--stun-servers"); }
+            "--stun-servers-file" => { let _ = req_value(&mut it, "--stun-servers-file"); }
             other => { warn!("Unknown option for buybingle: {}", other); std::process::exit(2); }
         }
     }
@@ -390,7 +625,7 @@ fn cmd_buybingle(args: Vec<String>) {
 fn cmd_sellbingle(args: Vec<String>) {
     // Usage help
     if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        warn!("Usage: bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>]");
+        warn!("Usage: bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]");
         std::process::exit(if args.is_empty() { 2 } else { 0 });
     }
 
@@ -411,6 +646,9 @@ fn cmd_sellbingle(args: Vec<String>) {
             "--asset-id" => { asset_id = Some(parse_u64(req_value(&mut it, "--asset-id"), "--asset-id")); }
             "--node-file" => { node_file = Some(req_value(&mut it, "--node-file")); }
             "--passphrase" => { passphrase = Some(req_value(&mut it, "--passphrase")); }
+            // Accept common STUN options for consistency across commands; ignored for sellbingle
+            "--stun-servers" => { let _ = req_value(&mut it, "--stun-servers"); }
+            "--stun-servers-file" => { let _ = req_value(&mut it, "--stun-servers-file"); }
             other => { warn!("Unknown option for sellbingle: {}", other); std::process::exit(2); }
         }
     }

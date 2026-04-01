@@ -41,6 +41,7 @@ impl BingleApiInternal for BothAsApi {
 }
 impl BingleApi for BothAsApi {
     fn debug_print_options(&self) { self.inner.debug_print_options() }
+    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> { self.inner.list_all_relays(include_self) }
     fn get_my_id(&self) -> Option<String> { self.inner.get_my_id() }
     fn get_user_id(&self) -> Option<String> { self.inner.get_user_id() }
     fn get_handle(&self) -> Option<String> { self.inner.get_handle() }
@@ -613,10 +614,12 @@ impl MessageHandler for DefaultPrintingHandler {
                 Some(id) => id,
                 None => { warn!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
             };
+            log::info!("[handlers::on_triangle_test1] call find_relay_excluding my_id = {}", my_id);
             let associated_relay = match finder.find_relay_excluding(&my_id, &exclusions) {
                 Ok(info) => info,
                 Err(e) => { warn!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
             };
+            log::info!("[handlers::on_triangle_test1] found relay: {:?}", associated_relay);
 
             // Build TriangleTest2 with checking_endpoint from TriangleTest1 and checking_id as our id (no issuer suffix)
             let t2 = RelayTriangleTest2 { app: None, checking_id: my_id.clone(), checking_endpoint: checking };

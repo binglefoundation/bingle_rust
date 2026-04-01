@@ -120,6 +120,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         fn notify_listening(&self, _l: bool) {}
     }
     impl rust_comms::api::bingle_api::BingleApi for MockApi {
+        fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
         fn get_handle(&self) -> Option<String> { None }
         fn set_on_listening(&mut self, _h: Option<Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {}
         fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }

@@ -5,6 +5,7 @@ use rust_comms::api::bingle_api::BingleApiBoth;
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApi` but provides defaults,
 /// so test mocks can override only the methods they care about.
 pub trait InnerBingleApi {
+    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
     fn set_on_listening(
         &self,
         _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>,
@@ -152,6 +153,9 @@ impl MockApiBoth {
 }
 
 impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
+    fn list_all_relays(&self, include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+        self.inner_bingle_api.list_all_relays(include_self)
+    }
     fn set_on_listening(
         &mut self,
         handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>,

@@ -856,6 +856,31 @@ impl Engine {
         }
     }
 
+    /// List all known relays using the current RelayFinder instance, if available.
+    /// Returns an empty vector if the engine has not initialized discovery yet
+    /// or if our issuer/id is not set.
+    pub fn list_all_relays(&self, include_self: bool) -> Vec<RelayInfo> {
+        log::info!("[Engine::list_all_relays] include_self={}", include_self);
+        let my_id = match self.issuer() {
+            Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
+            Err(e) => {
+                log::warn!("[Engine::list_all_relays] issuer unavailable: {}", e);
+                return Vec::new();
+            }
+        };
+        match &self.relay_finder {
+            Some(finder) => {
+                let res = finder.list_all_relays(&my_id, include_self);
+                log::info!("[Engine::list_all_relays] returning {} relays", res.len());
+                res
+            }
+            None => {
+                log::warn!("[Engine::list_all_relays] relay_finder not initialized");
+                Vec::new()
+            }
+        }
+    }
+
     /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
     /// This avoids duplicating the same closure in different Engine start paths.
     fn install_dtls_handler(&mut self) -> Result<(), String> {

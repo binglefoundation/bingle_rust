@@ -194,6 +194,10 @@ pub trait BingleApi: Send + Sync {
     /// indicates the network connection has changed and we need to rescan for IP address/port.
     fn network_change(&mut self);
 
+    /// List all known relays (root and non-root). When include_self is false, filters out this node.
+    /// Implementations should internally use RelayFinder and the configured blockchain discovery.
+    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo>;
+
     /// Lookup the handle in the Algorand blockchain and return the associated id.
     /// If multiple entries exist, the oldest one is returned.
     /// Returns Ok(Some(id)) if found, Ok(None) if not found, or Err on failure.

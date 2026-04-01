@@ -68,6 +68,8 @@ impl RelayFinder {
     /// Return the list of all relays (root and non-root) using the DDB client get_relays.
     /// Requires that the root relay cache has been populated (list_root_relays called recently).
     pub fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+        log::info!("[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
+
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 0) Return cached all-relays list if valid
         if let Ok(guard) = self.all_list_cache.lock() {
@@ -82,7 +84,10 @@ impl RelayFinder {
             }
         }
         // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
+        log::info!("[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
         let _ = self.list_root_relays(my_id, true);
+        log::info!("[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
+
         // 2) Pick preferred root relay and fetch all relays via DDB from that single root only
         let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
         let mut relays: Vec<RelayInfo> = {
@@ -149,23 +154,7 @@ impl RelayFinder {
         relays
     }
 
-    /// Convenience constructor: wire discovery to AlgoBingle::discover_root_relays using provided ops, app_id and candidate accounts.
-    pub fn with_algo_discovery(
-        api: crate::api::bingle_api::BingleApiBothType,
-        cache_ttl: Duration,
-        ops: crate::blockchain::algo_ops::AlgoOps,
-        app_id: u64,
-        accounts: Vec<String>,
-    ) -> Self {
-        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
-        let discover = Arc::new(move || {
-            match ab.discover_root_relays(app_id, &accounts) {
-                Ok(pairs) => pairs.into_iter().map(|(id, address)| RelayInfo { id, address, state: None }).collect(),
-                Err(_) => Vec::new(),
-            }
-        });
-        Self { api, cache_ttl, cache: Mutex::new(None), root_list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots: discover }
-    }
+    // Deprecated convenience constructor using AlgoBingle discovery has been removed.
 
     /// Find any relay suitable for us (root or non-root). Uses DDB getEpoch via list_all_relays.
     pub fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
@@ -220,6 +209,7 @@ impl RelayFinder {
 
     /// Return the list of root relays discovered via the blockchain (discover_roots), optionally including ourselves.
     pub fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+        log::info!("[RelayFinder] list_root_relays: my_id={} include_self={}", my_id, include_self);
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 1) Use cached list if valid
         if let Ok(guard) = self.root_list_cache.lock() {
@@ -229,12 +219,16 @@ impl RelayFinder {
                     if !include_self {
                         result.retain(|r| r.id != my_id_norm);
                     }
+                    log::info!("[RelayFinder] list_root_relays: using cached root relays: {:?}", result);
                     return result;
                 }
             }
         }
+
         // 2) Discover roots via provided closure
+        log::info!("[RelayFinder] list_root_relays: discovering roots");
         let mut relays = (self.discover_roots)();
+        log::info!("[RelayFinder] list_root_relays: discover_roots found {} root relays", relays.len());
         if !include_self {
             relays.retain(|r| r.id != my_id_norm);
         }
@@ -244,6 +238,7 @@ impl RelayFinder {
         if let Ok(mut guard) = self.root_list_cache.lock() {
             *guard = Some(CachedRelayList { root_relays: relays.clone(), expires_at: expires });
         }
+        log::info!("[RelayFinder] list_root_relays: returning root relays: {:?}", relays);
         relays
     }
 
