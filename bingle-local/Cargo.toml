@@ -9,3 +9,4 @@ name = "bingle_local"
 path = "src/lib.rs"
 
 [dependencies]
+rust_comms = { path = ".." }

@@ -1,0 +1,10 @@
+// This module has been split so that the BingleLocalApi trait and related types live
+// in a dedicated file `bingle_local_api.rs`. Keep this wrapper to preserve the
+// `bingle_local::api::*` path while referencing the new file.
+
+pub mod bingle_local_api;
+pub use bingle_local_api::*;
+
+// Local implementation stub (only generate_keypair currently implemented)
+pub mod bingle_local_api_impl;
+pub use bingle_local_api_impl::*;

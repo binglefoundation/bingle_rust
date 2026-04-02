@@ -1,6 +1,5 @@
 //! bingle-local
 //!
-//! Empty API crate placeholder for the local storage and contacts API.
-//! Future work will define the `BingleLocalApi` trait and its implementations.
+//! Local storage and contacts API for Bingle.
 
-// Intentionally left empty for now.
+pub mod api;

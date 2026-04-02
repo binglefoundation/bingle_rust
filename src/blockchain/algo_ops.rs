@@ -55,6 +55,33 @@ pub struct AlgoOps {
 }
 
 impl AlgoOps {
+    /// Generate a new Algorand keypair (secure random) and return `(id, passphrase)`.
+    ///
+    /// - `id` is the Algorand base32 address derived from the public key.
+    /// - `passphrase` is a base64-encoded 32-byte seed prefixed with `b64:` (compatible with AlgoOps::new).
+    ///
+    /// Note: We return a base64 passphrase to ensure compatibility with existing parsing
+    /// logic (mnemonic first, then legacy `b64:`). Callers can store/display it or convert
+    /// to a mnemonic externally if desired.
+    pub fn generate_keypair() -> (String, String) {
+        use ed25519_dalek::SigningKey;
+        use rand_core::{OsRng, RngCore};
+
+        // Generate a secure random 32-byte seed
+        let mut rng = OsRng;
+        let mut sk: [u8; 32] = [0u8; 32];
+        rng.fill_bytes(&mut sk);
+
+        // Derive public key and Algorand address
+        let signing_key = SigningKey::from_bytes(&sk);
+        let verifying_key = signing_key.verifying_key();
+        let pk: [u8; 32] = verifying_key.to_bytes();
+        let id = byte_key_to_address(&pk).expect("failed to derive Algorand address from public key");
+
+        // Encode secret seed as base64 passphrase with b64: prefix (supported by AlgoOps::new)
+        let passphrase = format!("b64:{}", general_purpose::STANDARD.encode(sk));
+        (id, passphrase)
+    }
     pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoChainConfig>) -> Self {
         // Enforce that a source of address is provided (either explicit address or a passphrase/seed)
         if passphrase.is_none() && address.is_none() {

@@ -34,3 +34,7 @@ pub mod algo_ops_reserve_helpers;
 #[path = "discover_roots_unit.rs"]
 pub mod discover_roots_unit;
 
+// New unit covering keypair generation helper
+#[path = "generate_keypair.rs"]
+pub mod generate_keypair;
+
