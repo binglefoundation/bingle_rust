@@ -1,6 +1,7 @@
 use crate::api::{BingleLocalApi, Contact, ContactSource, Keypair, Message};
 use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// Configuration for the local API implementation.
@@ -23,11 +24,13 @@ pub struct BingleApiLocalImpl {
     keypair: Mutex<Option<Keypair>>, // interior mutability to allow &self methods to ensure keypair exists
     algo_ops: Mutex<Option<AlgoOps>>, // cache constructed AlgoOps for current keypair
     config: LocalApiConfig,
+    // Contacts storage: id => (handle, source, is_blocked)
+    contacts: Mutex<HashMap<String, (String, ContactSource, bool)>>,
 }
 
 impl BingleApiLocalImpl {
     pub fn new(config: LocalApiConfig) -> Self {
-        Self { keypair: Mutex::new(None), algo_ops: Mutex::new(None), config }
+        Self { keypair: Mutex::new(None), algo_ops: Mutex::new(None), config, contacts: Mutex::new(HashMap::new()) }
     }
 }
 
@@ -93,17 +96,50 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(ops)
     }
 
-    fn add_contact(&mut self, _handle: String, _id: String, _source: ContactSource) -> Result<(), String> {
-        Err("not implemented".to_string())
+    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), String> {
+        // Validate inputs
+        if handle.trim().is_empty() { return Err("handle cannot be empty".to_string()); }
+        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+
+        let mut map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        if map.contains_key(&id) {
+            return Err("contact already exists".to_string());
+        }
+        map.insert(id, (handle, source, false));
+        Ok(())
     }
 
-    fn block_contact(&mut self, _id: String) -> Result<(), String> { Err("not implemented".to_string()) }
+    fn block_contact(&mut self, id: String) -> Result<(), String> {
+        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+        let mut map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        match map.get_mut(&id) {
+            Some((_h, _s, blocked)) => { *blocked = true; Ok(()) }
+            None => Err("contact not found".to_string()),
+        }
+    }
 
-    fn remove_contact(&mut self, _id: String) -> Result<(), String> { Err("not implemented".to_string()) }
+    fn remove_contact(&mut self, id: String) -> Result<(), String> {
+        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+        let mut map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        if map.remove(&id).is_some() { Ok(()) } else { Err("contact not found".to_string()) }
+    }
 
-    fn is_blocked(&self, _id: &str) -> Result<bool, String> { Err("not implemented".to_string()) }
+    fn is_blocked(&self, id: &str) -> Result<bool, String> {
+        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+        let map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        Ok(map.get(id).map(|(_, _, b)| *b).unwrap_or(false))
+    }
 
-    fn get_contacts(&self) -> Result<Vec<Contact>, String> { Err("not implemented".to_string()) }
+    fn get_contacts(&self) -> Result<Vec<Contact>, String> {
+        let map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let mut out: Vec<Contact> = Vec::new();
+        for (id, (handle, _source, blocked)) in map.iter() {
+            if !*blocked {
+                out.push(Contact { handle: handle.clone(), id: id.clone(), fields: HashMap::new() });
+            }
+        }
+        Ok(out)
+    }
 
     fn add_message(
         &mut self,

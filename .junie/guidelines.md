@@ -7,6 +7,8 @@ Do not use default values on traits.
 
 Always validate that a call which returns Option succeeds
 
+When a parameter is in use, do not start the name with'_' as this is the unused parameter marker.
+
 Before finishing a task:
 
 - Ensure the tests tree compiles
