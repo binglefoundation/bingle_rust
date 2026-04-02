@@ -1,0 +1,11 @@
+[package]
+name = "bingle-local"
+version = "0.0.1"
+edition = "2024"
+description = "Local API crate for storing messages and contacts for Bingle (placeholder)."
+
+[lib]
+name = "bingle_local"
+path = "src/lib.rs"
+
+[dependencies]

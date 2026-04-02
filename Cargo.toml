@@ -36,6 +36,7 @@ members = [
     ".",
     "bingle_test",
     "bingle_webserver",
+    "bingle-local",
 ]
 
 [dev-dependencies]

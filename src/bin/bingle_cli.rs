@@ -393,6 +393,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         app_id: Some(app_id),
         asset_id: Some(asset_id),
         log_level: None,
+        handle_cache_expiry: None,
     };
 
     // Create API and start engine minimal
