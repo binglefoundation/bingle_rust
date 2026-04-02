@@ -1,12 +1,12 @@
 api_server:
 - ~~Implement api wrapper for lookupHandle and test~~
 - ~~Implement api wrapper for send to handle and test~~
-- Put handle info into messages, with handle cache
+- ~~Put handle info into messages, with handle cache~~
 
 deployment:
 - ~~add staging environment~~
-- deploy relays to AWS using CloudFormation
-- smoke test in staging
+- ~~deploy relays to AWS using CloudFormation~~
+- ~~smoke test in staging~~
 
 local user:
 - API to hold local user key material securely (portable initially)
