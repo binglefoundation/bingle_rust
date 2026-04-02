@@ -271,6 +271,9 @@ name = "bingle-local"
 version = "0.0.1"
 dependencies = [
  "rust_comms",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

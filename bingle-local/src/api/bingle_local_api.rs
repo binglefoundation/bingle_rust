@@ -1,14 +1,15 @@
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
 /// Enum describing how a contact was added to the local store.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContactSource {
     Manual,
     Received,
 }
 
 /// Contact information stored locally.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Contact {
     pub handle: String,
     pub id: String,
@@ -17,7 +18,7 @@ pub struct Contact {
 }
 
 /// Message record stored locally.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub sender_handle: String,
     pub recipient_handles: Vec<String>,
@@ -27,7 +28,7 @@ pub struct Message {
 }
 
 /// Generated Algorand keypair details.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Keypair {
     /// Algorand address (public id)
     pub id: String,
@@ -76,4 +77,10 @@ pub trait BingleLocalApi: Send + Sync {
 
     /// Get the list of stored messages.
     fn get_messages(&self) -> Result<Vec<Message>, String>;
+
+    /// Save all local state to a JSON file at the given path.
+    fn save(&self, path: &str) -> Result<(), String>;
+
+    /// Load all local state from a JSON file at the given path, replacing current state.
+    fn load(&mut self, path: &str) -> Result<(), String>;
 }

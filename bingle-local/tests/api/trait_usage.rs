@@ -69,6 +69,10 @@ impl BingleLocalApi for DummyLocal {
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, String> { Ok(self.messages.clone()) }
+
+    fn save(&self, _path: &str) -> Result<(), String> { Ok(()) }
+
+    fn load(&mut self, _path: &str) -> Result<(), String> { Ok(()) }
 }
 
 #[test]

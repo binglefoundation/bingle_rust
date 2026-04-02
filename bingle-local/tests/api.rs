@@ -9,3 +9,6 @@ mod local_impl_contacts;
 
 #[path = "api/local_impl_messages.rs"]
 mod local_impl_messages;
+
+#[path = "api/local_impl_persistence.rs"]
+mod local_impl_persistence;

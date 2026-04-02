@@ -3,6 +3,7 @@ use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for the local API implementation.
 /// Includes the blockchain provider configuration and required ids.
@@ -171,5 +172,102 @@ impl BingleLocalApi for BingleApiLocalImpl {
     fn get_messages(&self) -> Result<Vec<Message>, String> {
         let guard = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
         Ok(guard.clone())
+    }
+
+    fn save(&self, path: &str) -> Result<(), String> {
+        // Build serializable snapshot
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ContactEntry {
+            id: String,
+            handle: String,
+            source: ContactSource,
+            is_blocked: bool,
+        }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct LocalState {
+            keypair: Option<Keypair>,
+            contacts: Vec<ContactEntry>,
+            messages: Vec<Message>,
+        }
+
+        // Snapshot under locks (avoid holding multiple locks longer than needed)
+        let keypair = {
+            let g = self.keypair.lock().map_err(|_| "mutex poisoned".to_string())?;
+            g.clone()
+        };
+        let contacts_vec: Vec<ContactEntry> = {
+            let map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+            map.iter()
+                .map(|(id, (handle, source, blocked))| ContactEntry {
+                    id: id.clone(),
+                    handle: handle.clone(),
+                    source: source.clone(),
+                    is_blocked: *blocked,
+                })
+                .collect()
+        };
+        let messages = {
+            let g = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
+            g.clone()
+        };
+
+        let state = LocalState { keypair, contacts: contacts_vec, messages };
+
+        // Ensure parent directory exists
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+        }
+
+        let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+        serde_json::to_writer_pretty(file, &state).map_err(|e| e.to_string())
+    }
+
+    fn load(&mut self, path: &str) -> Result<(), String> {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ContactEntry {
+            id: String,
+            handle: String,
+            source: ContactSource,
+            is_blocked: bool,
+        }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct LocalState {
+            keypair: Option<Keypair>,
+            contacts: Vec<ContactEntry>,
+            messages: Vec<Message>,
+        }
+
+        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        let state: LocalState = serde_json::from_reader(file).map_err(|e| e.to_string())?;
+
+        // Replace current state under locks
+        if let Ok(mut k) = self.keypair.lock() {
+            *k = state.keypair.clone();
+        } else {
+            return Err("mutex poisoned".to_string());
+        }
+        // Invalidate cached AlgoOps since keypair may have changed
+        if let Ok(mut ops_guard) = self.algo_ops.lock() {
+            *ops_guard = None;
+        } else {
+            return Err("mutex poisoned".to_string());
+        }
+        if let Ok(mut map) = self.contacts.lock() {
+            map.clear();
+            for ce in state.contacts.into_iter() {
+                map.insert(ce.id, (ce.handle, ce.source, ce.is_blocked));
+            }
+        } else {
+            return Err("mutex poisoned".to_string());
+        }
+        if let Ok(mut msgs) = self.messages.lock() {
+            *msgs = state.messages;
+        } else {
+            return Err("mutex poisoned".to_string());
+        }
+
+        Ok(())
     }
 }

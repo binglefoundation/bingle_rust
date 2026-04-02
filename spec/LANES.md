@@ -9,8 +9,8 @@ deployment:
 - ~~smoke test in staging~~
 
 local user:
-- API to hold local user key material securely (portable initially)
-- API to hold contacts
+- ~~API to hold local user key material securely (portable initially)~~
+- ~~API to hold contacts~~
 
 UX:
 - build react native UX based on messenger / signal / apple messages
