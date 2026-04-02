@@ -13,6 +13,7 @@
       <sourceFolder url="file://$MODULE_DIR$/bingle_webserver/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/bingle_webserver/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/bingle-local/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/bingle-local/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/TestResults.xcresult" />
       <excludeFolder url="file://$MODULE_DIR$/generated" />
       <excludeFolder url="file://$MODULE_DIR$/ios/BingleTestFFI.xcframework" />
