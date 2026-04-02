@@ -162,13 +162,20 @@ fn setup_stun_servers(broken_nat: bool) -> (SimpleStunServer, SimpleStunServer, 
     (s1, s2, vec![a1, a2])
 }
 
-fn setup_on_message(api: &Arc<BingleApiImpl>, received: &Arc<AtomicBool>, payload_guard: &Arc<Mutex<Option<serde_json::Value>>>) {
+fn setup_on_message(
+    api: &Arc<BingleApiImpl>,
+    received: &Arc<AtomicBool>,
+    payload_guard: &Arc<Mutex<Option<serde_json::Value>>>,
+    who_guard: &Arc<Mutex<Option<(String, String)>>>,
+) {
     let received_flag = received.clone();
     let payload_store = payload_guard.clone();
+    let who_store = who_guard.clone();
     let name = api.get_handle().unwrap_or_else(|| "unknown".to_string());
     let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
         log::info!("[Test][{} on_message] sender={} handle={} msg={}", name, sender, sender_handle, message);
         if let Ok(mut g) = payload_store.lock() { *g = Some(message); }
+        if let Ok(mut who) = who_store.lock() { *who = Some((sender.clone(), sender_handle.clone())); }
         received_flag.store(true, Ordering::SeqCst);
     });
     api.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.set_on_message(Some(on_message)));
@@ -194,8 +201,10 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     log::info!("[Test] relay1_addr = {}", relay1_addr);
     log::info!("[Test] relay2_addr = {}", relay2_addr);
 
-    let app_id = deploy_bingle_app();
+    // Deploy app + asset so we can register client handles on-chain for reverse lookups
     let cfg = test_util::localnet_config();
+    let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
     register_relays(app_id, relay1_addr, relay2_addr);
 
@@ -211,10 +220,37 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
     let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
 
-    // Install OnMessage handler for client B to capture delivery
+    // Before sending: ensure client A has its handle registered on-chain so reverse lookup by id succeeds.
+    {
+        use rust_comms::blockchain::algo_bingle::AlgoBingle;
+        let ops_a = test_util::ops_from_mnemonic(test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, cfg.clone());
+        // Opt-in A to the asset and app, and fund A with a few ASA units from creator
+        let _ = ops_a.opt_in_to_asset(asset_id).expect("client_a opt-in ASA");
+        let _ = ops_a.opt_in_app(app_id).expect("client_a opt-in app");
+        let _ = creator.send_asset(asset_id, 10, test_util::ADDRESS_10MIL).expect("fund client_a with ASA");
+
+        // Perform on-chain handle registration for client_a
+        let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
+        let _ = ab_a.register(app_id, asset_id, "client_a", 1).expect("register handle for client_a");
+
+        // Wait until local state for client A reflects the Handle key to avoid race conditions
+        let start = Instant::now();
+        let timeout = Duration::from_secs(30);
+        let mut ok = false;
+        while start.elapsed() < timeout {
+            if let Ok(Some(entries)) = ops_a.local_state_for_account(app_id, test_util::ADDRESS_10MIL) {
+                if entries.iter().any(|(k, v)| k == "Handle" && v == "client_a") { ok = true; break; }
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        assert!(ok, "client_a Handle not visible in local state within timeout");
+    }
+
+    // Install OnMessage handler for client B to capture delivery and who sent it
     let received = Arc::new(AtomicBool::new(false));
     let payload_guard: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
-    setup_on_message(&client_b, &received, &payload_guard);
+    let who_guard: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    setup_on_message(&client_b, &received, &payload_guard, &who_guard);
 
     // Wait for both clients to reach Registered
     let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));
@@ -281,6 +317,15 @@ fn run_send_message_to_id_test(broken_nat: bool) {
         let p = guard.as_ref().expect("payload should be Some since received is true");
         log::info!("[Test] received payload: {}", p);
         assert_eq!(p.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("hello"));
+    }
+
+    // Validate that reverse handle lookup on incoming message worked: sender_handle should be client_a
+    {
+        let who = who_guard.lock().expect("lock who_guard").clone().expect("who should be captured");
+        let (seen_sender_id, seen_handle) = who;
+        let id_a = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_a id");
+        assert_eq!(seen_sender_id, id_a, "sender id should match client_a id");
+        assert_eq!(seen_handle, "client_a", "sender handle should be resolved via blockchain to 'client_a'");
     }
 
     // Tear down
@@ -358,7 +403,21 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
         relay3_id, relay4_id, client3_id, client4_id
     ]).expect("fund accounts");
 
-    let app_id = deploy_bingle_app();
+    let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+    let ops_id2 = test_util::ops_from_mnemonic(id2, pp2, cfg.clone());
+    ops_id2.opt_in_app(app_id).expect("id2 opt-in app");
+    ops_id2.opt_in_to_asset(asset_id).expect("id2 opt-in asset");
+    let _ = creator.send_asset(asset_id, 10, id2).expect("fund id2 with ASA");
+    let ab_id2 = AlgoBingle::new(ops_id2, app_id, asset_id);
+    ab_id2.register(app_id, asset_id, "id2", 1).expect("register id2");
+    let ops_id3 = test_util::ops_from_mnemonic(id3, pp3, cfg.clone());
+    ops_id3.opt_in_app(app_id).expect("id3 opt-in app");
+    ops_id3.opt_in_to_asset(asset_id).expect("id3 opt-in asset");
+    let _ = creator.send_asset(asset_id, 10, id3).expect("fund id3 with ASA");
+    let ab_id3 = AlgoBingle::new(ops_id3, app_id, asset_id);
+    ab_id3.register(app_id, asset_id, "id3", 1).expect("register id3");
 
     // Setup root relays and STUN
     let r1_port = test_util::find_unused_loopback_port();
@@ -408,7 +467,8 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     // Install OnMessage on client4
     let received = Arc::new(AtomicBool::new(false));
     let payload_guard: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
-    setup_on_message(&client4, &received, &payload_guard);
+    let who_guard: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    setup_on_message(&client4, &received, &payload_guard, &who_guard);
 
     // Wait for clients to reach Registered
     log::info!("[Test] Waiting for clients to reach Registered state");
@@ -430,8 +490,6 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
         std::thread::sleep(Duration::from_millis(200));
     }
 
-    // The issue notes this will fail due to lack of ripple, but the requirement is to ensure it succeeds if possible.
-    // If it fails, we should document why, but the test code should be there.
     assert!(received.load(Ordering::SeqCst), "client 4USE did not receive the message from 3USE");
 
     log::info!("[Test] Received payload: {:?}", payload_guard.lock().expect("lock payload_guard"));

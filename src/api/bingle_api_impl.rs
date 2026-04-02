@@ -790,8 +790,8 @@ impl BingleApiImpl {
             None => { log::warn!("[BingleApiImpl::handle_lookup_by_id] algo_provider_config not configured"); return None; }
         };
 
-        // Build AlgoOps with provided config; no passphrase or address needed for read-only queries
-        let ops = AlgoOps::new(None, None, Some(config));
+        // Build AlgoOps with provided config
+        let ops = AlgoOps::new(self.started_options.algo_passphrase.clone(), None, Some(config));
         match ops.local_state_for_account(app_id, user_id) {
             Ok(Some(entries)) => {
                 if let Some((_k, h)) = entries.into_iter().find(|(k, _)| k == "Handle") {
