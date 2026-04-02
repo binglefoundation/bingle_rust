@@ -26,11 +26,19 @@ pub struct BingleApiLocalImpl {
     config: LocalApiConfig,
     // Contacts storage: id => (handle, source, is_blocked)
     contacts: Mutex<HashMap<String, (String, ContactSource, bool)>>,
+    // Messages storage: append-only log of messages
+    messages: Mutex<Vec<Message>>,
 }
 
 impl BingleApiLocalImpl {
     pub fn new(config: LocalApiConfig) -> Self {
-        Self { keypair: Mutex::new(None), algo_ops: Mutex::new(None), config, contacts: Mutex::new(HashMap::new()) }
+        Self {
+            keypair: Mutex::new(None),
+            algo_ops: Mutex::new(None),
+            config,
+            contacts: Mutex::new(HashMap::new()),
+            messages: Mutex::new(Vec::new()),
+        }
     }
 }
 
@@ -143,13 +151,25 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn add_message(
         &mut self,
-        _sender_handle: String,
-        _recipient_handles: Vec<String>,
-        _timestamp: i64,
-        _text: String,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        text: String,
     ) -> Result<(), String> {
-        Err("not implemented".to_string())
+        // Basic input validation
+        if sender_handle.trim().is_empty() { return Err("sender_handle cannot be empty".to_string()); }
+        if recipient_handles.is_empty() { return Err("recipient_handles cannot be empty".to_string()); }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err("recipient_handles cannot contain empty handles".to_string()); }
+        if text.trim().is_empty() { return Err("text cannot be empty".to_string()); }
+
+        let msg = Message { sender_handle, recipient_handles, timestamp, text };
+        let mut guard = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
+        guard.push(msg);
+        Ok(())
     }
 
-    fn get_messages(&self) -> Result<Vec<Message>, String> { Err("not implemented".to_string()) }
+    fn get_messages(&self) -> Result<Vec<Message>, String> {
+        let guard = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
+        Ok(guard.clone())
+    }
 }
