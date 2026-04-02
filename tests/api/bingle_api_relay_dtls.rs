@@ -197,7 +197,7 @@ pub fn bingle_api_send_via_relay() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     let start_res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     if let Err(e) = start_res { eprintln!("api.start error: {}", e); }

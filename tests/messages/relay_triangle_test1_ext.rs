@@ -132,6 +132,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
         fn handle_lookup(&self, _h: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
+        fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> { None }
         fn send_message_to_id(&self, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_handle(&self, _h: &Handle, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> bool { false }
         fn send_message_to_network(&self, _n: &NetworkEndpoint, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> bool { false }

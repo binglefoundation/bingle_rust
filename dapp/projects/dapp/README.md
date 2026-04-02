@@ -11,6 +11,8 @@ This project has been generated using AlgoKit. See below for default getting sta
 
 > For interactive tour over the codebase, download [vsls-contrib.codetour](https://marketplace.visualstudio.com/items?itemName=vsls-contrib.codetour) extension for VS Code, then open the [`.codetour.json`](./.tours/getting-started-with-your-algokit-project.tour) file in code tour extension.
 
+If python3 is not the default python version, then in bash use `alias python='python3'`
+
 ### Initial Setup
 
 #### 1. Clone the Repository
@@ -23,7 +25,7 @@ Ensure the following pre-requisites are installed and properly configured:
 - **AlgoKit CLI**: Essential for project setup and operations. Install the latest version from [AlgoKit CLI Installation Guide](https://github.com/algorandfoundation/algokit-cli#install). Verify installation with `algokit --version`, expecting `2.0.0` or later.
 
 #### 3. Bootstrap Your Local Environment
-Run the following commands within the project folder:
+Run the following commands within the project folder (dapp/projects/dapp):
 
 - **Install Poetry**: Required for Python dependency management. [Installation Guide](https://python-poetry.org/docs/#installation). Verify with `poetry -V` to see version `1.2`+.
 - **Setup Project**: Execute `algokit project bootstrap all` to install dependencies and setup a Python virtual environment in `.venv`.
@@ -33,9 +35,10 @@ Run the following commands within the project folder:
 ### Development Workflow
 
 #### Terminal
-Directly manage and interact with your project using AlgoKit commands:
+Directly manage and interact with your project using AlgoKit commands in dapp/projects/dapp:
 
 1. **Build Contracts**: `algokit project run build` compiles all smart contracts. You can also specify a specific contract by passing the name of the contract folder as an extra argument.
+   (this will create the teal files under `smart_contracts/bingle_dapp/teal`)
 For example: `algokit project run build -- hello_world` will only build the `hello_world` contract.
 2. **Deploy**: Use `algokit project deploy localnet` to deploy contracts to the local network. You can also specify a specific contract by passing the name of the contract folder as an extra argument.
 For example: `algokit project deploy localnet -- hello_world` will only deploy the `hello_world` contract.

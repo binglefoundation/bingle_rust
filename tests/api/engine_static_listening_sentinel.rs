@@ -72,7 +72,7 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
 
     // Start should cause Engine::start_with_addr to notify listening=true via EngineInternalPtr

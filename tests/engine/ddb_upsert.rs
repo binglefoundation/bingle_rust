@@ -32,7 +32,7 @@ fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>,
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -44,7 +44,7 @@ fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>,
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.start(&server_opts)).expect("server start ok");
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start ok");

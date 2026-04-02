@@ -42,3 +42,12 @@ pub mod turn_update_listener_relay;
 
 #[path = "bingle_api_handle_tests.rs"]
 pub mod bingle_api_handle_tests;
+
+#[path = "handle_cache_tests.rs"]
+pub mod handle_cache_tests;
+
+#[path = "handle_cache_reverse_lookup.rs"]
+pub mod handle_cache_reverse_lookup;
+
+#[path = "handle_reverse_lookup_blockchain_fallback.rs"]
+pub mod handle_reverse_lookup_blockchain_fallback;

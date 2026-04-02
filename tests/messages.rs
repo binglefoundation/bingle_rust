@@ -18,6 +18,9 @@ pub mod marshal_triangle_response;
 #[path = "messages/on_plain_text_delegate.rs"]
 pub mod on_plain_text_delegate;
 
+#[path = "messages/on_plain_text_reverse_lookup.rs"]
+pub mod on_plain_text_reverse_lookup;
+
 #[path = "messages/relay_ping_handler_unit.rs"]
 pub mod relay_ping_handler_unit;
 

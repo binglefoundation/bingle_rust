@@ -12,9 +12,11 @@ pub mod test_util;
 pub fn bingle_api_relay_check_two_nodes() {
 
 
-    // 1) Start relay node on an unused port with PASSPHRASE_RECEIVE and id ADDRESS_RECEIVE
+    // 1) Pick unused ports up-front for relay and client, and compute addresses
     let relay_port = test_util::find_unused_loopback_port();
+    let client_port = test_util::find_unused_loopback_port();
     let relay_addr = SocketAddr::from(([127, 0, 0, 1], relay_port));
+    let client_addr = SocketAddr::from(([127, 0, 0, 1], client_port));
     let relay = BingleApiImpl::new(&StartOptions::default());
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
@@ -26,21 +28,20 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&relay_opts)).expect("relay start");
 
     // Install an on_message on the relay that responds to RelayCheck with RelayCheckResponse.
-    // We need to send back to the client's socket address; this is provided via sender_handle (from_address string).
+    // We need to send back to the client's socket address; use the pre-known client_addr.
     // For user_id, use the known ADDRESS_SPEND (client id).
     let relay_arc = relay.clone();
     let relay_for_cb = relay_arc.clone();
     let client_id = test_util::ADDRESS_SPEND.to_string();
     relay.access_unsafe_for_tests(|guard: &mut BingleApiImpl| {
+        let client_addr_for_cb = client_addr.clone();
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
             log::info!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
-            // sender_handle is the peer socket address (string). Parse to SocketAddr. Fail fast if malformed.
-            let addr: SocketAddr = sender_handle.parse().expect("sender_handle must parse to SocketAddr");
             let is_check = msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("Check")
                 && msg.get("app").map(|v| v.is_null()).unwrap_or(true);
             if is_check {
@@ -49,16 +50,14 @@ pub fn bingle_api_relay_check_two_nodes() {
                     "type": "CheckResponse",
                     "state": "available", 
                 });
-                let nsk = NetworkEndpoint::new_direct(addr);
+                let nsk = NetworkEndpoint::new_direct(client_addr_for_cb);
                 // Validate that locking succeeds and attempt to send the response.
                 let _ok = relay_for_cb.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.send_message_to_network(&nsk, &client_id, resp, None));
             }
         })));
     });
 
-    // 2) Start client node on an unused port with PASSPHRASE_SPEND and id ADDRESS_SPEND
-    let client_port = test_util::find_unused_loopback_port();
-    let client_addr = SocketAddr::from(([127, 0, 0, 1], client_port));
+    // 2) Start client node on the pre-selected port with PASSPHRASE_SPEND and id ADDRESS_SPEND
     let client = BingleApiImpl::new(&StartOptions::default());
     let client_opts = StartOptions {
         handle: Handle::from("client"),
@@ -70,7 +69,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start");
 

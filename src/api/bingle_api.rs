@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::net::SocketAddr;
 
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -150,6 +151,9 @@ pub struct StartOptions {
     /// Optional log level override (trace|debug|info|warn|error). If None, defaults to debug on debug builds and warn on release.
     #[serde(default)]
     pub log_level: Option<String>,
+    /// Optional cache expiry for handle => id lookups.
+    #[serde(default)]
+    pub handle_cache_expiry: Option<Duration>,
 }
 
 impl Default for StartOptions {
@@ -165,6 +169,7 @@ impl Default for StartOptions {
             app_id: None,
             asset_id: None,
             log_level: None,
+            handle_cache_expiry: None,
         }
     }
 }
@@ -202,6 +207,10 @@ pub trait BingleApi: Send + Sync {
     /// If multiple entries exist, the oldest one is returned.
     /// Returns Ok(Some(id)) if found, Ok(None) if not found, or Err on failure.
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String>;
+
+    /// Reverse lookup: given a user id (Algorand address), obtain the corresponding handle if known.
+    /// Implementations may consult an in-memory cache and/or blockchain local state.
+    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle>;
 
     // Outgoing message transfer methods (see BINGLE_SPEC.md - Outgoing message transfer):
 

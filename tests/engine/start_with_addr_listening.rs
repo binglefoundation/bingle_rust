@@ -54,6 +54,7 @@ impl BingleApi for MockApi {
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
     fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
+    fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> { None }
     fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
     fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
     fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> bool { false }
@@ -98,7 +99,7 @@ pub fn start_with_addr_notifies_listening_true() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None,
+        log_level: None, handle_cache_expiry: None,
     };
 
     // Build Engine unbound and inject DTLS + Router with MockApi

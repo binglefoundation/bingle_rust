@@ -46,6 +46,10 @@ pub trait InnerBingleApi {
         Ok(None)
     }
 
+    fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+        None
+    }
+
     fn send_message_to_id(
         &self,
         _user_id: &rust_comms::api::bingle_api::UserId,
@@ -202,6 +206,10 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
 
     fn handle_lookup(&self, handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, String> {
         self.inner_bingle_api.handle_lookup(handle)
+    }
+
+    fn handle_lookup_by_id(&self, user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+        self.inner_bingle_api.handle_lookup_by_id(user_id)
     }
 
     fn send_message_to_id(

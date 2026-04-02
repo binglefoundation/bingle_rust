@@ -24,8 +24,8 @@ pub fn ddb_client_lookup_returns_endpoint() {
     let relay = BingleApiImpl::new(&StartOptions::default());
     let client = BingleApiImpl::new(&StartOptions::default());
 
-    let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
-    let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None };
+    let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None };
+    let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None };
 
     relay.access_unsafe_for_tests(|r| r.start(&relay_opts)).expect("relay start ok");
     client.access_unsafe_for_tests(|c| c.start(&client_opts)).expect("client start ok");
