@@ -184,6 +184,151 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VersionInfo'
+  # Local storage and contacts API (maps BingleLocalApi methods)
+  /local/generateKeypair:
+    post:
+      summary: Generate a new Algorand keypair and set it as current (local API)
+      responses:
+        '200':
+          description: Generated keypair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Keypair'
+  /local/registerKeypair:
+    post:
+      summary: Register the current keypair with Bingle using the provided handle (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterKeypairRequest'
+      responses:
+        '200':
+          description: Registration result
+          content:
+            application/json:
+              schema:
+                type: boolean
+        '400':
+          description: Missing configuration or keypair
+  /local/addContact:
+    post:
+      summary: Add a contact to the local store (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddContactRequest'
+      responses:
+        '200':
+          description: Added
+  /local/blockContact:
+    post:
+      summary: Block a contact by id (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdRequest'
+      responses:
+        '200':
+          description: Blocked
+        '404':
+          description: Contact not found
+  /local/removeContact:
+    post:
+      summary: Remove a contact by id without blocking it (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdRequest'
+      responses:
+        '200':
+          description: Removed
+        '404':
+          description: Contact not found
+  /local/isBlocked:
+    get:
+      summary: Check if a contact id is blocked (local API)
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: True if blocked
+          content:
+            application/json:
+              schema:
+                type: boolean
+  /local/getContacts:
+    get:
+      summary: Get the list of unblocked contacts (local API)
+      responses:
+        '200':
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contact'
+  /local/addMessage:
+    post:
+      summary: Add a message to the local store (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMessageRequest'
+      responses:
+        '200':
+          description: Added
+  /local/getMessages:
+    get:
+      summary: Get the list of stored messages (local API)
+      responses:
+        '200':
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+  /local/save:
+    post:
+      summary: Save all local state to a JSON file (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PathRequest'
+      responses:
+        '200':
+          description: Saved
+  /local/load:
+    post:
+      summary: Load all local state from a JSON file (local API)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PathRequest'
+      responses:
+        '200':
+          description: Loaded
 components:
   schemas:
     VersionInfo:
@@ -234,3 +379,89 @@ components:
         - $ref: '../../spec/openapi.yaml#/components/schemas/TypedMessage'
     Response:
       $ref: '#/components/schemas/BingleMessage'
+    # Local API schemas (mirror bingle-local types)
+    Keypair:
+      type: object
+      required: [id, passphrase]
+      properties:
+        id:
+          type: string
+          description: Algorand address (public id)
+        passphrase:
+          type: string
+          description: "Algorand mnemonic or base64 seed with b64: prefix"
+    ContactSource:
+      type: string
+      enum: [Manual, Received]
+    Contact:
+      type: object
+      required: [handle, id, fields]
+      properties:
+        handle:
+          type: string
+        id:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+    Message:
+      type: object
+      required: [senderHandle, recipientHandles, timestamp, text]
+      properties:
+        senderHandle:
+          type: string
+        recipientHandles:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: integer
+          format: int64
+        text:
+          type: string
+    RegisterKeypairRequest:
+      type: object
+      required: [handle]
+      properties:
+        handle:
+          type: string
+          description: The user's unique handle to register on-chain
+    AddContactRequest:
+      type: object
+      required: [handle, id, source]
+      properties:
+        handle:
+          type: string
+        id:
+          type: string
+        source:
+          $ref: '#/components/schemas/ContactSource'
+    IdRequest:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+    AddMessageRequest:
+      type: object
+      required: [senderHandle, recipientHandles, timestamp, text]
+      properties:
+        senderHandle:
+          type: string
+        recipientHandles:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: integer
+          format: int64
+        text:
+          type: string
+    PathRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: Filesystem path to a JSON file

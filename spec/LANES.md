@@ -11,6 +11,7 @@ deployment:
 local user:
 - ~~API to hold local user key material securely (portable initially)~~
 - ~~API to hold contacts~~
+- ~~Local user API in web server~~
 
 UX:
 - build react native UX based on messenger / signal / apple messages
