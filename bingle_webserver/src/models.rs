@@ -66,3 +66,40 @@ pub struct SendMessageToNetworkRequest {
 // BingleMessage is just Value for now since it's a oneOf and we're a stub
 pub type BingleMessage = Value;
 pub type Response = Value;
+
+// Local API models
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterKeypairRequest {
+    pub handle: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AddContactRequest {
+    pub handle: String,
+    pub id: String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct IdRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AddMessageRequest {
+    pub sender_handle: String,
+    pub recipient_handles: Vec<String>,
+    pub timestamp: i64,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PathRequest {
+    pub path: String,
+}

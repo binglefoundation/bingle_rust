@@ -11,6 +11,8 @@ fn setup_state() -> AppState {
     AppState {
         api: Arc::new(MockBingleApi),
         messages: Arc::new(Mutex::new(Vec::new())),
+        local_api: None,
+        local_file: None,
     }
 }
 
