@@ -25,10 +25,16 @@ pub async fn handle_lookup(
     State(state): State<AppState>,
     Query(query): Query<HandleQuery>
 ) -> impl IntoResponse {
-    match state.api.handle_lookup(&query.handle) {
-        Ok(Some(id)) => Json(id).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, "Handle not found").into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    let api = state.api.clone();
+    let handle = query.handle;
+    let result = tokio::task::spawn_blocking(move || {
+        api.handle_lookup(&handle)
+    }).await;
+    match result {
+        Ok(Ok(Some(id))) => Json(id).into_response(),
+        Ok(Ok(None)) => (StatusCode::NOT_FOUND, "Handle not found").into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
 
@@ -36,34 +42,57 @@ pub async fn send_message_to_id(
     State(state): State<AppState>,
     Json(payload): Json<SendMessageToIdRequest>
 ) -> impl IntoResponse {
-    let ok = state.api.send_message_to_id(&payload.user_id, payload.message, None);
-    Json(ok).into_response()
+    let api = state.api.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        api.send_message_to_id(&payload.user_id, payload.message, None)
+    }).await;
+    match result {
+        Ok(ok) => Json(ok).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+    }
 }
 
 pub async fn send_message_to_handle(
     State(state): State<AppState>,
     Json(payload): Json<SendMessageToHandleRequest>
 ) -> impl IntoResponse {
-    let ok = state.api.send_message_to_handle(&payload.handle, payload.message, None);
-    Json(ok).into_response()
+    let api = state.api.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        api.send_message_to_handle(&payload.handle, payload.message, None)
+    }).await;
+    match result {
+        Ok(ok) => Json(ok).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+    }
 }
 
 pub async fn send_message_to_network(
     State(state): State<AppState>,
     Json(payload): Json<SendMessageToNetworkRequest>
 ) -> impl IntoResponse {
-    let nsk: NetworkEndpoint = payload.network_source_key.into();
-    let ok = state.api.send_message_to_network(&nsk, &payload.user_id, payload.message, None);
-    Json(ok).into_response()
+    let api = state.api.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let nsk: NetworkEndpoint = payload.network_source_key.into();
+        api.send_message_to_network(&nsk, &payload.user_id, payload.message, None)
+    }).await;
+    match result {
+        Ok(ok) => Json(ok).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+    }
 }
 
 pub async fn send_message_to_id_with_response(
     State(state): State<AppState>,
     Json(payload): Json<SendMessageToIdRequest>
 ) -> impl IntoResponse {
-    match state.api.send_message_to_id_with_response(&payload.user_id, payload.message, None) {
-        Ok(res) => Json(res).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    let api = state.api.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        api.send_message_to_id_with_response(&payload.user_id, payload.message, None)
+    }).await;
+    match result {
+        Ok(Ok(res)) => Json(res).into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
 
@@ -71,9 +100,14 @@ pub async fn send_message_to_handle_with_response(
     State(state): State<AppState>,
     Json(payload): Json<SendMessageToHandleRequest>
 ) -> impl IntoResponse {
-    match state.api.send_message_to_handle_with_response(&payload.handle, payload.message, None) {
-        Ok(res) => Json(res).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    let api = state.api.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        api.send_message_to_handle_with_response(&payload.handle, payload.message, None)
+    }).await;
+    match result {
+        Ok(Ok(res)) => Json(res).into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
 
@@ -81,10 +115,15 @@ pub async fn send_message_to_network_with_response(
     State(state): State<AppState>,
     Json(payload): Json<SendMessageToNetworkRequest>
 ) -> impl IntoResponse {
-    let nsk: NetworkEndpoint = payload.network_source_key.into();
-    match state.api.send_message_to_network_with_response(&nsk, &payload.user_id, payload.message, None) {
-        Ok(res) => Json(res).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    let api = state.api.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let nsk: NetworkEndpoint = payload.network_source_key.into();
+        api.send_message_to_network_with_response(&nsk, &payload.user_id, payload.message, None)
+    }).await;
+    match result {
+        Ok(Ok(res)) => Json(res).into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
 
@@ -136,8 +175,17 @@ pub async fn local_register_keypair(
     State(state): State<AppState>,
     Json(req): Json<RegisterKeypairRequest>,
 ) -> impl IntoResponse {
-    match local_api_guard(&state) {
-        Ok(api) => match api.register_keypair(req.handle) {
+    // Check local API is enabled before spawning blocking task
+    if state.local_api.is_none() {
+        return (StatusCode::METHOD_NOT_ALLOWED, "Local API disabled").into_response();
+    }
+    let result = tokio::task::spawn_blocking(move || {
+        let local_arc = state.local_api.as_ref().unwrap();
+        let api = match local_arc.lock() {
+            Ok(g) => g,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned".to_string()).into_response(),
+        };
+        match api.register_keypair(req.handle) {
             Ok(ok) => {
                 drop(api); // release lock before save and start attempt
                 save_if_configured(&state);
@@ -145,8 +193,11 @@ pub async fn local_register_keypair(
                 AxumJson(ok).into_response()
             }
             Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
-        },
-        Err(resp) => resp,
+        }
+    }).await;
+    match result {
+        Ok(resp) => resp,
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
 
@@ -223,7 +274,7 @@ pub async fn local_is_blocked(
     Query(q): Query<IdQuery>,
 ) -> impl IntoResponse {
     match local_api_guard(&state) {
-        Ok(mut api) => match api.is_blocked(&q.id) {
+        Ok(api) => match api.is_blocked(&q.id) {
             Ok(val) => AxumJson(val).into_response(),
             Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
         },
@@ -233,7 +284,7 @@ pub async fn local_is_blocked(
 
 pub async fn local_get_contacts(State(state): State<AppState>) -> impl IntoResponse {
     match local_api_guard(&state) {
-        Ok(mut api) => match api.get_contacts() {
+        Ok(api) => match api.get_contacts() {
             Ok(list) => AxumJson(list).into_response(),
             Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
         },
@@ -268,7 +319,7 @@ pub async fn local_add_message(
 
 pub async fn local_get_messages(State(state): State<AppState>) -> impl IntoResponse {
     match local_api_guard(&state) {
-        Ok(mut api) => match api.get_messages() {
+        Ok(api) => match api.get_messages() {
             Ok(list) => AxumJson(list).into_response(),
             Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
         },
@@ -281,7 +332,7 @@ pub async fn local_save(
     Json(req): Json<PathRequest>,
 ) -> impl IntoResponse {
     match local_api_guard(&state) {
-        Ok(mut api) => {
+        Ok(api) => {
             let res = api.save(&req.path);
             drop(api);
             match res {
@@ -299,12 +350,24 @@ pub async fn get_nat_type(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 pub async fn local_keypair_status(State(state): State<AppState>) -> impl IntoResponse {
-    match local_api_guard(&state) {
-        Ok(api) => match api.keypair_status() {
+    // Check local API is enabled before spawning blocking task
+    if state.local_api.is_none() {
+        return (StatusCode::METHOD_NOT_ALLOWED, "Local API disabled").into_response();
+    }
+    let result = tokio::task::spawn_blocking(move || {
+        let local_arc = state.local_api.as_ref().unwrap();
+        let api = match local_arc.lock() {
+            Ok(g) => g,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned".to_string()).into_response(),
+        };
+        match api.keypair_status() {
             Ok(status) => AxumJson(status).into_response(),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
-        Err(resp) => resp,
+        }
+    }).await;
+    match result {
+        Ok(resp) => resp,
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
 
