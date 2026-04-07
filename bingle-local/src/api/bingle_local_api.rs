@@ -36,6 +36,21 @@ pub struct Keypair {
     pub passphrase: String,
 }
 
+/// Required ALGO balance (in ALGOs) for a keypair to be considered funded.
+pub const REQUIRED_ALGO: f64 = 1.5;
+
+/// Result of checking the keypair status.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KeypairStatus {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    #[serde(rename = "requiredAlgo", skip_serializing_if = "Option::is_none")]
+    pub required_algo: Option<f64>,
+}
+
 /// Trait describing the local API for storing messages and contacts.
 /// Do not provide default method implementations per project guidelines.
 pub trait BingleLocalApi: Send + Sync {
@@ -83,4 +98,11 @@ pub trait BingleLocalApi: Send + Sync {
 
     /// Load all local state from a JSON file at the given path, replacing current state.
     fn load(&mut self, path: &str) -> Result<(), String>;
+
+    /// Check the status of the current keypair.
+    /// Returns a KeypairStatus indicating None, UNFUNDED, FUNDED, or ACTIVE.
+    fn keypair_status(&self) -> Result<KeypairStatus, String>;
+
+    /// Return the current keypair, if one has been generated.
+    fn get_keypair(&self) -> Result<Option<Keypair>, String>;
 }

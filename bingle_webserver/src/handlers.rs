@@ -13,6 +13,7 @@ use crate::models::{
     RegisterKeypairRequest, AddContactRequest, IdRequest, AddMessageRequest, PathRequest,
 };
 use crate::AppState;
+use crate::try_start_api;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 
 #[derive(Deserialize)]
@@ -136,8 +137,13 @@ pub async fn local_register_keypair(
     Json(req): Json<RegisterKeypairRequest>,
 ) -> impl IntoResponse {
     match local_api_guard(&state) {
-        Ok(mut api) => match api.register_keypair(req.handle) {
-            Ok(ok) => AxumJson(ok).into_response(),
+        Ok(api) => match api.register_keypair(req.handle) {
+            Ok(ok) => {
+                drop(api); // release lock before save and start attempt
+                save_if_configured(&state);
+                try_start_api(&state);
+                AxumJson(ok).into_response()
+            }
             Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
         },
         Err(resp) => resp,
@@ -283,6 +289,16 @@ pub async fn local_save(
                 Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
             }
         }
+        Err(resp) => resp,
+    }
+}
+
+pub async fn local_keypair_status(State(state): State<AppState>) -> impl IntoResponse {
+    match local_api_guard(&state) {
+        Ok(api) => match api.keypair_status() {
+            Ok(status) => AxumJson(status).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        },
         Err(resp) => resp,
     }
 }

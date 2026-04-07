@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, Message};
+use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
 use rust_comms::blockchain::algo_ops::AlgoOps;
 
 #[derive(Default)]
@@ -73,6 +73,27 @@ impl BingleLocalApi for DummyLocal {
     fn save(&self, _path: &str) -> Result<(), String> { Ok(()) }
 
     fn load(&mut self, _path: &str) -> Result<(), String> { Ok(()) }
+
+    fn keypair_status(&self) -> Result<KeypairStatus, String> {
+        match &self.keypair {
+            Some(kp) => Ok(KeypairStatus {
+                status: "ACTIVE".to_string(),
+                id: Some(kp.id.clone()),
+                handle: Some("test_handle".to_string()),
+                required_algo: None,
+            }),
+            None => Ok(KeypairStatus {
+                status: "None".to_string(),
+                id: None,
+                handle: None,
+                required_algo: None,
+            }),
+        }
+    }
+
+    fn get_keypair(&self) -> Result<Option<Keypair>, String> {
+        Ok(self.keypair.clone())
+    }
 }
 
 #[test]

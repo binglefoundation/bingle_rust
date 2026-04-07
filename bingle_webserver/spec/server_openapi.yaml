@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Bingle Server API
-  version: 0.1.0
+  version: 0.1.2
   description: |
     Local HTTP server API to allow a browser client to call the Bingle API.
 servers:
@@ -305,6 +305,18 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Message'
+  /local/keypairStatus:
+    get:
+      summary: Check the status of the local keypair (local API)
+      responses:
+        '200':
+          description: Keypair status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeypairStatusResponse'
+        '405':
+          description: Local API disabled
   /local/save:
     post:
       summary: Save all local state to a JSON file (local API)
@@ -458,6 +470,28 @@ components:
           format: int64
         text:
           type: string
+    KeypairStatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [None, UNFUNDED, FUNDED, ACTIVE]
+          description: |
+            None - no keypair exists
+            UNFUNDED - keypair exists, no Bingle$ asset, insufficient ALGO
+            FUNDED - keypair exists, no Bingle$ asset, sufficient ALGO
+            ACTIVE - keypair exists and has Bingle$ asset
+        id:
+          type: string
+          description: Algorand address (present when status is not None)
+        handle:
+          type: string
+          description: Registered handle (present when status is ACTIVE)
+        requiredAlgo:
+          type: number
+          format: double
+          description: Required ALGO amount (present when status is UNFUNDED)
     PathRequest:
       type: object
       required: [path]

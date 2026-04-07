@@ -12,6 +12,8 @@ path = "src/lib.rs"
 rust_comms = { path = ".." }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+log = "0.4"
+simple_logger = "4"
 
 [dev-dependencies]
 tempfile = "3"

@@ -5,7 +5,8 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tower_http::cors::CorsLayer;
-use rust_comms::api::bingle_api::BingleApi;
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use crate::models::BingleMessage;
 use std::path::PathBuf;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
@@ -19,6 +20,46 @@ pub struct AppState {
     pub messages: Arc<Mutex<Vec<BingleMessage>>>,
     pub local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     pub local_file: Option<PathBuf>,
+    pub start_opts: Option<StartOptions>,
+    pub api_started: Arc<Mutex<bool>>,
+}
+
+/// Attempt to start the Bingle API if it hasn't been started yet and
+/// the local keypair status is "ACTIVE". Call this after any operation
+/// that might transition keypair_status to ACTIVE (e.g. register_keypair).
+pub fn try_start_api(state: &AppState) {
+    let Some(opts) = &state.start_opts else { return; };
+    let mut started = state.api_started.lock().unwrap();
+    if *started {
+        return;
+    }
+    // Check keypair status via local_api
+    if let Some(local_arc) = &state.local_api {
+        if let Ok(guard) = local_arc.lock() {
+            if let Ok(status) = guard.keypair_status() {
+                if status.status == "ACTIVE" {
+                    // Update handle and algo_passphrase from the local API's
+                    // generated keypair and registered handle before starting.
+                    let mut opts_clone = opts.clone();
+                    if let Some(handle) = &status.handle {
+                        opts_clone.handle = handle.clone();
+                    }
+                    if let Ok(Some(kp)) = guard.get_keypair() {
+                        opts_clone.algo_passphrase = Some(kp.passphrase);
+                    }
+                    let api_clone = state.api.clone();
+                    api_clone.access_unsafe_for_tests(|api_mut| {
+                        if let Err(e) = api_mut.start(&opts_clone) {
+                            log::error!("Failed to start Bingle API: {}", e);
+                        } else {
+                            log::info!("Bingle API started (keypair is ACTIVE)");
+                        }
+                    });
+                    *started = true;
+                }
+            }
+        }
+    }
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -31,8 +72,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/sendMessageToHandleWithResponse", post(handlers::send_message_to_handle_with_response))
         .route("/sendMessageToNetworkWithResponse", post(handlers::send_message_to_network_with_response))
         .route("/queued", get(handlers::get_queued))
-        .route("/version", get(handlers::handle_version))
-        .layer(CorsLayer::permissive());
+        .route("/version", get(handlers::handle_version));
 
     // Always register local routes; handlers will return 405 if local API isn't enabled
     let router = router
@@ -45,10 +85,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/local/getContacts", get(handlers::local_get_contacts))
         .route("/local/addMessage", post(handlers::local_add_message))
         .route("/local/getMessages", get(handlers::local_get_messages))
+        .route("/local/keypairStatus", get(handlers::local_keypair_status))
         .route("/local/save", post(handlers::local_save))
         .route("/local/load", post(handlers::local_load));
 
-    router.with_state(state)
+    // Apply CORS layer to ALL routes (must be after all routes are registered)
+    router.layer(CorsLayer::permissive()).with_state(state)
 }
 
 pub async fn start_server(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {

@@ -350,13 +350,32 @@ impl AlgoOps {
     }
 
     pub fn account_balance(&self) -> Result<Option<f64>> {
-        let client = self.algod_client()?;
-        let address = self.require_address()?;
-        let res = self.rt_block_on(client.account_information(&address))?;
+        let client = match self.algod_client() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("[account_balance] Failed to access algod client: {}", e);
+                return Err(e);
+            }
+        };
+        let address = match self.require_address() {
+            Ok(a) => a,
+            Err(e) => {
+                log::error!("[account_balance] Failed to resolve address: {}", e);
+                return Err(e);
+            }
+        };
+        let res = match self.rt_block_on(client.account_information(&address)) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("[account_balance] Failed to fetch account information for {}: {}", address, e);
+                return Err(e);
+            }
+        };
+        log::info!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
         let info = match res {
             Ok(v) => v,
-            Err(_e) => {
-                // Mirror Kotlin: if not successful or not credited, return None
+            Err(e) => {
+                log::error!("[account_balance] Account information request failed for {}: {}", address, e);
                 return Ok(None);
             }
         };

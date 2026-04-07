@@ -13,7 +13,6 @@ use crate::common::MockBingleApi;
 use bingle_webserver::handlers as web_handlers;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
-use tempfile::tempdir;
 
 fn setup_state() -> AppState {
     AppState {
@@ -21,6 +20,8 @@ fn setup_state() -> AppState {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: None,
         local_file: None,
+        start_opts: None,
+        api_started: Arc::new(Mutex::new(true)),
     }
 }
 
@@ -66,7 +67,7 @@ async fn test_local_disabled_returns_405() {
 
 #[tokio::test]
 async fn test_local_generate_keypair_saves_file() {
-    let tmp = tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
     let file_path = tmp.path().join("state.json");
 
     // Prepare local API
@@ -76,6 +77,8 @@ async fn test_local_generate_keypair_saves_file() {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
         local_file: Some(file_path.clone()),
+        start_opts: None,
+        api_started: Arc::new(Mutex::new(true)),
     };
 
     // Call generateKeypair which should also save
@@ -86,4 +89,34 @@ async fn test_local_generate_keypair_saves_file() {
     let meta = std::fs::metadata(&file_path).unwrap();
     assert!(meta.is_file());
     assert!(meta.len() > 0);
+}
+
+#[tokio::test]
+async fn test_local_keypair_status_disabled_returns_405() {
+    let state = setup_state();
+    let response = web_handlers::local_keypair_status(State(state)).await.into_response();
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn test_local_keypair_status_no_keypair() {
+    let impl_api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let state = AppState {
+        api: Arc::new(MockBingleApi),
+        messages: Arc::new(Mutex::new(Vec::new())),
+        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_file: None,
+        start_opts: None,
+        api_started: Arc::new(Mutex::new(true)),
+    };
+
+    let response = web_handlers::local_keypair_status(State(state)).await.into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "None");
+    assert!(json.get("id").is_none());
+    assert!(json.get("handle").is_none());
+    assert!(json.get("requiredAlgo").is_none());
 }

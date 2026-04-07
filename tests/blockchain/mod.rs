@@ -37,4 +37,6 @@ pub mod discover_roots_unit;
 // New unit covering keypair generation helper
 #[path = "generate_keypair.rs"]
 pub mod generate_keypair;
+#[path = "account_balance_test.rs"]
+pub mod account_balance_test;
 

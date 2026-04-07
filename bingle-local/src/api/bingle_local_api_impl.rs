@@ -1,4 +1,4 @@
-use crate::api::{BingleLocalApi, Contact, ContactSource, Keypair, Message};
+use crate::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, REQUIRED_ALGO};
 use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use std::collections::HashMap;
@@ -45,8 +45,10 @@ impl BingleApiLocalImpl {
 
 impl BingleLocalApi for BingleApiLocalImpl {
     fn generate_keypair(&mut self) -> Result<Keypair, String> {
+        log::info!("[BingleLocalApi] Generating new keypair");
         let (id, passphrase) = rust_comms::blockchain::algo_ops::AlgoOps::generate_keypair();
         let kp = Keypair { id, passphrase };
+        log::info!("[BingleLocalApi] Generated keypair with id: {}", kp.id);
         if let Ok(mut guard) = self.keypair.lock() {
             *guard = Some(kp.clone());
         }
@@ -58,6 +60,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn register_keypair(&self, handle: String) -> Result<bool, String> {
+        log::info!("[BingleLocalApi] Registering keypair with handle: {}", handle);
         // Validate config
         let app_id = self.config.app_id;
         let asset_id = self.config.asset_id;
@@ -65,52 +68,133 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if asset_id == 0 { return Err("asset_id not set in config".to_string()); }
 
         // Ensure we have blockchain ops bound to current keypair
-        let ops = self.get_algo_ops()?;
+        let ops = match self.get_algo_ops() {
+            Ok(o) => o,
+            Err(e) => {
+                log::error!("[register_keypair] Failed to get AlgoOps: {}", e);
+                return Err(e);
+            }
+        };
 
         // Execute on-chain steps
-        ops.opt_in_app(app_id).map_err(|e| e.to_string())?;
-        ops.opt_in_to_asset(asset_id).map_err(|e| e.to_string())?;
+        if let Err(e) = ops.opt_in_app(app_id) {
+            let msg = e.to_string();
+            log::error!("[register_keypair] Failed to opt in to app {}: {}", app_id, msg);
+            return Err(msg);
+        }
+        if let Err(e) = ops.opt_in_to_asset(asset_id) {
+            let msg = e.to_string();
+            log::error!("[register_keypair] Failed to opt in to asset {}: {}", asset_id, msg);
+            return Err(msg);
+        }
 
         // Create AlgoBingle helper and perform buy + register
         let bgl = AlgoBingle::new(ops.clone(), app_id, asset_id);
         // Determine current price and buy 1 unit
-        let price = bgl.get_bingle_price(app_id).map_err(|e| e.to_string())?;
-        let _tx1 = bgl.buy_bingle(app_id, asset_id, price).map_err(|e| e.to_string())?;
-        let _tx2 = bgl.register(app_id, asset_id, &handle, 1).map_err(|e| e.to_string())?;
+        let price = match bgl.get_bingle_price(app_id) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = e.to_string();
+                log::error!("[register_keypair] Failed to get Bingle price for app {}: {}", app_id, msg);
+                return Err(msg);
+            }
+        };
+        match bgl.buy_bingle(app_id, asset_id, price) {
+            Ok(tx) => { let _ = tx; }
+            Err(e) => {
+                let msg = e.to_string();
+                log::error!("[register_keypair] Failed to buy Bingle (app={}, asset={}, price={}): {}", app_id, asset_id, price, msg);
+                return Err(msg);
+            }
+        }
+        match bgl.register(app_id, asset_id, &handle, 1) {
+            Ok(tx) => { let _ = tx; }
+            Err(e) => {
+                let msg = e.to_string();
+                log::error!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, msg);
+                return Err(msg);
+            }
+        }
+        log::info!("[BingleLocalApi] Keypair registered successfully with handle: {}", handle);
         Ok(true)
     }
 
     fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, String> {
         // 1) Return cached instance if available
         {
-            let guard = self.algo_ops.lock().map_err(|_| "mutex poisoned".to_string())?;
+            let guard = match self.algo_ops.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    let msg = format!("mutex poisoned: {}", e);
+                    log::error!("[get_algo_ops] Failed to lock algo_ops: {}", msg);
+                    return Err(msg);
+                }
+            };
             if let Some(ops) = guard.as_ref() {
+                log::debug!("[BingleLocalApi] get_algo_ops: returning cached instance");
                 return Ok(ops.clone());
             }
         }
 
         // 2) No cached instance; require an existing keypair (do NOT generate here)
         let pass = {
-            let guard = self.keypair.lock().map_err(|_| "mutex poisoned".to_string())?;
-            guard
-                .as_ref()
-                .map(|k| k.passphrase.clone())
-                .ok_or_else(|| "no keypair".to_string())?
+            let guard = match self.keypair.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    let msg = format!("mutex poisoned: {}", e);
+                    log::error!("[get_algo_ops] Failed to lock keypair: {}", msg);
+                    return Err(msg);
+                }
+            };
+            match guard.as_ref().map(|k| k.passphrase.clone()) {
+                Some(p) => p,
+                None => {
+                    log::error!("[get_algo_ops] No keypair available");
+                    return Err("no keypair".to_string());
+                }
+            }
         };
 
         // 3) Construct and cache AlgoOps bound to this passphrase
+        log::debug!("[BingleLocalApi] get_algo_ops: constructing new AlgoOps with config: \
+            client_api_url={}, client_api_port={}, indexer_api_url={}, indexer_api_port={}, \
+            token={}, token_key={}, app_id={:?}, asset_id={:?}",
+            self.config.algo_config.client_api_url,
+            self.config.algo_config.client_api_port,
+            self.config.algo_config.indexer_api_url,
+            self.config.algo_config.indexer_api_port,
+            self.config.algo_config.token.as_deref().unwrap_or("<none>"),
+            self.config.algo_config.token_key.as_deref().unwrap_or("<none>"),
+            self.config.algo_config.app_id,
+            self.config.algo_config.asset_id,
+        );
         let ops = AlgoOps::new(Some(pass), None, Some(self.config.algo_config.clone()));
-        let mut cache_guard = self.algo_ops.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let mut cache_guard = match self.algo_ops.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[get_algo_ops] Failed to lock algo_ops for caching: {}", msg);
+                return Err(msg);
+            }
+        };
         *cache_guard = Some(ops.clone());
         Ok(ops)
     }
 
     fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), String> {
+        log::info!("[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}", handle, id, source);
         // Validate inputs
         if handle.trim().is_empty() { return Err("handle cannot be empty".to_string()); }
         if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
 
-        let mut map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let mut map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[add_contact] Failed to lock contacts: {}", msg);
+                return Err(msg);
+            }
+        };
         if map.contains_key(&id) {
             return Err("contact already exists".to_string());
         }
@@ -119,8 +203,16 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn block_contact(&mut self, id: String) -> Result<(), String> {
+        log::info!("[BingleLocalApi] Blocking contact: id={}", id);
         if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
-        let mut map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let mut map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[block_contact] Failed to lock contacts: {}", msg);
+                return Err(msg);
+            }
+        };
         match map.get_mut(&id) {
             Some((_h, _s, blocked)) => { *blocked = true; Ok(()) }
             None => Err("contact not found".to_string()),
@@ -128,19 +220,41 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn remove_contact(&mut self, id: String) -> Result<(), String> {
+        log::info!("[BingleLocalApi] Removing contact: id={}", id);
         if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
-        let mut map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let mut map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[remove_contact] Failed to lock contacts: {}", msg);
+                return Err(msg);
+            }
+        };
         if map.remove(&id).is_some() { Ok(()) } else { Err("contact not found".to_string()) }
     }
 
     fn is_blocked(&self, id: &str) -> Result<bool, String> {
         if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
-        let map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[is_blocked] Failed to lock contacts: {}", msg);
+                return Err(msg);
+            }
+        };
         Ok(map.get(id).map(|(_, _, b)| *b).unwrap_or(false))
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, String> {
-        let map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let map = match self.contacts.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[get_contacts] Failed to lock contacts: {}", msg);
+                return Err(msg);
+            }
+        };
         let mut out: Vec<Contact> = Vec::new();
         for (id, (handle, _source, blocked)) in map.iter() {
             if !*blocked {
@@ -157,6 +271,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         timestamp: i64,
         text: String,
     ) -> Result<(), String> {
+        log::debug!("[BingleLocalApi] Adding message from: {} to: {:?}", sender_handle, recipient_handles);
         // Basic input validation
         if sender_handle.trim().is_empty() { return Err("sender_handle cannot be empty".to_string()); }
         if recipient_handles.is_empty() { return Err("recipient_handles cannot be empty".to_string()); }
@@ -164,17 +279,32 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if text.trim().is_empty() { return Err("text cannot be empty".to_string()); }
 
         let msg = Message { sender_handle, recipient_handles, timestamp, text };
-        let mut guard = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[add_message] Failed to lock messages: {}", msg);
+                return Err(msg);
+            }
+        };
         guard.push(msg);
         Ok(())
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, String> {
-        let guard = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
+        let guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[get_messages] Failed to lock messages: {}", msg);
+                return Err(msg);
+            }
+        };
         Ok(guard.clone())
     }
 
     fn save(&self, path: &str) -> Result<(), String> {
+        log::info!("[BingleLocalApi] Saving state to: {}", path);
         // Build serializable snapshot
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct ContactEntry {
@@ -192,11 +322,25 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         // Snapshot under locks (avoid holding multiple locks longer than needed)
         let keypair = {
-            let g = self.keypair.lock().map_err(|_| "mutex poisoned".to_string())?;
+            let g = match self.keypair.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    let msg = format!("mutex poisoned: {}", e);
+                    log::error!("[save] Failed to lock keypair: {}", msg);
+                    return Err(msg);
+                }
+            };
             g.clone()
         };
         let contacts_vec: Vec<ContactEntry> = {
-            let map = self.contacts.lock().map_err(|_| "mutex poisoned".to_string())?;
+            let map = match self.contacts.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    let msg = format!("mutex poisoned: {}", e);
+                    log::error!("[save] Failed to lock contacts: {}", msg);
+                    return Err(msg);
+                }
+            };
             map.iter()
                 .map(|(id, (handle, source, blocked))| ContactEntry {
                     id: id.clone(),
@@ -207,7 +351,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 .collect()
         };
         let messages = {
-            let g = self.messages.lock().map_err(|_| "mutex poisoned".to_string())?;
+            let g = match self.messages.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    let msg = format!("mutex poisoned: {}", e);
+                    log::error!("[save] Failed to lock messages: {}", msg);
+                    return Err(msg);
+                }
+            };
             g.clone()
         };
 
@@ -216,15 +367,33 @@ impl BingleLocalApi for BingleApiLocalImpl {
         // Ensure parent directory exists
         if let Some(parent) = std::path::Path::new(path).parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    let msg = e.to_string();
+                    log::error!("[save] Failed to create parent directory for '{}': {}", path, msg);
+                    return Err(msg);
+                }
             }
         }
 
-        let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-        serde_json::to_writer_pretty(file, &state).map_err(|e| e.to_string())
+        let file = match std::fs::File::create(path) {
+            Ok(f) => f,
+            Err(e) => {
+                let msg = e.to_string();
+                log::error!("[save] Failed to create file '{}': {}", path, msg);
+                return Err(msg);
+            }
+        };
+        if let Err(e) = serde_json::to_writer_pretty(file, &state) {
+            let msg = e.to_string();
+            log::error!("[save] Failed to write JSON to '{}': {}", path, msg);
+            return Err(msg);
+        }
+        log::info!("[BingleLocalApi] State saved successfully to: {}", path);
+        Ok(())
     }
 
     fn load(&mut self, path: &str) -> Result<(), String> {
+        log::info!("[BingleLocalApi] Loading state from: {}", path);
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct ContactEntry {
             id: String,
@@ -239,19 +408,35 @@ impl BingleLocalApi for BingleApiLocalImpl {
             messages: Vec<Message>,
         }
 
-        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-        let state: LocalState = serde_json::from_reader(file).map_err(|e| e.to_string())?;
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                let msg = e.to_string();
+                log::error!("[load] Failed to open file '{}': {}", path, msg);
+                return Err(msg);
+            }
+        };
+        let state: LocalState = match serde_json::from_reader(file) {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = e.to_string();
+                log::error!("[load] Failed to parse JSON from '{}': {}", path, msg);
+                return Err(msg);
+            }
+        };
 
         // Replace current state under locks
         if let Ok(mut k) = self.keypair.lock() {
             *k = state.keypair.clone();
         } else {
+            log::error!("[load] Failed to lock keypair: mutex poisoned");
             return Err("mutex poisoned".to_string());
         }
         // Invalidate cached AlgoOps since keypair may have changed
         if let Ok(mut ops_guard) = self.algo_ops.lock() {
             *ops_guard = None;
         } else {
+            log::error!("[load] Failed to lock algo_ops: mutex poisoned");
             return Err("mutex poisoned".to_string());
         }
         if let Ok(mut map) = self.contacts.lock() {
@@ -260,14 +445,138 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 map.insert(ce.id, (ce.handle, ce.source, ce.is_blocked));
             }
         } else {
+            log::error!("[load] Failed to lock contacts: mutex poisoned");
             return Err("mutex poisoned".to_string());
         }
         if let Ok(mut msgs) = self.messages.lock() {
             *msgs = state.messages;
         } else {
+            log::error!("[load] Failed to lock messages: mutex poisoned");
             return Err("mutex poisoned".to_string());
         }
 
+        log::info!("[BingleLocalApi] State loaded successfully from: {}", path);
         Ok(())
+    }
+
+    fn keypair_status(&self) -> Result<KeypairStatus, String> {
+        log::debug!("[BingleLocalApi] Checking keypair status");
+        // 1) Check if keypair exists
+        let kp = {
+            let guard = match self.keypair.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    let msg = format!("mutex poisoned: {}", e);
+                    log::error!("[keypair_status] Failed to lock keypair: {}", msg);
+                    return Err(msg);
+                }
+            };
+            match guard.as_ref() {
+                Some(k) => k.clone(),
+                None => {
+                    log::info!("[BingleLocalApi] Keypair status: None (no keypair)");
+                    return Ok(KeypairStatus {
+                        status: "None".to_string(),
+                        id: None,
+                        handle: None,
+                        required_algo: None,
+                    });
+                }
+            }
+        };
+
+        let algorand_id = kp.id.clone();
+
+        // 2) Get AlgoOps for blockchain queries
+        let ops = match self.get_algo_ops() {
+            Ok(o) => o,
+            Err(e) => {
+                log::error!("[keypair_status] Failed to get AlgoOps: {}", e);
+                return Err(e);
+            }
+        };
+
+        // 3) Check if the account has opted in to the Bingle$ asset
+        let asset_id = self.config.asset_id;
+        let has_asset = if asset_id > 0 {
+            match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
+                Ok(v) => v,
+                Err(e) => {
+                    let msg = e.to_string();
+                    log::error!("[keypair_status] Failed to check asset opt-in for {} (asset {}): {}", algorand_id, asset_id, msg);
+                    return Err(msg);
+                }
+            }
+        } else {
+            false
+        };
+
+        if has_asset {
+            // ACTIVE: has Bingle$ asset — look up handle from on-chain local state
+            let app_id = self.config.app_id;
+            let handle = if app_id > 0 {
+                let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = e.to_string();
+                        log::error!("[keypair_status] Failed to get local state for {} (app {}): {}", algorand_id, app_id, msg);
+                        return Err(msg);
+                    }
+                };
+                local_state.and_then(|entries| {
+                    entries.into_iter()
+                        .find(|(k, _)| k == "Handle")
+                        .map(|(_, v)| v)
+                })
+            } else {
+                None
+            };
+            Ok(KeypairStatus {
+                status: "ACTIVE".to_string(),
+                id: Some(algorand_id),
+                handle,
+                required_algo: None,
+            })
+        } else {
+            // Check balance
+            let balance = match ops.account_balance() {
+                Ok(b) => b,
+                Err(e) => {
+                    let msg = e.to_string();
+                    log::error!("[keypair_status] Failed to get account balance: {}", msg);
+                    return Err(msg);
+                }
+            };
+            let balance_algos = balance.unwrap_or(0.0);
+            log::info!("[BingleLocalApi] Balance: {} ALGOs (raw: {:?})", balance_algos, balance);
+
+            if balance_algos >= REQUIRED_ALGO {
+                Ok(KeypairStatus {
+                    status: "FUNDED".to_string(),
+                    id: Some(algorand_id),
+                    handle: None,
+                    required_algo: None,
+                })
+            } else {
+                Ok(KeypairStatus {
+                    status: "UNFUNDED".to_string(),
+                    id: Some(algorand_id),
+                    handle: None,
+                    required_algo: Some(REQUIRED_ALGO),
+                })
+            }
+        }
+    }
+
+    fn get_keypair(&self) -> Result<Option<Keypair>, String> {
+        let guard = match self.keypair.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                log::error!("[get_keypair] Failed to lock keypair: {}", msg);
+                return Err(msg);
+            }
+        };
+        Ok(guard.clone())
     }
 }

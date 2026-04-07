@@ -11,7 +11,11 @@ use bingle_local::api::bingle_local_api::BingleLocalApi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    simple_logger::init_with_level(log::Level::Info).ok();
+    simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Info)
+        .with_module_level("rust_comms", log::LevelFilter::Debug)
+        .init()
+        .ok();
 
     let mut port = 12121;
     let mut address = "127.0.0.1".to_string();
@@ -53,7 +57,17 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let opts = parse_start_options_from_args(other_args).map_err(|e| anyhow::anyhow!(e))?;
+    // When --local is active, handle is set by the caller (e.g. via registerKeypair),
+    // so we don't require it on the command line.
+    let opts = match parse_start_options_from_args(other_args.clone()) {
+        Ok(o) => o,
+        Err(e) if local_file.is_some() && e.contains("Missing handle") => {
+            other_args.push("--handle".to_string());
+            other_args.push(String::new());
+            parse_start_options_from_args(other_args).map_err(|e| anyhow::anyhow!(e))?
+        }
+        Err(e) => return Err(anyhow::anyhow!(e)),
+    };
     let addr: SocketAddr = format!("{}:{}", address, port).parse()?;
 
     // Initialize network API
@@ -63,7 +77,11 @@ async fn main() -> anyhow::Result<()> {
     // Initialize local API if requested
     let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
     if let Some(path) = &local_file {
-        let cfg = LocalApiConfig::default();
+        let cfg = LocalApiConfig {
+            algo_config: opts.algo_provider_config.clone().unwrap_or_default(),
+            app_id: opts.app_id.unwrap_or(0),
+            asset_id: opts.asset_id.unwrap_or(0),
+        };
         let mut impl_api = BingleApiLocalImpl::new(cfg);
         if path.exists() {
             if let Err(e) = impl_api.load(path.to_string_lossy().as_ref()) {
@@ -96,8 +114,39 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Start API
-    {
+    // Determine whether to start API immediately or defer until keypair is ACTIVE
+    let mut api_started = false;
+    if local_file.is_some() {
+        // When --local is active, only start if keypair_status is already ACTIVE
+        if let Some(local_arc) = &local_api {
+            if let Ok(guard) = local_arc.lock() {
+                if let Ok(status) = guard.keypair_status() {
+                    if status.status == "ACTIVE" {
+                        let api_clone = api.clone();
+                        let mut opts_clone = opts.clone();
+                        // Update handle and algo_passphrase from the local API's
+                        // generated keypair and registered handle before starting.
+                        if let Some(handle) = &status.handle {
+                            opts_clone.handle = handle.clone();
+                        }
+                        if let Ok(Some(kp)) = guard.get_keypair() {
+                            opts_clone.algo_passphrase = Some(kp.passphrase);
+                        }
+                        api_clone.access_unsafe_for_tests(|api_mut| {
+                            if let Err(e) = api_mut.start(&opts_clone) {
+                                log::error!("Failed to start Bingle API: {}", e);
+                            }
+                        });
+                        api_started = true;
+                        log::info!("Bingle API started (keypair is ACTIVE)");
+                    } else {
+                        log::info!("Bingle API start deferred (keypair status: {})", status.status);
+                    }
+                }
+            }
+        }
+    } else {
+        // No --local: start API immediately as before
         let api_clone = api.clone();
         let opts_clone = opts.clone();
         api_clone.access_unsafe_for_tests(|api_mut| {
@@ -105,6 +154,7 @@ async fn main() -> anyhow::Result<()> {
                 log::error!("Failed to start Bingle API: {}", e);
             }
         });
+        api_started = true;
     }
 
     let state = AppState {
@@ -112,6 +162,8 @@ async fn main() -> anyhow::Result<()> {
         messages,
         local_api,
         local_file,
+        start_opts: if api_started { None } else { Some(opts.clone()) },
+        api_started: Arc::new(Mutex::new(api_started)),
     };
 
     let res = start_server(addr, state).await;

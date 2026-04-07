@@ -12,3 +12,5 @@ mod local_impl_messages;
 
 #[path = "api/local_impl_persistence.rs"]
 mod local_impl_persistence;
+#[path = "api/local_impl_keypair_status.rs"]
+mod local_impl_keypair_status;
