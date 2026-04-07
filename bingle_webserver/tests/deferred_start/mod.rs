@@ -85,6 +85,7 @@ fn test_try_start_api_does_not_start_when_no_start_opts() {
         local_file: None,
         start_opts: None, // no deferred start configured
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     try_start_api(&state);
@@ -105,6 +106,7 @@ fn test_try_start_api_does_not_start_when_keypair_not_active() {
         local_file: None,
         start_opts: Some(StartOptions::default()),
         api_started: Arc::new(Mutex::new(false)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     try_start_api(&state);
@@ -126,6 +128,7 @@ fn test_try_start_api_does_not_start_when_keypair_unfunded() {
         local_file: None,
         start_opts: Some(StartOptions::default()),
         api_started: Arc::new(Mutex::new(false)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     try_start_api(&state);
@@ -146,6 +149,7 @@ fn test_try_start_api_does_not_start_when_keypair_funded() {
         local_file: None,
         start_opts: Some(StartOptions::default()),
         api_started: Arc::new(Mutex::new(false)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     try_start_api(&state);
@@ -166,6 +170,7 @@ fn test_try_start_api_starts_when_keypair_active() {
         local_file: None,
         start_opts: Some(StartOptions::default()),
         api_started: Arc::new(Mutex::new(false)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     try_start_api(&state);
@@ -186,7 +191,8 @@ fn test_try_start_api_does_not_start_twice() {
         local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
         local_file: None,
         start_opts: Some(StartOptions::default()),
-        api_started: Arc::new(Mutex::new(true)), // already started
+        api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())), // already started
     };
 
     try_start_api(&state);
@@ -217,6 +223,7 @@ fn test_try_start_api_sets_handle_and_passphrase_from_local_api() {
         local_file: None,
         start_opts: Some(base_opts),
         api_started: Arc::new(Mutex::new(false)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     try_start_api(&state);

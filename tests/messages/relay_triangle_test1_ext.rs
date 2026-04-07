@@ -117,7 +117,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         fn turn_handle_call(&self, _s: SocketAddr, _d: SocketAddr) -> i32 { -1 }
         fn turn_handle_listen(&self, _i: String, _s: SocketAddr) -> bool { false }
         fn turn_handle_called(&self, _s: SocketAddr, _d: SocketAddr, _c: u16) {}
-        fn notify_listening(&self, _l: bool) {}
+        fn notify_listening(&self, _l: bool, _nat_type: rust_comms::engine::NatType) {}
     }
     impl rust_comms::api::bingle_api::BingleApi for MockApi {
         fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }

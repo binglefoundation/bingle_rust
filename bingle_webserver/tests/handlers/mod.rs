@@ -22,6 +22,7 @@ fn setup_state() -> AppState {
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     }
 }
 
@@ -79,6 +80,7 @@ async fn test_local_generate_keypair_saves_file() {
         local_file: Some(file_path.clone()),
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     // Call generateKeypair which should also save
@@ -108,6 +110,7 @@ async fn test_local_keypair_status_no_keypair() {
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
     let response = web_handlers::local_keypair_status(State(state)).await.into_response();
@@ -119,4 +122,31 @@ async fn test_local_keypair_status_no_keypair() {
     assert!(json.get("id").is_none());
     assert!(json.get("handle").is_none());
     assert!(json.get("requiredAlgo").is_none());
+}
+
+#[tokio::test]
+async fn test_get_nat_type_returns_unknown_by_default() {
+    let state = setup_state();
+    let response = web_handlers::get_nat_type(State(state)).await.into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["natType"], "Unknown");
+}
+
+#[tokio::test]
+async fn test_get_nat_type_reflects_updated_value() {
+    let state = setup_state();
+    // Simulate the on_listening handler updating nat_type
+    {
+        let mut guard = state.nat_type.lock().unwrap();
+        *guard = "FullCone".to_string();
+    }
+    let response = web_handlers::get_nat_type(State(state)).await.into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["natType"], "FullCone");
 }

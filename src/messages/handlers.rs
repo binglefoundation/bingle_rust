@@ -29,7 +29,7 @@ impl BingleApiInternal for BothAsApi {
     fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source, dest) }
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool { self.inner.turn_handle_listen(id, source) }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) { self.inner.turn_handle_called(source, dest, channel) }
-    fn notify_listening(&self, listening: bool) { self.inner.notify_listening(listening) }
+    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { self.inner.notify_listening(listening, nat_type) }
     fn set_relay_state(&self, state: crate::engine::RelayState) { self.inner.set_relay_state(state) }
     fn get_peer_ddb_target(&self) -> Option<usize> { self.inner.get_peer_ddb_target() }
     fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.inner.ddb_upsert_record(record) }
@@ -694,7 +694,7 @@ impl MessageHandler for DefaultPrintingHandler {
                         log::info!("[handlers::on_triangle_test3] registration process completed (user_id={}, handle={})", uid, handle);
                         api_for_thread.set_state(crate::engine::EngineState::Registered);
                         // Notify that we are listening now
-                        api_for_thread.notify_listening(true);
+                        api_for_thread.notify_listening(true, crate::engine::NatType::FullCone);
                     }
                     Err(e) => {
                         log::warn!("[handlers::on_triangle_test3] initial ddb_register_ip failed: {}", e);
@@ -775,7 +775,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
                     api_for_thread.set_state(crate::engine::EngineState::Registered);
                     // Notify that we are listening now
-                    api_for_thread.notify_listening(true)
+                    api_for_thread.notify_listening(true, crate::engine::NatType::Restricted)
                 }
             } else {
                 log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);

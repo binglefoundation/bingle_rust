@@ -79,7 +79,7 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _id: std::string::String, _source: std::net::SocketAddr) -> bool { false }
     fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) { }
-    fn notify_listening(&self, _listening: bool) {}
+    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
 }
 
 // Verifies that when starting with a static address, the engine invokes the listening handler with true.
@@ -111,7 +111,7 @@ pub fn start_with_addr_notifies_listening_true() {
     eng.set_router(router);
 
     let listening_flag = flag.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening| {
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat_type: rust_comms::engine::NatType| {
         if listening {
             listening_flag.store(true, Ordering::SeqCst);
         }

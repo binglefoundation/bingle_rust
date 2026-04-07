@@ -57,7 +57,7 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
     fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) { }
-    fn notify_listening(&self, _listening: bool) { }
+    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) { }
 }
 impl BingleApi for MockApi { 
     fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }

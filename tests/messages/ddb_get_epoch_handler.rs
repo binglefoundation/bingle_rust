@@ -47,7 +47,7 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn turn_handle_call(&self, _s: std::net::SocketAddr, _d: std::net::SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _i: String, _s: std::net::SocketAddr) -> bool { false }
     fn turn_handle_called(&self, _s: std::net::SocketAddr, _d: std::net::SocketAddr, _c: u16) {}
-    fn notify_listening(&self, _l: bool) {}
+    fn notify_listening(&self, _l: bool, _nat_type: rust_comms::engine::NatType) {}
     fn get_relay_state(&self) -> String { "off".into() }
 }
 
@@ -69,7 +69,7 @@ impl BingleApiInternal for InternalAvailable {
     fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
     fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) { }
-    fn notify_listening(&self, _listening: bool) {}
+    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
 }
 
 struct InternalStarting;
@@ -90,7 +90,7 @@ impl BingleApiInternal for InternalStarting {
     fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
     fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
     fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) { }
-    fn notify_listening(&self, _listening: bool) {}
+    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]

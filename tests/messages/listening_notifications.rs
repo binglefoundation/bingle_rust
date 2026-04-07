@@ -24,7 +24,7 @@ impl InnerBingleApiInternal for MockInternal {
         self.register_called.store(true, Ordering::SeqCst);
         Ok(())
     }
-    fn notify_listening(&self, listening: bool) { if listening { self.listening_notified.store(true, Ordering::SeqCst); } }
+    fn notify_listening(&self, listening: bool, _nat_type: rust_comms::engine::NatType) { if listening { self.listening_notified.store(true, Ordering::SeqCst); } }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]

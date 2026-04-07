@@ -184,6 +184,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VersionInfo'
+  /getNatType:
+    get:
+      summary: Get the current detected NAT type
+      responses:
+        '200':
+          description: The current NAT type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NatTypeResponse'
   # Local storage and contacts API (maps BingleLocalApi methods)
   /local/generateKeypair:
     post:
@@ -492,6 +502,19 @@ components:
           type: number
           format: double
           description: Required ALGO amount (present when status is UNFUNDED)
+    NatTypeResponse:
+      type: object
+      required: [natType]
+      properties:
+        natType:
+          type: string
+          enum: [Unknown, NoConnection, Symmetric, Restricted, FullCone]
+          description: |
+            Unknown - NAT type has not been determined yet
+            NoConnection - no network connection detected
+            Symmetric - symmetric NAT (not traversable)
+            Restricted - restricted cone NAT (traversable via relay)
+            FullCone - full cone NAT (directly reachable)
     PathRequest:
       type: object
       required: [path]

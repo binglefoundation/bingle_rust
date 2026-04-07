@@ -194,7 +194,7 @@ fn cmd_run(mut args: Vec<String>) {
             // Optional: install OnListening handler to manage a sentinel file
             if let Some(path) = sentinel_file.clone() {
                 let p = path.clone();
-                let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
+                let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening: bool, _nat_type: rust_comms::engine::NatType| {
                     if listening {
                         match fs::OpenOptions::new().create(true).write(true).truncate(true).open(&p) {
                             Ok(mut f) => {

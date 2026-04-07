@@ -72,7 +72,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn turn_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32 { self.api.access(|a| a.turn_handle_call(source, dest)) }
     fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { self.api.access(|a| a.turn_handle_listen(id, source)) }
     fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { self.api.access(|a| a.turn_handle_called(source, dest, channel)) }
-    fn notify_listening(&self, listening: bool) { self.api.access(|a| a.notify_listening(listening)) }
+    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { self.api.access(|a| a.notify_listening(listening, nat_type)) }
     fn set_relay_state(&self, state: crate::engine::RelayState) { self.api.access(|a| a.set_relay_state(state)) }
     fn get_peer_ddb_target(&self) -> Option<usize> { self.api.access(|a| a.get_peer_ddb_target()) }
     fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.api.access(|a| a.ddb_upsert_record(record)) }

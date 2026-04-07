@@ -51,7 +51,7 @@ pub trait BingleApiInternal: Send + Sync {
     fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16);
 
     /// Notify that the node's listening state changed.
-    fn notify_listening(&self, listening: bool);
+    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType);
 
     /// Get current relay state string for CheckResponse ("off"|"starting"|"loading"|"loaded"|"available"|"own").
     fn get_relay_state(&self) -> String;
@@ -117,9 +117,10 @@ pub type OnMessageHandler = dyn Fn(UserId, Handle, JsonValue) + Send + Sync + 's
 pub type OnConnectHandler = dyn Fn(UserId, Handle) + Send + Sync + 'static;
 
 /// Handler invoked when the node starts/stops listening for network messages.
-/// Parameter:
+/// Parameters:
 /// - listening: true when the node is listening; false when it has stopped.
-pub type OnListeningHandler = dyn Fn(bool) + Send + Sync + 'static;
+/// - nat_type: the detected NAT type at the time of the notification.
+pub type OnListeningHandler = dyn Fn(bool, crate::engine::NatType) + Send + Sync + 'static;
 
 /// Options used to start the Bingle node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -293,6 +293,11 @@ pub async fn local_save(
     }
 }
 
+pub async fn get_nat_type(State(state): State<AppState>) -> impl IntoResponse {
+    let nat = state.nat_type.lock().unwrap();
+    AxumJson(serde_json::json!({ "natType": *nat })).into_response()
+}
+
 pub async fn local_keypair_status(State(state): State<AppState>) -> impl IntoResponse {
     match local_api_guard(&state) {
         Ok(api) => match api.keypair_status() {

@@ -5,7 +5,8 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tower_http::cors::CorsLayer;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions, OnListeningHandler};
+use rust_comms::engine::NatType;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use crate::models::BingleMessage;
 use std::path::PathBuf;
@@ -22,6 +23,7 @@ pub struct AppState {
     pub local_file: Option<PathBuf>,
     pub start_opts: Option<StartOptions>,
     pub api_started: Arc<Mutex<bool>>,
+    pub nat_type: Arc<Mutex<String>>,
 }
 
 /// Attempt to start the Bingle API if it hasn't been started yet and
@@ -88,6 +90,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/local/keypairStatus", get(handlers::local_keypair_status))
         .route("/local/save", post(handlers::local_save))
         .route("/local/load", post(handlers::local_load));
+
+    let router = router
+        .route("/getNatType", get(handlers::get_nat_type));
 
     // Apply CORS layer to ALL routes (must be after all routes are registered)
     router.layer(CorsLayer::permissive()).with_state(state)

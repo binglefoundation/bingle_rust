@@ -73,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize network API
     let api = BingleApiImpl::new(&opts);
     let messages = Arc::new(Mutex::new(Vec::new()));
+    let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
 
     // Initialize local API if requested
     let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
@@ -89,6 +90,21 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
+    }
+
+    // Setup on-listening handler to update nat_type in shared state
+    {
+        let nat_type_for_closure = nat_type.clone();
+        api.access_unsafe_for_tests(|api_mut| {
+            let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> = Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
+                let type_str = if listening { format!("{:?}", nt) } else { "Unknown".to_string() };
+                log::info!("on_listening: listening={} nat_type={}", listening, type_str);
+                if let Ok(mut guard) = nat_type_for_closure.lock() {
+                    *guard = type_str;
+                }
+            });
+            api_mut.set_on_listening(Some(on_listening));
+        });
     }
 
     // Setup on-message handler
@@ -164,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
         local_file,
         start_opts: if api_started { None } else { Some(opts.clone()) },
         api_started: Arc::new(Mutex::new(api_started)),
+        nat_type,
     };
 
     let res = start_server(addr, state).await;

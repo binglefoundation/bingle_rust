@@ -341,9 +341,10 @@ impl Engine {
 
     /// Notify the application-level OnListening handler, if installed.
     pub fn notify_listening(&self, listening: bool) {
+        let nat = self.nat_type();
         if let Ok(g) = self.on_listening_cb.lock() {
             if let Some(cb) = &*g {
-                cb(listening);
+                cb(listening, nat);
             }
         }
     }

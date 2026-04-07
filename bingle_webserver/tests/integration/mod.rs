@@ -17,6 +17,7 @@ fn setup_state() -> AppState {
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     }
 }
 
@@ -242,6 +243,7 @@ async fn test_full_keypair_status_no_keypair() {
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
     let app = create_router(state);
 
@@ -260,6 +262,26 @@ async fn test_full_keypair_status_no_keypair() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "None");
     assert!(json.get("id").is_none());
+}
+
+#[tokio::test]
+async fn test_full_get_nat_type_default() {
+    let app = create_router(setup_state());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/getNatType")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["natType"], "Unknown");
 }
 
 #[tokio::test]
@@ -293,6 +315,7 @@ async fn test_cors_headers_on_local_keypair_status() {
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
+        nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
     let app = create_router(state);
 

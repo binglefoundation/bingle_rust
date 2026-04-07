@@ -71,7 +71,7 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
         fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
         fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
         fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
-        fn notify_listening(&self, _listening: bool) {}
+        fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
     }
     impl BingleApi for MockApi { 
     fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
@@ -138,7 +138,7 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
         fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
         fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
         fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
-        fn notify_listening(&self, _listening: bool) {}
+        fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
     }
     impl BingleApi for MockApi { 
     fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }

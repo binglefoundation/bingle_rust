@@ -335,8 +335,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.turn_handle_called(source, dest, channel);
     }
 
-    fn notify_listening(&self, listening: bool) {
-        self.inner_bingle_api_internal.notify_listening(listening);
+    fn notify_listening(&self, listening: bool, nat_type: rust_comms::engine::NatType) {
+        self.inner_bingle_api_internal.notify_listening(listening, nat_type);
     }
 
     fn set_relay_state(&self, state: rust_comms::engine::RelayState) {
@@ -423,7 +423,7 @@ pub trait InnerBingleApiInternal {
 
     fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
 
-    fn notify_listening(&self, _listening: bool) {}
+    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
 
     fn set_relay_state(&self, _state: rust_comms::engine::RelayState) {}
 

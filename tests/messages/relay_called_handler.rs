@@ -27,7 +27,7 @@ impl BingleApiInternal for CapturingInternal {
     fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) {
         *self.captured.lock().unwrap() = Some((source, dest, channel));
     }
-    fn notify_listening(&self, _listening: bool) {}
+    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
 }
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
@@ -51,7 +51,7 @@ pub fn relay_called_handler_invokes_turn_handle_called() {
         fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
         fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
         fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { self.cap.turn_handle_called(source, dest, channel); }
-        fn notify_listening(&self, _listening: bool) {}
+        fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
     }
 
     let my_pub = addr(50000);

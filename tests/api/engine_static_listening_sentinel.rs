@@ -49,7 +49,7 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
     // Build API with mock DTLS and install sentinel creator handler
     let api = BingleApiImpl::new_with_dtls(Box::new(MockDtls));
     let path_clone = sentinel_str.clone();
-    let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool| {
+    let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool, _nat_type: rust_comms::engine::NatType| {
         if listening {
             if let Ok(mut f) = fs::OpenOptions::new().create(true).write(true).truncate(true).open(&path_clone) {
                 use std::io::Write;

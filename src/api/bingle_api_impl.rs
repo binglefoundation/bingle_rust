@@ -433,7 +433,7 @@ impl BingleApi for BingleApiImpl {
     fn stop(&mut self) {
         log::info!("[BingleApiImpl::stop][enter] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
         // Notify listeners that we are no longer listening
-        if let Some(cb) = &self.on_listening { cb(false); }
+        if let Some(cb) = &self.on_listening { cb(false, crate::engine::NatType::Unknown); }
         // Stop Engine
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
@@ -862,9 +862,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.access(|e| e.turn_client_handle_listen_response(relay_addr, &relay_id));
         log::info!("[BingleApiImpl::turn_client_handle_listen_response][exit]");
     }
-    fn notify_listening(&self, listening: bool) {
-        log::info!("[BingleApiImpl::notify_listening] listening={}", listening);
-        if let Some(cb) = &self.on_listening { cb(listening); }
+    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) {
+        log::info!("[BingleApiImpl::notify_listening] listening={} nat_type={:?}", listening, nat_type);
+        if let Some(cb) = &self.on_listening { cb(listening, nat_type); }
     }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
         // Forward to the engine's TURN handler client-side interface (non-test API)
