@@ -22,14 +22,14 @@ pub struct HandleQuery {
 }
 
 pub async fn handle_lookup(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(query): Query<HandleQuery>
 ) -> impl IntoResponse {
-    // Still a stub since BingleApi doesn't have a direct handleLookup method yet
-    if query.handle == "notfound" {
-        return (StatusCode::NOT_FOUND, "Handle not found").into_response();
+    match state.api.handle_lookup(&query.handle) {
+        Ok(Some(id)) => Json(id).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "Handle not found").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
-    Json(format!("stub-id-{}", query.handle)).into_response()
 }
 
 pub async fn send_message_to_id(

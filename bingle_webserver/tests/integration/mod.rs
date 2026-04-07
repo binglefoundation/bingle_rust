@@ -36,6 +36,9 @@ async fn test_full_handle_lookup() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let id: String = serde_json::from_slice(&body).unwrap();
+    assert_eq!(id, "mock-id-foo");
 }
 
 #[tokio::test]

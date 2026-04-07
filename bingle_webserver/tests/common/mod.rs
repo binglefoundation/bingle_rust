@@ -16,7 +16,9 @@ impl BingleApi for MockBingleApi {
     fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
-    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
+    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
+        if handle == "notfound" { Ok(None) } else { Ok(Some(format!("mock-id-{}", handle))) }
+    }
     fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> { None }
     fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { true }
     fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { true }

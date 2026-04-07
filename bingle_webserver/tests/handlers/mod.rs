@@ -32,6 +32,10 @@ async fn test_handle_lookup_success() {
     let query = Query(HandleQuery { handle: "foo".to_string() });
     let response = handle_lookup(State(state), query).await.into_response();
     assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let id: String = serde_json::from_slice(&body).unwrap();
+    assert_eq!(id, "mock-id-foo");
 }
 
 #[tokio::test]
