@@ -275,6 +275,7 @@ Resources:
           Image: !Ref ImageUri
           Memory: 480 # Slightly less than 512MiB to allow for OS overhead on t4g.nano
           Essential: true
+          StopTimeout: 120
           Environment:
             - Name: RELAY
               Value: '1'
@@ -300,12 +301,17 @@ Resources:
 
   RelayLogGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
     Properties:
       LogGroupName: !Sub "/bingle/relay/${AWS::StackName}"
       RetentionInDays: 7
 
   RelayService:
     Type: AWS::ECS::Service
+    DependsOn:
+      - VPCGatewayAttachment
+      - DefaultRoute
+      - SubnetRouteTableAssociation
     Properties:
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref RelayTaskDefinition

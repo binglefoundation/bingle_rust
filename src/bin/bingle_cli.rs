@@ -104,7 +104,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>]";
     if code == 0 { log::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
@@ -113,12 +113,13 @@ fn print_usage_and_exit(code: i32) {
 fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
-        warn!("Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>]");
+        warn!("Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--echo]");
         std::process::exit(0);
     }
 
-    // Extract and remove optional --sentinel-file <path> from args before StartOptions parsing
+    // Extract and remove optional --sentinel-file <path> and --echo from args before StartOptions parsing
     let mut sentinel_file: Option<String> = None;
+    let mut echo_mode = false;
     let mut i = 0usize;
     while i < args.len() {
         if args[i] == "--sentinel-file" {
@@ -131,6 +132,11 @@ fn cmd_run(mut args: Vec<String>) {
             args.remove(i); // remove flag
             args.remove(i); // remove value now at same index
             // Do not increment i; continue scanning
+            continue;
+        }
+        if args[i] == "--echo" {
+            echo_mode = true;
+            args.remove(i);
             continue;
         }
         i += 1;
@@ -180,9 +186,26 @@ fn cmd_run(mut args: Vec<String>) {
 
     // Install handlers (requires mutable access to the Arc contents; CLI owns the only strong ref here)
     {
+        let api_for_echo = api.clone();
         api.access_unsafe_for_tests(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
                 log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
+                if echo_mode {
+                    // Check if this is a PlainTextMessage: has "text" field and no non-null "app"/"type"
+                    if let Some(text) = message.get("text").and_then(|v| v.as_str()) {
+                        let is_plain = message.get("app").map_or(true, |v| v.is_null())
+                            && message.get("type").map_or(true, |v| v.is_null());
+                        if is_plain {
+                            let echo_text = format!("Echo: {}", text);
+                            let echo_msg = serde_json::json!({ "text": echo_text });
+                            log::info!("[echo] Echoing back to {}: {}", sender, echo_msg);
+                            let ok = api_for_echo.send_message_to_id(&sender, echo_msg, None);
+                            if !ok {
+                                log::warn!("[echo] Failed to send echo to {}", sender);
+                            }
+                        }
+                    }
+                }
             });
             api_mut.set_on_message(Some(on_message));
 
@@ -230,10 +253,41 @@ fn cmd_run(mut args: Vec<String>) {
     // Install Ctrl-C handler
     let (tx, rx) = channel::<()>();
     install_ctrlc_handler(tx);
-    log::info!("Started. Press Ctrl-C to stop.");
+    log::info!("Started. Press Ctrl-C or send SIGTERM to stop.");
 
     // Wait until Ctrl-C
     let _ = rx.recv();
+
+    log::info!("Received shutdown signal. Stopping...");
+
+    // Determine shutdown action and execute if needed
+    let app_id_env = std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
+    let action = resolve_shutdown_action(&opts, app_id_env);
+    match action {
+        ShutdownAction::Unregister { app_id, passphrase, algo_provider_config, asset_id } => {
+            log::info!("[cmd_run] Unregistering static endpoint for app_id={}", app_id);
+            let ops = AlgoOps::new(Some(passphrase), None, algo_provider_config.clone());
+            let asset_id_for_ctor = asset_id.or_else(|| algo_provider_config.as_ref().and_then(|c| c.asset_id)).unwrap_or(0);
+            let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
+            match bingle.register_endpoint(app_id, "") {
+                Ok(txid) => {
+                    log::info!("[cmd_run] Unregistered static endpoint for app_id {} (tx: {})", app_id, txid);
+                }
+                Err(e) => {
+                    log::warn!("[cmd_run] Failed to unregister static endpoint for app_id {}: {}", app_id, e);
+                }
+            }
+        }
+        ShutdownAction::NoStaticIp => {
+            log::debug!("[cmd_run] No static IP configured; skipping endpoint unregistration");
+        }
+        ShutdownAction::NoAppId => {
+            log::debug!("[cmd_run] No app_id available; skipping endpoint unregistration");
+        }
+        ShutdownAction::NoPassphrase => {
+            log::debug!("[cmd_run] No passphrase available; skipping endpoint unregistration");
+        }
+    }
 
     // Stop API
     {
@@ -702,11 +756,56 @@ fn write_text_file(path: &str, content: &str) -> std::io::Result<()> {
     f.write_all(content.as_bytes())
 }
 
+/// Describes the action to take on shutdown regarding static endpoint unregistration.
+#[derive(Debug, PartialEq, Eq)]
+enum ShutdownAction {
+    /// No static IP was configured; nothing to unregister.
+    NoStaticIp,
+    /// Static IP was configured but no app_id is available.
+    NoAppId,
+    /// Static IP and app_id are available but no passphrase.
+    NoPassphrase,
+    /// All parameters are available; unregister the endpoint.
+    Unregister {
+        app_id: u64,
+        passphrase: String,
+        algo_provider_config: Option<AlgoChainConfig>,
+        asset_id: Option<u64>,
+    },
+}
+
+/// Determine the shutdown action based on the current StartOptions.
+/// The app_id_env parameter allows injecting the APP_ID environment variable for testability.
+fn resolve_shutdown_action(
+    opts: &rust_comms::api::bingle_api::StartOptions,
+    app_id_env: Option<u64>,
+) -> ShutdownAction {
+    if opts.static_ip.is_none() {
+        return ShutdownAction::NoStaticIp;
+    }
+    let app_id_opt = opts.app_id.or(app_id_env);
+    match app_id_opt {
+        None => ShutdownAction::NoAppId,
+        Some(app_id) => {
+            match opts.algo_passphrase {
+                Some(ref passphrase) => ShutdownAction::Unregister {
+                    app_id,
+                    passphrase: passphrase.clone(),
+                    algo_provider_config: opts.algo_provider_config.clone(),
+                    asset_id: opts.asset_id,
+                },
+                None => ShutdownAction::NoPassphrase,
+            }
+        }
+    }
+}
+
 fn install_ctrlc_handler(tx: Sender<()>) {
     if let Err(e) = ctrlc::set_handler(move || {
+        log::info!("Received shutdown signal (SIGINT/SIGTERM); sending message to main thread to exit");
         let _ = tx.send(());
     }) {
-        warn!("Failed to install Ctrl-C handler: {}", e);
+        warn!("Failed to install signal handler: {}", e);
     }
 }
 

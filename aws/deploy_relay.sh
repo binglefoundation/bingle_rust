@@ -109,6 +109,17 @@ docker tag "$REPO_NAME:$TAG" "$LATEST_IMAGE_URI"
 docker push "$LATEST_IMAGE_URI"
 
 # 3) Deploy/Update
+
+# If the log group was retained from a previous stack deletion, remove it so
+# CloudFormation can recreate it cleanly.  This avoids "already exists" errors
+# while still preserving logs between destroy and the next deploy.
+LOG_GROUP_NAME="/bingle/relay/${STACK_NAME}"
+if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --region "$REGION" \
+    --query "logGroups[?logGroupName=='${LOG_GROUP_NAME}']" --output text 2>/dev/null | grep -q "$LOG_GROUP_NAME"; then
+  echo "[deploy] Removing retained log group '$LOG_GROUP_NAME' from previous deployment..."
+  aws logs delete-log-group --log-group-name "$LOG_GROUP_NAME" --region "$REGION" || true
+fi
+
 if [[ $REDEPLOY_ONLY -eq 1 ]]; then
   echo "[deploy] Redeploying ECS service '$STACK_NAME' with new image..."
   # When using --redeploy-only, we assume the stack exists and we just want to update the ECS service

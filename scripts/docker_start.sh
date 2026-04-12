@@ -133,11 +133,12 @@ CMD=("/app/bingle_cli" \
 )
 
 # Add relay-specific parameters if RELAY flag is set
+# Run relays with --echo for testing
 if [[ -n "${RELAY:-}" ]]; then
   if [[ -n "${EXTERNAL_IP:-}" ]]; then
-    CMD+=("--relay" "--static-ip" "${EXTERNAL_IP}:${PORT}")
+    CMD+=("--relay" "--echo" "--static-ip" "${EXTERNAL_IP}:${PORT}")
   else
-    CMD+=("--relay")
+    CMD+=("--relay" "--echo")
   fi
 fi
 

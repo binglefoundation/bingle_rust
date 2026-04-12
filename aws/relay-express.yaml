@@ -170,6 +170,7 @@ Resources:
         - Name: relay
           Image: !Ref ImageUri
           Essential: true
+          StopTimeout: 120
           Environment:
             - Name: RELAY
               Value: '1'
@@ -195,12 +196,17 @@ Resources:
 
   RelayLogGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
     Properties:
       LogGroupName: !Sub "/bingle/relay/${AWS::StackName}"
       RetentionInDays: 7
 
   RelayService:
     Type: AWS::ECS::Service
+    DependsOn:
+      - VPCGatewayAttachment
+      - DefaultRoute
+      - SubnetRouteTableAssociation
     Properties:
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref RelayTaskDefinition
