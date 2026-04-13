@@ -41,3 +41,6 @@ pub mod turn_no_public_addr;
 
 #[path = "set_public_addr.rs"]
 pub mod set_public_addr;
+
+#[path = "send_to_peer_guards.rs"]
+pub mod send_to_peer_guards;

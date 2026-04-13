@@ -51,3 +51,9 @@ pub mod handle_cache_reverse_lookup;
 
 #[path = "handle_reverse_lookup_blockchain_fallback.rs"]
 pub mod handle_reverse_lookup_blockchain_fallback;
+
+#[path = "send_over_dtls_guards.rs"]
+pub mod send_over_dtls_guards;
+
+#[path = "self_relay_detection.rs"]
+pub mod self_relay_detection;

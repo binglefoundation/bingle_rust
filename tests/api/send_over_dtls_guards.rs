@@ -1,0 +1,110 @@
+use rust_comms::engine::BingleAccessUnsafeForTests;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+
+use rust_comms::api::bingle_api::{NetworkEndpoint, BingleApi};
+use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
+#[path = "../test_util.rs"]
+pub mod test_util;
+
+#[derive(Clone)]
+struct MockDtls {
+    pub sends: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+}
+
+impl MockDtls {
+    fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) {
+        let v = Arc::new(Mutex::new(vec![]));
+        (Self { sends: v.clone() }, v)
+    }
+}
+
+impl Dtls for MockDtls {
+    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
+    fn stop(&mut self) -> Result<()> { Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
+        let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
+        self.sends.lock().unwrap().push((addr, data.to_vec()));
+        Ok(())
+    }
+    fn get_handle_message(&self) -> Option<HandleMessage> { None }
+    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
+    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+}
+
+/// send_message_to_network returns false when given an incomplete relay endpoint
+/// (missing channel) because send_over_dtls rejects such endpoints.
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
+    let (mock, sent_vec) = MockDtls::new();
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let relay_nsk = NetworkEndpoint::new_relay(
+        "SOME_RELAY_ID".to_string(),
+        Some("10.0.0.1:5000".parse::<SocketAddr>().expect("valid addr")),
+        None,
+    );
+    let uid = test_util::ADDRESS_SPEND.to_string();
+    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(&relay_nsk, &uid, serde_json::json!({"test": true}), None)
+    });
+    assert!(!ok, "send_message_to_network should return false for incomplete relay endpoint");
+    assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
+}
+
+/// send_message_to_network returns false when the target address matches our own public address
+/// because send_over_dtls rejects sending to self.
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_over_dtls_rejects_send_to_self() {
+    let (mock, sent_vec) = MockDtls::new();
+    let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    // Set the engine's public address to our own address
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.engine_set_public_addr_for_tests(Some(my_addr));
+    });
+    let nsk = NetworkEndpoint::new_direct(my_addr);
+    let uid = test_util::ADDRESS_SPEND.to_string();
+    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
+    });
+    assert!(!ok, "send_message_to_network should return false when sending to self");
+    assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
+}
+
+/// send_message_to_network succeeds for a direct endpoint to a different address.
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_over_dtls_allows_direct_to_different_addr() {
+    let (mock, sent_vec) = MockDtls::new();
+    let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
+    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.engine_set_public_addr_for_tests(Some(my_addr));
+    });
+    let other_addr: SocketAddr = "10.0.0.1:5000".parse().expect("valid addr");
+    let nsk = NetworkEndpoint::new_direct(other_addr);
+    let uid = test_util::ADDRESS_SPEND.to_string();
+    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
+    });
+    assert!(ok, "send_message_to_network should succeed for direct endpoint to different addr");
+    assert_eq!(sent_vec.lock().unwrap().len(), 1, "MockDtls::send should have been called once");
+}

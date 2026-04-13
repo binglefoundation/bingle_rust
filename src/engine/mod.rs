@@ -797,6 +797,17 @@ impl Engine {
         to: &crate::api::bingle_api::NetworkEndpoint,
         data: &[u8],
     ) -> Result<(), String> {
+        // Guard: reject incomplete relay endpoints (missing channel); fully-configured
+        // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
+        if to.is_relay() && to.relay_channel().is_none() {
+            return Err(format!("[Engine::send_to_peer] rejecting incomplete relay endpoint (no channel): {}", to));
+        }
+        // Guard: do not send to ourselves
+        if let Some(target_addr) = to.inet_socket_address() {
+            if self.last_public_addr() == Some(target_addr) {
+                return Err(format!("[Engine::send_to_peer] rejecting send to self: {}", target_addr));
+            }
+        }
         // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.

@@ -239,6 +239,14 @@ impl BingleApiImpl {
     pub fn engine_turn_relay_handler_for_tests(&self) -> std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
         self.engine.access(|e| e.turn_relay_handler_for_tests())
     }
+
+    /// Test-only: set the engine's last public address (for self-send guard tests).
+    pub fn engine_set_public_addr_for_tests(&mut self, addr: Option<std::net::SocketAddr>) {
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut crate::engine::Engine;
+            (*engine_ptr).set_last_public_addr(addr);
+        }
+    }
     
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool {
@@ -253,6 +261,20 @@ impl BingleApiImpl {
     }
 
     fn send_over_dtls(&self, nsk: &NetworkEndpoint, message: JsonValue) -> bool {
+        // Guard: reject incomplete relay endpoints (missing channel); fully-configured
+        // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
+        if nsk.is_relay() && nsk.relay_channel().is_none() {
+            warn!("[BingleApiImpl::send_over_dtls] rejecting incomplete relay endpoint (no channel): {}", nsk);
+            return false;
+        }
+        // Guard: do not send to ourselves
+        if let Some(target_addr) = nsk.inet_socket_address() {
+            let my_addr = self.engine.access(|e| e.last_public_addr());
+            if my_addr == Some(target_addr) {
+                warn!("[BingleApiImpl::send_over_dtls] rejecting send to self: {}", target_addr);
+                return false;
+            }
+        }
         let bytes = serde_json::to_vec(&message).expect("Failed to serialize message to JSON bytes");
         match self.engine.access(|e| e.send_to_peer(nsk, &bytes)) {
             Ok(_) => true,
@@ -588,28 +610,44 @@ impl BingleApi for BingleApiImpl {
             // If this is a relay endpoint missing a channel, allocate one via RelayClient::call
             let mut effective_nsk = network_source_key.clone();
             if effective_nsk.relay_id().is_some() && effective_nsk.relay_channel().is_none() {
-                log::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
-                if let Some(cb) = progress.as_ref() { cb(15, "Allocating relay channel".to_string()); }
+                // Detect self-relay: if the relay_id is our own id, bypass the relay Call
+                // and send directly using the relay address (we ARE the relay for this node).
+                let my_id = self.get_my_id();
+                let is_self_relay = my_id.as_deref() == effective_nsk.relay_id();
 
-                // Construct RelayClient with API handle
-                let ddb = self.engine.access(|e| e.ddb_client());
-                let relay_client = crate::relay::relay_client::RelayClient::new(self.this.clone(), ddb);
-                match relay_client.call(&effective_nsk, user_id) {
-                    Ok(updated) => {
-                        effective_nsk = updated;
-
-                        // Register TURN client mapping upon successful CallResponse
-                        if let (Some(channel), Some(relay_addr)) = (effective_nsk.relay_channel(), effective_nsk.relay_address()) {
-                            let source_addr = effective_nsk.inet_socket_address().unwrap_or(relay_addr);
-                            self.engine.access(|e| e.turn_client_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()")));
-                        }
-
-                        if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
-                    }
-                    Err(err) => {
-                        log::warn!("[BingleApiImpl::send_message_to_network] relay Call failed: {}", err);
-                        if let Some(cb) = progress.as_ref() { cb(100, format!("Relay allocation failed: {}", err)); }
+                if is_self_relay {
+                    log::info!("[BingleApiImpl::send_message_to_network] target's relay is self; bypassing relay Call and sending directly");
+                    if let Some(relay_addr) = effective_nsk.relay_address() {
+                        effective_nsk = NetworkEndpoint::new_direct(relay_addr);
+                    } else {
+                        log::warn!("[BingleApiImpl::send_message_to_network] self-relay but no relay_address; cannot convert to direct endpoint");
+                        if let Some(cb) = progress.as_ref() { cb(100, "Self-relay with no relay address".to_string()); }
                         return false;
+                    }
+                } else {
+                    log::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
+                    if let Some(cb) = progress.as_ref() { cb(15, "Allocating relay channel".to_string()); }
+
+                    // Construct RelayClient with API handle
+                    let ddb = self.engine.access(|e| e.ddb_client());
+                    let relay_client = crate::relay::relay_client::RelayClient::new(self.this.clone(), ddb);
+                    match relay_client.call(&effective_nsk, user_id) {
+                        Ok(updated) => {
+                            effective_nsk = updated;
+
+                            // Register TURN client mapping upon successful CallResponse
+                            if let (Some(channel), Some(relay_addr)) = (effective_nsk.relay_channel(), effective_nsk.relay_address()) {
+                                let source_addr = effective_nsk.inet_socket_address().unwrap_or(relay_addr);
+                                self.engine.access(|e| e.turn_client_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()")));
+                            }
+
+                            if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
+                        }
+                        Err(err) => {
+                            log::warn!("[BingleApiImpl::send_message_to_network] relay Call failed: {}", err);
+                            if let Some(cb) = progress.as_ref() { cb(100, format!("Relay allocation failed: {}", err)); }
+                            return false;
+                        }
                     }
                 }
             }

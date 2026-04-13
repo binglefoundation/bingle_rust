@@ -136,6 +136,14 @@ Resources:
                 Resource:
                   - !Ref RelayPassphraseSecret
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/bingle/relay/*'
+        - PolicyName: CreateLogGroup
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/bingle/relay/${AWS::StackName}:*'
 
   # Secrets and Parameters
   RelayPassphraseSecret:
@@ -193,6 +201,7 @@ Resources:
               awslogs-group: !Ref RelayLogGroup
               awslogs-region: !Ref 'AWS::Region'
               awslogs-stream-prefix: relay
+              awslogs-create-group: "true"
 
   RelayLogGroup:
     Type: AWS::Logs::LogGroup
