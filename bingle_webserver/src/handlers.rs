@@ -43,8 +43,52 @@ pub async fn send_message_to_id(
     Json(payload): Json<SendMessageToIdRequest>
 ) -> impl IntoResponse {
     let api = state.api.clone();
+    let local_api_arc = state.local_api.clone();
+    let local_file = state.local_file.clone();
+    let message_clone = payload.message.clone();
+    let user_id_clone = payload.user_id.clone();
     let result = tokio::task::spawn_blocking(move || {
-        api.send_message_to_id(&payload.user_id, payload.message, None)
+        let ok = api.send_message_to_id(&payload.user_id, payload.message, None);
+        if ok {
+            if let Some(local_arc) = &local_api_arc {
+                if let Ok(mut guard) = local_arc.lock() {
+                    let text = message_clone.get("text")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| message_clone.to_string());
+                    let sender_handle = match api.get_handle() {
+                        Some(h) => h,
+                        None => {
+                            log::error!("[send_message_to_id] api.get_handle() returned None; not saving sent message to local API");
+                            return ok;
+                        }
+                    };
+                    let recipient_handle = match api.handle_lookup_by_id(&user_id_clone) {
+                        Some(h) => h,
+                        None => {
+                            log::error!("[send_message_to_id] handle_lookup_by_id returned None for user_id {}; not saving sent message to local API", user_id_clone);
+                            return ok;
+                        }
+                    };
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    if let Err(e) = guard.add_message(
+                        sender_handle,
+                        vec![recipient_handle],
+                        timestamp,
+                        text,
+                    ) {
+                        log::warn!("[send_message_to_id] failed to add sent message to local API: {}", e);
+                    }
+                    if let Some(path) = &local_file {
+                        let _ = guard.save(path.to_string_lossy().as_ref());
+                    }
+                }
+            }
+        }
+        ok
     }).await;
     match result {
         Ok(ok) => Json(ok).into_response(),

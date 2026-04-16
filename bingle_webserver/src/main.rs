@@ -112,18 +112,48 @@ async fn main() -> anyhow::Result<()> {
         let msgs = messages.clone();
         let local_api_for_closure = local_api.clone();
         let local_file_for_closure = local_file.clone();
+        let api_for_handle = api.clone();
         api.access_unsafe_for_tests(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
                 log::info!("Received message from {} ({}): {}", sender, sender_handle, message);
+                let text = message.get("text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| message.to_string());
                 let mut m = msgs.lock().unwrap();
                 m.push(message);
-                // Save local state after inbound message if enabled
+                // Store message in local API buffer so it is accessible via getMessages
                 if let Some(local_arc) = &local_api_for_closure {
-                    if let Ok(guard) = local_arc.lock() {
+                    if let Ok(mut guard) = local_arc.lock() {
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as i64)
+                            .unwrap_or(0);
+                        let recipient = match api_for_handle.get_handle() {
+                            Some(h) => h,
+                            None => {
+                                log::error!("[on_message] get_handle returned None; not saving message to local API");
+                                return;
+                            }
+                        };
+                        if let Err(e) = guard.add_message(
+                            sender_handle.clone(),
+                            vec![recipient],
+                            timestamp,
+                            text,
+                        ) {
+                            log::warn!("[on_message] failed to add message to local API: {}", e);
+                        }
                         if let Some(path) = &local_file_for_closure {
                             let _ = guard.save(path.to_string_lossy().as_ref());
                         }
                     }
+                    else {
+                        log::warn!("[on_message] local_api would not lock; not saving local state");
+                    }
+                }
+                else {
+                    log::warn!("[on_message] local_api is None; not saving local state");
                 }
             });
             api_mut.set_on_message(Some(on_message));
