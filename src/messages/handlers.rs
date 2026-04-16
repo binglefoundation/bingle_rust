@@ -411,7 +411,16 @@ impl MessageHandler for DefaultPrintingHandler {
             if !up.rippled && up.record.id != sender_id { return; }
             // Upsert to backend
             if let Some(backend) = router.get_ddb_backend() {
-                if let Ok(mut b) = backend.lock() { b.upsert(up.record.clone()); }
+                if let Ok(mut b) = backend.lock()
+                {
+                    log::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
+                    b.upsert(up.record.clone()); }
+                else {
+                    log::error!("[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert");
+                }
+            }
+            else {
+                log::error!("[handlers::on_ddb_upsert_resolve] No DDB backend available");
             }
 
             if !up.rippled {
@@ -482,15 +491,15 @@ impl MessageHandler for DefaultPrintingHandler {
     }
 
     fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) {
+        log::info!("[handlers::on_ddb_dump_resolve] upserting from {:?}", msg);
         api.ddb_upsert_record(msg.record.clone());
         if let Some(target) = api.get_peer_ddb_target() {
             if target == api.ddb_backend_size() {
-                log::info!("DDB sync complete (all {} records received). Sending DdbSignon.", target);
-
+                log::info!("[handlers::on_ddb_dump_resolve] DDB sync complete (all {} records received). Sending DdbSignon.", target);
                 let my_id = match api.get_my_id() {
                     Some(id) => id,
                     None => {
-                        log::warn!("[on_ddb_dump_resolve] get_my_id returned None; cannot send Signon");
+                        log::warn!("[handlers::on_ddb_dump_resolve] get_my_id returned None; cannot send Signon");
                         return;
                     }
                 };
@@ -560,16 +569,10 @@ impl MessageHandler for DefaultPrintingHandler {
             api.ddb_upsert_record(record);
             log::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
 
-            if msg.rippled != Some(true) {
-                let mut rippled_msg = msg.clone();
-                rippled_msg.rippled = Some(true);
-                let ripple_msg = Message::Ddb(DdbMessage::Signon(rippled_msg));
-                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-                api.ripple_message(ripple_json, msg.start_id.clone());
-            }
-
+            // Queue SignonResponse FIRST — the new relay needs to receive this and
+            // transition to Available before other relays learn about it and try
+            // getEpoch on it.
             let response_tag = router.get_last_response_tag();
-
             let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
                 app: "ddb".to_string(),
                 tag: None,
@@ -579,6 +582,23 @@ impl MessageHandler for DefaultPrintingHandler {
             }));
             let json = crate::messages::marshal::to_json_value(&resp);
             router.set_outbound_response(Some(json));
+
+            // Ripple asynchronously with a delay so the new relay has time to
+            // process SignonResponse and transition to Available state before
+            // other relays discover it and try getEpoch on it.
+            if msg.rippled != Some(true) {
+                let mut rippled_msg = msg.clone();
+                rippled_msg.rippled = Some(true);
+                let ripple_msg = Message::Ddb(DdbMessage::Signon(rippled_msg));
+                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+                let start_id = msg.start_id.clone();
+                let api_clone = api.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    log::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
+                    api_clone.ripple_message(ripple_json, start_id);
+                });
+            }
         }
     }
 

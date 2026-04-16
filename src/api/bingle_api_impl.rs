@@ -619,8 +619,11 @@ impl BingleApi for BingleApiImpl {
                     log::info!("[BingleApiImpl::send_message_to_network] target's relay is self; bypassing relay Call and sending directly");
                     if let Some(relay_addr) = effective_nsk.relay_address() {
                         effective_nsk = NetworkEndpoint::new_direct(relay_addr);
+                    } else if let Some(client_addr) = self.engine.access(|e| e.turn_relay_lookup_addr_by_id(user_id)) {
+                        log::info!("[BingleApiImpl::send_message_to_network] self-relay: looked up client addr {} for user_id {}", client_addr, user_id);
+                        effective_nsk = NetworkEndpoint::new_direct(client_addr);
                     } else {
-                        log::warn!("[BingleApiImpl::send_message_to_network] self-relay but no relay_address; cannot convert to direct endpoint");
+                        log::warn!("[BingleApiImpl::send_message_to_network] self-relay but no relay_address and TurnHandler lookup failed for user_id {}; cannot convert to direct endpoint", user_id);
                         if let Some(cb) = progress.as_ref() { cb(100, "Self-relay with no relay address".to_string()); }
                         return false;
                     }

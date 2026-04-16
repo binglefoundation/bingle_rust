@@ -326,6 +326,10 @@ Resources:
       TaskDefinition: !Ref RelayTaskDefinition
       DesiredCount: 1
       LaunchType: EC2
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
 
   RelayDashboard:
     Type: AWS::CloudWatch::Dashboard

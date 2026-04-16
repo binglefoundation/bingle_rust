@@ -8,7 +8,7 @@ use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
-
+use libc::sleep;
 use crate::setup_localnet;
 use crate::util::test_util;
 
@@ -162,6 +162,40 @@ fn setup_stun_servers(broken_nat: bool) -> (SimpleStunServer, SimpleStunServer, 
     (s1, s2, vec![a1, a2])
 }
 
+fn register_client_on_blockchain(
+    address: &str,
+    passphrase: &str,
+    handle: &str,
+    app_id: u64,
+    asset_id: u64,
+    creator: &rust_comms::algo_ops::AlgoOps,
+    cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig,
+) {
+    let ops = test_util::ops_from_mnemonic(address, passphrase, cfg);
+    // opt_in_app/asset may fail if already opted in (e.g. relays registered via register_relays)
+    if let Err(e) = ops.opt_in_app(app_id) {
+        log::info!("[register_client_on_blockchain] {} opt-in app skipped (may already be opted in): {}", handle, e);
+    }
+    if let Err(e) = ops.opt_in_to_asset(asset_id) {
+        log::info!("[register_client_on_blockchain] {} opt-in asset skipped (may already be opted in): {}", handle, e);
+    }
+    creator.send_asset(asset_id, 10, address).expect(&format!("fund {} with ASA", handle));
+    let ab = AlgoBingle::new(ops.clone(), app_id, asset_id);
+    ab.register(app_id, asset_id, handle, 1).expect(&format!("register handle for {}", handle));
+
+    // Wait until local state for the client reflects the Handle key to avoid race conditions
+    let start = Instant::now();
+    let timeout = Duration::from_secs(30);
+    let mut ok = false;
+    while start.elapsed() < timeout {
+        if let Ok(Some(entries)) = ops.local_state_for_account(app_id, address) {
+            if entries.iter().any(|(k, v)| k == "Handle" && v == handle) { ok = true; break; }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(ok, "{} Handle not visible in local state within timeout", handle);
+}
+
 fn setup_on_message(
     api: &Arc<BingleApiImpl>,
     received: &Arc<AtomicBool>,
@@ -221,30 +255,10 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
 
     // Before sending: ensure client A has its handle registered on-chain so reverse lookup by id succeeds.
-    {
-        use rust_comms::blockchain::algo_bingle::AlgoBingle;
-        let ops_a = test_util::ops_from_mnemonic(test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, cfg.clone());
-        // Opt-in A to the asset and app, and fund A with a few ASA units from creator
-        let _ = ops_a.opt_in_to_asset(asset_id).expect("client_a opt-in ASA");
-        let _ = ops_a.opt_in_app(app_id).expect("client_a opt-in app");
-        let _ = creator.send_asset(asset_id, 10, test_util::ADDRESS_10MIL).expect("fund client_a with ASA");
-
-        // Perform on-chain handle registration for client_a
-        let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
-        let _ = ab_a.register(app_id, asset_id, "client_a", 1).expect("register handle for client_a");
-
-        // Wait until local state for client A reflects the Handle key to avoid race conditions
-        let start = Instant::now();
-        let timeout = Duration::from_secs(30);
-        let mut ok = false;
-        while start.elapsed() < timeout {
-            if let Ok(Some(entries)) = ops_a.local_state_for_account(app_id, test_util::ADDRESS_10MIL) {
-                if entries.iter().any(|(k, v)| k == "Handle" && v == "client_a") { ok = true; break; }
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        assert!(ok, "client_a Handle not visible in local state within timeout");
-    }
+    register_client_on_blockchain(
+        test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client_a",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
 
     // Install OnMessage handler for client B to capture delivery and who sent it
     let received = Arc::new(AtomicBool::new(false));
@@ -406,18 +420,8 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
-    let ops_id2 = test_util::ops_from_mnemonic(id2, pp2, cfg.clone());
-    ops_id2.opt_in_app(app_id).expect("id2 opt-in app");
-    ops_id2.opt_in_to_asset(asset_id).expect("id2 opt-in asset");
-    let _ = creator.send_asset(asset_id, 10, id2).expect("fund id2 with ASA");
-    let ab_id2 = AlgoBingle::new(ops_id2, app_id, asset_id);
-    ab_id2.register(app_id, asset_id, "id2", 1).expect("register id2");
-    let ops_id3 = test_util::ops_from_mnemonic(id3, pp3, cfg.clone());
-    ops_id3.opt_in_app(app_id).expect("id3 opt-in app");
-    ops_id3.opt_in_to_asset(asset_id).expect("id3 opt-in asset");
-    let _ = creator.send_asset(asset_id, 10, id3).expect("fund id3 with ASA");
-    let ab_id3 = AlgoBingle::new(ops_id3, app_id, asset_id);
-    ab_id3.register(app_id, asset_id, "id3", 1).expect("register id3");
+    register_client_on_blockchain(id2, pp2, "id2", app_id, asset_id, &creator, cfg.clone());
+    register_client_on_blockchain(id3, pp3, "id3", app_id, asset_id, &creator, cfg.clone());
 
     // Setup root relays and STUN
     let r1_port = test_util::find_unused_loopback_port();
@@ -505,5 +509,124 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     s2_full.stop();
     s1_iso.stop();
     s2_iso.stop();
+}
+
+// Localnet-style integration test: a relay sends a message to its own relay client using send_message_to_id.
+#[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
+#[ntest::timeout(180_000)]
+pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
+    test_util::init_test_logging();
+
+    if !test_util::should_run_localnet() {
+        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
+        return;
+    }
+
+    // Fixed relay endpoints on loopback
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    assert_ne!(r1_port, 0);
+    assert_ne!(r2_port, 0);
+    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
+    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+
+    log::info!("[Test] relay1_addr = {}", relay1_addr);
+    log::info!("[Test] relay2_addr = {}", relay2_addr);
+
+    // Deploy app + asset
+    let cfg = test_util::localnet_config();
+    let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+    // Register relay handles on blockchain so receiver can resolve sender handle
+    register_client_on_blockchain(
+        test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, "relay1",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+    register_client_on_blockchain(
+        test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, "relay2",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+
+    register_relays(app_id, relay1_addr, relay2_addr);
+
+    // Start two root relays
+    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+
+    // Start STUN servers with broken NAT so clients must use relays
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
+
+    // Register client_b on blockchain so handle lookup works
+    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
+    let ops_b_tmp = rust_comms::algo_ops::AlgoOps::new(Some(passphrase_b.to_string()), None, Some(cfg.clone()));
+    let address_b = ops_b_tmp.address.as_deref().expect("derive client_b address from passphrase");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[address_b]).expect("fund client_b");
+    register_client_on_blockchain(
+        address_b, passphrase_b, "client_b",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+
+    // Start a single client that will be forced to use a relay due to broken NAT
+    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
+
+    // Wait for client to reach Registered (it should register via a relay)
+    let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
+    assert!(ok_b, "client B did not reach Registered state (state = {:?})",
+        client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
+
+    // Verify client B is using a relay endpoint (broken NAT)
+    let id_b = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b id");
+    let id_r1 = relay1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("relay1 id");
+    let id_r2 = relay2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("relay2 id");
+
+    std::thread::sleep(Duration::from_millis(30_000));
+
+    // Look up client_b's endpoint from relay1 to find which relay it uses
+    let ep_b = relay1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&id_b))
+        .expect("lookup client_b succeeds");
+    assert!(ep_b.is_relay(), "client_b should be registered as a relay endpoint (broken_nat=true)");
+    let relay_id_for_b = ep_b.relay_id().expect("ep_b relay_id");
+    assert!(relay_id_for_b == id_r1 || relay_id_for_b == id_r2, "client_b should use one of the two relays");
+
+    // Determine which relay owns client_b and send from that relay
+    let sending_relay = if relay_id_for_b == id_r1 { &relay1 } else { &relay2 };
+    let relay_name = if relay_id_for_b == id_r1 { "relay1" } else { "relay2" };
+    log::info!("[Test] client_b is using {} as its relay; sending message from that relay to client_b", relay_name);
+
+    // Install OnMessage handler on client_b to capture delivery
+    let received = Arc::new(AtomicBool::new(false));
+    let payload_guard: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+    let who_guard: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    setup_on_message(&client_b, &received, &payload_guard, &who_guard);
+
+    // Relay sends message to its own relay client using send_message_to_id.
+    let msg = json!({ "text": "hello from relay" });
+    let sent = sending_relay.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&id_b, msg.clone(), None));
+    assert!(sent, "send_message_to_id from relay to relay client should return true");
+
+    // Wait up to 60 seconds for receipt on client_b
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(60) {
+        if received.load(Ordering::SeqCst) { break; }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(received.load(Ordering::SeqCst), "client B did not receive the message from its relay in time");
+
+    // Validate payload
+    {
+        let guard = payload_guard.lock().expect("lock payload_guard");
+        let p = guard.as_ref().expect("payload should be Some since received is true");
+        log::info!("[Test] received payload: {}", p);
+        assert_eq!(p.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("hello from relay"));
+    }
+
+    // Tear down
+    relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+    s1.stop();
+    s2.stop();
 }
 

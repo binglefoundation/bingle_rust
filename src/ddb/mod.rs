@@ -150,6 +150,7 @@ impl DdbBackend for InMemoryDdbBackend {
         response_tag: Option<String>,
         sender: &dyn Fn(&crate::api::bingle_api::NetworkEndpoint, &str, serde_json::Value) -> bool,
     ) {
+        log::info!("[InMemoryDdbBackend::handle_init] nsk={} user_id={} response_tag={:?} db_size={}", nsk, user_id, response_tag, self.map.len());
         // Snapshot keys to avoid holding the map across sends
         let mut records: Vec<AdvertRecord> = self.map.values().cloned().collect();
         // Deterministic ordering for tests
@@ -170,6 +171,7 @@ impl DdbBackend for InMemoryDdbBackend {
             )
         );
         let init_json = crate::messages::marshal::to_json_value(&init_resp);
+        log::info!("[InMemoryDdbBackend::handle_init] sending InitResponse: {}", init_json);
         let _ = sender(nsk, user_id, init_json);
 
         // Send one DumpResolve per record
@@ -180,8 +182,10 @@ impl DdbBackend for InMemoryDdbBackend {
                 )
             );
             let dump_json = crate::messages::marshal::to_json_value(&dump);
+            log::info!("[InMemoryDdbBackend::handle_init] sending DumpResolve: {}", dump_json);
             let _ = sender(nsk, user_id, dump_json);
         }
+        log::info!("[InMemoryDdbBackend::handle_init] done, sent {} DumpResolve messages", db_count);
     }
 
     fn len(&self) -> usize {
