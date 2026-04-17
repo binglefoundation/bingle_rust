@@ -100,3 +100,37 @@ pub enum NatType {
 pub struct NatTypeResponse {
     pub nat_type: NatType,
 }
+
+/// Configuration for initializing the Bingle JSI API.
+///
+/// Each field corresponds to a command-line parameter of the bingle_webserver.
+/// When generated as TypeScript, this becomes a plain object with typed properties.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct BingleJsiConfig {
+    /// The user's unique handle (required unless `local` is set).
+    pub handle: Option<String>,
+    /// Algorand passphrase.
+    pub passphrase: Option<String>,
+    /// Become a relay node.
+    pub relay: bool,
+    /// Static external IP as `ip:port`.
+    pub static_ip: Option<String>,
+    /// Comma-separated STUN server list.
+    pub stun_servers: Option<String>,
+    /// File containing STUN servers.
+    pub stun_servers_file: Option<String>,
+    /// Algorand node configuration file path.
+    pub node_file: Option<String>,
+    /// Log level: trace|debug|info|warn|error.
+    pub log_level: Option<String>,
+    /// Algorand application id.
+    pub app_id: Option<u64>,
+    /// Algorand asset id.
+    pub asset_id: Option<u64>,
+    /// Cache expiry for handle lookups in seconds.
+    pub handle_cache_expiry_secs: Option<u64>,
+    /// Enable debug mode.
+    pub debug: bool,
+    /// Enable local API with the given state file path.
+    pub local: Option<String>,
+}

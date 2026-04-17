@@ -4,19 +4,20 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value as JsonValue;
 
-use rust_comms::api::bingle_api::BingleApi;
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::network_endpoint::NetworkEndpoint;
 use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::util::cli_utils::parse_start_options_from_args;
+use rust_comms::util::cli_utils::{parse_stun_list, parse_stun_file, parse_node_file_with_ids, resolve_app_asset_ids};
 
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair, KeypairStatus,
-    KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleJsiConfig, BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair,
+    KeypairStatus, KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey,
+    VersionInfo,
 };
 use crate::api::bingle_jsi_api::BingleJsiApi;
 
@@ -120,58 +121,95 @@ fn parse_nat_type(nat: &str) -> NatType {
 }
 
 impl BingleJsiApiImpl {
-    /// Initialize the Bingle JSI API using the same parameters as the bingle_webserver command line.
+    /// Initialize the Bingle JSI API from a typed configuration object.
     ///
-    /// Accepted arguments (same as bingle_webserver):
-    /// - `--handle <handle>` or positional `<handle>` — user's unique handle
-    /// - `--passphrase <text>` — Algorand passphrase
-    /// - `--relay` — become a relay node
-    /// - `--static-ip <ip:port>` — static external IP
-    /// - `--stun-servers <list>` — comma-separated STUN server list
-    /// - `--stun-servers-file <file>` — file containing STUN servers
-    /// - `--node-file <file>` — Algorand node configuration file
-    /// - `--log-level <level>` — trace|debug|info|warn|error
-    /// - `--app-id <id>` — Algorand application id
-    /// - `--asset-id <id>` — Algorand asset id
-    /// - `--handle-cache-expiry-secs <seconds>` — cache expiry for handle lookups
-    /// - `--local <file>` — enable local API with the given state file
-    pub fn init(args: Vec<String>) -> Result<Arc<Self>, BingleJsiError> {
-        let mut other_args = Vec::new();
-        let mut local_file: Option<PathBuf> = None;
+    /// Each field on `BingleJsiConfig` corresponds to a command-line parameter
+    /// of the bingle_webserver. When generated as TypeScript via uniffi, the
+    /// config becomes a plain object:
+    ///
+    /// ```typescript
+    /// {
+    ///   handle: string | null,
+    ///   passphrase: string | null,
+    ///   relay: boolean,
+    ///   static_ip: string | null,
+    ///   stun_servers: string | null,
+    ///   stun_servers_file: string | null,
+    ///   node_file: string | null,
+    ///   log_level: string | null,
+    ///   app_id: number | null,
+    ///   asset_id: number | null,
+    ///   handle_cache_expiry_secs: number | null,
+    ///   debug: boolean,
+    ///   local: string | null,
+    /// }
+    /// ```
+    pub fn init(config: BingleJsiConfig) -> Result<Arc<Self>, BingleJsiError> {
+        let local_file: Option<PathBuf> = config.local.map(PathBuf::from);
 
-        let mut i = 0;
-        while i < args.len() {
-            match args[i].as_str() {
-                "--local" => {
-                    if i + 1 < args.len() {
-                        local_file = Some(PathBuf::from(&args[i + 1]));
-                        i += 2;
-                    } else {
-                        return Err(BingleJsiError::InvalidRequest {
-                            reason: "--local requires a <file> value".to_string(),
-                        });
-                    }
-                }
-                _ => {
-                    other_args.push(args[i].clone());
-                    i += 1;
-                }
+        // Map BingleJsiConfig directly to StartOptions.
+        let handle = match (&config.handle, &local_file) {
+            (Some(h), _) => h.clone(),
+            (None, Some(_)) => String::new(), // local mode: handle set later via registerKeypair
+            (None, None) => {
+                return Err(BingleJsiError::InvalidRequest {
+                    reason: "Missing handle: provide handle or enable local mode".to_string(),
+                });
             }
+        };
+
+        let static_ip: Option<SocketAddr> = config
+            .static_ip
+            .map(|v| {
+                v.parse::<SocketAddr>()
+                    .map_err(|e| BingleJsiError::InvalidRequest {
+                        reason: format!("Invalid static_ip '{}': {}", v, e),
+                    })
+            })
+            .transpose()?;
+
+        let stun_servers: Option<Vec<SocketAddr>> = if let Some(ref file) = config.stun_servers_file {
+            Some(parse_stun_file(file).map_err(|e| BingleJsiError::InvalidRequest { reason: e })?)
+        } else if let Some(ref list) = config.stun_servers {
+            Some(parse_stun_list(list).map_err(|e| BingleJsiError::InvalidRequest { reason: e })?)
+        } else {
+            None
+        };
+
+        let mut algo_provider_config = None;
+        let mut algo_network = None;
+        let mut node_app_id = None;
+        let mut node_asset_id = None;
+        if let Some(ref node_file) = config.node_file {
+            let (net, cfg, nid_app, nid_asset) =
+                parse_node_file_with_ids(node_file).map_err(|e| BingleJsiError::InvalidRequest { reason: e })?;
+            algo_network = net;
+            algo_provider_config = Some(cfg);
+            node_app_id = nid_app;
+            node_asset_id = nid_asset;
         }
 
-        // When --local is active, handle may not be provided on the command line.
-        let opts = match parse_start_options_from_args(other_args.clone()) {
-            Ok(o) => o,
-            Err(e) if local_file.is_some() && e.contains("Missing handle") => {
-                other_args.push("--handle".to_string());
-                other_args.push(String::new());
-                parse_start_options_from_args(other_args).map_err(|e| {
-                    BingleJsiError::InvalidRequest { reason: e }
-                })?
-            }
-            Err(e) => {
-                return Err(BingleJsiError::InvalidRequest { reason: e });
-            }
+        let (app_id, asset_id) = match resolve_app_asset_ids(node_app_id, node_asset_id, config.app_id, config.asset_id) {
+            Ok((a, b)) => (Some(a), Some(b)),
+            Err(_) => (None, None),
+        };
+
+        let handle_cache_expiry = config
+            .handle_cache_expiry_secs
+            .map(std::time::Duration::from_secs);
+
+        let opts = StartOptions {
+            handle,
+            algo_passphrase: config.passphrase,
+            static_ip,
+            am_relay: config.relay,
+            stun_servers,
+            algo_provider_config,
+            algo_network,
+            app_id,
+            asset_id,
+            log_level: config.log_level,
+            handle_cache_expiry,
         };
 
         let api = BingleApiImpl::new(&opts);
@@ -325,7 +363,7 @@ fn local_api_guard(
     local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
 ) -> Result<std::sync::MutexGuard<'_, Box<dyn BingleLocalApi>>, BingleJsiError> {
     let local_arc = local_api.as_ref().ok_or_else(|| BingleJsiError::InvalidRequest {
-        reason: "Local API not enabled (pass --local <file> to init)".to_string(),
+        reason: "Local API not enabled (set 'local' in BingleJsiConfig)".to_string(),
     })?;
     local_arc.lock().map_err(|_| BingleJsiError::InternalError {
         reason: "Local API lock poisoned".to_string(),

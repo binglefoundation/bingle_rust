@@ -1,41 +1,84 @@
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
 use bingle_jsi::api::error::BingleJsiError;
-use bingle_jsi::api::types::{ContactSource, KeypairStatus, NatType};
+use bingle_jsi::api::types::{BingleJsiConfig, ContactSource, KeypairStatus, NatType};
+
+/// Helper: build a minimal config with only `handle` set.
+fn config_with_handle(handle: &str) -> BingleJsiConfig {
+    BingleJsiConfig {
+        handle: Some(handle.to_string()),
+        passphrase: None,
+        relay: false,
+        static_ip: None,
+        stun_servers: None,
+        stun_servers_file: None,
+        node_file: None,
+        log_level: None,
+        app_id: None,
+        asset_id: None,
+        handle_cache_expiry_secs: None,
+        debug: false,
+        local: None,
+    }
+}
+
+/// Helper: build a config with only `local` set (no handle).
+fn config_with_local(path: &str) -> BingleJsiConfig {
+    BingleJsiConfig {
+        handle: None,
+        passphrase: None,
+        relay: false,
+        static_ip: None,
+        stun_servers: None,
+        stun_servers_file: None,
+        node_file: None,
+        log_level: None,
+        app_id: None,
+        asset_id: None,
+        handle_cache_expiry_secs: None,
+        debug: false,
+        local: Some(path.to_string()),
+    }
+}
+
+/// Helper: build an empty config (no handle, no local).
+fn empty_config() -> BingleJsiConfig {
+    BingleJsiConfig {
+        handle: None,
+        passphrase: None,
+        relay: false,
+        static_ip: None,
+        stun_servers: None,
+        stun_servers_file: None,
+        node_file: None,
+        log_level: None,
+        app_id: None,
+        asset_id: None,
+        handle_cache_expiry_secs: None,
+        debug: false,
+        local: None,
+    }
+}
 
 // ── init tests ───────────────────────────────────────────────────────
 
 #[test]
 fn init_with_handle_succeeds() {
-    let args = vec!["--handle".to_string(), "testuser".to_string()];
-    let api = BingleJsiApiImpl::init(args);
-    assert!(api.is_ok(), "init should succeed with --handle: {:?}", api.err());
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"));
+    assert!(api.is_ok(), "init should succeed with handle: {:?}", api.err());
 }
 
 #[test]
 fn init_with_local_and_no_handle_succeeds() {
     let tmp = std::env::temp_dir().join("bingle_jsi_test_init_local.json");
-    let args = vec!["--local".to_string(), tmp.to_string_lossy().to_string()];
-    let api = BingleJsiApiImpl::init(args);
-    assert!(api.is_ok(), "init with --local and no handle should succeed: {:?}", api.err());
+    let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()));
+    assert!(api.is_ok(), "init with local and no handle should succeed: {:?}", api.err());
     let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
-fn init_with_no_args_fails() {
-    let args: Vec<String> = vec![];
-    let result = BingleJsiApiImpl::init(args);
-    assert!(result.is_err());
-    match result {
-        Err(BingleJsiError::InvalidRequest { .. }) => {}
-        other => panic!("Expected InvalidRequest, got {:?}", other.err()),
-    }
-}
-
-#[test]
-fn init_local_missing_value_fails() {
-    let args = vec!["--local".to_string()];
-    let result = BingleJsiApiImpl::init(args);
+fn init_with_no_handle_and_no_local_fails() {
+    let result = BingleJsiApiImpl::init(empty_config());
     assert!(result.is_err());
     match result {
         Err(BingleJsiError::InvalidRequest { .. }) => {}
@@ -47,8 +90,7 @@ fn init_local_missing_value_fails() {
 
 #[test]
 fn version_returns_valid_info() {
-    let args = vec!["--handle".to_string(), "testuser".to_string()];
-    let api = BingleJsiApiImpl::init(args).expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let info = api.version().expect("version should succeed");
     assert!(!info.version.is_empty());
     assert!(!info.build_timestamp.is_empty());
@@ -59,8 +101,7 @@ fn version_returns_valid_info() {
 
 #[test]
 fn queued_returns_empty_initially() {
-    let args = vec!["--handle".to_string(), "testuser".to_string()];
-    let api = BingleJsiApiImpl::init(args).expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let messages = api.queued().expect("queued should succeed");
     assert!(messages.is_empty());
 }
@@ -69,18 +110,16 @@ fn queued_returns_empty_initially() {
 
 #[test]
 fn get_nat_type_returns_unknown_initially() {
-    let args = vec!["--handle".to_string(), "testuser".to_string()];
-    let api = BingleJsiApiImpl::init(args).expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let nat = api.get_nat_type().expect("get_nat_type should succeed");
     assert_eq!(nat.nat_type, NatType::Unknown);
 }
 
-// ── local API guard tests (no --local) ───────────────────────────────
+// ── local API guard tests (no local) ─────────────────────────────────
 
 #[test]
 fn local_methods_fail_without_local_flag() {
-    let args = vec!["--handle".to_string(), "testuser".to_string()];
-    let api = BingleJsiApiImpl::init(args).expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
 
     let result = api.generate_keypair();
     assert!(result.is_err());
@@ -99,9 +138,9 @@ fn local_methods_fail_without_local_flag() {
     assert!(result.is_err());
 }
 
-// ── local API tests (with --local) ───────────────────────────────────
+// ── local API tests (with local) ─────────────────────────────────────
 
-fn init_with_local() -> std::sync::Arc<BingleJsiApiImpl> {
+fn init_with_local_helper() -> std::sync::Arc<BingleJsiApiImpl> {
     let tmp = std::env::temp_dir().join(format!(
         "bingle_jsi_test_{}.json",
         std::time::SystemTime::now()
@@ -109,13 +148,13 @@ fn init_with_local() -> std::sync::Arc<BingleJsiApiImpl> {
             .unwrap()
             .as_nanos()
     ));
-    let args = vec!["--local".to_string(), tmp.to_string_lossy().to_string()];
-    BingleJsiApiImpl::init(args).expect("init with --local should succeed")
+    BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
+        .expect("init with local should succeed")
 }
 
 #[test]
 fn keypair_status_returns_none_initially() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     let status = api.keypair_status().expect("keypair_status should succeed");
     assert_eq!(status.status, KeypairStatus::None);
     assert!(status.id.is_none());
@@ -124,7 +163,7 @@ fn keypair_status_returns_none_initially() {
 
 #[test]
 fn generate_keypair_succeeds() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     let kp = api.generate_keypair().expect("generate_keypair should succeed");
     assert!(!kp.id.is_empty());
     assert!(!kp.passphrase.is_empty());
@@ -132,7 +171,7 @@ fn generate_keypair_succeeds() {
 
 #[test]
 fn generate_keypair_changes_status_to_unfunded() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     let _kp = api.generate_keypair().expect("generate_keypair should succeed");
     let status = api.keypair_status().expect("keypair_status should succeed");
     assert_eq!(status.status, KeypairStatus::Unfunded);
@@ -141,7 +180,7 @@ fn generate_keypair_changes_status_to_unfunded() {
 
 #[test]
 fn add_and_get_contacts() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     api.add_contact(
         "alice".to_string(),
         "ALICE_ID".to_string(),
@@ -157,7 +196,7 @@ fn add_and_get_contacts() {
 
 #[test]
 fn block_contact_hides_from_contacts() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     api.add_contact(
         "bob".to_string(),
         "BOB_ID".to_string(),
@@ -177,7 +216,7 @@ fn block_contact_hides_from_contacts() {
 
 #[test]
 fn remove_contact_removes_without_blocking() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     api.add_contact(
         "carol".to_string(),
         "CAROL_ID".to_string(),
@@ -197,7 +236,7 @@ fn remove_contact_removes_without_blocking() {
 
 #[test]
 fn add_and_get_messages() {
-    let api = init_with_local();
+    let api = init_with_local_helper();
     api.add_message(
         "alice".to_string(),
         vec!["bob".to_string()],
@@ -216,16 +255,14 @@ fn add_and_get_messages() {
 
 #[test]
 fn save_and_load_round_trip() {
-    let tmp = std::env::temp_dir().join(format!(
+    let tmp_save = std::env::temp_dir().join(format!(
         "bingle_jsi_save_test_{}.json",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
     ));
-    let tmp_str = tmp.to_string_lossy().to_string();
-
-    let api = init_with_local();
+    let api = init_with_local_helper();
     api.add_contact(
         "dave".to_string(),
         "DAVE_ID".to_string(),
@@ -233,15 +270,39 @@ fn save_and_load_round_trip() {
     )
     .expect("add_contact should succeed");
 
-    api.save(tmp_str.clone()).expect("save should succeed");
+    api.save(tmp_save.to_string_lossy().to_string())
+        .expect("save should succeed");
 
-    // Create a fresh instance with --local and load the saved state
-    let api2 = init_with_local();
-    api2.load(tmp_str.clone()).expect("load should succeed");
+    // Load into a new instance
+    let api2 = init_with_local_helper();
+    api2.load(tmp_save.to_string_lossy().to_string())
+        .expect("load should succeed");
 
     let contacts = api2.get_contacts().expect("get_contacts should succeed");
     assert_eq!(contacts.len(), 1);
     assert_eq!(contacts[0].handle, "dave");
+    assert_eq!(contacts[0].id, "DAVE_ID");
 
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&tmp_save);
+}
+
+#[test]
+fn init_with_optional_fields() {
+    let config = BingleJsiConfig {
+        handle: Some("testuser".to_string()),
+        passphrase: None,
+        relay: false,
+        static_ip: None,
+        stun_servers: None,
+        stun_servers_file: None,
+        node_file: None,
+        log_level: Some("debug".to_string()),
+        app_id: Some(12345),
+        asset_id: Some(67890),
+        handle_cache_expiry_secs: Some(300),
+        debug: true,
+        local: None,
+    };
+    let api = BingleJsiApiImpl::init(config);
+    assert!(api.is_ok(), "init with optional fields should succeed: {:?}", api.err());
 }
