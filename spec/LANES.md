@@ -14,6 +14,8 @@ local user:
 - ~~Local user API in web server~~
 
 UX:
+- ~~build react UX with onboarding~~
+- JSI / Uniffi library interface
 - build react native UX based on messenger / signal / apple messages
 - user onboarding with held algorand
 - contact UX

@@ -1,0 +1,587 @@
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use serde_json::Value as JsonValue;
+
+use rust_comms::api::bingle_api::BingleApi;
+use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::api::network_endpoint::NetworkEndpoint;
+use rust_comms::engine::BingleAccessUnsafeForTests;
+use rust_comms::util::cli_utils::parse_start_options_from_args;
+
+use bingle_local::api::bingle_local_api::BingleLocalApi;
+use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+
+use crate::api::error::BingleJsiError;
+use crate::api::types::{
+    BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair, KeypairStatus,
+    KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
+};
+use crate::api::bingle_jsi_api::BingleJsiApi;
+
+/// Concrete implementation of BingleJsiApi backed by BingleApiImpl and BingleApiLocalImpl.
+pub struct BingleJsiApiImpl {
+    api: Arc<BingleApiImpl>,
+    messages: Arc<Mutex<Vec<JsonValue>>>,
+    local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+    local_file: Option<PathBuf>,
+    nat_type: Arc<Mutex<String>>,
+}
+
+/// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
+fn nsk_to_endpoint(nsk: &NetworkSourceKey) -> NetworkEndpoint {
+    if let Some(relay_id) = &nsk.relay_id {
+        let relay_addr = nsk.relay_address.as_ref().and_then(|a| isa_to_socket_addr(a));
+        NetworkEndpoint::new_relay(relay_id.clone(), relay_addr, nsk.relay_channel)
+    } else if let Some(addr) = nsk.inet_socket_address.as_ref().and_then(|a| isa_to_socket_addr(a)) {
+        NetworkEndpoint::new_direct(addr)
+    } else {
+        NetworkEndpoint::new_unset()
+    }
+}
+
+/// Convert an InetSocketAddress to a SocketAddr.
+fn isa_to_socket_addr(isa: &InetSocketAddress) -> Option<SocketAddr> {
+    format!("{}:{}", isa.host, isa.port).to_socket_addrs().ok()?.next()
+}
+
+/// Convert a BingleMessage (uniffi record) to a serde_json Value.
+fn message_to_json(msg: &BingleMessage) -> JsonValue {
+    let mut map = serde_json::Map::new();
+    if let Some(app) = &msg.app {
+        map.insert("app".to_string(), JsonValue::String(app.clone()));
+    }
+    if let Some(t) = &msg.r#type {
+        map.insert("type".to_string(), JsonValue::String(t.clone()));
+    }
+    if let Some(tag) = &msg.tag {
+        map.insert("tag".to_string(), JsonValue::String(tag.clone()));
+    }
+    if let Some(rt) = &msg.response_tag {
+        map.insert("responseTag".to_string(), JsonValue::String(rt.clone()));
+    }
+    if let Some(text) = &msg.text {
+        map.insert("text".to_string(), JsonValue::String(text.clone()));
+    }
+    if let Some(data) = &msg.data {
+        if let Ok(parsed) = serde_json::from_str::<JsonValue>(data) {
+            map.insert("data".to_string(), parsed);
+        } else {
+            map.insert("data".to_string(), JsonValue::String(data.clone()));
+        }
+    }
+    JsonValue::Object(map)
+}
+
+/// Convert a serde_json Value back to a BingleMessage (uniffi record).
+fn json_to_message(val: &JsonValue) -> BingleMessage {
+    BingleMessage {
+        app: val.get("app").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        r#type: val.get("type").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        tag: val.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        response_tag: val.get("responseTag").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        text: val.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        data: val.get("data").map(|v| v.to_string()),
+    }
+}
+
+/// Save local state if local_api and local_file are both configured.
+fn save_if_configured(
+    local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+    local_file: &Option<PathBuf>,
+) {
+    if let (Some(local_arc), Some(path)) = (local_api, local_file) {
+        if let Ok(guard) = local_arc.lock() {
+            let _ = guard.save(path.to_string_lossy().as_ref());
+        }
+    }
+}
+
+/// Parse a keypair status string (from BingleLocalApi) into a KeypairStatus enum.
+fn parse_keypair_status(status: &str) -> KeypairStatus {
+    match status {
+        "UNFUNDED" => KeypairStatus::Unfunded,
+        "FUNDED" => KeypairStatus::Funded,
+        "ACTIVE" => KeypairStatus::Active,
+        _ => KeypairStatus::None,
+    }
+}
+
+/// Parse a NAT type string into a NatType enum.
+fn parse_nat_type(nat: &str) -> NatType {
+    match nat {
+        "NoConnection" => NatType::NoConnection,
+        "Symmetric" => NatType::Symmetric,
+        "Restricted" => NatType::Restricted,
+        "FullCone" => NatType::FullCone,
+        _ => NatType::Unknown,
+    }
+}
+
+impl BingleJsiApiImpl {
+    /// Initialize the Bingle JSI API using the same parameters as the bingle_webserver command line.
+    ///
+    /// Accepted arguments (same as bingle_webserver):
+    /// - `--handle <handle>` or positional `<handle>` — user's unique handle
+    /// - `--passphrase <text>` — Algorand passphrase
+    /// - `--relay` — become a relay node
+    /// - `--static-ip <ip:port>` — static external IP
+    /// - `--stun-servers <list>` — comma-separated STUN server list
+    /// - `--stun-servers-file <file>` — file containing STUN servers
+    /// - `--node-file <file>` — Algorand node configuration file
+    /// - `--log-level <level>` — trace|debug|info|warn|error
+    /// - `--app-id <id>` — Algorand application id
+    /// - `--asset-id <id>` — Algorand asset id
+    /// - `--handle-cache-expiry-secs <seconds>` — cache expiry for handle lookups
+    /// - `--local <file>` — enable local API with the given state file
+    pub fn init(args: Vec<String>) -> Result<Arc<Self>, BingleJsiError> {
+        let mut other_args = Vec::new();
+        let mut local_file: Option<PathBuf> = None;
+
+        let mut i = 0;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--local" => {
+                    if i + 1 < args.len() {
+                        local_file = Some(PathBuf::from(&args[i + 1]));
+                        i += 2;
+                    } else {
+                        return Err(BingleJsiError::InvalidRequest {
+                            reason: "--local requires a <file> value".to_string(),
+                        });
+                    }
+                }
+                _ => {
+                    other_args.push(args[i].clone());
+                    i += 1;
+                }
+            }
+        }
+
+        // When --local is active, handle may not be provided on the command line.
+        let opts = match parse_start_options_from_args(other_args.clone()) {
+            Ok(o) => o,
+            Err(e) if local_file.is_some() && e.contains("Missing handle") => {
+                other_args.push("--handle".to_string());
+                other_args.push(String::new());
+                parse_start_options_from_args(other_args).map_err(|e| {
+                    BingleJsiError::InvalidRequest { reason: e }
+                })?
+            }
+            Err(e) => {
+                return Err(BingleJsiError::InvalidRequest { reason: e });
+            }
+        };
+
+        let api = BingleApiImpl::new(&opts);
+        let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
+        let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+
+        // Initialize local API if --local was provided
+        let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
+        if let Some(path) = &local_file {
+            let cfg = LocalApiConfig {
+                algo_config: opts.algo_provider_config.clone().unwrap_or_default(),
+                app_id: opts.app_id.unwrap_or(0),
+                asset_id: opts.asset_id.unwrap_or(0),
+            };
+            let mut impl_api = BingleApiLocalImpl::new(cfg);
+            if path.exists() {
+                if let Err(e) = impl_api.load(path.to_string_lossy().as_ref()) {
+                    log::warn!("Failed to load local state from {}: {}", path.display(), e);
+                }
+            }
+            local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
+        }
+
+        // Setup on-listening handler to update nat_type
+        {
+            let nat_type_for_closure = nat_type.clone();
+            api.access_unsafe_for_tests(|api_mut| {
+                let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> =
+                    Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
+                        let type_str = if listening {
+                            format!("{:?}", nt)
+                        } else {
+                            "Unknown".to_string()
+                        };
+                        log::info!("on_listening: listening={} nat_type={}", listening, type_str);
+                        if let Ok(mut guard) = nat_type_for_closure.lock() {
+                            *guard = type_str;
+                        }
+                    });
+                api_mut.set_on_listening(Some(on_listening));
+            });
+        }
+
+        // Setup on-message handler to queue received messages
+        {
+            let msgs = messages.clone();
+            let local_api_for_closure = local_api.clone();
+            let local_file_for_closure = local_file.clone();
+            let api_for_handle = api.clone();
+            api.access_unsafe_for_tests(|api_mut| {
+                let on_message: Arc<rust_comms::api::bingle_api::OnMessageHandler> =
+                    Arc::new(move |_sender, sender_handle, message| {
+                        log::info!("Received message from {}: {}", sender_handle, message);
+                        let text = message
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| message.to_string());
+                        let mut m = msgs.lock().unwrap();
+                        m.push(message.clone());
+                        // Store message in local API if configured
+                        if let Some(local_arc) = &local_api_for_closure {
+                            if let Ok(mut guard) = local_arc.lock() {
+                                let timestamp = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_millis() as i64)
+                                    .unwrap_or(0);
+                                let recipient = match api_for_handle.get_handle() {
+                                    Some(h) => h,
+                                    None => {
+                                        log::error!("[on_message] get_handle returned None");
+                                        return;
+                                    }
+                                };
+                                if let Err(e) = guard.add_message(
+                                    sender_handle.clone(),
+                                    vec![recipient],
+                                    timestamp,
+                                    text,
+                                ) {
+                                    log::warn!("[on_message] failed to add message: {}", e);
+                                }
+                                if let Some(path) = &local_file_for_closure {
+                                    let _ = guard.save(path.to_string_lossy().as_ref());
+                                }
+                            }
+                        }
+                    });
+                api_mut.set_on_message(Some(on_message));
+            });
+        }
+
+        // Determine whether to start the API immediately or defer
+        let mut api_started = false;
+        if local_file.is_some() {
+            if let Some(local_arc) = &local_api {
+                if let Ok(guard) = local_arc.lock() {
+                    if let Ok(status) = guard.keypair_status() {
+                        if status.status == "ACTIVE" {
+                            let api_clone = api.clone();
+                            let mut opts_clone = opts.clone();
+                            if let Some(handle) = &status.handle {
+                                opts_clone.handle = handle.clone();
+                            }
+                            if let Ok(Some(kp)) = guard.get_keypair() {
+                                opts_clone.algo_passphrase = Some(kp.passphrase);
+                            }
+                            api_clone.access_unsafe_for_tests(|api_mut| {
+                                if let Err(e) = api_mut.start(&opts_clone) {
+                                    log::error!("Failed to start Bingle API: {}", e);
+                                }
+                            });
+                            api_started = true;
+                            log::info!("Bingle API started (keypair is ACTIVE)");
+                        } else {
+                            log::info!(
+                                "Bingle API start deferred (keypair status: {})",
+                                status.status
+                            );
+                        }
+                    }
+                }
+            }
+        } else {
+            let api_clone = api.clone();
+            let opts_clone = opts.clone();
+            api_clone.access_unsafe_for_tests(|api_mut| {
+                if let Err(e) = api_mut.start(&opts_clone) {
+                    log::error!("Failed to start Bingle API: {}", e);
+                }
+            });
+            api_started = true;
+        }
+
+        if !api_started {
+            log::info!("Bingle API not yet started; waiting for keypair to become ACTIVE");
+        }
+
+        Ok(Arc::new(Self {
+            api,
+            messages,
+            local_api,
+            local_file,
+            nat_type,
+        }))
+    }
+}
+
+/// Guard helper: obtain the local API mutex guard or return an error.
+fn local_api_guard(
+    local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+) -> Result<std::sync::MutexGuard<'_, Box<dyn BingleLocalApi>>, BingleJsiError> {
+    let local_arc = local_api.as_ref().ok_or_else(|| BingleJsiError::InvalidRequest {
+        reason: "Local API not enabled (pass --local <file> to init)".to_string(),
+    })?;
+    local_arc.lock().map_err(|_| BingleJsiError::InternalError {
+        reason: "Local API lock poisoned".to_string(),
+    })
+}
+
+impl BingleJsiApi for BingleJsiApiImpl {
+    fn handle_lookup(&self, handle: String) -> Result<String, BingleJsiError> {
+        match self.api.handle_lookup(&handle) {
+            Ok(Some(id)) => Ok(id),
+            Ok(None) => Err(BingleJsiError::NotFound {
+                reason: format!("Handle '{}' not found", handle),
+            }),
+            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+        }
+    }
+
+    fn send_message_to_id(
+        &self,
+        user_id: String,
+        message: BingleMessage,
+    ) -> Result<bool, BingleJsiError> {
+        let json = message_to_json(&message);
+        let ok = self.api.send_message_to_id(&user_id, json, None);
+        Ok(ok)
+    }
+
+    fn send_message_to_handle(
+        &self,
+        handle: String,
+        message: BingleMessage,
+    ) -> Result<bool, BingleJsiError> {
+        let json = message_to_json(&message);
+        let ok = self.api.send_message_to_handle(&handle, json, None);
+        Ok(ok)
+    }
+
+    fn send_message_to_network(
+        &self,
+        network_source_key: NetworkSourceKey,
+        user_id: String,
+        message: BingleMessage,
+    ) -> Result<bool, BingleJsiError> {
+        let endpoint = nsk_to_endpoint(&network_source_key);
+        let json = message_to_json(&message);
+        let ok = self.api.send_message_to_network(&endpoint, &user_id, json, None);
+        Ok(ok)
+    }
+
+    fn send_message_to_id_with_response(
+        &self,
+        user_id: String,
+        message: BingleMessage,
+    ) -> Result<BingleMessage, BingleJsiError> {
+        let json = message_to_json(&message);
+        match self.api.send_message_to_id_with_response(&user_id, json, None) {
+            Ok(resp) => Ok(json_to_message(&resp)),
+            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+        }
+    }
+
+    fn send_message_to_handle_with_response(
+        &self,
+        handle: String,
+        message: BingleMessage,
+    ) -> Result<BingleMessage, BingleJsiError> {
+        let json = message_to_json(&message);
+        match self.api.send_message_to_handle_with_response(&handle, json, None) {
+            Ok(resp) => Ok(json_to_message(&resp)),
+            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+        }
+    }
+
+    fn send_message_to_network_with_response(
+        &self,
+        network_source_key: NetworkSourceKey,
+        user_id: String,
+        message: BingleMessage,
+    ) -> Result<BingleMessage, BingleJsiError> {
+        let endpoint = nsk_to_endpoint(&network_source_key);
+        let json = message_to_json(&message);
+        match self
+            .api
+            .send_message_to_network_with_response(&endpoint, &user_id, json, None)
+        {
+            Ok(resp) => Ok(json_to_message(&resp)),
+            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+        }
+    }
+
+    fn queued(&self) -> Result<Vec<BingleMessage>, BingleJsiError> {
+        let guard = self.messages.lock().map_err(|_| BingleJsiError::InternalError {
+            reason: "Messages lock poisoned".to_string(),
+        })?;
+        Ok(guard.iter().map(|v| json_to_message(v)).collect())
+    }
+
+    fn version(&self) -> Result<VersionInfo, BingleJsiError> {
+        let info = rust_comms::util::version::get_version_info();
+        Ok(VersionInfo {
+            version: info.version,
+            git_sha: info.git_sha,
+            build_timestamp: info.build_timestamp,
+            build_number: info.build_number,
+        })
+    }
+
+    fn get_nat_type(&self) -> Result<NatTypeResponse, BingleJsiError> {
+        let guard = self.nat_type.lock().map_err(|_| BingleJsiError::InternalError {
+            reason: "NAT type lock poisoned".to_string(),
+        })?;
+        Ok(NatTypeResponse {
+            nat_type: parse_nat_type(&guard),
+        })
+    }
+
+    fn generate_keypair(&self) -> Result<Keypair, BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        let kp = guard.generate_keypair().map_err(|e| BingleJsiError::InternalError {
+            reason: e,
+        })?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
+    }
+
+    fn register_keypair(&self, handle: String) -> Result<bool, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let result = guard.register_keypair(handle).map_err(|e| BingleJsiError::InternalError {
+            reason: e,
+        })?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(result)
+    }
+
+    fn add_contact(
+        &self,
+        handle: String,
+        id: String,
+        source: ContactSource,
+    ) -> Result<(), BingleJsiError> {
+        let local_source = match source {
+            ContactSource::Manual => bingle_local::api::bingle_local_api::ContactSource::Manual,
+            ContactSource::Received => bingle_local::api::bingle_local_api::ContactSource::Received,
+        };
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .add_contact(handle, id, local_source)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
+    }
+
+    fn block_contact(&self, id: String) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .block_contact(id)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
+    }
+
+    fn remove_contact(&self, id: String) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .remove_contact(id)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
+    }
+
+    fn is_blocked(&self, id: String) -> Result<bool, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        guard
+            .is_blocked(&id)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })
+    }
+
+    fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let contacts = guard
+            .get_contacts()
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        Ok(contacts
+            .into_iter()
+            .map(|c| Contact {
+                handle: c.handle,
+                id: c.id,
+                fields: c.fields,
+            })
+            .collect())
+    }
+
+    fn add_message(
+        &self,
+        sender_handle: String,
+        recipient_handles: Vec<String>,
+        timestamp: i64,
+        text: String,
+    ) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .add_message(sender_handle, recipient_handles, timestamp, text)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
+    }
+
+    fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let messages = guard
+            .get_messages()
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        Ok(messages
+            .into_iter()
+            .map(|m| Message {
+                sender_handle: m.sender_handle,
+                recipient_handles: m.recipient_handles,
+                timestamp: m.timestamp,
+                text: m.text,
+            })
+            .collect())
+    }
+
+    fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        let status = guard
+            .keypair_status()
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        Ok(KeypairStatusResponse {
+            status: parse_keypair_status(&status.status),
+            id: status.id,
+            handle: status.handle,
+            required_algo: status.required_algo,
+        })
+    }
+
+    fn save(&self, path: String) -> Result<(), BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        guard
+            .save(&path)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })
+    }
+
+    fn load(&self, path: String) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .load(&path)
+            .map_err(|e| BingleJsiError::InternalError { reason: e })
+    }
+}

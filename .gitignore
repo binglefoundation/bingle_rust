@@ -18,3 +18,11 @@
 
 /ios/
 .junie
+/bingle_webserver/ts-client/
+
+**/.build_exit
+**/.test_exit
+**/.test_log
+**/test_output.txt
+
+**/browser_local.json

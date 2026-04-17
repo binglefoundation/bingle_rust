@@ -1,0 +1,14 @@
+1. Create under bingle_jsi a standard file structure for a cross platform React Native compatible module
+using JSI / uniffi
+
+2. Based on bingle_webserver/spec/server_openapi.yaml create an interface wrapper using Rust macros (?).
+
+3. Implement each method using the bingle_webserver code is a guide. Provide an init function that has the same
+parameters as the command line to bingle_webserver
+
+4. Add set_message_callback and set_network_callback functions to be called on incoming messages and network changes
+
+5. Implement build code to produce an IOS module
+
+6. Implement build code to produce an Android module
+

@@ -1,0 +1,25 @@
+[package]
+name = "bingle_jsi"
+version = "0.0.1"
+edition = "2024"
+description = "React Native JSI bridge for Bingle using uniffi proc macros."
+
+[lib]
+name = "bingle_jsi"
+path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = "1"
+rust_comms = { path = ".." }
+bingle-local = { path = "../bingle-local" }
+serde_json = "1"
+log = "0.4"
+
+[dev-dependencies]
+uniffi = { version = "0.28", features = ["build"] }
+
+[[test]]
+name = "bingle_jsi_tests"
+path = "tests/all.rs"
