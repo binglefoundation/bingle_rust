@@ -13,6 +13,7 @@ use rust_comms::util::cli_utils::{parse_stun_list, parse_stun_file, parse_node_f
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
+use crate::api::callback::MessageCallback;
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair,
@@ -28,6 +29,7 @@ pub struct BingleJsiApiImpl {
     local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: Option<PathBuf>,
     nat_type: Arc<Mutex<String>>,
+    message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
 }
 
 /// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
@@ -253,16 +255,31 @@ impl BingleJsiApiImpl {
             });
         }
 
+        let message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>> =
+            Arc::new(Mutex::new(None));
+
         // Setup on-message handler to queue received messages
         {
             let msgs = messages.clone();
             let local_api_for_closure = local_api.clone();
             let local_file_for_closure = local_file.clone();
             let api_for_handle = api.clone();
+            let cb = message_callback.clone();
             api.access_unsafe_for_tests(|api_mut| {
                 let on_message: Arc<rust_comms::api::bingle_api::OnMessageHandler> =
-                    Arc::new(move |_sender, sender_handle, message| {
+                    Arc::new(move |sender, sender_handle, message| {
                         log::info!("Received message from {}: {}", sender_handle, message);
+                        // Invoke user callback if registered
+                        if let Ok(guard) = cb.lock() {
+                            if let Some(ref callback) = *guard {
+                                let bingle_msg = json_to_message(&message);
+                                callback.on_message(
+                                    sender.clone(),
+                                    sender_handle.clone(),
+                                    bingle_msg,
+                                );
+                            }
+                        }
                         let text = message
                             .get("text")
                             .and_then(|v| v.as_str())
@@ -354,6 +371,7 @@ impl BingleJsiApiImpl {
             local_api,
             local_file,
             nat_type,
+            message_callback,
         }))
     }
 }
@@ -621,5 +639,11 @@ impl BingleJsiApi for BingleJsiApiImpl {
         guard
             .load(&path)
             .map_err(|e| BingleJsiError::InternalError { reason: e })
+    }
+
+    fn set_message_callback(&self, callback: Box<dyn MessageCallback>) {
+        if let Ok(mut guard) = self.message_callback.lock() {
+            *guard = Some(callback);
+        }
     }
 }

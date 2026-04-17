@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
+use bingle_jsi::api::callback::MessageCallback;
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
@@ -179,6 +180,10 @@ impl BingleJsiApi for StubApi {
         Err(BingleJsiError::NotImplemented {
             reason: "load".to_string(),
         })
+    }
+
+    fn set_message_callback(&self, _callback: Box<dyn MessageCallback>) {
+        // no-op stub
     }
 }
 

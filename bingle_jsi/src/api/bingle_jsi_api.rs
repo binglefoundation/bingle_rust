@@ -1,3 +1,4 @@
+use crate::api::callback::MessageCallback;
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
@@ -116,4 +117,10 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Load all local state from a JSON file.
     fn load(&self, path: String) -> Result<(), BingleJsiError>;
+
+    // ── Callbacks ────────────────────────────────────────────────────
+
+    /// Register a callback to be invoked on each incoming message.
+    /// Replaces any previously registered callback.
+    fn set_message_callback(&self, callback: Box<dyn MessageCallback>);
 }

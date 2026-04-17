@@ -1,7 +1,10 @@
+use std::sync::{Arc, Mutex};
+
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
+use bingle_jsi::api::callback::MessageCallback;
 use bingle_jsi::api::error::BingleJsiError;
-use bingle_jsi::api::types::{BingleJsiConfig, ContactSource, KeypairStatus, NatType};
+use bingle_jsi::api::types::{BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType};
 
 /// Helper: build a minimal config with only `handle` set.
 fn config_with_handle(handle: &str) -> BingleJsiConfig {
@@ -305,4 +308,52 @@ fn init_with_optional_fields() {
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(api.is_ok(), "init with optional fields should succeed: {:?}", api.err());
+}
+
+// ── set_message_callback tests ───────────────────────────────────────
+
+/// Test callback implementation that records received messages.
+struct RecordingCallback {
+    received: Arc<Mutex<Vec<(String, String, BingleMessage)>>>,
+}
+
+impl MessageCallback for RecordingCallback {
+    fn on_message(&self, sender_id: String, sender_handle: String, message: BingleMessage) {
+        let mut guard = self.received.lock().unwrap();
+        guard.push((sender_id, sender_handle, message));
+    }
+}
+
+#[test]
+fn set_message_callback_succeeds() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+    let received: Arc<Mutex<Vec<(String, String, BingleMessage)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let cb = RecordingCallback {
+        received: received.clone(),
+    };
+    // Should not panic
+    api.set_message_callback(Box::new(cb));
+}
+
+#[test]
+fn set_message_callback_replaces_previous() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+
+    let received1: Arc<Mutex<Vec<(String, String, BingleMessage)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let cb1 = RecordingCallback {
+        received: received1.clone(),
+    };
+    api.set_message_callback(Box::new(cb1));
+
+    let received2: Arc<Mutex<Vec<(String, String, BingleMessage)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let cb2 = RecordingCallback {
+        received: received2.clone(),
+    };
+    // Replacing should not panic
+    api.set_message_callback(Box::new(cb2));
 }
