@@ -26,3 +26,10 @@
 **/test_output.txt
 
 **/browser_local.json
+
+# Ignore bingle_jsi generated/built artifacts
+/bingle_jsi/ios/generated/
+/bingle_jsi/ios/BingleJsi.xcframework/
+/bingle_jsi/android/generated/
+/bingle_jsi/android/src/main/jniLibs/
+/bingle_jsi/node_modules/
