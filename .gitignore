@@ -33,3 +33,13 @@
 /bingle_jsi/android/generated/
 /bingle_jsi/android/src/main/jniLibs/
 /bingle_jsi/node_modules/
+
+# Ignore bingle_jsi example app generated artifacts
+/bingle_jsi/example/node_modules/
+/bingle_jsi/example/ios/Pods/
+/bingle_jsi/example/ios/build/
+/bingle_jsi/example/ios/BingleJsiExample.xcworkspace/
+/bingle_jsi/example/ios/BingleJsiExample.xcodeproj/
+/bingle_jsi/example/package-lock.json
+
+**/react-native-bingle-jsi*.tgz

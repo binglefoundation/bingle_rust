@@ -6,7 +6,7 @@ set -euo pipefail
 # Prerequisites:
 #   - Xcode command-line tools
 #   - rustup with iOS targets (installed automatically if missing)
-#   - cargo install uniffi-bindgen-cli --version 0.28.3   (or matching uniffi version)
+#   - uniffi-bindgen is built from the bingle_jsi crate (no separate install needed)
 #
 # Usage:
 #   bash bingle_jsi/scripts/build_ios.sh
@@ -107,9 +107,9 @@ done
 echo "Generating Swift bindings..."
 mkdir -p "$GENERATED_DIR"
 
-# uniffi-bindgen can be invoked via `cargo run` on the crate (with cli feature)
-# or via the standalone uniffi-bindgen CLI. We use the library approach.
-"${CARGO_CMD[@]}" run -p uniffi-bindgen -- generate \
+# uniffi-bindgen is provided as a binary target in the bingle_jsi crate
+# (src/bin/uniffi-bindgen.rs) via the uniffi "cli" feature.
+"${CARGO_CMD[@]}" run -p bingle_jsi --bin uniffi-bindgen -- generate \
   --library "$LIB_DEVICE" \
   --language swift \
   --out-dir "$GENERATED_DIR"
@@ -130,7 +130,7 @@ fi
 # Create modulemap for the XCFramework
 HEADER_FILES=$(cd "$HEADERS_DIR" && ls *.h 2>/dev/null || true)
 cat > "$HEADERS_DIR/module.modulemap" <<EOF
-module BingleJsiFFI [system] {
+module bingle_jsiFFI [system] {
 $(for h in $HEADER_FILES; do echo "  header \"$h\""; done)
   export *
 }

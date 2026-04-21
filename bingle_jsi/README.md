@@ -22,7 +22,7 @@ bingle_jsi/
 │       ├── error.rs              # BingleJsiError
 │       ├── callback.rs           # MessageCallback trait
 │       ├── bingle_jsi_api.rs     # BingleJsiApi trait (20 methods)
-│       └── bingle_jsi_api_impl.rs# Concrete implementation + init()
+│       └── bingle_jsi_api_impl.rs# Concrete implementation + create_bingle_api()
 ├── scripts/
 │   ├── build_ios.sh              # iOS cross-compile + XCFramework
 │   └── build_android.sh          # Android cross-compile + jniLibs
@@ -51,14 +51,15 @@ bingle_jsi/
 #### Common
 
 - **Rust** (via [rustup](https://rustup.rs/)) — stable toolchain
-- **uniffi-bindgen** CLI matching the crate's uniffi version:
-  ```bash
-  cargo install uniffi-bindgen-cli --version 0.28.3
-  ```
+- **uniffi-bindgen** — provided as a binary target in the `bingle_jsi` crate
+  (`src/bin/uniffi-bindgen.rs`). No separate install is needed; the build
+  scripts invoke it automatically via `cargo run -p bingle_jsi --bin uniffi-bindgen`.
 
 #### iOS
 
 - **macOS** with **Xcode** (command-line tools installed)
+- **swiftformat** (installed via Homebrew) — used by `uniffi-bindgen` to auto-format
+  generated Swift bindings. Install with: `brew install swiftformat`
 - Rust iOS targets (installed automatically by the build script):
   - `aarch64-apple-ios` (device)
   - `aarch64-apple-ios-sim` (Apple Silicon simulator)
@@ -66,6 +67,8 @@ bingle_jsi/
 
 #### Android
 
+- **ktlint** (installed via Homebrew) — used by `uniffi-bindgen` to auto-format
+  generated Kotlin bindings. Install with: `brew install ktlint`
 - **Android NDK** — set `ANDROID_NDK_HOME` or install via Android Studio
   SDK Manager (the script auto-detects from `ANDROID_HOME` or
   `~/Library/Android/sdk/ndk/`)
@@ -170,11 +173,20 @@ cd ..
 The `bingle_jsi.podspec` links the XCFramework and Swift bindings
 automatically.
 
-#### Step 4: Android — Gradle Sync
+#### Step 4: Android — Register the Package
 
 The `android/build.gradle` in the module configures jniLibs and Kotlin
-bindings. After adding the module dependency, sync your Gradle project
-in Android Studio or run:
+bindings. You must register `BingleJsiPackage` in your app's
+`MainApplication.java` (or `.kt`):
+
+```kotlin
+import com.bingle.jsi.BingleJsiPackage
+
+// In getPackages():
+packages.add(BingleJsiPackage())
+```
+
+Then sync your Gradle project in Android Studio or run:
 
 ```bash
 cd android
@@ -184,20 +196,19 @@ cd ..
 
 #### Step 5: Use in TypeScript
 
+All native methods are **async** (Promise-based) because they cross the
+React Native bridge.
+
 ```typescript
 import {
-  BingleJsiApi,
+  BingleJsi,
+  initBingleJsi,
   BingleJsiConfig,
   BingleMessage,
   ContactSource,
-  MessageCallback,
 } from 'react-native-bingle-jsi';
 
-// The native module is loaded by uniffi's generated bindings.
-// Access varies by platform; typically via the generated Swift/Kotlin module.
-// Example usage (assuming the native module is exposed as `BingleJsi`):
-
-// Initialize
+// Initialize — must be called before any other method
 const config: BingleJsiConfig = {
   handle: 'alice',
   passphrase: null,
@@ -214,38 +225,55 @@ const config: BingleJsiConfig = {
   local: '/path/to/local_state.json',
 };
 
-// Call init (from the generated native module)
-// const api = BingleJsi.init(config);
+await initBingleJsi(config);
 
 // Get version info
-// const version = api.version();
-// console.log(`Bingle v${version.version}`);
+const version = await BingleJsi.version();
+console.log(`Bingle v${version.version}`);
 
 // Send a message
-// const msg: BingleMessage = {
-//   app: null,
-//   type: null,
-//   tag: null,
-//   response_tag: null,
-//   text: 'Hello from React Native!',
-//   data: null,
-// };
-// api.sendMessageToHandle('bob', msg);
-
-// Register a message callback
-// const callback: MessageCallback = {
-//   onMessage(senderId, senderHandle, message) {
-//     console.log(`Message from ${senderHandle}: ${message.text}`);
-//   },
-// };
-// api.setMessageCallback(callback);
+const msg: BingleMessage = {
+  app: null,
+  type: null,
+  tag: null,
+  response_tag: null,
+  text: 'Hello from React Native!',
+  data: null,
+};
+await BingleJsi.sendMessageToHandle('bob', msg);
 
 // Local API (when `local` is set in config)
-// const keypair = api.generateKeypair();
-// console.log(`Generated keypair: ${keypair.id}`);
-// api.addContact('bob', 'BOB_ALGO_ADDRESS', ContactSource.Manual);
-// const contacts = api.getContacts();
+const keypair = await BingleJsi.generateKeypair();
+console.log(`Generated keypair: ${keypair.id}`);
+await BingleJsi.addContact('bob', 'BOB_ALGO_ADDRESS', ContactSource.Manual);
+const contacts = await BingleJsi.getContacts();
 ```
+
+---
+
+### Native Module Architecture
+
+The module uses a two-layer architecture:
+
+1. **Rust → uniffi bindings**: The `bingle_jsi` Rust crate is compiled to
+   a static library (iOS) or shared library (Android). `uniffi-bindgen`
+   generates Swift and Kotlin bindings that call the Rust FFI layer.
+
+2. **uniffi bindings → React Native bridge**: Platform-specific bridge
+   classes wrap the uniffi-generated API and register it as a React Native
+   native module named `"BingleJsi"`:
+   - **iOS**: `ios/BingleJsiBridge.swift` + `ios/BingleJsiBridge.m`
+     (extends `RCTEventEmitter`, registered via `RCT_EXTERN_MODULE`)
+   - **Android**: `android/src/main/java/com/bingle/jsi/BingleJsiModule.kt`
+     + `BingleJsiPackage.kt` (extends `ReactContextBaseJavaModule`,
+     registered via `ReactPackage`)
+
+3. **TypeScript**: `ts/index.ts` acquires the native module via
+   `NativeModules.BingleJsi` and exports `initBingleJsi()` plus the
+   typed `BingleJsi` proxy object.
+
+All bridge methods are **Promise-based** — they dispatch work to a
+background thread and resolve/reject via the React Native bridge.
 
 ---
 
@@ -269,7 +297,7 @@ The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
 
 | Method | Description |
 |--------|-------------|
-| `init(config)` | Initialize the API with a `BingleJsiConfig` |
+| `createBingleApi(config)` | Initialize the API with a `BingleJsiConfig` |
 | `handleLookup(handle)` | Look up a user ID by handle |
 | `sendMessageToId(userId, message)` | Send a message to a user ID |
 | `sendMessageToHandle(handle, message)` | Send a message to a handle |

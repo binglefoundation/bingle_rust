@@ -1,0 +1,15 @@
+- Generate a new (empty) API crate bingle-local
+(This provides a local API to store messages and contacts.
+This will have multiple implementations to support local memory as well as platform provided contacts and secure storage).
+
+- Generate a trait BingleLocalApi with the following methods:
+- generate_keypair() - generate a new Algo keypair as id and passphrase
+- register_keypair() - register Algo kepair with Bingle, having credited funds, returns true or error
+- get_algo_ops() - get an AlgoOps instance with the current keypair
+- add_contact(handle, id, source) - add a contact to the local store, source is an enum MANUAL or RECEIVED
+- block_contact(id) - block a contact
+- remove_contact(id) - remove a contact but don't block it
+- is_blocked(id) - check if a contact is blocked
+- get_contacts() - get the list of unblocked contacts as a list of a struct with handle, id and a map of arbitrary additional fields
+- add_message(sender_handle, recipient_handles, timestamp, text) - add a message to the local store
+- get_messages() - get the list of messages as a list of sender contact handle, recipient contact handles, timestamp and the message text

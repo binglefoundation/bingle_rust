@@ -72,6 +72,15 @@ fn init_with_handle_succeeds() {
 }
 
 #[test]
+fn create_bingle_api_returns_trait_object() {
+    let api = bingle_jsi::create_bingle_api(config_with_handle("testuser"));
+    assert!(api.is_ok(), "create_bingle_api should succeed: {:?}", api.err());
+    let api = api.unwrap();
+    let info = api.version().expect("version should succeed on trait object");
+    assert!(!info.version.is_empty());
+}
+
+#[test]
 fn init_with_local_and_no_handle_succeeds() {
     let tmp = std::env::temp_dir().join("bingle_jsi_test_init_local.json");
     let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()));

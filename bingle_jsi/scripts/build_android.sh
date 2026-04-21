@@ -6,7 +6,7 @@ set -euo pipefail
 # Prerequisites:
 #   - Android NDK (set ANDROID_NDK_HOME or auto-detected from ANDROID_HOME)
 #   - rustup with Android targets (installed automatically if missing)
-#   - cargo install uniffi-bindgen-cli --version 0.28.3   (or matching uniffi version)
+#   - uniffi-bindgen is built from the bingle_jsi crate (no separate install needed)
 #
 # Usage:
 #   bash bingle_jsi/scripts/build_android.sh
@@ -113,6 +113,9 @@ export CC_x86_64_linux_android="$NDK_BIN/x86_64-linux-android${API_LEVEL}-clang"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
 export AR_armv7_linux_androideabi="$NDK_BIN/llvm-ar"
 export AR_x86_64_linux_android="$NDK_BIN/llvm-ar"
+export RANLIB_aarch64_linux_android="$NDK_BIN/llvm-ranlib"
+export RANLIB_armv7_linux_androideabi="$NDK_BIN/llvm-ranlib"
+export RANLIB_x86_64_linux_android="$NDK_BIN/llvm-ranlib"
 
 # ── Android target triples ────────────────────────────────────────────
 
@@ -152,7 +155,7 @@ mkdir -p "$GENERATED_DIR"
 # Use the arm64 library for binding generation (all ABIs share the same interface)
 BINDING_LIB="$BUILD_DIR/aarch64-linux-android/release/lib${CRATE_NAME}.so"
 
-"${CARGO_CMD[@]}" run -p uniffi-bindgen -- generate \
+"${CARGO_CMD[@]}" run -p bingle_jsi --bin uniffi-bindgen -- generate \
   --library "$BINDING_LIB" \
   --language kotlin \
   --out-dir "$GENERATED_DIR"
