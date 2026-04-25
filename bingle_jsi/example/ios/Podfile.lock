@@ -1980,7 +1980,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  bingle_jsi: 8dcb914fa88c856cca4e3bb2dc6f7d8c9aaf753f
+  bingle_jsi: 596e7cc780833012f407098b6b16516aac5e33ba
   FBLazyVector: 26fd21c75314e101f280d401e97f27d54f3f7064
   hermes-engine: a5057ef6344f95db49768aa61c0c0fb4ff1e5665
   RCTDeprecation: c7a2768f905d76ca6d2cfefb26e4349eacbdfca3

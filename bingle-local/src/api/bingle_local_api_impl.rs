@@ -366,10 +366,15 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         // Ensure parent directory exists
         if let Some(parent) = std::path::Path::new(path).parent() {
-            if !parent.as_os_str().is_empty() {
+            if !parent.as_os_str().is_empty() && !parent.is_dir() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
-                    let msg = e.to_string();
-                    log::error!("[save] Failed to create parent directory for '{}': {}", path, msg);
+                    let msg = format!(
+                        "Failed to create parent directory '{}' for '{}': {}",
+                        parent.display(),
+                        path,
+                        e
+                    );
+                    log::error!("[save] {}", msg);
                     return Err(msg);
                 }
             }

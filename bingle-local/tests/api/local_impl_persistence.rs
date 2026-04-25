@@ -73,3 +73,20 @@ fn save_creates_parent_directories() {
     let meta = fs::metadata(&nested).expect("file exists");
     assert!(meta.is_file());
 }
+
+#[test]
+fn save_succeeds_when_parent_directory_already_exists() {
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let _kp = api.generate_keypair().expect("keypair");
+    let base = tempfile::tempdir().expect("tempdir");
+    let file_path = base.path().join("state.json");
+    let path = file_path.to_str().unwrap().to_string();
+
+    // First save creates the file
+    api.save(&path).expect("first save ok");
+    assert!(fs::metadata(&file_path).expect("file exists").is_file());
+
+    // Second save should succeed without EEXIST error since parent already exists
+    api.save(&path).expect("second save ok (parent dir already exists)");
+    assert!(fs::metadata(&file_path).expect("file still exists").is_file());
+}

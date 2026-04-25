@@ -61,8 +61,11 @@ struct NodeFile {
 }
 
 pub fn parse_node_file_with_ids(path: &str) -> Result<(Option<String>, AlgoChainConfig, Option<u64>, Option<u64>), String> {
+    let cwd = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "<unknown>".to_string());
     let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read node file '{}': {}", path, e))?;
+        .map_err(|e| format!("Failed to read node file in {} '{}': {}", cwd, path, e))?;
     let nf: NodeFile = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse node file '{}': {}", path, e))?;
     Ok((

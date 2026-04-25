@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
-use bingle_jsi::api::callback::MessageCallback;
+use bingle_jsi::api::callback::{LogCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
@@ -185,6 +185,20 @@ impl BingleJsiApi for StubApi {
     fn set_message_callback(&self, _callback: Box<dyn MessageCallback>) {
         // no-op stub
     }
+
+    fn set_log_callback(&self, _callback: Box<dyn LogCallback>) {
+        // no-op stub
+    }
+
+    fn start(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "start".to_string(),
+        })
+    }
+
+    fn is_started(&self) -> bool {
+        false
+    }
 }
 
 #[test]
@@ -294,4 +308,61 @@ fn stub_get_nat_type_returns_not_implemented() {
     let api = StubApi;
     let result = api.get_nat_type();
     assert!(result.is_err());
+}
+
+#[test]
+fn stub_start_returns_not_implemented() {
+    let api = StubApi;
+    let result = api.start();
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(err, BingleJsiError::NotImplemented { .. }));
+}
+
+#[test]
+fn stub_is_started_returns_false() {
+    let api = StubApi;
+    assert!(!api.is_started());
+}
+
+#[test]
+fn stub_set_log_callback_does_not_panic() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct TestLogCallback {
+        called: Arc<AtomicBool>,
+    }
+    impl LogCallback for TestLogCallback {
+        fn on_log(&self, _timestamp: i64, _level: String, _message: String) {
+            self.called.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let api = StubApi;
+    let called = Arc::new(AtomicBool::new(false));
+    let cb = TestLogCallback { called: called.clone() };
+    api.set_log_callback(Box::new(cb));
+    // StubApi is a no-op, so called should remain false
+    assert!(!called.load(Ordering::SeqCst));
+}
+
+#[test]
+fn stub_set_message_callback_does_not_panic() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct TestMessageCallback {
+        called: Arc<AtomicBool>,
+    }
+    impl MessageCallback for TestMessageCallback {
+        fn on_message(&self, _sender_id: String, _sender_handle: String, _message: BingleMessage) {
+            self.called.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let api = StubApi;
+    let called = Arc::new(AtomicBool::new(false));
+    let cb = TestMessageCallback { called: called.clone() };
+    api.set_message_callback(Box::new(cb));
+    // StubApi is a no-op, so called should remain false
+    assert!(!called.load(Ordering::SeqCst));
 }

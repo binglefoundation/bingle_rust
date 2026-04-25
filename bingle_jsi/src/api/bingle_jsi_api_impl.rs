@@ -13,7 +13,7 @@ use rust_comms::util::cli_utils::{parse_stun_list, parse_stun_file, parse_node_f
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
-use crate::api::callback::MessageCallback;
+use crate::api::callback::{LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair,
@@ -30,6 +30,8 @@ pub struct BingleJsiApiImpl {
     local_file: Option<PathBuf>,
     nat_type: Arc<Mutex<String>>,
     message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
+    started: Arc<Mutex<bool>>,
+    opts: Arc<Mutex<StartOptions>>,
 }
 
 /// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
@@ -214,6 +216,18 @@ impl BingleJsiApiImpl {
             handle_cache_expiry,
         };
 
+        // Install the callback log bridge (no-op if already installed by a prior init call)
+        let log_level = opts.log_level.as_deref().unwrap_or("info");
+        let level_filter = match log_level.to_ascii_lowercase().as_str() {
+            "trace" => log::LevelFilter::Trace,
+            "debug" => log::LevelFilter::Debug,
+            "info" => log::LevelFilter::Info,
+            "warn" | "warning" => log::LevelFilter::Warn,
+            "error" => log::LevelFilter::Error,
+            _ => log::LevelFilter::Info,
+        };
+        crate::api::log_bridge::install_log_bridge(level_filter);
+
         let api = BingleApiImpl::new(&opts);
         let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
         let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
@@ -268,10 +282,11 @@ impl BingleJsiApiImpl {
             api.access_unsafe_for_tests(|api_mut| {
                 let on_message: Arc<rust_comms::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
-                        log::info!("Received message from {}: {}", sender_handle, message);
+                        log::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
                         // Invoke user callback if registered
                         if let Ok(guard) = cb.lock() {
                             if let Some(ref callback) = *guard {
+                                log::info!("[BingleJsiApiImpl][init handler] Invoking user callback for message from {}", sender_handle);
                                 let bingle_msg = json_to_message(&message);
                                 callback.on_message(
                                     sender.clone(),
@@ -279,7 +294,14 @@ impl BingleJsiApiImpl {
                                     bingle_msg,
                                 );
                             }
+                            else {
+                                log::info!("[BingleJsiApiImpl][init handler] No user callback registered");
+                            }
                         }
+                        else {
+                            log::warn!("[BingleJsiApiImpl][init handler] Could not lock callback");
+                        }
+
                         let text = message
                             .get("text")
                             .and_then(|v| v.as_str())
@@ -372,6 +394,8 @@ impl BingleJsiApiImpl {
             local_file,
             nat_type,
             message_callback,
+            started: Arc::new(Mutex::new(api_started)),
+            opts: Arc::new(Mutex::new(opts)),
         }))
     }
 }
@@ -644,6 +668,74 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn set_message_callback(&self, callback: Box<dyn MessageCallback>) {
         if let Ok(mut guard) = self.message_callback.lock() {
             *guard = Some(callback);
+            log::info!("[BingleJsiApiImpl][set_message_callback] Registered message callback");
         }
+        else {
+            log::error!("Failed to lock message_callback");
+        }
+    }
+
+    fn set_log_callback(&self, callback: Box<dyn LogCallback>) {
+        crate::api::log_bridge::set_global_log_callback(callback);
+    }
+
+    fn start(&self) -> Result<(), BingleJsiError> {
+        // Check if already started
+        {
+            let guard = self.started.lock().map_err(|_| BingleJsiError::InternalError {
+                reason: "Started flag lock poisoned".to_string(),
+            })?;
+            if *guard {
+                return Err(BingleJsiError::InvalidRequest {
+                    reason: "Engine already started".to_string(),
+                });
+            }
+        }
+
+        // Check keypair status is FUNDED or ACTIVE
+        let guard = local_api_guard(&self.local_api)?;
+        let status = guard
+            .keypair_status()
+            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+        let kp_status = parse_keypair_status(&status.status);
+        if kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
+            return Err(BingleJsiError::InvalidRequest {
+                reason: format!(
+                    "Cannot start engine: keypair must be FUNDED or ACTIVE, but is {:?}",
+                    kp_status
+                ),
+            });
+        }
+
+        // Build opts with handle and passphrase from local API
+        let mut opts_clone = self.opts.lock().map_err(|_| BingleJsiError::InternalError {
+            reason: "Opts lock poisoned".to_string(),
+        })?.clone();
+        if let Some(handle) = &status.handle {
+            opts_clone.handle = handle.clone();
+        }
+        if let Ok(Some(kp)) = guard.get_keypair() {
+            opts_clone.algo_passphrase = Some(kp.passphrase);
+        }
+        drop(guard);
+
+        // Start the engine
+        let api_clone = self.api.clone();
+        api_clone.access_unsafe_for_tests(|api_mut| {
+            if let Err(e) = api_mut.start(&opts_clone) {
+                log::error!("Failed to start Bingle API: {}", e);
+            }
+        });
+
+        // Mark as started
+        if let Ok(mut started_guard) = self.started.lock() {
+            *started_guard = true;
+        }
+        log::info!("Bingle engine started");
+        Ok(())
+    }
+
+    fn is_started(&self) -> bool {
+        self.started.lock().map(|g| *g).unwrap_or(false)
     }
 }

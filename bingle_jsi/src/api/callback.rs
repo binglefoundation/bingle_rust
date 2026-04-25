@@ -14,3 +14,18 @@ pub trait MessageCallback: Send + Sync {
     /// - message: the received message
     fn on_message(&self, sender_id: String, sender_handle: String, message: BingleMessage);
 }
+
+/// Callback interface for log output.
+///
+/// Implement this trait on the React Native / TypeScript side to receive
+/// log messages. Register via `set_log_callback`.
+#[uniffi::export(callback_interface)]
+pub trait LogCallback: Send + Sync {
+    /// Called for each log message.
+    ///
+    /// Parameters:
+    /// - timestamp: milliseconds since Unix epoch
+    /// - level: log level string (TRACE, DEBUG, INFO, WARN, ERROR)
+    /// - message: the log message text
+    fn on_log(&self, timestamp: i64, level: String, message: String);
+}

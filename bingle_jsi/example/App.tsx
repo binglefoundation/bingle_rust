@@ -11,6 +11,8 @@ import {
   Text,
   View,
   ActivityIndicator,
+  NativeEventEmitter,
+  NativeModules,
 } from 'react-native';
 
 import {initBingleJsi, BingleJsi} from 'react-native-bingle-jsi';
@@ -40,15 +42,41 @@ function App(): React.JSX.Element {
   useEffect(() => {
     async function run() {
       try {
-        console.log('[BingleJsiExample] Initializing BingleJsi...');
-        await initBingleJsi(defaultConfig);
-        console.log('[BingleJsiExample] BingleJsi initialized successfully.');
+        // Set up log forwarding BEFORE init so that logs emitted during
+        // initialization are captured in the JS console.
+        const emitter = new NativeEventEmitter(NativeModules.BingleJsi);
+        emitter.addListener('onLog', (event: {timestamp: number; level: string; message: string}) => {
+          const ts = new Date(event.timestamp).toISOString();
+          const line = `[Bingle/${event.level}] ${ts} ${event.message}`;
+          switch (event.level) {
+            case 'ERROR':
+              console.error(line);
+              break;
+            case 'WARN':
+              console.warn(line);
+              break;
+            case 'DEBUG':
+            case 'TRACE':
+              console.debug(line);
+              break;
+            default:
+              console.log(line);
+              break;
+          }
+        });
+        await BingleJsi.setLogCallback(defaultConfig.log_level);
+        console.log('[BingleJsiExample] Log callback registered (before init).');
 
-        console.log('[BingleJsiExample] Calling version()...');
+        // version() can also be called before init
+        console.log('[BingleJsiExample] Calling version() (before init)...');
         const version = await BingleJsi.version();
         const versionStr = `v${version.version} (build ${version.build_number}, ${version.build_timestamp})`;
         console.log(`[BingleJsiExample] Version: ${versionStr}`);
         setVersionInfo(versionStr);
+
+        console.log('[BingleJsiExample] Initializing BingleJsi...');
+        await initBingleJsi(defaultConfig);
+        console.log('[BingleJsiExample] BingleJsi initialized successfully.');
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(`[BingleJsiExample] Error: ${msg}`);

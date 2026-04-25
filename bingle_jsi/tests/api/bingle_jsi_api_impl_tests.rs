@@ -319,6 +319,75 @@ fn init_with_optional_fields() {
     assert!(api.is_ok(), "init with optional fields should succeed: {:?}", api.err());
 }
 
+// ── start / is_started tests ─────────────────────────────────────────
+
+#[test]
+fn is_started_true_after_init_without_local() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+    assert!(api.is_started(), "engine should be started when no local mode");
+}
+
+#[test]
+fn is_started_false_after_init_with_local() {
+    let api = init_with_local_helper();
+    assert!(!api.is_started(), "engine should not be started in local mode without funded keypair");
+}
+
+#[test]
+fn start_fails_without_local_api() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+    let result = api.start();
+    assert!(result.is_err(), "start should fail when already started or no local API");
+}
+
+#[test]
+fn start_fails_when_keypair_none() {
+    let api = init_with_local_helper();
+    let result = api.start();
+    assert!(result.is_err());
+    match result {
+        Err(BingleJsiError::InvalidRequest { reason }) => {
+            assert!(reason.contains("FUNDED"), "error should mention FUNDED: {}", reason);
+        }
+        other => panic!("Expected InvalidRequest, got {:?}", other),
+    }
+}
+
+#[test]
+fn start_fails_when_keypair_unfunded() {
+    let api = init_with_local_helper();
+    let _kp = api.generate_keypair().expect("generate_keypair should succeed");
+    let status = api.keypair_status().expect("keypair_status should succeed");
+    assert_eq!(status.status, KeypairStatus::Unfunded);
+
+    let result = api.start();
+    assert!(result.is_err());
+    match result {
+        Err(BingleJsiError::InvalidRequest { reason }) => {
+            assert!(reason.contains("FUNDED"), "error should mention FUNDED: {}", reason);
+        }
+        other => panic!("Expected InvalidRequest, got {:?}", other),
+    }
+    assert!(!api.is_started());
+}
+
+#[test]
+fn start_fails_when_already_started() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+    assert!(api.is_started());
+    let result = api.start();
+    assert!(result.is_err());
+    match result {
+        Err(BingleJsiError::InvalidRequest { reason }) => {
+            assert!(reason.contains("already started"), "error should mention already started: {}", reason);
+        }
+        other => panic!("Expected InvalidRequest about already started, got {:?}", other),
+    }
+}
+
 // ── set_message_callback tests ───────────────────────────────────────
 
 /// Test callback implementation that records received messages.

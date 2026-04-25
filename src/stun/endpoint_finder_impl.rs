@@ -56,9 +56,11 @@ impl Inner {
                 let first = endpoints[0];
                 if endpoints.iter().all(|&e| e == first) {
                     self.endpoint = Some(first);
+                    log::info!("[STUN] endpoint Consistent: {:?}", self.endpoint);
                     StunState::Consistent
                 } else {
                     self.endpoint = None;
+                    log::info!("[STUN] endpoint Inconsistent");
                     StunState::Inconsistent
                 }
             }

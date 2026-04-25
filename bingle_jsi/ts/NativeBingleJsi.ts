@@ -110,6 +110,10 @@ export interface MessageCallback {
   onMessage(senderId: string, senderHandle: string, message: BingleMessage): void;
 }
 
+export interface LogCallback {
+  onLog(timestamp: number, level: string, message: string): void;
+}
+
 // ── API interface ────────────────────────────────────────────────────
 
 export interface BingleJsiApi {
@@ -154,4 +158,13 @@ export interface BingleJsiApi {
 
   // Callbacks
   setMessageCallback(callback: MessageCallback): void;
+  setLogCallback(callback: LogCallback): void;
+
+  // Events (emitted by the native bridge)
+  // onMessage: { sender_id: string; sender_handle: string; message: BingleMessage }
+  // onLog: { timestamp: number; level: string; message: string }
+
+  // Engine lifecycle
+  start(): void;
+  isStarted(): boolean;
 }

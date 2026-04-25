@@ -394,6 +394,52 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    @ReactMethod
+    fun start(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.start()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun isStarted(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val result = api.isStarted()
+                promise.resolve(result)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun setMessageCallback(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        val bridge = MessageCallbackBridge(reactApplicationContext)
+        api.setMessageCallback(bridge)
+        promise.resolve(null)
+    }
+
     // -- Helper conversions --
 
     private fun ReadableMap.tryGetString(key: String): String? =
@@ -435,5 +481,33 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         KeypairStatus.UNFUNDED -> "Unfunded"
         KeypairStatus.FUNDED -> "Funded"
         KeypairStatus.ACTIVE -> "Active"
+    }
+}
+
+/**
+ * Bridges uniffi's MessageCallback to React Native event emitter events.
+ *
+ * Each [onMessage] invocation sends an "onMessage" event with senderId,
+ * senderHandle, and the message fields to the JS layer via React Native's
+ * event emitter infrastructure.
+ */
+class MessageCallbackBridge(private val reactContext: ReactApplicationContext) : MessageCallback {
+    override fun onMessage(senderId: String, senderHandle: String, message: BingleMessage) {
+        val msgMap = Arguments.createMap()
+        if (message.app != null) msgMap.putString("app", message.app) else msgMap.putNull("app")
+        if (message.type != null) msgMap.putString("type", message.type) else msgMap.putNull("type")
+        if (message.tag != null) msgMap.putString("tag", message.tag) else msgMap.putNull("tag")
+        if (message.responseTag != null) msgMap.putString("response_tag", message.responseTag) else msgMap.putNull("response_tag")
+        if (message.text != null) msgMap.putString("text", message.text) else msgMap.putNull("text")
+        if (message.data != null) msgMap.putString("data", message.data) else msgMap.putNull("data")
+
+        val body = Arguments.createMap()
+        body.putString("sender_id", senderId)
+        body.putString("sender_handle", senderHandle)
+        body.putMap("message", msgMap)
+
+        reactContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onMessage", body)
     }
 }

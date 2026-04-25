@@ -1,4 +1,4 @@
-use crate::api::callback::MessageCallback;
+use crate::api::callback::{LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
@@ -123,4 +123,18 @@ pub trait BingleJsiApi: Send + Sync {
     /// Register a callback to be invoked on each incoming message.
     /// Replaces any previously registered callback.
     fn set_message_callback(&self, callback: Box<dyn MessageCallback>);
+
+    /// Register a callback to be invoked on each log message.
+    /// Replaces any previously registered callback.
+    /// The callback receives timestamp (ms since epoch), level, and message.
+    fn set_log_callback(&self, callback: Box<dyn LogCallback>);
+
+    // ── Engine lifecycle ─────────────────────────────────────────────
+
+    /// Start the bingle engine, enabling messaging.
+    /// Requires the keypair to be in state FUNDED (or ACTIVE).
+    fn start(&self) -> Result<(), BingleJsiError>;
+
+    /// Return whether the engine has been started.
+    fn is_started(&self) -> bool;
 }

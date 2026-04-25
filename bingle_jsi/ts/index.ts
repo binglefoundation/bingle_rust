@@ -25,6 +25,7 @@ export type {
   NatTypeResponse,
   BingleJsiConfig,
   MessageCallback,
+  LogCallback,
   BingleJsiApi,
 } from "./NativeBingleJsi";
 
@@ -127,4 +128,8 @@ export const BingleJsi = BingleJsiNative as {
   }>;
   save(path: string): Promise<void>;
   load(path: string): Promise<void>;
+  setLogCallback(logLevel: string | null): Promise<void>;
+  setMessageCallback(): Promise<void>;
+  start(): Promise<void>;
+  isStarted(): Promise<boolean>;
 };

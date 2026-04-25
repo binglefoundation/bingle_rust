@@ -15,7 +15,7 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     override func supportedEvents() -> [String] {
-        return ["onMessage"]
+        return ["onMessage", "onLog"]
     }
 
     @objc
@@ -98,21 +98,30 @@ class BingleJsiBridge: RCTEventEmitter {
 
     @objc
     func version(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let api = apiInstance else {
-            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
-            return
-        }
         DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let info = try api.version()
+            // version() works before init — it only reads compile-time constants.
+            // If the API is initialized, delegate to it; otherwise call the
+            // free function directly.
+            if let api = self.apiInstance {
+                do {
+                    let info = try api.version()
+                    resolve([
+                        "version": info.version,
+                        "git_sha": info.gitSha as Any,
+                        "build_timestamp": info.buildTimestamp,
+                        "build_number": info.buildNumber,
+                    ])
+                } catch {
+                    reject("BINGLE_ERROR", "\(error)", error)
+                }
+            } else {
+                let info = getVersion()
                 resolve([
                     "version": info.version,
                     "git_sha": info.gitSha as Any,
                     "build_timestamp": info.buildTimestamp,
                     "build_number": info.buildNumber,
                 ])
-            } catch {
-                reject("BINGLE_ERROR", "\(error)", error)
             }
         }
     }
@@ -354,6 +363,59 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    @objc
+    func start(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.start()
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func isStarted(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = api.isStarted()
+            resolve(result)
+        }
+    }
+
+    @objc(setLogCallback:resolver:rejecter:)
+    func setLogCallback(_ logLevel: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        let bridge = LogCallbackBridge(emitter: self)
+        // setLogCallback works before init — it sets a global log callback.
+        // If the API is already initialized, also register on the instance;
+        // otherwise use the free function so logs during init are captured.
+        if let api = apiInstance {
+            api.setLogCallback(callback: bridge)
+        } else {
+            setLogCallbackGlobal(callback: bridge, logLevel: logLevel)
+        }
+        resolve(nil)
+    }
+
+    @objc(setMessageCallback:rejecter:)
+    func setMessageCallback(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        let bridge = MessageCallbackBridge(emitter: self)
+        api.setMessageCallback(callback: bridge)
+        resolve(nil)
+    }
+
     // MARK: - Helper conversions
 
     private func dictToMessage(_ dict: NSDictionary) -> BingleMessage {
@@ -395,5 +457,53 @@ class BingleJsiBridge: RCTEventEmitter {
         case .funded: return "Funded"
         case .active: return "Active"
         }
+    }
+}
+
+/// Bridges uniffi's LogCallback to RCTEventEmitter events.
+///
+/// Each `onLog` invocation sends an "onLog" event with timestamp, level, and message
+/// to the JS layer via React Native's event emitter infrastructure.
+class LogCallbackBridge: LogCallback {
+    private weak var emitter: RCTEventEmitter?
+
+    init(emitter: RCTEventEmitter) {
+        self.emitter = emitter
+    }
+
+    func onLog(timestamp: Int64, level: String, message: String) {
+        emitter?.sendEvent(withName: "onLog", body: [
+            "timestamp": timestamp,
+            "level": level,
+            "message": message,
+        ])
+    }
+}
+
+/// Bridges uniffi's MessageCallback to RCTEventEmitter events.
+///
+/// Each `onMessage` invocation sends an "onMessage" event with senderId,
+/// senderHandle, and the message fields to the JS layer via React Native's
+/// event emitter infrastructure.
+class MessageCallbackBridge: MessageCallback {
+    private weak var emitter: RCTEventEmitter?
+
+    init(emitter: RCTEventEmitter) {
+        self.emitter = emitter
+    }
+
+    func onMessage(senderId: String, senderHandle: String, message: BingleMessage) {
+        emitter?.sendEvent(withName: "onMessage", body: [
+            "sender_id": senderId,
+            "sender_handle": senderHandle,
+            "message": [
+                "app": message.app as Any,
+                "type": message.type as Any,
+                "tag": message.tag as Any,
+                "response_tag": message.responseTag as Any,
+                "text": message.text as Any,
+                "data": message.data as Any,
+            ],
+        ])
     }
 }
