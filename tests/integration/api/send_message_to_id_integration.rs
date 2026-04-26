@@ -56,6 +56,28 @@ fn start_relay(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id:
     api
 }
 
+// Helper: start a client node at a fixed address (for restart scenarios)
+fn start_client_at_addr(name: &str, passphrase: &str, addr: SocketAddr, stun_list: Vec<SocketAddr>, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
+    log::info!("[Test] start_client_at_addr name={} addr={} stun_list={:?} app_id={}", name, addr, stun_list, app_id);
+    let opts = StartOptions {
+        handle: name.into(),
+        algo_passphrase: Some(passphrase.parse().unwrap()),
+        static_ip: Some(addr),
+        am_relay: false,
+        stun_servers: Some(stun_list),
+        algo_provider_config: Some(cfg),
+        algo_network: None,
+        app_id: Some(app_id),
+        asset_id: None,
+        log_level: None,
+        handle_cache_expiry: None,
+    };
+    let api = BingleApiImpl::new(&opts);
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start at addr");
+    log::info!("[Test] client {} started at {}", name, addr);
+    api
+}
+
 // Helper: start a client node with given STUN list
 fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
     log::info!("[Test] start_client name={} stun_list={:?} app_id={}", name, stun_list, app_id);
@@ -223,6 +245,9 @@ fn run_send_message_to_id_test(broken_nat: bool) {
         eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
         return;
     }
+
+    let cfg = test_util::localnet_config();
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, test_util::ADDRESS_10MIL]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
@@ -523,6 +548,9 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
         return;
     }
 
+    let cfg = test_util::localnet_config();
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
+
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
     let r2_port = test_util::find_unused_loopback_port();
@@ -535,7 +563,6 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     log::info!("[Test] relay2_addr = {}", relay2_addr);
 
     // Deploy app + asset
-    let cfg = test_util::localnet_config();
     let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
@@ -625,6 +652,173 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     // Tear down
     relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
     relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+    s1.stop();
+    s2.stop();
+}
+
+/// Helper: wait for the `received` flag to be set within the given timeout.
+/// Returns true if the message was received in time.
+fn wait_for_message(received: &Arc<AtomicBool>, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if received.load(Ordering::SeqCst) { return true; }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    false
+}
+
+/// Helper: reset message-receive state so we can reuse the same flags for a new message.
+fn reset_message_state(
+    received: &Arc<AtomicBool>,
+    payload_guard: &Arc<Mutex<Option<serde_json::Value>>>,
+    who_guard: &Arc<Mutex<Option<(String, String)>>>,
+) {
+    received.store(false, Ordering::SeqCst);
+    if let Ok(mut g) = payload_guard.lock() { *g = None; }
+    if let Ok(mut g) = who_guard.lock() { *g = None; }
+}
+
+/// Exercises the DTLS connection reuse bug after a client restart.
+///
+/// Steps:
+/// 1. Create, register and start two root relays and STUN servers.
+/// 2. Start clients A and B, register A on blockchain, wait for Registered.
+/// 3. Send a message from A → B and validate receipt.
+/// 4. Stop client A.
+/// 5. Start new client A2 with the same identity and address:port as A.
+/// 6. Send a message from A2 → B and validate receipt on B.
+/// 7. Send a message from B → A2 and validate receipt on A2.
+///
+/// This test is expected to fail because the target node (B) uses stale DTLS
+/// connection state from the original client A when communicating with A2.
+#[cfg_attr(not(target_os = "ios"), test)]
+#[ntest::timeout(300_000)]
+#[ignore]
+pub fn bingle_api_send_message_after_client_restart_localnet() {
+    test_util::init_test_logging();
+
+    if !test_util::should_run_localnet() {
+        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
+        return;
+    }
+
+    // ── Infrastructure: relays, STUN, blockchain ───────────────────────
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    assert_ne!(r1_port, 0);
+    assert_ne!(r2_port, 0);
+    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
+    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+    log::info!("relay_1_addr: {}, relay_2_addr: {}", relay1_addr, relay2_addr);
+
+    let cfg = test_util::localnet_config();
+    let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+    register_relays(app_id, relay1_addr, relay2_addr);
+
+    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(false);
+
+    // ── Clients A and B ────────────────────────────────────────────────
+    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
+    let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
+    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
+
+    // Register client A on blockchain for reverse handle lookup
+    register_client_on_blockchain(
+        test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client_a",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+
+    // Wait for both clients to reach Registered
+    let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));
+    let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
+    assert!(ok_a, "client A did not reach Registered state");
+    assert!(ok_b, "client B did not reach Registered state");
+
+    // ── Phase 1: A → B message ─────────────────────────────────────────
+    let b_id = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b id");
+
+    let received_b = Arc::new(AtomicBool::new(false));
+    let payload_b: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+    let who_b: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    setup_on_message(&client_b, &received_b, &payload_b, &who_b);
+
+    log::info!("[Test] Phase 1: sending message from A → B");
+    let msg1 = json!({ "text": "hello from A" });
+    let sent1 = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg1.clone(), None));
+    assert!(sent1, "send_message_to_id A→B should return true");
+
+    assert!(wait_for_message(&received_b, Duration::from_secs(60)), "client B did not receive message from A in time");
+    {
+        let guard = payload_b.lock().expect("lock payload_b");
+        let p = guard.as_ref().expect("payload should be Some");
+        assert_eq!(p.get("text").and_then(|v| v.as_str()), Some("hello from A"));
+    }
+    log::info!("[Test] Phase 1 complete: A → B message received");
+
+    // ── Stop client A and record its address ───────────────────────────
+    let a_addr = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_local_bind_addr_for_tests())
+        .expect("client A should have a local bind address");
+    log::info!("[Test] Stopping client A (addr={})", a_addr);
+    client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+
+    // Brief pause for the old connection state to settle
+    std::thread::sleep(Duration::from_secs(2));
+
+    // ── Start client A2 with same identity and address:port ────────────
+    log::info!("[Test] Starting client A2 with same id at {}", a_addr);
+    let client_a2 = start_client_at_addr("client_a", test_util::PASSPHRASE_10MIL, a_addr, stun_list.clone(), app_id, cfg.clone());
+
+    let ok_a2 = wait_for_registered(&client_a2, Duration::from_secs(120));
+    assert!(ok_a2, "client A2 did not reach Registered state");
+    log::info!("[Test] client A2 reached Registered state");
+
+    // ── Phase 2: A2 → B message ────────────────────────────────────────
+    reset_message_state(&received_b, &payload_b, &who_b);
+
+    log::info!("[Test] Phase 2: sending message from A2 → B");
+    let msg2 = json!({ "text": "hello from A2" });
+    let sent2 = client_a2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg2.clone(), None));
+    assert!(sent2, "send_message_to_id A2→B should return true");
+
+    assert!(wait_for_message(&received_b, Duration::from_secs(60)), "client B did not receive message from A2 in time");
+    {
+        let guard = payload_b.lock().expect("lock payload_b");
+        let p = guard.as_ref().expect("payload should be Some");
+        assert_eq!(p.get("text").and_then(|v| v.as_str()), Some("hello from A2"));
+    }
+    log::info!("[Test] Phase 2 complete: A2 → B message received");
+
+    // ── Phase 3: B → A2 message ────────────────────────────────────────
+    let a2_id = client_a2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_a2 id");
+
+    let received_a2 = Arc::new(AtomicBool::new(false));
+    let payload_a2: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+    let who_a2: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    setup_on_message(&client_a2, &received_a2, &payload_a2, &who_a2);
+
+    log::info!("[Test] Phase 3: sending message from B → A2");
+    let msg3 = json!({ "text": "hello from B" });
+    let sent3 = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&a2_id, msg3.clone(), None));
+    assert!(sent3, "send_message_to_id B→A2 should return true");
+
+    assert!(wait_for_message(&received_a2, Duration::from_secs(60)), "client A2 did not receive message from B in time");
+    {
+        let guard = payload_a2.lock().expect("lock payload_a2");
+        let p = guard.as_ref().expect("payload should be Some");
+        assert_eq!(p.get("text").and_then(|v| v.as_str()), Some("hello from B"));
+    }
+    log::info!("[Test] Phase 3 complete: B → A2 message received");
+
+    // ── Tear down ──────────────────────────────────────────────────────
+    relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    client_a2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
     client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
     s1.stop();
     s2.stop();

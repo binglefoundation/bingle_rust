@@ -44,6 +44,10 @@ pub mod dtls_debug_sequence;
 
 #[path = "pki.rs"]
 pub mod pki;
+#[path = "test_handlers.rs"]
+pub mod test_handlers;
+#[path = "dtls_client_reconnect.rs"]
+pub mod dtls_client_reconnect;
 
 #[path = "dtls_app_layer_verification.rs"]
 pub mod dtls_app_layer_verification;
@@ -59,3 +63,5 @@ pub mod dtls_peer_certificate_issuer_trim;
 
 #[path = "dtls_send_signature.rs"]
 pub mod dtls_send_signature;
+#[path = "network_mux_udp_socket_close.rs"]
+pub mod network_mux_udp_socket_close;

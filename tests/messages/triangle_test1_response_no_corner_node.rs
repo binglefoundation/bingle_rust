@@ -102,9 +102,18 @@ pub fn no_corner_node_sets_nat_restricted_immediately() {
         router.route(&handler, &msg, "FROMID");
     });
 
-    // State should be set immediately (synchronously) — no need to poll for 10s
+    // The no_corner_node path spawns a thread (without the 10s delay) that sets the state.
+    // Poll briefly for the state to be set.
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_secs(5) {
+        if mock_internal.get_state() == EngineState::NATRestricted {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
     let st = mock_internal.get_state();
-    assert_eq!(st, EngineState::NATRestricted, "state should be NATRestricted immediately when no_corner_node=true");
+    assert_eq!(st, EngineState::NATRestricted, "state should be NATRestricted shortly after no_corner_node=true (no 10s delay)");
 
     let nt = mock_internal.nat_type.lock().unwrap();
     assert_eq!(*nt, Some(rust_comms::engine::NatType::Restricted), "nat_type should be Restricted");

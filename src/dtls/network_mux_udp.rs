@@ -47,7 +47,7 @@ pub fn mux_type_for(data: &[u8]) -> MuxType {
 
 /// UDP-based NetworkMux implementation
 pub struct UdpNetworkMux {
-    socket: UdpSocket,
+    socket: Mutex<Option<UdpSocket>>,
     handle_dtls: Mutex<Option<HandleDtls>>,
     handle_stun: Mutex<Option<HandleStun>>,
     handle_turn: std::sync::OnceLock<HandleTurn>,
@@ -69,7 +69,7 @@ impl UdpNetworkMux {
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         Ok(Self {
-            socket,
+            socket: Mutex::new(Some(socket)),
             handle_dtls: std::sync::Mutex::new(None),
             handle_stun: std::sync::Mutex::new(None),
             handle_turn: OnceLock::new(),
@@ -81,17 +81,19 @@ impl UdpNetworkMux {
 
     /// Get the local socket address this mux is bound to
     pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
-        self.socket.local_addr()
+        let guard = self.socket.lock().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socket lock poisoned"))?;
+        guard.as_ref().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?.local_addr()
     }
 
     /// Get only the bound IP address (for debug printing)
     pub fn bound_ip(&self) -> std::io::Result<std::net::IpAddr> {
-        self.socket.local_addr().map(|a| a.ip())
+        self.local_addr().map(|a| a.ip())
     }
 
     /// Set read timeout on the underlying socket
     pub fn set_read_timeout(&self, dur: Option<Duration>) -> std::io::Result<()> {
-        self.socket.set_read_timeout(dur)
+        let guard = self.socket.lock().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socket lock poisoned"))?;
+        if let Some(s) = guard.as_ref() { s.set_read_timeout(dur) } else { Ok(()) }
     }
 
     // /// Peek the next DTLS datagram from the internal queue without removing it.
@@ -141,7 +143,10 @@ impl UdpNetworkMux {
             // already running
             return Ok(());
         }
-        let socket = self.socket.try_clone()?;
+        let socket = {
+            let guard = self.socket.lock().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socket lock poisoned"))?;
+            guard.as_ref().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?.try_clone()?
+        };
         let this = Arc::clone(self);
         let to = self.local_addr().unwrap();
         let handle = thread::spawn(move || {
@@ -170,6 +175,14 @@ impl UdpNetworkMux {
                     }
                 }
             }
+            // Drop the cloned socket used by the receive loop
+            drop(socket);
+            // Take the original socket out of the Mutex to close it and free the port
+            if let Ok(mut guard) = this.socket.lock() {
+                let taken = guard.take();
+                drop(taken);
+                warn!("[UdpNetworkMux][receive][loop on {:?}] socket closed, port freed", to);
+            }
             warn!("[UdpNetworkMux][receive][loop on {:?}] done", to);
 
         });
@@ -183,7 +196,7 @@ impl UdpNetworkMux {
         log::debug!("[UdpNetworkMux::stop]");
         self.running.store(false, Ordering::SeqCst);
         // poke the socket by setting a very short timeout so the thread wakes up soon
-        let _ = self.socket.set_read_timeout(Some(Duration::from_millis(10)));
+        let _ = self.set_read_timeout(Some(Duration::from_millis(10)));
         if let Ok(mut slot) = self.rx_thread.lock() {
             if let Some(handle) = slot.take() {
                 log::debug!("[UdpNetworkMux::stop] joining rx_thread");
@@ -198,13 +211,18 @@ impl UdpNetworkMux {
         }
         log::debug!("[UdpNetworkMux::stop] done");
     }
+
+    /// Returns true if the socket has been closed (taken out of the Mutex).
+    pub fn is_closed(&self) -> bool {
+        self.socket.lock().map(|g| g.is_none()).unwrap_or(true)
+    }
 }
 
 impl Drop for UdpNetworkMux {
     fn drop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
         // poke the socket by setting a very short timeout so the thread wakes up soon
-        let _ = self.socket.set_read_timeout(Some(Duration::from_millis(10)));
+        let _ = self.set_read_timeout(Some(Duration::from_millis(10)));
         // We cannot join here because the JoinHandle is owned behind a Mutex<Option<..>> and
         // may already be taken or we're in drop; rely on stop() in normal flows.
     }
@@ -215,7 +233,9 @@ impl NetworkMux for UdpNetworkMux {
         // Support two paths:
         // - Relay: when relay_channel and relay_address are provided, wrap payload in TURN ChannelData and send to relay_address
         // - Direct: otherwise, require inet_socket_address and send raw payload
-        let from_addr = self.socket.local_addr().ok();
+        let socket_guard = self.socket.lock().map_err(|_| "socket lock poisoned".to_string())?;
+        let sock = socket_guard.as_ref().ok_or_else(|| "socket closed".to_string())?;
+        let from_addr = sock.local_addr().ok();
         if let (Some(ch), Some(relay_addr)) = (to.relay_channel(), to.relay_address()) {
             // Build TURN ChannelData
             let wrapped = match crate::turn::turn_handler::build_channel_data(ch, buf) {
@@ -231,7 +251,7 @@ impl NetworkMux for UdpNetworkMux {
                 buf.len(),
                 wrapped.len()
             );
-            return match self.socket.send_to(&wrapped, relay_addr) {
+            return match sock.send_to(&wrapped, relay_addr) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(format!("udp send_to (relay) failed: {}", e)),
             };
@@ -256,7 +276,7 @@ impl NetworkMux for UdpNetworkMux {
                 #[allow(unused)] {  }
             }
         }
-        match self.socket.send_to(buf, to_addr) {
+        match sock.send_to(buf, to_addr) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("udp send_to failed: {}", e)),
         }

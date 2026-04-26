@@ -849,6 +849,35 @@ pub mod openssl_impl {
             let q_arc = {
                 let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
+
+                // Detect ClientHello on existing stream to handle client restarts
+                let is_client_hello = data.len() >= 14
+                    && data[0] == 0x16       // Handshake
+                    && data[3] == 0          // Epoch high byte
+                    && data[4] == 0          // Epoch low byte
+                    && data[13] == 0x01;     // ClientHello
+
+                if is_client_hello {
+                    let mut drop_it = false;
+                    if let Some(ps) = pm.get(&key) {
+                        if let Some(stream_arc) = &ps.stream {
+                            if !ps.is_connecting_peer {
+                                if let Ok(guard) = stream_arc.lock() {
+                                    if guard.ssl().is_init_finished() {
+                                        drop_it = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if drop_it {
+                        if let Some(ps) = pm.remove(&key) {
+                            log::info!("[DtlsOpenSsl::accept] ClientHello on existing established stream for {} - dropping old stream to allow reconnect", from);
+                            ps.queue.close();
+                        }
+                    }
+                }
+
                 if let Some(ps) = pm.get(&key) {
                     ps.queue.clone()
                 } else {
