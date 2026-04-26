@@ -733,6 +733,10 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
         test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client_a",
         app_id, asset_id, &creator, cfg.clone(),
     );
+    register_client_on_blockchain(
+        &*client_b.get_my_id().expect("Client B must have id"), passphrase_b, "client_b",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
 
     // Wait for both clients to reach Registered
     let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));

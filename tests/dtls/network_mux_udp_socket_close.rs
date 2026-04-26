@@ -55,7 +55,7 @@ pub fn write_fails_after_socket_closed() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn local_addr_fails_after_socket_closed() {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
-    let addr = mux.local_addr().expect("local_addr should succeed before start");
+    let _ = mux.local_addr().expect("local_addr should succeed before start");
 
     mux.start().expect("start mux");
     mux.stop();

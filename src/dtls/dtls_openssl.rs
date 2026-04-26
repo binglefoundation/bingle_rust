@@ -228,7 +228,19 @@ pub mod openssl_impl {
         }
         // Cleanup
         {
-            let _ = peers.lock().map(|mut m| { m.remove(&key_from); });
+            if let Ok(mut m) = peers.lock() {
+                let mut should_remove = false;
+                if let Some(ps) = m.get(&key_from) {
+                    if let Some(existing_stream) = &ps.stream {
+                        if Arc::ptr_eq(existing_stream, &stream_arc) {
+                            should_remove = true;
+                        }
+                    }
+                }
+                if should_remove {
+                    m.remove(&key_from);
+                }
+            }
         }
         log::info!("[DtlsOpenSsl{}][read-loop {}] exit and cleanup", log_tag, from);
     }
