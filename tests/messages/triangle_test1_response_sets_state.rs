@@ -38,7 +38,7 @@ pub fn triangle_test1_response_sets_nat_restricted_when_not_available() {
 
     // Act: route TriangleTest1Response within router context
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;
-    let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
+    let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: false }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
     });
@@ -76,7 +76,7 @@ pub fn triangle_test1_response_does_not_override_endpoint_available() {
     assert_eq!(st1, EngineState::EndpointAvailable);
 
     // Act: send TriangleTest1Response
-    let t1r = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
+    let t1r = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: false }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &t1r, "FROMID");
     });

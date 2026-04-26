@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
-use bingle_jsi::api::callback::{LogCallback, MessageCallback};
+use bingle_jsi::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
@@ -190,6 +190,10 @@ impl BingleJsiApi for StubApi {
         // no-op stub
     }
 
+    fn set_listening_callback(&self, _callback: Box<dyn ListeningCallback>) {
+        // no-op stub
+    }
+
     fn start(&self) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "start".to_string(),
@@ -363,6 +367,27 @@ fn stub_set_message_callback_does_not_panic() {
     let called = Arc::new(AtomicBool::new(false));
     let cb = TestMessageCallback { called: called.clone() };
     api.set_message_callback(Box::new(cb));
+    // StubApi is a no-op, so called should remain false
+    assert!(!called.load(Ordering::SeqCst));
+}
+
+#[test]
+fn stub_set_listening_callback_does_not_panic() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct TestListeningCallback {
+        called: Arc<AtomicBool>,
+    }
+    impl ListeningCallback for TestListeningCallback {
+        fn on_listening(&self, _listening: bool, _nat_type: String) {
+            self.called.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let api = StubApi;
+    let called = Arc::new(AtomicBool::new(false));
+    let cb = TestListeningCallback { called: called.clone() };
+    api.set_listening_callback(Box::new(cb));
     // StubApi is a no-op, so called should remain false
     assert!(!called.load(Ordering::SeqCst));
 }

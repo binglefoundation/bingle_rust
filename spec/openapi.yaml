@@ -910,6 +910,32 @@ components:
           description: TriangleTest3
       required: [app, type]
 
+    RelayTriangleTest1Response:
+      type: object
+      description: |
+        Response sent back to the originator of a `RelayTriangleTest1` message.
+        Indicates that the relay has processed the triangle test request.
+        If `noCornerNode` is true, the relay could not find a second relay node
+        (corner node) to complete the triangle because all known relays were
+        already excluded by the client.
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["TriangleTest1Response"]
+          description: TriangleTest1Response
+        noCornerNode:
+          type: boolean
+          default: false
+          description: |
+            When true, indicates that no corner node was available for the
+            triangle test (all known relay nodes were already excluded by the
+            client). The receiver should assume NAT is restricted.
+      required: [app, type]
+
     RelayListen:
       type: object
       description: |

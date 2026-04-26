@@ -440,6 +440,18 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
+    @ReactMethod
+    fun setListeningCallback(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        val bridge = ListeningCallbackBridge(reactApplicationContext)
+        api.setListeningCallback(bridge)
+        promise.resolve(null)
+    }
+
     // -- Helper conversions --
 
     private fun ReadableMap.tryGetString(key: String): String? =
@@ -509,5 +521,24 @@ class MessageCallbackBridge(private val reactContext: ReactApplicationContext) :
         reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onMessage", body)
+    }
+}
+
+/**
+ * Bridges uniffi's ListeningCallback to React Native event emitter events.
+ *
+ * Each [onListening] invocation sends an "onListening" event with listening
+ * state and NAT type to the JS layer via React Native's event emitter
+ * infrastructure.
+ */
+class ListeningCallbackBridge(private val reactContext: ReactApplicationContext) : ListeningCallback {
+    override fun onListening(listening: Boolean, natType: String) {
+        val body = Arguments.createMap()
+        body.putBoolean("listening", listening)
+        body.putString("nat_type", natType)
+
+        reactContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onListening", body)
     }
 }

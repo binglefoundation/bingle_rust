@@ -1286,6 +1286,35 @@ impl Engine {
                                         if !self.await_signon_complete(Duration::from_secs(60)) {
                                             log::warn!("[Engine::initialize_relay] Timed out waiting for signon completion");
                                         }
+
+                                        // After loading the peer's DDB state, upsert an AdvertRecord
+                                        // for ourselves so the DDB contains both the old state and our
+                                        // new relay entry.
+                                        let self_addr = self
+                                            .last_public_addr()
+                                            .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
+                                        let self_host = match self_addr.ip() {
+                                            IpAddr::V4(v4) => v4.to_string(),
+                                            IpAddr::V6(v6) => v6.to_string(),
+                                        };
+                                        let self_rec = AdvertRecord {
+                                            id: my_id_for_mtx.clone(),
+                                            endpoint: Some(InetSocketAddress { host: self_host, port: self_addr.port() }),
+                                            am_relay: Some(true),
+                                            relay_id: None,
+                                            relay_sig: None,
+                                            date: "1970-01-01T00:00:00Z".to_string(),
+                                            sig: None,
+                                        };
+                                        if let Ok(mut b) = ddb_backend_arc.lock() {
+                                            b.upsert(self_rec);
+                                            log::info!(
+                                                "[Engine::initialize_relay] upserted self AdvertRecord into DDB after peer load (id={})",
+                                                my_id_for_mtx
+                                            );
+                                        } else {
+                                            log::warn!("[Engine::initialize_relay] failed to lock ddb_backend for self upsert after peer load");
+                                        }
                                     }
                                     Err(e) => {
                                         log::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);

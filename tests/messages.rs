@@ -84,3 +84,6 @@ pub mod marshalling_and_routing;
 // If this file does not exist in your checkout, comment out the following line.
 #[path = "messages/triangle_test3_sets_state.rs"]
 pub mod triangle_test3_sets_state;
+
+#[path = "messages/triangle_test1_response_no_corner_node.rs"]
+pub mod triangle_test1_response_no_corner_node;

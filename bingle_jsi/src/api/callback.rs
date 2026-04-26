@@ -29,3 +29,19 @@ pub trait LogCallback: Send + Sync {
     /// - message: the log message text
     fn on_log(&self, timestamp: i64, level: String, message: String);
 }
+
+/// Callback interface for listening state changes.
+///
+/// Implement this trait on the React Native / TypeScript side to receive
+/// notifications when the engine starts or stops listening.
+/// Register via `set_listening_callback`.
+#[uniffi::export(callback_interface)]
+pub trait ListeningCallback: Send + Sync {
+    /// Called when the listening state changes.
+    ///
+    /// Parameters:
+    /// - listening: true when the engine is listening, false when it stops
+    /// - nat_type: the detected NAT type as a string
+    ///   ("Unknown", "NoConnection", "Symmetric", "Restricted", "FullCone")
+    fn on_listening(&self, listening: bool, nat_type: String);
+}

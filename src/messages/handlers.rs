@@ -641,7 +641,17 @@ impl MessageHandler for DefaultPrintingHandler {
             log::info!("[handlers::on_triangle_test1] call find_relay_excluding my_id = {}", my_id);
             let associated_relay = match finder.find_relay_excluding(&my_id, &exclusions) {
                 Ok(info) => info,
-                Err(e) => { warn!("[handlers::on_triangle_test1] find_relay failed: {}", e); return; }
+                Err(e) => {
+                    warn!("[handlers::on_triangle_test1] find_relay failed: {}", e);
+                    // No corner node available — send TriangleTest1Response with no_corner_node=true
+                    let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: true }));
+                    let resp_json = crate::messages::marshal::to_json_value(&resp);
+                    if !from_user_id.is_empty() {
+                        let ok = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
+                        log::info!("[handlers::on_triangle_test1] TriangleTest1Response (no_corner_node) sent ok={}", ok);
+                    }
+                    return;
+                }
             };
             log::info!("[handlers::on_triangle_test1] found relay: {:?}", associated_relay);
 
@@ -660,7 +670,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
             // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
 
-            let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None }));
+            let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: false }));
             let resp_json = crate::messages::marshal::to_json_value(&resp);
 
             if from_user_id.is_empty() {
@@ -726,80 +736,100 @@ impl MessageHandler for DefaultPrintingHandler {
         });
     }
 
-    fn on_triangle_test1_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
-        log::info!("[DefaultPrintingHandler] TriangleTest1Response received");
+    fn on_triangle_test1_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayTriangleTest1Response) {
+        log::info!("[DefaultPrintingHandler] TriangleTest1Response received (no_corner_node={})", msg.no_corner_node);
 
-        // Move all logic to a spawned thread with delay
-        let api_for_thread = api.clone();
-        std::thread::spawn(move || {
-            // Delay for 10 seconds before making the state check
-            std::thread::sleep(std::time::Duration::from_secs(10));
+        if msg.no_corner_node {
+            // No corner node available — immediately set NATRestricted if appropriate, then
+            // run the same post-triangle logic that the delayed thread would execute.
+            warn!("[DefaultPrintingHandler][on_triangle_test1_response] no corner node available for triangle test");
 
-            // Only set state/nat_type if current state is neither EndpointAvailable nor Registered
-            let cur = api_for_thread.get_state();
-            if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
-                let _ = api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
-                api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
+            // Execute the post-triangle relay registration logic immediately in a thread (no delay)
+            let api_for_thread = api.clone();
+            std::thread::spawn(move || {
+                Self::post_triangle_relay_register(api_for_thread);
+            });
+        } else {
+            // Normal path: spawn a delayed thread to check state after 10 seconds
+            let api_for_thread = api.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                Self::post_triangle_relay_register(api_for_thread);
+            });
+        }
+    }
 
-                // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
-                use std::time::Duration;
-                use crate::relay::relay_finder::{RelayFinder, RelayInfo};
+}
 
-                // Build discovery closure similar to on_triangle_test1
-                let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                    let app_id_opt = api_for_thread
-                        .get_app_id()
-                        .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                    let app_id = match app_id_opt {
-                        Some(v) => v,
-                        None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
-                    };
-                    let cfg = api_for_thread.get_algo_provider_config();
-                    crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+impl DefaultPrintingHandler {
+    /// Shared logic executed after a triangle test response (either delayed or immediate).
+    ///
+    /// Sets NATRestricted if current state is neither EndpointAvailable nor Registered,
+    /// then contacts the associated relay to start TURN Listen and registers in the DDB.
+    fn post_triangle_relay_register(api_for_thread: Arc<dyn BingleApiBoth>) {
+        let cur = api_for_thread.get_state();
+        if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
+            let _ = api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
+            api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
+
+            // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
+            use std::time::Duration;
+            use crate::relay::relay_finder::{RelayFinder, RelayInfo};
+
+            // Build discovery closure similar to on_triangle_test1
+            let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
+                let app_id_opt = api_for_thread
+                    .get_app_id()
+                    .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                let app_id = match app_id_opt {
+                    Some(v) => v,
+                    None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
                 };
+                let cfg = api_for_thread.get_algo_provider_config();
+                crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+            };
 
-                // Wrap combined API as plain BingleApiBoth for RelayFinder
-                let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
-                let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
-                let my_id = match api_for_thread.get_my_id() {
-                    Some(id) => id,
-                    None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
-                };
-                let relay_info = match finder.find_relay(&my_id) {
-                    Ok(info) => info,
-                    Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
-                };
+            // Wrap combined API as plain BingleApiBoth for RelayFinder
+            let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
+            let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
+            let my_id = match api_for_thread.get_my_id() {
+                Some(id) => id,
+                None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
+            };
+            let relay_info = match finder.find_relay(&my_id) {
+                Ok(info) => info,
+                Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
+            };
 
-                // Send Relay::Listen and expect Relay::ListenResponse
-                let listen = crate::messages::types::RelayListen { app: None };
-                let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
-                let json = crate::messages::marshal::to_json_value(&msg);
-                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
-                let uid = relay_info.id.clone();
-                match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
-                    Ok(resp) => {
-                        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                        if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
+            // Send Relay::Listen and expect Relay::ListenResponse
+            let listen = crate::messages::types::RelayListen { app: None };
+            let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
+            let json = crate::messages::marshal::to_json_value(&msg);
+            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
+            let uid = relay_info.id.clone();
+            match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                Ok(resp) => {
+                    let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                    if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
 
-                        // Register the relay listener mapping via the internal API (engine turn_handler)
-                        log::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
-                        api_for_thread.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
-                    }
-                    Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
+                    // Register the relay listener mapping via the internal API (engine turn_handler)
+                    log::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
+                    api_for_thread.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
                 }
-
-                // Register relay association in DDB and mark registered
-                if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id.clone(), None) {
-                    warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
-                } else {
-                    log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
-                    api_for_thread.set_state(crate::engine::EngineState::Registered);
-                    // Notify that we are listening now
-                    api_for_thread.notify_listening(true, crate::engine::NatType::Restricted)
-                }
-            } else {
-                log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+                Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
             }
-        });
+
+            // Register relay association in DDB and mark registered
+            if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id.clone(), None) {
+                warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
+            } else {
+                log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+                api_for_thread.set_state(crate::engine::EngineState::Registered);
+                // Notify that we are listening now
+                api_for_thread.notify_listening(true, crate::engine::NatType::Restricted)
+            }
+        } else {
+            log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+        }
     }
 }

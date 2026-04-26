@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
-use bingle_jsi::api::callback::MessageCallback;
+use bingle_jsi::api::callback::{ListeningCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType};
 
@@ -434,4 +434,49 @@ fn set_message_callback_replaces_previous() {
     };
     // Replacing should not panic
     api.set_message_callback(Box::new(cb2));
+}
+
+// ── set_listening_callback tests ─────────────────────────────────────
+
+/// Test callback implementation that records listening state changes.
+struct RecordingListeningCallback {
+    events: Arc<Mutex<Vec<(bool, String)>>>,
+}
+
+impl ListeningCallback for RecordingListeningCallback {
+    fn on_listening(&self, listening: bool, nat_type: String) {
+        let mut guard = self.events.lock().unwrap();
+        guard.push((listening, nat_type));
+    }
+}
+
+#[test]
+fn set_listening_callback_succeeds() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+    let events: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let cb = RecordingListeningCallback {
+        events: events.clone(),
+    };
+    // Should not panic
+    api.set_listening_callback(Box::new(cb));
+}
+
+#[test]
+fn set_listening_callback_replaces_previous() {
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
+        .expect("init should succeed");
+
+    let events1: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let cb1 = RecordingListeningCallback {
+        events: events1.clone(),
+    };
+    api.set_listening_callback(Box::new(cb1));
+
+    let events2: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let cb2 = RecordingListeningCallback {
+        events: events2.clone(),
+    };
+    // Replacing should not panic
+    api.set_listening_callback(Box::new(cb2));
 }

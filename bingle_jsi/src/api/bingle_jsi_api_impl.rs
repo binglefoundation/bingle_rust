@@ -13,7 +13,7 @@ use rust_comms::util::cli_utils::{parse_stun_list, parse_stun_file, parse_node_f
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
-use crate::api::callback::{LogCallback, MessageCallback};
+use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair,
@@ -30,6 +30,7 @@ pub struct BingleJsiApiImpl {
     local_file: Option<PathBuf>,
     nat_type: Arc<Mutex<String>>,
     message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
+    listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
     started: Arc<Mutex<bool>>,
     opts: Arc<Mutex<StartOptions>>,
 }
@@ -249,9 +250,13 @@ impl BingleJsiApiImpl {
             local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
         }
 
-        // Setup on-listening handler to update nat_type
+        let listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>> =
+            Arc::new(Mutex::new(None));
+
+        // Setup on-listening handler to update nat_type and invoke user callback
         {
             let nat_type_for_closure = nat_type.clone();
+            let lcb = listening_callback.clone();
             api.access_unsafe_for_tests(|api_mut| {
                 let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> =
                     Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
@@ -262,7 +267,13 @@ impl BingleJsiApiImpl {
                         };
                         log::info!("on_listening: listening={} nat_type={}", listening, type_str);
                         if let Ok(mut guard) = nat_type_for_closure.lock() {
-                            *guard = type_str;
+                            *guard = type_str.clone();
+                        }
+                        // Invoke user listening callback if registered
+                        if let Ok(guard) = lcb.lock() {
+                            if let Some(ref callback) = *guard {
+                                callback.on_listening(listening, type_str);
+                            }
                         }
                     });
                 api_mut.set_on_listening(Some(on_listening));
@@ -394,6 +405,7 @@ impl BingleJsiApiImpl {
             local_file,
             nat_type,
             message_callback,
+            listening_callback,
             started: Arc::new(Mutex::new(api_started)),
             opts: Arc::new(Mutex::new(opts)),
         }))
@@ -677,6 +689,15 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
     fn set_log_callback(&self, callback: Box<dyn LogCallback>) {
         crate::api::log_bridge::set_global_log_callback(callback);
+    }
+
+    fn set_listening_callback(&self, callback: Box<dyn ListeningCallback>) {
+        if let Ok(mut guard) = self.listening_callback.lock() {
+            *guard = Some(callback);
+            log::info!("[BingleJsiApiImpl][set_listening_callback] Registered listening callback");
+        } else {
+            log::error!("Failed to lock listening_callback");
+        }
     }
 
     fn start(&self) -> Result<(), BingleJsiError> {

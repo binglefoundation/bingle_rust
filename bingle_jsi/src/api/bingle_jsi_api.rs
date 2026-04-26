@@ -1,4 +1,4 @@
-use crate::api::callback::{LogCallback, MessageCallback};
+use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
@@ -128,6 +128,11 @@ pub trait BingleJsiApi: Send + Sync {
     /// Replaces any previously registered callback.
     /// The callback receives timestamp (ms since epoch), level, and message.
     fn set_log_callback(&self, callback: Box<dyn LogCallback>);
+
+    /// Register a callback to be invoked when the engine listening state changes.
+    /// Replaces any previously registered callback.
+    /// The callback receives a boolean (listening) and the NAT type as a string.
+    fn set_listening_callback(&self, callback: Box<dyn ListeningCallback>);
 
     // ── Engine lifecycle ─────────────────────────────────────────────
 

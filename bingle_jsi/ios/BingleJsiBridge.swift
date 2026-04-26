@@ -15,7 +15,7 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     override func supportedEvents() -> [String] {
-        return ["onMessage", "onLog"]
+        return ["onMessage", "onLog", "onListening"]
     }
 
     @objc
@@ -416,6 +416,17 @@ class BingleJsiBridge: RCTEventEmitter {
         resolve(nil)
     }
 
+    @objc(setListeningCallback:rejecter:)
+    func setListeningCallback(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        let bridge = ListeningCallbackBridge(emitter: self)
+        api.setListeningCallback(callback: bridge)
+        resolve(nil)
+    }
+
     // MARK: - Helper conversions
 
     private func dictToMessage(_ dict: NSDictionary) -> BingleMessage {
@@ -504,6 +515,26 @@ class MessageCallbackBridge: MessageCallback {
                 "text": message.text as Any,
                 "data": message.data as Any,
             ],
+        ])
+    }
+}
+
+/// Bridges uniffi's ListeningCallback to RCTEventEmitter events.
+///
+/// Each `onListening` invocation sends an "onListening" event with listening
+/// state and NAT type to the JS layer via React Native's event emitter
+/// infrastructure.
+class ListeningCallbackBridge: ListeningCallback {
+    private weak var emitter: RCTEventEmitter?
+
+    init(emitter: RCTEventEmitter) {
+        self.emitter = emitter
+    }
+
+    func onListening(listening: Bool, natType: String) {
+        emitter?.sendEvent(withName: "onListening", body: [
+            "listening": listening,
+            "nat_type": natType,
         ])
     }
 }

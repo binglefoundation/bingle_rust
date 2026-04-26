@@ -141,6 +141,10 @@ pub struct RelayTriangleTest3 {
 pub struct RelayTriangleTest1Response {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
+    /// When true, the relay could not find a corner node for the triangle test
+    /// (all known relays were already excluded by the client).
+    #[serde(rename = "noCornerNode", default)]
+    pub no_corner_node: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

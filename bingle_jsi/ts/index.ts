@@ -26,6 +26,7 @@ export type {
   BingleJsiConfig,
   MessageCallback,
   LogCallback,
+  ListeningCallback,
   BingleJsiApi,
 } from "./NativeBingleJsi";
 
@@ -130,6 +131,7 @@ export const BingleJsi = BingleJsiNative as {
   load(path: string): Promise<void>;
   setLogCallback(logLevel: string | null): Promise<void>;
   setMessageCallback(): Promise<void>;
+  setListeningCallback(): Promise<void>;
   start(): Promise<void>;
   isStarted(): Promise<boolean>;
 };

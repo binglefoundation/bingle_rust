@@ -92,4 +92,7 @@ RCT_EXTERN_METHOD(setLogCallback:(nullable NSString *)logLevel
 RCT_EXTERN_METHOD(setMessageCallback:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(setListeningCallback:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end
