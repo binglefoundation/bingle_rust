@@ -6,6 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
+use crate::engine::ddb_upsert::test_util::init_test_logging;
+
 pub mod pki;
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -35,6 +37,7 @@ pub fn dtls_openssl_udp_listener_invokes_handler() {
     {
         rust_comms::util::printing::enable_immediate_prints();
     }
+    init_test_logging();
 
     // Generate Ed25519 CA, server, and client credentials dynamically
     let certs = pki::generate_ed25519_test_certs();

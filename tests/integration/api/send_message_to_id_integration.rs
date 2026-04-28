@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use libc::sleep;
 use crate::setup_localnet;
 use crate::util::test_util;
+use serial_test::serial;
 
 // Helper: start a relay node at a fixed address
 fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
@@ -30,7 +31,11 @@ fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
-    log::info!("[Test] root relay {} started", name);
+    log::info!("[Test] root relay {} started, wait for registered", name);
+
+    wait_for_registered(&api, Duration::from_secs(30));
+    log::info!("[Test] root relay {} registered", name);
+
     api
 }
 
@@ -127,14 +132,25 @@ fn deploy_bingle_app() -> u64 {
     test_util::deploy_bingle_app(&ops_creator)
 }
 
-// Helper: wait for given duration and return true if both relays are visible via discovery
-fn wait_for_relays_visible(ab: &AlgoBingle, app_id: u64, accounts: &[String], timeout: Duration) -> bool {
+// Helper: wait for given duration and return true if both relays are visible via discovery with expected addresses
+fn wait_for_relays_visible(ab: &AlgoBingle, app_id: u64, expected: &[(String, SocketAddr)], timeout: Duration) -> bool {
     let start = Instant::now();
+    let account_ids: Vec<String> = expected.iter().map(|(id, _)| id.clone()).collect();
     while start.elapsed() < timeout {
-        if let Ok(found) = ab.discover_root_relays(app_id, accounts) {
-            if found.len() == accounts.len() {
-                log::info!("[Test] All {} relays visible via discover_root_relays after {:?}", accounts.len(), start.elapsed());
-                return true;
+        if let Ok(found) = ab.discover_root_relays(app_id, &account_ids) {
+            if found.len() == expected.len() {
+                let mut all_match = true;
+                for (exp_id, exp_addr) in expected {
+                    if !found.iter().any(|(fid, faddr)| fid == exp_id && faddr == exp_addr) {
+                        all_match = false;
+                        log::info!("[Test] Relay {} not yet visible with address {} (found: {:?})", exp_id, exp_addr, found);
+                        break;
+                    }
+                }
+                if all_match {
+                    log::info!("[Test] All {} relays visible with correct addresses via discover_root_relays after {:?}", expected.len(), start.elapsed());
+                    return true;
+                }
             }
         }
         std::thread::sleep(Duration::from_millis(1000));
@@ -166,8 +182,11 @@ fn register_relays(app_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr
 
     // Wait for discovery to see them (using discover_root_relays as requested)
     log::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
-    let accounts = vec![test_util::ADDRESS_SPEND.to_string(), test_util::ADDRESS_RECEIVE.to_string()];
-    if !wait_for_relays_visible(&ab_creator, app_id, &accounts, Duration::from_secs(60)) {
+    let expected = vec![
+        (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
+        (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
+    ];
+    if !wait_for_relays_visible(&ab_creator, app_id, &expected, Duration::from_secs(60)) {
         panic!("Relays did not become visible via discover_root_relays within 60s");
     }
 }
@@ -377,7 +396,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
 }
 
 // Helper: wait for indexer to see the relays
-fn wait_for_indexer_visible(app_id: u64, accounts: &[String], timeout: Duration) -> bool {
+fn wait_for_indexer_visible(app_id: u64, expected: &[(String, SocketAddr)], timeout: Duration) -> bool {
     let cfg = test_util::localnet_config();
     // Provide a placeholder address for read-only indexer ops
     let ops = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
@@ -385,9 +404,17 @@ fn wait_for_indexer_visible(app_id: u64, accounts: &[String], timeout: Duration)
     let start = Instant::now();
     while start.elapsed() < timeout {
         if let Ok(list) = ab.list_static_endpoints_via_indexer(app_id) {
-            let found_count = list.iter().filter(|(addr, _)| accounts.contains(addr)).count();
-            if found_count == accounts.len() {
-                log::info!("[Test] All {} relays visible via indexer after {:?}", accounts.len(), start.elapsed());
+            let mut all_match = true;
+            for (exp_id, exp_addr) in expected {
+                let exp_addr_str = exp_addr.to_string();
+                if !list.iter().any(|(fid, faddr_str)| fid == exp_id && faddr_str == &exp_addr_str) {
+                    all_match = false;
+                    log::info!("[Test] Relay {} not yet visible via indexer with address {} (found: {:?})", exp_id, exp_addr_str, list);
+                    break;
+                }
+            }
+            if all_match && list.len() >= expected.len() {
+                log::info!("[Test] All {} relays visible via indexer with correct addresses after {:?}", expected.len(), start.elapsed());
                 return true;
             }
         }
@@ -398,25 +425,25 @@ fn wait_for_indexer_visible(app_id: u64, accounts: &[String], timeout: Duration)
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
+#[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(180_000)]
-#[ignore]
+#[ntest::timeout(600_000)]
 pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients,
 // where both clients have broken NAT and must use relays.
+#[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(180_000)]
-#[ignore]
+#[ntest::timeout(600_000)]
 pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
 
+#[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(300_000)]
-#[ignore]
+#[ntest::timeout(600_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging();
     if !test_util::should_run_localnet() { return; }
@@ -458,7 +485,10 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     // Wait for root relays to be visible via indexer too, as the engine's initialization depends on it
     log::info!("[Test] Waiting for root relay ids to be visible via indexer");
-    let roots = vec![test_util::ADDRESS_SPEND.to_string(), test_util::ADDRESS_RECEIVE.to_string()];
+    let roots = vec![
+        (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
+        (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
+    ];
     if !wait_for_indexer_visible(app_id, &roots, Duration::from_secs(60)) {
         panic!("Root relayids  did not become visible via indexer");
     }
@@ -537,9 +567,9 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 }
 
 // Localnet-style integration test: a relay sends a message to its own relay client using send_message_to_id.
+#[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
-#[ntest::timeout(180_000)]
+#[ntest::timeout(600_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging();
 
@@ -690,11 +720,11 @@ fn reset_message_state(
 /// 6. Send a message from A2 → B and validate receipt on B.
 /// 7. Send a message from B → A2 and validate receipt on A2.
 ///
-/// This test is expected to fail because the target node (B) uses stale DTLS
-/// connection state from the original client A when communicating with A2.
+/// This test validates that the DTLS connection is correctly reused
+/// after a client restart, once the old connection state has been cleaned up.
+#[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(300_000)]
-#[ignore]
+#[ntest::timeout(600_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging();
 

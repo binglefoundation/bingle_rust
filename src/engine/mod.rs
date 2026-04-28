@@ -1353,6 +1353,15 @@ impl Engine {
         log::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
 
+    pub(crate) fn initialize_relay_async(&mut self) {
+        log::info!("[Engine] spawning initialize_relay thread");
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        std::thread::spawn(move || unsafe {
+            let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+            eng.initialize_relay();
+        });
+    }
+
     fn start_with_addr(
         &mut self,
         _options: &StartOptions,
@@ -1404,7 +1413,7 @@ impl Engine {
 
         // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
         if self.options.am_relay {
-            self.initialize_relay();
+            self.initialize_relay_async();
         }
         // Static address path: once DTLS accept loop is running and any relay is available, notify that we are listening.
         self.notify_listening(true);

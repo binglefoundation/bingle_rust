@@ -73,6 +73,8 @@ pub fn dtls_client_reconnect() {
     let client_mux_port = test_util::find_unused_loopback_port();
     let client_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), client_mux_port);
 
+    log::info!("Starting client 1 on addr:port {} server on {}", client_addr, mux_srv.local_addr().unwrap());
+
     let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 1 mux"));
     let mut client1 = DtlsOpenSsl::new()
         .with_null_encryption()

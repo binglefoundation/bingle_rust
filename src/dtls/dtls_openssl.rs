@@ -131,7 +131,10 @@ pub mod openssl_impl {
                                     let _ = peers.lock().map(|mut m| {
                                         m.entry(key)
                                             .and_modify(|ps| ps.issuer = s.clone())
-                                            .or_insert(PeerState { writer: None, issuer: s.clone(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
+                                            .or_insert_with(|| {
+                                                log::debug!("[DtlsOpenSsl{}::read_loop][peer_cert_handler] no peers entry, HandlePeerCertificate returned ok, initialize is_connecting_peer=false for {}", log_tag, from);
+                                                PeerState { writer: None, issuer: s.clone(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false }
+                                            });
                                     });
                                 }
                             }
@@ -145,7 +148,10 @@ pub mod openssl_impl {
                             let _ = peers.lock().map(|mut m| {
                                 m.entry(key_from.clone())
                                     .and_modify(|ps| ps.issuer = String::new())
-                                    .or_insert(PeerState { writer: None, issuer: String::new(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
+                                    .or_insert_with(|| {
+                                        log::debug!("[DtlsOpenSsl{}::read_loop] no peers entry, no HandlePeerCertificate, initialize is_connecting_peer=false for {}", log_tag, from);
+                                        PeerState { writer: None, issuer: String::new(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false }
+                                    });
                             });
                         }
                     }
@@ -183,7 +189,10 @@ pub mod openssl_impl {
                                             match h(&cert_pem, ca_vec) {
                                                 Ok(mut s) if !s.is_empty() => {
                                                     if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
-                                                    m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
+                                                    m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert_with(|| {
+                                                        log::debug!("[DtlsOpenSsl{}::read_loop][peer_cert_handler][first-data], no peers entry, HandlePeerCertificate passed, initialize is_connecting_peer=false for {}", log_tag, from);
+                                                        PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false }
+                                                    });
                                                 }
                                                 res => {
                                                     let err_msg = match res {
@@ -204,7 +213,10 @@ pub mod openssl_impl {
                                         }
                                     } else {
                                         let s: String = String::from_utf8_lossy(&cert_pem).into();
-                                        m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert(PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
+                                        m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert_with(|| {
+                                            log::debug!("[DtlsOpenSsl{}::read_loop][peer_cert_handler][first-data], no peers entry, no HandlePeerCertificate, initialize is_connecting_peer=false for {}", log_tag, from);
+                                            PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false }
+                                        });
                                     }
                                 }
                             }
@@ -838,7 +850,44 @@ pub mod openssl_impl {
             Ok(())
         }
 
-        // Start DTLS accept loop using a pre-bound NetworkMux (no internal bind)
+        /// Central entry point for all inbound DTLS packets received via the NetworkMux.
+        ///
+        /// This function routes inbound datagrams to the correct per-peer SslStream and manages
+        /// DTLS session lifecycles based on packet type and current peer state:
+        ///
+        /// ### Packet Type Handling
+        /// - **ClientHello**: 
+        ///   - If an established stream already exists, it is dropped to allow a reconnect (Client Restart).
+        ///   - If no stream exists, it triggers the creation of a new `SslStream` (unless suppressed).
+        /// - **Non-Handshake/Other**: 
+        ///   - These are enqueued for the existing `SslStream`.
+        ///   - If no stream exists yet, they will still trigger stream creation, which is necessary
+        ///     to handle cases where the initial `ClientHello` might have been processed or 
+        ///     retransmitted.
+        ///
+        /// ### State-Based Processing
+        /// 1. **No Existing State**: Creates a new `PeerQueue` and `PeerState`, enqueues the 
+        ///    packet, and initiates a new `SslStream` in `accept_state`.
+        ///
+        /// 2. **Existing Established Stream**:
+        ///    - If a `ClientHello` arrives, the old session is terminated and a new one starts.
+        ///    - Otherwise, the packet is simply enqueued for the existing session.
+        ///
+        /// 3. **Outbound Connect in Progress (`is_connecting_peer`)**:
+        ///    - Implements **Simultaneous Connect Tie-Breaking** to avoid deadlocks where both
+        ///      sides are trying to connect and neither is accepting.
+        ///    - Compares local and remote socket addresses (port then IP).
+        ///    - The "lower" address is the designated client: it suppresses the inbound 
+        ///      accept stream, waiting for its own outbound connect to succeed.
+        ///    - The "higher" address is the designated server: it aborts its outbound 
+        ///      connect and allows the inbound accept stream to proceed.
+        ///
+        /// 4. **Queue Management**: All inbound datagrams are pushed to the peer's `PeerQueue`,
+        ///    which is read by the `CommonNetworkMuxConn` inside the `SslStream`.
+        ///
+        /// 5. **Inbound Stream Lifecycle**: If a new stream is needed, it creates an `SslStream` in 
+        ///    `accept_state` and spawns a background `run_read_loop` to handle the handshake and 
+        ///    subsequent application data.
         fn handle_dtls_accept_packet(
             mux: Arc<crate::dtls::UdpNetworkMux>,
             acceptor: Arc<SslAcceptor>,
@@ -895,11 +944,12 @@ pub mod openssl_impl {
                 } else {
                     log::info!("[DtlsOpenSsl::accept] new queue for {} (key: {})", from, key);
                     let q = Arc::new(PeerQueue::default());
+                    log::debug!("[DtlsOpenSsl::accept] no peer, initialize is_connecting_peer=false for {}", from);
                     pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
                     q
                 }
             };
-            log::trace!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes) [{} queued b4]", from, to_ip_str, data.len(), q_arc.len());
+            log::debug!("[DtlsOpenSsl::accept] enqueue datagram [{} -> {}] ({} bytes) [{} queued b4]", from, to_ip_str, data.len(), q_arc.len());
             #[allow(unused)] {}
             q_arc.push(data.to_vec());
 
@@ -907,14 +957,41 @@ pub mod openssl_impl {
             let suppressed = {
                 let key = from.get_key().expect("direct endpoint key");
                 match peers.lock() {
-                    Ok(m) => m.get(&key).map(|ps| ps.is_connecting_peer).unwrap_or(false),
+                    Ok(mut m) => {
+                        if let Some(ps) = m.get_mut(&key) {
+                            if ps.is_connecting_peer {
+                                // Tie-breaker to avoid simultaneous-connect deadlock:
+                                // if both sides connect at once, one side MUST become the server.
+                                // We use the socket address order as a stable tie-breaker.
+                                // Compare ports first to handle 0.0.0.0 (any) local address correctly.
+                                if let (Ok(local_addr), Some(remote_addr)) = (mux.local_addr(), from.inet_socket_address()) {
+                                    let is_client = if local_addr.port() != remote_addr.port() {
+                                        local_addr.port() < remote_addr.port()
+                                    } else {
+                                        local_addr.ip() < remote_addr.ip()
+                                    };
+                                    if is_client {
+                                        log::debug!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress and I am the designated client)", from);
+                                        true
+                                    } else {
+                                        log::info!("[DtlsOpenSsl::accept] on {:?} allowing accept stream for {} despite outbound connect (I am the designated server) - aborting my outbound connect", mux.local_addr(), from);
+                                        log::debug!("[DtlsOpenSsl::accept] change is_connecting_peer to false for {} (tie-breaker server)", from);
+                                        ps.is_connecting_peer = false;
+                                        false
+                                    }
+                                } else {
+                                    true
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    }
                     Err(_) => false,
                 }
             };
-            if suppressed {
-                log::debug!("[DtlsOpenSsl::accept] suppress creating accept stream for {} (outbound connect in progress)", from);
-                #[allow(unused)] {}
-            }
             let create_stream = {
                 let key = from.get_key().expect("direct endpoint key");
                 let pm = peers.lock().unwrap();
@@ -934,6 +1011,7 @@ pub mod openssl_impl {
                 if let Ok(mut pm) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
                     let (prev_writer, prev_issuer, prev_queue, prev_conn, prev_ann) = if let Some(ps) = pm.get(&key) { (ps.writer.clone(), ps.issuer.clone(), ps.queue.clone(), ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (None, String::new(), q_arc.clone(), false, false) };
+                    log::debug!("[DtlsOpenSsl::accept] create_stream, issuer {}, clone peer, is_connection_peer={}", prev_issuer, prev_conn);
                     pm.insert(key, PeerState { writer: prev_writer, issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn, is_announced_client_cert_peer: prev_ann });
                 }
 
@@ -945,11 +1023,13 @@ pub mod openssl_impl {
                     guard.write_all(payload).map_err(|e| format!("dtls write failed: {}", e))
                 });
                 // Install or update peer state with writer
+                // is this a duplicate!
                 if let Ok(mut m) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
                     let (issuer_prev, queue_prev) = if let Some(ps) = m.get(&key) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), Arc::new(PeerQueue::default())) };
                     let (prev_conn_flag, prev_ann_flag) = if let Some(ps) = m.get(&key) { (ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (false, false) };
-                                        m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag });
+                    log::debug!("[DtlsOpenSsl::accept] create_stream, with writer, clone peer again, is_connection_peer={}", prev_conn_flag);
+                    m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag });
                     log::debug!("[DtlsOpenSsl::accept] installed writer for {}", from);
                 }
 
@@ -1051,11 +1131,11 @@ pub mod openssl_impl {
         }
 
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
-            // TODO: target id and relay id get confused here
             use std::io::Write;
             // We require a running UDP mux to perform client handshake and writes
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
+            log::debug !("[DtlsOpenSsl::send] {:?} -> {} ({} bytes)", mux.local_addr(), to, data.len());
             // Validate destination key: allow either direct inet address or relay channel+address
             let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some() {
                 to
@@ -1103,6 +1183,7 @@ pub mod openssl_impl {
                 } else {
                     log::info!("[DtlsOpenSsl::send] new queue for {} (key: {})", endpoint, key_to);
                     let q = std::sync::Arc::new(PeerQueue::default());
+                    log::debug!("[DtlsOpenSsl::send][creating new queue] initialize is_connecting_peer=false for {}", endpoint);
                     map.insert(key_to.clone(), PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
                     q
                 }
@@ -1114,8 +1195,12 @@ pub mod openssl_impl {
                     use std::collections::hash_map::Entry;
                     let key = to.get_key().expect("direct endpoint key");
                     match m.entry(key) {
-                        Entry::Occupied(mut e) => { e.get_mut().is_connecting_peer = true; }
+                        Entry::Occupied(mut e) => {
+                            log::debug!("[DtlsOpenSsl::send] on {:?},change is_connecting_peer to true for {}", mux.local_addr(), to);
+                            e.get_mut().is_connecting_peer = true;
+                        }
                         Entry::Vacant(v) => {
+                            log::debug!("[DtlsOpenSsl::send] no peer, initialize is_connecting_peer=true for {}", to);
                             v.insert(PeerState { writer: None, issuer: String::new(), queue: std::sync::Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: true, is_announced_client_cert_peer: false });
                         }
                     }
@@ -1124,13 +1209,13 @@ pub mod openssl_impl {
             // Create a UDP-backed connection to the peer using the per-peer queue.
             let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc };
             // OpenSSL connect requires a domain string; for DTLS over UDP this is not meaningful, so use a placeholder.
-            log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 15000ms deadline", to);
+            log::info!("[DtlsOpenSsl::send] starting DTLS connect/handshake to {} with 60000ms deadline", to);
             let stream = match connector.connect("localhost", conn) {
                 Ok(s) => s,
                 Err(HandshakeError::WouldBlock(mut mid)) => {
                     use std::time::{Duration, Instant};
                     let start = Instant::now();
-                    let deadline = Duration::from_millis(15000);
+                    let deadline = Duration::from_millis(60000);
                     let mut iter: u32 = 0;
                     loop {
                         match mid.handshake() {
@@ -1144,10 +1229,31 @@ pub mod openssl_impl {
                                 iter += 1;
                                 let elapsed = start.elapsed();
                                 if elapsed > deadline {
-                                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                                    {
+                                        let peers = &self.peer_states;
+                                        if let Ok(mut m) = peers.lock() {
+                                            let key = to.get_key().expect("direct endpoint key");
+                                            if let Some(ps) = m.get_mut(&key) {
+                                                log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (timeout)", to);
+                                                ps.is_connecting_peer = false;
+                                            }
+                                        }
+                                    }
                                     log::info!("[DtlsOpenSsl::send] connect() timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
                                     #[allow(unused)] {}
                                     return Err("dtls client connect timeout".to_string());
+                                }
+                                // Check if we were told to abort by the tie-breaker
+                                {
+                                    let peers = &self.peer_states;
+                                    if let Ok(map) = peers.lock() {
+                                        if let Some(ps) = map.get(&key_to) {
+                                            if !ps.is_connecting_peer {
+                                                log::info!("[DtlsOpenSsl::send] aborting outbound connect to {} (tie-breaker decided I am server)", to);
+                                                return Err("dtls client connect aborted by tie-breaker".to_string());
+                                            }
+                                        }
+                                    }
                                 }
                                 if iter % 10 == 1 {
                                     // Log periodically to avoid spam
@@ -1159,14 +1265,32 @@ pub mod openssl_impl {
                                 continue;
                             }
                             Err(HandshakeError::Failure(mid2)) => {
-                                { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                                {
+                                    let peers = &self.peer_states;
+                                    if let Ok(mut m) = peers.lock() {
+                                        let key = to.get_key().expect("direct endpoint key");
+                                        if let Some(ps) = m.get_mut(&key) {
+                                            log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (handshake failure)", to);
+                                            ps.is_connecting_peer = false;
+                                        }
+                                    }
+                                }
                                 let err = mid2.error();
                                 log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                                 #[allow(unused)] {}
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::Failure: {}", err));
                             }
                             Err(HandshakeError::SetupFailure(err)) => {
-                                { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                                {
+                                    let peers = &self.peer_states;
+                                    if let Ok(mut m) = peers.lock() {
+                                        let key = to.get_key().expect("direct endpoint key");
+                                        if let Some(ps) = m.get_mut(&key) {
+                                            log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (handshake setup failure)", to);
+                                            ps.is_connecting_peer = false;
+                                        }
+                                    }
+                                }
                                 log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                                 #[allow(unused)] {}
                                 return Err(format!("dtls client connect failed after retries - HandshakeError::SetupFailure: {}", err));
@@ -1175,14 +1299,32 @@ pub mod openssl_impl {
                     }
                 }
                 Err(HandshakeError::Failure(mid)) => {
-                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                    {
+                        let peers = &self.peer_states;
+                        if let Ok(mut m) = peers.lock() {
+                            let key = to.get_key().expect("direct endpoint key");
+                            if let Some(ps) = m.get_mut(&key) {
+                                log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (connect failure)", to);
+                                ps.is_connecting_peer = false;
+                            }
+                        }
+                    }
                     let err = mid.error();
                     log::info!("[DtlsOpenSsl::send] connect() FAILURE to {}: {}", to, err);
                     #[allow(unused)] {}
                     return Err(format!("dtls client connect failed - HandshakeError::Failure: {}", err));
                 }
                 Err(HandshakeError::SetupFailure(err)) => {
-                    { let peers = &self.peer_states; if let Ok(mut m) = peers.lock() { let key = to.get_key().expect("direct endpoint key"); if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; } } }
+                    {
+                        let peers = &self.peer_states;
+                        if let Ok(mut m) = peers.lock() {
+                            let key = to.get_key().expect("direct endpoint key");
+                            if let Some(ps) = m.get_mut(&key) {
+                                log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (connect setup failure)", to);
+                                ps.is_connecting_peer = false;
+                            }
+                        }
+                    }
                     log::info!("[DtlsOpenSsl::send] connect() SETUP FAILURE to {}: {}", to, err);
                     #[allow(unused)] {}
                     return Err(format!("dtls client connect failed - HandshakeError::SetupFailure: {}", err));
@@ -1219,7 +1361,10 @@ pub mod openssl_impl {
                                         let _ = peers.lock().map(|mut m| {
                                             m.entry(key_to.clone())
                                                 .and_modify(|ps| ps.issuer = id.clone())
-                                                .or_insert_with(|| PeerState { writer: None, issuer: id.clone(), queue: std::sync::Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false });
+                                                .or_insert_with(|| {
+                                                    log::debug!("[DtlsOpenSsl::send] initialize is_connecting_peer=false for {}", to);
+                                                    PeerState { writer: None, issuer: id.clone(), queue: std::sync::Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false }
+                                                });
                                         });
                                     }
                                     Ok(_) => {
@@ -1261,6 +1406,7 @@ pub mod openssl_impl {
                 });
                 let _ = peers.lock().map(|mut m| {
                     let (prev_issuer, prev_queue) = if let Some(ps) = m.get(&key_to) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), std::sync::Arc::new(PeerQueue::default())) };
+                    log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (post-connect update)", to);
                     m.insert(key_to.clone(), PeerState { writer: Some(writer_fn.clone()), issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), is_connecting_peer: false, is_announced_client_cert_peer: false });
                 });
             }
@@ -1291,7 +1437,10 @@ pub mod openssl_impl {
                 let peers = &self.peer_states;
                 let _ = peers.lock().map(|mut m| {
                     let key = to.get_key().expect("direct endpoint key");
-                    if let Some(ps) = m.get_mut(&key) { ps.is_connecting_peer = false; }
+                    if let Some(ps) = m.get_mut(&key) {
+                        log::debug!("[DtlsOpenSsl::send] change is_connecting_peer to false for {} (final cleanup)", to);
+                        ps.is_connecting_peer = false;
+                    }
                 });
             }
 

@@ -940,7 +940,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         log::info!("[BingleApiImpl::initialize_relay]");
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).initialize_relay();
+            (*engine_ptr).initialize_relay_async();
         }
     }
     fn is_relay(&self) -> bool {
