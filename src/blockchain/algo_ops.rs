@@ -371,7 +371,7 @@ impl AlgoOps {
                 return Err(e);
             }
         };
-        log::info!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
+        log::trace!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
         let info = match res {
             Ok(v) => v,
             Err(e) => {
@@ -381,6 +381,7 @@ impl AlgoOps {
         };
         // amount is in microalgos
         let micro: u64 = info.amount.0;
+        log::debug!("[account_balance] Balance for address {} is {} microalgos", address, micro);
         Ok(Some(micro as f64 / 1_000_000.0))
     }
 

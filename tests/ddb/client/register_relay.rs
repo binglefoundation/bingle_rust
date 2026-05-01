@@ -47,6 +47,9 @@ fn start_pair() -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAd
         log_level: None, handle_cache_expiry: None,
     };
     relay.access_unsafe_for_tests(|r| r.start(&relay_opts)).expect("relay start ok");
+    if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {
+        panic!("relay did not become Available within 30s");
+    }
     client.access_unsafe_for_tests(|c| c.start(&client_opts)).expect("client start ok");
     (relay, client, relay_addr, client_addr)
 }

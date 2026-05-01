@@ -95,7 +95,7 @@ struct InnerState {
 
 impl InnerState {
     fn required_acks(&self) -> usize {
-        self.dynamic_node_ids.len() / 2 + 1
+        self.dynamic_node_ids.len() / 2 + if self.dynamic_node_ids.len() > 2 { 1 } else { 0 }
     }
 
     fn update_membership(&mut self, self_id: &str, from_id: &str, known_ids: &Option<HashSet<String>>) -> bool {

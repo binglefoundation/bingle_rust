@@ -38,6 +38,7 @@ impl BingleApiInternal for BothAsApi {
     fn is_relay(&self) -> bool { self.inner.is_relay() }
     fn signal_signon_complete(&self) { self.inner.signal_signon_complete() }
     fn reset_signon_complete(&self) { self.inner.reset_signon_complete() }
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) { self.inner.ripple_message(message, originator_id, ddb_backend) }
 }
 impl BingleApi for BothAsApi {
     fn debug_print_options(&self) { self.inner.debug_print_options() }
@@ -428,7 +429,11 @@ impl MessageHandler for DefaultPrintingHandler {
                 rippled_up.rippled = true;
                 let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
                 let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-                _api.ripple_message(ripple_json, up.start_id.clone());
+                if let Some(backend) = router.get_ddb_backend() {
+                    if let Ok(b) = backend.lock() {
+                        _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
+                    }
+                }
 
                 // Prepare response JSON and stash on router for Engine/DTLS layer to send.
                 let resp = crate::messages::types::Message::Ddb(
@@ -468,7 +473,11 @@ impl MessageHandler for DefaultPrintingHandler {
                 rippled_msg.rippled = true;
                 let ripple_msg = Message::Ddb(DdbMessage::DeleteResolve(rippled_msg));
                 let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-                api.ripple_message(ripple_json, msg.start_id.clone());
+                if let Some(backend) = router.get_ddb_backend() {
+                    if let Ok(b) = backend.lock() {
+                        api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
+                    }
+                }
             }
         }
     }
@@ -596,7 +605,13 @@ impl MessageHandler for DefaultPrintingHandler {
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(3));
                     log::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
-                    api_clone.ripple_message(ripple_json, start_id);
+                    if let Some(router) = crate::messages::router::Router::current() {
+                        if let Some(backend) = router.get_ddb_backend() {
+                            if let Ok(b) = backend.lock() {
+                                api_clone.ripple_message(ripple_json, start_id, &*b);
+                            }
+                        }
+                    }
                 });
             }
         }

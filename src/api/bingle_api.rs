@@ -24,34 +24,34 @@ pub trait BingleApiInternal: Send + Sync {
     /// Request the engine state to be set to the provided value. Implementations should
     /// delegate to the underlying Engine instance. Implementations may be best-effort
     /// and can ignore unsupported transitions.
-    fn set_state(&self, state: crate::engine::EngineState);
+    fn set_state(&self, _state: crate::engine::EngineState) {}
     /// Get the current engine state.
-    fn get_state(&self) -> crate::engine::EngineState;
+    fn get_state(&self) -> crate::engine::EngineState { crate::engine::EngineState::StunIdentify }
     /// Set the detected NAT type on the engine.
-    fn set_nat_type(&self, nat: crate::engine::NatType);
+    fn set_nat_type(&self, _nat: crate::engine::NatType) {}
     /// Retrieve the last discovered public address (IP:port) if available.
-    fn get_last_public_addr(&self) -> Option<SocketAddr>;
+    fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
     /// Register an endpoint IP:port via the engine's DDB client.
-    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String>;
+    fn ddb_register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Ok(()) }
     /// Register a relay association via the engine's DDB client.
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String>;
+    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), String>;
+    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Ok(()) }
     /// Client-side handler invoked on ListenResponse to register allowed relay id <-> addr mapping.
-    fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String);
+    fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) {}
     /// Lookup a previously registered address for the given id (TURN mapping).
-    fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr>;
+    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
     /// Handle a Relay::Call by allocating or retrieving a TURN channel for the (source, dest) pair.
     /// Returns the channel number as i32 (negative on failure) to mirror TurnHandler::handle_call.
-    fn turn_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32;
+    fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
     /// Handle a Relay::Listen on the relay side to register id -> source address.
-    fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool;
+    fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
     /// Handle a RelayCalled notification at the client side to register the channel mapping.
-    fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16);
+    fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) {}
 
     /// Notify that the node's listening state changed.
-    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType);
+    fn notify_listening(&self, _listening: bool, _nat_type: crate::engine::NatType) {}
 
     /// Get current relay state string for CheckResponse ("off"|"starting"|"loading"|"loaded"|"available"|"own").
     fn get_relay_state(&self) -> String;
@@ -81,7 +81,41 @@ pub trait BingleApiInternal: Send + Sync {
     fn reset_signon_complete(&self) {}
 
     /// Send a message to all known relays (except ourselves and the message originator).
-    fn ripple_message(&self, _message: JsonValue, _originator_id: String) {}
+    fn ripple_message(&self, _message: JsonValue, _originator_id: String, _ddb_backend: &dyn crate::ddb::DdbBackend) {}
+}
+
+#[macro_export]
+macro_rules! impl_bingle_api_internal_noop {
+    ($struct_name:ident) => {
+        impl $crate::api::bingle_api::BingleApiInternal for $struct_name {
+            fn mutex_handle_request(&self, _from_id: String, _req: $crate::messages::types::MutexRequest) {}
+            fn mutex_handle_response(&self, _from_id: String, _resp: $crate::messages::types::MutexResponse) {}
+            fn mutex_handle_release(&self, _from_id: String, _rel: $crate::messages::types::MutexRelease) {}
+            fn set_state(&self, _state: $crate::engine::EngineState) {}
+            fn get_state(&self) -> $crate::engine::EngineState { $crate::engine::EngineState::StunIdentify }
+            fn set_nat_type(&self, _nat: $crate::engine::NatType) {}
+            fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
+            fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> { Err("ni".into()) }
+            fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("ni".into()) }
+            fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> { Err("ni".into()) }
+            fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
+            fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> { None }
+            fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
+            fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
+            fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
+            fn notify_listening(&self, _listening: bool, _nat_type: $crate::engine::NatType) {}
+            fn get_relay_state(&self) -> String { "off".to_string() }
+            fn set_relay_state(&self, _state: $crate::engine::RelayState) {}
+            fn get_peer_ddb_target(&self) -> Option<usize> { None }
+            fn ddb_upsert_record(&self, _record: $crate::ddb::AdvertRecord) {}
+            fn ddb_backend_size(&self) -> usize { 0 }
+            fn initialize_relay(&self) {}
+            fn is_relay(&self) -> bool { false }
+            fn signal_signon_complete(&self) {}
+            fn reset_signon_complete(&self) {}
+            fn ripple_message(&self, _message: serde_json::Value, _originator_id: String, _ddb_backend: &dyn $crate::ddb::DdbBackend) {}
+        }
+    }
 }
 
 /// Convenience type aliases used by the Bingle API.

@@ -157,7 +157,7 @@ impl BingleApiImpl {
 
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
-    pub fn set_issuer_for_tests(&mut self, issuer: String) {
+    pub fn set_issuer_for_tests(&self, issuer: String) {
         log::info!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
@@ -954,9 +954,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         log::info!("[BingleApiImpl::reset_signon_complete]");
         self.engine.access(|e| e.reset_signon_complete());
     }
-    fn ripple_message(&self, message: serde_json::Value, originator_id: String) {
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) {
         log::info!("[BingleApiImpl::ripple_message] originator={}", originator_id);
-        self.engine.access(|e| e.ripple_message(message, originator_id));
+        self.engine.access(|e| e.ripple_message(message, originator_id, ddb_backend));
     }
 }
 

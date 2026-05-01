@@ -95,6 +95,9 @@ pub fn dtls_send_via_relay_end_to_end() {
     };
     let relay_api = BingleApiImpl::new(&relay_opts);
     relay_api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");
+    if !test_util::wait_for_relay_available(&relay_api, Duration::from_secs(30)) {
+        panic!("relay did not become Available within 30s");
+    }
 
     // 3) Send RelayListen from the DTLS target node to the relay and validate registration
     let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));

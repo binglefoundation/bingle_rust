@@ -1,5 +1,5 @@
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::api::bingle_api::StartOptions;
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 
 // Basic sanity: without engine issuer/app_id configured, list_all_relays should return an empty list.
 #[cfg_attr(not(target_os = "ios"), test)]

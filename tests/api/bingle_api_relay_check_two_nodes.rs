@@ -31,6 +31,9 @@ pub fn bingle_api_relay_check_two_nodes() {
         log_level: None, handle_cache_expiry: None,
     };
     relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&relay_opts)).expect("relay start");
+    if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {
+        panic!("relay did not become Available within 30s");
+    }
 
     // Install an on_message on the relay that responds to RelayCheck with RelayCheckResponse.
     // We need to send back to the client's socket address; use the pre-known client_addr.

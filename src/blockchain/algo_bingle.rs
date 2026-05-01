@@ -271,7 +271,7 @@ impl AlgoBingle {
                 req = req.header("X-Indexer-API-Token", tok.clone())
                          .header(self.ops.config.token_key.clone().unwrap_or_else(|| "X-Algo-API-Token".to_string()), tok.clone());
             }
-            log::info!("[indexer_query_opted_in_accounts_sync] Sending indexer request {:?}", req);
+            log::debug!("[indexer_query_opted_in_accounts_sync] Sending indexer request {:?}", req);
             let resp = match req.send() {
                 Ok(r) => r,
                 Err(e) => {
@@ -282,7 +282,7 @@ impl AlgoBingle {
                     return Err(anyhow!("indexer request failed: {e}"));
                 }
             };
-            log::info!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);
+            log::trace!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);
             if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
             let v: serde_json::Value = match resp.json() {
                 Ok(v) => v,
@@ -295,10 +295,10 @@ impl AlgoBingle {
                 }
             };
             // Debug: dump the full JSON returned from /v2/accounts for visibility
-            log::info!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
+            log::trace!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
             let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
             for acct in accounts {
-                log::debug!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", acct);
+                log::trace!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", acct);
                 if let Err(e) = f(&acct) {
                     // Log explicit error rather than propagating implicitly with '?'
                     log::error!(

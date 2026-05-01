@@ -81,7 +81,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn is_relay(&self) -> bool { self.api.access(|a| a.is_relay()) }
     fn signal_signon_complete(&self) { self.api.access(|a| a.signal_signon_complete()) }
     fn reset_signon_complete(&self) { self.api.access(|a| a.reset_signon_complete()) }
-    fn ripple_message(&self, message: serde_json::Value, originator_id: String) { self.api.access(|a| a.ripple_message(message, originator_id)) }
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) { self.api.access(|a| a.ripple_message(message, originator_id, ddb_backend)) }
 }
 
 

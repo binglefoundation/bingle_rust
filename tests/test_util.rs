@@ -1,8 +1,12 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg};
+use rust_comms::api::bingle_api::BingleApiInternal;
+use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::env;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 use log::LevelFilter;
 use std::fs;
+use std::time::{Duration, Instant};
 
 // Macro to skip localnet-dependent tests with a standard message.
 // Usage: skip_if_no_localnet!();
@@ -175,4 +179,27 @@ pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units:
     ops.set_asset_clawback_to_app(app_id, asset_id).expect("set_asset_clawback_to_app call");
 
     (app_id, asset_id)
+}
+
+#[allow(dead_code)]
+pub fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Some(st) = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
+            if st == EngineState::Registered { return true; }
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    false
+}
+
+#[allow(dead_code)]
+pub fn wait_for_relay_available(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        let st = api.get_relay_state();
+        if st == "available" { return true; }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    false
 }

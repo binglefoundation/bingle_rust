@@ -65,3 +65,5 @@ pub mod dtls_peer_certificate_issuer_trim;
 pub mod dtls_send_signature;
 #[path = "network_mux_udp_socket_close.rs"]
 pub mod network_mux_udp_socket_close;
+#[path = "dtls_handshake_failure_retry.rs"]
+pub mod dtls_handshake_failure_retry;

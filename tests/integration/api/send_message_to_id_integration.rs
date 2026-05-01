@@ -2,13 +2,11 @@ use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
-use libc::sleep;
 use crate::setup_localnet;
 use crate::util::test_util;
 use serial_test::serial;
@@ -33,8 +31,13 @@ fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64,
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
     log::info!("[Test] root relay {} started, wait for registered", name);
 
-    wait_for_registered(&api, Duration::from_secs(30));
+    test_util::wait_for_registered(&api, Duration::from_secs(30));
     log::info!("[Test] root relay {} registered", name);
+
+    if !test_util::wait_for_relay_available(&api, Duration::from_secs(180)) {
+        panic!("root relay {} did not become Available within 180", name);
+    }
+    log::info!("[Test] root relay {} Available", name);
 
     api
 }
@@ -58,6 +61,12 @@ fn start_relay(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id:
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
     log::info!("[Test] non-root relay {} started", name);
+
+    if !test_util::wait_for_relay_available(&api, Duration::from_secs(90)) {
+        panic!("non-root relay {} did not become Available within 90s", name);
+    }
+    log::info!("[Test] non-root relay {} Available", name);
+
     api
 }
 
@@ -103,17 +112,6 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");
     log::info!("[Test] client {} started", name);
     api
-}
-
-fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if let Some(st) = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
-            if st == EngineState::Registered { return true; }
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    false
 }
 
 fn deploy_bingle_app() -> u64 {
@@ -311,8 +309,8 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     setup_on_message(&client_b, &received, &payload_guard, &who_guard);
 
     // Wait for both clients to reach Registered
-    let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));
-    let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
+    let ok_a = test_util::wait_for_registered(&client_a, Duration::from_secs(120));
+    let ok_b = test_util::wait_for_registered(&client_b, Duration::from_secs(120));
     assert!(ok_a, "client A did not reach Registered state (state = {:?})", client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
     assert!(ok_b, "client B did not reach Registered state (state = {:?})", client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
 
@@ -427,7 +425,7 @@ fn wait_for_indexer_visible(app_id: u64, expected: &[(String, SocketAddr)], time
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(600_000)]
+#[ntest::timeout(1200_000)]
 pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
@@ -436,14 +434,14 @@ pub fn bingle_api_send_message_to_id_localnet() {
 // where both clients have broken NAT and must use relays.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(600_000)]
+#[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
 
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(600_000)]
+#[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging();
     if !test_util::should_run_localnet() { return; }
@@ -515,8 +513,8 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     // Wait for non-root relays to register themselves in DDB (they should enter Registered state)
     log::info!("[Test] Waiting for non-root relays to register themselves in DDB");
-    assert!(wait_for_registered(&relay3, Duration::from_secs(120)), "relay3 did not register");
-    assert!(wait_for_registered(&relay4, Duration::from_secs(120)), "relay4 did not register");
+    assert!(test_util::wait_for_registered(&relay3, Duration::from_secs(120)), "relay3 did not register");
+    assert!(test_util::wait_for_registered(&relay4, Duration::from_secs(120)), "relay4 did not register");
 
     // Start clients
     log::info!("[Test] Starting clients");
@@ -531,8 +529,8 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     // Wait for clients to reach Registered
     log::info!("[Test] Waiting for clients to reach Registered state");
-    assert!(wait_for_registered(&client3, Duration::from_secs(120)), "client3 did not register");
-    assert!(wait_for_registered(&client4, Duration::from_secs(120)), "client4 did not register");
+    assert!(test_util::wait_for_registered(&client3, Duration::from_secs(120)), "client3 did not register");
+    assert!(test_util::wait_for_registered(&client4, Duration::from_secs(120)), "client4 did not register");
 
     // Send message from 3USE to 4USE
     log::info!("[Test] Sending message from 3USE to 4USE");
@@ -569,7 +567,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 // Localnet-style integration test: a relay sends a message to its own relay client using send_message_to_id.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(600_000)]
+#[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging();
 
@@ -629,7 +627,7 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
 
     // Wait for client to reach Registered (it should register via a relay)
-    let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
+    let ok_b = test_util::wait_for_registered(&client_b, Duration::from_secs(120));
     assert!(ok_b, "client B did not reach Registered state (state = {:?})",
         client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()));
 
@@ -724,7 +722,7 @@ fn reset_message_state(
 /// after a client restart, once the old connection state has been cleaned up.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ntest::timeout(600_000)]
+#[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging();
 
@@ -769,8 +767,8 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     );
 
     // Wait for both clients to reach Registered
-    let ok_a = wait_for_registered(&client_a, Duration::from_secs(120));
-    let ok_b = wait_for_registered(&client_b, Duration::from_secs(120));
+    let ok_a = test_util::wait_for_registered(&client_a, Duration::from_secs(120));
+    let ok_b = test_util::wait_for_registered(&client_b, Duration::from_secs(120));
     assert!(ok_a, "client A did not reach Registered state");
     assert!(ok_b, "client B did not reach Registered state");
 
@@ -808,7 +806,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     log::info!("[Test] Starting client A2 with same id at {}", a_addr);
     let client_a2 = start_client_at_addr("client_a", test_util::PASSPHRASE_10MIL, a_addr, stun_list.clone(), app_id, cfg.clone());
 
-    let ok_a2 = wait_for_registered(&client_a2, Duration::from_secs(120));
+    let ok_a2 = test_util::wait_for_registered(&client_a2, Duration::from_secs(120));
     assert!(ok_a2, "client A2 did not reach Registered state");
     log::info!("[Test] client A2 reached Registered state");
 

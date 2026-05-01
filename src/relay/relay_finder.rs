@@ -72,17 +72,17 @@ impl RelayFinder {
 
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 0) Return cached all-relays list if valid
-        if let Ok(guard) = self.all_list_cache.lock() {
-            if let Some(list) = &*guard {
-                if Instant::now() < list.expires_at {
-                    let mut result = list.relays.clone();
-                    if !include_self { result.retain(|r| r.id != my_id_norm); }
-                    result.sort_by(|a, b| a.id.cmp(&b.id));
-                    log::info!("[RelayFinder] list_all_relays: returning cached relay list: {:?}", result);
-                    return result;
-                }
-            }
-        }
+        // if let Ok(guard) = self.all_list_cache.lock() {
+        //     if let Some(list) = &*guard {
+        //         if Instant::now() < list.expires_at {
+        //             let mut result = list.relays.clone();
+        //             if !include_self { result.retain(|r| r.id != my_id_norm); }
+        //             result.sort_by(|a, b| a.id.cmp(&b.id));
+        //             log::info!("[RelayFinder] list_all_relays: returning cached relay list: {:?}", result);
+        //             return result;
+        //         }
+        //     }
+        // }
         // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
         log::info!("[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
         let _ = self.list_root_relays(my_id, true);
@@ -108,7 +108,6 @@ impl RelayFinder {
                         match cli.get_relays_from(chosen) {
                             Ok(pairs) => pairs
                                 .into_iter()
-                                .filter(|(id, _addr)| id != my_id_norm)
                                 .map(|(id, addr)| RelayInfo { id, address: addr, state: None })
                                 .collect(),
                             Err(_e) => Vec::new(),
@@ -131,25 +130,37 @@ impl RelayFinder {
                 }
             }
         }
-        // If caller requested inclusion of self but DDB list excluded it, reinsert our own relay from roots cache
-        if include_self {
+        // 4) Cache all-relays list. We ensure our own relay is included in the cached list if it was excluded by DDB.
+        {
             let has_self = relays.iter().any(|r| r.id == my_id_norm);
             if !has_self {
-                if let Ok(g) = self.root_list_cache.lock() {
-                    if let Some(roots) = &*g {
-                        if let Some(me) = roots.root_relays.iter().find(|r| r.id == my_id_norm) {
-                            relays.push(RelayInfo { id: me.id.clone(), address: me.address, state: None });
+                let mut added = false;
+                if let Some(api) = self.api.upgrade() {
+                    if api.is_relay() {
+                        if let Some(addr) = api.get_last_public_addr() {
+                            log::info!("[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
+                            relays.push(RelayInfo { id: my_id_norm.to_string(), address: addr, state: None });
+                            added = true;
+                        }
+                    }
+                }
+                if !added {
+                    if let Ok(g) = self.root_list_cache.lock() {
+                        if let Some(roots) = &*g {
+                            if let Some(me) = roots.root_relays.iter().find(|r| r.id == my_id_norm) {
+                                log::info!("[RelayFinder] list_all_relays: adding self (from roots cache) to relay list for cache: {}", me.id);
+                                relays.push(RelayInfo { id: me.id.clone(), address: me.address, state: None });
+                            }
                         }
                     }
                 }
             }
         }
-        if !include_self { relays.retain(|r| r.id != my_id_norm); }
         relays.sort_by(|a, b| a.id.cmp(&b.id));
-        // 4) Cache all-relays list
         let expires = Instant::now() + self.cache_ttl;
         if let Ok(mut g) = self.all_list_cache.lock() { *g = Some(CachedAllRelayList { relays: relays.clone(), expires_at: expires }); }
 
+        if !include_self { relays.retain(|r| r.id != my_id_norm); }
         log::info!("[RelayFinder] list_all_relays: returning relay list: {:?}", relays);
         relays
     }
@@ -229,14 +240,16 @@ impl RelayFinder {
         log::info!("[RelayFinder] list_root_relays: discovering roots");
         let mut relays = (self.discover_roots)();
         log::info!("[RelayFinder] list_root_relays: discover_roots found {} root relays", relays.len());
-        if !include_self {
-            relays.retain(|r| r.id != my_id_norm);
-        }
         relays.sort_by(|a, b| a.id.cmp(&b.id));
-        // 3) Cache root relays only
+
+        // 3) Cache FULL list of root relays (including ourselves if present in discovery)
         let expires = Instant::now() + self.cache_ttl;
         if let Ok(mut guard) = self.root_list_cache.lock() {
             *guard = Some(CachedRelayList { root_relays: relays.clone(), expires_at: expires });
+        }
+
+        if !include_self {
+            relays.retain(|r| r.id != my_id_norm);
         }
         log::info!("[RelayFinder] list_root_relays: returning root relays: {:?}", relays);
         relays

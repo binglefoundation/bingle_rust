@@ -28,6 +28,9 @@ pub fn ddb_client_lookup_returns_endpoint() {
     let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None };
 
     relay.access_unsafe_for_tests(|r| r.start(&relay_opts)).expect("relay start ok");
+    if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {
+        panic!("relay did not become Available within 30s");
+    }
     client.access_unsafe_for_tests(|c| c.start(&client_opts)).expect("client start ok");
 
     // Use a DdbClientImpl with custom discovery that points to the relay

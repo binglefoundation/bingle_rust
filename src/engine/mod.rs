@@ -840,31 +840,50 @@ impl Engine {
     }
 
     /// Send a message to all known relays (except ourselves and the message originator).
-    pub fn ripple_message(&self, message: serde_json::Value, originator_id: String) {
+    pub fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb: &dyn DdbBackend) {
         log::info!("[Engine::ripple_message] originator={}", originator_id);
-        if let Some(finder) = &self.relay_finder {
-            let my_id = match self.issuer() {
-                Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
-                Err(_) => {
-                    log::warn!("[Engine::ripple_message] issuer not set, cannot ripple");
-                    return;
-                }
-            };
-            // list_all_relays(my_id, include_self=false)
-            let relays = finder.list_all_relays(&my_id, false);
-            for r in relays {
-                if r.id == originator_id {
-                    log::debug!("[Engine::ripple_message] skipping originator {}", r.id);
+        let my_id = match self.issuer() {
+            Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
+            Err(_) => {
+                log::warn!("[Engine::ripple_message] issuer not set, cannot ripple");
+                return;
+            }
+        };
+        let (relay_ids, relay_endpoints_opt) = ddb.make_epoch_info();
+
+        // Use endpoints from make_epoch_info if available, otherwise try to look them up individually
+        if let Some(endpoints) = relay_endpoints_opt {
+            for (id, endpoint) in relay_ids.into_iter().zip(endpoints.into_iter()) {
+                if id == my_id || id == originator_id {
+                    log::debug!("[Engine::ripple_message] skipping relay {}", id);
                     continue;
                 }
-                log::info!("[Engine::ripple_message] sending to relay={} at {:?}", r.id, r.address);
-                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(r.address);
-                if let Some(api) = self.bingle_api.upgrade() {
-                    api.send_message_to_network(&nsk, &r.id, message.clone(), None);
+                if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
+                    log::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
+                    let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                    if let Some(api) = self.bingle_api.upgrade() {
+                        api.send_message_to_network(&nsk, &id, message.clone(), None);
+                    }
                 }
             }
         } else {
-            log::warn!("[Engine::ripple_message] relay_finder not initialized");
+            for id in relay_ids {
+                if id == my_id || id == originator_id {
+                    log::debug!("[Engine::ripple_message] skipping relay {}", id);
+                    continue;
+                }
+                if let Some(rec) = ddb.lookup(&id) {
+                    if let Some(endpoint) = rec.endpoint {
+                        if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
+                            log::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
+                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                            if let Some(api) = self.bingle_api.upgrade() {
+                                api.send_message_to_network(&nsk, &id, message.clone(), None);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

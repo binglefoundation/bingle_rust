@@ -3,7 +3,7 @@ use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
@@ -15,14 +15,15 @@ pub mod setup_localnet;
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-// Option B integration test: use BingleApiImpl as the entry point, but mock out
+// Integration test: use BingleApiImpl as the entry point, but mock out
 // the discovery by forcing STUN consistent on the underlying Engine. We avoid
 // a real Algorand localnet and real relays; instead, we start two relay instances
 // (static endpoints) and two client instances, then validate that the clients reach
-// EndpointAvailable with the expected public address.
+// Registered with the expected public address.
+// Note this has morphed as we register with the relays now after EndpointAvailable
 #[cfg_attr(not(target_os = "ios"), test)]
 #[serial]
-pub fn bingle_api_endpoint_identify_via_forced_stun() {
+pub fn bingle_api_register_via_forced_stun() {
     init_test_logging();
 
     fn wait_for_relays_visible(
@@ -69,7 +70,7 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
             .expect("register_endpoint");
     }
 
-    fn start_relay_and_wait_registered(
+    fn start_relay_and_wait_available(
         opts: &StartOptions,
         name: &str,
     ) -> Arc<BingleApiImpl> {
@@ -79,10 +80,26 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
             .unwrap_or_else(|e| panic!("{} start() failed: {}", name, e));
 
         let relay_wait_start = Instant::now();
+        let mut registered = false;
+        let mut available = false;
         while relay_wait_start.elapsed() < Duration::from_secs(60) {
-            let state =
-                relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
-            if matches!(state, Some(EngineState::Registered)) {
+            if !registered {
+                let state =
+                    relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
+                if matches!(state, Some(EngineState::Registered)) {
+                    registered = true;
+                    log::info!("[Test] {} registered", name);
+                }
+            }
+            if !available {
+                let st = relay.get_relay_state();
+                if st == "available" {
+                    available = true;
+                    log::info!("[Test] {} available", name);
+                }
+            }
+
+            if registered && available {
                 return relay;
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -90,7 +107,8 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
 
         let state =
             relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
-        panic!("unexpected {} state: {:?}", name, state);
+        let relay_state = relay.get_relay_state();
+        panic!("unexpected {} state: engine={:?} relay={}", name, state, relay_state);
     }
 
     // This test requires a running local Algorand localnet + indexer.
@@ -100,12 +118,10 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
         return;
     }
     // Set up two relay instances with static endpoints (127.0.0.1 with known, unused ports)
-    // let r1_port = find_unused_loopback_port();
-    // let r2_port = find_unused_loopback_port();
-    // assert_ne!(r1_port, 0);
-    // assert_ne!(r2_port, 0);
-    let r1_port = 12345;
-    let r2_port = 12346;
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    assert_ne!(r1_port, 0);
+    assert_ne!(r2_port, 0);
     let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
     let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
 
@@ -150,7 +166,7 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
     let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: Some(cfg.clone()), algo_network: None, app_id: Some(app_id), asset_id: None, log_level: None, handle_cache_expiry: None };
     let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: Some(cfg.clone()), algo_network: None, app_id: Some(app_id), asset_id: None, log_level: None, handle_cache_expiry: None };
 
-    let relay1 = start_relay_and_wait_registered(&r1_opts, "relay1");
+    let relay1 = start_relay_and_wait_available(&r1_opts, "relay1");
 
     let relay12_accounts = vec![
         test_util::ADDRESS_SPEND.to_string(),
@@ -170,7 +186,7 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
         Duration::from_secs(60),
     );
     log::info!("[Test] Relay 2 is visible via discover_root_relays");
-    let relay2 = start_relay_and_wait_registered(&r2_opts, "relay2");
+    let relay2 = start_relay_and_wait_available(&r2_opts, "relay2");
 
     // Start two local STUN servers we will use for consistency resolution
     let p1 = test_util::find_unused_loopback_port();
@@ -189,19 +205,48 @@ pub fn bingle_api_endpoint_identify_via_forced_stun() {
 
     client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&c1_opts)).expect("client1 start() failed");
 
-    // Wait up to 60 seconds for client engine to enter EndpointAvailable (allow indexer/DTLS timing)
+    // Wait up to 60 seconds for client engine to enter Registered (allow indexer/DTLS timing)
     let wait_start = Instant::now();
     while wait_start.elapsed() < Duration::from_secs(60) {
         match client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()) {
-            Some(EngineState::EndpointAvailable) => break,
+            Some(EngineState::Registered) => break,
             _ => {}
         }
         std::thread::sleep(Duration::from_millis(25));
     }
 
-    // State is expected to be EndpointAvailable - do not change this!
+    // State is expected to be Registered - do not change this!
     let s1_state = client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests());
-    assert!(matches!(s1_state, Some(EngineState::EndpointAvailable)  ), "unexpected client1 state: {:?}", s1_state);
+    assert!(matches!(s1_state, Some(EngineState::Registered)  ), "unexpected client1 state: {:?}", s1_state);
+
+    // Validate that both relays have an entry for client 1 in their DDB backend
+    let client1_id = client1.get_my_id().expect("client1 should have an ID");
+    log::info!("[Test] Validating DDB entry for client1 ({}) on both relays", client1_id);
+
+    let wait_ddb_start = Instant::now();
+    let mut r1_ok = false;
+    let mut r2_ok = false;
+    while wait_ddb_start.elapsed() < Duration::from_secs(20) {
+        if !r1_ok {
+            if relay1.with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id)).is_some() {
+                log::info!("[Test] Relay 1 has DDB entry for client 1");
+                r1_ok = true;
+            }
+        }
+        if !r2_ok {
+            if relay2.with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id)).is_some() {
+                log::info!("[Test] Relay 2 has DDB entry for client 1");
+                r2_ok = true;
+            }
+        }
+        if r1_ok && r2_ok {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    assert!(r1_ok, "Relay 1 should have a DDB entry for client 1 within timeout");
+    assert!(r2_ok, "Relay 2 should have a DDB entry for client 1 within timeout");
 
     // Stop instances and STUN servers
     relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
