@@ -10,3 +10,31 @@ pub fn removed_log_line<S: AsRef<str>>(_msg: S) {
 pub fn tee_stderr<S: AsRef<str>>(msg: S) {
     tracing::warn!("{}", msg.as_ref());
 }
+
+#[macro_export]
+macro_rules! info_theme {
+    ($theme:expr, $($arg:tt)*) => {
+        tracing::info!("[{}]{}", $theme, format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! warn_theme {
+    ($theme:expr, $($arg:tt)*) => {
+        tracing::warn!("[{}]{}", $theme, format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! error_theme {
+    ($theme:expr, $($arg:tt)*) => {
+        tracing::error!("[{}]{}", $theme, format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! debug_theme {
+    ($theme:expr, $($arg:tt)*) => {
+        tracing::debug!("[{}]{}", $theme, format_args!($($arg)*))
+    };
+}

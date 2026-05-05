@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
+use crate::themes;
+use crate::{info_theme, warn_theme};
 
 use crate::api::bingle_api::NetworkEndpoint;
 use data_encoding::BASE32_NOPAD;
@@ -68,7 +70,7 @@ impl RelayFinder {
     /// Return the list of all relays (root and non-root) using the DDB client get_relays.
     /// Requires that the root relay cache has been populated (list_root_relays called recently).
     pub fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
-        tracing::info!("[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
+        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
 
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 0) Return cached all-relays list if valid
@@ -84,9 +86,9 @@ impl RelayFinder {
         //     }
         // }
         // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
-        tracing::info!("[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
+        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
         let _ = self.list_root_relays(my_id, true);
-        tracing::info!("[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
+        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
 
         // 2) Pick preferred root relay and fetch all relays via DDB from that single root only
         let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
@@ -119,13 +121,13 @@ impl RelayFinder {
                 Vec::new()
             }
         };
-        tracing::info!("[RelayFinder] list_all_relays: relays from DDB: {:?}", relays);
+        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from DDB: {:?}", relays);
 
         // 3) Fallback: if none from DDB, use the cached root list
         if relays.is_empty() {
             if let Ok(g) = self.root_list_cache.lock() {
                 if let Some(roots) = &*g {
-                    tracing::warn!("[RelayFinder] list_all_relays: no relays from DDB, using cached root list: {:?}", roots);
+                    warn_theme!(themes::RELAY, "[RelayFinder] list_all_relays: no relays from DDB, using cached root list: {:?}", roots);
                     relays = roots.root_relays.clone();
                 }
             }
@@ -138,7 +140,7 @@ impl RelayFinder {
                 if let Some(api) = self.api.upgrade() {
                     if api.is_relay() {
                         if let Some(addr) = api.get_last_public_addr() {
-                            tracing::info!("[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
+                            info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
                             relays.push(RelayInfo { id: my_id_norm.to_string(), address: addr, state: None });
                             added = true;
                         }

@@ -1,0 +1,13 @@
+pub const BLOCKCHAIN: &str = "BLOCKCHAIN";
+pub const DTLS: &str = "DTLS";
+pub const DDB: &str = "DDB";
+pub const RELAY: &str = "RELAY";
+pub const ENGINE: &str = "ENGINE";
+pub const API: &str = "API";
+pub const NETWORK: &str = "NETWORK";
+pub const MESSAGES: &str = "MESSAGES";
+pub const PROTOCOL: &str = "PROTOCOL";
+pub const STUN: &str = "STUN";
+pub const TURN: &str = "TURN";
+pub const UTIL: &str = "UTIL";
+pub const DISTRIBUTED_MUTEX: &str = "DISTRIBUTED_MUTEX";

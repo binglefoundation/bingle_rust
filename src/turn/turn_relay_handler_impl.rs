@@ -1,4 +1,6 @@
 use crate::api::bingle_api::NetworkEndpoint;
+use crate::themes;
+use crate::{info_theme, warn_theme};
 use crate::turn::turn_handler::{TurnHandler, TurnRelayHandler, TurnMessageWithAddress, WrappedMessageWithNetworkEndpoint};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -85,10 +87,10 @@ impl TurnHandler for TurnRelayHandlerImpl {
         if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
             id2a.insert(source_id.to_string(), *source);
             a2id.insert(*source, source_id.to_string());
-            tracing::info!("[TurnRelayHandlerImpl::handle_listen] registered {} -> {}", source_id, source);
+            info_theme!(themes::TURN, "[TurnRelayHandlerImpl::handle_listen] registered {} -> {}", source_id, source);
             true
         } else {
-            tracing::info!("[TurnRelayHandlerImpl::handle_listen] lock poisoned while adding {} -> {}", source_id, source);
+            info_theme!(themes::TURN, "[TurnRelayHandlerImpl::handle_listen] lock poisoned while adding {} -> {}", source_id, source);
             false
         }
     }
@@ -99,11 +101,11 @@ impl TurnHandler for TurnRelayHandlerImpl {
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
-        tracing::info!("[TurnRelayHandlerImpl::handle_turn_incoming] {} bytes from {:?}, local_public_address={:?}", packet.len(), sender_address, local_public_address);
+        info_theme!(themes::TURN, "[TurnRelayHandlerImpl::handle_turn_incoming] {} bytes from {:?}, local_public_address={:?}", packet.len(), sender_address, local_public_address);
         let (ch, len, _pad) = match parse_channel_data_header(packet) {
             Some(v) => v,
             None => {
-                tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] failed to parse channel data header ({} bytes)", packet.len());
+                warn_theme!(themes::TURN, "[TurnRelayHandlerImpl::handle_turn_incoming] failed to parse channel data header ({} bytes)", packet.len());
                 return None;
             }
         };

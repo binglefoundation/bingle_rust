@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tracing::{info, warn};
+use crate::themes;
+use crate::{info_theme, warn_theme};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
@@ -515,16 +517,16 @@ impl BingleApi for BingleApiImpl {
         if let Ok(Some(ref user_id)) = res {
             if let Ok(mut cache) = self.handle_cache.lock() {
                 cache.insert(handle.clone(), user_id.clone(), Instant::now());
-                tracing::info!("[BingleApiImpl::handle_lookup] cache updated for handle {}: {}", handle, user_id);
+                info_theme!(themes::API, "[BingleApiImpl::handle_lookup] cache updated for handle {}: {}", handle, user_id);
             }
         }
 
-        tracing::info!("[BingleApiImpl::handle_lookup][exit] return={:?}", res);
+        info_theme!(themes::API, "[BingleApiImpl::handle_lookup][exit] return={:?}", res);
         res
     }
 
     fn send_message_to_id(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        tracing::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
+        warn_theme!(themes::API, "[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         if let Some(cb) = progress.as_ref() { cb(5, "Starting lookup".to_string()); }
         // Engine is ready
         if let Some(cb) = progress.as_ref() { cb(10, "Engine ready".to_string()); }
@@ -543,7 +545,7 @@ impl BingleApi for BingleApiImpl {
                 if let Some(nsk) = finder.lookup_root_id(user_id) {
                     if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
                     let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
-                    tracing::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
+                    info_theme!(themes::API, "[BingleApiImpl::send_message_to_id][exit] return={}", ok);
                     return ok;
                 } else {
                     if let Some(cb) = progress.as_ref() { cb(20, "Root not known; falling back to DDB".to_string()); }
@@ -558,7 +560,7 @@ impl BingleApi for BingleApiImpl {
             Ok(nsk) => {
                 if let Some(cb) = progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
                 let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
-                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
+                info_theme!(themes::API, "[BingleApiImpl::send_message_to_id][exit] return={}", ok);
                 ok
             }
             Err(err) => {

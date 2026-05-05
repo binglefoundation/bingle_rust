@@ -4,6 +4,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{NetworkEndpoint, StartOptions, UserId};
+use crate::themes;
+use crate::{info_theme, warn_theme, debug_theme};
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
@@ -232,14 +234,16 @@ impl Engine {
         let prev_str = Self::relay_state_to_str_static(prev);
         let new_str = Self::relay_state_to_str_static(new_state);
         if prev != new_state {
-            tracing::info!(
+            info_theme!(
+                themes::ENGINE,
                 "[Engine] relay_state change: {} -> {} reason={}",
                 prev_str,
                 new_str,
                 reason
             );
         } else {
-            tracing::info!(
+            info_theme!(
+                themes::ENGINE,
                 "[Engine] relay_state set to {} again reason={}",
                 new_str,
                 reason
@@ -249,7 +253,7 @@ impl Engine {
     }
 
     pub fn set_last_public_addr(&mut self, addr: Option<SocketAddr>) {
-        tracing::info!("[Engine] set_last_public_addr: {:?}", addr);
+        info_theme!(themes::ENGINE, "[Engine] set_last_public_addr: {:?}", addr);
         if let Ok(mut g) = self.last_public_addr_shared.lock() {
             *g = addr;
         } else {
@@ -270,10 +274,11 @@ impl Engine {
     /// Upsert a list of root relays into the in-memory DDB backend (as am_relay=true records).
     fn upsert_roots_into_backend(&self, roots: &[RelayInfo]) {
         if roots.is_empty() {
-            tracing::debug!("[Engine::upsert_roots_into_backend] no roots to upsert");
+            debug_theme!(themes::ENGINE, "[Engine::upsert_roots_into_backend] no roots to upsert");
             return;
         }
-        tracing::info!(
+        info_theme!(
+            themes::ENGINE,
             "[Engine::upsert_roots_into_backend] upserting {} root relay record(s)",
             roots.len()
         );
@@ -305,7 +310,7 @@ impl Engine {
             }
             tracing::info!("[Engine::upsert_roots_into_backend] upsert complete");
         } else {
-            tracing::warn!("[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert");
+            warn_theme!(themes::ENGINE, "[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert");
         }
     }
 

@@ -2,6 +2,8 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 
 pub mod openssl_impl {
     use super::*;
+    use crate::themes;
+    use crate::{info_theme, warn_theme, debug_theme};
     use crate::dtls::network_mux_trait::NetworkMux;
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]
@@ -75,7 +77,7 @@ pub mod openssl_impl {
                 };
                 match guard.read(&mut buf) {
                     Ok(0) => {
-                        tracing::info!("[DtlsOpenSsl{}][read-loop {}] EOF/peer closed", log_tag, from);
+                        info_theme!(themes::DTLS, "[DtlsOpenSsl{}][read-loop {}] EOF/peer closed", log_tag, from);
                         break;
                     }
                     Ok(n) => {
@@ -87,14 +89,14 @@ pub mod openssl_impl {
                         // Release the stream lock immediately - the channel-based queue will handle blocking
                         drop(guard);
                         if !logged_wouldblock {
-                            tracing::info!("[DtlsOpenSsl{}][read-loop {}] WouldBlock (no datagram yet)", log_tag, from);
+                            info_theme!(themes::DTLS, "[DtlsOpenSsl{}][read-loop {}] WouldBlock (no datagram yet)", log_tag, from);
                             logged_wouldblock = true;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(10));
                         continue;
                     }
                     Err(e) => {
-                        tracing::info!("[DtlsOpenSsl{}][read-loop {}] read error: {}", log_tag, from, e);
+                        info_theme!(themes::DTLS, "[DtlsOpenSsl{}][read-loop {}] read error: {}", log_tag, from, e);
                         break;
                     }
                 }
@@ -116,9 +118,9 @@ pub mod openssl_impl {
                     let ca_pem = &payload[ca_start..];
                     if let Some(h) = peer_cert_handler {
                         let ca_len = ca_pem.len();
-                        tracing::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] cert_len={} ca_len={}", log_tag, from, cert_pem.len(), ca_len);
+                        info_theme!(themes::DTLS, "[DtlsOpenSsl{}][peer_cert_handler][announce][{}] cert_len={} ca_len={}", log_tag, from, cert_pem.len(), ca_len);
                         if ca_len == 0 {
-                            tracing::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] no CA in message; rejecting per policy", log_tag, from);
+                            info_theme!(themes::DTLS, "[DtlsOpenSsl{}][peer_cert_handler][announce][{}] no CA in message; rejecting per policy", log_tag, from);
                             break;
                         }
                         match h(cert_pem, ca_pem) {
@@ -132,14 +134,14 @@ pub mod openssl_impl {
                                         m.entry(key)
                                             .and_modify(|ps| ps.issuer = s.clone())
                                             .or_insert_with(|| {
-                                                tracing::debug!("[DtlsOpenSsl{}::read_loop][peer_cert_handler] no peers entry, HandlePeerCertificate returned ok, initialize is_connecting_peer=false for {}", log_tag, from);
+                                debug_theme!(themes::DTLS, "[DtlsOpenSsl{}::read_loop][peer_cert_handler] no peers entry, HandlePeerCertificate returned ok, initialize is_connecting_peer=false for {}", log_tag, from);
                                                 PeerState { writer: None, issuer: s.clone(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false }
                                             });
                                     });
                                 }
                             }
                             _ => {
-                                tracing::info!("[DtlsOpenSsl{}][peer_cert_handler][announce][{}] validation failed (empty issuer or error)", log_tag, from);
+                                warn_theme!(themes::DTLS, "[DtlsOpenSsl{}][peer_cert_handler][announce][{}] validation failed (empty issuer or error)", log_tag, from);
                                 break;
                             }
                         }
