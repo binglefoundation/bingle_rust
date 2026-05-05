@@ -24,12 +24,12 @@ pub fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     let handler = TurnHandlerImpl::new();
     let peer = addr(5000);
 
-    let ch1 = TurnRelayHandler::handle_call(&handler, &peer, &peer);
+    let ch1 = TurnRelayHandler::handle_call(&handler, "PEER", "PEER", &peer, &peer);
     assert!(ch1 >= 0, "channel should be non-negative");
     let ch1u = ch1 as u16;
     assert!(ch1u >= 0x4000 && ch1u <= 0x7FFE, "channel in TURN range: {:#X}", ch1u);
 
-    let ch2 = TurnRelayHandler::handle_call(&handler, &peer, &peer);
+    let ch2 = TurnRelayHandler::handle_call(&handler, "PEER", "PEER", &peer, &peer);
     assert_eq!(ch1, ch2, "channel must be reused for same (source,dest)");
 }
 
@@ -40,7 +40,7 @@ pub fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     let dst = addr(6000);
     // Register listen for gating: destination (callee) must be allowed
     assert!(handler.handle_listen("DSTID3", &dst));
-    let ch = TurnRelayHandler::handle_call(&handler, &src, &dst);
+    let ch = TurnRelayHandler::handle_call(&handler, "SRCID3", "DSTID3", &src, &dst);
     assert!(ch >= 0);
 
     let payload = b"abc"; // len 3 -> padding 1 byte

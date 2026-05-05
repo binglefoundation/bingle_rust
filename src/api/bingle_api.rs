@@ -44,11 +44,13 @@ pub trait BingleApiInternal: Send + Sync {
     fn turn_lookup_addr_by_id(&self, _id: String) -> Option<SocketAddr> { None }
     /// Handle a Relay::Call by allocating or retrieving a TURN channel for the (source, dest) pair.
     /// Returns the channel number as i32 (negative on failure) to mirror TurnHandler::handle_call.
-    fn turn_handle_call(&self, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
+    fn turn_handle_call(&self, _source_id: String, _dest_id: String, _source: SocketAddr, _dest: SocketAddr) -> i32 { -1 }
     /// Handle a Relay::Listen on the relay side to register id -> source address.
     fn turn_handle_listen(&self, _id: String, _source: SocketAddr) -> bool { false }
     /// Handle a RelayCalled notification at the client side to register the channel mapping.
     fn turn_handle_called(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16) {}
+    /// Handle a Relay::CallResponse at the client/relay side to register the channel mapping.
+    fn turn_handle_call_response(&self, _source: SocketAddr, _dest: SocketAddr, _channel: u16, _relay_id: String) {}
 
     /// Notify that the node's listening state changed.
     fn notify_listening(&self, _listening: bool, _nat_type: crate::engine::NatType) {}
@@ -100,9 +102,10 @@ macro_rules! impl_bingle_api_internal_noop {
             fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> { Err("ni".into()) }
             fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
             fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> { None }
-            fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
+            fn turn_handle_call(&self, _source_id: String, _dest_id: String, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
             fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
             fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
+            fn turn_handle_call_response(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16, _relay_id: String) {}
             fn notify_listening(&self, _listening: bool, _nat_type: $crate::engine::NatType) {}
             fn get_relay_state(&self) -> String { "off".to_string() }
             fn set_relay_state(&self, _state: $crate::engine::RelayState) {}

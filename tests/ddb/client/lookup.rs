@@ -21,11 +21,11 @@ pub fn ddb_client_lookup_returns_endpoint() {
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let relay = BingleApiImpl::new(&StartOptions::default());
-    let client = BingleApiImpl::new(&StartOptions::default());
 
     let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None };
     let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None };
+    let relay = BingleApiImpl::new(&relay_opts);
+    let client = BingleApiImpl::new(&client_opts);
 
     relay.access_unsafe_for_tests(|r| r.start(&relay_opts)).expect("relay start ok");
     if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {

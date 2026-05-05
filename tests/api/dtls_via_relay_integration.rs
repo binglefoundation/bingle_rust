@@ -10,7 +10,7 @@ use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::messages::{Message, PlainTextMessage, RelayMessage};
 use rust_comms::messages::types::{RelayCall, RelayListen};
-use rust_comms::turn::turn_handler::{TurnClientHandler, TurnHandler};
+use rust_comms::turn::turn_handler::TurnHandler;
 use crate::relay::relay_states::test_util::init_test_logging;
 use crate::util::test_util::{ADDRESS_10MIL, ADDRESS_RECEIVE, ADDRESS_SPEND};
 
@@ -197,7 +197,7 @@ pub fn dtls_send_via_relay_end_to_end() {
         guard.expect("channel should be present")
     };
 
-    turn_client2.handle_call_response(&(relay_addr.clone()),
+    TurnHandler::handle_call_response(turn_client2.as_ref(), &(relay_addr.clone()),
                                       &(mux_target_arc.local_addr().expect("mux target has local addr")), channel, ADDRESS_10MIL
     );
     
@@ -237,18 +237,5 @@ impl rust_comms::api::bingle_api::BingleApi for MockApi {
 }
 
 impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
-    fn set_state(&self, _s: rust_comms::engine::EngineState) {}
-    fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
-    fn set_nat_type(&self, _n: rust_comms::engine::NatType) {}
-    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
-    fn ddb_register_ip(&self, _e: std::net::SocketAddr, _a: bool) -> Result<(), String> { Ok(()) }
-    fn ddb_register_relay(&self, _r: String, _s: Option<String>) -> Result<(), String> { Ok(()) }
-    fn update_turn_listener_relay(&self, _r: String, _a: std::net::SocketAddr) -> Result<(), String> { Ok(()) }
-    fn turn_client_handle_listen_response(&self, _a: std::net::SocketAddr, _r: String) {}
-    fn turn_lookup_addr_by_id(&self, _i: String) -> Option<std::net::SocketAddr> { None }
-    fn turn_handle_call(&self, _s: std::net::SocketAddr, _d: std::net::SocketAddr) -> i32 { -1 }
-    fn turn_handle_listen(&self, _i: String, _s: std::net::SocketAddr) -> bool { false }
-    fn turn_handle_called(&self, _s: std::net::SocketAddr, _d: std::net::SocketAddr, _c: u16) {}
-    fn notify_listening(&self, _l: bool, _nat_type: rust_comms::engine::NatType) {}
-    fn get_relay_state(&self) -> String { "off".into() }
+    fn get_relay_state(&self) -> String { "off".to_string() }
 }

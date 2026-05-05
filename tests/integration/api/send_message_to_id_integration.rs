@@ -856,3 +856,118 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     s2.stop();
 }
 
+// Localnet-style integration test: relay1 sends a message to client_a who is registered with relay2.
+// This tests cross-relay delivery which is expected to fail currently.
+#[serial(send_message_to_id)]
+#[cfg_attr(not(target_os = "ios"), test)]
+#[ntest::timeout(1_200_000)]
+pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
+    test_util::init_test_logging();
+
+    if !test_util::should_run_localnet() {
+        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
+        return;
+    }
+
+    let cfg = test_util::localnet_config();
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
+
+    // Fixed relay endpoints on loopback
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    assert_ne!(r1_port, 0);
+    assert_ne!(r2_port, 0);
+    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
+    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+
+    log::info!("[Test] relay1_addr = {}, relay2_addr = {}", relay1_addr, relay2_addr);
+
+    // Deploy app + asset
+    let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+    // Register relay2 ONLY initially
+    register_client_on_blockchain(
+        test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, "relay2",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+    let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
+    ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
+
+    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+    let ab_r2 = AlgoBingle::new(ops_relay2.clone(), app_id, 0);
+    ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+
+    // Start relay2
+    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+
+    // Start STUN servers with broken NAT so client_a must use relay
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
+
+    // Register client_a
+    let passphrase_a = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
+    let ops_a_tmp = rust_comms::algo_ops::AlgoOps::new(Some(passphrase_a.to_string()), None, Some(cfg.clone()));
+    let address_a = ops_a_tmp.address.as_deref().expect("derive client_a address from passphrase");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[address_a]).expect("fund client_a");
+    register_client_on_blockchain(
+        address_a, passphrase_a, "client_a",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+
+    // Start client_a - it should find only relay2 on blockchain
+    let client_a = start_client("client_a", passphrase_a, stun_list.clone(), app_id, cfg.clone());
+
+    // Wait for client_a to reach Registered
+    let ok_a = test_util::wait_for_registered(&client_a, Duration::from_secs(120));
+    assert!(ok_a, "client A did not reach Registered state");
+
+    log::info!("[Test] client_a reached Registered state, endpoint={}", client_a.access_unsafe_for_tests(|c| c.engine_last_public_addr_for_tests()).expect("client_a endpoint"));
+
+    // Now register and start relay1
+    register_client_on_blockchain(
+        test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, "relay1",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+    ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
+    let ab_r1 = AlgoBingle::new(creator.clone(), app_id, 0);
+    ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
+
+    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+
+    // Verify client_a is using relay2
+    let id_a = client_a.access_unsafe_for_tests(|c| c.get_my_id()).expect("client_a id");
+    let id_r2 = relay2.access_unsafe_for_tests(|c| c.get_my_id()).expect("relay2 id");
+
+    // Give it a bit of time for DDB to propagate
+    std::thread::sleep(Duration::from_secs(10));
+
+    // Check DDB lookup for client_a from relay1
+    let ep_a = relay1.access_unsafe_for_tests(|c| c.engine_ddb_lookup_for_tests(&id_a))
+        .expect("lookup client_a succeeds");
+    assert!(ep_a.is_relay(), "client_a should be registered as a relay endpoint");
+    assert_eq!(ep_a.relay_id(), Some(id_r2.as_str()), "client_a should be using relay2");
+
+    // Install OnMessage handler on client_a
+    let received = Arc::new(AtomicBool::new(false));
+    let payload_guard = Arc::new(Mutex::new(None));
+    let who_guard = Arc::new(Mutex::new(None));
+    setup_on_message(&client_a, &received, &payload_guard, &who_guard);
+
+    // relay1 sends message to client_a (id)
+    log::info!("[Test] relay1 sending message to client_a (id={}) who is on relay2 (id={})", id_a, id_r2);
+    let msg = json!({ "text": "hello from relay1 to client_a via relay2" });
+    let sent = relay1.access_unsafe_for_tests(|c| c.send_message_to_id(&id_a, msg.clone(), None));
+    assert!(sent, "send_message_to_id from relay1 should return true");
+
+    // Wait for delivery to client_a - expected to fail
+    let ok = wait_for_message(&received, Duration::from_secs(60));
+    assert!(ok, "client A did not receive the message from relay1 via relay2");
+
+    // Cleanup
+    relay1.access_unsafe_for_tests(|r| r.stop());
+    relay2.access_unsafe_for_tests(|r| r.stop());
+    client_a.access_unsafe_for_tests(|c| c.stop());
+    s1.stop();
+    s2.stop();
+}
+

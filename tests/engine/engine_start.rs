@@ -31,20 +31,7 @@ impl BingleApi for DummyApi {
 }
 
 impl rust_comms::api::bingle_api::BingleApiInternal for DummyApi {
-    fn set_state(&self, _state: rust_comms::engine::EngineState) {}
-    fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
-    fn set_nat_type(&self, _nat: rust_comms::engine::NatType) {}
-    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
-    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> { Ok(()) }
-    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
-    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> { Ok(()) }
-    fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
-    fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> { None }
-    fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
-    fn turn_handle_listen(&self, _id: String, _source: std::net::SocketAddr) -> bool { false }
-    fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
-    fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
-    fn get_relay_state(&self) -> String { "off".into() }
+    fn get_relay_state(&self) -> String { "off".to_string() }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]

@@ -17,7 +17,7 @@ pub fn relay_listen_registers_and_responds() {
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl InnerBingleApiInternal for MockInternal {
         fn turn_lookup_addr_by_id(&self, id: std::string::String) -> Option<std::net::SocketAddr> { self.turn.lookup_addr_by_id(&id) }
-        fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source, &dest) }
+        fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source_id, &dest_id, &source, &dest) }
         fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { self.turn.handle_listen(&id, &source) }
     }
     let internal = Arc::new(MockInternal { turn: turn.clone() });

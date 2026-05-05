@@ -95,6 +95,16 @@ pub trait TurnHandler {
         dest: &SocketAddr,
         packet: &[u8],
     ) -> Option<TurnMessageWithAddress>;
+
+    /**
+     * Received when we called someone and got a CallResponse back (source -> dest on channel).
+     *
+     * @param source the address of the peer we are connecting from
+     * @param dest the address of the peer we are connecting to
+     * @param channel the TURN channel allocated for this session
+     * @param relay_id the id of the relay that provided the channel
+     */
+    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str);
 }
 
 /**
@@ -102,15 +112,13 @@ pub trait TurnHandler {
  */
 pub trait TurnRelayHandler {
     /// Allocate or reuse a channel for the (source, dest) pair; returns channel or -1.
-    fn handle_call(&self, source: &SocketAddr, dest: &SocketAddr) -> i32;
+    fn handle_call(&self, source_id: &str, dest_id: &str, source: &SocketAddr, dest: &SocketAddr) -> i32;
 }
 
 /**
  * Client-side control interface: invoked when client learns about calls/channels.
  */
 pub trait TurnClientHandler {
-    /// Received when we called someone and got a CallResponse back (source -> dest on channel).
-    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str);
     /// Received when we are the recipient of a call via the relay (source -> dest on channel).
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16);
     /// Received when we get a Listen response from a relay (registers relay address and ID).
@@ -380,10 +388,34 @@ impl TurnHandler for TurnHandlerImpl {
             message: msg,
         })
     }
+
+    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
+        // Record bidirectional mapping for channel and ensure relay id/address is registered
+        if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_pair.lock(), self.pair_to_ch.lock()) {
+            c2a.insert(channel, (*source, *dest));
+            p2c.insert((*source, *dest), channel);
+            p2c.insert((*dest, *source), channel);
+        }
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
+            // Associate the relay id with the caller/source address so inbound packets from the relay are accepted
+            id2a.insert(relay_id.to_string(), *source);
+            a2id.insert(*source, relay_id.to_string());
+        }
+        log::info!(
+            "[TurnHandlerImpl::handle_call_response] set mapping ch={:#X} for {} <-> {} (relay={})",
+            channel,
+            source,
+            dest,
+            relay_id
+        );
+    }
 }
 
 impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
-    fn handle_call(&self, source: &SocketAddr, dest: &SocketAddr) -> i32 {
+    fn handle_call(&self, source_id: &str, dest_id: &str, source: &SocketAddr, dest: &SocketAddr) -> i32 {
         // If already have a channel for this (source, dest) pair, return it
         if let Ok(map) = self.pair_to_ch.lock() {
             if let Some(ch) = map.get(&(*source, *dest)).cloned() {
@@ -412,21 +444,21 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
 
             // Register source and destination addresses as allowed if not already present
             if !a2id.contains_key(source) {
-                let source_id = format!("call_{}", source);
-                id2a.insert(source_id.clone(), *source);
-                a2id.insert(*source, source_id);
+                id2a.insert(source_id.to_string(), *source);
+                a2id.insert(*source, source_id.to_string());
             }
             if !a2id.contains_key(dest) {
-                let dest_id = format!("call_{}", dest);
-                id2a.insert(dest_id.clone(), *dest);
-                a2id.insert(*dest, dest_id);
+                id2a.insert(dest_id.to_string(), *dest);
+                a2id.insert(*dest, dest_id.to_string());
             }
 
             log::info!(
-                "[TurnRelayImpl::handle_call] allocated channel {:#X} for {} -> {} and registered addresses",
+                "[TurnRelayImpl::handle_call] allocated channel {:#X} for {} ({}) -> {} ({}) and registered addresses",
                 ch,
                 source,
-                dest
+                source_id,
+                dest,
+                dest_id
             );
             ch as i32
         } else {
@@ -456,30 +488,6 @@ impl super::turn_handler::TurnClientHandler for TurnHandlerImpl {
                 relay_address
             );
         }
-    }
-
-    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
-        // Record bidirectional mapping for channel and ensure relay id/address is registered
-        if let (Ok(mut c2a), Ok(mut p2c)) = (self.ch_to_pair.lock(), self.pair_to_ch.lock()) {
-            c2a.insert(channel, (*source, *dest));
-            p2c.insert((*source, *dest), channel);
-            p2c.insert((*dest, *source), channel);
-        }
-        if let (Ok(mut id2a), Ok(mut a2id)) = (
-            self.allowed_id_to_addr.lock(),
-            self.allowed_addr_to_id.lock(),
-        ) {
-            // Associate the relay id with the caller/source address so inbound packets from the relay are accepted
-            id2a.insert(relay_id.to_string(), *source);
-            a2id.insert(*source, relay_id.to_string());
-        }
-        log::info!(
-            "[TurnHandlerImpl::handle_call_response] set mapping ch={:#X} for {} <-> {} (relay_id={})",
-            channel,
-            source,
-            dest,
-            relay_id
-        );
     }
 
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {
@@ -626,6 +634,29 @@ impl TurnHandler for TurnClientImpl {
             message: msg,
         })
     }
+
+    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
+        self.insert_mapping(source, dest, channel);
+        log::info!(
+            "[TurnClientImpl::handle_call_response] set mapping ch={:#X} for {} <-> {} (relay={})",
+            channel,
+            source,
+            dest,
+            relay_id
+        );
+        if let (Ok(mut id2a), Ok(mut a2id)) = (
+            self.allowed_id_to_addr.lock(),
+            self.allowed_addr_to_id.lock(),
+        ) {
+            id2a.insert(relay_id.to_string(), *source);
+            a2id.insert(*source, relay_id.to_string());
+            log::info!(
+                "[TurnClientImpl::handle_call_response] registered address to id {} -> {}",
+                relay_id,
+                source
+            );
+        }
+    }
 }
 
 impl super::turn_handler::TurnClientHandler for TurnClientImpl {
@@ -646,28 +677,6 @@ impl super::turn_handler::TurnClientHandler for TurnClientImpl {
                 "[TurnClientImpl::handle_listen_response] failed to register relay {} -> {} due to lock poisoning",
                 relay_id,
                 relay_address
-            );
-        }
-    }
-
-    fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
-        self.insert_mapping(source, dest, channel);
-        log::info!(
-            "[TurnClientImpl::handle_call_response] set mapping ch={:#X} for {} <-> {}",
-            channel,
-            source,
-            dest
-        );
-        if let (Ok(mut id2a), Ok(mut a2id)) = (
-            self.allowed_id_to_addr.lock(),
-            self.allowed_addr_to_id.lock(),
-        ) {
-            id2a.insert(relay_id.to_string(), *source);
-            a2id.insert(*source, relay_id.to_string());
-            log::info!(
-                "[TurnClientImpl::handle_call_response] registered address to id {} -> {}",
-                relay_id,
-                source
             );
         }
     }

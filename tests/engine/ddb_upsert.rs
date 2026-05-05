@@ -19,9 +19,6 @@ fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>,
     let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port);
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
-    let server = BingleApiImpl::new(&StartOptions::default());
-    let client = BingleApiImpl::new(&StartOptions::default());
-
     let server_opts = StartOptions {
         handle: "server".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
@@ -46,6 +43,10 @@ fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>,
         asset_id: None,
         log_level: None, handle_cache_expiry: None,
     };
+
+    let server = BingleApiImpl::new(&server_opts);
+    let client = BingleApiImpl::new(&client_opts);
+
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.start(&server_opts)).expect("server start ok");
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start ok");
     (server, client, server_addr, client_addr)

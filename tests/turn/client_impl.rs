@@ -47,7 +47,7 @@ pub fn unit_turn_client_handle_call_response_and_send() {
 
     // After we call, we receive a CallResponse indicating channel
     let ch: u16 = 0x4002;
-    TurnClientHandler::handle_call_response(&client, &src, &dst, ch, "SRCID2");
+    TurnHandler::handle_call_response(&client, &src, &dst, ch, "SRCID2");
 
     // Now we can send to dest using the established channel
     let payload = b"world";

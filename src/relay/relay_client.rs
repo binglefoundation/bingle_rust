@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::api::bingle_api::NetworkEndpoint;
-use crate::engine::BingleAccess;
+use crate::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use crate::ddb::client::DdbClient;
 use crate::messages::{Message, RelayMessage};
 use crate::messages::marshal::to_json_value;
@@ -32,6 +32,9 @@ impl RelayClient {
     /// Open a channel via the relay identified in `relay_nsk` to the provided `target_id`.
     /// Returns a NetworkEndpoint suitable for sending data via the relay (with channel and address set).
     pub fn call(&self, relay_nsk: &NetworkEndpoint, target_id: &str) -> Result<NetworkEndpoint, String> {
+        log::info!("[RelayClient::call] my_id={:?}, relay_nsk: {:?}, target_id: {}", 
+            self.api.access_unsafe_for_tests(|a| a.get_my_id()), relay_nsk, target_id);
+        
         // Validate the relay id is present
         let relay_id = relay_nsk
             .relay_id()

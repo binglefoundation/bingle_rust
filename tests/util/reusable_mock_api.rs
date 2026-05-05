@@ -323,8 +323,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.turn_lookup_addr_by_id(id)
     }
 
-    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
-        self.inner_bingle_api_internal.turn_handle_call(source, dest)
+    fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
+        self.inner_bingle_api_internal.turn_handle_call(source_id, dest_id, source, dest)
     }
 
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
@@ -413,7 +413,7 @@ pub trait InnerBingleApiInternal {
         None
     }
 
-    fn turn_handle_call(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 {
+    fn turn_handle_call(&self, _source_id: String, _dest_id: String, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 {
         -1
     }
 

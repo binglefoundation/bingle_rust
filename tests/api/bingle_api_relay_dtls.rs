@@ -7,7 +7,7 @@ use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::types::{RelayCall, RelayListen, RelayListenResponse};
 use rust_comms::messages::{Message, RelayMessage};
-use rust_comms::turn::turn_handler::{TurnClientImpl, TurnHandler};
+use rust_comms::turn::turn_handler::TurnClientImpl;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -159,7 +159,7 @@ pub fn bingle_api_send_via_relay() {
     struct MockInternal { pub turn: std::sync::Arc<rust_comms::turn::turn_handler::TurnHandlerImpl> }
     impl InnerBingleApiInternal for MockInternal {
         fn turn_lookup_addr_by_id(&self, id: std::string::String) -> Option<std::net::SocketAddr> { self.turn.lookup_addr_by_id(&id) }
-        fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source, &dest) }
+        fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { rust_comms::turn::turn_handler::TurnRelayHandler::handle_call(&*self.turn, &source_id, &dest_id, &source, &dest) }
         fn turn_handle_listen(&self, id: std::string::String, source: std::net::SocketAddr) -> bool { use rust_comms::turn::turn_handler::TurnHandler;
             self.turn.handle_listen(&id, &source)
         }
@@ -218,7 +218,7 @@ pub fn bingle_api_send_via_relay() {
 
     log::info!("Node A faking handle_call_response for relay channel");
     let turn_client_a = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_turn_client_handler_for_tests());
-    use rust_comms::turn::turn_handler::TurnClientHandler;
+    use rust_comms::turn::turn_handler::TurnHandler;
     turn_client_a.handle_call_response(&a_addr, &relay_addr, ch, "RID");
 
     // 6) Send a message via the relay using NetworkEndpoint::new_relay

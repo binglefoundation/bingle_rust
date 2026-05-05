@@ -26,7 +26,7 @@ impl BingleApiInternal for BothAsApi {
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) { self.inner.turn_client_handle_listen_response(relay_addr, relay_id) }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> { self.inner.turn_lookup_addr_by_id(id) }
-    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source, dest) }
+    fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source_id, dest_id, source, dest) }
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool { self.inner.turn_handle_listen(id, source) }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) { self.inner.turn_handle_called(source, dest, channel) }
     fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { self.inner.notify_listening(listening, nat_type) }
@@ -159,7 +159,7 @@ pub trait MessageHandler {
     }
 
     // Relay messages
-    fn on_relay_call(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCall) {
+    fn on_relay_call(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayCall) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() {
                 warn!("[handlers::on_relay_call] Not a relay: ignoring Call");
@@ -170,12 +170,13 @@ pub trait MessageHandler {
                 None => { warn!("[handlers::on_relay_call] No source address available"); return; }
             };
             // Resolve destination address by id recorded via Listen using internal API
-            let called_id_raw = _msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let called_id_raw = msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
             let dest = match api.turn_lookup_addr_by_id(called_id_raw.clone()) {
                 Some(a) => a,
                 None => { warn!("[handlers::on_relay_call] called id not registered: {}", called_id_raw); return; }
             };
-            let ch = api.turn_handle_call(src, dest);
+            let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let ch = api.turn_handle_call(source_id, called_id_raw.clone(), src, dest);
             if ch < 0 { warn!("[handlers::on_relay_call] turn_handle_call failed"); return; }
 
             // Before setting the response, notify the called node with a RelayCalled message

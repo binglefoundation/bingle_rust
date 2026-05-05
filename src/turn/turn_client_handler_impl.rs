@@ -152,17 +152,6 @@ impl TurnHandler for TurnClientHandlerImpl {
 
         Some(TurnMessageWithAddress { ip_address: *dest, message: msg })
     }
-}
-
-impl TurnClientHandler for TurnClientHandlerImpl {
-    fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
-        // Register allowed relay id/address mapping on client
-        if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
-            id2a.insert(relay_id.to_string(), *relay_address);
-            a2id.insert(*relay_address, relay_id.to_string());
-        }
-        log::info!("[TurnClientHandlerImpl] registered relay {} at {}", relay_id, relay_address);
-    }
 
     fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
         if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
@@ -177,6 +166,17 @@ impl TurnClientHandler for TurnClientHandlerImpl {
             "[TurnClientHandlerImpl] CallResponse: {} -> {} using ch {:#X} (relay_id={})",
             source, dest, channel, relay_id
         );
+    }
+}
+
+impl TurnClientHandler for TurnClientHandlerImpl {
+    fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
+        // Register allowed relay id/address mapping on client
+        if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
+            id2a.insert(relay_id.to_string(), *relay_address);
+            a2id.insert(*relay_address, relay_id.to_string());
+        }
+        log::info!("[TurnClientHandlerImpl] registered relay {} at {}", relay_id, relay_address);
     }
 
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {

@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
@@ -11,7 +10,7 @@ use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
-use crate::messages::{DefaultPrintingHandler, from_json_str};
+use crate::messages::{from_json_str, DefaultPrintingHandler};
 use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
@@ -191,8 +190,8 @@ pub struct Engine {
     ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
     // TURN handlers (split): client and relay variants
     turn_handler_client:
-        std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>,
-    turn_handler_relay: std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>,
+        Option<std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>>,
+    turn_handler_relay: Option<std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>>,
     // Application-level callback for listening state changes (set by API)
     on_listening_cb: std::sync::Arc<
         std::sync::Mutex<Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>>,
@@ -262,9 +261,9 @@ impl Engine {
     /// Return the appropriate TURN handler for current role (client vs relay)
     pub fn get_approp_turn_handler(&self) -> std::sync::Arc<dyn TurnHandler + Send + Sync> {
         if self.options.am_relay {
-            self.turn_handler_relay.clone()
+            self.turn_handler_relay.clone().expect("Relay must have turn_handler_relay")
         } else {
-            self.turn_handler_client.clone()
+            self.turn_handler_client.clone().expect("Non-relay must have turn_handler_client")
         }
     }
 
@@ -510,12 +509,12 @@ impl Engine {
             )),
             router: None,
             ddb_client: ddb,
-            turn_handler_client: std::sync::Arc::new(
+            turn_handler_client: if options.am_relay { None } else { Some(std::sync::Arc::new(
                 crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new(),
-            ),
-            turn_handler_relay: std::sync::Arc::new(
+            )) },
+            turn_handler_relay: if options.am_relay {Some(std::sync::Arc::new(
                 crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl::new(),
-            ),
+            )) } else { None},
             on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
@@ -1762,30 +1761,32 @@ impl Engine {
     pub fn turn_client_handler_for_tests(
         &self,
     ) -> std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
-        self.turn_handler_client.clone()
+        self.turn_handler_client.clone().expect("In turn_client_handler_for_tests must have turn_handler_client")
     }
     pub fn turn_relay_handler_for_tests(
         &self,
     ) -> std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
-        self.turn_handler_relay.clone()
+        self.turn_handler_relay.clone().expect("In turn_relay_handler_for_tests must have turn_handler_relay")
     }
 }
 
 impl Engine {
     /// Relay-side: register a listener relay id -> address mapping (non-test API)
     pub fn turn_relay_handle_listen(&self, relay_id: &str, relay_addr: &SocketAddr) -> bool {
-        self.turn_handler_relay.handle_listen(relay_id, relay_addr)
+        self.turn_handler_relay.clone().expect("In turn_relay_handle_listen must have turn_handler_relay").handle_listen(relay_id, relay_addr)
     }
 
     /// Relay-side: lookup address by id (non-test API)
     pub fn turn_relay_lookup_addr_by_id(&self, relay_id: &str) -> Option<SocketAddr> {
-        self.turn_handler_relay.lookup_addr_by_id(relay_id)
+        self.turn_handler_relay.clone().expect("In turn_relay_lookup_addr_by_id must have turn_handler_relay").lookup_addr_by_id(relay_id)
     }
 
     /// Relay-side: handle a Call by allocating channel (non-test API)
-    pub fn turn_relay_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32 {
+    pub fn turn_relay_handle_call(&self, source_id: &str, dest_id: &str, source: SocketAddr, dest: SocketAddr) -> i32 {
         crate::turn::turn_handler::TurnRelayHandler::handle_call(
-            &*self.turn_handler_relay,
+            &*self.turn_handler_relay.clone().expect("In turn_relay_handle_call must have turn_handler_relay"),
+            source_id,
+            dest_id,
             &source,
             &dest,
         )
@@ -1794,33 +1795,33 @@ impl Engine {
     /// Client-side: record ListenResponse mapping (non-test API)
     pub fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: &str) {
         crate::turn::turn_handler::TurnClientHandler::handle_listen_response(
-            &*self.turn_handler_client,
+            &*self.turn_handler_client.clone().expect("In turn_client_handle_listen_response must have turn_handler_client"),
             &relay_addr,
             relay_id,
         );
     }
 
-    /// Client-side: record CallResponse mapping (non-test API)
-    pub fn turn_client_handle_call_response(
+    /// Record CallResponse mapping (non-test API)
+    pub fn turn_handle_call_response(
         &self,
         source: SocketAddr,
         dest: SocketAddr,
         channel: u16,
         relay_id: &str,
     ) {
-        crate::turn::turn_handler::TurnClientHandler::handle_call_response(
-            &*self.turn_handler_client,
-            &source,
-            &dest,
-            channel,
-            relay_id,
-        );
+        use crate::turn::turn_handler::TurnHandler;
+        if let Some(h) = &self.turn_handler_client {
+            h.handle_call_response(&source, &dest, channel, relay_id);
+        }
+        if let Some(h) = &self.turn_handler_relay {
+            h.handle_call_response(&source, &dest, channel, relay_id);
+        }
     }
 
     /// Client-side: record Called mapping (non-test API)
     pub fn turn_client_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) {
         crate::turn::turn_handler::TurnClientHandler::handle_called(
-            &*self.turn_handler_client,
+            &*self.turn_handler_client.clone().expect("In turn_client_handle_called must have turn_handler_client"),
             &source,
             &dest,
             channel,

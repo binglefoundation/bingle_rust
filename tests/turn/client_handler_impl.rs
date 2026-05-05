@@ -65,7 +65,7 @@ pub fn client_incoming_from_called_relay_returns_wrapped() {
     let ch: u16 = 0x4002;
 
     // Simulate a CallResponse: establishes channel and should register allowed relay id/address mapping
-    TurnClientHandler::handle_call_response(&client, &source, &relay_dest, ch, "RELAY_B");
+    TurnHandler::handle_call_response(&client, &source, &relay_dest, ch, "RELAY_B");
 
     // Build ChannelData packet and simulate it arriving from the relay endpoint.
     // NOTE: Current implementation lacks a relay address parameter here; once available, pass relay address.
@@ -152,7 +152,7 @@ pub fn client_call_response_registers_allowed_and_channel() {
     let dest = addr(8051);
     let ch: u16 = 0x4005;
 
-    TurnClientHandler::handle_call_response(&client, &source, &dest, ch, "RELAY_C");
+    TurnHandler::handle_call_response(&client, &source, &dest, ch, "RELAY_C");
 
     // After call response, sending should succeed
     let _wrapped = client

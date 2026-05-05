@@ -105,19 +105,6 @@ pub fn test_relay_ping_handler_honors_exclusions() {
     struct MockApi;
     impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
         fn get_relay_state(&self) -> String { "off".to_string() }
-        fn set_state(&self, _s: rust_comms::engine::EngineState) {}
-        fn get_state(&self) -> rust_comms::engine::EngineState { rust_comms::engine::EngineState::StunIdentify }
-        fn set_nat_type(&self, _n: rust_comms::engine::NatType) {}
-        fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
-        fn ddb_register_ip(&self, _e: SocketAddr, _am_relay: bool) -> Result<(), String> { Err("ni".into()) }
-        fn ddb_register_relay(&self, _r: String, _s: Option<String>) -> Result<(), String> { Err("ni".into()) }
-        fn update_turn_listener_relay(&self, _r: String, _a: SocketAddr) -> Result<(), String> { Err("ni".into()) }
-        fn turn_client_handle_listen_response(&self, _a: SocketAddr, _r: String) { }
-        fn turn_lookup_addr_by_id(&self, _i: String) -> Option<SocketAddr> { None }
-        fn turn_handle_call(&self, _s: SocketAddr, _d: SocketAddr) -> i32 { -1 }
-        fn turn_handle_listen(&self, _i: String, _s: SocketAddr) -> bool { false }
-        fn turn_handle_called(&self, _s: SocketAddr, _d: SocketAddr, _c: u16) {}
-        fn notify_listening(&self, _l: bool, _nat_type: rust_comms::engine::NatType) {}
     }
     impl rust_comms::api::bingle_api::BingleApi for MockApi {
         fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }

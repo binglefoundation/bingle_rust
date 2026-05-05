@@ -69,7 +69,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), String> { self.api.access(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
     fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { self.api.access(|a| a.turn_client_handle_listen_response(relay_addr, relay_id)) }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr> { self.api.access(|a| a.turn_lookup_addr_by_id(id)) }
-    fn turn_handle_call(&self, source: SocketAddr, dest: SocketAddr) -> i32 { self.api.access(|a| a.turn_handle_call(source, dest)) }
+    fn turn_handle_call(&self, source_id: String, dest_id: String, source: SocketAddr, dest: SocketAddr) -> i32 { self.api.access(|a| a.turn_handle_call(source_id, dest_id, source, dest)) }
     fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { self.api.access(|a| a.turn_handle_listen(id, source)) }
     fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { self.api.access(|a| a.turn_handle_called(source, dest, channel)) }
     fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { self.api.access(|a| a.notify_listening(listening, nat_type)) }

@@ -9,7 +9,7 @@ pub fn unit_turn_incoming_rejected_without_listen_and_call() {
     let src = addr(7001);
     let dst = addr(7000);
     // Allocate a channel for (src,dst)
-    let ch = TurnRelayHandler::handle_call(&handler, &src, &dst);
+    let ch = TurnRelayHandler::handle_call(&handler, "SRCID", "DSTID", &src, &dst);
     assert!(ch >= 0);
     // Build a small payload and wrap
     let payload = b"xyz";
@@ -30,7 +30,7 @@ pub fn unit_turn_incoming_accepted_after_listen() {
     let ok = handler.handle_listen("DSTID", &dst);
     assert!(ok);
     // Allocate a channel for (src,dst)
-    let ch = TurnRelayHandler::handle_call(&handler, &src, &dst);
+    let ch = TurnRelayHandler::handle_call(&handler, "SRCID", "DSTID", &src, &dst);
     assert!(ch >= 0);
     // Wrap a payload
     let payload = b"abcd"; // len 4, no padding

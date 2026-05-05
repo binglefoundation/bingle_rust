@@ -134,15 +134,19 @@ impl BingleApiImpl {
 
     /// Test-oriented constructor to inject a custom DTLS implementation.
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Self> {
-        log::info!("[BingleApiImpl::new_with_dtls][enter] dtls_provided=true");
-        let initial_options = StartOptions::default();
+        Self::new_with_dtls_and_options(dtls, StartOptions::default())
+    }
+
+    /// Test-oriented constructor to inject custom DTLS and options.
+    pub fn new_with_dtls_and_options(dtls: Box<dyn Dtls + Send + Sync>, options: StartOptions) -> Arc<Self> {
+        log::info!("[BingleApiImpl::new_with_dtls_and_options][enter] dtls_provided=true am_relay={}", options.am_relay);
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
-            let engine = Arc::new(Engine::new_with_dtls(&initial_options, me_both.clone(), dtls));
+            let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
             Self {
                 on_message: None,
                 on_connect: None,
-                started_options: initial_options,
+                started_options: options,
                 shared_on_message: Arc::new(Mutex::new(None)),
                 on_listening: None,
                 engine,
@@ -641,7 +645,7 @@ impl BingleApi for BingleApiImpl {
                             // Register TURN client mapping upon successful CallResponse
                             if let (Some(channel), Some(relay_addr)) = (effective_nsk.relay_channel(), effective_nsk.relay_address()) {
                                 let source_addr = effective_nsk.inet_socket_address().unwrap_or(relay_addr);
-                                self.engine.access(|e| e.turn_client_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()")));
+                                self.engine.access(|e| e.turn_handle_call_response(source_addr, relay_addr, channel, effective_nsk.relay_id().expect("relay_id() should be set by RelayClient::call()")));
                             }
 
                             if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
@@ -911,11 +915,14 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         // Forward to the engine's TURN handler client-side interface (non-test API)
         self.engine.access(|e| e.turn_client_handle_called(source, dest, channel));
     }
+    fn turn_handle_call_response(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16, relay_id: String) {
+        self.engine.access(|e| e.turn_handle_call_response(source, dest, channel, &relay_id));
+    }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
         self.engine.access(|e| e.turn_relay_lookup_addr_by_id(&id))
     }
-    fn turn_handle_call(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
-        self.engine.access(|e| e.turn_relay_handle_call(source, dest))
+    fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
+        self.engine.access(|e| e.turn_relay_handle_call(&source_id, &dest_id, source, dest))
     }
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
         self.engine.access(|e| e.turn_relay_handle_listen(&id, &source))

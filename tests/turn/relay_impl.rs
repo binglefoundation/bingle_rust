@@ -57,7 +57,7 @@ pub fn relay_handle_call_sets_mappings_and_incoming_both_directions() {
     let relay_public = addr(47000);
 
     // Allocate a channel for (source -> dest); this should also register both addresses as allowed
-    let ch_i32 = TurnRelayHandler::handle_call(&handler, &source, &dest);
+    let ch_i32 = TurnRelayHandler::handle_call(&handler, "SRCID", "DSTID", &source, &dest);
     assert!(ch_i32 >= 0, "channel should be allocated");
     let ch = ch_i32 as u16;
 

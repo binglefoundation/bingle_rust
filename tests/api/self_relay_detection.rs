@@ -87,7 +87,9 @@ pub fn self_relay_converts_to_direct_send() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn self_relay_no_relay_address_returns_false() {
     let (mock, sent_vec) = MockDtls::new();
-    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let mut options = rust_comms::api::bingle_api::StartOptions::default();
+    options.am_relay = true;
+    let api = BingleApiImpl::new_with_dtls_and_options(Box::new(mock), options);
 
     let my_id = test_util::ADDRESS_SPEND;
     let issuer = format!("{}.", my_id);
