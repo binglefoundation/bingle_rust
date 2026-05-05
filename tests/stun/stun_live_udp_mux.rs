@@ -93,7 +93,7 @@ fn live_stun_endpoint_finder_with_udp_mux() {
                     break true;
                 } else {
                     // INCONSISTENT may occur on some networks; accept it as success for live test
-                    log::info!("Stun state {:?}: {:?}", st, ep);
+                    tracing::info!("Stun state {:?}: {:?}", st, ep);
                     break true;
                 }
             }

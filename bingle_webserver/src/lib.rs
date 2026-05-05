@@ -52,9 +52,9 @@ pub fn try_start_api(state: &AppState) {
                     let api_clone = state.api.clone();
                     api_clone.access_unsafe_for_tests(|api_mut| {
                         if let Err(e) = api_mut.start(&opts_clone) {
-                            log::error!("Failed to start Bingle API: {}", e);
+                            tracing::error!("Failed to start Bingle API: {}", e);
                         } else {
-                            log::info!("Bingle API started (keypair is ACTIVE)");
+                            tracing::info!("Bingle API started (keypair is ACTIVE)");
                         }
                     });
                     *started = true;
@@ -101,8 +101,8 @@ pub fn create_router(state: AppState) -> Router {
 pub async fn start_server(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    log::info!("Listening on {}", addr);
-    log::info!("Started. Press Ctrl-C to stop.");
+    tracing::info!("Listening on {}", addr);
+    tracing::info!("Started. Press Ctrl-C to stop.");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -132,5 +132,5 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 
-    log::info!("Shutdown signal received.");
+    tracing::info!("Shutdown signal received.");
 }

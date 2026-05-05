@@ -220,12 +220,12 @@ impl BingleJsiApiImpl {
         // Install the callback log bridge (no-op if already installed by a prior init call)
         let log_level = opts.log_level.as_deref().unwrap_or("info");
         let level_filter = match log_level.to_ascii_lowercase().as_str() {
-            "trace" => log::LevelFilter::Trace,
-            "debug" => log::LevelFilter::Debug,
-            "info" => log::LevelFilter::Info,
-            "warn" | "warning" => log::LevelFilter::Warn,
-            "error" => log::LevelFilter::Error,
-            _ => log::LevelFilter::Info,
+            "trace" => tracing_subscriber::filter::LevelFilter::TRACE,
+            "debug" => tracing_subscriber::filter::LevelFilter::DEBUG,
+            "info" => tracing_subscriber::filter::LevelFilter::INFO,
+            "warn" | "warning" => tracing_subscriber::filter::LevelFilter::WARN,
+            "error" => tracing_subscriber::filter::LevelFilter::ERROR,
+            _ => tracing_subscriber::filter::LevelFilter::INFO,
         };
         crate::api::log_bridge::install_log_bridge(level_filter);
 
@@ -244,7 +244,7 @@ impl BingleJsiApiImpl {
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists() {
                 if let Err(e) = impl_api.load(path.to_string_lossy().as_ref()) {
-                    log::warn!("Failed to load local state from {}: {}", path.display(), e);
+                    tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
                 }
             }
             local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
@@ -265,7 +265,7 @@ impl BingleJsiApiImpl {
                         } else {
                             "Unknown".to_string()
                         };
-                        log::info!("on_listening: listening={} nat_type={}", listening, type_str);
+                        tracing::info!("on_listening: listening={} nat_type={}", listening, type_str);
                         if let Ok(mut guard) = nat_type_for_closure.lock() {
                             *guard = type_str.clone();
                         }
@@ -293,11 +293,11 @@ impl BingleJsiApiImpl {
             api.access_unsafe_for_tests(|api_mut| {
                 let on_message: Arc<rust_comms::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
-                        log::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
+                        tracing::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
                         // Invoke user callback if registered
                         if let Ok(guard) = cb.lock() {
                             if let Some(ref callback) = *guard {
-                                log::info!("[BingleJsiApiImpl][init handler] Invoking user callback for message from {}", sender_handle);
+                                tracing::info!("[BingleJsiApiImpl][init handler] Invoking user callback for message from {}", sender_handle);
                                 let bingle_msg = json_to_message(&message);
                                 callback.on_message(
                                     sender.clone(),
@@ -306,11 +306,11 @@ impl BingleJsiApiImpl {
                                 );
                             }
                             else {
-                                log::info!("[BingleJsiApiImpl][init handler] No user callback registered");
+                                tracing::info!("[BingleJsiApiImpl][init handler] No user callback registered");
                             }
                         }
                         else {
-                            log::warn!("[BingleJsiApiImpl][init handler] Could not lock callback");
+                            tracing::warn!("[BingleJsiApiImpl][init handler] Could not lock callback");
                         }
 
                         let text = message
@@ -330,7 +330,7 @@ impl BingleJsiApiImpl {
                                 let recipient = match api_for_handle.get_handle() {
                                     Some(h) => h,
                                     None => {
-                                        log::error!("[on_message] get_handle returned None");
+                                        tracing::error!("[on_message] get_handle returned None");
                                         return;
                                     }
                                 };
@@ -340,7 +340,7 @@ impl BingleJsiApiImpl {
                                     timestamp,
                                     text,
                                 ) {
-                                    log::warn!("[on_message] failed to add message: {}", e);
+                                    tracing::warn!("[on_message] failed to add message: {}", e);
                                 }
                                 if let Some(path) = &local_file_for_closure {
                                     let _ = guard.save(path.to_string_lossy().as_ref());
@@ -369,13 +369,13 @@ impl BingleJsiApiImpl {
                             }
                             api_clone.access_unsafe_for_tests(|api_mut| {
                                 if let Err(e) = api_mut.start(&opts_clone) {
-                                    log::error!("Failed to start Bingle API: {}", e);
+                                    tracing::error!("Failed to start Bingle API: {}", e);
                                 }
                             });
                             api_started = true;
-                            log::info!("Bingle API started (keypair is ACTIVE)");
+                            tracing::info!("Bingle API started (keypair is ACTIVE)");
                         } else {
-                            log::info!(
+                            tracing::info!(
                                 "Bingle API start deferred (keypair status: {})",
                                 status.status
                             );
@@ -388,14 +388,14 @@ impl BingleJsiApiImpl {
             let opts_clone = opts.clone();
             api_clone.access_unsafe_for_tests(|api_mut| {
                 if let Err(e) = api_mut.start(&opts_clone) {
-                    log::error!("Failed to start Bingle API: {}", e);
+                    tracing::error!("Failed to start Bingle API: {}", e);
                 }
             });
             api_started = true;
         }
 
         if !api_started {
-            log::info!("Bingle API not yet started; waiting for keypair to become ACTIVE");
+            tracing::info!("Bingle API not yet started; waiting for keypair to become ACTIVE");
         }
 
         Ok(Arc::new(Self {
@@ -680,10 +680,10 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn set_message_callback(&self, callback: Box<dyn MessageCallback>) {
         if let Ok(mut guard) = self.message_callback.lock() {
             *guard = Some(callback);
-            log::info!("[BingleJsiApiImpl][set_message_callback] Registered message callback");
+            tracing::info!("[BingleJsiApiImpl][set_message_callback] Registered message callback");
         }
         else {
-            log::error!("Failed to lock message_callback");
+            tracing::error!("Failed to lock message_callback");
         }
     }
 
@@ -694,9 +694,9 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn set_listening_callback(&self, callback: Box<dyn ListeningCallback>) {
         if let Ok(mut guard) = self.listening_callback.lock() {
             *guard = Some(callback);
-            log::info!("[BingleJsiApiImpl][set_listening_callback] Registered listening callback");
+            tracing::info!("[BingleJsiApiImpl][set_listening_callback] Registered listening callback");
         } else {
-            log::error!("Failed to lock listening_callback");
+            tracing::error!("Failed to lock listening_callback");
         }
     }
 
@@ -744,7 +744,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let api_clone = self.api.clone();
         api_clone.access_unsafe_for_tests(|api_mut| {
             if let Err(e) = api_mut.start(&opts_clone) {
-                log::error!("Failed to start Bingle API: {}", e);
+                tracing::error!("Failed to start Bingle API: {}", e);
             }
         });
 
@@ -752,7 +752,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         if let Ok(mut started_guard) = self.started.lock() {
             *started_guard = true;
         }
-        log::info!("Bingle engine started");
+        tracing::info!("Bingle engine started");
         Ok(())
     }
 

@@ -64,12 +64,12 @@ pub fn dtls_send_via_relay_end_to_end() {
                 // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
                 if let Some(udp) = source.as_any().downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>() {
                     udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                    log::info!("[handle turn target] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
+                    tracing::info!("[handle turn target] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
                 } else {
-                    log::warn!("[handle turn target] source is not UdpNetworkMux; cannot reprocess");
+                    tracing::warn!("[handle turn target] source is not UdpNetworkMux; cannot reprocess");
                 }
             } else {
-                log::debug!("[handle_turn target] handle_turn_incoming returned None (ignored)");
+                tracing::debug!("[handle_turn target] handle_turn_incoming returned None (ignored)");
             }
         });
         mux_target.set_handle_turn(Some(&th));
@@ -127,12 +127,12 @@ pub fn dtls_send_via_relay_end_to_end() {
             // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
             if let Some(udp) = source.as_any().downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>() {
                 udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                log::info!("[handle turn client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
+                tracing::info!("[handle turn client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
             } else {
-                log::warn!("[handle turn client] source is not UdpNetworkMux; cannot reprocess");
+                tracing::warn!("[handle turn client] source is not UdpNetworkMux; cannot reprocess");
             }
         } else {
-            log::debug!("[handle_turn client] handle_turn_incoming returned None (ignored)");
+            tracing::debug!("[handle_turn client] handle_turn_incoming returned None (ignored)");
         }
     });
         mux_client.set_handle_turn(Some(&th));
@@ -153,19 +153,19 @@ pub fn dtls_send_via_relay_end_to_end() {
         // App-layer verification keeps things simple for tests using custom PKI
         .with_app_layer_only_verification(true)
         .with_handle_message(Arc::new(move |_server, _from, issuer, data| {
-            log::info!("dtls_client received: {:?} on ${issuer}", data);
+            tracing::info!("dtls_client received: {:?} on ${issuer}", data);
             if let Ok(message) = serde_json::from_slice::<Message>(data) {
-                log::info!("Parsed message: {:?}", message);
+                tracing::info!("Parsed message: {:?}", message);
                 if let Message::Relay(RelayMessage::RelayResponse(relay_response)) = message {
                     if let Some(channel) = relay_response.channel {
                         if let Ok(mut guard) = captured_channel_clone.lock() {
                             *guard = Some(channel);
-                            log::info!("Captured channel: {}", channel);
+                            tracing::info!("Captured channel: {}", channel);
                         }
                     }
                 }
             } else {
-                log::warn!("Failed to parse message from JSON bytes");
+                tracing::warn!("Failed to parse message from JSON bytes");
             }
         }));
 

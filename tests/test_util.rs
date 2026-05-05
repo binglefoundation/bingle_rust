@@ -4,7 +4,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::env;
 use std::sync::{Arc, Once};
-use log::LevelFilter;
+use tracing_subscriber::filter::LevelFilter;
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -120,15 +120,15 @@ pub fn print_cwd_for_debug() {
 pub fn init_test_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let level = LevelFilter::Debug;
-        let _ = env_logger::Builder::new()
-            .filter_level(level)
-            .format_timestamp_millis()
+        let level = LevelFilter::DEBUG;
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_test_writer()
             .try_init();
         // Panic hook that logs at error! and then defers to default behavior
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |pi| {
-            log::error!("PANIC: {}", pi);
+            tracing::error!("PANIC: {}", pi);
             default_hook(pi);
         }));
     });

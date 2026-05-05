@@ -1,5 +1,9 @@
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing_subscriber::Layer;
+use tracing::Subscriber;
+use tracing_subscriber::registry::LookupSpan;
+use tracing::field::Visit;
 
 use crate::api::callback::LogCallback;
 
@@ -17,44 +21,57 @@ pub fn set_global_log_callback(callback: Box<dyn LogCallback>) {
     }
 }
 
-/// Custom logger that forwards to the registered LogCallback.
-struct CallbackLogger;
+struct MessageVisitor {
+    message: String,
+}
 
-impl log::Log for CallbackLogger {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        true
+impl Visit for MessageVisitor {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            self.message = format!("{:?}", value);
+        }
     }
 
-    fn log(&self, record: &log::Record) {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "message" {
+            self.message = value.to_string();
+        }
+    }
+}
+
+/// Custom layer that forwards to the registered LogCallback.
+struct CallbackLayer;
+
+impl<S> Layer<S> for CallbackLayer 
+where 
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
         if let Ok(guard) = global_callback().lock() {
             if let Some(ref cb) = *guard {
                 let timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0);
-                let level = record.level().to_string();
-                let message = format!("{}", record.args());
-                cb.on_log(timestamp, level, message);
+                
+                let level = event.metadata().level().to_string();
+                let mut visitor = MessageVisitor { message: String::new() };
+                event.record(&mut visitor);
+                
+                cb.on_log(timestamp, level, visitor.message);
             }
         }
     }
-
-    fn flush(&self) {}
 }
 
-/// Install the callback logger as the global `log` logger.
-///
-/// Must be called at most once (subsequent calls are no-ops because
-/// `log::set_logger` fails if a logger is already installed).
-/// Returns `true` if successfully installed.
-pub fn install_log_bridge(level: log::LevelFilter) -> bool {
-    // Ensure the global callback storage is initialized
+/// Install the callback layer as a global subscriber.
+pub fn install_log_bridge(level: tracing_subscriber::filter::LevelFilter) -> bool {
+    use tracing_subscriber::prelude::*;
     let _ = global_callback();
-    static LOGGER: CallbackLogger = CallbackLogger;
-    if log::set_logger(&LOGGER).is_ok() {
-        log::set_max_level(level);
-        true
-    } else {
-        false
-    }
+    let layer = CallbackLayer;
+    let subscriber = tracing_subscriber::registry()
+        .with(layer)
+        .with(level);
+    
+    tracing::subscriber::set_global_default(subscriber).is_ok()
 }

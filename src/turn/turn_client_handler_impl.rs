@@ -66,7 +66,7 @@ impl Default for TurnClientHandlerImpl { fn default() -> Self { Self::new() } }
 
 impl TurnHandler for TurnClientHandlerImpl {
     fn handle_listen(&self, _source_id: &str, _source: &SocketAddr) -> bool {
-        log::error!("[TurnClientHandlerImpl::handle_listen] unexpected relay command listen on client; ignoring");
+        tracing::error!("[TurnClientHandlerImpl::handle_listen] unexpected relay command listen on client; ignoring");
         false
     }
 
@@ -76,11 +76,11 @@ impl TurnHandler for TurnClientHandlerImpl {
         _local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
-        log::info!("[TurnClientHandlerImpl::handle_turn_incoming] received TURN packet from {:?} with {} bytes", sender_address, packet.len());
+        tracing::info!("[TurnClientHandlerImpl::handle_turn_incoming] received TURN packet from {:?} with {} bytes", sender_address, packet.len());
         let (ch, len, _pad) = match parse_channel_data_header(packet) {
             Some(header) => header,
             None => {
-                log::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to parse TURN channel data header from {} byte packet", packet.len());
+                tracing::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to parse TURN channel data header from {} byte packet", packet.len());
                 return None;
             }
         };
@@ -88,7 +88,7 @@ impl TurnHandler for TurnClientHandlerImpl {
         let payload = match packet.get(4..4 + len) {
             Some(slice) => slice.to_vec(),
             None => {
-                log::error!("[TurnClientHandlerImpl::handle_turn_incoming] packet too short for payload: expected {} bytes at offset 4", len);
+                tracing::error!("[TurnClientHandlerImpl::handle_turn_incoming] packet too short for payload: expected {} bytes at offset 4", len);
                 return None;
             }
         };
@@ -99,7 +99,7 @@ impl TurnHandler for TurnClientHandlerImpl {
                 Ok(map) => {
                     if let Some(relay_id) = map.get(relay_addr).cloned() {
                         let network_endpoint = NetworkEndpoint::new_relay(relay_id, Some(*relay_addr), Some(ch));
-                        log::info!(
+                        tracing::info!(
                             "[TurnClientHandlerImpl::handle_turn_incoming] from registered relay {}; wrapping as {} (ch {:#X}, {} bytes)",
                             relay_addr,
                             network_endpoint,
@@ -109,18 +109,18 @@ impl TurnHandler for TurnClientHandlerImpl {
                         return Some(WrappedMessageWithNetworkEndpoint { ip_address: *relay_addr, message: payload, network_endpoint });
                     }
                     else {
-                        log::warn!("[TurnClientHandlerImpl::handle_turn_incoming] packet from unknown relay {:?}; dropping", relay_addr);
+                        tracing::warn!("[TurnClientHandlerImpl::handle_turn_incoming] packet from unknown relay {:?}; dropping", relay_addr);
                         return None;
                     }
                 }
                 Err(_) => {
-                    log::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to lock allowed_addr_to_id");
+                    tracing::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to lock allowed_addr_to_id");
                     return None;
                 }
             }
         }
         else {
-            log::warn!("[TurnClientHandlerImpl::handle_turn_incoming] no sender address for incoming packet; dropping");
+            tracing::warn!("[TurnClientHandlerImpl::handle_turn_incoming] no sender address for incoming packet; dropping");
             return None;
         }
     }
@@ -131,13 +131,13 @@ impl TurnHandler for TurnClientHandlerImpl {
                 match map.get(&(*source, *dest)).cloned() {
                     Some(channel) => channel,
                     None => {
-                        log::error!("[TurnClientHandlerImpl::send_turn_outgoing] no channel mapping found for {} -> {}", source, dest);
+                        tracing::error!("[TurnClientHandlerImpl::send_turn_outgoing] no channel mapping found for {} -> {}", source, dest);
                         return None;
                     }
                 }
             }
             Err(_) => {
-                log::error!("[TurnClientHandlerImpl::send_turn_outgoing] failed to lock pair_to_ch");
+                tracing::error!("[TurnClientHandlerImpl::send_turn_outgoing] failed to lock pair_to_ch");
                 return None;
             }
         };
@@ -145,7 +145,7 @@ impl TurnHandler for TurnClientHandlerImpl {
         let msg = match build_channel_data(ch, packet) {
             Some(data) => data,
             None => {
-                log::error!("[TurnClientHandlerImpl::send_turn_outgoing] failed to build channel data for channel {:#X}", ch);
+                tracing::error!("[TurnClientHandlerImpl::send_turn_outgoing] failed to build channel data for channel {:#X}", ch);
                 return None;
             }
         };
@@ -162,7 +162,7 @@ impl TurnHandler for TurnClientHandlerImpl {
             a2id.insert(*dest, relay_id.to_string());
         }
         self.insert_mapping(source, dest, channel);
-        log::info!(
+        tracing::info!(
             "[TurnClientHandlerImpl] CallResponse: {} -> {} using ch {:#X} (relay_id={})",
             source, dest, channel, relay_id
         );
@@ -176,7 +176,7 @@ impl TurnClientHandler for TurnClientHandlerImpl {
             id2a.insert(relay_id.to_string(), *relay_address);
             a2id.insert(*relay_address, relay_id.to_string());
         }
-        log::info!("[TurnClientHandlerImpl] registered relay {} at {}", relay_id, relay_address);
+        tracing::info!("[TurnClientHandlerImpl] registered relay {} at {}", relay_id, relay_address);
     }
 
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {
@@ -184,19 +184,19 @@ impl TurnClientHandler for TurnClientHandlerImpl {
         // if let Ok(map) = self.allowed_id_to_addr.lock() {
         //     let source_allowed = map.values().any(|addr| addr == source);
         //     if !source_allowed {
-        //         log::error!(
+        //         tracing::error!(
         //             "[TurnClientHandlerImpl::handle_called] destination {} not in allowed addresses; ignoring Called message",
         //             dest
         //         );
         //         return;
         //     }
         // } else {
-        //     log::error!("[TurnClientHandlerImpl::handle_called] failed to lock allowed_id_to_addr");
+        //     tracing::error!("[TurnClientHandlerImpl::handle_called] failed to lock allowed_id_to_addr");
         //     return;
         // }
 
         self.insert_mapping(source, dest, channel);
-        log::info!(
+        tracing::info!(
             "[TurnClientHandlerImpl] Called: {} -> {} using ch {:#X}",
             source, dest, channel
         );

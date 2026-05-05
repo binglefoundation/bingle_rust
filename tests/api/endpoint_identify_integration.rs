@@ -32,12 +32,12 @@ pub fn bingle_api_register_via_forced_stun() {
         accounts: &[String],
         timeout: Duration,
     ) {
-        log::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
+        tracing::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
         let start = Instant::now();
         while start.elapsed() < timeout {
             if let Ok(found) = ab.discover_root_relays(app_id, accounts) {
                 if found.len() == accounts.len() {
-                    log::info!(
+                    tracing::info!(
                         "[Test] All {} relays visible via discover_root_relays after {:?}",
                         accounts.len(),
                         start.elapsed()
@@ -88,14 +88,14 @@ pub fn bingle_api_register_via_forced_stun() {
                     relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
                 if matches!(state, Some(EngineState::Registered)) {
                     registered = true;
-                    log::info!("[Test] {} registered", name);
+                    tracing::info!("[Test] {} registered", name);
                 }
             }
             if !available {
                 let st = relay.get_relay_state();
                 if st == "available" {
                     available = true;
-                    log::info!("[Test] {} available", name);
+                    tracing::info!("[Test] {} available", name);
                 }
             }
 
@@ -126,8 +126,8 @@ pub fn bingle_api_register_via_forced_stun() {
     let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
 
     // Print relay addresses for debugging
-    log::info!("[Test] relay1_addr = {}", relay1_addr);
-    log::info!("[Test] relay2_addr = {}", relay2_addr);
+    tracing::info!("[Test] relay1_addr = {}", relay1_addr);
+    tracing::info!("[Test] relay2_addr = {}", relay2_addr);
 
     let cfg = test_util::localnet_config();
     // Ensure relay accounts are funded
@@ -159,7 +159,7 @@ pub fn bingle_api_register_via_forced_stun() {
         Duration::from_secs(60),
     );
 
-    log::info!("[Test] Relay 1 is visible via discover_root_relays");
+    tracing::info!("[Test] Relay 1 is visible via discover_root_relays");
 
     let cfg = test_util::localnet_config();
 
@@ -185,7 +185,7 @@ pub fn bingle_api_register_via_forced_stun() {
         &relay12_accounts,
         Duration::from_secs(60),
     );
-    log::info!("[Test] Relay 2 is visible via discover_root_relays");
+    tracing::info!("[Test] Relay 2 is visible via discover_root_relays");
     let relay2 = start_relay_and_wait_available(&r2_opts, "relay2");
 
     // Start two local STUN servers we will use for consistency resolution
@@ -221,7 +221,7 @@ pub fn bingle_api_register_via_forced_stun() {
 
     // Validate that both relays have an entry for client 1 in their DDB backend
     let client1_id = client1.get_my_id().expect("client1 should have an ID");
-    log::info!("[Test] Validating DDB entry for client1 ({}) on both relays", client1_id);
+    tracing::info!("[Test] Validating DDB entry for client1 ({}) on both relays", client1_id);
 
     let wait_ddb_start = Instant::now();
     let mut r1_ok = false;
@@ -229,13 +229,13 @@ pub fn bingle_api_register_via_forced_stun() {
     while wait_ddb_start.elapsed() < Duration::from_secs(20) {
         if !r1_ok {
             if relay1.with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id)).is_some() {
-                log::info!("[Test] Relay 1 has DDB entry for client 1");
+                tracing::info!("[Test] Relay 1 has DDB entry for client 1");
                 r1_ok = true;
             }
         }
         if !r2_ok {
             if relay2.with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id)).is_some() {
-                log::info!("[Test] Relay 2 has DDB entry for client 1");
+                tracing::info!("[Test] Relay 2 has DDB entry for client 1");
                 r2_ok = true;
             }
         }

@@ -32,7 +32,7 @@ impl RelayClient {
     /// Open a channel via the relay identified in `relay_nsk` to the provided `target_id`.
     /// Returns a NetworkEndpoint suitable for sending data via the relay (with channel and address set).
     pub fn call(&self, relay_nsk: &NetworkEndpoint, target_id: &str) -> Result<NetworkEndpoint, String> {
-        log::info!("[RelayClient::call] my_id={:?}, relay_nsk: {:?}, target_id: {}", 
+        tracing::info!("[RelayClient::call] my_id={:?}, relay_nsk: {:?}, target_id: {}", 
             self.api.access_unsafe_for_tests(|a| a.get_my_id()), relay_nsk, target_id);
         
         // Validate the relay id is present

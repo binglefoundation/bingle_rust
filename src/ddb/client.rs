@@ -54,11 +54,11 @@ impl DdbClientImpl {
     }
 
     fn find_relay(&self) -> Result<RelayInfo, String> {
-        log::info!("[DdbClientImpl::find_relay] create RelayFinder");
+        tracing::info!("[DdbClientImpl::find_relay] create RelayFinder");
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
-        log::info!("[DdbClientImpl::find_relay] get_my_id");
+        tracing::info!("[DdbClientImpl::find_relay] get_my_id");
         let my_id = self.api.access(|a| a.get_my_id()).ok_or_else(|| "get_my_id returned None".to_string())?;
-        log::info!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
+        tracing::info!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
         finder.find_relay(&my_id)
     }
 
@@ -74,12 +74,12 @@ impl DdbClientImpl {
     /// Send a single getEpoch request to the specified relay and parse the relay list.
     /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
     pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, String> {
-        log::info!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
+        tracing::info!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
         let nsk = NetworkEndpoint::new_direct(relay.address);
         let relay_user = match Self::relay_user_id(&relay.id) {
             Ok(u) => u,
             Err(e) => {
-                log::error!("[DdbClientImpl::get_relays_from] relay_user_id failed: {}", e);
+                tracing::error!("[DdbClientImpl::get_relays_from] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
@@ -88,7 +88,7 @@ impl DdbClientImpl {
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user, json, None)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::get_relays_from] send_message_to_network_with_response failed: {}", e);
+                tracing::error!("[DdbClientImpl::get_relays_from] send_message_to_network_with_response failed: {}", e);
                 return Err(e);
             }
         };
@@ -99,7 +99,7 @@ impl DdbClientImpl {
             Some(a) => a,
             None => {
                 let err = "missing relayIds".to_string();
-                log::error!("[DdbClientImpl::get_relays_from] {}", err);
+                tracing::error!("[DdbClientImpl::get_relays_from] {}", err);
                 return Err(err);
             }
         };
@@ -114,7 +114,7 @@ impl DdbClientImpl {
                         Some(h) => h,
                         None => {
                             let err = "endpoint missing host".to_string();
-                            log::error!("[DdbClientImpl::get_relays_from] {}", err);
+                            tracing::error!("[DdbClientImpl::get_relays_from] {}", err);
                             return Err(err);
                         }
                     };
@@ -122,7 +122,7 @@ impl DdbClientImpl {
                         Some(p) => p as u16,
                         None => {
                             let err = "endpoint missing port".to_string();
-                            log::error!("[DdbClientImpl::get_relays_from] {}", err);
+                            tracing::error!("[DdbClientImpl::get_relays_from] {}", err);
                             return Err(err);
                         }
                     };
@@ -162,7 +162,7 @@ impl DdbClient for NullDdbClient {
 
 impl DdbClient for DdbClientImpl {
     fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, String> {
-        log::info!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
+        tracing::info!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
         // Resolve the peer relay's direct endpoint using RelayFinder first, then fall back to DDB lookup
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
         let mut nsk_opt = finder.lookup_root_id(peer_id);
@@ -172,7 +172,7 @@ impl DdbClient for DdbClientImpl {
                 Ok(nsk) => nsk_opt = Some(nsk),
                 Err(e) => {
                     let err = format!("failed to resolve peer '{}' via roots or DDB: {}", peer_id, e);
-                    log::warn!("[DdbClientImpl::start_load_from_peer] {}", err);
+                    tracing::warn!("[DdbClientImpl::start_load_from_peer] {}", err);
                     return Err(err);
                 }
             }
@@ -183,7 +183,7 @@ impl DdbClient for DdbClientImpl {
             Some(a) => a,
             None => {
                 let err = "peer NetworkEndpoint is not a direct address".to_string();
-                log::error!("[DdbClientImpl::start_load_from_peer] {}", err);
+                tracing::error!("[DdbClientImpl::start_load_from_peer] {}", err);
                 return Err(err);
             }
         };
@@ -191,7 +191,7 @@ impl DdbClient for DdbClientImpl {
         let relay_user = match Self::relay_user_id(peer_id) {
             Ok(u) => u,
             Err(e) => {
-                log::error!("[DdbClientImpl::start_load_from_peer] {}", e);
+                tracing::error!("[DdbClientImpl::start_load_from_peer] {}", e);
                 return Err(e);
             }
         };
@@ -205,7 +205,7 @@ impl DdbClient for DdbClientImpl {
         let resp: serde_json::Value = match self.api.access(|a| a.send_message_to_network_with_response(&nsk_direct, &relay_user, json, None)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::start_load_from_peer] send_message_to_network_with_response failed: {}", e);
+                tracing::error!("[DdbClientImpl::start_load_from_peer] send_message_to_network_with_response failed: {}", e);
                 return Err(e);
             }
         };
@@ -220,7 +220,7 @@ impl DdbClient for DdbClientImpl {
             Some(c) => c,
             None => {
                 let err = "missing dbCount".to_string();
-                log::error!("[DdbClientImpl::start_load_from_peer] {}", err);
+                tracing::error!("[DdbClientImpl::start_load_from_peer] {}", err);
                 return Err(err);
             }
         };
@@ -229,12 +229,12 @@ impl DdbClient for DdbClientImpl {
             Ok(u) => u,
             Err(_) => {
                 let err = "dbCount out of range".to_string();
-                log::error!("[DdbClientImpl::start_load_from_peer] {}", err);
+                tracing::error!("[DdbClientImpl::start_load_from_peer] {}", err);
                 return Err(err);
             }
         };
 
-        log::info!("[DdbClientImpl::start_load_from_peer][exit] Ok({})", out);
+        tracing::info!("[DdbClientImpl::start_load_from_peer][exit] Ok({})", out);
         Ok(out)
     }
 
@@ -294,14 +294,14 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::register_ip] find_relay failed: {}", e);
+                tracing::error!("[DdbClientImpl::register_ip] find_relay failed: {}", e);
                 return Err(e);
             }
         };
         let relay_user_b64 = match Self::relay_user_id(&relay.id) {
             Ok(u) => u,
             Err(e) => {
-                log::error!("[DdbClientImpl::register_ip] relay_user_id failed: {}", e);
+                tracing::error!("[DdbClientImpl::register_ip] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
@@ -312,7 +312,7 @@ impl DdbClient for DdbClientImpl {
             Some(id) => id,
             None => {
                 let err = "get_my_id returned None".to_string();
-                log::error!("[DdbClientImpl::register_ip] {}", err);
+                tracing::error!("[DdbClientImpl::register_ip] {}", err);
                 return Err(err);
             }
         };
@@ -340,15 +340,15 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&up);
 
         // 3) Send and wait for response; validate UpdateResponse
-        log::info!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
+        tracing::info!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::register_ip] send_message_to_network_with_response failed: {}", e);
+                tracing::error!("[DdbClientImpl::register_ip] send_message_to_network_with_response failed: {}", e);
                 return Err(e);
             }
         };
-        log::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
+        tracing::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
@@ -360,20 +360,20 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::register_relay] find_relay failed: {}", e);
+                tracing::error!("[DdbClientImpl::register_relay] find_relay failed: {}", e);
                 return Err(e);
             }
         };
         let relay_user_b64 = match Self::relay_user_id(&relay.id) {
             Ok(u) => u,
             Err(e) => {
-                log::error!("[DdbClientImpl::register_relay] relay_user_id (root) failed: {}", e);
+                tracing::error!("[DdbClientImpl::register_relay] relay_user_id (root) failed: {}", e);
                 return Err(e);
             }
         };
         // validate provided relay_id shape
         if let Err(e) = Self::relay_user_id(&relay_id) {
-            log::error!("[DdbClientImpl::register_relay] relay_user_id (param) failed: {}", e);
+            tracing::error!("[DdbClientImpl::register_relay] relay_user_id (param) failed: {}", e);
             return Err(e);
         }
         let nsk = NetworkEndpoint::new_direct(relay.address);
@@ -383,7 +383,7 @@ impl DdbClient for DdbClientImpl {
             Some(id) => id,
             None => {
                 let err = "get_my_id returned None".to_string();
-                log::error!("[DdbClientImpl::register_relay] {}", err);
+                tracing::error!("[DdbClientImpl::register_relay] {}", err);
                 return Err(err);
             }
         };
@@ -411,15 +411,15 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&up);
 
         // 3) Send and wait for response; validate UpdateResponse
-        log::info!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
+        tracing::info!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::register_relay] send_message_to_network_with_response failed: {}", e);
+                tracing::error!("[DdbClientImpl::register_relay] send_message_to_network_with_response failed: {}", e);
                 return Err(e);
             }
         };
-        log::info!("[DdbClientImpl::register_relay] received DdbUpdateResponse: {:?}", resp);
+        tracing::info!("[DdbClientImpl::register_relay] received DdbUpdateResponse: {:?}", resp);
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()).is_some_and(|s| s == "ddb") || resp.get("app").is_none();
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
@@ -431,14 +431,14 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::lookup] find_relay failed: {}", e);
+                tracing::error!("[DdbClientImpl::lookup] find_relay failed: {}", e);
                 return Err(e);
             }
         };
         let relay_user_b64 = match Self::relay_user_id(&relay.id) {
             Ok(u) => u,
             Err(e) => {
-                log::error!("[DdbClientImpl::lookup] relay_user_id failed: {}", e);
+                tracing::error!("[DdbClientImpl::lookup] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
@@ -459,7 +459,7 @@ impl DdbClient for DdbClientImpl {
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}", e);
+                tracing::error!("[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}", e);
                 return Err(e);
             }
         };
@@ -478,7 +478,7 @@ impl DdbClient for DdbClientImpl {
             Some(a) => a,
             None => {
                 let err = "missing advert".to_string();
-                log::error!("[DdbClientImpl::lookup] {}", err);
+                tracing::error!("[DdbClientImpl::lookup] {}", err);
                 return Err(err);
             }
         };
@@ -489,7 +489,7 @@ impl DdbClient for DdbClientImpl {
                 Some(s) => s.to_string(),
                 None => {
                     let err = "relayId is not a string".to_string();
-                    log::error!("[DdbClientImpl::lookup] {}", err);
+                    tracing::error!("[DdbClientImpl::lookup] {}", err);
                     return Err(err);
                 }
             };
@@ -505,7 +505,7 @@ impl DdbClient for DdbClientImpl {
                 Some(h) => h,
                 None => {
                     let err = "missing endpoint.host".to_string();
-                    log::error!("[DdbClientImpl::lookup] {}", err);
+                    tracing::error!("[DdbClientImpl::lookup] {}", err);
                     return Err(err);
                 }
             };
@@ -513,7 +513,7 @@ impl DdbClient for DdbClientImpl {
                 Some(p) => p as u16,
                 None => {
                     let err = "missing endpoint.port".to_string();
-                    log::error!("[DdbClientImpl::lookup] {}", err);
+                    tracing::error!("[DdbClientImpl::lookup] {}", err);
                     return Err(err);
                 }
             };
@@ -521,7 +521,7 @@ impl DdbClient for DdbClientImpl {
                 Ok(ip) => ip,
                 Err(_) => {
                     let err = format!("invalid host '{}': not an IP address", host);
-                    log::error!("[DdbClientImpl::lookup] {}", err);
+                    tracing::error!("[DdbClientImpl::lookup] {}", err);
                     return Err(err);
                 }
             };

@@ -38,7 +38,7 @@ impl MessageHandler for RelayPingHandler {
                 ie.clone().try_into().map(|addr: std::net::SocketAddr| addr == to_peer).unwrap_or(false)
             });
             if is_excluded {
-                log::warn!("[RelayPingHandler::on_triangle_test1] configured peer relay {} is in do_not_use_endpoints; skipping", to_peer);
+                tracing::warn!("[RelayPingHandler::on_triangle_test1] configured peer relay {} is in do_not_use_endpoints; skipping", to_peer);
                 return;
             }
 
@@ -46,7 +46,7 @@ impl MessageHandler for RelayPingHandler {
             let my_id = match api.get_my_id() {
                 Some(id) => id,
                 None => {
-                    log::warn!("[RelayPingHandler::on_triangle_test1] get_my_id returned None; aborting send");
+                    tracing::warn!("[RelayPingHandler::on_triangle_test1] get_my_id returned None; aborting send");
                     return;
                 }
             };

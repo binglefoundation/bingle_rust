@@ -54,7 +54,7 @@ impl TestNetwork {
                 dest.handle_request(&self_id_for_req, req);
             }
             else {
-                log::warn!("REQUEST: No node with id {} in network", dest_id);
+                tracing::warn!("REQUEST: No node with id {} in network", dest_id);
             }
         };
 
@@ -72,7 +72,7 @@ impl TestNetwork {
                 dest.handle_reply(&self_id_for_rep, resp);
             }
             else {
-                log::warn!("REPLY: No node with id {} in network", dest_id);
+                tracing::warn!("REPLY: No node with id {} in network", dest_id);
             }
         };
 
@@ -90,7 +90,7 @@ impl TestNetwork {
                 dest.handle_release(&self_id_for_rel, rel);
             }
             else {
-                log::warn!("RELEASE: No node with id {} in network", dest_id);
+                tracing::warn!("RELEASE: No node with id {} in network", dest_id);
             }
         };
 

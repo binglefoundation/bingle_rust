@@ -9,9 +9,8 @@ use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_dec
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::BingleAccessUnsafeForTests;
-use log::warn;
-use log::LevelFilter;
-use simple_logger::SimpleLogger;
+use tracing::warn;
+use tracing_subscriber::filter::LevelFilter;
 
 fn init_logger_from_args(args: &mut Vec<String>) {
     // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
@@ -24,12 +23,12 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             if i + 1 < args.len() {
                 let val = args[i + 1].to_ascii_lowercase();
                 let lvl = match val.as_str() {
-                    "trace" => LevelFilter::Trace,
-                    "debug" => LevelFilter::Debug,
-                    "info" => LevelFilter::Info,
-                    "warn" | "warning" => LevelFilter::Warn,
-                    "error" => LevelFilter::Error,
-                    _ => LevelFilter::Info,
+                    "trace" => LevelFilter::TRACE,
+                    "debug" => LevelFilter::DEBUG,
+                    "info" => LevelFilter::INFO,
+                    "warn" | "warning" => LevelFilter::WARN,
+                    "error" => LevelFilter::ERROR,
+                    _ => LevelFilter::INFO,
                 };
                 chosen = Some(lvl);
                 // Remove flag and its value
@@ -44,12 +43,12 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         } else if let Some(rest) = a.strip_prefix("--log-level=") {
             let val = rest.to_ascii_lowercase();
             let lvl = match val.as_str() {
-                "trace" => LevelFilter::Trace,
-                "debug" => LevelFilter::Debug,
-                "info" => LevelFilter::Info,
-                "warn" | "warning" => LevelFilter::Warn,
-                "error" => LevelFilter::Error,
-                _ => LevelFilter::Info,
+                "trace" => LevelFilter::TRACE,
+                "debug" => LevelFilter::DEBUG,
+                "info" => LevelFilter::INFO,
+                "warn" | "warning" => LevelFilter::WARN,
+                "error" => LevelFilter::ERROR,
+                _ => LevelFilter::INFO,
             };
             chosen = Some(lvl);
             args.remove(i);
@@ -57,10 +56,10 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         }
 
         let matched = match a {
-            "--log-warn" | "-q" => { chosen = Some(LevelFilter::Warn); true }
-            "--log-info" => { chosen = Some(LevelFilter::Info); true }
-            "--log-debug" | "-v" => { chosen = Some(LevelFilter::Debug); true }
-            "--log-trace" | "--vv" | "-vv" => { chosen = Some(LevelFilter::Trace); true }
+            "--log-warn" | "-q" => { chosen = Some(LevelFilter::WARN); true }
+            "--log-info" => { chosen = Some(LevelFilter::INFO); true }
+            "--log-debug" | "-v" => { chosen = Some(LevelFilter::DEBUG); true }
+            "--log-trace" | "--vv" | "-vv" => { chosen = Some(LevelFilter::TRACE); true }
             _ => false,
         };
         if matched {
@@ -69,10 +68,10 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             i += 1;
         }
     }
-    let level = chosen.unwrap_or(LevelFilter::Info);
-    let _ = SimpleLogger::new().with_level(level).init();
-    // Ensure the global max level reflects our choice (SimpleLogger::init sets it too; this is a no-op if already set)
-    log::set_max_level(level);
+    let level = chosen.unwrap_or(LevelFilter::INFO);
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(level)
+        .try_init();
 }
 
 fn main() {
@@ -105,7 +104,7 @@ fn main() {
 
 fn print_usage_and_exit(code: i32) {
     let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>]";
-    if code == 0 { log::info!("{}", usage); } else { warn!("{}", usage); }
+    if code == 0 { tracing::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
 
@@ -167,7 +166,7 @@ fn cmd_run(mut args: Vec<String>) {
                                         let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
                     match bingle.register_endpoint(app_id, &static_addr.to_string()) {
                         Ok(txid) => {
-                            log::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
+                            tracing::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
                         }
                         Err(e) => {
                             warn!("Failed to register static endpoint '{}': {}", static_addr, e);
@@ -189,7 +188,7 @@ fn cmd_run(mut args: Vec<String>) {
         let api_for_echo = api.clone();
         api.access_unsafe_for_tests(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-                log::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
+                tracing::info!("on_message: sender={} sender_handle={} message={}", sender, sender_handle, message);
                 if echo_mode {
                     // Check if this is a PlainTextMessage: has "text" field and no non-null "app"/"type"
                     if let Some(text) = message.get("text").and_then(|v| v.as_str()) {
@@ -198,10 +197,10 @@ fn cmd_run(mut args: Vec<String>) {
                         if is_plain {
                             let echo_text = format!("Echo: {}", text);
                             let echo_msg = serde_json::json!({ "text": echo_text });
-                            log::info!("[echo] Echoing back to {}: {}", sender, echo_msg);
+                            tracing::info!("[echo] Echoing back to {}: {}", sender, echo_msg);
                             let ok = api_for_echo.send_message_to_id(&sender, echo_msg, None);
                             if !ok {
-                                log::warn!("[echo] Failed to send echo to {}", sender);
+                                tracing::warn!("[echo] Failed to send echo to {}", sender);
                             }
                         }
                     }
@@ -210,7 +209,7 @@ fn cmd_run(mut args: Vec<String>) {
             api_mut.set_on_message(Some(on_message));
 
             let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
-                log::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
+                tracing::info!("on_connect: sender={} sender_handle={}", sender, sender_handle);
             });
             api_mut.set_on_connect(Some(on_connect));
 
@@ -222,16 +221,16 @@ fn cmd_run(mut args: Vec<String>) {
                         match fs::OpenOptions::new().create(true).write(true).truncate(true).open(&p) {
                             Ok(mut f) => {
                                 let _ = writeln!(f, "listening");
-                                log::info!("Created sentinel file: {}", p);
+                                tracing::info!("Created sentinel file: {}", p);
                             }
                             Err(e) => {
-                                log::warn!("Failed to create sentinel file '{}': {}", p, e);
+                                tracing::warn!("Failed to create sentinel file '{}': {}", p, e);
                             }
                         }
                     } else {
                         match fs::remove_file(&p) {
-                            Ok(()) => log::info!("Removed sentinel file: {}", p),
-                            Err(e) => log::warn!("Failed to remove sentinel file '{}': {}", p, e),
+                            Ok(()) => tracing::info!("Removed sentinel file: {}", p),
+                            Err(e) => tracing::warn!("Failed to remove sentinel file '{}': {}", p, e),
                         }
                     }
                 });
@@ -253,39 +252,39 @@ fn cmd_run(mut args: Vec<String>) {
     // Install Ctrl-C handler
     let (tx, rx) = channel::<()>();
     install_ctrlc_handler(tx);
-    log::info!("Started. Press Ctrl-C or send SIGTERM to stop.");
+    tracing::info!("Started. Press Ctrl-C or send SIGTERM to stop.");
 
     // Wait until Ctrl-C
     let _ = rx.recv();
 
-    log::info!("Received shutdown signal. Stopping...");
+    tracing::info!("Received shutdown signal. Stopping...");
 
     // Determine shutdown action and execute if needed
     let app_id_env = std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
     let action = resolve_shutdown_action(&opts, app_id_env);
     match action {
         ShutdownAction::Unregister { app_id, passphrase, algo_provider_config, asset_id } => {
-            log::info!("[cmd_run] Unregistering static endpoint for app_id={}", app_id);
+            tracing::info!("[cmd_run] Unregistering static endpoint for app_id={}", app_id);
             let ops = AlgoOps::new(Some(passphrase), None, algo_provider_config.clone());
             let asset_id_for_ctor = asset_id.or_else(|| algo_provider_config.as_ref().and_then(|c| c.asset_id)).unwrap_or(0);
             let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
             match bingle.register_endpoint(app_id, "") {
                 Ok(txid) => {
-                    log::info!("[cmd_run] Unregistered static endpoint for app_id {} (tx: {})", app_id, txid);
+                    tracing::info!("[cmd_run] Unregistered static endpoint for app_id {} (tx: {})", app_id, txid);
                 }
                 Err(e) => {
-                    log::warn!("[cmd_run] Failed to unregister static endpoint for app_id {}: {}", app_id, e);
+                    tracing::warn!("[cmd_run] Failed to unregister static endpoint for app_id {}: {}", app_id, e);
                 }
             }
         }
         ShutdownAction::NoStaticIp => {
-            log::debug!("[cmd_run] No static IP configured; skipping endpoint unregistration");
+            tracing::debug!("[cmd_run] No static IP configured; skipping endpoint unregistration");
         }
         ShutdownAction::NoAppId => {
-            log::debug!("[cmd_run] No app_id available; skipping endpoint unregistration");
+            tracing::debug!("[cmd_run] No app_id available; skipping endpoint unregistration");
         }
         ShutdownAction::NoPassphrase => {
-            log::debug!("[cmd_run] No passphrase available; skipping endpoint unregistration");
+            tracing::debug!("[cmd_run] No passphrase available; skipping endpoint unregistration");
         }
     }
 
@@ -295,7 +294,7 @@ fn cmd_run(mut args: Vec<String>) {
             api_mut.stop();
         });
     }
-    log::info!("Stopped.");
+    tracing::info!("Stopped.");
 }
 
 use rust_comms::api::network_endpoint::NetworkEndpoint;
@@ -495,7 +494,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         let relays = api.list_all_relays(false);
 
         if relays.is_empty() {
-            log::warn!("No relays discovered; nothing to check");
+            tracing::warn!("No relays discovered; nothing to check");
         } else {
             for r in &relays {
                 let mut ok: u32 = 0;
@@ -607,13 +606,13 @@ fn cmd_register(args: Vec<String>) {
         warn!("Account {} has zero balance. Please fund it and retry.", address);
         std::process::exit(2);
     }
-    log::info!("Using funded account {} (balance {:.6} ALGO)", address, bal_algos);
+    tracing::info!("Using funded account {} (balance {:.6} ALGO)", address, bal_algos);
 
     // Register the handle on-chain
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.register(app_id, asset_id, &handle, price_units) {
         Ok(txid) => {
-            log::info!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
+            tracing::info!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
         }
         Err(e) => {
             warn!("Failed to register handle: {}", e);
@@ -668,11 +667,11 @@ fn cmd_buybingle(args: Vec<String>) {
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
     let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
     if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
-    log::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
+    tracing::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.buy_bingle(app_id, asset_id, price_micro) {
-        Ok(txid) => { log::info!("buybingle submitted (tx: {})", txid); }
+        Ok(txid) => { tracing::info!("buybingle submitted (tx: {})", txid); }
         Err(e) => { warn!("buybingle failed: {}", e); std::process::exit(1); }
     }
 }
@@ -724,11 +723,11 @@ fn cmd_sellbingle(args: Vec<String>) {
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
     let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
     if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
-    log::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
+    tracing::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
     match bingle.sell_bingle(app_id, asset_id, amount_units, price_micro) {
-        Ok(txid) => { log::info!("sellbingle submitted (tx: {})", txid); }
+        Ok(txid) => { tracing::info!("sellbingle submitted (tx: {})", txid); }
         Err(e) => { warn!("sellbingle failed: {}", e); std::process::exit(1); }
     }
 }
@@ -802,7 +801,7 @@ fn resolve_shutdown_action(
 
 fn install_ctrlc_handler(tx: Sender<()>) {
     if let Err(e) = ctrlc::set_handler(move || {
-        log::info!("Received shutdown signal (SIGINT/SIGTERM); sending message to main thread to exit");
+        tracing::info!("Received shutdown signal (SIGINT/SIGTERM); sending message to main thread to exit");
         let _ = tx.send(());
     }) {
         warn!("Failed to install signal handler: {}", e);

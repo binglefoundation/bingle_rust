@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
 use std::sync::OnceLock;
 use crate::api::bingle_api::NetworkEndpoint;
-use log::warn;
+use tracing::warn;
 
 /// Mux classification types translated from the provided Kotlin function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,7 +159,7 @@ impl UdpNetworkMux {
                     Ok((n, from)) => {
                         if n == 0 { continue; }
                         let data = &buf[..n];
-                        log::trace!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
+                        tracing::trace!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
                         this.process_packet(&NetworkEndpoint::new_direct(from), data);
                     }
                     Err(e) => {
@@ -193,23 +193,23 @@ impl UdpNetworkMux {
 
     /// Stop the receive loop and join the background thread.
     pub fn stop(&self) {
-        log::debug!("[UdpNetworkMux::stop]");
+        tracing::debug!("[UdpNetworkMux::stop]");
         self.running.store(false, Ordering::SeqCst);
         // poke the socket by setting a very short timeout so the thread wakes up soon
         let _ = self.set_read_timeout(Some(Duration::from_millis(10)));
         if let Ok(mut slot) = self.rx_thread.lock() {
             if let Some(handle) = slot.take() {
-                log::debug!("[UdpNetworkMux::stop] joining rx_thread");
+                tracing::debug!("[UdpNetworkMux::stop] joining rx_thread");
                 let _ = handle.join();
             }
             else {
-                log::warn!("[UdpNetworkMux::stop] rx_thread not running");
+                tracing::warn!("[UdpNetworkMux::stop] rx_thread not running");
             }
         }
         else {
-            log::warn!("[UdpNetworkMux::stop] rx_thread lock poisoned");
+            tracing::warn!("[UdpNetworkMux::stop] rx_thread lock poisoned");
         }
-        log::debug!("[UdpNetworkMux::stop] done");
+        tracing::debug!("[UdpNetworkMux::stop] done");
     }
 
     /// Returns true if the socket has been closed (taken out of the Mutex).
@@ -303,7 +303,7 @@ impl NetworkMux for UdpNetworkMux {
     fn get_handle_turn<'a>(&'a self) -> Option<&'a HandleTurn> { self.handle_turn.get() }
 
     fn set_handle_turn(&mut self, handler: Option<&HandleTurn>) { 
-        log::debug!("[UdpNetworkMux] set_handle_turn: handler={}", if handler.is_some() { "Some" } else { "None" });
+        tracing::debug!("[UdpNetworkMux] set_handle_turn: handler={}", if handler.is_some() { "Some" } else { "None" });
         if let Some(h) = handler { let _ = self.handle_turn.set(h.clone()); }
     }
 
@@ -386,7 +386,7 @@ impl UdpNetworkMux {
         match mux_type_for(data) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                    log::trace!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}", from_endpoint, to, json);
+                    tracing::trace!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}", from_endpoint, to, json);
                     #[allow(unused)] {  }
                 } else {
                     warn!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] <parse error> ({} bytes)", from_endpoint, to, data.len());
@@ -401,9 +401,9 @@ impl UdpNetworkMux {
                     (h)(source, from_endpoint, data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        log::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}ms", elapsed.as_millis());
+                        tracing::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}ms", elapsed.as_millis());
                     } else if elapsed.as_micros() > 100 {
-                        log::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}μs", elapsed.as_micros());
+                        tracing::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}μs", elapsed.as_micros());
                     }
                 }
             }
@@ -414,23 +414,23 @@ impl UdpNetworkMux {
                     (h)(source, &from_endpoint.inet_socket_address().expect("Stun messages must originate from an IP"), data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        log::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}ms", elapsed.as_millis());
+                        tracing::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}ms", elapsed.as_millis());
                     } else if elapsed.as_micros() > 100 {
-                        log::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}μs", elapsed.as_micros());
+                        tracing::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}μs", elapsed.as_micros());
                     }
                 }
             }
             MuxType::TurnChannelData => {
                 if let Some(h) = self.handle_turn.get() {
-                    log::info!("[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes", from_endpoint, to, data.len());
+                    tracing::info!("[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes", from_endpoint, to, data.len());
                     let start = Instant::now();
                     let source: &dyn NetworkMux = self;
                     (h)(source, &from_endpoint.inet_socket_address().expect("TURN messages must originate from an IP"), data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        log::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}ms", elapsed.as_millis());
+                        tracing::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}ms", elapsed.as_millis());
                     } else if elapsed.as_micros() > 100 {
-                        log::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}μs", elapsed.as_micros());
+                        tracing::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}μs", elapsed.as_micros());
                     }
                 }
             }

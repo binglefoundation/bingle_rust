@@ -28,7 +28,7 @@ pub fn dtls_trace_json_includes_sequence_and_epoch() {
     let seq: u64 = 0x0000_0000_00AB_CDu64; // fits in 48 bits
     let datagram = build_dtls_record(22, epoch, seq, [0xFE, 0xFD], &[0u8; 12]); // minimal handshake header length
 
-    let json_txt = dtls_udp_to_json_with_level(&datagram, log::Level::Trace).expect("ok");
+    let json_txt = dtls_udp_to_json_with_level(&datagram, tracing::Level::TRACE).expect("ok");
     assert!(json_txt.contains("\"records\""), "expected JSON output at TRACE");
 
     let v: Value = serde_json::from_str(&json_txt).expect("valid json");
@@ -45,7 +45,7 @@ pub fn dtls_debug_compact_includes_sequence_and_epoch() {
     let seq: u64 = 0x11_2233_4455u64; // within 48 bits
     let datagram = build_dtls_record(23, epoch, seq, [0xFE, 0xFD], &[1u8, 2u8, 3u8]);
 
-    let out = dtls_udp_to_json_with_level(&datagram, log::Level::Debug).expect("ok");
+    let out = dtls_udp_to_json_with_level(&datagram, tracing::Level::DEBUG).expect("ok");
     assert!(!out.is_empty(), "expected some output at or above debug level");
 
     // In debug compact mode we expect epoch and seq presented. If we're at TRACE, we still

@@ -37,7 +37,7 @@ pub fn integration_decode_relay_response() {
 pub fn integration_decode_triangle_test1() {
     init_test_logging();
     let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":{\"host\":\"127.0.0.1\",\"port\":3456}}");
-    log::debug!("{:?}", msg);
+    tracing::debug!("{:?}", msg);
     match msg {
         Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456"),
         _ => panic!("expected TriangleTest1"),

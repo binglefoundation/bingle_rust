@@ -75,7 +75,7 @@ pub fn testnet_send_ping_to_registered_node() {
 
     // Create progress callback that logs at INFO level
     let progress_callback = Arc::new(|progress: u8, message: String| {
-        log::info!("Ping message progress: {}% - {}", progress, message);
+        tracing::info!("Ping message progress: {}% - {}", progress, message);
     });
 
     // Time the send_message_to_id_with_response call
@@ -86,7 +86,7 @@ pub fn testnet_send_ping_to_registered_node() {
 
     // Output timing clearly
     println!("TIMING: send_message_to_id_with_response took {:.3}s", elapsed.as_secs_f64());
-    log::info!("send_message_to_id_with_response completed in {:.3}s", elapsed.as_secs_f64());
+    tracing::info!("send_message_to_id_with_response completed in {:.3}s", elapsed.as_secs_f64());
 
     // Expected: { app: "ping", type: "response", verifiedId: dest_id, text: "ACK: ..." }
     let app = resp.get("app").and_then(|v: &serde_json::Value| v.as_str());
@@ -100,7 +100,7 @@ pub fn testnet_send_ping_to_registered_node() {
 
     // 6) Send Ping to handle and validate response
     let dest_handle = pingable_handle().expect("pingable handle must resolve");
-    log::info!("Starting ping to handle: {}", dest_handle);
+    tracing::info!("Starting ping to handle: {}", dest_handle);
 
     // Time the send_message_to_handle_with_response call
     let start_time_handle = Instant::now();
@@ -110,7 +110,7 @@ pub fn testnet_send_ping_to_registered_node() {
 
     // Output timing clearly
     println!("TIMING: send_message_to_handle_with_response took {:.3}s", elapsed_handle.as_secs_f64());
-    log::info!("send_message_to_handle_with_response completed in {:.3}s", elapsed_handle.as_secs_f64());
+    tracing::info!("send_message_to_handle_with_response completed in {:.3}s", elapsed_handle.as_secs_f64());
 
     // Expected: { app: "ping", type: "response", verifiedId: dest_id, text: "ACK: ..." }
     let app_h = resp_handle.get("app").and_then(|v: &serde_json::Value| v.as_str());

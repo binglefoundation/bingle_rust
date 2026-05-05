@@ -10,8 +10,7 @@
 // To keep CI green in environments without testnet credentials, this test only
 // runs when BINGLE_RUN_TESTNET=1 is set in the environment. Otherwise it exits early.
 
-use log::LevelFilter;
-use simple_logger::SimpleLogger;
+use tracing_subscriber::filter::LevelFilter;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -33,9 +32,9 @@ pub fn testnet_user_reaches_endpoint_available() {
         return;
     }
 
-    let _ = SimpleLogger::new()
-        .with_level(LevelFilter::Info)
-        .init();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::INFO)
+        .try_init();
 
     // Load testnet node configuration and IDs from the bundled file.
     let node_path = "nodely_testnet_node.json";
@@ -183,8 +182,8 @@ pub fn testnet_user_reaches_endpoint_available() {
         assert_eq!(got_nat, expect_nat, "expected NAT type {:?}, got {:?}", expect_nat, got_nat);
     }
 
-    log::info!("Final state: {:?}, NAT type: {:?}", final_state, got_nat);
-    log::info!("Static endpoints: {:?}", static_endpoints);
+    tracing::info!("Final state: {:?}, NAT type: {:?}", final_state, got_nat);
+    tracing::info!("Static endpoints: {:?}", static_endpoints);
 
     // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
     if final_state == EngineState::Registered {

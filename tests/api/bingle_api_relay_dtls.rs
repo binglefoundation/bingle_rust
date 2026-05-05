@@ -33,7 +33,7 @@ pub fn bingle_api_send_via_relay() {
     let b_id = ADDRESS_SPEND;
 
     // 1) Spin up destination DTLS server (node B)
-    log::info!("Starting DTLS server");
+    tracing::info!("Starting DTLS server");
     let b_port = test_util::find_unused_loopback_port();
     let b_addr = addr(b_port);
 
@@ -43,12 +43,12 @@ pub fn bingle_api_send_via_relay() {
     let turn_client_clone = turn_client.clone();
     let client_turn_handler: std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(
         move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-            log::info!("client_turn_handler Got packet from {}:", from);
+            tracing::info!("client_turn_handler Got packet from {}:", from);
             // Parse/unwrap the TURN ChannelData using our handler
             if let Some(wrapped) =
                 turn_client_clone.handle_turn_incoming(Some(from), Some(b_addr), packet)
             {
-                log::info!(
+                tracing::info!(
                             "Got wrapped message {} bytes from {}:",
                             wrapped.message.len(),
                             wrapped.network_endpoint
@@ -59,18 +59,18 @@ pub fn bingle_api_send_via_relay() {
                     .downcast_ref::<UdpNetworkMux>(
                     ) {
                     udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                    log::info!(
+                    tracing::info!(
                                 "reprocessed {} bytes from {}",
                                 wrapped.message.len(),
                                 wrapped.network_endpoint
                             );
                 } else {
-                    log::warn!(
+                    tracing::warn!(
                                 "source is not UdpNetworkMux; cannot reprocess"
                             );
                 }
             } else {
-                log::warn!("handle_turn_incoming returned None (ignored)");
+                tracing::warn!("handle_turn_incoming returned None (ignored)");
             }
         });
 
@@ -94,7 +94,7 @@ pub fn bingle_api_send_via_relay() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
         .with_handle_message(Arc::new(move |_server: &dyn Dtls, _from: &NetworkEndpoint, _issuer: &str, data: &[u8]| {
-            log::info!("Received message from B: {:?}", std::str::from_utf8(data));
+            tracing::info!("Received message from B: {:?}", std::str::from_utf8(data));
             if let Ok(mut v) = rec_clone.lock() {
                 v.push(data.to_vec());
             } else {
@@ -104,7 +104,7 @@ pub fn bingle_api_send_via_relay() {
     server.start(mux_b_arc.clone()).expect("server start");
 
     // 2) Spin up a relay UDP mux + TURN handler + Router acting as a relay
-    log::info!("Starting relay UDP mux + TURN handler + Router");
+    tracing::info!("Starting relay UDP mux + TURN handler + Router");
     let relay_port = test_util::find_unused_loopback_port();
     let relay_addr = addr(relay_port);
 
@@ -123,7 +123,7 @@ pub fn bingle_api_send_via_relay() {
             if let Some(wrapped) = turn_clone.handle_turn_incoming(Some(from), Some(relay_addr), packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
                     let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
-                    log::info!("Relay forwarding (TURN->RAW) from {} to {}", from, nsk);
+                    tracing::info!("Relay forwarding (TURN->RAW) from {} to {}", from, nsk);
                     let _ = udp.write(&nsk, &wrapped.message);
                 }
             }
@@ -144,7 +144,7 @@ pub fn bingle_api_send_via_relay() {
             if let Some(wrapped) = turn_clone2.send_turn_outgoing(&from_addr, &a_addr, packet) {
                 if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
                     let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
-                    log::info!("Relay forwarding (RAW->TURN) from {} to {}", from, nsk);
+                    tracing::info!("Relay forwarding (RAW->TURN) from {} to {}", from, nsk);
                     let _ = udp.write(&nsk, &wrapped.message);
                 }
             }
@@ -170,7 +170,7 @@ pub fn bingle_api_send_via_relay() {
     let handler = DefaultPrintingHandler;
 
     // 3) B sends RelayListen to the relay to register its id -> address mapping
-    log::info!("B sending RelayListen");
+    tracing::info!("B sending RelayListen");
     router.set_last_from(Some(b_addr));
     let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
@@ -178,14 +178,14 @@ pub fn bingle_api_send_via_relay() {
     });
     assert_eq!(turn.lookup_addr_by_id(b_id), Some(b_addr));
 
-    log::info!("Relay sending RelayListenResponse to B");
+    tracing::info!("Relay sending RelayListenResponse to B");
     let resp = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None }));
     let resp_bytes = serde_json::to_vec(&resp).expect("marshal ListenResponse");
     let b_nsk = NetworkEndpoint::new_direct(b_addr);
     mux_relay.write(&b_nsk, &resp_bytes).expect("relay write to B");
 
     // 5) Build Bingle API client (node A)
-    log::info!("Starting Bingle API client");
+    tracing::info!("Starting Bingle API client");
     let api = BingleApiImpl::new(&StartOptions::default());
     let opts = StartOptions {
         handle: Handle::from("alice"),
@@ -203,7 +203,7 @@ pub fn bingle_api_send_via_relay() {
     if let Err(e) = start_res { eprintln!("api.start error: {}", e); }
 
     // 4) A sends RelayCall(calledId=BID) to the relay; extract assigned channel
-    log::info!("A sending RelayCall");
+    tracing::info!("A sending RelayCall");
     let a_addr = api
         .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_local_bind_addr_for_tests())
         .expect("api local bind addr");
@@ -216,13 +216,13 @@ pub fn bingle_api_send_via_relay() {
     let out = router.take_outbound_response().expect("RelayResponse present");
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
 
-    log::info!("Node A faking handle_call_response for relay channel");
+    tracing::info!("Node A faking handle_call_response for relay channel");
     let turn_client_a = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_turn_client_handler_for_tests());
     use rust_comms::turn::turn_handler::TurnHandler;
     turn_client_a.handle_call_response(&a_addr, &relay_addr, ch, "RID");
 
     // 6) Send a message via the relay using NetworkEndpoint::new_relay
-    log::info!("Sending message via relay");
+    tracing::info!("Sending message via relay");
     let nsk = NetworkEndpoint::new_relay("RID".to_string(), Some(relay_addr), Some(ch));
     let uid = test_util::ADDRESS_SPEND.to_string();
     let payload = serde_json::json!({"app": null, "type": "HelloRelay", "ts": 1});
@@ -235,7 +235,7 @@ pub fn bingle_api_send_via_relay() {
     assert!(ok, "send_message_to_network returned false");
 
     // 7) Await delivery at B
-    log::info!("Awaiting delivery at B");
+    tracing::info!("Awaiting delivery at B");
     let start = Instant::now();
     let mut delivered = false;
     while start.elapsed() < Duration::from_secs(3) {
@@ -252,7 +252,7 @@ pub fn bingle_api_send_via_relay() {
     assert!(delivered, "expected destination to receive data via DTLS over relay");
 
     // Optionally, validate content is JSON and matches our payload type
-    log::info!("Validating received message content");
+    tracing::info!("Validating received message content");
     if let Ok(v) = received.lock() {
         if let Some(first) = v.first() {
             if let Ok(txt) = std::str::from_utf8(first) {

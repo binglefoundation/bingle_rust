@@ -17,7 +17,7 @@ pub fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Res
 }
 
 pub fn client_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    log::info!("client_echo_handler: {:?}", data);
+    tracing::info!("client_echo_handler: {:?}", data);
     // Record that client received the Ping
     if data == b"Ping" {
         let _ = CLIENT_PING_SEEN.set(data.to_vec());
@@ -29,7 +29,7 @@ pub fn client_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api
 }
 
 pub fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    log::info!("server_capture_and_trigger_handler: {:?}", data);
+    tracing::info!("server_capture_and_trigger_handler: {:?}", data);
     // Capture the initial Hello and immediately send Ping to the client
     if data == b"Hello" {
         let _ = SERVER_HELLO.set(data.to_vec());

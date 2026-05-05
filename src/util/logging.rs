@@ -8,5 +8,5 @@ pub fn removed_log_line<S: AsRef<str>>(_msg: S) {
 
 /// Forward to warn! only; no file writes.
 pub fn tee_stderr<S: AsRef<str>>(msg: S) {
-    log::warn!("{}", msg.as_ref());
+    tracing::warn!("{}", msg.as_ref());
 }

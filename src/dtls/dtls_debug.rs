@@ -142,11 +142,11 @@ fn read_u24(be3: &[u8]) -> u32 { ((be3[0] as u32) << 16) | ((be3[1] as u32) << 8
 /// Returns Err(String) if the datagram is malformed.
 pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
     // Use current global log level
-    let level = if log::log_enabled!(log::Level::Trace) {
-        log::Level::Trace
+    let level = if tracing::enabled!(tracing::Level::TRACE) {
+        tracing::Level::TRACE
     } else {
         // Default to Debug summary to ensure some output for tests even without global logger setup
-        log::Level::Debug
+        tracing::Level::DEBUG
     };
     dtls_udp_to_json_with_level(datagram, level)
 }
@@ -154,12 +154,12 @@ pub fn dtls_udp_to_json(datagram: &[u8]) -> Result<String, String> {
 /// Convert a raw UDP datagram containing DTLS records into a pretty-printed JSON string.
 /// Behavior depends on the provided log level for testability.
 /// Returns Err(String) if the datagram is malformed.
-pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: log::Level) -> Result<String, String> {
+pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: tracing::Level) -> Result<String, String> {
     // Behavior depends on provided log level:
     // - Trace: full JSON (pretty) with handshake introspection (existing behavior)
     // - Debug: single-line summary for quick inspection
     // - Below Debug: return an empty string
-    if level >= log::Level::Trace {
+    if level >= tracing::Level::TRACE {
         // Full decode path (existing behavior)
         let mut i: usize = 0;
         let mut records: Vec<DtlsRecordJson> = Vec::new();
@@ -246,7 +246,7 @@ pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: log::Level) -> Result
 
         let packet = DtlsUdpPacketJson { records };
         return serde_json::to_string_pretty(&packet).map_err(|e| e.to_string());
-    } else if level >= log::Level::Debug {
+    } else if level >= tracing::Level::DEBUG {
         // Produce a terse single-line summary without heavy parsing
         let mut i: usize = 0;
         let mut parts: Vec<String> = Vec::new();
@@ -414,9 +414,9 @@ mod tests {
     #[test]
     fn roundtrip_single_record() {
         INIT_LOG.call_once(|| {
-            let _ = simple_logger::SimpleLogger::new()
-                .with_level(log::LevelFilter::Trace)
-                .init();
+            let _ = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::TRACE)
+                .try_init();
         });
         // Construct a simple DTLS record: content_type=23 (AppData), version=DTLS1.2 (0xFEFD)
         let payload = b"hello-dtls";
@@ -439,9 +439,9 @@ mod tests {
     fn parse_multiple_records() {
         // Ensure logging is initialized at TRACE so dtls_udp_to_json performs full decode
         INIT_LOG.call_once(|| {
-            let _ = simple_logger::SimpleLogger::new()
-                .with_level(log::LevelFilter::Trace)
-                .init();
+            let _ = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::TRACE)
+                .try_init();
         });
         // Two small records concatenated
         let mut d: Vec<u8> = Vec::new();

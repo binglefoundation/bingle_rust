@@ -20,12 +20,12 @@ pub fn indexer_discover_closure(
     let ops = AlgoOps::new(None, Some(placeholder_addr), cfg);
     let ab = AlgoBingle::new(ops, app_id, 0);
     Arc::new(move || {
-        log::info!("[discovery] indexer_discover_closure - in closure app_id={}", app_id);
+        tracing::info!("[discovery] indexer_discover_closure - in closure app_id={}", app_id);
 
         // Use the synchronous indexer call to ensure we block until results are ready
         let closure_result = match ab.list_static_endpoints_via_indexer_sync(app_id) {
             Ok(list) => {
-                log::info!("[discovery] indexer_discover_closure - indexer discovery returned list: {:?}", list);
+                tracing::info!("[discovery] indexer_discover_closure - indexer discovery returned list: {:?}", list);
                 let mut out: Vec<RelayInfo> = Vec::new();
                 for (id, ep) in list {
                     if let Some(addr) = AlgoBingle::parse_relay_ip(&ep) {
@@ -33,7 +33,7 @@ pub fn indexer_discover_closure(
                     }
                 }
                 if out.is_empty() {
-                    log::warn!("[discovery] indexer discovery returned empty static endpoints list");
+                    tracing::warn!("[discovery] indexer discovery returned empty static endpoints list");
                 }
                 out
             }
@@ -42,7 +42,7 @@ pub fn indexer_discover_closure(
             }
         };
 
-        log::info!("[discovery] indexer_discover_closure - returning closure result: {:?}", closure_result);
+        tracing::info!("[discovery] indexer_discover_closure - returning closure result: {:?}", closure_result);
 
         closure_result
     })

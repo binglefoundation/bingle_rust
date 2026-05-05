@@ -141,7 +141,7 @@ impl Router {
     pub fn route_with_network<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint) {
         let api_opt = self.get_bingle_api();
         if api_opt.is_none() {
-            log::warn!("[router::route_with_network] No BingleApi available to pass to handler");
+            tracing::warn!("[router::route_with_network] No BingleApi available to pass to handler");
             return;
         }
         let api_base = api_opt.unwrap();

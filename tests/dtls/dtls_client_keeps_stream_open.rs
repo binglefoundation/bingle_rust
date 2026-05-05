@@ -82,19 +82,19 @@ pub fn dtls_client_keeps_stream_open_across_sends() {
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 1, "server did not receive first message");
-    log::info!("[Test] Server received first message, proceeding with second send");
+    tracing::info!("[Test] Server received first message, proceeding with second send");
 
     // Second send should reuse the same client DTLS stream; the stream must remain open across send()
     let payload2 = b"second-message";
     assert!(client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr), payload2).is_ok(), "second send failed (stream may have been closed)");
-    log::info!("[Test] Client sent second message");
+    tracing::info!("[Test] Client sent second message");
     // Wait for second message
     let start2 = Instant::now();
     while MSG_COUNT.load(Ordering::Relaxed) < 2 && start2.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 2, "server did not receive second message; client stream might not be kept open");
-    log::info!("[Test] Server received second message");
+    tracing::info!("[Test] Server received second message");
 
     client.stop().expect("client stop");
     server.stop().expect("server stop");

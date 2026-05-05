@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use log::{info, warn};
+use tracing::{info, warn};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
@@ -101,7 +101,7 @@ pub struct BingleApiImpl {
 
 impl BingleApiImpl {
     pub fn new(options: &StartOptions) -> Arc<Self> {
-        log::info!("[BingleApiImpl::new][enter]");
+        tracing::info!("[BingleApiImpl::new][enter]");
         let initial_options = options.clone();
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
@@ -139,7 +139,7 @@ impl BingleApiImpl {
 
     /// Test-oriented constructor to inject custom DTLS and options.
     pub fn new_with_dtls_and_options(dtls: Box<dyn Dtls + Send + Sync>, options: StartOptions) -> Arc<Self> {
-        log::info!("[BingleApiImpl::new_with_dtls_and_options][enter] dtls_provided=true am_relay={}", options.am_relay);
+        tracing::info!("[BingleApiImpl::new_with_dtls_and_options][enter] dtls_provided=true am_relay={}", options.am_relay);
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
@@ -162,51 +162,51 @@ impl BingleApiImpl {
     /// Test-only helper: override issuer directly for unit/integration tests.
     /// Not part of the stable API surface.
     pub fn set_issuer_for_tests(&self, issuer: String) {
-        log::info!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
+        tracing::info!("[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}", issuer.len());
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).set_issuer(issuer);
         }
-        log::info!("[BingleApiImpl::set_issuer_for_tests][exit]");
+        tracing::info!("[BingleApiImpl::set_issuer_for_tests][exit]");
     }
 
     /// Test helpers to access the Engine from integration tests (not part of stable API).
     pub fn engine_state_for_tests(&self) -> Option<EngineState> {
-        log::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
+        tracing::trace!("[BingleApiImpl::engine_state_for_tests][enter]");
         let s = Some(self.engine.access(|e| e.state()));
-        log::trace!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
+        tracing::trace!("[BingleApiImpl::engine_state_for_tests][exit] state={:?}", s);
         s
     }
     pub fn engine_nat_type_for_tests(&self) -> Option<crate::engine::NatType> {
-        log::info!("[BingleApiImpl::engine_nat_type_for_tests][enter]");
+        tracing::info!("[BingleApiImpl::engine_nat_type_for_tests][enter]");
         let t = Some(self.engine.access(|e| e.nat_type()));
-        log::info!("[BingleApiImpl::engine_nat_type_for_tests][exit] nat_type={:?}", t);
+        tracing::info!("[BingleApiImpl::engine_nat_type_for_tests][exit] nat_type={:?}", t);
         t
     }
     pub fn engine_last_public_addr_for_tests(&self) -> Option<SocketAddr> {
-        log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
+        tracing::info!("[BingleApiImpl::engine_last_public_addr_for_tests][enter]");
         let a = self.engine.access(|e| e.last_public_addr());
-        log::info!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a);
+        tracing::info!("[BingleApiImpl::engine_last_public_addr_for_tests][exit] addr={:?}", a);
         a
     }
     pub fn engine_local_bind_addr_for_tests(&self) -> Option<SocketAddr> {
-        log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
+        tracing::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][enter]");
         let a = self.engine.access(|e| e.local_bind_addr_for_tests());
-        log::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
+        tracing::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
         a
     }
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
         self.engine.access_unsafe_for_tests(|e: &mut Engine| e.receive_message_for_tests(from_ep, data));
     }
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, String> {
-        log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);
+        tracing::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][enter] id={}", id);
         let res = self.engine.access(|e| e.ddb_client().lookup(id));
-        log::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
+        tracing::info!("[BingleApiImpl::engine_ddb_lookup_for_tests][exit] res={:?}", res.as_ref().ok());
         res
     }
 
     pub fn engine_set_ddb_client_for_tests(&self, ddb: Arc<dyn crate::ddb::DdbClient>) {
-        log::info!("[BingleApiImpl::engine_set_ddb_client_for_tests][enter]");
+        tracing::info!("[BingleApiImpl::engine_set_ddb_client_for_tests][enter]");
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).set_ddb_client_for_tests(ddb);
@@ -228,12 +228,12 @@ impl BingleApiImpl {
         self.engine.clone()
     }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
-        log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
+        tracing::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}", addr);
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).test_force_stun_consistent(addr);
         }
-        log::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
+        tracing::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
     }
 
     /// Test-only accessor to the Engine's TURN handler (for white-box integration tests)
@@ -254,9 +254,9 @@ impl BingleApiImpl {
     
     /// Exposed for integration tests: whether a DTLS instance has been created.
     pub fn has_dtls(&self) -> bool {
-        log::info!("[BingleApiImpl::has_dtls][enter]");
+        tracing::info!("[BingleApiImpl::has_dtls][enter]");
         // Engine now always has a DTLS instance initialized in new()
-        log::info!("[BingleApiImpl::has_dtls][exit] return=true");
+        tracing::info!("[BingleApiImpl::has_dtls][exit] return=true");
         true
     }
 
@@ -300,13 +300,13 @@ impl Drop for BingleApiImpl {
 
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
-        log::info!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
+        tracing::info!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
     }
     fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
-        log::info!("[BingleApiImpl::list_all_relays] include_self={}", include_self);
+        tracing::info!("[BingleApiImpl::list_all_relays] include_self={}", include_self);
         // Delegate to Engine's relay_finder-backed implementation
         let res = self.engine.access(|e| e.list_all_relays(include_self));
-        log::info!("[BingleApiImpl::list_all_relays] return={:?}", res);
+        tracing::info!("[BingleApiImpl::list_all_relays] return={:?}", res);
         res
     }
     fn get_my_id(&self) -> Option<String> {
@@ -314,7 +314,7 @@ impl BingleApi for BingleApiImpl {
         match self.engine.access(|e| e.issuer().map(|iss| iss.to_string())) {
             Ok(iss) => Some(iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()),
             Err(e) => {
-                log::warn!("[BingleApiImpl::get_my_id] {}", e);
+                tracing::warn!("[BingleApiImpl::get_my_id] {}", e);
                 None
             }
         }
@@ -413,9 +413,9 @@ impl BingleApi for BingleApiImpl {
             // Sender closure routes via the delegating API handle
             let this_weak = self.this.clone();
             let sender_cb: Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static> = Arc::new(move |nsk, uid, msg| {
-                log::info!("[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}", nsk, uid, msg);
+                tracing::info!("[BingleApiImpl::start][sender_cb] nsk={} uid={} msg={}", nsk, uid, msg);
                 let progress_cb = Arc::new(|percent: u8, message: String| {
-                    log::info!("[BingleApiImpl::start][router sender] Send progress: {}% - {}", percent, message);
+                    tracing::info!("[BingleApiImpl::start][router sender] Send progress: {}% - {}", percent, message);
                 });
                 if let Some(api) = this_weak.upgrade() {
                     api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)))
@@ -435,9 +435,9 @@ impl BingleApi for BingleApiImpl {
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
-                log::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
+                tracing::info!("[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}", nsk, uid, msg);
                 let progress_cb = Arc::new(|percent: u8, message: String| {
-                    log::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
+                    tracing::info!("[BingleApiImpl::start][engine sender] Send progress: {}% - {}", percent, message);
                 });
                 if let Some(api) = this_weak_for_engine.upgrade() {
                     api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)))
@@ -452,12 +452,12 @@ impl BingleApi for BingleApiImpl {
             (*engine_ptr).start(options)?;
         }
 
-        log::info!("[BingleApiImpl::start][exit] Ok(())");
+        tracing::info!("[BingleApiImpl::start][exit] Ok(())");
         Ok(())
     }
 
     fn stop(&mut self) {
-        log::info!("[BingleApiImpl::stop][enter] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
+        tracing::info!("[BingleApiImpl::stop][enter] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
         // Notify listeners that we are no longer listening
         if let Some(cb) = &self.on_listening { cb(false, crate::engine::NatType::Unknown); }
         // Stop Engine
@@ -465,24 +465,24 @@ impl BingleApi for BingleApiImpl {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).stop();
         }
-        log::info!("[BingleApiImpl::stop][exit] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
+        tracing::info!("[BingleApiImpl::stop][exit] {:?}:{:?}", self.engine.issuer(), self.engine.last_public_addr());
     }
 
     fn network_change(&mut self) {
-        log::info!("[BingleApiImpl::network_change][enter]");
+        tracing::info!("[BingleApiImpl::network_change][enter]");
         // Placeholder: in a full implementation, we would rescan STUN/static IP and update listeners.
-        log::info!("[BingleApiImpl::network_change][exit]");
+        tracing::info!("[BingleApiImpl::network_change][exit]");
     }
 
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
-        log::info!("[BingleApiImpl::handle_lookup][enter] handle={}", handle);
+        tracing::info!("[BingleApiImpl::handle_lookup][enter] handle={}", handle);
 
         let expiry_duration = self.started_options.handle_cache_expiry.unwrap_or(Duration::from_secs(600)); // Default 10 minutes
 
         // Check cache
         if let Ok(mut cache) = self.handle_cache.lock() {
             if let Some(user_id) = cache.get_id_by_handle(handle, expiry_duration) {
-                log::info!("[BingleApiImpl::handle_lookup] cache hit for handle {}: {}", handle, user_id);
+                tracing::info!("[BingleApiImpl::handle_lookup] cache hit for handle {}: {}", handle, user_id);
                 return Ok(Some(user_id));
             }
         }
@@ -495,7 +495,7 @@ impl BingleApi for BingleApiImpl {
                 if let Ok(Some(ref user_id)) = res {
                     if let Ok(mut cache) = self.handle_cache.lock() {
                         cache.insert(handle.clone(), user_id.clone(), Instant::now());
-                        log::info!("[BingleApiImpl::handle_lookup] cache updated from mock for handle {}: {}", handle, user_id);
+                        tracing::info!("[BingleApiImpl::handle_lookup] cache updated from mock for handle {}: {}", handle, user_id);
                     }
                 }
                 return res;
@@ -515,16 +515,16 @@ impl BingleApi for BingleApiImpl {
         if let Ok(Some(ref user_id)) = res {
             if let Ok(mut cache) = self.handle_cache.lock() {
                 cache.insert(handle.clone(), user_id.clone(), Instant::now());
-                log::info!("[BingleApiImpl::handle_lookup] cache updated for handle {}: {}", handle, user_id);
+                tracing::info!("[BingleApiImpl::handle_lookup] cache updated for handle {}: {}", handle, user_id);
             }
         }
 
-        log::info!("[BingleApiImpl::handle_lookup][exit] return={:?}", res);
+        tracing::info!("[BingleApiImpl::handle_lookup][exit] return={:?}", res);
         res
     }
 
     fn send_message_to_id(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        log::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
+        tracing::warn!("[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         if let Some(cb) = progress.as_ref() { cb(5, "Starting lookup".to_string()); }
         // Engine is ready
         if let Some(cb) = progress.as_ref() { cb(10, "Engine ready".to_string()); }
@@ -543,7 +543,7 @@ impl BingleApi for BingleApiImpl {
                 if let Some(nsk) = finder.lookup_root_id(user_id) {
                     if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
                     let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
-                    log::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
+                    tracing::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
                     return ok;
                 } else {
                     if let Some(cb) = progress.as_ref() { cb(20, "Root not known; falling back to DDB".to_string()); }
@@ -558,20 +558,20 @@ impl BingleApi for BingleApiImpl {
             Ok(nsk) => {
                 if let Some(cb) = progress.as_ref() { cb(40, format!("DDB lookup ok: {}", nsk)); }
                 let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone());
-                log::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
+                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return={}", ok);
                 ok
             }
             Err(err) => {
                 warn!("[BingleApiImpl::send_message_to_id] DDB lookup failed: {}", err);
                 if let Some(cb) = progress.as_ref() { cb(100, format!("DDB lookup failed: {}", err)); }
-                log::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
+                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
                 false
             }
         }
     }
 
     fn send_message_to_handle(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        log::info!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
+        tracing::info!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
         let user_id_opt = match self.handle_lookup(handle) {
             Ok(uid) => uid,
             Err(e) => {
@@ -584,12 +584,12 @@ impl BingleApi for BingleApiImpl {
         if let Some(user_id) = user_id_opt {
             if let Some(cb) = progress.as_ref() { cb(10, format!("Handle {} resolved to {}", handle, user_id)); }
             let ok = self.send_message_to_id(&user_id, message, progress);
-            log::info!("[BingleApiImpl::send_message_to_handle][exit] return={}", ok);
+            tracing::info!("[BingleApiImpl::send_message_to_handle][exit] return={}", ok);
             ok
         } else {
             warn!("[BingleApiImpl::send_message_to_handle] handle not found: {}", handle);
             if let Some(cb) = progress.as_ref() { cb(100, format!("Handle not found: {}", handle)); }
-            log::info!("[BingleApiImpl::send_message_to_handle][exit] return=false");
+            tracing::info!("[BingleApiImpl::send_message_to_handle][exit] return=false");
             false
         }
     }
@@ -601,7 +601,7 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> bool {
-        log::info!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
+        tracing::info!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
         // Validate user_id is an Algorand address (base32 without padding) that decodes to 36 bytes
         let user_id_valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
@@ -620,19 +620,19 @@ impl BingleApi for BingleApiImpl {
                 let is_self_relay = my_id.as_deref() == effective_nsk.relay_id();
 
                 if is_self_relay {
-                    log::info!("[BingleApiImpl::send_message_to_network] target's relay is self; bypassing relay Call and sending directly");
+                    tracing::info!("[BingleApiImpl::send_message_to_network] target's relay is self; bypassing relay Call and sending directly");
                     if let Some(relay_addr) = effective_nsk.relay_address() {
                         effective_nsk = NetworkEndpoint::new_direct(relay_addr);
                     } else if let Some(client_addr) = self.engine.access(|e| e.turn_relay_lookup_addr_by_id(user_id)) {
-                        log::info!("[BingleApiImpl::send_message_to_network] self-relay: looked up client addr {} for user_id {}", client_addr, user_id);
+                        tracing::info!("[BingleApiImpl::send_message_to_network] self-relay: looked up client addr {} for user_id {}", client_addr, user_id);
                         effective_nsk = NetworkEndpoint::new_direct(client_addr);
                     } else {
-                        log::warn!("[BingleApiImpl::send_message_to_network] self-relay but no relay_address and TurnHandler lookup failed for user_id {}; cannot convert to direct endpoint", user_id);
+                        tracing::warn!("[BingleApiImpl::send_message_to_network] self-relay but no relay_address and TurnHandler lookup failed for user_id {}; cannot convert to direct endpoint", user_id);
                         if let Some(cb) = progress.as_ref() { cb(100, "Self-relay with no relay address".to_string()); }
                         return false;
                     }
                 } else {
-                    log::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
+                    tracing::info!("[BingleApiImpl::send_message_to_network] relay endpoint without channel detected; allocating via RelayClient");
                     if let Some(cb) = progress.as_ref() { cb(15, "Allocating relay channel".to_string()); }
 
                     // Construct RelayClient with API handle
@@ -651,7 +651,7 @@ impl BingleApi for BingleApiImpl {
                             if let Some(cb) = progress.as_ref() { cb(30, "Relay channel allocated".to_string()); }
                         }
                         Err(err) => {
-                            log::warn!("[BingleApiImpl::send_message_to_network] relay Call failed: {}", err);
+                            tracing::warn!("[BingleApiImpl::send_message_to_network] relay Call failed: {}", err);
                             if let Some(cb) = progress.as_ref() { cb(100, format!("Relay allocation failed: {}", err)); }
                             return false;
                         }
@@ -662,30 +662,30 @@ impl BingleApi for BingleApiImpl {
         } else { false };
 
         if let Some(cb) = progress.as_ref() { cb(100, if ok { "Sent" } else { "Failed to send" }.to_string()); }
-        log::info!("[BingleApiImpl::send_message_to_network][exit] return={}", ok);
+        tracing::info!("[BingleApiImpl::send_message_to_network][exit] return={}", ok);
         ok
     }
 
     fn send_message_to_id_with_response(&self, user_id: &UserId, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        log::info!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
+        tracing::info!("[BingleApiImpl::send_message_to_id_with_response][enter] user_id={} msg={} progress={}", user_id, message, progress.is_some());
         // 1) Use the Engine-bound DDB client to resolve the destination NetworkSourceKey
         let cli = self.engine.access(|e| e.ddb_client());
-        log::debug!("[BingleApiImpl::send_message_to_id_with_response][enter] got ddb_client");
+        tracing::debug!("[BingleApiImpl::send_message_to_id_with_response][enter] got ddb_client");
         let nsk = cli.lookup(user_id).map_err(|e| format!("DDB lookup failed: {}", e))?;
         // 2) Delegate to send_message_to_network_with_response for the actual send + wait
-        log::debug!("[BingleApiImpl::send_message_to_id_with_response] calling with nsk={}", nsk);
+        tracing::debug!("[BingleApiImpl::send_message_to_id_with_response] calling with nsk={}", nsk);
         let res = self.send_message_to_network_with_response(&nsk, user_id, message, progress);
-        log::info!("[BingleApiImpl::send_message_to_id_with_response][exit] result={:?}", res.as_ref().ok());
+        tracing::info!("[BingleApiImpl::send_message_to_id_with_response][exit] result={:?}", res.as_ref().ok());
         res
     }
 
     fn send_message_to_handle_with_response(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
-        log::info!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
+        tracing::info!("[BingleApiImpl::send_message_to_handle_with_response][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
         let user_id = self.handle_lookup(handle)?
             .ok_or_else(|| format!("Handle not found: {}", handle))?;
         if let Some(cb) = progress.as_ref() { cb(10, format!("Handle {} resolved to {}", handle, user_id)); }
         let res = self.send_message_to_id_with_response(&user_id, message, progress);
-        log::info!("[BingleApiImpl::send_message_to_handle_with_response][exit] result={:?}", res.as_ref().ok());
+        tracing::info!("[BingleApiImpl::send_message_to_handle_with_response][exit] result={:?}", res.as_ref().ok());
         res
     }
 
@@ -696,7 +696,7 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<JsonValue, String> {
-        log::info!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
+        tracing::info!("[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
         #[allow(unused)] {  }
         // Create a unique tag and register a pending waiter with the Engine
         let (tag, pending) = self.engine.access(|eng| {
@@ -728,20 +728,20 @@ impl BingleApi for BingleApiImpl {
         let timeout = Duration::from_secs(10);
         if let Some(resp) = Engine::wait_for_response_static(pending, &tag, timeout) {
             if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
-            log::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
+            tracing::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
             #[allow(unused)] {  }
             Ok(resp)
         } else {
             if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
             let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
-            log::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
+            tracing::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
             #[allow(unused)] {  }
             Err(err)
         }
     }
 
     fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>) {
-            log::info!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some());
+            tracing::info!("[BingleApiImpl::set_on_message][enter] handler_is_some={}", handler.is_some());
             #[allow(unused)] {  }
 
             // Store the handler and register it with the per-API router and global fallback
@@ -749,18 +749,18 @@ impl BingleApi for BingleApiImpl {
             if let Ok(mut g) = self.shared_on_message.lock() { *g = handler.clone(); }
             if let Some(r) = &self.router { r.set_on_message(handler.clone()); }
 
-            log::info!("[BingleApiImpl::set_on_message][exit]");
+            tracing::info!("[BingleApiImpl::set_on_message][exit]");
             #[allow(unused)] {  }
         }
 
     fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>) { 
-            log::info!("[BingleApiImpl::set_on_connect][enter] handler_is_some={}", handler.is_some());
+            tracing::info!("[BingleApiImpl::set_on_connect][enter] handler_is_some={}", handler.is_some());
             self.on_connect = handler; 
-            log::info!("[BingleApiImpl::set_on_connect][exit]");
+            tracing::info!("[BingleApiImpl::set_on_connect][exit]");
         }
 
     fn set_on_listening(&mut self, handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {
-            log::info!("[BingleApiImpl::set_on_listening][enter] handler_is_some={}", handler.is_some());
+            tracing::info!("[BingleApiImpl::set_on_listening][enter] handler_is_some={}", handler.is_some());
             // Store locally
             self.on_listening = handler.clone();
             // Propagate to Engine so internal notifications can reach the application
@@ -768,7 +768,7 @@ impl BingleApi for BingleApiImpl {
                 let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
                 (*engine_ptr).set_on_listening_handler(handler);
             }
-            log::info!("[BingleApiImpl::set_on_listening][exit]");
+            tracing::info!("[BingleApiImpl::set_on_listening][exit]");
         }
 }
 
@@ -776,7 +776,7 @@ impl BingleApiImpl {
     /// Public entry from the networking layer for inbound messages.
     /// If message contains a responseTag, it is treated as a response and routed to waiter; otherwise it is dispatched to on_message.
     pub fn handle_incoming_network_message(&self, sender: UserId, sender_handle: Handle, message: JsonValue) {
-        log::info!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message);
+        tracing::info!("[BingleApiImpl::handle_incoming_network_message][enter] sender={} handle={} msg={}", sender, sender_handle, message);
         #[allow(unused)] {  }
         // Opportunistically update the cache mapping for reverse lookups
         if let Ok(mut cache) = self.handle_cache.lock() {
@@ -786,7 +786,7 @@ impl BingleApiImpl {
         if let Some(cb) = &self.on_message {
             cb(sender, sender_handle, message);
         }
-        log::info!("[BingleApiImpl::handle_incoming_network_message][exit]");
+        tracing::info!("[BingleApiImpl::handle_incoming_network_message][exit]");
         #[allow(unused)] {  }
     }
 }
@@ -814,7 +814,7 @@ impl BingleApiImpl {
                     }
                     Ok(None) => { /* fall through to blockchain (or ultimately None) */ }
                     Err(e) => {
-                        log::warn!("[BingleApiImpl::handle_lookup_by_id] test seam error: {}", e);
+                        tracing::warn!("[BingleApiImpl::handle_lookup_by_id] test seam error: {}", e);
                         // fall through
                     }
                 }
@@ -824,11 +824,11 @@ impl BingleApiImpl {
         // 3) Fallback: query blockchain local storage via AlgoOps/AlgoBingle to extract 'Handle'
         let app_id = match self.get_app_id() {
             Some(a) => a,
-            None => { log::warn!("[BingleApiImpl::handle_lookup_by_id] app_id not configured"); return None; }
+            None => { tracing::warn!("[BingleApiImpl::handle_lookup_by_id] app_id not configured"); return None; }
         };
         let config = match self.get_algo_provider_config() {
             Some(c) => c,
-            None => { log::warn!("[BingleApiImpl::handle_lookup_by_id] algo_provider_config not configured"); return None; }
+            None => { tracing::warn!("[BingleApiImpl::handle_lookup_by_id] algo_provider_config not configured"); return None; }
         };
 
         // Build AlgoOps with provided config
@@ -842,15 +842,15 @@ impl BingleApiImpl {
                     }
                     return Some(h);
                 }
-                log::info!("[BingleApiImpl::handle_lookup_by_id] no Handle key in local state for {}", user_id);
+                tracing::info!("[BingleApiImpl::handle_lookup_by_id] no Handle key in local state for {}", user_id);
                 None
             }
             Ok(None) => {
-                log::info!("[BingleApiImpl::handle_lookup_by_id] user not opted in or no local state for {}", user_id);
+                tracing::info!("[BingleApiImpl::handle_lookup_by_id] user not opted in or no local state for {}", user_id);
                 None
             }
             Err(e) => {
-                log::warn!("[BingleApiImpl::handle_lookup_by_id] blockchain query failed: {}", e);
+                tracing::warn!("[BingleApiImpl::handle_lookup_by_id] blockchain query failed: {}", e);
                 None
             }
         }
@@ -870,45 +870,45 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         let _ = self.engine.access(|e| e.mutex_handle_release(&from_id, &rel));
     }
     fn set_state(&self, state: EngineState) {
-        log::info!("[BingleApiImpl::set_state][enter] state={:?}", state);
+        tracing::info!("[BingleApiImpl::set_state][enter] state={:?}", state);
         let _ = self.engine.access(|e| e.set_state_internal(state));
-        log::info!("[BingleApiImpl::set_state][exit]");
+        tracing::info!("[BingleApiImpl::set_state][exit]");
     }
     fn get_state(&self) -> EngineState {
         self.engine.access(|e| e.state())
     }
     fn set_nat_type(&self, nat: crate::engine::NatType) {
-        log::info!("[BingleApiImpl::set_nat_type][enter] nat_type={:?}", nat);
+        tracing::info!("[BingleApiImpl::set_nat_type][enter] nat_type={:?}", nat);
         self.engine.access(|e| e.set_nat_type(nat));
-        log::info!("[BingleApiImpl::set_nat_type][exit]");
+        tracing::info!("[BingleApiImpl::set_nat_type][exit]");
     }
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
         self.engine.access(|e| e.last_public_addr())
     }
     fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), String> {
         let cli = self.engine.access(|e| e.ddb_client());
-        log::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}, am_relay={}", endpoint, am_relay);
+        tracing::info!("[BingleApiImpl::ddb_register_ip] registering IP: {:?}, am_relay={}", endpoint, am_relay);
         cli.register_ip(endpoint, am_relay)
     }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
         let cli = self.engine.access(|e| e.ddb_client());
-        log::info!("[BingleApiImpl::ddb_register_relay] registering relay: id={}", relay_id);
+        tracing::info!("[BingleApiImpl::ddb_register_relay] registering relay: id={}", relay_id);
         cli.register_relay(relay_id, relay_sig)
     }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
-        log::info!("[BingleApiImpl::update_turn_listener_relay][enter] id={} addr={}", relay_id, relay_addr);
+        tracing::info!("[BingleApiImpl::update_turn_listener_relay][enter] id={} addr={}", relay_id, relay_addr);
         // Backwards-compatible: delegate to client-side listen response handler
         <BingleApiImpl as crate::api::bingle_api::BingleApiInternal>::turn_client_handle_listen_response(self, relay_addr, relay_id);
-        log::info!("[BingleApiImpl::update_turn_listener_relay][exit] Ok(())");
+        tracing::info!("[BingleApiImpl::update_turn_listener_relay][exit] Ok(())");
         Ok(())
     }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
-        log::info!("[BingleApiImpl::turn_client_handle_listen_response][enter] id={} addr={}", relay_id, relay_addr);
+        tracing::info!("[BingleApiImpl::turn_client_handle_listen_response][enter] id={} addr={}", relay_id, relay_addr);
         self.engine.access(|e| e.turn_client_handle_listen_response(relay_addr, &relay_id));
-        log::info!("[BingleApiImpl::turn_client_handle_listen_response][exit]");
+        tracing::info!("[BingleApiImpl::turn_client_handle_listen_response][exit]");
     }
     fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) {
-        log::info!("[BingleApiImpl::notify_listening] listening={} nat_type={:?}", listening, nat_type);
+        tracing::info!("[BingleApiImpl::notify_listening] listening={} nat_type={:?}", listening, nat_type);
         if let Some(cb) = &self.on_listening { cb(listening, nat_type); }
     }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
@@ -928,7 +928,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.access(|e| e.turn_relay_handle_listen(&id, &source))
     }
     fn set_relay_state(&self, state: crate::engine::RelayState) {
-        log::info!("[BingleApiImpl::set_relay_state] state={:?}", state);
+        tracing::info!("[BingleApiImpl::set_relay_state] state={:?}", state);
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).set_relay_state(state, "set_relay_state from API internal");
@@ -944,7 +944,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.access(|e| e.ddb_backend_size())
     }
     fn initialize_relay(&self) {
-        log::info!("[BingleApiImpl::initialize_relay]");
+        tracing::info!("[BingleApiImpl::initialize_relay]");
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).initialize_relay_async();
@@ -954,15 +954,15 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.started_options.am_relay
     }
     fn signal_signon_complete(&self) {
-        log::info!("[BingleApiImpl::signal_signon_complete]");
+        tracing::info!("[BingleApiImpl::signal_signon_complete]");
         self.engine.access(|e| e.signal_signon_complete());
     }
     fn reset_signon_complete(&self) {
-        log::info!("[BingleApiImpl::reset_signon_complete]");
+        tracing::info!("[BingleApiImpl::reset_signon_complete]");
         self.engine.access(|e| e.reset_signon_complete());
     }
     fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) {
-        log::info!("[BingleApiImpl::ripple_message] originator={}", originator_id);
+        tracing::info!("[BingleApiImpl::ripple_message] originator={}", originator_id);
         self.engine.access(|e| e.ripple_message(message, originator_id, ddb_backend));
     }
 }

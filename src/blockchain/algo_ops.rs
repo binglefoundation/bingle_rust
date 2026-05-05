@@ -353,35 +353,35 @@ impl AlgoOps {
         let client = match self.algod_client() {
             Ok(c) => c,
             Err(e) => {
-                log::error!("[account_balance] Failed to access algod client: {}", e);
+                tracing::error!("[account_balance] Failed to access algod client: {}", e);
                 return Err(e);
             }
         };
         let address = match self.require_address() {
             Ok(a) => a,
             Err(e) => {
-                log::error!("[account_balance] Failed to resolve address: {}", e);
+                tracing::error!("[account_balance] Failed to resolve address: {}", e);
                 return Err(e);
             }
         };
         let res = match self.rt_block_on(client.account_information(&address)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("[account_balance] Failed to fetch account information for {}: {}", address, e);
+                tracing::error!("[account_balance] Failed to fetch account information for {}: {}", address, e);
                 return Err(e);
             }
         };
-        log::trace!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
+        tracing::trace!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
         let info = match res {
             Ok(v) => v,
             Err(e) => {
-                log::error!("[account_balance] Account information request failed for {}: {}", address, e);
+                tracing::error!("[account_balance] Account information request failed for {}: {}", address, e);
                 return Ok(None);
             }
         };
         // amount is in microalgos
         let micro: u64 = info.amount.0;
-        log::debug!("[account_balance] Balance for address {} is {} microalgos", address, micro);
+        tracing::debug!("[account_balance] Balance for address {} is {} microalgos", address, micro);
         Ok(Some(micro as f64 / 1_000_000.0))
     }
 
@@ -422,8 +422,8 @@ impl AlgoOps {
         let res = self.rt_block_on(client.account_information(&address))?;
         let info = match res { Ok(v) => v, Err(_e) => return Ok(None) };
 
-        log::debug!("Retrieved account info for address: {}", account_address);
-        log::trace!("Account info: {:#?}", info);
+        tracing::debug!("Retrieved account info for address: {}", account_address);
+        tracing::trace!("Account info: {:#?}", info);
 
         let v = serde_json::to_value(&info)
             .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
@@ -621,7 +621,7 @@ impl AlgoOps {
         let params_res = self.rt_block_on(client.suggested_transaction_params())?;
         let params = match params_res { Ok(p) => p, Err(e) => return Err(anyhow!("failed to fetch suggested params: {e}")) };
 
-        log::info!("Setting clawback to app address: {:?}", clawback);
+        tracing::info!("Setting clawback to app address: {:?}", clawback);
 
         // Build asset reconfiguration: explicitly keep manager and reserve; set clawback to app address
         let cfg = algonaut::transaction::builder::UpdateAsset::new(manager, asset_id)
@@ -696,7 +696,7 @@ impl AlgoOps {
             .note(Self::unique_note())
             .build()
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
-        log::info!("[change_asset_reserve_address] tx: {:#?}", tx);
+        tracing::info!("[change_asset_reserve_address] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -723,7 +723,7 @@ impl AlgoOps {
             }
         }
         if creator_amount == 0 {
-            log::info!("[change_asset_reserve_address] creator has no balance of asset {}", asset_id);
+            tracing::info!("[change_asset_reserve_address] creator has no balance of asset {}", asset_id);
             return Ok(()); // nothing to move
         }
 
@@ -756,7 +756,7 @@ impl AlgoOps {
             .build()
             .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
 
-        log::trace!("[send_asset] tx: {:#?}", tx);
+        tracing::trace!("[send_asset] tx: {:#?}", tx);
 
         // Sign and submit
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
@@ -850,7 +850,7 @@ impl AlgoOps {
         let va = serde_json::to_value(&acct_info).map_err(|e| anyhow!("failed to serialize reserve account info: {e}"))?;
         let amount = Self::parse_holding_amount_from_account_value(&va, asset_id);
         if amount == 0 {
-            log::info!("[recover_reserve_balance] reserve has zero balance for asset {asset_id}");
+            tracing::info!("[recover_reserve_balance] reserve has zero balance for asset {asset_id}");
             return Ok(());
         }
         // Transfer to creator
@@ -941,7 +941,7 @@ impl AlgoOps {
         // Print estimated fee components and current balance for visibility
         let per_byte = params.fee_per_byte;
         let min_fee = params.min_fee;
-        log::info!(
+        tracing::info!(
             "Preflight: min_fee={} µAlgos, fee_per_byte={} µAlgos/byte, est_prog_size={} bytes, estimated fee: {:.6} ALGO ({} µAlgos); current balance: {:.6} ALGO ({} µAlgos)",
             min_fee.0,
             per_byte.0,
@@ -1017,7 +1017,7 @@ impl AlgoOps {
         let est_fee = Self::estimate_fee_for_programs(&params, &[est_prog_size]);
         let per_byte = params.fee_per_byte;
         let min_fee = params.min_fee;
-        log::info!(
+        tracing::info!(
             "Update preflight: min_fee={} µAlgos, fee_per_byte={} µAlgos/byte, est_prog_size={} bytes, estimated fee: {:.6} ALGO ({} µAlgos)",
             min_fee.0,
             per_byte.0,
@@ -1052,8 +1052,8 @@ impl AlgoOps {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Build tx
         let tx = self.build_call_app_tx(app_id, asset_id, method, args)?;
-        log::info!("[call_app] method={:?} app_id={} asset_id={:?} args_len={}", method, app_id, asset_id, args.len());
-        log::trace!("[call_app] tx={:?}", tx);
+        tracing::info!("[call_app] method={:?} app_id={} asset_id={:?} args_len={}", method, app_id, asset_id, args.len());
+        tracing::trace!("[call_app] tx={:?}", tx);
         let sk = self.private_key_bytes()?;
         let client = self.algod_client()?;
         // Sign, submit, wait

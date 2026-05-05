@@ -44,7 +44,7 @@ pub fn bingle_api_relay_check_two_nodes() {
     relay.access_unsafe_for_tests(|guard: &mut BingleApiImpl| {
         let client_addr_for_cb = client_addr.clone();
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
-            log::info!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
+            tracing::info!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
             let is_check = msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("Check")
                 && msg.get("app").map(|v| v.is_null()).unwrap_or(true);
             if is_check {

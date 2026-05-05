@@ -47,12 +47,12 @@ pub fn get_version() -> VersionInfo {
 pub fn set_log_callback_global(callback: Box<dyn LogCallback>, log_level: Option<String>) {
     let level_str = log_level.as_deref().unwrap_or("info");
     let level_filter = match level_str.to_ascii_lowercase().as_str() {
-        "trace" => log::LevelFilter::Trace,
-        "debug" => log::LevelFilter::Debug,
-        "info" => log::LevelFilter::Info,
-        "warn" | "warning" => log::LevelFilter::Warn,
-        "error" => log::LevelFilter::Error,
-        _ => log::LevelFilter::Info,
+        "trace" => tracing_subscriber::filter::LevelFilter::TRACE,
+        "debug" => tracing_subscriber::filter::LevelFilter::DEBUG,
+        "info" => tracing_subscriber::filter::LevelFilter::INFO,
+        "warn" | "warning" => tracing_subscriber::filter::LevelFilter::WARN,
+        "error" => tracing_subscriber::filter::LevelFilter::ERROR,
+        _ => tracing_subscriber::filter::LevelFilter::INFO,
     };
     api::log_bridge::install_log_bridge(level_filter);
     api::log_bridge::set_global_log_callback(callback);

@@ -54,15 +54,15 @@ fn dtls_handshake_failure_retry() {
     // (Actually, to trigger the specific bug of leaving an entry in peer_states,
     // we want a failure DURING the handshake loop in send)
     
-    log::info!("Attempting send with stopped mux to trigger failure...");
+    tracing::info!("Attempting send with stopped mux to trigger failure...");
     mux_cli.stop();
     
     let res = client.send(&endpoint, b"Hello fail");
     assert!(res.is_err(), "Send should fail because mux is stopped");
-    log::info!("First send failed as expected: {}", res.err().unwrap());
+    tracing::info!("First send failed as expected: {}", res.err().unwrap());
 
     // 5. Start server and a NEW mux for client
-    log::info!("Starting server and new client mux...");
+    tracing::info!("Starting server and new client mux...");
     mux_srv.start().expect("server mux start");
     server.start(mux_srv.clone()).expect("server start");
 
@@ -73,14 +73,14 @@ fn dtls_handshake_failure_retry() {
     // 6. Attempt send again. 
     // If the bug exists, this will use the old SslStream (linked to mux_cli) and fail.
     // If fixed, it will create a new SslStream (linked to mux_cli2) and succeed.
-    log::info!("Attempting second send (should succeed if bug is fixed)...");
+    tracing::info!("Attempting second send (should succeed if bug is fixed)...");
     let res2 = client.send(&endpoint, b"Hello success");
     
     assert!(res2.is_ok(), "Second send should succeed after re-starting with new mux: {:?}", res2.err());
-    log::info!("Second send succeeded!");
+    tracing::info!("Second send succeeded!");
 
     // 7. Test with SAME endpoint coming online
-    log::info!("Testing same endpoint coming online...");
+    tracing::info!("Testing same endpoint coming online...");
     
     // Create a new endpoint on a fresh port
     let mux_srv3 = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind server mux 3"));
@@ -108,5 +108,5 @@ fn dtls_handshake_failure_retry() {
     
     let res4 = client.send(&endpoint3, b"Hello success 3");
     assert!(res4.is_ok(), "Fourth send should succeed to the same endpoint after it comes online: {:?}", res4.err());
-    log::info!("Fourth send succeeded!");
+    tracing::info!("Fourth send succeeded!");
 }

@@ -20,14 +20,14 @@ impl LogCallback for CountingLogCallback {
 #[test]
 fn log_bridge_forwards_to_callback() {
     // install_log_bridge may fail if another test already installed a logger;
-    // that's fine — what matters is set_global_log_callback + log::info! works.
-    let _ = install_log_bridge(log::LevelFilter::Trace);
+    // that's fine — what matters is set_global_log_callback + tracing::info! works.
+    let _ = install_log_bridge(tracing_subscriber::filter::LevelFilter::TRACE);
 
     let count = Arc::new(AtomicU32::new(0));
     let cb = CountingLogCallback { count: count.clone() };
     set_global_log_callback(Box::new(cb));
 
-    log::info!("test log message");
+    tracing::info!("test log message");
 
     // The callback should have been invoked at least once
     assert!(count.load(Ordering::SeqCst) >= 1, "log callback should have been called");
@@ -36,8 +36,8 @@ fn log_bridge_forwards_to_callback() {
 #[test]
 fn log_bridge_no_callback_does_not_panic() {
     // With no callback set, logging should not panic
-    let _ = install_log_bridge(log::LevelFilter::Trace);
-    log::info!("this should not panic even without a callback");
+    let _ = install_log_bridge(tracing_subscriber::filter::LevelFilter::TRACE);
+    tracing::info!("this should not panic even without a callback");
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn set_log_callback_global_installs_and_forwards() {
     // The free function should install the bridge and set the callback
     bingle_jsi::set_log_callback_global(Box::new(cb), Some("trace".to_string()));
 
-    log::info!("message via global free function");
+    tracing::info!("message via global free function");
 
     assert!(count.load(Ordering::SeqCst) >= 1, "global log callback should have been called");
 }

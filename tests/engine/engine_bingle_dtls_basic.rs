@@ -35,10 +35,10 @@ pub fn engine_basic_bingle_dtls_layer() {
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_flag = delivered.clone();
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.set_on_connect(Some(Arc::new(|sender, handle| {
-        log::info!("[server][on_connect] sender={} handle={}", sender, handle);
+        tracing::info!("[server][on_connect] sender={} handle={}", sender, handle);
     }))));
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.set_on_message(Some(Arc::new(move |sender, handle, msg| {
-        log::info!("[server][on_message] sender={} handle={} msg={}", sender, handle, msg);
+        tracing::info!("[server][on_message] sender={} handle={} msg={}", sender, handle, msg);
         delivered_flag.store(true, Ordering::SeqCst);
     }))));
 
@@ -69,9 +69,9 @@ pub fn engine_basic_bingle_dtls_layer() {
     };
 
     // Start both nodes
-    log::info!("[test] starting server at {}", server_addr);
+    tracing::info!("[test] starting server at {}", server_addr);
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.start(&server_opts)).expect("server start() should succeed");
-    log::info!("[test] starting client at {}", client_addr);
+    tracing::info!("[test] starting client at {}", client_addr);
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start() should succeed");
 
     // Build direct network destination to server and send a simple plaintext JSON message.
@@ -81,10 +81,10 @@ pub fn engine_basic_bingle_dtls_layer() {
     });
 
     let progress: Arc<rust_comms::api::bingle_api::ProgressCallback> = Arc::new(|pct, msg| {
-        log::info!("[client][progress] {}% {}", pct, msg);
+        tracing::info!("[client][progress] {}% {}", pct, msg);
     });
 
-    log::info!("[test] client sending message to {}", server_addr);
+    tracing::info!("[test] client sending message to {}", server_addr);
     let uid = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id()).expect("server id Some");
     let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&dest, &uid, payload, Some(progress)));
     assert!(ok, "client send_message_to_network should return true");

@@ -18,7 +18,7 @@ pub fn get_version_info() -> VersionInfo {
     // Combining them to match the request: 0.1.0.x
     let full_version = format!("{}.{}", cargo_version, build_number);
 
-    log::info!("get_version_info - Version: {}", full_version);
+    tracing::info!("get_version_info - Version: {}", full_version);
 
     VersionInfo {
         version: full_version,

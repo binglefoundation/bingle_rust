@@ -33,7 +33,6 @@ impl InnerBingleApi for MockApi {
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
-use simple_logger::SimpleLogger;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -58,11 +57,6 @@ pub fn find_root_relay_rejects_self() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn select_indices_partitions_for_multiple_ids() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let _ = SimpleLogger::new().init();
-    });
-
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
     let discover = Arc::new(|| -> Vec<RelayInfo> { Vec::new() });
     let finder = RelayFinder::new(
@@ -87,7 +81,7 @@ pub fn select_indices_partitions_for_multiple_ids() {
 
     for (i, id) in ids.iter().enumerate() {
         let (idx, alt) = finder.select_indices(&relays, id);
-        log::info!("[RelayFinder] select_indices: id={} idx={} alt={}", id, idx, alt);
+        tracing::info!("[RelayFinder] select_indices: id={} idx={} alt={}", id, idx, alt);
         assert_eq!(idx, i, "idx mismatch for id {}", id);
         assert_eq!(alt, (idx + 1) % 4, "alt mismatch for id {}", id);
     }

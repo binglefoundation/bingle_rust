@@ -85,10 +85,10 @@ impl TurnHandler for TurnRelayHandlerImpl {
         if let (Ok(mut id2a), Ok(mut a2id)) = (self.allowed_id_to_addr.lock(), self.allowed_addr_to_id.lock()) {
             id2a.insert(source_id.to_string(), *source);
             a2id.insert(*source, source_id.to_string());
-            log::info!("[TurnRelayHandlerImpl::handle_listen] registered {} -> {}", source_id, source);
+            tracing::info!("[TurnRelayHandlerImpl::handle_listen] registered {} -> {}", source_id, source);
             true
         } else {
-            log::info!("[TurnRelayHandlerImpl::handle_listen] lock poisoned while adding {} -> {}", source_id, source);
+            tracing::info!("[TurnRelayHandlerImpl::handle_listen] lock poisoned while adding {} -> {}", source_id, source);
             false
         }
     }
@@ -99,11 +99,11 @@ impl TurnHandler for TurnRelayHandlerImpl {
         local_public_address: Option<SocketAddr>,
         packet: &[u8],
     ) -> Option<WrappedMessageWithNetworkEndpoint> {
-        log::info!("[TurnRelayHandlerImpl::handle_turn_incoming] {} bytes from {:?}, local_public_address={:?}", packet.len(), sender_address, local_public_address);
+        tracing::info!("[TurnRelayHandlerImpl::handle_turn_incoming] {} bytes from {:?}, local_public_address={:?}", packet.len(), sender_address, local_public_address);
         let (ch, len, _pad) = match parse_channel_data_header(packet) {
             Some(v) => v,
             None => {
-                log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] failed to parse channel data header ({} bytes)", packet.len());
+                tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] failed to parse channel data header ({} bytes)", packet.len());
                 return None;
             }
         };
@@ -112,7 +112,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
             let map = match self.ch_to_pair.lock() {
                 Ok(m) => m,
                 Err(_) => {
-                    log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] ch_to_pair lock poisoned");
+                    tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] ch_to_pair lock poisoned");
                     return None;
                 }
             };
@@ -121,7 +121,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
                 let sender_addr = match sender_address {
                     Some(addr) => *addr,
                     None => {
-                        log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {:#X} and sender_address is None", ch);
+                        tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {:#X} and sender_address is None", ch);
                         return None;
                     }
                 };
@@ -129,24 +129,24 @@ impl TurnHandler for TurnRelayHandlerImpl {
                     Ok(m) => match m.get(&sender_addr).cloned() {
                         Some(id) => id,
                         None => {
-                            log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {:#X} and sender {} is not registered", ch, sender_addr);
+                            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {:#X} and sender {} is not registered", ch, sender_addr);
                             return None;
                         }
                     },
                     Err(_) => {
-                        log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] allowed_addr_to_id lock poisoned");
+                        tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] allowed_addr_to_id lock poisoned");
                         return None;
                     }
                 };
                 let payload = match packet.get(4..4 + len) {
                     Some(p) => p.to_vec(),
                     None => {
-                        log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] packet too short for len {} (total {})", len, packet.len());
+                        tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] packet too short for len {} (total {})", len, packet.len());
                         return None;
                     }
                 };
                 let network_endpoint = NetworkEndpoint::new_relay(relay_id.clone(), Some(sender_addr), Some(ch));
-                log::info!(
+                tracing::info!(
                     "[TurnRelayHandlerImpl::handle_turn_incoming] inbound from advertised relay {} on ch {:#X} ({} bytes)",
                     relay_id, ch, len
                 );
@@ -157,11 +157,11 @@ impl TurnHandler for TurnRelayHandlerImpl {
         // Gate by allowed addr presence
         if let Ok(map) = self.allowed_addr_to_id.lock() {
             if !map.contains_key(&dest_addr) {
-                log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] rejecting packet from {}: destination address not registered via Listen", dest_addr);
+                tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] rejecting packet from {}: destination address not registered via Listen", dest_addr);
                 return None;
             }
         } else {
-            log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] lock poisoned while checking allowed addr presence");
+            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] lock poisoned while checking allowed addr presence");
             return None;
         }
 
@@ -169,11 +169,11 @@ impl TurnHandler for TurnRelayHandlerImpl {
         let payload = match packet.get(4..4 + len) {
             Some(p) => p.to_vec(),
             None => {
-                log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] packet too short for len {} (total {})", len, packet.len());
+                tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] packet too short for len {} (total {})", len, packet.len());
                 return None;
             }
         };
-        log::info!(
+        tracing::info!(
             "[TurnRelayHandlerImpl::handle_turn_incoming] accepted is_packet_from_dest={} from {:?} on ch {} ({} bytes)",
             is_packet_from_dest, sender_address, ch, len
         );
@@ -183,14 +183,14 @@ impl TurnHandler for TurnRelayHandlerImpl {
                 let local_pub = match local_public_address {
                     Some(addr) => addr,
                     None => {
-                        log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] local_public_address is None for relayed message");
+                        tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] local_public_address is None for relayed message");
                         return None;
                     }
                 };
                 NetworkEndpoint::new_relay(relay_id, Some(local_pub), Some(ch))
             } else { NetworkEndpoint::new_direct(*sender_addr) }
         } else {
-            log::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] rejecting packet from unknown source {:?}", sender_address);
+            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] rejecting packet from unknown source {:?}", sender_address);
             return None
         };
 
@@ -217,7 +217,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
             id2a.insert(relay_id.to_string(), *source);
             a2id.insert(*source, relay_id.to_string());
         }
-        log::info!(
+        tracing::info!(
             "[TurnRelayHandlerImpl::handle_call_response] set mapping ch={:#X} for {} -> {} (relay_id={})",
             channel, source, dest, relay_id
         );
@@ -249,7 +249,7 @@ impl TurnRelayHandler for TurnRelayHandlerImpl {
                 id2a.insert(dest_id.to_string(), *dest);
                 a2id.insert(*dest, dest_id.to_string());
             }
-            log::info!("[TurnRelayHandlerImpl::handle_call] allocated channel {:#X} for {} ({}) -> {} ({})", ch, source, source_id, dest, dest_id);
+            tracing::info!("[TurnRelayHandlerImpl::handle_call] allocated channel {:#X} for {} ({}) -> {} ({})", ch, source, source_id, dest, dest_id);
             ch as i32
         } else { -1 }
     }

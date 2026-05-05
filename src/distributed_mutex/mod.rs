@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::cmp::Ordering;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use log::debug;
+use tracing::debug;
 
 /// Trait representing a distributed mutex.
 ///
@@ -101,14 +101,14 @@ impl InnerState {
     fn update_membership(&mut self, self_id: &str, from_id: &str, known_ids: &Option<HashSet<String>>) -> bool {
         let mut changed = false;
         if !self.dynamic_node_ids.contains(from_id) {
-            log::info!("[mutex:{}] adding new node to dynamic_node_ids: {}", self_id, from_id);
+            tracing::info!("[mutex:{}] adding new node to dynamic_node_ids: {}", self_id, from_id);
             self.dynamic_node_ids.insert(from_id.to_string());
             changed = true;
         }
         if let Some(known) = known_ids {
             for id in known {
                 if !self.dynamic_node_ids.contains(id) {
-                    log::info!("[mutex:{}] adding new node from known_ids: {}", self_id, id);
+                    tracing::info!("[mutex:{}] adding new node from known_ids: {}", self_id, id);
                     self.dynamic_node_ids.insert(id.clone());
                     changed = true;
                 }
@@ -131,7 +131,7 @@ impl ModifiedLamportDistributedMutex {
         Rep: Fn(&str, &crate::messages::types::MutexResponse) + Send + Sync + 'static,
         Rel: Fn(&str, &crate::messages::types::MutexRelease) + Send + Sync + 'static,
     {
-        log::info!("Creating ModifiedLamportDistributedMutex on {:?} with {:?}", self_id, node_ids);
+        tracing::info!("Creating ModifiedLamportDistributedMutex on {:?} with {:?}", self_id, node_ids);
         let inner = InnerState {
             lamport: 0,
             current_request_ts: None,
@@ -183,7 +183,7 @@ impl ModifiedLamportDistributedMutex {
             };
             (ids, msg)
         };
-        log::info!("[mutex:{}] broadcast release: {:?}", self.self_id, ids);
+        tracing::info!("[mutex:{}] broadcast release: {:?}", self.self_id, ids);
         for id in ids {
             if id == self.self_id { continue; }
             (self.send_release)(&id, &msg);
@@ -201,7 +201,7 @@ impl ModifiedLamportDistributedMutex {
             };
             (ids, msg)
         };
-        log::debug!("[mutex:{}] broadcasting membership: {:?}", self.self_id, ids);
+        tracing::debug!("[mutex:{}] broadcasting membership: {:?}", self.self_id, ids);
         for id in ids {
             if id == self.self_id { continue; }
             (self.send_reply)(&id, &msg);
@@ -210,7 +210,7 @@ impl ModifiedLamportDistributedMutex {
 
     // External message handlers
     pub fn handle_request(&self, from_id: &str, req: &crate::messages::types::MutexRequest) {
-        log::debug!("[mutex:{}] handle REQUEST from {}: ts={}", self.self_id, from_id, req.lamport_timestamp);
+        tracing::debug!("[mutex:{}] handle REQUEST from {}: ts={}", self.self_id, from_id, req.lamport_timestamp);
         // Update Lamport clock
         let mut st = self.inner.lock().expect("lock");
         st.lamport = st.lamport.max(req.lamport_timestamp) + 1;
@@ -270,13 +270,13 @@ impl ModifiedLamportDistributedMutex {
         }
         if should_send_reply {
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
-            log::debug!("[mutex:{}] [handle_request] grant_now - send REPLY: {:?}", self.self_id, resp);
+            tracing::debug!("[mutex:{}] [handle_request] grant_now - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(from_id, &resp);
         }
     }
 
     pub fn handle_reply(&self, from_id: &str, resp: &crate::messages::types::MutexResponse) {
-        log::debug!("[mutex:{}] handle REPLY from {}, known ids={:?}", self.self_id, from_id, resp.known_ids);
+        tracing::debug!("[mutex:{}] handle REPLY from {}, known ids={:?}", self.self_id, from_id, resp.known_ids);
         let mut st = self.inner.lock().expect("lock");
 
         let membership_changed = st.update_membership(&self.self_id, from_id, &resp.known_ids);
@@ -297,7 +297,7 @@ impl ModifiedLamportDistributedMutex {
     }
 
     pub fn handle_release(&self, from_id: &str, rel: &crate::messages::types::MutexRelease) {
-        log::debug!("[mutex:{}] handle RELEASE from {}", self.self_id, from_id);
+        tracing::debug!("[mutex:{}] handle RELEASE from {}", self.self_id, from_id);
         let mut st = self.inner.lock().expect("lock");
         let membership_changed = st.update_membership(&self.self_id, from_id, &rel.known_ids);
         if membership_changed && st.current_request_ts.is_some() {
@@ -327,7 +327,7 @@ impl ModifiedLamportDistributedMutex {
 
         if let Some(id) = next_grant {
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
-            log::debug!("[mutex:{}] [handle_release] grant deferred - send REPLY: {:?}", self.self_id, resp);
+            tracing::debug!("[mutex:{}] [handle_release] grant deferred - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(&id, &resp);
         }
     }
@@ -449,7 +449,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
         // Send a single reply outside the lock (if any)
         if let Some((_ts, id)) = maybe_grant {
             let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
-            log::debug!("[mutex:{}] [acquire] maybe_grant - send REPLY: {:?}", self.self_id, resp);
+            tracing::debug!("[mutex:{}] [acquire] maybe_grant - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(&id, &resp);
         }
         debug!("[mutex:{}] Broadcasting RELEASE to peers", self.self_id);

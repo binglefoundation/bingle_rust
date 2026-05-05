@@ -59,14 +59,14 @@ pub async fn send_message_to_id(
                     let sender_handle = match api.get_handle() {
                         Some(h) => h,
                         None => {
-                            log::error!("[send_message_to_id] api.get_handle() returned None; not saving sent message to local API");
+                            tracing::error!("[send_message_to_id] api.get_handle() returned None; not saving sent message to local API");
                             return ok;
                         }
                     };
                     let recipient_handle = match api.handle_lookup_by_id(&user_id_clone) {
                         Some(h) => h,
                         None => {
-                            log::error!("[send_message_to_id] handle_lookup_by_id returned None for user_id {}; not saving sent message to local API", user_id_clone);
+                            tracing::error!("[send_message_to_id] handle_lookup_by_id returned None for user_id {}; not saving sent message to local API", user_id_clone);
                             return ok;
                         }
                     };
@@ -80,7 +80,7 @@ pub async fn send_message_to_id(
                         timestamp,
                         text,
                     ) {
-                        log::warn!("[send_message_to_id] failed to add sent message to local API: {}", e);
+                        tracing::warn!("[send_message_to_id] failed to add sent message to local API: {}", e);
                     }
                     if let Some(path) = &local_file {
                         let _ = guard.save(path.to_string_lossy().as_ref());

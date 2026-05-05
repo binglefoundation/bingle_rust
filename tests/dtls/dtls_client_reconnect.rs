@@ -19,7 +19,7 @@ static SERVER_CLIENT_ECHOED_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static CLIENT_PING_SEEN_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 fn server_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    log::info!("server_handler_2: {:?}", data);
+    tracing::info!("server_handler_2: {:?}", data);
     if data == b"Hello" {
         let mut g = SERVER_HELLO_2.lock().unwrap();
         *g = Some(data.to_vec());
@@ -33,7 +33,7 @@ fn server_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Netwo
 }
 
 fn client_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    log::info!("client_handler_2: {:?}", data);
+    tracing::info!("client_handler_2: {:?}", data);
     if data == b"Ping" {
         let mut g = CLIENT_PING_SEEN_2.lock().unwrap();
         *g = Some(data.to_vec());
@@ -73,7 +73,7 @@ pub fn dtls_client_reconnect() {
     let client_mux_port = test_util::find_unused_loopback_port();
     let client_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), client_mux_port);
 
-    log::info!("Starting client 1 on addr:port {} server on {}", client_addr, mux_srv.local_addr().unwrap());
+    tracing::info!("Starting client 1 on addr:port {} server on {}", client_addr, mux_srv.local_addr().unwrap());
 
     let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 1 mux"));
     let mut client1 = DtlsOpenSsl::new()
@@ -95,13 +95,13 @@ pub fn dtls_client_reconnect() {
     do_roundtrip(&client1, addr_srv, "Round 1");
 
     // 3. Stop Client 1
-    log::info!("Stopping client 1...");
+    tracing::info!("Stopping client 1...");
     mux_cli1.stop();
     // Wait for port to be freed
     thread::sleep(Duration::from_millis(500));
 
     // 4. Build another DTLS client and mux on same address and port
-    log::info!("Starting client 2 on same addr:port {}...", client_addr);
+    tracing::info!("Starting client 2 on same addr:port {}...", client_addr);
     
     // Clear validation storage for round 2
     {

@@ -59,8 +59,8 @@ pub fn dtls_debug_parses_handshake_type_and_extensions() {
     datagram.extend_from_slice(&(hs.len() as u16).to_be_bytes());
     datagram.extend_from_slice(&hs);
 
-    let json = dtls_udp_to_json_with_level(&datagram, log::Level::Trace).expect("dtls_udp_to_json ok");
-    log::debug!("json: {}", json);
+    let json = dtls_udp_to_json_with_level(&datagram, tracing::Level::TRACE).expect("dtls_udp_to_json ok");
+    tracing::debug!("json: {}", json);
     // Validate JSON contains handshake type name and extension names
     let v: Value = serde_json::from_str(&json).expect("json parse");
     let records = v.get("records").and_then(|r| r.as_array()).expect("records array");

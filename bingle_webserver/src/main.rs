@@ -11,11 +11,9 @@ use bingle_local::api::bingle_local_api::BingleLocalApi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Info)
-        .with_module_level("rust_comms", log::LevelFilter::Debug)
-        .init()
-        .ok();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info,rust_comms=debug"))
+        .init();
 
     let mut port = 12121;
     let mut address = "127.0.0.1".to_string();
@@ -86,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         let mut impl_api = BingleApiLocalImpl::new(cfg);
         if path.exists() {
             if let Err(e) = impl_api.load(path.to_string_lossy().as_ref()) {
-                log::warn!("Failed to load local state from {}: {}", path.display(), e);
+                tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
             }
         }
         local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
@@ -98,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
         api.access_unsafe_for_tests(|api_mut| {
             let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> = Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
                 let type_str = if listening { format!("{:?}", nt) } else { "Unknown".to_string() };
-                log::info!("on_listening: listening={} nat_type={}", listening, type_str);
+                tracing::info!("on_listening: listening={} nat_type={}", listening, type_str);
                 if let Ok(mut guard) = nat_type_for_closure.lock() {
                     *guard = type_str;
                 }
@@ -115,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
         let api_for_handle = api.clone();
         api.access_unsafe_for_tests(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-                log::info!("Received message from {} ({}): {}", sender, sender_handle, message);
+                tracing::info!("Received message from {} ({}): {}", sender, sender_handle, message);
                 let text = message.get("text")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
@@ -132,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
                         let recipient = match api_for_handle.get_handle() {
                             Some(h) => h,
                             None => {
-                                log::error!("[on_message] get_handle returned None; not saving message to local API");
+                                tracing::error!("[on_message] get_handle returned None; not saving message to local API");
                                 return;
                             }
                         };
@@ -142,18 +140,18 @@ async fn main() -> anyhow::Result<()> {
                             timestamp,
                             text,
                         ) {
-                            log::warn!("[on_message] failed to add message to local API: {}", e);
+                            tracing::warn!("[on_message] failed to add message to local API: {}", e);
                         }
                         if let Some(path) = &local_file_for_closure {
                             let _ = guard.save(path.to_string_lossy().as_ref());
                         }
                     }
                     else {
-                        log::warn!("[on_message] local_api would not lock; not saving local state");
+                        tracing::warn!("[on_message] local_api would not lock; not saving local state");
                     }
                 }
                 else {
-                    log::warn!("[on_message] local_api is None; not saving local state");
+                    tracing::warn!("[on_message] local_api is None; not saving local state");
                 }
             });
             api_mut.set_on_message(Some(on_message));
@@ -180,13 +178,13 @@ async fn main() -> anyhow::Result<()> {
                         }
                         api_clone.access_unsafe_for_tests(|api_mut| {
                             if let Err(e) = api_mut.start(&opts_clone) {
-                                log::error!("Failed to start Bingle API: {}", e);
+                                tracing::error!("Failed to start Bingle API: {}", e);
                             }
                         });
                         api_started = true;
-                        log::info!("Bingle API started (keypair is ACTIVE)");
+                        tracing::info!("Bingle API started (keypair is ACTIVE)");
                     } else {
-                        log::info!("Bingle API start deferred (keypair status: {})", status.status);
+                        tracing::info!("Bingle API start deferred (keypair status: {})", status.status);
                     }
                 }
             }
@@ -197,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
         let opts_clone = opts.clone();
         api_clone.access_unsafe_for_tests(|api_mut| {
             if let Err(e) = api_mut.start(&opts_clone) {
-                log::error!("Failed to start Bingle API: {}", e);
+                tracing::error!("Failed to start Bingle API: {}", e);
             }
         });
         api_started = true;
@@ -215,9 +213,9 @@ async fn main() -> anyhow::Result<()> {
 
     let res = start_server(addr, state).await;
 
-    log::info!("Stopping Bingle API...");
+    tracing::info!("Stopping Bingle API...");
     api.access_unsafe_for_tests(|a| a.stop());
-    log::info!("Stopped.");
+    tracing::info!("Stopped.");
 
     res
 }

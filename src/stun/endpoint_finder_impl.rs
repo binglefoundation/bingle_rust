@@ -56,11 +56,11 @@ impl Inner {
                 let first = endpoints[0];
                 if endpoints.iter().all(|&e| e == first) {
                     self.endpoint = Some(first);
-                    log::info!("[STUN] endpoint Consistent: {:?}", self.endpoint);
+                    tracing::info!("[STUN] endpoint Consistent: {:?}", self.endpoint);
                     StunState::Consistent
                 } else {
                     self.endpoint = None;
-                    log::info!("[STUN] endpoint Inconsistent");
+                    tracing::info!("[STUN] endpoint Inconsistent");
                     StunState::Inconsistent
                 }
             }
@@ -71,7 +71,7 @@ impl Inner {
         }
         if new_state != self.state {
             self.state = new_state;
-            log::info!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
+            tracing::info!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
             if let Some(cb) = &self.state_change { cb(self.state, self.endpoint); }
         }
     }
@@ -211,7 +211,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             if let Some(h) = handler.as_ref() {
                                 let host = target.ip().to_string();
                                 let port = target.port();
-                                log::info!("[STUN] sending Binding Request to {}:{}", host, port);
+                                tracing::info!("[STUN] sending Binding Request to {}:{}", host, port);
                                 h(&host, port, &pkt);
                             }
                         }
@@ -240,26 +240,26 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
     }
 
     fn stop(&mut self) {
-        log::info!("[StunEndpointFinder] stopping background thread");
+        tracing::info!("[StunEndpointFinder] stopping background thread");
         if self.running.swap(false, Ordering::SeqCst) {
             self.stop_cond.notify_all();
             if let Some(h) = self.thread.take() {
-                log::info!("[StunEndpointFinder] join on background thread, waiting for it to finish...");
+                tracing::info!("[StunEndpointFinder] join on background thread, waiting for it to finish...");
                 let _ = h.join();
             }
             else {
-                log::warn!("[StunEndpointFinder] background thread not running, nothing to stop");
+                tracing::warn!("[StunEndpointFinder] background thread not running, nothing to stop");
             }
         }
         else {
-            log::warn!("[StunEndpointFinder] stop called without start");
+            tracing::warn!("[StunEndpointFinder] stop called without start");
         }
-        log::info!("[StunEndpointFinder] stopped background thread");
+        tracing::info!("[StunEndpointFinder] stopped background thread");
     }
 
     fn process_packet(&mut self, from: SocketAddr, data: &[u8]) {
         let endpoint = StunEndpointFinderImpl::parse_xor_mapped_address(data);
-        log::info!("[STUN] received response from {} mapped={:?}", from, endpoint);
+        tracing::info!("[STUN] received response from {} mapped={:?}", from, endpoint);
         let mut inner = self.inner.lock().unwrap();
         // Find server by source address
         if let Some(s) = inner.servers.iter_mut().find(|s| s.addr == from) {

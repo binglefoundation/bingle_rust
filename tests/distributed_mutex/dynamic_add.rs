@@ -47,7 +47,7 @@ pub fn modified_lamport_dynamic_add_node_after_start() {
         net2.add_node("Z");
         let z = net2.create_mutex("Z",vec!["A".to_string(), "B".to_string(), "C".to_string(), "Z".to_string()]);
 
-        log::info!("Z added to network: z={:?}", z);
+        tracing::info!("Z added to network: z={:?}", z);
 
         // Now have Z try to acquire; it should eventually succeed.
         z.acquire(|| {

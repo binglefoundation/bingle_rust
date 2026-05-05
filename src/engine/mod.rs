@@ -232,14 +232,14 @@ impl Engine {
         let prev_str = Self::relay_state_to_str_static(prev);
         let new_str = Self::relay_state_to_str_static(new_state);
         if prev != new_state {
-            log::info!(
+            tracing::info!(
                 "[Engine] relay_state change: {} -> {} reason={}",
                 prev_str,
                 new_str,
                 reason
             );
         } else {
-            log::info!(
+            tracing::info!(
                 "[Engine] relay_state set to {} again reason={}",
                 new_str,
                 reason
@@ -249,11 +249,11 @@ impl Engine {
     }
 
     pub fn set_last_public_addr(&mut self, addr: Option<SocketAddr>) {
-        log::info!("[Engine] set_last_public_addr: {:?}", addr);
+        tracing::info!("[Engine] set_last_public_addr: {:?}", addr);
         if let Ok(mut g) = self.last_public_addr_shared.lock() {
             *g = addr;
         } else {
-            log::error!("[Engine] last_public_addr_shared lock failed; replacing Arc");
+            tracing::error!("[Engine] last_public_addr_shared lock failed; replacing Arc");
             self.last_public_addr_shared = Arc::new(Mutex::new(addr));
         }
     }
@@ -270,10 +270,10 @@ impl Engine {
     /// Upsert a list of root relays into the in-memory DDB backend (as am_relay=true records).
     fn upsert_roots_into_backend(&self, roots: &[RelayInfo]) {
         if roots.is_empty() {
-            log::debug!("[Engine::upsert_roots_into_backend] no roots to upsert");
+            tracing::debug!("[Engine::upsert_roots_into_backend] no roots to upsert");
             return;
         }
-        log::info!(
+        tracing::info!(
             "[Engine::upsert_roots_into_backend] upserting {} root relay record(s)",
             roots.len()
         );
@@ -283,7 +283,7 @@ impl Engine {
                     IpAddr::V4(v4) => v4.to_string(),
                     IpAddr::V6(v6) => v6.to_string(),
                 };
-                log::debug!(
+                tracing::debug!(
                     "[Engine::upsert_roots_into_backend] upsert id={} addr={}:{}",
                     r.id,
                     host,
@@ -303,9 +303,9 @@ impl Engine {
                 };
                 b.upsert(rec);
             }
-            log::info!("[Engine::upsert_roots_into_backend] upsert complete");
+            tracing::info!("[Engine::upsert_roots_into_backend] upsert complete");
         } else {
-            log::warn!("[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert");
+            tracing::warn!("[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert");
         }
     }
 
@@ -362,12 +362,12 @@ impl Engine {
                     Ok(g) => match *g {
                         Some(addr) => addr,
                         None => {
-                            log::error!("[Engine][TURN] no last_public_addr_shared; cannot handle TURN packet");
+                            tracing::error!("[Engine][TURN] no last_public_addr_shared; cannot handle TURN packet");
                             return;
                         }
                     },
                     Err(_) => {
-                        log::error!("[Engine][TURN] failed to lock last_public_addr_shared; cannot handle TURN packet");
+                        tracing::error!("[Engine][TURN] failed to lock last_public_addr_shared; cannot handle TURN packet");
                         return;
                     }
                 };
@@ -378,7 +378,7 @@ impl Engine {
                     turn.handle_turn_incoming(Some(from), Some(local_public_addr), packet)
                 {
                     if am_relay {
-                        log::info!(
+                        tracing::info!(
                             "[Engine][TURN] handle_turn_incoming (relay) {} bytes from {}:",
                             wrapped.message.len(),
                             wrapped.network_endpoint
@@ -393,25 +393,25 @@ impl Engine {
                             );
                             // Here we forward the TURN packet including channel number to the resolved ip_address
                             if let Err(e) = udp.write(&nsk, &packet) {
-                                log::warn!(
+                                tracing::warn!(
                                     "[Engine][TURN relay] forward to {} failed: {}",
                                     wrapped.ip_address,
                                     e
                                 );
                             } else {
-                                log::info!(
+                                tracing::info!(
                                     "[Engine][TURN relay] forwarded {} bytes to {}",
                                     wrapped.message.len(),
                                     wrapped.ip_address
                                 );
                             }
                         } else {
-                            log::warn!(
+                            tracing::warn!(
                                 "[Engine][TURN relay] source is not UdpNetworkMux; cannot forward"
                             );
                         }
                     } else {
-                        log::info!(
+                        tracing::info!(
                             "[Engine][TURN] handle_turn_incoming (not relay) {} bytes from {}:",
                             wrapped.message.len(),
                             wrapped.network_endpoint
@@ -422,19 +422,19 @@ impl Engine {
                             .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
                         ) {
                             udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                            log::info!(
+                            tracing::info!(
                                 "[Engine][TURN client] reprocessed {} bytes from {}",
                                 wrapped.message.len(),
                                 wrapped.network_endpoint
                             );
                         } else {
-                            log::warn!(
+                            tracing::warn!(
                                 "[Engine][TURN client] source is not UdpNetworkMux; cannot reprocess"
                             );
                         }
                     }
                 } else {
-                    log::warn!("[Engine][TURN] handle_turn_incoming returned None (ignored)");
+                    tracing::warn!("[Engine][TURN] handle_turn_incoming returned None (ignored)");
                 }
             },
         )
@@ -460,7 +460,7 @@ impl Engine {
         api: crate::api::bingle_api::BingleApiBothType,
         dtls: Box<dyn Dtls + Send + Sync>,
     ) -> Self {
-        log::info!("[Engine::new] options={:?}", options);
+        tracing::info!("[Engine::new] options={:?}", options);
         #[allow(unused)]
         {}
         // Build a DDB client now (always present); choose real or null implementation
@@ -471,7 +471,7 @@ impl Engine {
                     .and_then(|s| s.parse::<u64>().ok())
             });
             if have_app.is_none() {
-                log::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient");
+                tracing::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient");
             }
             if let Some(app_id) = have_app {
                 std::sync::Arc::new(crate::ddb::DdbClientImpl::new(
@@ -562,7 +562,7 @@ impl Engine {
         let msg = match crate::messages::marshal::from_json_str(&String::from_utf8_lossy(data)) {
             Ok(m) => m,
             Err(_) => {
-                log::warn!("[Engine::receive_message_for_tests] failed to parse message: {:?}", String::from_utf8_lossy(data));
+                tracing::warn!("[Engine::receive_message_for_tests] failed to parse message: {:?}", String::from_utf8_lossy(data));
                 return;
             },
         };
@@ -571,7 +571,7 @@ impl Engine {
             let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
             r.route_with_network(&handler, &msg, issuer, from_ep);
         } else {
-            log::warn!("[Engine::receive_message_for_tests] no router available");
+            tracing::warn!("[Engine::receive_message_for_tests] no router available");
         }
     }
 
@@ -582,7 +582,7 @@ impl Engine {
 
     /// Set and get issuer moved from API layer.
     pub fn set_issuer(&mut self, issuer: String) {
-        log::info!("[Engine::set_issuer] issuer={}", issuer);
+        tracing::info!("[Engine::set_issuer] issuer={}", issuer);
         self.issuer = Some(Arc::from(issuer));
     }
     /// Return the issuer string (id + ISSUER_SUFFIX) or an error if not set. Logs a warning on None.
@@ -590,7 +590,7 @@ impl Engine {
         if let Some(ref s) = self.issuer {
             Ok(s.as_str())
         } else {
-            log::warn!("[Engine::issuer] issuer not set");
+            tracing::warn!("[Engine::issuer] issuer not set");
             Err("issuer not set".to_string())
         }
     }
@@ -691,7 +691,7 @@ impl Engine {
     pub fn signal_signon_complete(&self) {
         let (lock, cvar) = &*self.signon_complete;
         if let Ok(mut complete) = lock.lock() {
-            log::info!("[Engine::signal_signon_complete] signaling complete=true");
+            tracing::info!("[Engine::signal_signon_complete] signaling complete=true");
             *complete = true;
             cvar.notify_all();
         }
@@ -700,7 +700,7 @@ impl Engine {
     pub fn reset_signon_complete(&self) {
         let (lock, _) = &*self.signon_complete;
         if let Ok(mut complete) = lock.lock() {
-            log::info!("[Engine::reset_signon_complete] resetting complete=false");
+            tracing::info!("[Engine::reset_signon_complete] resetting complete=false");
             *complete = false;
         }
     }
@@ -709,21 +709,21 @@ impl Engine {
         let (lock, cvar) = &*self.signon_complete;
         let mut complete = lock.lock().unwrap();
         let start = Instant::now();
-        log::info!("[Engine::await_signon_complete] awaiting signon completion with timeout {:?}", timeout);
+        tracing::info!("[Engine::await_signon_complete] awaiting signon completion with timeout {:?}", timeout);
         while !*complete {
             let remaining = timeout.saturating_sub(start.elapsed());
             if remaining.is_zero() {
-                log::warn!("[Engine::await_signon_complete] timed out");
+                tracing::warn!("[Engine::await_signon_complete] timed out");
                 return false;
             }
             let (new_complete, wait_res) = cvar.wait_timeout(complete, remaining).unwrap();
             complete = new_complete;
             if wait_res.timed_out() && !*complete {
-                log::warn!("[Engine::await_signon_complete] wait_timeout returned timed out");
+                tracing::warn!("[Engine::await_signon_complete] wait_timeout returned timed out");
                 return false;
             }
         }
-        log::info!("[Engine::await_signon_complete] signon complete observed");
+        tracing::info!("[Engine::await_signon_complete] signon complete observed");
         true
     }
 
@@ -840,11 +840,11 @@ impl Engine {
 
     /// Send a message to all known relays (except ourselves and the message originator).
     pub fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb: &dyn DdbBackend) {
-        log::info!("[Engine::ripple_message] originator={}", originator_id);
+        tracing::info!("[Engine::ripple_message] originator={}", originator_id);
         let my_id = match self.issuer() {
             Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
             Err(_) => {
-                log::warn!("[Engine::ripple_message] issuer not set, cannot ripple");
+                tracing::warn!("[Engine::ripple_message] issuer not set, cannot ripple");
                 return;
             }
         };
@@ -854,11 +854,11 @@ impl Engine {
         if let Some(endpoints) = relay_endpoints_opt {
             for (id, endpoint) in relay_ids.into_iter().zip(endpoints.into_iter()) {
                 if id == my_id || id == originator_id {
-                    log::debug!("[Engine::ripple_message] skipping relay {}", id);
+                    tracing::debug!("[Engine::ripple_message] skipping relay {}", id);
                     continue;
                 }
                 if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
-                    log::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
+                    tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
                     let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
                     if let Some(api) = self.bingle_api.upgrade() {
                         api.send_message_to_network(&nsk, &id, message.clone(), None);
@@ -868,13 +868,13 @@ impl Engine {
         } else {
             for id in relay_ids {
                 if id == my_id || id == originator_id {
-                    log::debug!("[Engine::ripple_message] skipping relay {}", id);
+                    tracing::debug!("[Engine::ripple_message] skipping relay {}", id);
                     continue;
                 }
                 if let Some(rec) = ddb.lookup(&id) {
                     if let Some(endpoint) = rec.endpoint {
                         if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
-                            log::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
+                            tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
                             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
                             if let Some(api) = self.bingle_api.upgrade() {
                                 api.send_message_to_network(&nsk, &id, message.clone(), None);
@@ -890,22 +890,22 @@ impl Engine {
     /// Returns an empty vector if the engine has not initialized discovery yet
     /// or if our issuer/id is not set.
     pub fn list_all_relays(&self, include_self: bool) -> Vec<RelayInfo> {
-        log::info!("[Engine::list_all_relays] include_self={}", include_self);
+        tracing::info!("[Engine::list_all_relays] include_self={}", include_self);
         let my_id = match self.issuer() {
             Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
             Err(e) => {
-                log::warn!("[Engine::list_all_relays] issuer unavailable: {}", e);
+                tracing::warn!("[Engine::list_all_relays] issuer unavailable: {}", e);
                 return Vec::new();
             }
         };
         match &self.relay_finder {
             Some(finder) => {
                 let res = finder.list_all_relays(&my_id, include_self);
-                log::info!("[Engine::list_all_relays] returning {} relays", res.len());
+                tracing::info!("[Engine::list_all_relays] returning {} relays", res.len());
                 res
             }
             None => {
-                log::warn!("[Engine::list_all_relays] relay_finder not initialized");
+                tracing::warn!("[Engine::list_all_relays] relay_finder not initialized");
                 Vec::new()
             }
         }
@@ -929,7 +929,7 @@ impl Engine {
         let d = self.dtls.as_mut();
         let router_arc = self.router.clone();
         d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
-                log::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
+                tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || {
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
@@ -960,7 +960,7 @@ impl Engine {
                     // Try JSON parse to extract responseTag and fulfill waiters
                     if let Ok(s) = std::str::from_utf8(data) {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                            log::info!("[Engine::install_dtls_handler][cb] checking for responseTag in {}", v);
+                            tracing::info!("[Engine::install_dtls_handler][cb] checking for responseTag in {}", v);
                             // Expose last responseTag (if this is a request). Handlers may echo it back.
                             if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
                                 if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
@@ -975,7 +975,7 @@ impl Engine {
                                     if let Ok(map) = pending_responses.lock() {
                                         if let Some(wait) = map.get(&tag_uuid) {
                                             if let Ok(mut g) = wait.0.lock() {
-                                                log::info!("[Engine::install_dtls_handler][cb] got response, returning");
+                                                tracing::info!("[Engine::install_dtls_handler][cb] got response, returning");
                                                 g.responded = true;
                                                 g.response = Some(v.clone());
                                                 wait.1.notify_all();
@@ -993,26 +993,26 @@ impl Engine {
                     match std::str::from_utf8(data) {
                         Ok(s) => match from_json_str(s) {
                             Ok(msg) => {
-                                log::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
+                                tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
                                 if let Some(r) = &router_arc {
                                     r.route_with_network(&handler, &msg, issuer, &from);
                                     if let Some(out) = r.take_outbound_response() {
-                                        log::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
+                                        tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
                                         {
-                                            if let Err(e) = server.send(&from, &bytes) { log::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
+                                            if let Err(e) = server.send(&from, &bytes) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                         }
                                     }
                                 }
                             }
                             Err(e) => {
                                 // Not valid JSON per our schema; treat as plaintext with raw bytes
-                                log::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s, e);
+                                tracing::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s, e);
                                 handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
                             }
                         },
                         Err(e) => {
-                            log::warn!("[Engine::install_dtls_handler][cb] not UTF-8 {:?}", e);
+                            tracing::warn!("[Engine::install_dtls_handler][cb] not UTF-8 {:?}", e);
                             handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
                         }
                     }
@@ -1071,7 +1071,7 @@ impl Engine {
         )));
 
         // Configure TURN ChannelData handler based on role (relay vs client)
-        log::info!("[Engine] set_handle_turn from start");
+        tracing::info!("[Engine] set_handle_turn from start");
         let th = self.create_turn_handler();
         mux0.set_handle_turn(Some(&th));
 
@@ -1098,7 +1098,7 @@ impl Engine {
     }
 
     pub(crate) fn initialize_relay(&mut self) {
-        log::info!("[Engine::initialize_relay] starts for {:?}", self.issuer);
+        tracing::info!("[Engine::initialize_relay] starts for {:?}", self.issuer);
         self.set_relay_state(
             RelayState::Off,
             "initialize_relay: starting sequence (set Off before delay)",
@@ -1112,7 +1112,7 @@ impl Engine {
                     .and_then(|s| s.parse::<u64>().ok())
             });
             if let Some(app_id) = app_id_opt {
-                log::info!("[Engine::initialize_relay] app_id configured: {}", app_id);
+                tracing::info!("[Engine::initialize_relay] app_id configured: {}", app_id);
 
                 let cfg = self.options.algo_provider_config.clone();
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
@@ -1121,7 +1121,7 @@ impl Engine {
                     Duration::from_secs(60),
                     discover,
                 );
-                log::info!("[Engine::initialize_relay] RelayFinder constructed");
+                tracing::info!("[Engine::initialize_relay] RelayFinder constructed");
 
                 // Determine our id for exclusion
                 let my_id = if let Some(iss) = self.issuer.as_deref() {
@@ -1130,16 +1130,16 @@ impl Engine {
                 } else {
                     self.options.handle.clone()
                 };
-                log::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
+                tracing::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
 
                 // Clear any stale state so that we always reload fresh on startup
                 finder.clear_state_cache();
-                log::info!("[Engine::initialize_relay] cleared finder state cache");
+                tracing::info!("[Engine::initialize_relay] cleared finder state cache");
 
                 // 1) Seed caches and load current states across the network
                 // Load states via RelayCheck for all known relays (must include self)
                 finder.load_relay_states(&my_id);
-                log::info!("[Engine::initialize_relay] loaded peer relay states");
+                tracing::info!("[Engine::initialize_relay] loaded peer relay states");
                 let mut all_relays = finder.list_all_relays(&my_id, true);
                 if !all_relays.iter().any(|r| r.id == my_id) {
                     let addr = self
@@ -1154,21 +1154,21 @@ impl Engine {
 
                 // Count peer states (excluding self)
                 let (avail_cnt, starting_cnt) = count_peer_states(&finder, &my_id);
-                log::info!(
+                tracing::info!(
                     "[Engine::initialize_relay] peer states after load: available={} starting={}",
                     avail_cnt,
                     starting_cnt
                 );
 
                 // Build peer id list including self for the mutex
-                log::info!(
+                tracing::info!(
                     "[Engine::initialize_relay] discovered {:?} relays (including self)",
                     all_relays
                 );
                 let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
                 ids.sort();
                 ids.dedup();
-                log::info!(
+                tracing::info!(
                     "[Engine::initialize_relay] mutex participants: {}",
                     ids.len()
                 );
@@ -1183,7 +1183,7 @@ impl Engine {
                     // let progress: Arc<ProgressCallback> = Arc::new({
                     //     let uid = uid.clone();
                     //     move |pct: u8, msg: String| {
-                    //         log::info!(
+                    //         tracing::info!(
                     //             "[Engine::initialize_relay][mutex] progress={} dest_id={} msg={}",
                     //             pct,
                     //             uid,
@@ -1194,7 +1194,7 @@ impl Engine {
                     let ok =
                         api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None));
                     if !ok {
-                        log::warn!(
+                        tracing::warn!(
                             "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
                             dest_id,
                             my_id_for_send,
@@ -1232,7 +1232,7 @@ impl Engine {
                         send_common(dest_id, json_val);
                     }
                 };
-                log::info!(
+                tracing::info!(
                     "[Engine::initialize_relay] prepared distributed mutex messaging closures"
                 );
 
@@ -1245,7 +1245,7 @@ impl Engine {
                     send_release,
                 );
                 self.relay_init_mutex = Some(std::sync::Arc::new(mtx));
-                log::info!("[Engine::initialize_relay] created distributed mutex");
+                tracing::info!("[Engine::initialize_relay] created distributed mutex");
 
                 // Use the mutex to serialize initialization of the DDB one node at a time
                 let ddb_backend_arc = self.ddb_backend.clone();
@@ -1255,17 +1255,17 @@ impl Engine {
                     let my_id_for_mtx = my_id.clone();
                     m.acquire(|| {
                         self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
-                        log::info!("[Engine::initialize_relay] entering CS: relay state set to Starting: {}", my_id_for_mtx);
+                        tracing::info!("[Engine::initialize_relay] entering CS: relay state set to Starting: {}", my_id_for_mtx);
 
                         // Re-count peer states under the mutex to decide initialization strategy
                         finder_arc_for_mtx.clear_state_cache();
-                        log::info!("[Engine::initialize_relay] cleared finder state cache");
+                        tracing::info!("[Engine::initialize_relay] cleared finder state cache");
                         finder_arc_for_mtx.load_relay_states(&my_id);
-                        log::info!("[Engine::initialize_relay] loaded peer relay states");
+                        tracing::info!("[Engine::initialize_relay] loaded peer relay states");
                         let (avail_cnt, starting_cnt) = count_peer_states(&finder_arc_for_mtx, &my_id_for_mtx);
-                        log::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
+                        tracing::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
                         if avail_cnt == 0 {
-                            log::info!("[Engine::initialize_relay] No peers available; initializing DDB directly");
+                            tracing::info!("[Engine::initialize_relay] No peers available; initializing DDB directly");
                             // No available peers: upsert roots into backend as bootstrap
                             if let Ok(mut b) = ddb_backend_arc.lock() {
                                 for r in &roots_copy {
@@ -1281,9 +1281,9 @@ impl Engine {
                                     };
                                     b.upsert(rec);
                                 }
-                                log::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
+                                tracing::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
                             } else {
-                                log::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
+                                tracing::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
                             }
                         } else {
                             // Peers available: start DDB load from a peer
@@ -1298,11 +1298,11 @@ impl Engine {
                                     Ok(n) => {
                                         self.peer_ddb_records = Some(n);
                                         self.set_relay_state(RelayState::Loading, "initialize_relay: started DDB load from peer");
-                                        log::info!("[Engine::initialize_relay] started DDB load from peer {} with {} records", peer_id, n);
+                                        tracing::info!("[Engine::initialize_relay] started DDB load from peer {} with {} records", peer_id, n);
 
                                         // Wait for signon to complete (signaled from MessageHandler::on_ddb_signon_response)
                                         if !self.await_signon_complete(Duration::from_secs(60)) {
-                                            log::warn!("[Engine::initialize_relay] Timed out waiting for signon completion");
+                                            tracing::warn!("[Engine::initialize_relay] Timed out waiting for signon completion");
                                         }
 
                                         // After loading the peer's DDB state, upsert an AdvertRecord
@@ -1326,53 +1326,53 @@ impl Engine {
                                         };
                                         if let Ok(mut b) = ddb_backend_arc.lock() {
                                             b.upsert(self_rec);
-                                            log::info!(
+                                            tracing::info!(
                                                 "[Engine::initialize_relay] upserted self AdvertRecord into DDB after peer load (id={})",
                                                 my_id_for_mtx
                                             );
                                         } else {
-                                            log::warn!("[Engine::initialize_relay] failed to lock ddb_backend for self upsert after peer load");
+                                            tracing::warn!("[Engine::initialize_relay] failed to lock ddb_backend for self upsert after peer load");
                                         }
                                     }
                                     Err(e) => {
-                                        log::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);
+                                        tracing::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);
                                     }
                                 }
                             } else {
-                                log::warn!("[Engine::initialize_relay] no peer selected for DDB load");
+                                tracing::warn!("[Engine::initialize_relay] no peer selected for DDB load");
                             }
                         }
                         // Need to await DDB load complete here and signon response
-                        log::info!("[Engine::initialize_relay] relay initialization CS complete {}", my_id_for_mtx);
+                        tracing::info!("[Engine::initialize_relay] relay initialization CS complete {}", my_id_for_mtx);
                     });
                     // After critical section completes, mark as Available
                     self.set_relay_state(
                         RelayState::Available,
                         "initialize_relay: DDB initialized under mutex",
                     );
-                    log::info!(
+                    tracing::info!(
                         "[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available"
                     );
                 }
                 // Record the finder
                 self.relay_finder = Some(finder_arc);
-                log::info!("[Engine::initialize_relay] stored RelayFinder reference");
+                tracing::info!("[Engine::initialize_relay] stored RelayFinder reference");
             } else {
-                log::warn!(
+                tracing::warn!(
                     "[Engine::initialize_relay] am_relay set but app_id not configured; skipping root relay discovery"
                 );
                 // Even if discovery is skipped, the relay is operational for local tests; mark available.
                 self.set_relay_state(RelayState::Available, "initialize_relay: app_id not configured; skipping discovery; mark Available for local operation");
-                log::warn!(
+                tracing::warn!(
                     "[Engine::initialize_relay] stage complete: discovery skipped, relay marked Available"
                 );
             }
         }
-        log::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
+        tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
 
     pub(crate) fn initialize_relay_async(&mut self) {
-        log::info!("[Engine] spawning initialize_relay thread");
+        tracing::info!("[Engine] spawning initialize_relay thread");
         let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
         std::thread::spawn(move || unsafe {
             let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
@@ -1385,7 +1385,7 @@ impl Engine {
         _options: &StartOptions,
         bind_addr: SocketAddr,
     ) -> Result<(), String> {
-        log::info!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
+        tracing::info!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
 
         self.set_last_public_addr(Some(
             self.options
@@ -1398,7 +1398,7 @@ impl Engine {
         // The static address is used for signaling and routing outside any firewall, not for local bind.
         let port = bind_addr.port();
         let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-        log::info!(
+        tracing::info!(
             "[Engine] start_with_addr: requested={:?} binding={:?}",
             bind_addr,
             bind_all
@@ -1415,7 +1415,7 @@ impl Engine {
         self.install_dtls_handler()?;
 
         // Configure TURN ChannelData handler based on role (relay vs client)
-        log::info!("[Engine] set_handle_turn from start_with_addr");
+        tracing::info!("[Engine] set_handle_turn from start_with_addr");
         let th = self.create_turn_handler();
         mux0.set_handle_turn(Some(&th));
 
@@ -1437,7 +1437,7 @@ impl Engine {
         self.notify_listening(true);
 
         self.mux = Some(mux);
-        log::info!("[Engine] start_with_addr: done");
+        tracing::info!("[Engine] start_with_addr: done");
         self.set_state_internal(EngineState::Registered);
 
         Ok(())
@@ -1453,14 +1453,14 @@ impl Engine {
     }
 
     fn stun_consistent_process(&mut self, public_addr: Option<SocketAddr>) {
-        log::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
+        tracing::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
         // Save last known public address (for validation/tests)
         self.set_last_public_addr(public_addr);
 
         // Transition to TrianglePing and perform relay triangle test
         let prev = self.state;
         self.state = EngineState::TrianglePing;
-        log::info!("[Engine] state change: {:?} -> TrianglePing", prev);
+        tracing::info!("[Engine] state change: {:?} -> TrianglePing", prev);
         #[allow(unused)]
         {}
 
@@ -1511,18 +1511,18 @@ impl Engine {
             // If configured as a relay, update the in-memory DDB with all root relays discovered
             if self.options.am_relay {
                 let roots = finder.list_root_relays(&my_id, true);
-                log::info!(
+                tracing::info!(
                     "[Engine::stun_consistent_process] discovered {} root relays (excluding self)",
                     roots.len()
                 );
                 self.upsert_roots_into_backend(&roots);
-                log::info!("[Engine::stun_consistent_process] upserted root relays into backend");
+                tracing::info!("[Engine::stun_consistent_process] upserted root relays into backend");
             }
 
             let relay = finder.find_relay(&my_id);
             if let Ok(r) = relay {
                 relay_target = Some(r.clone());
-                log::info!("[Engine] chosen relay {} (id={})", r.address, r.id);
+                tracing::info!("[Engine] chosen relay {} (id={})", r.address, r.id);
             } else {
                 panic!("[Engine] no relay found");
             }
@@ -1546,7 +1546,7 @@ impl Engine {
                 // Use the relay's actual Algorand address (base32) as the user id.
                 let uid = target.id.clone();
                 let ok = cb(&nsk, &uid, json_val);
-                log::info!(
+                tracing::info!(
                     "[Engine] TriangleTest1 send_via_bingle to {} (uid=base32 relay id) -> {}",
                     to_addr,
                     ok
@@ -1554,7 +1554,7 @@ impl Engine {
                 #[allow(unused)]
                 {}
             } else {
-                log::info!(
+                tracing::info!(
                     "[Engine][WARN] send_via_bingle not installed; cannot send TriangleTest1 to {}",
                     to_addr
                 );
@@ -1562,7 +1562,7 @@ impl Engine {
                 {}
             }
         } else {
-            log::info!(
+            tracing::info!(
                 "[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1"
             );
             panic!(
@@ -1598,7 +1598,7 @@ impl Engine {
                             .expect("UDP mux write failed in STUN send_packet_handler");
                     }
                     Err(e) => {
-                        log::warn!(
+                        tracing::warn!(
                             "[Engine::start] STUN send_packet_handler: invalid host '{}': {}",
                             host,
                             e
@@ -1635,7 +1635,7 @@ impl Engine {
     /// Stop the engine and background tasks if started.
     pub fn stop(&mut self) {
         let last_addr = self.last_public_addr();
-        log::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
+        tracing::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
         // First, clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
         self.dtls.stop().expect(&format!(
@@ -1650,24 +1650,24 @@ impl Engine {
             mux.stop();
         }
         else {
-            log::warn!("[Engine::stop] mux is not running at stop time {:?}:{:?}", self.issuer, last_addr);
+            tracing::warn!("[Engine::stop] mux is not running at stop time {:?}:{:?}", self.issuer, last_addr);
         }
         if let Some(stun_arc) = &self.stun {
-            log::info!("[Engine::stop] locking STUN finder");
+            tracing::info!("[Engine::stop] locking STUN finder");
             if let Ok(mut finder) = stun_arc.lock() {
-                log::info!("[Engine::stop] stopping STUN finder");
+                tracing::info!("[Engine::stop] stopping STUN finder");
                 finder.stop();
             }
             else {
-                log::error!("[Engine::stop] STUN finder lock failed {:?}:{:?}", self.issuer, last_addr);
+                tracing::error!("[Engine::stop] STUN finder lock failed {:?}:{:?}", self.issuer, last_addr);
             }
         }
         else {
-            log::warn!("[Engine::stop] STUN finder is not running at stop time {:?}:{:?}", self.issuer, last_addr);
+            tracing::warn!("[Engine::stop] STUN finder is not running at stop time {:?}:{:?}", self.issuer, last_addr);
         }
         self.mux = None;
         self.stun = None;
-        log::info!("[Engine::stop] done {:?}:{:?}", self.issuer, last_addr);
+        tracing::info!("[Engine::stop] done {:?}:{:?}", self.issuer, last_addr);
     }
 
     pub fn state(&self) -> EngineState {

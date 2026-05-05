@@ -1,7 +1,7 @@
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
-use log::warn;
+use tracing::warn;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ pub trait MessageHandler {
                 match _api.handle_lookup_by_id(&sender_id) {
                     Some(sender_handle) => cb(sender_id, sender_handle, json),
                     None => {
-                        log::error!(
+                        tracing::error!(
                             "[MessageHandler::on_plain_text] failed to resolve handle for sender id {}",
                             sender_id
                         );
@@ -88,12 +88,12 @@ pub trait MessageHandler {
             }
         }
         // Fallback to logging if no on_message callback is installed
-        log::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
     }
 
     // Ping messages
     fn on_ping_ping(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingPing) {
-        log::info!("[on_ping_ping] handling ping {:?} from {:?}", msg, from);
+        tracing::info!("[on_ping_ping] handling ping {:?} from {:?}", msg, from);
         // Reply with PingResponse: app="ping", type="response", verifiedId from API, text="ACK: {text}"
         if let Some(router) = crate::messages::router::Router::current() {
             let sender_opt = router.get_sender();
@@ -128,10 +128,10 @@ pub trait MessageHandler {
             // Prepare destination (use from.id (issuer) as base32 algorand address without conversion)
             let nsk = from.network_source_key.clone();
             let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            log::info!("[handlers::on_ping_ping] sending response {:?} to {:?}", json_val, nsk);
+            tracing::info!("[handlers::on_ping_ping] sending response {:?} to {:?}", json_val, nsk);
             let ok = sender(&nsk, &user_id, json_val);
             if !ok {
-                log::warn!("[handlers::on_ping_ping] sender returned false");
+                tracing::warn!("[handlers::on_ping_ping] sender returned false");
             }
         }
     }
@@ -263,7 +263,7 @@ pub trait MessageHandler {
         let nsk = from.network_source_key.clone();
         // Convert from.id (issuer) to raw Algorand address (base32)
         let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-        log::info!("[handlers::on_relay_check] Sending CheckResponse to {}: {}", user_id, json_val);
+        tracing::info!("[handlers::on_relay_check] Sending CheckResponse to {}: {}", user_id, json_val);
         let _ok = sender(&nsk, &user_id, json_val);
     }
     fn on_relay_listen_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
@@ -303,12 +303,12 @@ pub trait MessageHandler {
 
     // Unknown
     fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
-        log::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
+        tracing::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
     }
 
     // Default unimplemented handler: prints the message JSON
     fn on_unimplemented(&self, msg: &Message) {
-        log::info!("[UNIMPLEMENTED] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::info!("[UNIMPLEMENTED] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
     }
 }
 
@@ -415,14 +415,14 @@ impl MessageHandler for DefaultPrintingHandler {
             if let Some(backend) = router.get_ddb_backend() {
                 if let Ok(mut b) = backend.lock()
                 {
-                    log::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
+                    tracing::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
                     b.upsert(up.record.clone()); }
                 else {
-                    log::error!("[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert");
+                    tracing::error!("[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert");
                 }
             }
             else {
-                log::error!("[handlers::on_ddb_upsert_resolve] No DDB backend available");
+                tracing::error!("[handlers::on_ddb_upsert_resolve] No DDB backend available");
             }
 
             if !up.rippled {
@@ -501,15 +501,15 @@ impl MessageHandler for DefaultPrintingHandler {
     }
 
     fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) {
-        log::info!("[handlers::on_ddb_dump_resolve] upserting from {:?}", msg);
+        tracing::info!("[handlers::on_ddb_dump_resolve] upserting from {:?}", msg);
         api.ddb_upsert_record(msg.record.clone());
         if let Some(target) = api.get_peer_ddb_target() {
             if target == api.ddb_backend_size() {
-                log::info!("[handlers::on_ddb_dump_resolve] DDB sync complete (all {} records received). Sending DdbSignon.", target);
+                tracing::info!("[handlers::on_ddb_dump_resolve] DDB sync complete (all {} records received). Sending DdbSignon.", target);
                 let my_id = match api.get_my_id() {
                     Some(id) => id,
                     None => {
-                        log::warn!("[handlers::on_ddb_dump_resolve] get_my_id returned None; cannot send Signon");
+                        tracing::warn!("[handlers::on_ddb_dump_resolve] get_my_id returned None; cannot send Signon");
                         return;
                     }
                 };
@@ -532,27 +532,27 @@ impl MessageHandler for DefaultPrintingHandler {
 
                 let api_for_thread = api.clone();
                 std::thread::spawn(move || {
-                    log::info!("[on_ddb_dump_resolve] sending DdbSignon to {} via {}", peer_id, nsk);
+                    tracing::info!("[on_ddb_dump_resolve] sending DdbSignon to {} via {}", peer_id, nsk);
                     let ok = api_for_thread.send_message_to_network(&nsk, &peer_id, json, None);
-                    log::info!("[on_ddb_dump_resolve] DdbSignon sent ok={}", ok);
+                    tracing::info!("[on_ddb_dump_resolve] DdbSignon sent ok={}", ok);
                 });
             }
         }
     }
 
     fn on_ddb_signon_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbSignonResponse) {
-        log::info!("[on_ddb_signon_response] received SignonResponse, signaling completion");
+        tracing::info!("[on_ddb_signon_response] received SignonResponse, signaling completion");
         api.signal_signon_complete();
     }
 
     fn on_ddb_signon(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignon) {
         if let Some(router) = crate::messages::router::Router::current() {
             if !router.get_am_relay() { return; }
-            log::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
+            tracing::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
 
             let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
             if msg.rippled != Some(true) && msg.start_id != sender_id {
-                log::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
+                tracing::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
                 return;
             }
 
@@ -577,7 +577,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 sig: msg.original_signature.clone(),
             };
             api.ddb_upsert_record(record);
-            log::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
+            tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
 
             // Queue SignonResponse FIRST — the new relay needs to receive this and
             // transition to Available before other relays learn about it and try
@@ -605,7 +605,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 let api_clone = api.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(3));
-                    log::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
+                    tracing::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
                     if let Some(router) = crate::messages::router::Router::current() {
                         if let Some(backend) = router.get_ddb_backend() {
                             if let Ok(b) = backend.lock() {
@@ -654,7 +654,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 Some(id) => id,
                 None => { warn!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
             };
-            log::info!("[handlers::on_triangle_test1] call find_relay_excluding my_id = {}", my_id);
+            tracing::info!("[handlers::on_triangle_test1] call find_relay_excluding my_id = {}", my_id);
             let associated_relay = match finder.find_relay_excluding(&my_id, &exclusions) {
                 Ok(info) => info,
                 Err(e) => {
@@ -664,12 +664,12 @@ impl MessageHandler for DefaultPrintingHandler {
                     let resp_json = crate::messages::marshal::to_json_value(&resp);
                     if !from_user_id.is_empty() {
                         let ok = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
-                        log::info!("[handlers::on_triangle_test1] TriangleTest1Response (no_corner_node) sent ok={}", ok);
+                        tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response (no_corner_node) sent ok={}", ok);
                     }
                     return;
                 }
             };
-            log::info!("[handlers::on_triangle_test1] found relay: {:?}", associated_relay);
+            tracing::info!("[handlers::on_triangle_test1] found relay: {:?}", associated_relay);
 
             // Build TriangleTest2 with checking_endpoint from TriangleTest1 and checking_id as our id (no issuer suffix)
             let t2 = RelayTriangleTest2 { app: None, checking_id: my_id.clone(), checking_endpoint: checking };
@@ -682,7 +682,7 @@ impl MessageHandler for DefaultPrintingHandler {
             let user_id = associated_relay.id.clone();
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
-            log::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", associated_relay.address, ok);
+            tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", associated_relay.address, ok);
 
             // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
 
@@ -693,7 +693,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 warn!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
             } else {
                 let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
-                log::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
+                tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
             }
         });
     }
@@ -710,7 +710,7 @@ impl MessageHandler for DefaultPrintingHandler {
         // Convert checking_id (issuer) to raw address by trimming issuer suffix (base32 Algorand address)
         let user_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
         let ok = api.send_message_to_network(&nsk, &user_id, json_val, None);
-        log::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
+        tracing::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
     }
 
     fn on_triangle_test3(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
@@ -725,35 +725,35 @@ impl MessageHandler for DefaultPrintingHandler {
                 // Register the IP as not relay first
                 match api_for_thread.ddb_register_ip(addr, false) {
                     Ok(()) => {
-                        log::info!("[handlers::on_triangle_test3] initial DDB registration successful: {}", addr);
+                        tracing::info!("[handlers::on_triangle_test3] initial DDB registration successful: {}", addr);
                         if api_for_thread.is_relay() {
                             api_for_thread.initialize_relay();
                             if let Err(e) = api_for_thread.ddb_register_ip(addr, true) {
-                                log::warn!("[handlers::on_triangle_test3] second ddb_register_ip(true) failed: {}", e);
+                                tracing::warn!("[handlers::on_triangle_test3] second ddb_register_ip(true) failed: {}", e);
                             } else {
-                                log::info!("[handlers::on_triangle_test3] relay DDB registration successful: {}", addr);
+                                tracing::info!("[handlers::on_triangle_test3] relay DDB registration successful: {}", addr);
                             }
                         }
                         // Mark engine state as Registered and print id/handle for debugging
                         let uid = api_for_thread.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
                         let handle = api_for_thread.get_handle().unwrap_or_else(|| "<unknown>".to_string());
-                        log::info!("[handlers::on_triangle_test3] registration process completed (user_id={}, handle={})", uid, handle);
+                        tracing::info!("[handlers::on_triangle_test3] registration process completed (user_id={}, handle={})", uid, handle);
                         api_for_thread.set_state(crate::engine::EngineState::Registered);
                         // Notify that we are listening now
                         api_for_thread.notify_listening(true, crate::engine::NatType::FullCone);
                     }
                     Err(e) => {
-                        log::warn!("[handlers::on_triangle_test3] initial ddb_register_ip failed: {}", e);
+                        tracing::warn!("[handlers::on_triangle_test3] initial ddb_register_ip failed: {}", e);
                     }
                 }
             } else {
-                log::warn!("[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register");
+                tracing::warn!("[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register");
             }
         });
     }
 
     fn on_triangle_test1_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayTriangleTest1Response) {
-        log::info!("[DefaultPrintingHandler] TriangleTest1Response received (no_corner_node={})", msg.no_corner_node);
+        tracing::info!("[DefaultPrintingHandler] TriangleTest1Response received (no_corner_node={})", msg.no_corner_node);
 
         if msg.no_corner_node {
             // No corner node available — immediately set NATRestricted if appropriate, then
@@ -829,7 +829,7 @@ impl DefaultPrintingHandler {
                     if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
 
                     // Register the relay listener mapping via the internal API (engine turn_handler)
-                    log::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
+                    tracing::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
                     api_for_thread.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
                 }
                 Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
@@ -839,13 +839,13 @@ impl DefaultPrintingHandler {
             if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id.clone(), None) {
                 warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
             } else {
-                log::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+                tracing::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
                 api_for_thread.set_state(crate::engine::EngineState::Registered);
                 // Notify that we are listening now
                 api_for_thread.notify_listening(true, crate::engine::NatType::Restricted)
             }
         } else {
-            log::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+            tracing::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
         }
     }
 }

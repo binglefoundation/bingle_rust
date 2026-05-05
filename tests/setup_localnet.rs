@@ -44,7 +44,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&s
     // Ensure algokit CLI is available and get a funding source account
     let list = run_cmd("algokit", &["goal", "account", "list", "-w", "unencrypted-default-wallet"]) ?;
     let funded = parse_funded_account(&list).ok_or_else(|| "Could not determine a funded localnet account from `algokit goal account list` output".to_string())?;
-    log::info!("Using account {} for localnet account funding", funded);
+    tracing::info!("Using account {} for localnet account funding", funded);
 
     // For each target, ensure it's funded with at least some ALGOs
     for &addr in target_addrs {
@@ -57,7 +57,7 @@ pub fn ensure_localnet_accounts_funded(cfg: &AlgoChainConfig, target_addrs: &[&s
             let amount = "900000000";
             let note = format!("fund_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
             let transfer_res = run_cmd("algokit", &["goal", "clerk", "send", "-w", "unencrypted-default-wallet", "-a", amount, "-t", addr, "-f", &funded, "--note", &note])?;
-            log::info!("algokit transfer result: {}", transfer_res);
+            tracing::info!("algokit transfer result: {}", transfer_res);
             // Poll until balance appears
             let deadline = Instant::now() + Duration::from_secs(20);
             while Instant::now() < deadline {
