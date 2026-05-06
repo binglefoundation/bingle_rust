@@ -6,6 +6,7 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing::field::Visit;
 
 use crate::api::callback::LogCallback;
+use rust_comms::util::logging::HandleExtension;
 
 /// Global storage for the user-provided log callback.
 static GLOBAL_LOG_CALLBACK: OnceLock<Arc<Mutex<Option<Box<dyn LogCallback>>>>> = OnceLock::new();
@@ -46,7 +47,7 @@ impl<S> Layer<S> for CallbackLayer
 where 
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
         if let Ok(guard) = global_callback().lock() {
             if let Some(ref cb) = *guard {
                 let timestamp = SystemTime::now()
@@ -55,10 +56,25 @@ where
                     .unwrap_or(0);
                 
                 let level = event.metadata().level().to_string();
+                
+                let mut prefix = String::new();
+                if let Some(scope) = ctx.event_scope(event) {
+                    for span in scope {
+                        if span.name() == "BingleApi" {
+                            if let Some(ext) = span.extensions().get::<HandleExtension>() {
+                                prefix.push_str(&format!("[{}]", ext.0));
+                                continue;
+                            }
+                        }
+                        prefix.push_str(&format!("[{}]", span.name()));
+                        // Note: we could also extract fields here if we had a field-storage layer
+                    }
+                }
+
                 let mut visitor = MessageVisitor { message: String::new() };
                 event.record(&mut visitor);
                 
-                cb.on_log(timestamp, level, visitor.message);
+                cb.on_log(timestamp, level, format!("{}{}", prefix, visitor.message));
             }
         }
     }

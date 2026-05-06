@@ -204,6 +204,7 @@ pub struct Engine {
     signon_complete: Arc<(Mutex<bool>, Condvar)>,
     // Set of endpoints we have seen (sent to)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
+    pub(crate) span: tracing::Span,
 }
 
 impl Engine {
@@ -230,6 +231,8 @@ impl Engine {
     }
 
     pub(crate) fn set_relay_state(&mut self, new_state: RelayState, reason: &str) {
+        let span = self.span.clone();
+        let _guard = span.enter();
         let prev = self.relay_state;
         let prev_str = Self::relay_state_to_str_static(prev);
         let new_str = Self::relay_state_to_str_static(new_state);
@@ -524,6 +527,7 @@ impl Engine {
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            span: tracing::Span::none(),
         };
         eng.set_last_public_addr(options.static_ip.clone());
         eng
@@ -895,6 +899,8 @@ impl Engine {
     /// Returns an empty vector if the engine has not initialized discovery yet
     /// or if our issuer/id is not set.
     pub fn list_all_relays(&self, include_self: bool) -> Vec<RelayInfo> {
+        let span = self.span.clone();
+        let _guard = span.enter();
         tracing::info!("[Engine::list_all_relays] include_self={}", include_self);
         let my_id = match self.issuer() {
             Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
@@ -929,11 +935,13 @@ impl Engine {
         let bingle_api = self.bingle_api.clone();
         let am_relay = self.options.am_relay;
         let ddb_backend = self.ddb_backend.clone();
+        let span = self.span.clone();
 
         // Now obtain a mutable reference to dtls only for installing the new handler
         let d = self.dtls.as_mut();
         let router_arc = self.router.clone();
         d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
+                let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || {
                     // 1) Track connection last_seen using captured connections map
@@ -1036,6 +1044,8 @@ impl Engine {
     /// Start the engine using the provided StartOptions.
     /// Implements static endpoint path or STUN-based discovery when not provided.
     pub fn start(&mut self, options: &StartOptions) -> Result<(), String> {
+        let span = self.span.clone();
+        let _guard = span.enter();
         // Keep a copy of options
         self.options = options.clone();
 
@@ -1081,6 +1091,8 @@ impl Engine {
         mux0.set_handle_turn(Some(&th));
 
         // Now wrap mux in Arc
+        let mut mux0 = mux0;
+        mux0.span = self.span.clone();
         let mux = Arc::new(mux0);
 
         // Start mux thread first so DTLS accept loop can receive
@@ -1103,6 +1115,8 @@ impl Engine {
     }
 
     pub(crate) fn initialize_relay(&mut self) {
+        let span = self.span.clone();
+        let _guard = span.enter();
         tracing::info!("[Engine::initialize_relay] starts for {:?}", self.issuer);
         self.set_relay_state(
             RelayState::Off,
@@ -1379,7 +1393,9 @@ impl Engine {
     pub(crate) fn initialize_relay_async(&mut self) {
         tracing::info!("[Engine] spawning initialize_relay thread");
         let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        let span = self.span.clone();
         std::thread::spawn(move || unsafe {
+            let _guard = span.enter();
             let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
             eng.initialize_relay();
         });
@@ -1425,6 +1441,8 @@ impl Engine {
         mux0.set_handle_turn(Some(&th));
 
         // Now wrap mux in Arc
+        let mut mux0 = mux0;
+        mux0.span = self.span.clone();
         let mux = Arc::new(mux0);
 
         // Start the UDP mux background loop first
@@ -1451,7 +1469,9 @@ impl Engine {
     fn on_stun_consistent(&mut self, public_addr: Option<SocketAddr>) {
         // Spawn a worker thread to process STUN-consistent follow-up to avoid blocking inbound packet path
         let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        let span = self.span.clone();
         std::thread::spawn(move || unsafe {
+            let _guard = span.enter();
             let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
             eng.stun_consistent_process(public_addr);
         });

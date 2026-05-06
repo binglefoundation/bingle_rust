@@ -4,7 +4,9 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::env;
 use std::sync::{Arc, Once};
-use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
+use rust_comms::util::logging::{BingleFormatter, HandleLayer};
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -118,13 +120,27 @@ pub fn print_cwd_for_debug() {
 
 #[allow(dead_code)]
 pub fn init_test_logging() {
+    init_test_logging_with_filter("debug");
+}
+
+#[allow(dead_code)]
+pub fn init_test_logging_with_filter(filter_str: &str) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let level = LevelFilter::DEBUG;
-        let _ = tracing_subscriber::fmt()
-            .with_max_level(level)
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new(filter_str));
+
+        let fmt_layer = tracing_subscriber::fmt::layer()
             .with_test_writer()
-            .try_init();
+            .event_format(BingleFormatter);
+
+        let subscriber = tracing_subscriber::registry()
+            .with(filter)
+            .with(HandleLayer)
+            .with(fmt_layer);
+
+        let _ = tracing::subscriber::set_global_default(subscriber);
+
         // Panic hook that logs at error! and then defers to default behavior
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |pi| {

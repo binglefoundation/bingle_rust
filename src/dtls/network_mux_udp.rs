@@ -53,7 +53,7 @@ pub struct UdpNetworkMux {
     handle_turn: std::sync::OnceLock<HandleTurn>,
     running: AtomicBool,
     rx_thread: Mutex<Option<JoinHandle<()>>>,
-    // dtls_queue: Mutex<VecDeque<(NetworkEndpoint, Vec<u8>)>>,
+    pub(crate) span: tracing::Span,
 }
 
 impl UdpNetworkMux {
@@ -75,7 +75,7 @@ impl UdpNetworkMux {
             handle_turn: OnceLock::new(),
             running: AtomicBool::new(false),
             rx_thread: Mutex::new(None),
-            // dtls_queue: Mutex::new(VecDeque::new()),
+            span: tracing::Span::none(),
         })
     }
 
@@ -149,7 +149,9 @@ impl UdpNetworkMux {
         };
         let this = Arc::clone(self);
         let to = self.local_addr().unwrap();
+        let span = self.span.clone();
         let handle = thread::spawn(move || {
+            let _guard = span.enter();
             let mut buf = [0u8; 2048];
 
             warn!("[UdpNetworkMux][receive][loop on {:?}] starts", to);

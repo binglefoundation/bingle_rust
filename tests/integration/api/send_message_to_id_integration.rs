@@ -255,7 +255,7 @@ fn setup_on_message(
 }
 
 fn run_send_message_to_id_test(broken_nat: bool) {
-    test_util::init_test_logging();
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
     // This test requires a running local Algorand localnet + indexer.
     if !test_util::should_run_localnet() {
@@ -443,7 +443,7 @@ pub fn bingle_api_send_message_to_id_relay_only_localnet() {
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
-    test_util::init_test_logging();
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
     if !test_util::should_run_localnet() { return; }
 
     let relay3_id = "3RLYTSRX54G5WOPPPV4FYWRV2QXKIC5WRPM54YKXGVLTAFGUEIG2QN4DMQ";
@@ -569,7 +569,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
-    test_util::init_test_logging();
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
     if !test_util::should_run_localnet() {
         eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
@@ -724,7 +724,7 @@ fn reset_message_state(
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
-    test_util::init_test_logging();
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
     if !test_util::should_run_localnet() {
         eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
@@ -862,7 +862,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
-    test_util::init_test_logging();
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
     if !test_util::should_run_localnet() {
         eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");

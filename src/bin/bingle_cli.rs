@@ -11,6 +11,8 @@ use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::prelude::*;
+use rust_comms::util::logging::{BingleFormatter, HandleLayer};
 
 fn init_logger_from_args(args: &mut Vec<String>) {
     // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
@@ -69,9 +71,15 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         }
     }
     let level = chosen.unwrap_or(LevelFilter::INFO);
-    let _ = tracing_subscriber::fmt()
-        .with_max_level(level)
-        .try_init();
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .event_format(BingleFormatter);
+
+    let subscriber = tracing_subscriber::registry()
+        .with(level)
+        .with(HandleLayer)
+        .with(fmt_layer);
+
+    let _ = tracing::subscriber::set_global_default(subscriber);
 }
 
 fn main() {

@@ -99,6 +99,7 @@ pub struct BingleApiImpl {
     // Test seam for reverse lookup (id -> handle) without network
     id_to_handle_lookup_mock: Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
     handle_cache: Mutex<HandleCacheBi>,
+    span: tracing::Span,
 }
 
 impl BingleApiImpl {
@@ -120,6 +121,7 @@ impl BingleApiImpl {
                 handle_lookup_mock: Mutex::new(None),
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
+                span: tracing::Span::none(),
             }
         })
     }
@@ -157,6 +159,7 @@ impl BingleApiImpl {
                 handle_lookup_mock: Mutex::new(None),
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
+                span: tracing::Span::none(),
             }
         })
     }
@@ -302,21 +305,27 @@ impl Drop for BingleApiImpl {
 
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
-        tracing::info!("[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
+        let span = self.span.clone();
+        let _guard = span.enter();
+        info_theme!(themes::API, "[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
     }
     fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
-        tracing::info!("[BingleApiImpl::list_all_relays] include_self={}", include_self);
+        let span = self.span.clone();
+        let _guard = span.enter();
+        info_theme!(themes::API, "[BingleApiImpl::list_all_relays] include_self={}", include_self);
         // Delegate to Engine's relay_finder-backed implementation
         let res = self.engine.access(|e| e.list_all_relays(include_self));
-        tracing::info!("[BingleApiImpl::list_all_relays] return={:?}", res);
+        info_theme!(themes::API, "[BingleApiImpl::list_all_relays] return={:?}", res);
         res
     }
     fn get_my_id(&self) -> Option<String> {
+        let span = self.span.clone();
+        let _guard = span.enter();
         // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
         match self.engine.access(|e| e.issuer().map(|iss| iss.to_string())) {
             Ok(iss) => Some(iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()),
             Err(e) => {
-                tracing::warn!("[BingleApiImpl::get_my_id] {}", e);
+                warn_theme!(themes::API, "[BingleApiImpl::get_my_id] {}", e);
                 None
             }
         }
@@ -339,27 +348,15 @@ impl BingleApi for BingleApiImpl {
         BingleApiImpl::handle_lookup_by_id(self, user_id)
     }
     fn start(&mut self, options: &StartOptions) -> Result<(), String> {
-        // Initialize logging once (stderr + timestamps), respect options.log_level if provided.
-        // static INIT: Once = Once::new();
-        // INIT.call_once(|| {
-        //     let default_level = if cfg!(debug_assertions) { LevelFilter::Debug } else { LevelFilter::Warn };
-        //     let level = options.log_level.as_deref().map(|s| match s.to_ascii_lowercase().as_str() {
-        //         "trace" => LevelFilter::Trace,
-        //         "debug" => LevelFilter::Debug,
-        //         "info" => LevelFilter::Info,
-        //         "warn" | "warning" => LevelFilter::Warn,
-        //         "error" => LevelFilter::Error,
-        //         _ => default_level,
-        //     }).unwrap_or(default_level);
-        //     let _ = SimpleLogger::new().with_level(level).init();
-        //     // Panic hook that logs at error! and then defers to default behavior
-        //     let default_hook = std::panic::take_hook();
-        //     std::panic::set_hook(Box::new(move |pi| {
-        //         error!("panic: {}", pi);
-        //         default_hook(pi);
-        //     }));
-        // });
-        info!("[BingleApiImpl::start][enter] options={:?}", options);
+        let span = tracing::info_span!("BingleApi", handle = %options.handle);
+        self.span = span.clone();
+        let _guard = span.enter();
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).span = self.span.clone();
+        }
+
+        info_theme!(themes::API, "[BingleApiImpl::start][enter] options={:?}", options);
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
         self.started_options = options.clone();
         self.ensure_dtls();
@@ -477,7 +474,9 @@ impl BingleApi for BingleApiImpl {
     }
 
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String> {
-        tracing::info!("[BingleApiImpl::handle_lookup][enter] handle={}", handle);
+        let span = self.span.clone();
+        let _guard = span.enter();
+        info_theme!(themes::API, "[BingleApiImpl::handle_lookup][enter] handle={}", handle);
 
         let expiry_duration = self.started_options.handle_cache_expiry.unwrap_or(Duration::from_secs(600)); // Default 10 minutes
 
@@ -573,7 +572,9 @@ impl BingleApi for BingleApiImpl {
     }
 
     fn send_message_to_handle(&self, handle: &Handle, message: JsonValue, progress: Option<Arc<ProgressCallback>>) -> bool {
-        tracing::info!("[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
+        let span = self.span.clone();
+        let _guard = span.enter();
+        info_theme!(themes::API, "[BingleApiImpl::send_message_to_handle][enter] handle={} msg={} progress={}", handle, message, progress.is_some());
         let user_id_opt = match self.handle_lookup(handle) {
             Ok(uid) => uid,
             Err(e) => {
@@ -603,7 +604,9 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> bool {
-        tracing::info!("[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
+        let span = self.span.clone();
+        let _guard = span.enter();
+        info_theme!(themes::API, "[BingleApiImpl::send_message_to_network][enter] nsk={} user_id={} msg={} progress={}", network_source_key, user_id, message, progress.is_some());
         if let Some(cb) = progress.as_ref() { cb(10, "Preparing send".to_string()); }
         // Validate user_id is an Algorand address (base32 without padding) that decodes to 36 bytes
         let user_id_valid = match BASE32_NOPAD.decode(user_id.as_bytes()) {
