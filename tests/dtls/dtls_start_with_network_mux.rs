@@ -38,7 +38,7 @@ pub fn dtls_start_accepts_external_network_mux_udp() {
     let addr: SocketAddr = mux.local_addr().expect("mux local addr");
 
     // Build and configure the server
-    let mut server = DtlsOpenSsl::new()
+    let mut server = DtlsOpenSsl::new("server".to_string())
         .with_handle_message(std::sync::Arc::new(handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
@@ -53,7 +53,7 @@ pub fn dtls_start_accepts_external_network_mux_udp() {
 
     // Build DTLS client and send a payload
     let certs_b = pki::generate_ed25519_test_certs();
-    let mut client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new("client".to_string())
         .with_client_cert(certs_b.client_crt.clone())
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())

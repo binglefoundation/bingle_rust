@@ -47,7 +47,7 @@ pub fn stun_response_does_not_interfere_with_dtls_flow() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Start the server
-    let mut server = DtlsOpenSsl::new()
+    let mut server = DtlsOpenSsl::new("server".to_string())
         .with_handle_message(std::sync::Arc::new(server_echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
@@ -59,7 +59,7 @@ pub fn stun_response_does_not_interfere_with_dtls_flow() {
 
     // Build two DTLS clients with a handler to record echoes
     let certs_b = pki::generate_ed25519_test_certs();
-    let mut client1 = DtlsOpenSsl::new()
+    let mut client1 = DtlsOpenSsl::new("client1".to_string())
         .with_client_cert(certs_b.client_crt.clone())
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())
@@ -69,7 +69,7 @@ pub fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     let certs_c = pki::generate_ed25519_test_certs();
-    let mut client2 = DtlsOpenSsl::new()
+    let mut client2 = DtlsOpenSsl::new("client2".to_string())
         .with_client_cert(certs_c.client_crt.clone())
         .with_client_private_key(certs_c.client_key.clone())
         .with_server_signing_cert(certs_c.server_crt.clone())

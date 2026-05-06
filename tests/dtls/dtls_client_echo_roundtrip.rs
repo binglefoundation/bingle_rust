@@ -32,7 +32,7 @@ pub fn dtls_client_echo_roundtrip() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Build and configure the server instance with handler that captures and triggers Ping
-    let mut server = DtlsOpenSsl::new()
+    let mut server = DtlsOpenSsl::new("server".to_string())
         .with_null_encryption()
         .with_handle_message(std::sync::Arc::new(server_capture_and_trigger_handler))
         .with_server_signing_cert(server_cert_pem.clone())
@@ -49,7 +49,7 @@ pub fn dtls_client_echo_roundtrip() {
 
     // Build the DTLS client with the echo handler and provide server creds for its accept loop
     let certs_b = pki::generate_ed25519_test_certs();
-    let mut client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new("client".to_string())
         .with_null_encryption()
         .with_handle_message(std::sync::Arc::new(client_echo_handler))
         .with_client_cert(certs_b.client_crt.clone())

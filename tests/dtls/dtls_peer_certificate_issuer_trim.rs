@@ -92,7 +92,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
     let (seen_flag, seen_issuer): (Arc<AtomicBool>, Arc<OnceLock<String>>) = (Arc::new(AtomicBool::new(false)), Arc::new(OnceLock::new()));
 
-    let mut server = DtlsOpenSsl::new()
+    let mut server = DtlsOpenSsl::new("server".to_string())
         .with_null_encryption()
         .with_handle_peer_certificate(rust_comms::protocol::cert_verify::peer_certificate_handler())
         .with_server_signing_cert(server_cert_pem.clone())
@@ -114,7 +114,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind cmux");
     let cmux = std::sync::Arc::new(cmux0);
     cmux.start().expect("cmux start");
-    let mut client = DtlsOpenSsl::new()
+    let mut client = DtlsOpenSsl::new("client".to_string())
         .with_null_encryption()
         .with_handle_peer_certificate(rust_comms::protocol::cert_verify::peer_certificate_handler())
         .with_client_cert(client_cert_pem.clone())

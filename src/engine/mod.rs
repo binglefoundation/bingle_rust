@@ -459,7 +459,7 @@ struct ConnectionEntry {
 
 impl Engine {
     pub fn new(options: &StartOptions, api: crate::api::bingle_api::BingleApiBothType) -> Self {
-        let dtls: Box<dyn Dtls + Send + Sync> = Box::new(DtlsOpenSsl::new());
+        let dtls: Box<dyn Dtls + Send + Sync> = Box::new(DtlsOpenSsl::new(options.handle.clone()));
         Self::new_with_dtls(options, api, dtls)
     }
 
