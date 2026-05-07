@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 

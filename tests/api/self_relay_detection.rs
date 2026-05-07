@@ -117,7 +117,7 @@ pub fn self_relay_no_relay_address_returns_false() {
 /// Since there is no real relay to call in this test, the call will fail and return false.
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn non_self_relay_is_not_converted() {
-    let (mock, sent_vec) = MockDtls::new();
+    let (mock, _sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
 
     let my_id = test_util::ADDRESS_SPEND;
@@ -148,7 +148,7 @@ pub fn non_self_relay_is_not_converted() {
 /// should not trigger even if relay_id is present (the normal relay Call path is attempted).
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn self_relay_no_issuer_does_not_match() {
-    let (mock, sent_vec) = MockDtls::new();
+    let (mock, _sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
 
     // Do NOT set issuer — get_my_id() will return None

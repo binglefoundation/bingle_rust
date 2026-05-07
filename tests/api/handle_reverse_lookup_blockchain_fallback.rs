@@ -1,5 +1,5 @@
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
+use rust_comms::api::bingle_api::{NetworkEndpoint, StartOptions};
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use std::sync::{Arc, Mutex};
 

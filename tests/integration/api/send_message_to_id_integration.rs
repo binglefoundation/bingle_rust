@@ -117,21 +117,6 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
     api
 }
 
-fn deploy_bingle_app() -> u64 {
-    let cfg = test_util::localnet_config();
-    // Ensure relay accounts are funded
-    // id_b is in same segment as id_a
-    let id_b = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
-
-    setup_localnet::ensure_localnet_accounts_funded(&cfg,
-                                                    &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE , id_b])
-        .expect("Failed to fund localnet accounts");
-
-    // Build AlgoOps for two relay accounts and one creator (use SPEND as creator)
-    let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-
-    test_util::deploy_bingle_app(&ops_creator)
-}
 
 // Helper: wait for given duration and return true if both relays are visible via discovery with expected addresses
 fn wait_for_relays_visible(ab: &AlgoBingle, app_id: u64, expected: &[(String, SocketAddr)], timeout: Duration) -> bool {
@@ -267,7 +252,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     }
 
     let cfg = test_util::localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, test_util::ADDRESS_10MIL]);
+    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, test_util::ADDRESS_10MIL]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
@@ -584,7 +569,7 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     }
 
     let cfg = test_util::localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
+    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
@@ -879,7 +864,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     }
 
     let cfg = test_util::localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
+    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();

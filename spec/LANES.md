@@ -15,11 +15,12 @@ local user:
 
 UX:
 - ~~build react UX with onboarding~~
-- JSI / Uniffi library interface
-- build react native UX based on messenger / signal / apple messages
-- user onboarding with held algorand
+- ~~JSI / Uniffi library interface~~
+- ~~build react native UX based on messenger / signal / apple messages~~
+- ~~user onboarding with held algorand~~
 - contact UX
 - build iOS APK
+- tidy up bugs
 
 security:
 - ensure protocol is built as documented
@@ -27,6 +28,12 @@ security:
 - delegate admin tasks to not be creator
 - ensure runs in live with full encryption
 - ensure endpoint is checked and fails on impersonation
+
+robustness:
+- clean up duplicated code
+- ensure fails result in a fail message which gets handled
+- implement retry for packet loss and retryable fails
+- implement relay cache properly with expiry
 
 network:
 - remove DDB entries on node stop

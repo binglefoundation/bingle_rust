@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tracing::{info, warn};
+use tracing::warn;
 use crate::themes;
 use crate::{info_theme, warn_theme};
 use serde_json::{Map as JsonMap, Value as JsonValue};

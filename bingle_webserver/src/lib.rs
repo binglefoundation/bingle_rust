@@ -5,8 +5,7 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tower_http::cors::CorsLayer;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions, OnListeningHandler};
-use rust_comms::engine::NatType;
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use crate::models::BingleMessage;
 use std::path::PathBuf;

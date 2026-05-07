@@ -3,8 +3,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{Message, PlainTextMessage};
 
-#[path = "../util/reusable_mock_api.rs"]
-mod reusable_mock_api;
+use crate::util::reusable_mock_api;
 
 struct DefaultHandler;
 impl MessageHandler for DefaultHandler {}

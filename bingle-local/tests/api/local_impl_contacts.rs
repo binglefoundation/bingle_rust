@@ -1,4 +1,4 @@
-use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, Contact, ContactSource, LocalApiConfig};
+use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, ContactSource, LocalApiConfig};
 
 fn mk_api() -> BingleApiLocalImpl { BingleApiLocalImpl::new(LocalApiConfig::default()) }
 
