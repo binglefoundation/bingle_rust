@@ -1341,14 +1341,3 @@ pub fn byte_key_to_address(byte_public_key: &[u8; 32]) -> Result<String> {
     Ok(addr)
 }
 
-
-// Shared helper: Convert an Algorand base32 address string into base64-encoded 36-byte form.
-// Returns Err if the input is not valid base32 or does not decode to exactly 36 bytes.
-pub fn id_b64_from_algorand_addr(id: &str) -> Result<String, String> {
-    use base64::Engine as _;
-    match BASE32_NOPAD.decode(id.as_bytes()) {
-        Ok(bytes) if bytes.len() == 36 => Ok(base64::engine::general_purpose::STANDARD.encode(bytes)),
-        Ok(bytes) => Err(format!("base32 decoded len {} != 36", bytes.len())),
-        Err(e) => Err(format!("base32 decode failed: {}", e)),
-    }
-}

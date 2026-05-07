@@ -175,23 +175,6 @@ impl AlgoBingle {
         self.broadcast_group(&client, vec![signed])
     }
 
-    /// List accounts from the provided slice that have non-empty local state key "static_endpoint" set for this app.
-    /// Returns Vec of (account_address, static_endpoint_value).
-    pub fn list_static_endpoints_for_accounts(&self, app_id: u64, accounts: &[String]) -> Result<Vec<(String, String)>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        let mut out: Vec<(String, String)> = Vec::new();
-        for acct in accounts {
-            if let Ok(Some(entries)) = self.ops.local_state_for_account(app_id, acct) {
-                if let Some((_, val)) = entries.into_iter().find(|(k, _)| k == "static_endpoint") {
-                    if !val.is_empty() {
-                        out.push((acct.clone(), val));
-                    }
-                }
-            }
-        }
-        Ok(out)
-    }
-
     /// Parse a RelayIP string into a SocketAddr. Accepts forms like "host:port" or "ip:port".
     /// Returns None if parsing fails.
     pub fn parse_relay_ip(ip: &str) -> Option<std::net::SocketAddr> {
