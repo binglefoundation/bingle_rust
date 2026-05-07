@@ -1,3 +1,6 @@
+// To run these tests for integration test:
+// cargo test --test all integration::api::send_message_to_id_integration -- --ignored
+
 use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
@@ -425,6 +428,7 @@ fn wait_for_indexer_visible(app_id: u64, expected: &[(String, SocketAddr)], time
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
 #[ntest::timeout(1200_000)]
 pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
@@ -434,6 +438,7 @@ pub fn bingle_api_send_message_to_id_localnet() {
 // where both clients have broken NAT and must use relays.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
@@ -441,6 +446,7 @@ pub fn bingle_api_send_message_to_id_relay_only_localnet() {
 
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
@@ -567,6 +573,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 // Localnet-style integration test: a relay sends a message to its own relay client using send_message_to_id.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
@@ -722,6 +729,7 @@ fn reset_message_state(
 /// after a client restart, once the old connection state has been cleaned up.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
@@ -860,6 +868,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 // This tests cross-relay delivery which is expected to fail currently.
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore]
 #[ntest::timeout(1_200_000)]
 pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");

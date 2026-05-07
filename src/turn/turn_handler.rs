@@ -47,6 +47,7 @@ pub struct WrappedMessageWithNetworkEndpoint {
     pub ip_address: SocketAddr,
     pub network_endpoint: NetworkEndpoint,
     pub message: Vec<u8>,
+    pub is_relay_local: bool,
 }
 
 /**
@@ -261,12 +262,12 @@ impl TurnHandler for TurnHandlerImpl {
                 Some(pair) => pair,
                 None => {
                     // No mapping found - this could be an inbound packet from a channel we advertised via listen
-                    tracing::info!("[TurnHandlerImpl::handle_turn_incoming] no mapping found for channel {:#X}, checking if sender is allowed", ch);
+                    tracing::info!("[TurnHandlerImpl::handle_turn_incoming] no mapping found for channel {}, checking if sender is allowed", ch);
 
                     let sender_addr = match sender_address {
                         Some(addr) => *addr,
                         None => {
-                            tracing::warn!("[TurnHandlerImpl::handle_turn_incoming] no sender address provided for unmapped channel {:#X}", ch);
+                            tracing::warn!("[TurnHandlerImpl::handle_turn_incoming] no sender address provided for unmapped channel {}", ch);
                             return None;
                         }
                     };
@@ -277,7 +278,7 @@ impl TurnHandler for TurnHandlerImpl {
                             match addr_to_id.get(&sender_addr).cloned() {
                                 Some(id) => id,
                                 None => {
-                                    tracing::warn!("[TurnHandlerImpl::handle_turn_incoming] sender {} not in allowed addresses for unmapped channel {:#X}", sender_addr, ch);
+                                    tracing::warn!("[TurnHandlerImpl::handle_turn_incoming] sender {} not in allowed addresses for unmapped channel {}", sender_addr, ch);
                                     return None;
                                 }
                             }
@@ -299,7 +300,7 @@ impl TurnHandler for TurnHandlerImpl {
                     );
 
                     tracing::info!(
-                        "[TurnHandlerImpl::handle_turn_incoming] inbound packet from advertised relay {} on ch {:#X} ({} bytes), wrapping with endpoint {:?}",
+                        "[TurnHandlerImpl::handle_turn_incoming] inbound packet from advertised relay {} on ch {} ({} bytes), wrapping with endpoint {:?}",
                         relay_id,
                         ch,
                         len,
@@ -310,6 +311,7 @@ impl TurnHandler for TurnHandlerImpl {
                         ip_address: sender_addr,
                         message: payload,
                         network_endpoint,
+                        is_relay_local: false,
                     });
                 }
             }
@@ -369,6 +371,7 @@ impl TurnHandler for TurnHandlerImpl {
             ip_address: if is_packet_from_dest { source_addr } else { dest_addr },
             message: payload,
             network_endpoint: network_endpoint,
+            is_relay_local: source_addr == dest_addr,
         })
     }
 
@@ -405,7 +408,7 @@ impl TurnHandler for TurnHandlerImpl {
             a2id.insert(*source, relay_id.to_string());
         }
         tracing::info!(
-            "[TurnHandlerImpl::handle_call_response] set mapping ch={:#X} for {} <-> {} (relay={})",
+            "[TurnHandlerImpl::handle_call_response] set mapping ch={} for {} <-> {} (relay={})",
             channel,
             source,
             dest,
@@ -453,7 +456,7 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
             }
 
             tracing::info!(
-                "[TurnRelayImpl::handle_call] allocated channel {:#X} for {} ({}) -> {} ({}) and registered addresses",
+                "[TurnRelayImpl::handle_call] allocated channel {} for {} ({}) -> {} ({}) and registered addresses",
                 ch,
                 source,
                 source_id,
@@ -497,7 +500,7 @@ impl super::turn_handler::TurnClientHandler for TurnHandlerImpl {
             p2c.insert((*dest, *source), channel);
         }
         tracing::info!(
-            "[TurnHandlerImpl::handle_called] set mapping ch={:#X} for {} <-> {}",
+            "[TurnHandlerImpl::handle_called] set mapping ch={} for {} <-> {}",
             channel,
             source,
             dest
@@ -574,7 +577,7 @@ impl TurnHandler for TurnClientImpl {
                 if let Some(relay_id) = map.get(relay_addr).cloned() {
                     let network_endpoint = NetworkEndpoint::new_relay(relay_id, Some(*relay_addr), Some(ch));
                     tracing::info!(
-                        "[TurnClientImpl::handle_turn_incoming] from registered relay {}; wrapping as {} (ch {:#X}, {} bytes)",
+                        "[TurnClientImpl::handle_turn_incoming] from registered relay {}; wrapping as {} (ch {}, {} bytes)",
                         relay_addr,
                         network_endpoint,
                         ch,
@@ -585,6 +588,7 @@ impl TurnHandler for TurnClientImpl {
                         ip_address: *relay_addr,
                         message: payload,
                         network_endpoint,
+                        is_relay_local: false,
                     });
                 }
             } else {
@@ -615,6 +619,7 @@ impl TurnHandler for TurnClientImpl {
             ip_address: addr,
             message: payload,
             network_endpoint,
+            is_relay_local: false,
         })
     }
 
@@ -638,7 +643,7 @@ impl TurnHandler for TurnClientImpl {
     fn handle_call_response(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16, relay_id: &str) {
         self.insert_mapping(source, dest, channel);
         tracing::info!(
-            "[TurnClientImpl::handle_call_response] set mapping ch={:#X} for {} <-> {} (relay={})",
+            "[TurnClientImpl::handle_call_response] set mapping ch={} for {} <-> {} (relay={})",
             channel,
             source,
             dest,
@@ -684,7 +689,7 @@ impl super::turn_handler::TurnClientHandler for TurnClientImpl {
     fn handle_called(&self, source: &SocketAddr, dest: &SocketAddr, channel: u16) {
         self.insert_mapping(source, dest, channel);
         tracing::info!(
-            "[TurnClientImpl::handle_called] set mapping ch={:#X} for {} <-> {}",
+            "[TurnClientImpl::handle_called] set mapping ch={} for {} <-> {}",
             channel,
             source,
             dest

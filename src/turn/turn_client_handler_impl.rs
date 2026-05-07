@@ -100,13 +100,13 @@ impl TurnHandler for TurnClientHandlerImpl {
                     if let Some(relay_id) = map.get(relay_addr).cloned() {
                         let network_endpoint = NetworkEndpoint::new_relay(relay_id, Some(*relay_addr), Some(ch));
                         tracing::info!(
-                            "[TurnClientHandlerImpl::handle_turn_incoming] from registered relay {}; wrapping as {} (ch {:#X}, {} bytes)",
+                            "[TurnClientHandlerImpl::handle_turn_incoming] from registered relay {}; wrapping as {} (ch {}, {} bytes)",
                             relay_addr,
                             network_endpoint,
                             ch,
                             len
                         );
-                        return Some(WrappedMessageWithNetworkEndpoint { ip_address: *relay_addr, message: payload, network_endpoint });
+                        return Some(WrappedMessageWithNetworkEndpoint { ip_address: *relay_addr, message: payload, network_endpoint, is_relay_local: false });
                     }
                     else {
                         tracing::warn!("[TurnClientHandlerImpl::handle_turn_incoming] packet from unknown relay {:?}; dropping", relay_addr);
@@ -125,6 +125,7 @@ impl TurnHandler for TurnClientHandlerImpl {
         }
     }
 
+    // This is never called?
     fn send_turn_outgoing(&self, source: &SocketAddr, dest: &SocketAddr, packet: &[u8]) -> Option<TurnMessageWithAddress> {
         let ch = match self.pair_to_ch.lock() {
             Ok(map) => {
@@ -145,7 +146,7 @@ impl TurnHandler for TurnClientHandlerImpl {
         let msg = match build_channel_data(ch, packet) {
             Some(data) => data,
             None => {
-                tracing::error!("[TurnClientHandlerImpl::send_turn_outgoing] failed to build channel data for channel {:#X}", ch);
+                tracing::error!("[TurnClientHandlerImpl::send_turn_outgoing] failed to build channel data for channel {}", ch);
                 return None;
             }
         };
@@ -163,7 +164,7 @@ impl TurnHandler for TurnClientHandlerImpl {
         }
         self.insert_mapping(source, dest, channel);
         tracing::info!(
-            "[TurnClientHandlerImpl] CallResponse: {} -> {} using ch {:#X} (relay_id={})",
+            "[TurnClientHandlerImpl] CallResponse: {} -> {} using ch {} (relay_id={})",
             source, dest, channel, relay_id
         );
     }
@@ -197,7 +198,7 @@ impl TurnClientHandler for TurnClientHandlerImpl {
 
         self.insert_mapping(source, dest, channel);
         tracing::info!(
-            "[TurnClientHandlerImpl] Called: {} -> {} using ch {:#X}",
+            "[TurnClientHandlerImpl] Called: {} -> {} using ch {}",
             source, dest, channel
         );
     }

@@ -22,7 +22,7 @@ impl fmt::Display for NetworkEndpointKey {
         if let Some(addr) = self.inet_socket_address {
             write!(f, "NetworkEndpointKey(inetSocketAddress={:?})", addr)
         } else if let (Some(id), Some(ch)) = (&self.relay_id, self.relay_channel) {
-            write!(f, "NetworkEndpointKey(relayId={:?}, relayChannel={:#X})", id, ch)
+            write!(f, "NetworkEndpointKey(relayId={:?}, relayChannel={})", id, ch)
         } else if let Some(id) = &self.relay_id {
             // Backward-compat logging (should not occur for new relay keys)
             write!(f, "NetworkEndpointKey(relayId={:?})", id)

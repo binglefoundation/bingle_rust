@@ -118,12 +118,15 @@ impl TurnHandler for TurnRelayHandlerImpl {
                     return None;
                 }
             };
-            if let Some(pair) = map.get(&ch).cloned() { pair } else {
+            if let Some(pair) = map.get(&ch).cloned() {
+                tracing::debug!("[TurnRelayHandlerImpl::handle_turn_incoming] found channel mapping in ch_to_pair for ch {} => {:?}", ch, pair);
+                pair
+            } else {
                 // No mapping found - check if sender is allowed (registered via Listen)
                 let sender_addr = match sender_address {
                     Some(addr) => *addr,
                     None => {
-                        tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {:#X} and sender_address is None", ch);
+                        tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {} and sender_address is None", ch);
                         return None;
                     }
                 };
@@ -131,7 +134,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
                     Ok(m) => match m.get(&sender_addr).cloned() {
                         Some(id) => id,
                         None => {
-                            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {:#X} and sender {} is not registered", ch, sender_addr);
+                            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] no mapping for ch {} and sender {} is not registered", ch, sender_addr);
                             return None;
                         }
                     },
@@ -149,10 +152,10 @@ impl TurnHandler for TurnRelayHandlerImpl {
                 };
                 let network_endpoint = NetworkEndpoint::new_relay(relay_id.clone(), Some(sender_addr), Some(ch));
                 tracing::info!(
-                    "[TurnRelayHandlerImpl::handle_turn_incoming] inbound from advertised relay {} on ch {:#X} ({} bytes)",
+                    "[TurnRelayHandlerImpl::handle_turn_incoming] inbound from advertised relay {} on ch {} ({} bytes)",
                     relay_id, ch, len
                 );
-                return Some(WrappedMessageWithNetworkEndpoint { ip_address: sender_addr, message: payload, network_endpoint });
+                return Some(WrappedMessageWithNetworkEndpoint { ip_address: sender_addr, message: payload, network_endpoint, is_relay_local: false });
             }
         };
 
@@ -167,6 +170,10 @@ impl TurnHandler for TurnRelayHandlerImpl {
             return None;
         }
 
+        if source_addr == dest_addr {
+            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] {}: source and destination are the same", source_addr);
+        }
+        
         let is_packet_from_dest = sender_address.map(|a| a != &source_addr).unwrap_or(false);
         let payload = match packet.get(4..4 + len) {
             Some(p) => p.to_vec(),
@@ -180,6 +187,8 @@ impl TurnHandler for TurnRelayHandlerImpl {
             is_packet_from_dest, sender_address, ch, len
         );
 
+        // NOTE: this is being ignored for a relay (always)
+        // and is wrong relay_id == sender id ??
         let network_endpoint: NetworkEndpoint = if let Some(sender_addr) = sender_address {
             if let Some(relay_id) = self.allowed_addr_to_id.lock().ok().and_then(|m| m.get(sender_addr).cloned()) {
                 let local_pub = match local_public_address {
@@ -200,6 +209,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
             ip_address: if is_packet_from_dest { source_addr } else { dest_addr },
             message: payload,
             network_endpoint,
+            is_relay_local: source_addr == dest_addr,
         })
     }
 
@@ -220,7 +230,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
             a2id.insert(*source, relay_id.to_string());
         }
         tracing::info!(
-            "[TurnRelayHandlerImpl::handle_call_response] set mapping ch={:#X} for {} -> {} (relay_id={})",
+            "[TurnRelayHandlerImpl::handle_call_response] set mapping ch={} for {} -> {} (relay_id={})",
             channel, source, dest, relay_id
         );
     }
@@ -251,7 +261,7 @@ impl TurnRelayHandler for TurnRelayHandlerImpl {
                 id2a.insert(dest_id.to_string(), *dest);
                 a2id.insert(*dest, dest_id.to_string());
             }
-            tracing::info!("[TurnRelayHandlerImpl::handle_call] allocated channel {:#X} for {} ({}) -> {} ({})", ch, source, source_id, dest, dest_id);
+            tracing::info!("[TurnRelayHandlerImpl::handle_call] allocated channel {} for {} ({}) -> {} ({})", ch, source, source_id, dest, dest_id);
             ch as i32
         } else { -1 }
     }

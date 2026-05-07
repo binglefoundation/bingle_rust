@@ -386,37 +386,56 @@ impl Engine {
                     turn.handle_turn_incoming(Some(from), Some(local_public_addr), packet)
                 {
                     if am_relay {
-                        tracing::info!(
-                            "[Engine][TURN] handle_turn_incoming (relay) {} bytes from {}:",
-                            wrapped.message.len(),
-                            wrapped.network_endpoint
-                        );
-                        // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
-                        if let Some(udp) = source
-                            .as_any()
-                            .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
-                        ) {
-                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(
-                                wrapped.ip_address,
-                            );
-                            // Here we forward the TURN packet including channel number to the resolved ip_address
-                            if let Err(e) = udp.write(&nsk, &packet) {
-                                tracing::warn!(
-                                    "[Engine][TURN relay] forward to {} failed: {}",
-                                    wrapped.ip_address,
-                                    e
-                                );
-                            } else {
+                        if wrapped.is_relay_local {
+                            // This is the special case where a relay (us) is sending via another relay
+                            if let Some(udp) = source
+                                .as_any()
+                                .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
+                            ) {
                                 tracing::info!(
-                                    "[Engine][TURN relay] forwarded {} bytes to {}",
+                                    "[Engine][TURN relay] message for own relay node, re-injecting {} bytes from {}",
                                     wrapped.message.len(),
-                                    wrapped.ip_address
+                                    wrapped.network_endpoint
+                                );
+                                udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
+                            } else {
+                                tracing::warn!(
+                                    "[Engine][TURN relay] message for own relay node but source is not UdpNetworkMux"
                                 );
                             }
                         } else {
-                            tracing::warn!(
-                                "[Engine][TURN relay] source is not UdpNetworkMux; cannot forward"
+                            tracing::info!(
+                                "[Engine][TURN] handle_turn_incoming (relay) {} bytes from {}:",
+                                wrapped.message.len(),
+                                wrapped.network_endpoint
                             );
+                            // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
+                            if let Some(udp) = source
+                                .as_any()
+                                .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
+                            ) {
+                                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(
+                                    wrapped.ip_address,
+                                );
+                                // Here we forward the TURN packet including channel number to the resolved ip_address
+                                if let Err(e) = udp.write(&nsk, &packet) {
+                                    tracing::warn!(
+                                        "[Engine][TURN relay] forward to {} failed: {}",
+                                        wrapped.ip_address,
+                                        e
+                                    );
+                                } else {
+                                    tracing::info!(
+                                        "[Engine][TURN relay] forwarded {} bytes to {}",
+                                        wrapped.message.len(),
+                                        wrapped.ip_address
+                                    );
+                                }
+                            } else {
+                                tracing::warn!(
+                                    "[Engine][TURN relay] source is not UdpNetworkMux; cannot forward"
+                                );
+                            }
                         }
                     } else {
                         tracing::info!(
