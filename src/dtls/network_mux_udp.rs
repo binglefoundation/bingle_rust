@@ -274,7 +274,7 @@ impl NetworkMux for UdpNetworkMux {
                 }
             }
             other => {
-                warn!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len());
+                tracing::debug!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len());
                 #[allow(unused)] {  }
             }
         }
