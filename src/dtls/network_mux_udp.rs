@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
 use std::sync::OnceLock;
 use crate::api::bingle_api::NetworkEndpoint;
-use tracing::warn;
+use tracing::{debug, info, warn};
 
 /// Mux classification types translated from the provided Kotlin function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,7 +154,7 @@ impl UdpNetworkMux {
             let _guard = span.enter();
             let mut buf = [0u8; 2048];
 
-            warn!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
+            info!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
 
             while this.running.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
@@ -183,9 +183,9 @@ impl UdpNetworkMux {
             if let Ok(mut guard) = this.socket.lock() {
                 let taken = guard.take();
                 drop(taken);
-                warn!("[UdpNetworkMux][receive][loop on {:?}] socket closed, port freed", to);
+                info!("[UdpNetworkMux][receive][loop on {:?}] socket closed, port freed", to);
             }
-            warn!("[UdpNetworkMux][receive][loop on {:?}] done", to);
+            info!("[UdpNetworkMux][receive][loop on {:?}] done", to);
 
         });
         let mut slot = self.rx_thread.lock().unwrap();
@@ -195,7 +195,7 @@ impl UdpNetworkMux {
 
     /// Stop the receive loop and join the background thread.
     pub fn stop(&self) {
-        tracing::debug!("[UdpNetworkMux::stop]");
+        tracing::info!("[UdpNetworkMux::stop]");
         self.running.store(false, Ordering::SeqCst);
         // poke the socket by setting a very short timeout so the thread wakes up soon
         let _ = self.set_read_timeout(Some(Duration::from_millis(10)));
@@ -211,7 +211,7 @@ impl UdpNetworkMux {
         else {
             tracing::warn!("[UdpNetworkMux::stop] rx_thread lock poisoned");
         }
-        tracing::debug!("[UdpNetworkMux::stop] done");
+        tracing::info!("[UdpNetworkMux::stop] done");
     }
 
     /// Returns true if the socket has been closed (taken out of the Mutex).
@@ -266,7 +266,7 @@ impl NetworkMux for UdpNetworkMux {
         match mux_type_for(buf) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    warn!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json);
+                    debug!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json);
                     #[allow(unused)] {  }
                 } else {
                     warn!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len());

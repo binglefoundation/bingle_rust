@@ -171,7 +171,7 @@ impl TurnHandler for TurnRelayHandlerImpl {
         }
 
         if source_addr == dest_addr {
-            tracing::warn!("[TurnRelayHandlerImpl::handle_turn_incoming] {}: source and destination are the same", source_addr);
+            tracing::info!("[TurnRelayHandlerImpl::handle_turn_incoming] {}: source and destination are the same, indicates we have a message for this relay to receive locally.", source_addr);
         }
         
         let is_packet_from_dest = sender_address.map(|a| a != &source_addr).unwrap_or(false);
