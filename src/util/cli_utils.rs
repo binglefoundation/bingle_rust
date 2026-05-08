@@ -138,6 +138,7 @@ where
     let mut node_asset_id: Option<u64> = None;
     let mut log_level: Option<String> = None;
     let mut handle_cache_expiry: Option<std::time::Duration> = None;
+    let mut dangerous_debug = false;
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -196,6 +197,9 @@ where
                 // Accept a --debug flag. The binary may use this to enable verbose output.
                 // Intentionally no-op here to keep StartOptions stable for existing tests.
             }
+            "--dangerous-debug" => {
+                dangerous_debug = true;
+            }
             s if s.starts_with('-') => {
                 return Err(format!("Unknown option: {}", s));
             }
@@ -230,6 +234,7 @@ where
         asset_id: asset_id_opt,
         log_level,
         handle_cache_expiry,
+        dangerous_debug,
     })
 }
 

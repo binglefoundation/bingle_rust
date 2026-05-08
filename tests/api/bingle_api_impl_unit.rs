@@ -41,6 +41,10 @@ impl Dtls for MockDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -105,6 +109,10 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
         fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
         fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
         fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+        fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+        fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+        fn set_dangerous_debug(&mut self, _enabled: bool) {}
+        fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
     }
 
     // Deterministic 32-byte secret and its Algorand address

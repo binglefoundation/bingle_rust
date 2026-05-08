@@ -34,7 +34,8 @@ robustness:
 - ensure fails result in a fail message which gets handled
 - implement retry for packet loss and retryable fails
 - implement relay cache properly with expiry
-
+- lookup matches handles with downcase and some punctuation normalized (as Gmail?)
+- 
 network:
 - remove DDB entries on node stop
 - handle clean relay shutdown

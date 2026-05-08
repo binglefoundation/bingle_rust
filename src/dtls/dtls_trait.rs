@@ -118,6 +118,21 @@ pub trait Dtls {
         Self: Sized;
 
     // Verification mode: if true, do not enforce TLS verification during handshake; validate at application layer only.
-    fn set_app_layer_only_verification(&mut self, enabled: bool) { let _ = enabled; }
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_app_layer_only_verification(&mut self, enabled: bool);
+    fn with_app_layer_only_verification(self, enabled: bool) -> Self
+    where
+        Self: Sized;
+
+    /**
+     * Set the dangerous debug mode
+     * This enables features that are insecure but useful for debugging, such as NULL encryption and keylogging.
+     */
+    fn set_dangerous_debug(&mut self, enabled: bool);
+
+    /**
+     * Fluently set the dangerous debug mode
+     */
+    fn with_dangerous_debug(self, enabled: bool) -> Self
+    where
+        Self: Sized;
 }

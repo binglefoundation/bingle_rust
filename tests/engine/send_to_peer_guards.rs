@@ -46,9 +46,10 @@ impl Dtls for FakeDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 fn make_engine_with_public_addr(addr: SocketAddr) -> Engine {

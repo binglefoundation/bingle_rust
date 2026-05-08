@@ -36,6 +36,10 @@ impl Dtls for MockDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 // Simple mock API required by Router.
@@ -86,7 +90,7 @@ pub fn start_with_addr_notifies_listening_true() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
     };
 
     // Build Engine unbound and inject DTLS + Router with MockApi

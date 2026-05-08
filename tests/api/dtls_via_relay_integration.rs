@@ -40,6 +40,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     let received_clone = received.clone();
 
     let mut dtls_server = DtlsOpenSsl::new("server".to_string())
+        .with_dangerous_debug(true)
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_client_cert(certs.client_crt.clone())
@@ -91,7 +92,9 @@ pub fn dtls_send_via_relay_end_to_end() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
     };
     let relay_api = BingleApiImpl::new(&relay_opts);
     relay_api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");
@@ -145,6 +148,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     let captured_channel_clone = captured_channel.clone();
 
     let mut dtls_client = DtlsOpenSsl::new("client".to_string())
+        .with_dangerous_debug(true)
         .with_server_signing_cert(server_cert_pem2.clone())
         .with_server_signing_private_key(server_key_pem2.clone())
         .with_client_cert(certs2.client_crt.clone())

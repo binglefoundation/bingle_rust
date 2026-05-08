@@ -21,10 +21,6 @@ impl ControllableLocalApi {
             status_override: status.to_string(),
         }
     }
-
-    fn set_status(&mut self, status: &str) {
-        self.status_override = status.to_string();
-    }
 }
 
 impl BingleLocalApi for ControllableLocalApi {

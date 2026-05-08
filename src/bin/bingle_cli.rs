@@ -350,6 +350,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
     let mut cli_app_id: Option<u64> = None;
     let mut cli_asset_id: Option<u64> = None;
     let mut stun_servers: Option<Vec<SocketAddr>> = None;
+    let mut dangerous_debug = false;
 
     // Remaining args after --interval-ms extraction
     let mut it = args.into_iter();
@@ -409,6 +410,9 @@ fn cmd_checkrelays(mut args: Vec<String>) {
                     Err(e) => { warn!("{}", e); std::process::exit(2); }
                 }
             }
+            "--dangerous-debug" => {
+                dangerous_debug = true;
+            }
             s if s.starts_with('-') => {
                 warn!("Unknown option: {}", s);
                 std::process::exit(2);
@@ -455,6 +459,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         asset_id: Some(asset_id),
         log_level: None,
         handle_cache_expiry: None,
+        dangerous_debug,
     };
 
     // Create API and start engine minimal

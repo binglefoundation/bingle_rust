@@ -33,6 +33,10 @@ impl Dtls for MockDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 #[derive(Clone)]
@@ -68,7 +72,7 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_upserts_root_relays_into_backend() {
     // Engine with am_relay true
-    let opts = StartOptions { handle: "eng".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None };
+    let opts = StartOptions { handle: "eng".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true };
     let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::mock_api_weak());
     eng.set_dtls(Box::new(MockDtls));
     // Need a router to avoid nulls in start; use minimal MockApi

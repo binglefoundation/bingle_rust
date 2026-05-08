@@ -192,6 +192,9 @@ pub struct StartOptions {
     /// Optional cache expiry for handle => id lookups.
     #[serde(default)]
     pub handle_cache_expiry: Option<Duration>,
+    /// Optional flag to enable dangerous debug features (NULL encryption, keylogging, etc).
+    #[serde(default)]
+    pub dangerous_debug: bool,
 }
 
 impl Default for StartOptions {
@@ -208,6 +211,7 @@ impl Default for StartOptions {
             asset_id: None,
             log_level: None,
             handle_cache_expiry: None,
+            dangerous_debug: false,
         }
     }
 }

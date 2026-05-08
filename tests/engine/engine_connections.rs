@@ -50,6 +50,8 @@ impl Dtls for FakeDtls {
 
     fn set_app_layer_only_verification(&mut self, _enabled: bool) { }
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]

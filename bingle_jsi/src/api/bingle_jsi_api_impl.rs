@@ -215,6 +215,7 @@ impl BingleJsiApiImpl {
             asset_id,
             log_level: config.log_level,
             handle_cache_expiry,
+            dangerous_debug: false,
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)

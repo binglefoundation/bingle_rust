@@ -51,6 +51,7 @@ pub mod openssl_impl {
         trim_issuer_suffix: bool,
         handle: String,
         log_tag: &str,
+        dangerous_debug: bool,
     ) {
         let _span = tracing::info_span!("BingleApi", handle = %handle);
         let _guard = _span.enter();
@@ -236,7 +237,9 @@ pub mod openssl_impl {
                 tracing::info!("[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated", log_tag, from);
                 continue;
             }
-            tracing::info!("[DtlsOpenSsl:{}][read-loop {}] application data {} bytes", log_tag, from, n);
+            if dangerous_debug {
+                tracing::info!("[DtlsOpenSsl:{}][read-loop {}] application data {} bytes", log_tag, from, n);
+            }
             if let Some(h) = &handle_message {
                 let issuer = issuer_opt.unwrap_or_default();
                 let adapter = PeerAdapter(peers.clone());
@@ -283,10 +286,15 @@ pub mod openssl_impl {
         }
     }
 
+    // trace at ERROR level when using these
     #[inline]
-    fn configure_dtls12_connector(builder: &mut SslConnectorBuilder, handle: String) -> Result<()> {
-        // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
-        builder.set_keylog_callback(keylog_callback("client", handle));
+    fn configure_dtls12_connector(builder: &mut SslConnectorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
+        if dangerous_debug {
+            // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
+            builder.set_keylog_callback(keylog_callback("client", handle));
+            // Lower security level to avoid strict policy rejections in test envs
+            builder.set_security_level(0);
+        }
         builder.set_options(SslOptions::NO_DTLSV1);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
@@ -294,14 +302,18 @@ pub mod openssl_impl {
         builder
             .set_max_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("client: set_max_proto_version failed: {}", e))?;
-        // Lower security level to avoid strict policy rejections in test envs
-        builder.set_security_level(0);
         builder.set_read_ahead(true);
         Ok(())
     }
 
     #[inline]
-    fn configure_dtls12_acceptor(builder: &mut SslAcceptorBuilder, handle: String) -> Result<()> {
+    fn configure_dtls12_acceptor(builder: &mut SslAcceptorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
+        if dangerous_debug {
+            // Lower security level to avoid strict policy rejections in test envs
+            builder.set_security_level(0);
+            // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
+            builder.set_keylog_callback(keylog_callback("server", handle));
+        }
         builder.set_options(SslOptions::NO_DTLSV1);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
@@ -310,8 +322,6 @@ pub mod openssl_impl {
             .set_max_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("server: set_max_proto_version failed: {}", e))?;
         builder.set_read_ahead(true);
-        // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
-        builder.set_keylog_callback(keylog_callback("server", handle));
         Ok(())
     }
 
@@ -605,9 +615,14 @@ pub mod openssl_impl {
     // Used by the background reader to allow handlers to reply using the same DTLS stream.
     struct PeerAdapter(PeerStates);
 
+    // Do we need this, can we get a reference to API?
     impl Dtls for PeerAdapter {
         fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
         fn stop(&mut self) -> Result<()> { Ok(()) }
+        fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+        fn with_app_layer_only_verification(self, _enabled: bool) -> Self { self }
+        fn set_dangerous_debug(&mut self, _enabled: bool) {}
+        fn with_dangerous_debug(self, _enabled: bool) -> Self { self }
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             let key = to
                 .get_key()
@@ -667,6 +682,7 @@ pub mod openssl_impl {
         // Debug: if true, configure OpenSSL to use NULL (eNULL) cipher suites for no-encryption handshakes.
         pub(crate) null_encryption: bool,
         pub(crate) app_layer_only_verification: bool,
+        pub(crate) dangerous_debug: bool,
 
         // State placeholders
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
@@ -703,8 +719,9 @@ pub mod openssl_impl {
                 client_private_key: None,
                 server_signing_cert: None,
                 server_signing_private_key: None,
-                null_encryption: true, // default to enable NULL ciphers in tests
+                null_encryption: false,
                 app_layer_only_verification: false,
+                dangerous_debug: false,
                 acceptor: None,
                 peer_states: peers,
                 stop_flag: None,
@@ -716,11 +733,21 @@ pub mod openssl_impl {
 
         /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
         pub fn with_null_encryption(mut self) -> Self {
-            self.null_encryption = true;
+            if self.dangerous_debug {
+                self.null_encryption = true;
+            } else {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+            }
             self
         }
         /// Set NULL (no-encryption) ciphers on/off for debugging.
-        pub fn set_null_encryption(&mut self, enabled: bool) { self.null_encryption = enabled; }
+        pub fn set_null_encryption(&mut self, enabled: bool) {
+            if self.dangerous_debug {
+                self.null_encryption = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+            }
+        }
 
         // Removed client/server role distinction; context builders are used by send() as-needed
         fn prepare_client_context(&self) -> Result<SslConnector> {
@@ -728,10 +755,10 @@ pub mod openssl_impl {
             let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|e| format!("openssl: build dtls connector: {}", e))?;
 
             // Restrict to DTLSv1.2 and enable read_ahead.
-            configure_dtls12_connector(&mut builder, self.handle.clone())?;
+            configure_dtls12_connector(&mut builder, self.handle.clone(), self.dangerous_debug)?;
 
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
-            if self.null_encryption {
+            if self.null_encryption && self.dangerous_debug {
                 // OpenSSL 3 defaults to security level >=1 which forbids NULL; drop to 0.
                 enable_null_encryption_for_connector(&mut builder)?;
             }
@@ -777,6 +804,7 @@ pub mod openssl_impl {
         fn prepare_server_acceptor(&mut self) -> Result<()> {
             // Build an SslAcceptor for DTLSv1.2. For tests we disable client authentication by default; a custom
             // verify callback can be supplied via handle_peer_certificate to enforce checks if desired.
+            // Gate this on dangerous_debug option
             let ca_pem = self.ca_cert.as_deref().ok_or_else(|| "missing ca_cert".to_string())?;
             let server_cert_pem = self.server_signing_cert.as_deref().ok_or_else(|| "missing server_signing_cert".to_string())?;
             let server_key_pem = self.server_signing_private_key.as_deref().ok_or_else(|| "missing server_signing_private_key".to_string())?;
@@ -808,17 +836,14 @@ pub mod openssl_impl {
             let _ = ca_pem; // suppress unused warning
 
             // Constrain to DTLSv1.2 only
-            configure_dtls12_acceptor(&mut builder, self.handle.clone())?;
-
-            // Lower security level to avoid strict policy rejections in test envs
-            builder.set_security_level(0);
+            configure_dtls12_acceptor(&mut builder, self.handle.clone(), self.dangerous_debug)?;
 
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
-            if self.null_encryption {
+            if self.null_encryption && self.dangerous_debug {
                 enable_null_encryption_for_acceptor(&mut builder)?;
             }
 
-            if self.app_layer_only_verification {
+            if self.app_layer_only_verification && self.dangerous_debug {
                 // Disable built-in certificate verification; validate at application layer instead.
                 builder.set_verify(SslVerifyMode::NONE);
             } else {
@@ -917,9 +942,10 @@ pub mod openssl_impl {
             from: &NetworkEndpoint,
             data: &[u8],
             handle: String,
+            dangerous_debug: bool,
         ) {
-            let _span = tracing::info_span!("BingleApi", handle = %handle);
-            let _guard = _span.enter();
+            let tracing_span = tracing::info_span!("BingleApi", handle = %handle);
+            let _tracing_span_guard = tracing_span.enter();
             // Check for looping back, verboten here
             let my_ip = mux.local_addr().expect("We must have a local address when accepting inbound");
             if !from.is_relay() && my_ip == from.inet_socket_address().unwrap() {
@@ -983,45 +1009,6 @@ pub mod openssl_impl {
             #[allow(unused)] {}
             q_arc.push(data.to_vec());
 
-            // // If no stream exists for this peer, and no outbound connect is in progress, create one in accept state and spawn reader loop
-            // let suppressed = {
-            //     let key = from.get_key().expect("direct endpoint key");
-            //     match peers.lock() {
-            //         Ok(mut m) => {
-            //             if let Some(ps) = m.get_mut(&key) {
-            //                 if ps.is_connecting_peer {
-            //                     // Tie-breaker to avoid simultaneous-connect deadlock:
-            //                     // if both sides connect at once, one side MUST become the server.
-            //                     // We use the socket address order as a stable tie-breaker.
-            //                     // Compare ports first to handle 0.0.0.0 (any) local address correctly.
-            //                     if let (local_addr, Some(remote_addr)) = (my_ip, from.inet_socket_address()) {
-            //                         let is_client = if local_addr.port() != remote_addr.port() {
-            //                             local_addr.port() < remote_addr.port()
-            //                         } else {
-            //                             local_addr.ip() < remote_addr.ip()
-            //                         };
-            //                         if is_client {
-            //                             tracing::debug!("[DtlsOpenSsl:::accept] suppress creating accept stream for {} (outbound connect in progress and I am the designated client)", from);
-            //                             true
-            //                         } else {
-            //                             tracing::info!("[DtlsOpenSsl:::accept] on {:?} allowing accept stream for {} despite outbound connect (I am the designated server) - aborting my outbound connect", mux.local_addr(), from);
-            //                             tracing::debug!("[DtlsOpenSsl:::accept] change is_connecting_peer to false for {} (tie-breaker server)", from);
-            //                             ps.is_connecting_peer = false;
-            //                             false
-            //                         }
-            //                     } else {
-            //                         true
-            //                     }
-            //                 } else {
-            //                     false
-            //                 }
-            //             } else {
-            //                 false
-            //             }
-            //         }
-            //         Err(_) => false,
-            //     }
-            // };
             let create_stream = {
                 let key = from.get_key().expect("direct endpoint key");
                 let pm = peers.lock().unwrap();
@@ -1078,6 +1065,7 @@ pub mod openssl_impl {
                         true,   // trim_issuer_suffix (record ids)
                         handle.clone(),
                         "::accept",
+                        dangerous_debug,
                     );
                 });
             }
@@ -1101,6 +1089,7 @@ pub mod openssl_impl {
             let handle_message = self.handle_message.clone();
             let peer_cert_handler = self.handle_peer_certificate;
             let handle = self.handle.clone();
+            let dangerous_debug = self.dangerous_debug;
             // Connecting peer suppression now tracked per-peer in PeerState.is_connecting_peer
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
@@ -1114,6 +1103,7 @@ pub mod openssl_impl {
                     from,
                     data,
                     handle.clone(),
+                    dangerous_debug,
                 );
             })));
 
@@ -1195,11 +1185,6 @@ pub mod openssl_impl {
                                 return guard.write_all(data).map_err(|e| format!("send existing dtls write failed: {}", e));
                             }
                         }
-                        // Comment the next line out, why should we not have a stream?
-                        // if let Some(writer) = &ps.writer {
-                        //     tracing::info!("[DtlsOpenSsl:::send] using existing inbound writer to {} ({} bytes)", to, data.len());
-                        //     return writer(data);
-                        // }
                     }
                 }
             }
@@ -1401,6 +1386,7 @@ pub mod openssl_impl {
                 let from2: NetworkEndpoint = endpoint.clone();
                 let peers2: PeerStates = self.peer_states.clone();
                 let handle = self.handle.clone();
+                let dangerous_debug = self.dangerous_debug;
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc_for_reader.clone(),
@@ -1413,6 +1399,7 @@ pub mod openssl_impl {
                         false,  // don't trim suffix; server path records trimmed ids
                         handle,
                         "::send",
+                        dangerous_debug,
                     );
                 });
             }
@@ -1434,7 +1421,7 @@ pub mod openssl_impl {
                     });
                 }
                 if should_send {
-                    let mut guard = stream_arc.lock().map_err(|_| "stream lock poisoned".to_string())?;
+                    let mut stream_guard = stream_arc.lock().map_err(|_| "stream lock poisoned".to_string())?;
                     // Include the peer CA certificate in the announcement payload to avoid relying on local CA
                     let ca_pem = self.ca_cert.as_deref().unwrap_or(&[]);
                     let mut msg = Vec::with_capacity(CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len());
@@ -1445,7 +1432,7 @@ pub mod openssl_impl {
                     msg.extend_from_slice(ca_pem);
                     tracing::info!("[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
                     #[allow(unused)] {}
-                    let _ = guard.write_all(&msg);
+                    let _ = stream_guard.write_all(&msg);
                 }
             }
             Ok(())
@@ -1501,9 +1488,35 @@ pub mod openssl_impl {
         }
 
         // Toggle application-layer-only verification mode
-        fn set_app_layer_only_verification(&mut self, enabled: bool) { self.app_layer_only_verification = enabled; }
+        fn set_app_layer_only_verification(&mut self, enabled: bool) {
+            if self.dangerous_debug {
+                self.app_layer_only_verification = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring");
+            }
+        }
+
         fn with_app_layer_only_verification(mut self, enabled: bool) -> Self {
-            self.app_layer_only_verification = enabled;
+            if self.dangerous_debug {
+                self.app_layer_only_verification = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring");
+            }
+            self
+        }
+
+        fn set_dangerous_debug(&mut self, enabled: bool) {
+            if enabled {
+                tracing::error!("[DtlsOpenSsl] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
+            }
+            self.dangerous_debug = enabled;
+        }
+
+        fn with_dangerous_debug(mut self, enabled: bool) -> Self {
+            if enabled {
+                tracing::error!("[DtlsOpenSsl] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
+            }
+            self.dangerous_debug = enabled;
             self
         }
     }
