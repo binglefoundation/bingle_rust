@@ -121,7 +121,8 @@ The system of relay servers starts with the root relay servers. These have stati
 
 Other relay servers are provided by users and can have dynamic IP addresses (but must support full cone NAT or direct IP).
 
-At initialization, a node obtains a list of relay servers and determines its preferred servers (based on partition of the 256 bit address space by the number of relays).
+At initialization, a node obtains a list of relay servers and determines its preferred servers
+(based on partition of the 32 bit Algorand address space by the number of relays).
 When relay servers are added or removed, the epoch changes and the preferred servers are recalculated.
 
 When at initialization or network change time, a node determines that it has not full cone or direct IP, it will use a relay server.
@@ -129,9 +130,10 @@ When at initialization or network change time, a node determines that it has not
 It then issues a `Listen` message to the preferred relay server. 
 The relay endpoint is then advertised in the distributed database.
 
-When a node wishes to send a message to a relayed node, it sends a `Call` message to the relay server. 
+When a node wishes to send a message to a relayed node, it sends a `Call` message to the relay server.
 This allocates a TURN channel.
-The returned `RelayCallResponse` message contains the channel number to use.
+The relay server then notifies the called node with a `RelayCalled` message containing the channel number.
+The relay responds to the caller with a `RelayCallResponse` message containing the channel number to use.
 DTLS UDP traffic can then be encapsulated in TURN `ChannelData` messages sent to the relay server.
 Return traffic is encapsulated in the same way on the same channel.
 
@@ -204,8 +206,11 @@ Consistent responses indicate that we *may* have a full cone NAT.
 In the latter case, we need to validate this endpoint address and port using a triangular ping test.
 
 We send a `RelayTriangleTest1` message to our selected relay server.
-The relay will then send a `RelayTriangleTest2` message to a peer relay server (the next one in the relay graph).
-This server will then send us a `RelayTriangleTest3` message. Receipt of this with our `id` and `tag` indicates that we have a full cone NAT.
+The relay responds with a `RelayTriangleTest1Response`.
+If `noCornerNode` is true, it indicates that no corner node was available for the test and the receiver should assume restricted/symmetric NAT.
+Otherwise, the relay will send a `RelayTriangleTest2` message to a peer relay server (the next one in the relay graph).
+This server will then send us a `RelayTriangleTest3` message.
+Receipt of this indicates that we have a full cone NAT.
 
 If we didn't receive this response in a reasonable interval, we can assume symmetric or restricted cone NAT.
 
@@ -375,6 +380,12 @@ The message ripples onward to all configured nodes in the graph who will process
 The peer relay follows this with a "DdbEpochInfo" message containing the new epoch number, which is sent to its peer and rippled to all nodes, notifying them of the new relay graph configuration.
 
 The new relay is now initialized and live, it shoud expect to receive requests from selected peers.
+
+## Relay Coordination (Distributed Mutex)
+
+To coordinate relay initialization and other cluster-wide operations, relays use a distributed mutex implementation based on Lamport timestamps.
+Messages used for this include `MutexRequest`, `MutexResponse`, and `MutexRelease`.
+These messages are in the `mutex` app namespace.
 
 # Distributed database requests
 
