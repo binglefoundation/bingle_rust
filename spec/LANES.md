@@ -1,18 +1,3 @@
-api_server:
-- ~~Implement api wrapper for lookupHandle and test~~
-- ~~Implement api wrapper for send to handle and test~~
-- ~~Put handle info into messages, with handle cache~~
-
-deployment:
-- ~~add staging environment~~
-- ~~deploy relays to AWS using CloudFormation~~
-- ~~smoke test in staging~~
-
-local user:
-- ~~API to hold local user key material securely (portable initially)~~
-- ~~API to hold contacts~~
-- ~~Local user API in web server~~
-
 UX:
 - ~~build react UX with onboarding~~
 - ~~JSI / Uniffi library interface~~
