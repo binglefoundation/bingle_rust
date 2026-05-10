@@ -11,6 +11,7 @@ pub mod util;
 pub mod turn;
 pub mod distributed_mutex;
 pub mod themes;
+pub mod module_version;
 
 // Backward-compatible module re-exports
 pub use blockchain::algo_ops;

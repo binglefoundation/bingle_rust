@@ -13,6 +13,7 @@ use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
 use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
+use rust_comms::util::version::VersionsMap;
 
 fn init_logger_from_args(args: &mut Vec<String>) {
     // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
@@ -118,6 +119,13 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // Initialize logger from global flags and strip them from args (default Info)
     init_logger_from_args(&mut args);
+
+    // Build and output VersionsMap
+    let mut versions = VersionsMap::new();
+    versions.insert("Base".to_string(), rust_comms::module_version::get_version());
+    versions.insert("CLI".to_string(), rust_comms::module_version::get_version());
+    tracing::info!("Bingle CLI starting. Versions: {:?}", versions);
+
     if args.is_empty() {
         print_usage_and_exit(2);
     }

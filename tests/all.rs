@@ -22,6 +22,7 @@ pub mod turn;
 pub mod distributed_mutex;
 pub mod integration;
 pub mod setup_localnet;
+pub mod module_version;
 
 #[path = "dev_arc4_selector.rs"]
 pub mod dev_arc4_selector;

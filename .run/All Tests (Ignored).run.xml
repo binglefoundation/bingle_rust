@@ -3,7 +3,9 @@
     <option name="buildProfileId" value="test" />
     <option name="command" value="test --workspace -- --ignored" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
-    <envs />
+    <envs>
+      <env name="BINGLE_LOG_MODE" value="Ansi" />
+    </envs>
     <option name="emulateTerminal" value="true" />
     <option name="channel" value="DEFAULT" />
     <option name="requiredFeatures" value="true" />

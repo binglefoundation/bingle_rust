@@ -527,6 +527,28 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
+    fn get_versions(&self) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError> {
+        let mut map = std::collections::HashMap::new();
+
+        let base_info = rust_comms::module_version::get_version();
+        map.insert("Base".to_string(), VersionInfo {
+            version: base_info.version,
+            git_sha: base_info.git_sha,
+            build_timestamp: base_info.build_timestamp,
+            build_number: base_info.build_number,
+        });
+
+        let jsi_info = crate::module_version::get_version();
+        map.insert("JSI".to_string(), VersionInfo {
+            version: jsi_info.version,
+            git_sha: jsi_info.git_sha,
+            build_timestamp: jsi_info.build_timestamp,
+            build_number: jsi_info.build_number,
+        });
+
+        Ok(map)
+    }
+
     fn get_nat_type(&self) -> Result<NatTypeResponse, BingleJsiError> {
         let guard = self.nat_type.lock().map_err(|_| BingleJsiError::InternalError {
             reason: "NAT type lock poisoned".to_string(),
@@ -754,6 +776,12 @@ impl BingleJsiApi for BingleJsiApiImpl {
         if let Ok(mut started_guard) = self.started.lock() {
             *started_guard = true;
         }
+
+        // Output INFO with version information
+        if let Ok(versions) = self.get_versions() {
+            tracing::info!("Bingle JSI started. Versions: {:?}", versions);
+        }
+
         tracing::info!("Bingle engine started");
         Ok(())
     }
