@@ -58,7 +58,7 @@ pub fn make_start_options(
         algo_network: network_name, 
         app_id: Some(app_id),
         asset_id,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     }
 }
 

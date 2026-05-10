@@ -76,7 +76,7 @@ pub fn engine_static_ip_triggers_on_listening_handler() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
 
     // Start should cause Engine::start_with_addr to notify listening=true via EngineInternalPtr

@@ -216,6 +216,7 @@ impl BingleJsiApiImpl {
             log_level: config.log_level,
             handle_cache_expiry,
             dangerous_debug: false,
+            log_mode: rust_comms::util::logging::LogMode::JS,
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)

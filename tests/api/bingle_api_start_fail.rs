@@ -24,7 +24,7 @@ pub fn start_returns_err_on_invalid_passphrase() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
 
     let err = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect_err("start should fail for invalid passphrase");

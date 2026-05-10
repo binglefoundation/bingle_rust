@@ -22,8 +22,8 @@ pub fn ddb_client_lookup_returns_endpoint() {
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
 
-    let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true };
-    let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true };
+    let relay_opts = StartOptions { handle: "relay".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()), static_ip: Some(relay_addr), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain };
+    let client_opts = StartOptions { handle: "client".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: Some(client_addr), am_relay: false, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain };
     let relay = BingleApiImpl::new(&relay_opts);
     let client = BingleApiImpl::new(&client_opts);
 

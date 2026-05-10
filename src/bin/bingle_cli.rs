@@ -12,11 +12,12 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
-use rust_comms::util::logging::{BingleFormatter, HandleLayer};
+use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
 
 fn init_logger_from_args(args: &mut Vec<String>) {
     // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
     let mut chosen: Option<LevelFilter> = None;
+    let mut chosen_mode: Option<LogMode> = None;
     let mut i = 0usize;
     while i < args.len() {
         let a = args[i].as_str();
@@ -55,6 +56,36 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             chosen = Some(lvl);
             args.remove(i);
             continue;
+        } else if a == "--log-mode" {
+            if i + 1 < args.len() {
+                let val = args[i + 1].to_ascii_lowercase();
+                let mode = match val.as_str() {
+                    "plain" => LogMode::Plain,
+                    "ansi" => LogMode::ANSI,
+                    "aws" => LogMode::AWS,
+                    "js" => LogMode::JS,
+                    _ => LogMode::Plain,
+                };
+                chosen_mode = Some(mode);
+                args.remove(i);
+                args.remove(i);
+                continue;
+            } else {
+                args.remove(i);
+                continue;
+            }
+        } else if let Some(rest) = a.strip_prefix("--log-mode=") {
+            let val = rest.to_ascii_lowercase();
+            let mode = match val.as_str() {
+                "plain" => LogMode::Plain,
+                "ansi" => LogMode::ANSI,
+                "aws" => LogMode::AWS,
+                "js" => LogMode::JS,
+                _ => LogMode::Plain,
+            };
+            chosen_mode = Some(mode);
+            args.remove(i);
+            continue;
         }
 
         let matched = match a {
@@ -71,8 +102,9 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         }
     }
     let level = chosen.unwrap_or(LevelFilter::INFO);
+    let mode = chosen_mode.unwrap_or(LogMode::Plain);
     let fmt_layer = tracing_subscriber::fmt::layer()
-        .event_format(BingleFormatter);
+        .event_format(BingleFormatter { mode });
 
     let subscriber = tracing_subscriber::registry()
         .with(level)
@@ -111,7 +143,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     if code == 0 { tracing::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
@@ -460,6 +492,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         log_level: None,
         handle_cache_expiry: None,
         dangerous_debug,
+        log_mode: LogMode::Plain,
     };
 
     // Create API and start engine minimal

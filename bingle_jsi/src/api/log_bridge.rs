@@ -61,13 +61,9 @@ where
                 if let Some(scope) = ctx.event_scope(event) {
                     for span in scope {
                         if span.name() == "BingleApi" {
-                            if let Some(ext) = span.extensions().get::<HandleExtension>() {
-                                prefix.push_str(&format!("[{}]", ext.0));
-                                continue;
-                            }
+                            continue;
                         }
                         prefix.push_str(&format!("[{}]", span.name()));
-                        // Note: we could also extract fields here if we had a field-storage layer
                     }
                 }
 

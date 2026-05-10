@@ -30,6 +30,10 @@ CMD=("/app/bingle_webserver" \
   "--node-file" "$NODE_FILE"
 )
 
+if [[ "${AWS:-0}" == "1" ]]; then
+  CMD+=("--log-mode" "AWS")
+fi
+
 # Global peak tracking for the current process
 PEAK_BYTES=0
 

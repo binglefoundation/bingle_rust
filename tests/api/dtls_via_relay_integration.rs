@@ -94,7 +94,7 @@ pub fn dtls_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: true,
+        dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let relay_api = BingleApiImpl::new(&relay_opts);
     relay_api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");

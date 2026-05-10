@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use crate::util::logging::LogMode;
 use serde_json::Value as JsonValue;
 
 /// Internal-only API for engine control from message handlers and router context.
@@ -159,6 +160,7 @@ pub type OnConnectHandler = dyn Fn(UserId, Handle) + Send + Sync + 'static;
 /// - nat_type: the detected NAT type at the time of the notification.
 pub type OnListeningHandler = dyn Fn(bool, crate::engine::NatType) + Send + Sync + 'static;
 
+
 /// Options used to start the Bingle node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartOptions {
@@ -195,6 +197,9 @@ pub struct StartOptions {
     /// Optional flag to enable dangerous debug features (NULL encryption, keylogging, etc).
     #[serde(default)]
     pub dangerous_debug: bool,
+    /// Optional log mode (Plain|ANSI|AWS|JS).
+    #[serde(default)]
+    pub log_mode: LogMode,
 }
 
 impl Default for StartOptions {
@@ -212,6 +217,7 @@ impl Default for StartOptions {
             log_level: None,
             handle_cache_expiry: None,
             dangerous_debug: false,
+            log_mode: LogMode::Plain,
         }
     }
 }
