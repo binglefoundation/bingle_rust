@@ -10,7 +10,7 @@
     "ios/",
     "android/",
     "cpp/",
-    "bingle_jsi.podspec",
+    "BingleJsiRN.podspec",
     "README.md"
   ],
   "scripts": {

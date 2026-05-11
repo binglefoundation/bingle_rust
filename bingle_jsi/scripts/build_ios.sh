@@ -91,9 +91,16 @@ if $HAS_X64_SIM; then
   "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target x86_64-apple-ios || true
 fi
 
-LIB_DEVICE="$BUILD_DIR/aarch64-apple-ios/release/lib${CRATE_NAME}.a"
-LIB_SIM_ARM64="$BUILD_DIR/aarch64-apple-ios-sim/release/lib${CRATE_NAME}.a"
-LIB_SIM_X64="$BUILD_DIR/x86_64-apple-ios/release/lib${CRATE_NAME}.a"
+LIB_DEVICE="$BUILD_DIR/aarch64-apple-ios/release/libBingleJsi.a"
+cp "$BUILD_DIR/aarch64-apple-ios/release/lib${CRATE_NAME}.a" "$LIB_DEVICE"
+
+LIB_SIM_ARM64="$BUILD_DIR/aarch64-apple-ios-sim/release/libBingleJsi.a"
+cp "$BUILD_DIR/aarch64-apple-ios-sim/release/lib${CRATE_NAME}.a" "$LIB_SIM_ARM64"
+
+LIB_SIM_X64="$BUILD_DIR/x86_64-apple-ios/release/libBingleJsi.a"
+if $HAS_X64_SIM && [[ -f "$BUILD_DIR/x86_64-apple-ios/release/lib${CRATE_NAME}.a" ]]; then
+  cp "$BUILD_DIR/x86_64-apple-ios/release/lib${CRATE_NAME}.a" "$LIB_SIM_X64"
+fi
 
 for lib in "$LIB_DEVICE" "$LIB_SIM_ARM64"; do
   if [[ ! -f "$lib" ]]; then
@@ -105,6 +112,7 @@ done
 # ── generate Swift bindings via uniffi-bindgen ────────────────────────
 
 echo "Generating Swift bindings..."
+rm -rf "$GENERATED_DIR"
 mkdir -p "$GENERATED_DIR"
 
 # uniffi-bindgen is provided as a binary target in the bingle_jsi crate
@@ -139,7 +147,7 @@ EOF
 # ── create universal simulator lib (lipo) ─────────────────────────────
 
 if $HAS_X64_SIM && [[ -f "$LIB_SIM_X64" ]]; then
-  SIM_UNIV_LIB="$BUILD_DIR/ios-sim-universal/lib${CRATE_NAME}.a"
+  SIM_UNIV_LIB="$BUILD_DIR/ios-sim-universal/libBingleJsi.a"
   mkdir -p "$(dirname "$SIM_UNIV_LIB")"
   lipo -create -output "$SIM_UNIV_LIB" "$LIB_SIM_ARM64" "$LIB_SIM_X64"
   SIM_LIB="$SIM_UNIV_LIB"
