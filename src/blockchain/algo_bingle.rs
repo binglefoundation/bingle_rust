@@ -633,6 +633,19 @@ impl AlgoBingle {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if handle.is_empty() { bail!("handle must not be empty"); }
+
+        let client = self.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        let sender_str = sender.to_string();
+
+        // 1. Pre-check: Handle uniqueness via indexer
+        if let Some(existing_owner) = self.handle_lookup(handle)? {
+            if existing_owner != sender_str {
+                bail!("Handle already in use by {}", existing_owner);
+            }
+        }
+
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
         self.opt_in_app_to_asset(app_id, asset_id)?;
         
@@ -640,12 +653,9 @@ impl AlgoBingle {
         let _ = self.opt_in_sender_to_asset(asset_id)?;
         // Ensure the caller is opted-in to the application local state to avoid logic eval error
         self.ops.opt_in_app(app_id)?;
-        let client = self.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
 
-        // 1) ASA fee: sender -> app address amount = price_units
+        // 2) ASA fee: sender -> app address amount = price_units
         let ax = TransferAsset::new(sender, asset_id, price_units, app_addr).build();
         let tx_ax = TxnBuilder::with(&params, ax)
             .note(AlgoOps::unique_note())
@@ -654,7 +664,7 @@ impl AlgoBingle {
         // Print the full asset transfer transaction (tx_ax) with all fields for visibility
         algo_log!("tx_ax: {:#?}", tx_ax);
 
-        // 2) App call: register(string)void with handle arg
+        // 3) App call: register(string)void with handle arg
         // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(AlgoOps::arc4_selector("register(string)void").to_vec());
@@ -680,7 +690,28 @@ impl AlgoBingle {
         let s1 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign axfer: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed axfer: {e}"))?;
         let s2 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
 
-        self.broadcast_group(&client, vec![s1, s2])
+        let tx_id = self.broadcast_group(&client, vec![s1, s2])?;
+
+        // 4. Post-check: Validate that we are the deterministic winner for this handle
+        // Wait up to 15 seconds for indexer to catch up and verify
+        let mut winner_verified = false;
+        for i in 0..15 {
+            if i > 0 { std::thread::sleep(std::time::Duration::from_secs(1)); }
+            if let Some(winner) = self.handle_lookup(handle)? {
+                if winner == sender_str {
+                    winner_verified = true;
+                    break;
+                } else {
+                    bail!("Handle registration post-check failed: handle '{}' was taken by {} (race condition)", handle, winner);
+                }
+            }
+        }
+
+        if !winner_verified {
+            algo_log!("Warning: handle registration post-check timed out for handle '{}'. It may still be pending in indexer.", handle);
+        }
+
+        Ok(tx_id)
     }
 
     /// Admin method: Opt the application account into the given ASA by calling the
