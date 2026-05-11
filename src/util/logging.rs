@@ -4,6 +4,7 @@ use tracing_subscriber::layer::{Layer, Context};
 use tracing::span::{Attributes, Id};
 use tracing::{Subscriber, field::{Visit, Field}};
 use std::fmt;
+use chrono::Local;
 
 // Deprecated file logger shim. All logging should go through the `log` facade.
 // These functions are kept as no-ops (or simple log forwarding) to avoid touching all call sites.
@@ -105,6 +106,10 @@ where
         event: &tracing::Event<'_>,
     ) -> fmt::Result {
         let meta = event.metadata();
+
+        // 0. Timestamp
+        let now = Local::now();
+        write!(writer, "{} ", now.format("%Y-%m-%dT%H:%M:%S%.3f"))?;
 
         let show_handle = match self.mode {
             LogMode::Plain | LogMode::ANSI => true,

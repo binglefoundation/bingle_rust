@@ -28,6 +28,7 @@ ctrlc = { version = "3", features = ["termination"] }
 tracing = "0.1"
 # tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Moving to dev-deps if only used there, or keep here if needed for lib
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
 openssl = { version = "0.10", features = ["vendored"] }
 openssl-sys = { version = "0.9" }
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }

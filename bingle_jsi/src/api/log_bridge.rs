@@ -4,9 +4,9 @@ use tracing_subscriber::Layer;
 use tracing::Subscriber;
 use tracing_subscriber::registry::LookupSpan;
 use tracing::field::Visit;
+use chrono::Local;
 
 use crate::api::callback::LogCallback;
-use rust_comms::util::logging::HandleExtension;
 
 /// Global storage for the user-provided log callback.
 static GLOBAL_LOG_CALLBACK: OnceLock<Arc<Mutex<Option<Box<dyn LogCallback>>>>> = OnceLock::new();
@@ -70,7 +70,8 @@ where
                 let mut visitor = MessageVisitor { message: String::new() };
                 event.record(&mut visitor);
                 
-                cb.on_log(timestamp, level, format!("{}{}", prefix, visitor.message));
+                let iso_timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f");
+                cb.on_log(timestamp, level, format!("{} {}{}", iso_timestamp, prefix, visitor.message));
             }
         }
     }

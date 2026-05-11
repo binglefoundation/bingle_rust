@@ -535,7 +535,7 @@ impl AlgoBingle {
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
-        tracing::info!("[buy_bingle] app_addr: {:#?}", app_addr);
+        tracing::debug!("[buy_bingle] app_addr: {:#?}", app_addr);
 
         // 1) Payment: sender -> app address for price. The app will verify this and perform
         //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
@@ -544,13 +544,13 @@ impl AlgoBingle {
             .note(AlgoOps::unique_note())
             .build()
             .map_err(|e| anyhow!("build pay: {e}"))?;
-        tracing::info!("[buy_bingle] tx_pay: {:#?}", tx_pay);
+        tracing::trace!("[buy_bingle] tx_pay: {:#?}", tx_pay);
 
         // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
         let tx_app = self
             .ops
             .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
-        tracing::info!("[buy_bingle] tx_app: {:#?}", tx_app);
+        tracing::trace!("[buy_bingle] tx_app: {:#?}", tx_app);
 
         // Group, sign, and send
         let mut txs = vec![tx_pay, tx_app];

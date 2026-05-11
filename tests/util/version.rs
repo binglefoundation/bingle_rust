@@ -2,6 +2,7 @@ use rust_comms::util::version::{get_version_info, VersionsMap};
 
 #[test]
 fn test_get_version_info() {
+    crate::util::test_util::init_test_logging();
     let info = get_version_info();
     
     // Check that version contains 4 parts (major.minor.patch.build)

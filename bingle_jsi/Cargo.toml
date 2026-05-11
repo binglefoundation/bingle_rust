@@ -3,6 +3,7 @@ name = "bingle_jsi"
 version = "0.0.1"
 edition = "2024"
 description = "React Native JSI bridge for Bingle using uniffi proc macros."
+autotests = false
 
 [lib]
 name = "bingle_jsi"
@@ -17,9 +18,13 @@ bingle-local = { path = "../bingle-local" }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
+
+[build-dependencies]
+vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }
 
 [[test]]
 name = "bingle_jsi_tests"

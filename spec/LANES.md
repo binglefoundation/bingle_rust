@@ -42,7 +42,8 @@ robustness:
 - lookup matches handles with downcase and some punctuation normalized (as Gmail?)
 - ensure ipv6 is unsupported consistently
 - indicate when we get no STUN responses (UDP blocked)
-
+- ensure handle uniqueness
+- 
 network:
 - remove DDB entries on node stop
 - handle clean relay shutdown

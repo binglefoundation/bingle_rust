@@ -255,6 +255,29 @@ impl BingleJsiApiImpl {
         let listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>> =
             Arc::new(Mutex::new(None));
 
+        let message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>> =
+            Arc::new(Mutex::new(None));
+
+        let started = Arc::new(Mutex::new(false));
+        let opts_mutex = Arc::new(Mutex::new(opts.clone()));
+
+        let api_instance = Arc::new(Self {
+            api: api.clone(),
+            messages: messages.clone(),
+            local_api: local_api.clone(),
+            local_file: local_file.clone(),
+            nat_type: nat_type.clone(),
+            message_callback: message_callback.clone(),
+            listening_callback: listening_callback.clone(),
+            started: started.clone(),
+            opts: opts_mutex,
+        });
+
+        // Output INFO with version information as early as possible
+        if let Ok(versions) = api_instance.get_versions() {
+            tracing::info!("Bingle JSI initializing. Versions: {:?}", versions);
+        }
+
         // Setup on-listening handler to update nat_type and invoke user callback
         {
             let nat_type_for_closure = nat_type.clone();
@@ -281,9 +304,6 @@ impl BingleJsiApiImpl {
                 api_mut.set_on_listening(Some(on_listening));
             });
         }
-
-        let message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>> =
-            Arc::new(Mutex::new(None));
 
         // Setup on-message handler to queue received messages
         {
@@ -396,21 +416,15 @@ impl BingleJsiApiImpl {
             api_started = true;
         }
 
-        if !api_started {
+        if api_started {
+            if let Ok(mut started_guard) = started.lock() {
+                *started_guard = true;
+            }
+        } else {
             tracing::info!("Bingle API not yet started; waiting for keypair to become ACTIVE");
         }
 
-        Ok(Arc::new(Self {
-            api,
-            messages,
-            local_api,
-            local_file,
-            nat_type,
-            message_callback,
-            listening_callback,
-            started: Arc::new(Mutex::new(api_started)),
-            opts: Arc::new(Mutex::new(opts)),
-        }))
+        Ok(api_instance)
     }
 }
 
