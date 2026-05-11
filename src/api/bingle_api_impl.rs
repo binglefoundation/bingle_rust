@@ -303,6 +303,8 @@ impl Drop for BingleApiImpl {
     }
 }
 
+const TIMEOUT_SECONDS_WAIT_RESPONSE: u64 = 60;
+
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
         let span = self.span.clone();
@@ -730,7 +732,7 @@ impl BingleApi for BingleApiImpl {
         if let Some(cb) = progress.as_ref() { cb(20, if sent_ok { "Request sent" } else { "Failed to send request" }.to_string()); }
 
         // Now wait for a response tagged with our UUID using the Engine's pending map
-        let timeout = Duration::from_secs(10);
+        let timeout = Duration::from_secs(TIMEOUT_SECONDS_WAIT_RESPONSE);
         if let Some(resp) = Engine::wait_for_response_static(pending, &tag, timeout) {
             if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
             tracing::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");
