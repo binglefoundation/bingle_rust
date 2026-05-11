@@ -127,8 +127,14 @@ pub fn init_test_logging() {
 pub fn init_test_logging_with_filter(filter_str: &str) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
+        let mut final_filter = filter_str.to_string();
+        if !rust_comms::util::logging::is_algo_debug_enabled() {
+            // Suppress noisy external Algorand connection logs
+            final_filter.push_str(",hyper=info,reqwest=info,rustls=info,h2=info");
+        }
+
         let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new(filter_str));
+            .unwrap_or_else(|_| EnvFilter::new(final_filter));
 
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_test_writer()

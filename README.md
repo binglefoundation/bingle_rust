@@ -74,6 +74,12 @@ Notes:
 ## 4) What the Tests Do
 The included test `RustCommsFFITests` verifies the Swift package can import the RustCommsFFI module and runs a trivial assertion. This confirms tests can run under the iOS target and that the XCFramework is discoverable.
 
+## Environment Variables
+
+- `BINGLE_ALGO_DEBUG`: Set to `true` or `1` to enable verbose logging for Algorand blockchain operations (algod/indexer requests, transaction preflights, etc.). These logs are disabled by default.
+- `RUST_COMMS_RUN_LOCALNET`: Set to `true` to enable integration tests that require a running Algorand localnet.
+- `MEASURE_MEMORY`: Set to `1` to enable peak memory usage reporting in Docker containers.
+
 ## 5) Running Localnet Integration Tests
 Integration tests that require a running Algorand localnet (via `algokit`) are marked as `#[ignore]` and skipped by default in standard `cargo test` runs.
 

@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod util;
 pub mod blockchain;
 pub mod dtls;
 pub mod api;
@@ -7,7 +9,6 @@ pub mod messages;
 pub mod ddb;
 pub mod engine;
 pub mod protocol;
-pub mod util;
 pub mod turn;
 pub mod distributed_mutex;
 pub mod themes;
