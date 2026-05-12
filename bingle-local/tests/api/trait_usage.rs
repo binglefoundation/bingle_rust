@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
+use rust_comms::api::bingle_api::BingleError;
 use rust_comms::blockchain::algo_ops::AlgoOps;
 
 #[derive(Default)]
@@ -12,42 +13,42 @@ struct DummyLocal {
 }
 
 impl BingleLocalApi for DummyLocal {
-    fn generate_keypair(&mut self) -> Result<Keypair, String> {
+    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
         let kp = Keypair { id: "TEST_ID".into(), passphrase: "TEST_PASSPHRASE".into() };
         self.keypair = Some(kp.clone());
         Ok(kp)
     }
 
-    fn register_keypair(&self, _handle: String) -> Result<bool, String> { Ok(true) }
+    fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> { Ok(true) }
 
-    fn get_algo_ops(&self) -> Result<AlgoOps, String> {
+    fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         let pass = self
             .keypair
             .as_ref()
             .map(|k| k.passphrase.clone())
-            .ok_or_else(|| "no keypair".to_string())?;
+            .ok_or_else(|| BingleError::Other("no keypair".to_string()))?;
         Ok(AlgoOps::new(Some(pass), None, None))
     }
 
-    fn add_contact(&mut self, handle: String, id: String, _source: ContactSource) -> Result<(), String> {
+    fn add_contact(&mut self, handle: String, id: String, _source: ContactSource) -> Result<(), BingleError> {
         let c = Contact { handle, id, fields: HashMap::new() };
         self.contacts.push(c);
         Ok(())
     }
 
-    fn block_contact(&mut self, id: String) -> Result<(), String> {
+    fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
         self.blocked.insert(id);
         Ok(())
     }
 
-    fn remove_contact(&mut self, id: String) -> Result<(), String> {
+    fn remove_contact(&mut self, id: String) -> Result<(), BingleError> {
         self.contacts.retain(|c| c.id != id);
         Ok(())
     }
 
-    fn is_blocked(&self, id: &str) -> Result<bool, String> { Ok(self.blocked.contains(id)) }
+    fn is_blocked(&self, id: &str) -> Result<bool, BingleError> { Ok(self.blocked.contains(id)) }
 
-    fn get_contacts(&self) -> Result<Vec<Contact>, String> {
+    fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
         let v = self
             .contacts
             .iter()
@@ -63,18 +64,18 @@ impl BingleLocalApi for DummyLocal {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), BingleError> {
         self.messages.push(Message { sender_handle, recipient_handles, timestamp, text });
         Ok(())
     }
 
-    fn get_messages(&self) -> Result<Vec<Message>, String> { Ok(self.messages.clone()) }
+    fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(self.messages.clone()) }
 
-    fn save(&self, _path: &str) -> Result<(), String> { Ok(()) }
+    fn save(&self, _path: &str) -> Result<(), BingleError> { Ok(()) }
 
-    fn load(&mut self, _path: &str) -> Result<(), String> { Ok(()) }
+    fn load(&mut self, _path: &str) -> Result<(), BingleError> { Ok(()) }
 
-    fn keypair_status(&self) -> Result<KeypairStatus, String> {
+    fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         match &self.keypair {
             Some(kp) => Ok(KeypairStatus {
                 status: "ACTIVE".to_string(),
@@ -91,7 +92,7 @@ impl BingleLocalApi for DummyLocal {
         }
     }
 
-    fn get_keypair(&self) -> Result<Option<Keypair>, String> {
+    fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
         Ok(self.keypair.clone())
     }
 }

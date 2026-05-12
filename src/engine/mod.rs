@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::api::bingle_api::{NetworkEndpoint, StartOptions, UserId};
+use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
 use crate::{info_theme, warn_theme, debug_theme};
 use crate::blockchain::algo_ops::AlgoChainConfig;
@@ -890,7 +890,7 @@ impl Engine {
                     tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
                     let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
                     if let Some(api) = self.bingle_api.upgrade() {
-                        api.send_message_to_network(&nsk, &id, message.clone(), None);
+                        let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                     }
                 }
             }
@@ -906,7 +906,7 @@ impl Engine {
                             tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
                             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
                             if let Some(api) = self.bingle_api.upgrade() {
-                                api.send_message_to_network(&nsk, &id, message.clone(), None);
+                                let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                             }
                         }
                     }
@@ -944,7 +944,7 @@ impl Engine {
 
     /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
     /// This avoids duplicating the same closure in different Engine start paths.
-    fn install_dtls_handler(&mut self) -> Result<(), String> {
+    fn install_dtls_handler(&mut self) -> Result<(), BingleError> {
         // Capture any existing handler without taking a mutable borrow to self.dtls
         let existing = self.dtls.get_handle_message();
 
@@ -1063,7 +1063,7 @@ impl Engine {
 
     /// Start the engine using the provided StartOptions.
     /// Implements static endpoint path or STUN-based discovery when not provided.
-    pub fn start(&mut self, options: &StartOptions) -> Result<(), String> {
+    pub fn start(&mut self, options: &StartOptions) -> Result<(), BingleError> {
         let span = self.span.clone();
         let _guard = span.enter();
         // Keep a copy of options
@@ -1078,7 +1078,7 @@ impl Engine {
 
         // Bind UDP on 0.0.0.0:0 and create mux (OS assigns an ephemeral port)
         let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0")
-            .map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+            .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
         let _local_addr: SocketAddr = mux0
             .local_addr()
             .map_err(|e| format!("Failed to get local addr: {}", e))?;
@@ -1117,11 +1117,11 @@ impl Engine {
 
         // Start mux thread first so DTLS accept loop can receive
         mux.start()
-            .map_err(|e| format!("Failed to start UDP mux: {}", e))?;
+            .map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
         self.dtls.start(mux.clone())
-            .map_err(|e| format!("Failed to start DTLS: {}", e))?;
+            .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // Persist mux, STUN finder, and triangle wait handle before initializing STUN
         self.mux = Some(mux.clone());
@@ -1231,7 +1231,7 @@ impl Engine {
                     //     }
                     // });
                     let ok =
-                        api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None));
+                        api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None).unwrap_or(false));
                     if !ok {
                         tracing::warn!(
                             "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
@@ -1425,7 +1425,7 @@ impl Engine {
         &mut self,
         _options: &StartOptions,
         bind_addr: SocketAddr,
-    ) -> Result<(), String> {
+    ) -> Result<(), BingleError> {
         tracing::info!("[Engine] start_with_addr: bind_addr={:?}", bind_addr);
 
         self.set_last_public_addr(Some(
@@ -1446,11 +1446,11 @@ impl Engine {
         );
 
         let mut mux0 =
-            UdpNetworkMux::bind(bind_all).map_err(|e| format!("Failed to bind UDP mux: {}", e))?;
+            UdpNetworkMux::bind(bind_all).map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux0
             .local_addr()
-            .map_err(|e| format!("Failed to get local addr: {}", e))?;
+            .map_err(|e| BingleError::Other(format!("Failed to get local addr: {}", e)))?;
 
         // Install the common DTLS handler wrapper
         self.install_dtls_handler()?;
@@ -1466,11 +1466,11 @@ impl Engine {
         let mux = Arc::new(mux0);
 
         // Start the UDP mux background loop first
-        mux.start().map_err(|_| "Failed to start UDP mux")?;
+        mux.start().map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS accept loop with the mux
         self.dtls.start(mux.clone())
-            .map_err(|e| format!("Failed to start DTLS: {}", e))?;
+            .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
         if self.options.am_relay {
@@ -1632,7 +1632,7 @@ impl Engine {
         options: &StartOptions,
         finder: &Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>,
         mux: &Arc<UdpNetworkMux>,
-    ) -> Result<(), String> {
+    ) -> Result<(), BingleError> {
         // Create a self pointer for callbacks invoked from STUN worker thread
         let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
         if let Ok(mut f) = finder.lock() {
@@ -1678,7 +1678,7 @@ impl Engine {
             // Kick off STUN polling using provided servers
             let servers = options.stun_servers.clone().unwrap_or_default();
             if servers.is_empty() {
-                return Err("No STUN servers provided".into());
+                return Err(BingleError::Other("No STUN servers provided".to_string()));
             }
             f.start(servers, 2_000, 60_000);
         }

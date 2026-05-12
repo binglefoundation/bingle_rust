@@ -1,4 +1,5 @@
-use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth};
+use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError};
+use crate::engine::BingleAccessUnsafeForTests;
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use tracing::warn;
@@ -21,9 +22,9 @@ impl BingleApiInternal for BothAsApi {
     fn get_state(&self) -> crate::engine::EngineState { self.inner.get_state() }
     fn set_nat_type(&self, nat: crate::engine::NatType) { self.inner.set_nat_type(nat) }
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { self.inner.get_last_public_addr() }
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), String> { self.inner.ddb_register_ip(endpoint, am_relay) }
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> { self.inner.ddb_register_relay(relay_id, relay_sig) }
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.inner.ddb_register_ip(endpoint, am_relay) }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.inner.ddb_register_relay(relay_id, relay_sig) }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), BingleError> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) { self.inner.turn_client_handle_listen_response(relay_addr, relay_id) }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> { self.inner.turn_lookup_addr_by_id(id) }
     fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source_id, dest_id, source, dest) }
@@ -48,17 +49,17 @@ impl BingleApi for BothAsApi {
     fn get_handle(&self) -> Option<String> { self.inner.get_handle() }
     fn get_app_id(&self) -> Option<u64> { self.inner.get_app_id() }
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.inner.get_algo_provider_config() }
-    fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), String> { Err("not supported".into()) }
-    fn stop(&mut self) { }
-    fn network_change(&mut self) { }
-    fn handle_lookup(&self, _handle: &crate::api::bingle_api::Handle) -> Result<Option<crate::api::bingle_api::UserId>, String> { self.inner.handle_lookup(_handle) }
+    fn start(&mut self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> { self.inner.access_unsafe_for_tests(|a| a.start(options)) }
+    fn stop(&mut self) { self.inner.access_unsafe_for_tests(|a| a.stop()) }
+    fn network_change(&mut self) { self.inner.access_unsafe_for_tests(|a| a.network_change()) }
+    fn handle_lookup(&self, _handle: &crate::api::bingle_api::Handle) -> Result<Option<crate::api::bingle_api::UserId>, BingleError> { self.inner.handle_lookup(_handle) }
     fn handle_lookup_by_id(&self, user_id: &crate::api::bingle_api::UserId) -> Option<crate::api::bingle_api::Handle> { self.inner.handle_lookup_by_id(user_id) }
-    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_id(user_id, message, progress) }
-    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_handle(handle, message, progress) }
-    fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> bool { self.inner.send_message_to_network(nsk, user_id, message, progress) }
-    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.inner.send_message_to_id_with_response(user_id, message, progress) }
-    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.inner.send_message_to_handle_with_response(handle, message, progress) }
-    fn send_message_to_network_with_response(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.inner.send_message_to_network_with_response(nsk, user_id, message, progress) }
+    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.inner.send_message_to_id(user_id, message, progress) }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.inner.send_message_to_handle(handle, message, progress) }
+    fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.inner.send_message_to_network(nsk, user_id, message, progress) }
+    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.inner.send_message_to_id_with_response(user_id, message, progress) }
+    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.inner.send_message_to_handle_with_response(handle, message, progress) }
+    fn send_message_to_network_with_response(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.inner.send_message_to_network_with_response(nsk, user_id, message, progress) }
     fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
     fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
@@ -534,7 +535,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 std::thread::spawn(move || {
                     tracing::info!("[on_ddb_dump_resolve] sending DdbSignon to {} via {}", peer_id, nsk);
                     let ok = api_for_thread.send_message_to_network(&nsk, &peer_id, json, None);
-                    tracing::info!("[on_ddb_dump_resolve] DdbSignon sent ok={}", ok);
+                    tracing::info!("[on_ddb_dump_resolve] DdbSignon sent ok={:?}", ok);
                 });
             }
         }
@@ -664,7 +665,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     let resp_json = crate::messages::marshal::to_json_value(&resp);
                     if !from_user_id.is_empty() {
                         let ok = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
-                        tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response (no_corner_node) sent ok={}", ok);
+                        tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response (no_corner_node) sent ok={:?}", ok);
                     }
                     return;
                 }
@@ -682,7 +683,7 @@ impl MessageHandler for DefaultPrintingHandler {
             let user_id = associated_relay.id.clone();
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
-            tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={}", associated_relay.address, ok);
+            tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={:?}", associated_relay.address, ok);
 
             // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
 
@@ -693,7 +694,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 warn!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
             } else {
                 let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
-                tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={}", ok2);
+                tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={:?}", ok2);
             }
         });
     }
@@ -710,7 +711,7 @@ impl MessageHandler for DefaultPrintingHandler {
         // Convert checking_id (issuer) to raw address by trimming issuer suffix (base32 Algorand address)
         let user_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
         let ok = api.send_message_to_network(&nsk, &user_id, json_val, None);
-        tracing::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={}", endpoint, ok);
+        tracing::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={:?}", endpoint, ok);
     }
 
     fn on_triangle_test3(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) {

@@ -64,7 +64,7 @@ pub fn ddb_client_register_ip_ok() {
     struct ApiProxy(Arc<BingleApiImpl>);
     impl InnerBingleApi for ApiProxy { 
         fn get_my_id(&self) -> Option<String> { self.0.get_my_id() }
-        fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, uid: &UserId, msg: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+        fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, uid: &UserId, msg: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
             self.0.send_message_to_network_with_response(nsk, uid, msg, progress)
         }
     }

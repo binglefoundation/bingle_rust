@@ -35,7 +35,7 @@ pub fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new(&StartOptions::default());
     let nsk = NetworkEndpoint::new_relay(ADDRESS_SPEND.parse().unwrap(), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)), Some(2));
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None));
+    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None)).unwrap();
     assert!(!ok, "Should return false when no direct address is provided");
 }
 

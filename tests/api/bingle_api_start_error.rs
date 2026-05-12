@@ -23,6 +23,6 @@ pub fn bingle_api_start_propagates_engine_error() {
 
     let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(res.is_err(), "expected start() to propagate Engine error");
-    let msg = res.err().unwrap().to_lowercase();
+    let msg = res.err().unwrap().to_string().to_lowercase();
     assert!(msg.contains("missing server credentials"));
 }

@@ -2279,6 +2279,7 @@ dependencies = [
  "sha2",
  "stun-rs",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",

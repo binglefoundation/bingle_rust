@@ -27,7 +27,7 @@ fn duplicate_add_errors() {
     let mut api = mk_api();
     api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap();
     let err = api.add_contact("alice2".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap_err();
-    assert!(err.to_lowercase().contains("exists"));
+    assert!(err.to_string().to_lowercase().contains("exists"));
 }
 
 #[test]

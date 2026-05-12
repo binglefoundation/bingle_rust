@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 
-use crate::api::bingle_api::NetworkEndpoint;
+use crate::api::bingle_api::{BingleError, NetworkEndpoint};
 use crate::messages::types::*;
 use crate::messages::{to_json_value, Message};
 use crate::engine::BingleAccess;
@@ -15,25 +15,21 @@ use crate::relay::relay_finder::RelayInfo;
 /// and validate typed responses.
 pub trait DdbClient: Send + Sync {
     /// Register/update our endpoint IP:port in the DDB via a relay.
-    fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String>;
+    fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError>;
     /// Alias with camelCase to match external nomenclature.
     #[allow(non_snake_case)]
-    fn registerIP(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String> { self.register_ip(endpoint, am_relay) }
+    fn registerIP(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.register_ip(endpoint, am_relay) }
 
     /// Register/update our chosen relay association in the DDB via a relay.
     /// relay_id must be a valid Algorand base32 address (36-byte decoded).
-    fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String>;
+    fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError>;
 
     /// Lookup an id in the DDB and build a NetworkSourceKey from its AdvertRecord.
-    fn lookup(&self, id: &str) -> Result<NetworkEndpoint, String>;
+    fn lookup(&self, id: &str) -> Result<NetworkEndpoint, BingleError>;
 
     /// Start loading the DDB from a peer relay by sending DdbInitResolve.
     /// Returns the number of records reported by DdbInitResponse (dbCount) on success.
-    fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, String>;
-
-    // /// Obtain list of all relays via DdbGetEpoch, returning pairs of (relay_id, SocketAddr).
-    // /// Implementations should attempt multiple known relays and fallback to discovery when unavailable.
-    // fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String>;
+    fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, BingleError>;
 }
 
 pub struct DdbClientImpl {
@@ -53,27 +49,27 @@ impl DdbClientImpl {
         Self { api, discover }
     }
 
-    fn find_relay(&self) -> Result<RelayInfo, String> {
+    fn find_relay(&self) -> Result<RelayInfo, BingleError> {
         tracing::info!("[DdbClientImpl::find_relay] create RelayFinder");
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
         tracing::info!("[DdbClientImpl::find_relay] get_my_id");
-        let my_id = self.api.access(|a| a.get_my_id()).ok_or_else(|| "get_my_id returned None".to_string())?;
+        let my_id = self.api.access(|a| a.get_my_id()).ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
         tracing::info!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
-        finder.find_relay(&my_id)
+        finder.find_relay(&my_id).map_err(BingleError::Other)
     }
 
-    fn relay_user_id(relay_id: &str) -> Result<String, String> {
+    fn relay_user_id(relay_id: &str) -> Result<String, BingleError> {
         // Validate Algorand base32 address by decoding to 36 bytes
         match data_encoding::BASE32_NOPAD.decode(relay_id.as_bytes()) {
             Ok(bytes) if bytes.len() == 36 => Ok(relay_id.to_string()),
-            Ok(bytes) => Err(format!("invalid relay id: base32 decoded length {} != 36", bytes.len())),
-            Err(e) => Err(format!("invalid relay id: {}", e)),
+            Ok(bytes) => Err(BingleError::Other(format!("invalid relay id: base32 decoded length {} != 36", bytes.len()))),
+            Err(e) => Err(BingleError::Other(format!("invalid relay id: {}", e))),
         }
     }
 
     /// Send a single getEpoch request to the specified relay and parse the relay list.
     /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
-    pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, String> {
+    pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, BingleError> {
         tracing::info!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
         let nsk = NetworkEndpoint::new_direct(relay.address);
         let relay_user = match Self::relay_user_id(&relay.id) {
@@ -94,13 +90,13 @@ impl DdbClientImpl {
         };
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("getEpochResponse");
-        if !app_ok || !ty_ok { return Err("unexpected response to getEpoch".to_string()); }
+        if !app_ok || !ty_ok { return Err(BingleError::Other("unexpected response to getEpoch".to_string())); }
         let ids_arr = match resp.get("relayIds").and_then(|v| v.as_array()) {
             Some(a) => a,
             None => {
                 let err = "missing relayIds".to_string();
                 tracing::error!("[DdbClientImpl::get_relays_from] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
         let ids: Vec<String> = ids_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -115,7 +111,7 @@ impl DdbClientImpl {
                         None => {
                             let err = "endpoint missing host".to_string();
                             tracing::error!("[DdbClientImpl::get_relays_from] {}", err);
-                            return Err(err);
+                            return Err(BingleError::Other(err));
                         }
                     };
                     let port = match ep.get("port").and_then(|v| v.as_u64()) {
@@ -123,7 +119,7 @@ impl DdbClientImpl {
                         None => {
                             let err = "endpoint missing port".to_string();
                             tracing::error!("[DdbClientImpl::get_relays_from] {}", err);
-                            return Err(err);
+                            return Err(BingleError::Other(err));
                         }
                     };
                     if let Ok(ip) = host.parse::<IpAddr>() { out.push((id.clone(), SocketAddr::new(ip, port))); }
@@ -143,25 +139,22 @@ impl NullDdbClient {
 }
 
 impl DdbClient for NullDdbClient {
-    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> {
-        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), BingleError> {
+        Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
     }
-    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> {
-        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), BingleError> {
+        Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
     }
-    fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, String> {
-        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, BingleError> {
+        Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
     }
-    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, String> {
-        Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
+    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, BingleError> {
+        Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
     }
-    // fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> {
-    //     Err("DDB client not configured (missing app_id or unsupported platform)".to_string())
-    // }
 }
 
 impl DdbClient for DdbClientImpl {
-    fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, String> {
+    fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, BingleError> {
         tracing::info!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
         // Resolve the peer relay's direct endpoint using RelayFinder first, then fall back to DDB lookup
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
@@ -173,7 +166,7 @@ impl DdbClient for DdbClientImpl {
                 Err(e) => {
                     let err = format!("failed to resolve peer '{}' via roots or DDB: {}", peer_id, e);
                     tracing::warn!("[DdbClientImpl::start_load_from_peer] {}", err);
-                    return Err(err);
+                    return Err(e);
                 }
             }
         }
@@ -184,7 +177,7 @@ impl DdbClient for DdbClientImpl {
             None => {
                 let err = "peer NetworkEndpoint is not a direct address".to_string();
                 tracing::error!("[DdbClientImpl::start_load_from_peer] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
 
@@ -213,7 +206,7 @@ impl DdbClient for DdbClientImpl {
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("initResponse");
         if !app_ok || !ty_ok {
-            return Err("unexpected response (expected DdbInitResponse)".to_string());
+            return Err(BingleError::Other("unexpected response (expected DdbInitResponse)".to_string()));
         }
 
         let cnt = match resp.get("dbCount").and_then(|v| v.as_i64()) {
@@ -221,7 +214,7 @@ impl DdbClient for DdbClientImpl {
             None => {
                 let err = "missing dbCount".to_string();
                 tracing::error!("[DdbClientImpl::start_load_from_peer] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
 
@@ -230,7 +223,7 @@ impl DdbClient for DdbClientImpl {
             Err(_) => {
                 let err = "dbCount out of range".to_string();
                 tracing::error!("[DdbClientImpl::start_load_from_peer] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
 
@@ -289,7 +282,7 @@ impl DdbClient for DdbClientImpl {
     //     Err(last_err.unwrap_or_else(|| "no relays discovered".to_string()))
     // }
 
-    fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String> {
+    fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> {
         // 1) Find relay to talk to
         let relay = match self.find_relay() {
             Ok(r) => r,
@@ -313,7 +306,7 @@ impl DdbClient for DdbClientImpl {
             None => {
                 let err = "get_my_id returned None".to_string();
                 tracing::error!("[DdbClientImpl::register_ip] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
         let record = AdvertRecord {
@@ -352,10 +345,10 @@ impl DdbClient for DdbClientImpl {
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
-        if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }
+        if app_ok && ty_ok { Ok(()) } else { Err(BingleError::Other("unexpected response (expected DdbUpdateResponse)".to_string())) }
     }
 
-    fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
+    fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> {
         // 1) Find relay to talk to (we also accept the relay_id parameter for the record)
         let relay = match self.find_relay() {
             Ok(r) => r,
@@ -384,7 +377,7 @@ impl DdbClient for DdbClientImpl {
             None => {
                 let err = "get_my_id returned None".to_string();
                 tracing::error!("[DdbClientImpl::register_relay] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
         let record = AdvertRecord {
@@ -423,10 +416,10 @@ impl DdbClient for DdbClientImpl {
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()).is_some_and(|s| s == "ddb") || resp.get("app").is_none();
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
-        if app_ok && ty_ok { Ok(()) } else { Err("unexpected response (expected DdbUpdateResponse)".to_string()) }
+        if app_ok && ty_ok { Ok(()) } else { Err(BingleError::Other("unexpected response (expected DdbUpdateResponse)".to_string())) }
     }
 
-    fn lookup(&self, id: &str) -> Result<NetworkEndpoint, String> {
+    fn lookup(&self, id: &str) -> Result<NetworkEndpoint, BingleError> {
         // 1) Find relay to talk to
         let relay = match self.find_relay() {
             Ok(r) => r,
@@ -467,11 +460,11 @@ impl DdbClient for DdbClientImpl {
         let is_ddb = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty = resp.get("type").and_then(|v| v.as_str());
         if !is_ddb || ty != Some("queryResponse") {
-            return Err("unexpected response (expected DdbQueryResponse)".to_string());
+            return Err(BingleError::Other("unexpected response (expected DdbQueryResponse)".to_string()));
         }
         let found = resp.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
         if !found {
-            return Err("not found".to_string());
+            return Err(BingleError::Other("not found".to_string()));
         }
         // Build NetworkEndpoint from advert (supporting both direct endpoint and relay_id)
         let advert = match resp.get("advert") {
@@ -479,7 +472,7 @@ impl DdbClient for DdbClientImpl {
             None => {
                 let err = "missing advert".to_string();
                 tracing::error!("[DdbClientImpl::lookup] {}", err);
-                return Err(err);
+                return Err(BingleError::Other(err));
             }
         };
 
@@ -490,7 +483,7 @@ impl DdbClient for DdbClientImpl {
                 None => {
                     let err = "relayId is not a string".to_string();
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(err);
+                    return Err(BingleError::Other(err));
                 }
             };
 
@@ -506,7 +499,7 @@ impl DdbClient for DdbClientImpl {
                 None => {
                     let err = "missing endpoint.host".to_string();
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(err);
+                    return Err(BingleError::Other(err));
                 }
             };
             let port = match endpoint.get("port").and_then(|v| v.as_u64()) {
@@ -514,7 +507,7 @@ impl DdbClient for DdbClientImpl {
                 None => {
                     let err = "missing endpoint.port".to_string();
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(err);
+                    return Err(BingleError::Other(err));
                 }
             };
             let ip: IpAddr = match host.parse() {
@@ -522,13 +515,13 @@ impl DdbClient for DdbClientImpl {
                 Err(_) => {
                     let err = format!("invalid host '{}': not an IP address", host);
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(err);
+                    return Err(BingleError::Other(err));
                 }
             };
             let addr = SocketAddr::new(ip, port);
             return Ok(NetworkEndpoint::new_direct(addr));
         }
 
-        Err("AdvertRecord contains neither relayId nor endpoint".to_string())
+        Err(BingleError::Other("AdvertRecord contains neither relayId nor endpoint".to_string()))
     }
 }

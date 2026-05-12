@@ -62,7 +62,7 @@ pub fn unit_send_message_to_network_calls_dtls_send() {
         &uid,
         msg.clone(),
         Some(Arc::new(move |p, s| { progress_calls_closure.lock().unwrap().push((p, s)); })),
-    ));
+    )).unwrap();
     assert!(ok, "send_message_to_network should return true on MockDtls::send Ok");
     let locked = sent_vec.lock().unwrap();
     assert_eq!(locked.len(), 1);
@@ -130,7 +130,7 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
     let addr_send: SocketAddr = "127.0.0.1:45678".parse().unwrap();
     let nsk = NetworkEndpoint::new_direct(addr_send);
     let uid2 = test_util::ADDRESS_RECEIVE.to_string();
-    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None));
+    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid2, serde_json::json!({"k": 1}), None)).unwrap();
     assert!(ok);
     let cap = captured.lock().unwrap();
     assert_eq!(cap.len(), 1);

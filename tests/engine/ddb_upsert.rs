@@ -118,7 +118,7 @@ pub fn ddb_upsert_ignored_when_not_relay() {
 
     let nsk = NetworkEndpoint::new_direct(server_addr);
     let uid = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id()).unwrap();
-    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&nsk, &uid, json, None));
+    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&nsk, &uid, json, None)).unwrap();
     assert!(ok, "client send ok");
 
     // Give some time; expect no updateResponse because server is not a relay
@@ -148,7 +148,7 @@ pub fn ddb_upsert_rejected_on_id_mismatch() {
 
     let nsk = NetworkEndpoint::new_direct(server_addr);
     let uid = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id()).unwrap();
-    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&nsk, &uid, json, None));
+    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&nsk, &uid, json, None)).unwrap();
     assert!(ok, "client send ok");
 
     std::thread::sleep(Duration::from_millis(200));

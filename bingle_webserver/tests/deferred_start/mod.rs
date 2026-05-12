@@ -4,7 +4,7 @@ use bingle_webserver::{AppState, try_start_api};
 use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message,
 };
-use rust_comms::api::bingle_api::StartOptions;
+use rust_comms::api::bingle_api::{BingleError, StartOptions};
 use rust_comms::blockchain::algo_ops::AlgoOps;
 use crate::common::{TrackingMockBingleApi, CapturingMockBingleApi};
 
@@ -24,23 +24,23 @@ impl ControllableLocalApi {
 }
 
 impl BingleLocalApi for ControllableLocalApi {
-    fn generate_keypair(&mut self) -> Result<Keypair, String> {
+    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
         let kp = Keypair { id: "TEST_ID".into(), passphrase: "TEST_PASS".into() };
         self.keypair = Some(kp.clone());
         Ok(kp)
     }
 
-    fn register_keypair(&self, _handle: String) -> Result<bool, String> { Ok(true) }
+    fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> { Ok(true) }
 
-    fn get_algo_ops(&self) -> Result<AlgoOps, String> {
-        Err("not configured".to_string())
+    fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
+        Err(BingleError::Other("not configured".to_string()))
     }
 
-    fn add_contact(&mut self, _handle: String, _id: String, _source: ContactSource) -> Result<(), String> { Ok(()) }
-    fn block_contact(&mut self, _id: String) -> Result<(), String> { Ok(()) }
-    fn remove_contact(&mut self, _id: String) -> Result<(), String> { Ok(()) }
-    fn is_blocked(&self, _id: &str) -> Result<bool, String> { Ok(false) }
-    fn get_contacts(&self) -> Result<Vec<Contact>, String> { Ok(Vec::new()) }
+    fn add_contact(&mut self, _handle: String, _id: String, _source: ContactSource) -> Result<(), BingleError> { Ok(()) }
+    fn block_contact(&mut self, _id: String) -> Result<(), BingleError> { Ok(()) }
+    fn remove_contact(&mut self, _id: String) -> Result<(), BingleError> { Ok(()) }
+    fn is_blocked(&self, _id: &str) -> Result<bool, BingleError> { Ok(false) }
+    fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> { Ok(Vec::new()) }
 
     fn add_message(
         &mut self,
@@ -48,13 +48,13 @@ impl BingleLocalApi for ControllableLocalApi {
         _recipient_handles: Vec<String>,
         _timestamp: i64,
         _text: String,
-    ) -> Result<(), String> { Ok(()) }
+    ) -> Result<(), BingleError> { Ok(()) }
 
-    fn get_messages(&self) -> Result<Vec<Message>, String> { Ok(Vec::new()) }
-    fn save(&self, _path: &str) -> Result<(), String> { Ok(()) }
-    fn load(&mut self, _path: &str) -> Result<(), String> { Ok(()) }
+    fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(Vec::new()) }
+    fn save(&self, _path: &str) -> Result<(), BingleError> { Ok(()) }
+    fn load(&mut self, _path: &str) -> Result<(), BingleError> { Ok(()) }
 
-    fn keypair_status(&self) -> Result<KeypairStatus, String> {
+    fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         Ok(KeypairStatus {
             status: self.status_override.clone(),
             id: self.keypair.as_ref().map(|k| k.id.clone()),
@@ -63,7 +63,7 @@ impl BingleLocalApi for ControllableLocalApi {
         })
     }
 
-    fn get_keypair(&self) -> Result<Option<Keypair>, String> {
+    fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
         Ok(self.keypair.clone())
     }
 }

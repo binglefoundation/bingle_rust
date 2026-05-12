@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use crate::blockchain::error::AlgoError;
 use uuid::Uuid;
 use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
@@ -350,35 +351,10 @@ impl AlgoOps {
     }
 
     pub fn account_balance(&self) -> Result<Option<f64>> {
-        let client = match self.algod_client() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("[account_balance] Failed to access algod client: {}", e);
-                return Err(e);
-            }
-        };
-        let address = match self.require_address() {
-            Ok(a) => a,
-            Err(e) => {
-                tracing::error!("[account_balance] Failed to resolve address: {}", e);
-                return Err(e);
-            }
-        };
-        let res = match self.rt_block_on(client.account_information(&address)) {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("[account_balance] Failed to fetch account information for {}: {}", address, e);
-                return Err(e);
-            }
-        };
-        tracing::trace!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
-        let info = match res {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("[account_balance] Account information request failed for {}: {}", address, e);
-                return Ok(None);
-            }
-        };
+        let client = self.algod_client()?;
+        let address = self.require_address()?;
+        let res = self.rt_block_on(client.account_information(&address));
+        let info = AlgoError::map_node_err("account_information", res)?;
         // amount is in microalgos
         let micro: u64 = info.amount.0;
         tracing::debug!("[account_balance] Balance for address {} is {} microalgos", address, micro);
@@ -388,8 +364,9 @@ impl AlgoOps {
     pub fn global_state(&self, maybe_app_id: Option<u64>) -> Result<Option<Vec<(u64, Vec<(String, String)>)>>> {
         let client = self.algod_client()?;
         let address = self.require_address()?;
-        let res = self.rt_block_on(client.account_information(&address))?;
-        let info = match res { Ok(v) => v, Err(_e) => return Ok(None) };
+        let res = self.rt_block_on(client.account_information(&address));
+        let info_opt = AlgoError::map_node_err_opt("account_information", res)?;
+        let info = match info_opt { Some(i) => i, None => return Ok(None) };
 
         // Convert to json Value for resilient traversal
         let v = serde_json::to_value(&info)
@@ -419,8 +396,9 @@ impl AlgoOps {
     pub fn local_state_for_account(&self, app_id: u64, account_address: &str) -> Result<Option<Vec<(String, String)>>> {
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
-        let res = self.rt_block_on(client.account_information(&address))?;
-        let info = match res { Ok(v) => v, Err(_e) => return Ok(None) };
+        let res = self.rt_block_on(client.account_information(&address));
+        let info_opt = AlgoError::map_node_err_opt("account_information", res)?;
+        let info = match info_opt { Some(i) => i, None => return Ok(None) };
 
         tracing::debug!("Retrieved account info for address: {}", account_address);
         tracing::trace!("Account info: {:#?}", info);
@@ -1256,17 +1234,15 @@ impl AlgoOps {
         let client = self.algod_client()?;
 
         // Get starting round
-        let status = self
-            .rt_block_on(client.status())?
-            .map_err(|e| anyhow!("status query failed: {e}"))?;
+        let status = AlgoError::map_node_err("status", self.rt_block_on(client.status()))?;
         let start_round = status.last_round + 1;
         let end_round = start_round + timeout_rounds;
 
         let mut current_round = start_round;
         while current_round < end_round {
             // Check pending transaction info
-            match self.rt_block_on(client.pending_transaction_with_id(tx_id))? {
-                Ok(p) => {
+            match self.rt_block_on(client.pending_transaction_with_id(tx_id)) {
+                Ok(Ok(p)) => {
                     if let Some(cr) = p.confirmed_round {
                         if cr > 0 {
                             return Ok(());
@@ -1276,15 +1252,22 @@ impl AlgoOps {
                         bail!("Transaction rejected with pool error: {}", p.pool_error);
                     }
                 }
-                Err(_e) => {
+                Ok(Err(e)) => {
+                    let ae = anyhow!(e.to_string());
+                    if AlgoError::is_host_unreachable(&ae) {
+                        return Err(AlgoError::unreachable("pending_transaction_with_id", &ae.to_string()).into());
+                    }
                     // If the node no longer remembers the tx or transient error, continue waiting until timeout
+                }
+                Err(e) => {
+                    if AlgoError::is_host_unreachable(&e) {
+                        return Err(AlgoError::unreachable("pending_transaction_with_id", &e.to_string()).into());
+                    }
                 }
             }
 
             // Wait for next round
-            self
-                .rt_block_on(client.status_after_round(algonaut::core::Round(current_round)))?
-                .map_err(|e| anyhow!("status_after_round failed: {e}"))?;
+            AlgoError::map_node_err("status_after_round", self.rt_block_on(client.status_after_round(algonaut::core::Round(current_round))))?;
             current_round += 1;
         }
         Err(anyhow!("Transaction not confirmed after {} rounds", timeout_rounds))

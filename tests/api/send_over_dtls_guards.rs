@@ -69,7 +69,7 @@ pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&relay_nsk, &uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
     assert!(!ok, "send_message_to_network should return false for incomplete relay endpoint");
     assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
 }
@@ -89,7 +89,7 @@ pub fn send_over_dtls_rejects_send_to_self() {
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
     assert!(!ok, "send_message_to_network should return false when sending to self");
     assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
 }
@@ -108,7 +108,7 @@ pub fn send_over_dtls_allows_direct_to_different_addr() {
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
     assert!(ok, "send_message_to_network should succeed for direct endpoint to different addr");
     assert_eq!(sent_vec.lock().unwrap().len(), 1, "MockDtls::send should have been called once");
 }

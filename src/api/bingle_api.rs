@@ -10,6 +10,30 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use crate::util::logging::LogMode;
 use serde_json::Value as JsonValue;
+use crate::blockchain::error::AlgoError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum BingleError {
+    #[error("Blockchain error: {0}")]
+    Algo(#[from] AlgoError),
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<String> for BingleError {
+    fn from(s: String) -> Self {
+        BingleError::Other(s)
+    }
+}
+
+impl BingleError {
+    pub fn from_anyhow(e: anyhow::Error) -> Self {
+        match e.downcast::<AlgoError>() {
+            Ok(ae) => BingleError::Algo(ae),
+            Err(e) => BingleError::Other(e.to_string()),
+        }
+    }
+}
 
 /// Internal-only API for engine control from message handlers and router context.
 /// Not part of the public BingleApi surface. Intended for in-process coordination only.
@@ -33,12 +57,12 @@ pub trait BingleApiInternal: Send + Sync {
     /// Retrieve the last discovered public address (IP:port) if available.
     fn get_last_public_addr(&self) -> Option<SocketAddr> { None }
     /// Register an endpoint IP:port via the engine's DDB client.
-    fn ddb_register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Ok(()) }
+    fn ddb_register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), BingleError> { Ok(()) }
     /// Register a relay association via the engine's DDB client.
-    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
+    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), BingleError> { Ok(()) }
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
-    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), String> { Ok(()) }
+    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), BingleError> { Ok(()) }
     /// Client-side handler invoked on ListenResponse to register allowed relay id <-> addr mapping.
     fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) {}
     /// Lookup a previously registered address for the given id (TURN mapping).
@@ -98,9 +122,9 @@ macro_rules! impl_bingle_api_internal_noop {
             fn get_state(&self) -> $crate::engine::EngineState { $crate::engine::EngineState::StunIdentify }
             fn set_nat_type(&self, _nat: $crate::engine::NatType) {}
             fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
-            fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> { Err("ni".into()) }
-            fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("ni".into()) }
-            fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> { Err("ni".into()) }
+            fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
+            fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
+            fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
             fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
             fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> { None }
             fn turn_handle_call(&self, _source_id: String, _dest_id: String, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 { -1 }
@@ -239,7 +263,7 @@ pub trait BingleApi: Send + Sync {
     /// Returns the configured Algorand provider config from StartOptions, if any.
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig>;
     /// Start the node using the provided options. Implementations may spawn background tasks.
-    fn start(&mut self, options: &StartOptions) -> Result<(), String>;
+    fn start(&mut self, options: &StartOptions) -> Result<(), BingleError>;
 
     /// Stop all threads/tasks and release resources.
     fn stop(&mut self);
@@ -254,7 +278,7 @@ pub trait BingleApi: Send + Sync {
     /// Lookup the handle in the Algorand blockchain and return the associated id.
     /// If multiple entries exist, the oldest one is returned.
     /// Returns Ok(Some(id)) if found, Ok(None) if not found, or Err on failure.
-    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, String>;
+    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError>;
 
     /// Reverse lookup: given a user id (Algorand address), obtain the corresponding handle if known.
     /// Implementations may consult an in-memory cache and/or blockchain local state.
@@ -268,7 +292,7 @@ pub trait BingleApi: Send + Sync {
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
-    ) -> bool;
+    ) -> Result<bool, BingleError>;
 
     /// Send a message when we have the handle and don't need a response.
     fn send_message_to_handle(
@@ -276,7 +300,7 @@ pub trait BingleApi: Send + Sync {
         handle: &Handle,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
-    ) -> bool;
+    ) -> Result<bool, BingleError>;
 
     /// Send a message when we have the endpoint NetworkSourceKey and the id.
     fn send_message_to_network(
@@ -285,7 +309,7 @@ pub trait BingleApi: Send + Sync {
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
-    ) -> bool;
+    ) -> Result<bool, BingleError>;
 
     /// Send a message when we have the id and need a response.
     fn send_message_to_id_with_response(
@@ -293,7 +317,7 @@ pub trait BingleApi: Send + Sync {
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
-    ) -> Result<JsonValue, String>;
+    ) -> Result<JsonValue, BingleError>;
 
     /// Send a message when we have the handle and need a response.
     fn send_message_to_handle_with_response(
@@ -301,7 +325,7 @@ pub trait BingleApi: Send + Sync {
         handle: &Handle,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
-    ) -> Result<JsonValue, String>;
+    ) -> Result<JsonValue, BingleError>;
 
     /// Send a message when we have the endpoint NetworkSourceKey and the id and need a response.
     fn send_message_to_network_with_response(
@@ -310,7 +334,7 @@ pub trait BingleApi: Send + Sync {
         user_id: &UserId,
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
-    ) -> Result<JsonValue, String>;
+    ) -> Result<JsonValue, BingleError>;
 
     // Handler properties:
 

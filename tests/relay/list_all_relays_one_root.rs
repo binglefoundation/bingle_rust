@@ -11,7 +11,7 @@ struct GetRelaysMockApi {
 }
 
 impl InnerBingleApi for GetRelaysMockApi {
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let app = message.get("app").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
 
@@ -29,7 +29,7 @@ impl InnerBingleApi for GetRelaysMockApi {
                 ]
             }))
         } else {
-            Err("unexpected message".into())
+            Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
         }
     }
 }

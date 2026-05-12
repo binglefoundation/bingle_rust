@@ -1,4 +1,5 @@
 use crate::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, REQUIRED_ALGO};
+use rust_comms::api::bingle_api::BingleError;
 use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use std::collections::HashMap;
@@ -44,7 +45,7 @@ impl BingleApiLocalImpl {
 }
 
 impl BingleLocalApi for BingleApiLocalImpl {
-    fn generate_keypair(&mut self) -> Result<Keypair, String> {
+    fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Generating new keypair");
         let (id, passphrase) = rust_comms::blockchain::algo_ops::AlgoOps::generate_keypair();
         let kp = Keypair { id, passphrase };
@@ -59,13 +60,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(kp)
     }
 
-    fn register_keypair(&self, handle: String) -> Result<bool, String> {
+    fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         tracing::info!("[BingleLocalApi] Registering keypair with handle: {}", handle);
         // Validate config
         let app_id = self.config.app_id;
         let asset_id = self.config.asset_id;
-        if app_id == 0 { return Err("app_id not set in config".to_string()); }
-        if asset_id == 0 { return Err("asset_id not set in config".to_string()); }
+        if app_id == 0 { return Err(BingleError::Other("app_id not set in config".to_string())); }
+        if asset_id == 0 { return Err(BingleError::Other("asset_id not set in config".to_string())); }
 
         // Ensure we have blockchain ops bound to current keypair
         let ops = match self.get_algo_ops() {
@@ -78,14 +79,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         // Execute on-chain steps
         if let Err(e) = ops.opt_in_app(app_id) {
-            let msg = e.to_string();
-            tracing::error!("[register_keypair] Failed to opt in to app {}: {}", app_id, msg);
-            return Err(msg);
+            tracing::error!("[register_keypair] Failed to opt in to app {}: {}", app_id, e);
+            return Err(BingleError::from_anyhow(e));
         }
         if let Err(e) = ops.opt_in_to_asset(asset_id) {
-            let msg = e.to_string();
-            tracing::error!("[register_keypair] Failed to opt in to asset {}: {}", asset_id, msg);
-            return Err(msg);
+            tracing::error!("[register_keypair] Failed to opt in to asset {}: {}", asset_id, e);
+            return Err(BingleError::from_anyhow(e));
         }
 
         // Create AlgoBingle helper and perform buy + register
@@ -94,32 +93,29 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let price = match bgl.get_bingle_price(app_id) {
             Ok(p) => p,
             Err(e) => {
-                let msg = e.to_string();
-                tracing::error!("[register_keypair] Failed to get Bingle price for app {}: {}", app_id, msg);
-                return Err(msg);
+                tracing::error!("[register_keypair] Failed to get Bingle price for app {}: {}", app_id, e);
+                return Err(BingleError::from_anyhow(e));
             }
         };
         match bgl.buy_bingle(app_id, asset_id, price) {
             Ok(tx) => { let _ = tx; }
             Err(e) => {
-                let msg = e.to_string();
-                tracing::error!("[register_keypair] Failed to buy Bingle (app={}, asset={}, price={}): {}", app_id, asset_id, price, msg);
-                return Err(msg);
+                tracing::error!("[register_keypair] Failed to buy Bingle (app={}, asset={}, price={}): {}", app_id, asset_id, price, e);
+                return Err(BingleError::from_anyhow(e));
             }
         }
         match bgl.register(app_id, asset_id, &handle, 1) {
             Ok(tx) => { let _ = tx; }
             Err(e) => {
-                let msg = e.to_string();
-                tracing::error!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, msg);
-                return Err(msg);
+                tracing::error!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, e);
+                return Err(BingleError::from_anyhow(e));
             }
         }
         tracing::info!("[BingleLocalApi] Keypair registered successfully with handle: {}", handle);
         Ok(true)
     }
 
-    fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, String> {
+    fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, BingleError> {
         // 1) Return cached instance if available
         {
             let guard = match self.algo_ops.lock() {
@@ -127,7 +123,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
                     tracing::error!("[get_algo_ops] Failed to lock algo_ops: {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             };
             if let Some(ops) = guard.as_ref() {
@@ -143,14 +139,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
                     tracing::error!("[get_algo_ops] Failed to lock keypair: {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             };
             match guard.as_ref().map(|k| k.passphrase.clone()) {
                 Some(p) => p,
                 None => {
                     tracing::error!("[get_algo_ops] No keypair available");
-                    return Err("no keypair".to_string());
+                    return Err(BingleError::Other("no keypair".to_string()));
                 }
             }
         };
@@ -174,85 +170,85 @@ impl BingleLocalApi for BingleApiLocalImpl {
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[get_algo_ops] Failed to lock algo_ops for caching: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         *cache_guard = Some(ops.clone());
         Ok(ops)
     }
 
-    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), String> {
+    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}", handle, id, source);
         // Validate inputs
-        if handle.trim().is_empty() { return Err("handle cannot be empty".to_string()); }
-        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+        if handle.trim().is_empty() { return Err(BingleError::Other("handle cannot be empty".to_string())); }
+        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
 
         let mut map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[add_contact] Failed to lock contacts: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         if map.contains_key(&id) {
-            return Err("contact already exists".to_string());
+            return Err(BingleError::Other("contact already exists".to_string()));
         }
         map.insert(id, (handle, source, false));
         Ok(())
     }
 
-    fn block_contact(&mut self, id: String) -> Result<(), String> {
+    fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Blocking contact: id={}", id);
-        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
         let mut map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[block_contact] Failed to lock contacts: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         match map.get_mut(&id) {
             Some((_h, _s, blocked)) => { *blocked = true; Ok(()) }
-            None => Err("contact not found".to_string()),
+            None => Err(BingleError::Other("contact not found".to_string())),
         }
     }
 
-    fn remove_contact(&mut self, id: String) -> Result<(), String> {
+    fn remove_contact(&mut self, id: String) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Removing contact: id={}", id);
-        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
         let mut map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[remove_contact] Failed to lock contacts: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
-        if map.remove(&id).is_some() { Ok(()) } else { Err("contact not found".to_string()) }
+        if map.remove(&id).is_some() { Ok(()) } else { Err(BingleError::Other("contact not found".to_string())) }
     }
 
-    fn is_blocked(&self, id: &str) -> Result<bool, String> {
-        if id.trim().is_empty() { return Err("id cannot be empty".to_string()); }
+    fn is_blocked(&self, id: &str) -> Result<bool, BingleError> {
+        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
         let map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[is_blocked] Failed to lock contacts: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         Ok(map.get(id).map(|(_, _, b)| *b).unwrap_or(false))
     }
 
-    fn get_contacts(&self) -> Result<Vec<Contact>, String> {
+    fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
         let map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[get_contacts] Failed to lock contacts: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         let mut out: Vec<Contact> = Vec::new();
@@ -270,13 +266,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), BingleError> {
         tracing::debug!("[BingleLocalApi] Adding message from: {} to: {:?}", sender_handle, recipient_handles);
         // Basic input validation
-        if sender_handle.trim().is_empty() { return Err("sender_handle cannot be empty".to_string()); }
-        if recipient_handles.is_empty() { return Err("recipient_handles cannot be empty".to_string()); }
-        if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err("recipient_handles cannot contain empty handles".to_string()); }
-        if text.trim().is_empty() { return Err("text cannot be empty".to_string()); }
+        if sender_handle.trim().is_empty() { return Err(BingleError::Other("sender_handle cannot be empty".to_string())); }
+        if recipient_handles.is_empty() { return Err(BingleError::Other("recipient_handles cannot be empty".to_string())); }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err(BingleError::Other("recipient_handles cannot contain empty handles".to_string())); }
+        if text.trim().is_empty() { return Err(BingleError::Other("text cannot be empty".to_string())); }
 
         let msg = Message { sender_handle, recipient_handles, timestamp, text };
         let mut guard = match self.messages.lock() {
@@ -284,26 +280,26 @@ impl BingleLocalApi for BingleApiLocalImpl {
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[add_message] Failed to lock messages: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         guard.push(msg);
         Ok(())
     }
 
-    fn get_messages(&self) -> Result<Vec<Message>, String> {
+    fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
         let guard = match self.messages.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[get_messages] Failed to lock messages: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         Ok(guard.clone())
     }
 
-    fn save(&self, path: &str) -> Result<(), String> {
+    fn save(&self, path: &str) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Saving state to: {}", path);
         // Build serializable snapshot
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -327,7 +323,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
                     tracing::error!("[save] Failed to lock keypair: {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             };
             g.clone()
@@ -338,7 +334,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
                     tracing::error!("[save] Failed to lock contacts: {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             };
             map.iter()
@@ -356,7 +352,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
                     tracing::error!("[save] Failed to lock messages: {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             };
             g.clone()
@@ -375,7 +371,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                         e
                     );
                     tracing::error!("[save] {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             }
         }
@@ -385,19 +381,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
             Err(e) => {
                 let msg = e.to_string();
                 tracing::error!("[save] Failed to create file '{}': {}", path, msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         if let Err(e) = serde_json::to_writer_pretty(file, &state) {
             let msg = e.to_string();
             tracing::error!("[save] Failed to write JSON to '{}': {}", path, msg);
-            return Err(msg);
+            return Err(BingleError::Other(msg));
         }
         tracing::info!("[BingleLocalApi] State saved successfully to: {}", path);
         Ok(())
     }
 
-    fn load(&mut self, path: &str) -> Result<(), String> {
+    fn load(&mut self, path: &str) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Loading state from: {}", path);
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct ContactEntry {
@@ -418,7 +414,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             Err(e) => {
                 let msg = e.to_string();
                 tracing::error!("[load] Failed to open file '{}': {}", path, msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         let state: LocalState = match serde_json::from_reader(file) {
@@ -426,7 +422,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             Err(e) => {
                 let msg = e.to_string();
                 tracing::error!("[load] Failed to parse JSON from '{}': {}", path, msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
 
@@ -435,14 +431,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
             *k = state.keypair.clone();
         } else {
             tracing::error!("[load] Failed to lock keypair: mutex poisoned");
-            return Err("mutex poisoned".to_string());
+            return Err(BingleError::Other("mutex poisoned".to_string()));
         }
         // Invalidate cached AlgoOps since keypair may have changed
         if let Ok(mut ops_guard) = self.algo_ops.lock() {
             *ops_guard = None;
         } else {
             tracing::error!("[load] Failed to lock algo_ops: mutex poisoned");
-            return Err("mutex poisoned".to_string());
+            return Err(BingleError::Other("mutex poisoned".to_string()));
         }
         if let Ok(mut map) = self.contacts.lock() {
             map.clear();
@@ -451,20 +447,20 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         } else {
             tracing::error!("[load] Failed to lock contacts: mutex poisoned");
-            return Err("mutex poisoned".to_string());
+            return Err(BingleError::Other("mutex poisoned".to_string()));
         }
         if let Ok(mut msgs) = self.messages.lock() {
             *msgs = state.messages;
         } else {
             tracing::error!("[load] Failed to lock messages: mutex poisoned");
-            return Err("mutex poisoned".to_string());
+            return Err(BingleError::Other("mutex poisoned".to_string()));
         }
 
         tracing::info!("[BingleLocalApi] State loaded successfully from: {}", path);
         Ok(())
     }
 
-    fn keypair_status(&self) -> Result<KeypairStatus, String> {
+    fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         tracing::debug!("[BingleLocalApi] Checking keypair status");
         // 1) Check if keypair exists
         let kp = {
@@ -473,7 +469,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
                     tracing::error!("[keypair_status] Failed to lock keypair: {}", msg);
-                    return Err(msg);
+                    return Err(BingleError::Other(msg));
                 }
             };
             match guard.as_ref() {
@@ -507,9 +503,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
                 Ok(v) => v,
                 Err(e) => {
-                    let msg = e.to_string();
-                    tracing::error!("[keypair_status] Failed to check asset opt-in for {} (asset {}): {}", algorand_id, asset_id, msg);
-                    return Err(msg);
+                    tracing::error!("[keypair_status] Failed to check asset opt-in for {} (asset {}): {}", algorand_id, asset_id, e);
+                    return Err(BingleError::from_anyhow(e));
                 }
             }
         } else {
@@ -523,9 +518,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
                     Ok(s) => s,
                     Err(e) => {
-                        let msg = e.to_string();
-                        tracing::error!("[keypair_status] Failed to get local state for {} (app {}): {}", algorand_id, app_id, msg);
-                        return Err(msg);
+                        tracing::error!("[keypair_status] Failed to get local state for {} (app {}): {}", algorand_id, app_id, e);
+                        return Err(BingleError::from_anyhow(e));
                     }
                 };
                 local_state.and_then(|entries| {
@@ -547,9 +541,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             let balance = match ops.account_balance() {
                 Ok(b) => b,
                 Err(e) => {
-                    let msg = e.to_string();
-                    tracing::error!("[keypair_status] Failed to get account balance: {}", msg);
-                    return Err(msg);
+                    tracing::error!("[keypair_status] Failed to get account balance: {}", e);
+                    return Err(BingleError::from_anyhow(e));
                 }
             };
             let balance_algos = balance.unwrap_or(0.0);
@@ -573,13 +566,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
     }
 
-    fn get_keypair(&self) -> Result<Option<Keypair>, String> {
+    fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
         let guard = match self.keypair.lock() {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
                 tracing::error!("[get_keypair] Failed to lock keypair: {}", msg);
-                return Err(msg);
+                return Err(BingleError::Other(msg));
             }
         };
         Ok(guard.clone())

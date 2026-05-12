@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value as JsonValue;
 
-use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, BingleError, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::network_endpoint::NetworkEndpoint;
+use rust_comms::blockchain::error::AlgoErrorKind;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::util::cli_utils::{parse_stun_list, parse_stun_file, parse_node_file_with_ids, resolve_app_asset_ids};
 
@@ -122,6 +123,15 @@ fn parse_nat_type(nat: &str) -> NatType {
         "Restricted" => NatType::Restricted,
         "FullCone" => NatType::FullCone,
         _ => NatType::Unknown,
+    }
+}
+
+fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
+    match e {
+        BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
+            BingleJsiError::NoBlockchain { reason: ae.to_string() }
+        }
+        _ => BingleJsiError::InternalError { reason: e.to_string() },
     }
 }
 
@@ -447,7 +457,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             Ok(None) => Err(BingleJsiError::NotFound {
                 reason: format!("Handle '{}' not found", handle),
             }),
-            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+            Err(e) => Err(bingle_error_to_jsi(e)),
         }
     }
 
@@ -457,8 +467,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         message: BingleMessage,
     ) -> Result<bool, BingleJsiError> {
         let json = message_to_json(&message);
-        let ok = self.api.send_message_to_id(&user_id, json, None);
-        Ok(ok)
+        self.api.send_message_to_id(&user_id, json, None).map_err(bingle_error_to_jsi)
     }
 
     fn send_message_to_handle(
@@ -467,8 +476,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         message: BingleMessage,
     ) -> Result<bool, BingleJsiError> {
         let json = message_to_json(&message);
-        let ok = self.api.send_message_to_handle(&handle, json, None);
-        Ok(ok)
+        self.api.send_message_to_handle(&handle, json, None).map_err(bingle_error_to_jsi)
     }
 
     fn send_message_to_network(
@@ -479,8 +487,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
     ) -> Result<bool, BingleJsiError> {
         let endpoint = nsk_to_endpoint(&network_source_key);
         let json = message_to_json(&message);
-        let ok = self.api.send_message_to_network(&endpoint, &user_id, json, None);
-        Ok(ok)
+        self.api.send_message_to_network(&endpoint, &user_id, json, None).map_err(bingle_error_to_jsi)
     }
 
     fn send_message_to_id_with_response(
@@ -491,7 +498,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let json = message_to_json(&message);
         match self.api.send_message_to_id_with_response(&user_id, json, None) {
             Ok(resp) => Ok(json_to_message(&resp)),
-            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+            Err(e) => Err(bingle_error_to_jsi(e)),
         }
     }
 
@@ -503,7 +510,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let json = message_to_json(&message);
         match self.api.send_message_to_handle_with_response(&handle, json, None) {
             Ok(resp) => Ok(json_to_message(&resp)),
-            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+            Err(e) => Err(bingle_error_to_jsi(e)),
         }
     }
 
@@ -520,7 +527,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .send_message_to_network_with_response(&endpoint, &user_id, json, None)
         {
             Ok(resp) => Ok(json_to_message(&resp)),
-            Err(e) => Err(BingleJsiError::InternalError { reason: e }),
+            Err(e) => Err(bingle_error_to_jsi(e)),
         }
     }
 
@@ -574,9 +581,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
     fn generate_keypair(&self) -> Result<Keypair, BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
-        let kp = guard.generate_keypair().map_err(|e| BingleJsiError::InternalError {
-            reason: e,
-        })?;
+        let kp = guard.generate_keypair().map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(Keypair {
@@ -587,9 +592,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
     fn register_keypair(&self, handle: String) -> Result<bool, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
-        let result = guard.register_keypair(handle).map_err(|e| BingleJsiError::InternalError {
-            reason: e,
-        })?;
+        let result = guard.register_keypair(handle).map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(result)
@@ -608,7 +611,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .add_contact(handle, id, local_source)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(())
@@ -618,7 +621,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .block_contact(id)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(())
@@ -628,7 +631,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .remove_contact(id)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(())
@@ -638,14 +641,14 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let guard = local_api_guard(&self.local_api)?;
         guard
             .is_blocked(&id)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })
+            .map_err(bingle_error_to_jsi)
     }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         let contacts = guard
             .get_contacts()
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         Ok(contacts
             .into_iter()
             .map(|c| Contact {
@@ -666,7 +669,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .add_message(sender_handle, recipient_handles, timestamp, text)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(())
@@ -676,7 +679,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let guard = local_api_guard(&self.local_api)?;
         let messages = guard
             .get_messages()
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         Ok(messages
             .into_iter()
             .map(|m| Message {
@@ -692,7 +695,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let guard = local_api_guard(&self.local_api)?;
         let status = guard
             .keypair_status()
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         Ok(KeypairStatusResponse {
             status: parse_keypair_status(&status.status),
             id: status.id,
@@ -705,14 +708,14 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let guard = local_api_guard(&self.local_api)?;
         guard
             .save(&path)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })
+            .map_err(bingle_error_to_jsi)
     }
 
     fn load(&self, path: String) -> Result<(), BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
         guard
             .load(&path)
-            .map_err(|e| BingleJsiError::InternalError { reason: e })
+            .map_err(bingle_error_to_jsi)
     }
 
     fn set_message_callback(&self, callback: Box<dyn MessageCallback>) {
@@ -755,7 +758,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let guard = local_api_guard(&self.local_api)?;
         let status = guard
             .keypair_status()
-            .map_err(|e| BingleJsiError::InternalError { reason: e })?;
+            .map_err(bingle_error_to_jsi)?;
         let kp_status = parse_keypair_status(&status.status);
         if kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
             return Err(BingleJsiError::InvalidRequest {
@@ -780,11 +783,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
         // Start the engine
         let api_clone = self.api.clone();
+        let mut start_err = None;
         api_clone.access_unsafe_for_tests(|api_mut| {
             if let Err(e) = api_mut.start(&opts_clone) {
                 tracing::error!("Failed to start Bingle API: {}", e);
+                start_err = Some(bingle_error_to_jsi(e));
             }
         });
+
+        if let Some(err) = start_err {
+            return Err(err);
+        }
 
         // Mark as started
         if let Ok(mut started_guard) = self.started.lock() {

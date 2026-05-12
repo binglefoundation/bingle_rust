@@ -22,7 +22,7 @@ impl MockApi {
 }
 
 impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         match (message.get("app"), ty) {
             (Some(app), "getEpoch") if app.as_str() == Some("ddb") => {
@@ -47,7 +47,7 @@ impl InnerBingleApi for MockApi {
                 let _addr = nsk.inet_socket_address().expect("direct endpoint required");
                 Ok(serde_json::json!({ "app": null, "type": "CheckResponse", "state": "available" }))
             }
-                _ => Err("unexpected message".into())
+                _ => Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
         }
     }
 }

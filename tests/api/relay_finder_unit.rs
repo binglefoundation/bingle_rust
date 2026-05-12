@@ -34,26 +34,26 @@ impl BingleApi for MockApi {
     fn debug_print_options(&self) {}
     fn get_my_id(&self) -> Option<String> { None }
     fn get_app_id(&self) -> Option<u64> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), String> { Ok(()) }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> { Ok(()) }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
 
-    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
+    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, rust_comms::api::bingle_api::BingleError> { Ok(None) }
     fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> { None }
 
-    fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> bool { false }
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("ni".to_string()) }
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> { Err("ni".to_string()) }
+    fn send_message_to_id(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
+    fn send_message_to_handle(&self, _handle: &Handle, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
+    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
+    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".to_string())) }
+    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".to_string())) }
 
-    fn send_message_to_network_with_response(&self, network_source_key: &NetworkEndpoint, _user_id: &UserId, message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, String> {
+    fn send_message_to_network_with_response(&self, network_source_key: &NetworkEndpoint, _user_id: &UserId, message: JsonValue, _progress: Option<Arc<ProgressCallback>>) -> Result<JsonValue, rust_comms::api::bingle_api::BingleError> {
         // Count calls
         if let Ok(mut c) = self.calls.lock() { *c += 1; }
         let addr = network_source_key.inet_socket_address().expect("addr required");
         // Should receive a RelayCheck
         let is_check = message.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("Check") && message.get("app").map(|v| v.is_null()).unwrap_or(true);
-        if !is_check { return Err("unexpected message".to_string()); }
+        if !is_check { return Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".to_string())); }
         // Lookup availability
         let available = self.availability.lock().ok()
             .and_then(|v| v.iter().find(|(a, _)| *a == addr).cloned())

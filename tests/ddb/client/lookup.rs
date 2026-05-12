@@ -38,7 +38,7 @@ pub fn ddb_client_lookup_returns_endpoint() {
     struct ApiProxy(Arc<BingleApiImpl>);
     impl InnerBingleApi for ApiProxy { 
         fn get_my_id(&self) -> Option<String> { self.0.get_my_id() }
-        fn send_message_to_network_with_response(&self, nsk: &rust_comms::api::bingle_api::NetworkEndpoint, uid: &rust_comms::api::bingle_api::UserId, msg: serde_json::Value, progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, String> { self.0.send_message_to_network_with_response(nsk, uid, msg, progress) }
+        fn send_message_to_network_with_response(&self, nsk: &rust_comms::api::bingle_api::NetworkEndpoint, uid: &rust_comms::api::bingle_api::UserId, msg: serde_json::Value, progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { self.0.send_message_to_network_with_response(nsk, uid, msg, progress) }
     }
 
     let client_shared = client.clone();

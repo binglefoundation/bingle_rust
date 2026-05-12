@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # Core deps kept iOS-friendly; heavy platform-specific deps remain gated below.
 algonaut = "0.4.2"
 anyhow = "1"
+thiserror = "1"
 base64 = "0.21"
 data-encoding = "2"
 sha2 = "0.10"

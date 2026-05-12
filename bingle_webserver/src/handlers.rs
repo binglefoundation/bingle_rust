@@ -15,6 +15,17 @@ use crate::models::{
 use crate::AppState;
 use crate::try_start_api;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
+use rust_comms::api::bingle_api::{BingleApi, BingleError};
+use rust_comms::blockchain::error::AlgoErrorKind;
+
+fn handle_bingle_error(e: BingleError) -> AxumResponse {
+    match e {
+        BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
+            (StatusCode::BAD_GATEWAY, ae.to_string()).into_response()
+        }
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
 
 #[derive(Deserialize)]
 pub struct HandleQuery {
@@ -33,7 +44,7 @@ pub async fn handle_lookup(
     match result {
         Ok(Ok(Some(id))) => Json(id).into_response(),
         Ok(Ok(None)) => (StatusCode::NOT_FOUND, "Handle not found").into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -48,8 +59,8 @@ pub async fn send_message_to_id(
     let message_clone = payload.message.clone();
     let user_id_clone = payload.user_id.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let ok = api.send_message_to_id(&payload.user_id, payload.message, None);
-        if ok {
+        let ok_res = api.send_message_to_id(&payload.user_id, payload.message, None);
+        if let Ok(true) = ok_res {
             if let Some(local_arc) = &local_api_arc {
                 if let Ok(mut guard) = local_arc.lock() {
                     let text = message_clone.get("text")
@@ -60,14 +71,14 @@ pub async fn send_message_to_id(
                         Some(h) => h,
                         None => {
                             tracing::error!("[send_message_to_id] api.get_handle() returned None; not saving sent message to local API");
-                            return ok;
+                            return ok_res;
                         }
                     };
                     let recipient_handle = match api.handle_lookup_by_id(&user_id_clone) {
                         Some(h) => h,
                         None => {
                             tracing::error!("[send_message_to_id] handle_lookup_by_id returned None for user_id {}; not saving sent message to local API", user_id_clone);
-                            return ok;
+                            return ok_res;
                         }
                     };
                     let timestamp = std::time::SystemTime::now()
@@ -88,10 +99,11 @@ pub async fn send_message_to_id(
                 }
             }
         }
-        ok
+        ok_res
     }).await;
     match result {
-        Ok(ok) => Json(ok).into_response(),
+        Ok(Ok(ok)) => Json(ok).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -105,7 +117,8 @@ pub async fn send_message_to_handle(
         api.send_message_to_handle(&payload.handle, payload.message, None)
     }).await;
     match result {
-        Ok(ok) => Json(ok).into_response(),
+        Ok(Ok(ok)) => Json(ok).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -120,7 +133,8 @@ pub async fn send_message_to_network(
         api.send_message_to_network(&nsk, &payload.user_id, payload.message, None)
     }).await;
     match result {
-        Ok(ok) => Json(ok).into_response(),
+        Ok(Ok(ok)) => Json(ok).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -135,7 +149,7 @@ pub async fn send_message_to_id_with_response(
     }).await;
     match result {
         Ok(Ok(res)) => Json(res).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -150,7 +164,7 @@ pub async fn send_message_to_handle_with_response(
     }).await;
     match result {
         Ok(Ok(res)) => Json(res).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -166,7 +180,7 @@ pub async fn send_message_to_network_with_response(
     }).await;
     match result {
         Ok(Ok(res)) => Json(res).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Ok(Err(e)) => handle_bingle_error(e),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
     }
 }
@@ -208,7 +222,7 @@ pub async fn local_generate_keypair(State(state): State<AppState>) -> impl IntoR
                     save_if_configured(&state);
                     AxumJson(kp).into_response()
                 }
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
@@ -236,7 +250,7 @@ pub async fn local_register_keypair(
                 try_start_api(&state);
                 AxumJson(ok).into_response()
             }
-            Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+            Err(e) => handle_bingle_error(e),
         }
     }).await;
     match result {
@@ -263,7 +277,7 @@ pub async fn local_add_contact(
                     save_if_configured(&state);
                     StatusCode::OK.into_response()
                 }
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
@@ -283,7 +297,7 @@ pub async fn local_block_contact(
                     save_if_configured(&state);
                     StatusCode::OK.into_response()
                 }
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
@@ -303,7 +317,7 @@ pub async fn local_remove_contact(
                     save_if_configured(&state);
                     StatusCode::OK.into_response()
                 }
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
@@ -320,7 +334,7 @@ pub async fn local_is_blocked(
     match local_api_guard(&state) {
         Ok(api) => match api.is_blocked(&q.id) {
             Ok(val) => AxumJson(val).into_response(),
-            Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+            Err(e) => handle_bingle_error(e),
         },
         Err(resp) => resp,
     }
@@ -330,7 +344,7 @@ pub async fn local_get_contacts(State(state): State<AppState>) -> impl IntoRespo
     match local_api_guard(&state) {
         Ok(api) => match api.get_contacts() {
             Ok(list) => AxumJson(list).into_response(),
-            Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+            Err(e) => handle_bingle_error(e),
         },
         Err(resp) => resp,
     }
@@ -354,7 +368,7 @@ pub async fn local_add_message(
                     save_if_configured(&state);
                     StatusCode::OK.into_response()
                 }
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
@@ -365,7 +379,7 @@ pub async fn local_get_messages(State(state): State<AppState>) -> impl IntoRespo
     match local_api_guard(&state) {
         Ok(api) => match api.get_messages() {
             Ok(list) => AxumJson(list).into_response(),
-            Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+            Err(e) => handle_bingle_error(e),
         },
         Err(resp) => resp,
     }
@@ -381,7 +395,7 @@ pub async fn local_save(
             drop(api);
             match res {
                 Ok(_) => StatusCode::OK.into_response(),
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
@@ -406,7 +420,7 @@ pub async fn local_keypair_status(State(state): State<AppState>) -> impl IntoRes
         };
         match api.keypair_status() {
             Ok(status) => AxumJson(status).into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            Err(e) => handle_bingle_error(e),
         }
     }).await;
     match result {
@@ -428,7 +442,7 @@ pub async fn local_load(
                     save_if_configured(&state);
                     StatusCode::OK.into_response()
                 }
-                Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+                Err(e) => handle_bingle_error(e),
             }
         }
         Err(resp) => resp,
