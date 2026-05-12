@@ -1616,8 +1616,14 @@ impl Engine {
         }
     }
 
-    fn on_stun_inconsistent(&mut self) {
-        panic!("NotImplemented: STUN reported Inconsistent public endpoint");
+    pub(crate) fn on_stun_inconsistent(&mut self) {
+        self.set_nat_type(NatType::Symmetric);
+        self.set_state_internal(EngineState::NATRestricted);
+        self.notify_listening(true);
+    }
+
+    pub(crate) fn on_stun_blocked(&mut self) {
+        self.set_nat_type(NatType::NoConnection);
     }
 
     /// Configure STUN send/state handlers and start the finder after DTLS and mux are running.
@@ -1663,6 +1669,8 @@ impl Engine {
                         (&mut *p).on_stun_consistent(ep);
                     } else if st == crate::stun::endpoint_finder::StunState::Inconsistent {
                         (&mut *p).on_stun_inconsistent();
+                    } else if st == crate::stun::endpoint_finder::StunState::Blocked {
+                        (&mut *p).on_stun_blocked();
                     }
                 }
             })));
@@ -1755,6 +1763,14 @@ impl Engine {
 
     pub fn test_force_stun_consistent(&mut self, addr: SocketAddr) {
         self.on_stun_consistent(Some(addr));
+    }
+
+    pub fn test_force_stun_inconsistent(&mut self) {
+        self.on_stun_inconsistent();
+    }
+
+    pub fn test_force_stun_blocked(&mut self) {
+        self.on_stun_blocked();
     }
 
     pub fn set_nat_type(&self, nat: NatType) {

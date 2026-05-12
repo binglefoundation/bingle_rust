@@ -45,12 +45,12 @@ robustness:
 - ensure handle uniqueness
 - 
 network:
+- handle network change and clear caches / rediscover nat type
 - remove DDB entries on node stop
 - handle clean relay shutdown
 - cache DDB locally with timeout / cancel
 - cache blockchain locally
 - detect relay unresponsive from peers and remove
-- handle network change and clear caches / rediscover nat type
 
 tokenomics:
 - develop tokenomics model
