@@ -568,6 +568,7 @@ impl Engine {
         self.dtls.as_ref()
     }
 
+
     /// Test helper: Inject a custom DDB client.
     pub fn set_ddb_client_for_tests(&mut self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         self.ddb_client = ddb;
@@ -584,6 +585,10 @@ impl Engine {
         } else {
             None
         }
+    }
+
+    pub fn mux_for_tests(&self) -> Option<Arc<UdpNetworkMux>> {
+        self.mux.clone()
     }
 
     /// Test helper: simulate receiving a message from the network.
@@ -605,7 +610,10 @@ impl Engine {
     }
 
     /// Apply a closure to the DTLS instance.
-    pub fn with_dtls_mut<F: FnOnce(&mut (dyn Dtls + Send + Sync))>(&mut self, f: F) {
+    pub fn with_dtls_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut (dyn Dtls + Send + Sync)) -> R,
+    {
         f(self.dtls.as_mut())
     }
 

@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use tracing::warn;
 use crate::themes;
-use crate::{info_theme, warn_theme};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
@@ -199,6 +198,9 @@ impl BingleApiImpl {
         let a = self.engine.access(|e| e.local_bind_addr_for_tests());
         tracing::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
         a
+    }
+    pub fn engine_mux_for_tests(&self) -> Option<Arc<crate::dtls::UdpNetworkMux>> {
+        self.engine.access(|e| e.mux_for_tests())
     }
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
         self.engine.access_unsafe_for_tests(|e: &mut Engine| e.receive_message_for_tests(from_ep, data));

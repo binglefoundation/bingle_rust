@@ -622,7 +622,9 @@ pub mod openssl_impl {
         fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
         fn with_app_layer_only_verification(self, _enabled: bool) -> Self { self }
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
-        fn with_dangerous_debug(self, _enabled: bool) -> Self { self }
+        fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+        fn set_null_encryption(&mut self, _enabled: bool) {}
+        fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             let key = to
                 .get_key()
@@ -1517,6 +1519,23 @@ pub mod openssl_impl {
                 tracing::error!("[DtlsOpenSsl] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
             }
             self.dangerous_debug = enabled;
+            self
+        }
+
+        fn set_null_encryption(&mut self, enabled: bool) {
+            if self.dangerous_debug {
+                self.null_encryption = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+            }
+        }
+
+        fn with_null_encryption(mut self, enabled: bool) -> Self {
+            if self.dangerous_debug {
+                self.null_encryption = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+            }
             self
         }
     }

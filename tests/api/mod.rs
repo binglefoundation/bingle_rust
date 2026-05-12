@@ -64,3 +64,6 @@ pub mod self_relay_detection;
 
 #[path = "ripple_message_unit.rs"]
 pub mod ripple_message_unit;
+
+#[path = "dtls_encryption_randomness_test.rs"]
+pub mod dtls_encryption_randomness_test;

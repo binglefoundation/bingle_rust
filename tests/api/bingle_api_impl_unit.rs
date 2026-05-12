@@ -45,6 +45,8 @@ impl Dtls for MockDtls {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -113,6 +115,8 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
         fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
         fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     }
 
     // Deterministic 32-byte secret and its Algorand address

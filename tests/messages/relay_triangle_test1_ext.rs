@@ -104,6 +104,8 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
         fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     }
 
     struct MockApi;
