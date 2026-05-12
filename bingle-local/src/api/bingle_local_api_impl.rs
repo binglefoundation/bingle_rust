@@ -59,7 +59,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(kp)
     }
 
-    fn register_keypair(&self, handle: String) -> Result<bool, String> {
+    fn register_keypair(&self, handle: String) -> Result<(), String> {
         tracing::info!("[BingleLocalApi] Registering keypair with handle: {}", handle);
         // Validate config
         let app_id = self.config.app_id;
@@ -116,7 +116,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         }
         tracing::info!("[BingleLocalApi] Keypair registered successfully with handle: {}", handle);
-        Ok(true)
+        Ok(())
     }
 
     fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, String> {

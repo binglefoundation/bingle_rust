@@ -75,7 +75,7 @@ pub trait BingleJsiApi: Send + Sync {
     fn generate_keypair(&self) -> Result<Keypair, BingleJsiError>;
 
     /// Register the current keypair with Bingle using the provided handle.
-    fn register_keypair(&self, handle: String) -> Result<bool, BingleJsiError>;
+    fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError>;
 
     /// Add a contact to the local store.
     fn add_contact(

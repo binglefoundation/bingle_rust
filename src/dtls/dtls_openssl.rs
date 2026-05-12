@@ -3,7 +3,7 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 pub mod openssl_impl {
     use super::*;
     use crate::themes;
-    use crate::{info_theme, warn_theme, debug_theme};
+
     use crate::dtls::network_mux_trait::NetworkMux;
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]

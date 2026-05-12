@@ -105,7 +105,7 @@ impl BingleJsiApi for StubApi {
         })
     }
 
-    fn register_keypair(&self, _handle: String) -> Result<bool, BingleJsiError> {
+    fn register_keypair(&self, _handle: String) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "register_keypair".to_string(),
         })

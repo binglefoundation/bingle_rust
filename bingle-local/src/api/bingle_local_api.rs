@@ -58,10 +58,10 @@ pub trait BingleLocalApi: Send + Sync {
     fn generate_keypair(&mut self) -> Result<Keypair, String>;
 
     /// Register the current keypair with Bingle (requires credited funds).
-    /// Returns Ok(true) on success, or Err(message) on failure.
+    /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:
     /// - handle: the user's unique handle to register on-chain
-    fn register_keypair(&self, handle: String) -> Result<bool, String>;
+    fn register_keypair(&self, handle: String) -> Result<(), String>;
 
     /// Get an AlgoOps instance configured with the current keypair.
     fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, String>;

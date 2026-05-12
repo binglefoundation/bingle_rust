@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use crate::themes;
-use crate::{info_theme, warn_theme};
 
 use crate::api::bingle_api::NetworkEndpoint;
 use data_encoding::BASE32_NOPAD;

@@ -18,7 +18,7 @@ impl BingleLocalApi for DummyLocal {
         Ok(kp)
     }
 
-    fn register_keypair(&self, _handle: String) -> Result<bool, String> { Ok(true) }
+    fn register_keypair(&self, _handle: String) -> Result<(), String> { Ok(()) }
 
     fn get_algo_ops(&self) -> Result<AlgoOps, String> {
         let pass = self
