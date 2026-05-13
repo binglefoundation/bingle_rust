@@ -38,17 +38,17 @@
 ## ~~Initialize our certificates~~
  
 - ~~Initialize an AlgoOps instance from a passphrase in StartOptions "algoPassphrase" (add this field)~~
-- ~~Obtain our id (address) from the AlgoOps and use this as issuer by appending .ids.bingle.home.arpa to it~~
+- ~~Obtain our id (address) from the AlgoOps and use this as subject CN by appending "." to it~~
 - ~~Generate a CA certificate using ed25519 using the Algorand private key~~
-- ~~Use RSAPSS algorithm with a 2048 bit key and a SHA-512 hash for server and client certs~~
+- ~~Use EC (P-256) for signing and ECDHE for protocol on server and client certs~~
 - ~~Generate an ephemeral server certificate and private key and sign with CA cert~~
 - ~~Generate an ephemeral client certificate and private key and sign with CA cert~~
 
 ## ~~Create a HandlePeerCertificate~~
 
-- ~~Extract the CA certificates id (Algo public key) from its issuer by removing the trailing .ids.bingle.home.arpa~~
+- ~~Extract the CA certificates id (Algo public key) from its OrganizationName or subject CN by removing the trailing "."~~
 - ~~Validate that the CA certificate is signed by the Algo public key~~
-- ~~Extract the server/client certificate id (Algo public key) from its issuer by removing the trailing .ids.bingle.home.arpa~~
+- ~~Extract the server/client certificate id (Algo public key) from its subject CN by removing the trailing "."~~
 - ~~Validate that the server/client certificate is signed by the CA certificate~~
 - ~~Validate that the server/client certificate has a valid issuer which matches the AC cert~~
 - ~~If everything valid return the issuer~~
