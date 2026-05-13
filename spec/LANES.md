@@ -32,18 +32,18 @@ security:
 - ~~ensure runs in live with full encryption~~
 - ~~test encryption for entropy~~
 - ensure endpoint is checked and fails on impersonation
-- add a cipher suite string to messages with DTLS cipher suite
-- TLS1.2 vuln tests:
-  1. Protocol Downgrade Attacks
-  2. Weak Cipher Suite Acceptance
-  3. Weak Key Exchange and Small Keys
-  4. Certificate Verification Vulnerabilities (Custom Handler)
-  5. Padding Oracle Attacks (Lucky13)
-  6. Compression-Related Attacks (CRIME)
-  7. Insecure Randomness
-  8. Insecure Renegotiation
-  9. ROBOT (Return of Bleichenbacher's Oracle Threat)
-- Ensure and test we have PFS via ECDHE  
+- ~~add a cipher suite string to messages with DTLS cipher suite~~
+- ~~TLS1.2 vuln tests:~~
+  ~~1. Protocol Downgrade Attacks~~
+  ~~2. Weak Cipher Suite Acceptance~~
+  ~~3. Weak Key Exchange and Small Keys~~
+  ~~4. Certificate Verification Vulnerabilities (Custom Handler)~~
+  ~~5. Padding Oracle Attacks (Lucky13)~~
+  ~~6. Compression-Related Attacks (CRIME)~~
+  ~~7. Insecure Randomness~~
+  ~~8. Insecure Renegotiation~~
+  ~~9. ROBOT (Return of Bleichenbacher's Oracle Threat)~~
+- ~~Ensure and test we have PFS via ECDHE~~  
 - Test for extended master secret support
 
 robustness:

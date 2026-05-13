@@ -8,3 +8,4 @@ pub mod padding_oracle_test;
 pub mod compression_test;
 pub mod renegotiation_test;
 pub mod pki_algorithm_test;
+pub mod extended_master_secret_test;
