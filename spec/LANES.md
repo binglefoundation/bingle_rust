@@ -31,7 +31,7 @@ security:
 - delegate admin tasks to not be creator
 - ~~ensure runs in live with full encryption~~
 - ~~test encryption for entropy~~
-- ensure endpoint is checked and fails on impersonation
+- ensure id is checked and fails on impersonation
 - ~~add a cipher suite string to messages with DTLS cipher suite~~
 - ~~TLS1.2 vuln tests:~~
   ~~1. Protocol Downgrade Attacks~~
