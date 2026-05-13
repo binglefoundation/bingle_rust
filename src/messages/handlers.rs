@@ -302,7 +302,25 @@ pub trait MessageHandler {
     fn on_ddb_epoch_info(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbEpochInfo) { self.on_unimplemented(&Message::Ddb(DdbMessage::EpochInfo(msg.clone()))); }
 
     // Unknown
-    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
+    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _raw: &serde_json::Value) {
+        // Delegate to API on_message via the per-API Router if installed
+        if let Some(router) = crate::messages::router::Router::current() {
+            if let Some(cb) = router.get_on_message() {
+                // Normalize sender id: issuer without suffix
+                let sender_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                // Look up the sender's handle by id via the API.
+                match _api.handle_lookup_by_id(&sender_id) {
+                    Some(sender_handle) => cb(sender_id, sender_handle, _raw.clone()),
+                    None => {
+                        tracing::error!(
+                            "[MessageHandler::on_unknown] failed to resolve handle for sender id {}",
+                            sender_id
+                        );
+                    }
+                }
+                return;
+            }
+        }
         tracing::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
     }
 

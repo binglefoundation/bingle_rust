@@ -12,10 +12,10 @@ security:
 - ensure protocol is built as documented, changes as follows:
 *   ~~Update spec to match correct message changes~~
 *   ~~Update spec for issuer suffix of "."~~
-*   **DTLS Identity Validation**:
-*   **Spec**: Explicitly requires that the DTLS implementation "MUST check that the `id` is opted in to the Bingle DAPP and has a `Handle` field in local storage."
-*   **Code**: The `peer_certificate_handler` in `src/protocol/cert_verify.rs` only verifies the certificate signature and CN/OrganizationName alignment. It does not perform any blockchain-based opt-in or handle verification.
-*   Implement a check on incoming messages (in the Engine) to validate the id, look it up in blockchain local storage and retrieve/check the handle.
+*   ~~**DTLS Identity Validation**:~~
+*   ~~**Spec**: Explicitly requires that the DTLS implementation "MUST check that the `id` is opted in to the Bingle DAPP and has a `Handle` field in local storage."~~
+*   ~~**Code**: The `peer_certificate_handler` in `src/protocol/cert_verify.rs` only verifies the certificate signature and CN/OrganizationName alignment. It does not perform any blockchain-based opt-in or handle verification.~~
+*   ~~Implement a check on incoming messages (in the Engine) to validate the id, look it up in blockchain local storage and retrieve/check the handle.~~
 *   ~~**Certificate Algorithms**: Ed25519 on CA key, EC (P-256) for signing and ECDHE for protocol on server/client keys.~~
     *   ~~**Spec**: Updated to reflect EC (NIST P-256).~~
     *   ~~**Code**: Updated to use EC (P-256).~~

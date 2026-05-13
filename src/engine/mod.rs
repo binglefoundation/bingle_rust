@@ -972,6 +972,14 @@ impl Engine {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || {
+                    // Validate identity (opted in and has handle)
+                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                    let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
+                    if handle_opt.is_none() {
+                        tracing::warn!("[Engine::install_dtls_handler][cb] dropping message from unauthenticated id: {}", sender_id);
+                        return;
+                    }
+
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
