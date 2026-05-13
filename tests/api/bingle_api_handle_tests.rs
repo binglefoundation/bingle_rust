@@ -1,4 +1,4 @@
-use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint};
+use rust_comms::api::bingle_api::{BingleApi, BingleError, NetworkEndpoint};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::ddb::DdbClient;
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
@@ -73,12 +73,12 @@ impl MockDdbClient {
 }
 
 impl DdbClient for MockDdbClient {
-    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Ok(()) }
-    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Ok(()) }
-    fn lookup(&self, id: &str) -> Result<NetworkEndpoint, String> {
-        self.lookup_results.lock().unwrap().get(id).cloned().ok_or_else(|| "not found".to_string())
+    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), BingleError> { Ok(()) }
+    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), BingleError> { Ok(()) }
+    fn lookup(&self, id: &str) -> Result<NetworkEndpoint, BingleError> {
+        self.lookup_results.lock().unwrap().get(id).cloned().ok_or_else(|| BingleError::Other("not found".to_string()))
     }
-    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, String> { Ok(0) }
+    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, BingleError> { Ok(0) }
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn test_send_message_to_handle_success() {
     api.engine_set_ddb_client_for_tests(ddb);
     
     let msg = json!({"hello": "world"});
-    let ok = api.send_message_to_handle(&handle, msg.clone(), None);
+    let ok = api.send_message_to_handle(&handle, msg.clone(), None).unwrap();
     
     assert!(ok);
     let locked_sends = sends.lock().unwrap();
@@ -123,7 +123,7 @@ fn test_send_message_to_handle_not_found() {
     api.set_handle_lookup_mock_for_tests(Box::new(|_| Ok(None)));
     
     let msg = json!({"hello": "world"});
-    let ok = api.send_message_to_handle(&"unknown_handle".to_string(), msg, None);
+    let ok = api.send_message_to_handle(&"unknown_handle".to_string(), msg, None).unwrap();
     
     assert!(!ok);
 }
@@ -138,7 +138,7 @@ fn test_send_message_to_handle_lookup_error() {
     let msg = json!({"hello": "world"});
     let ok = api.send_message_to_handle(&"any_handle".to_string(), msg, None);
     
-    assert!(!ok);
+    assert!(ok.is_err());
 }
 
 #[test]

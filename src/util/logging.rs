@@ -26,6 +26,7 @@ macro_rules! algo_log {
         }
     };
 }
+use chrono::Local;
 
 // Deprecated file logger shim. All logging should go through the `log` facade.
 // These functions are kept as no-ops (or simple log forwarding) to avoid touching all call sites.
@@ -68,6 +69,22 @@ macro_rules! debug_theme {
     };
 }
 
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LogMode {
+    Plain,
+    ANSI,
+    AWS,
+    JS,
+}
+
+impl Default for LogMode {
+    fn default() -> Self {
+        LogMode::Plain
+    }
+}
+
 pub struct HandleExtension(pub String);
 
 #[derive(Default)]
@@ -89,7 +106,15 @@ impl Visit for HandleVisitor {
     }
 }
 
-pub struct BingleFormatter;
+pub struct BingleFormatter {
+    pub mode: LogMode,
+}
+
+impl Default for BingleFormatter {
+    fn default() -> Self {
+        Self { mode: LogMode::Plain }
+    }
+}
 
 impl<S, N> FormatEvent<S, N> for BingleFormatter
 where
@@ -104,34 +129,54 @@ where
     ) -> fmt::Result {
         let meta = event.metadata();
 
+        // 0. Timestamp
+        let now = Local::now();
+        write!(writer, "{} ", now.format("%Y-%m-%dT%H:%M:%S%.3f"))?;
+
+        let show_handle = match self.mode {
+            LogMode::Plain | LogMode::ANSI => true,
+            LogMode::AWS | LogMode::JS => false,
+        };
+
+        let use_ansi = match self.mode {
+            LogMode::ANSI => true,
+            LogMode::Plain | LogMode::AWS | LogMode::JS => false,
+        };
+
         // 1. Try to find handle in span extensions
         let mut handle_str = String::new();
-        if let Some(scope) = ctx.event_scope() {
-            for span in scope {
-                if let Some(ext) = span.extensions().get::<HandleExtension>() {
-                    handle_str = ext.0.clone();
-                    break;
+        if show_handle {
+            if let Some(scope) = ctx.event_scope() {
+                for span in scope {
+                    if let Some(ext) = span.extensions().get::<HandleExtension>() {
+                        handle_str = ext.0.clone();
+                        break;
+                    }
                 }
             }
         }
 
         // 2. Format handle with color if present
         if !handle_str.is_empty() {
-            let color_code = match hash_str(&handle_str) % 6 {
-                0 => "31", // Red
-                1 => "32", // Green
-                2 => "33", // Yellow
-                3 => "34", // Blue
-                4 => "35", // Magenta
-                5 => "36", // Cyan
-                _ => "37",
-            };
-            write!(writer, "\x1b[1;{}m[{}]\x1b[0m ", color_code, handle_str)?;
+            if use_ansi {
+                let color_code = match hash_str(&handle_str) % 6 {
+                    0 => "31", // Red
+                    1 => "32", // Green
+                    2 => "33", // Yellow
+                    3 => "34", // Blue
+                    4 => "35", // Magenta
+                    5 => "36", // Cyan
+                    _ => "37",
+                };
+                write!(writer, "\x1b[1;{}m[{}]\x1b[0m ", color_code, handle_str)?;
+            } else {
+                write!(writer, "[{}] ", handle_str)?;
+            }
         }
 
         // 3. Level (with default colors if enabled in writer)
         let level = *meta.level();
-        if writer.has_ansi_escapes() {
+        if use_ansi && writer.has_ansi_escapes() {
             let level_str = match level {
                 tracing::Level::TRACE => "\x1b[35mTRACE\x1b[0m",
                 tracing::Level::DEBUG => "\x1b[34mDEBUG\x1b[0m",

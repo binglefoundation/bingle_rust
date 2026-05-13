@@ -24,7 +24,7 @@ impl ApiMock {
 }
 
 impl InnerBingleApi for ApiMock { 
-    fn send_message_to_network_with_response(&self, network_source_key: &NetworkEndpoint, user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+    fn send_message_to_network_with_response(&self, network_source_key: &NetworkEndpoint, user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         *self.sent_nsk.lock().unwrap() = Some(network_source_key.clone());
         *self.sent_uid.lock().unwrap() = Some(user_id.clone());
         Ok(self.response.clone())
@@ -39,10 +39,10 @@ struct DdbMock {
 impl DdbMock { fn new(lookup_result: Option<NetworkEndpoint>) -> Self { Self { lookup_result } } }
 
 impl DdbClient for DdbMock {
-    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> { Err("not used".into()) }
-    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> { Err("not used".into()) }
-    fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, String> { self.lookup_result.clone().ok_or_else(|| "no lookup".into()) }
-    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, String> { Err("not used".into()) }
+    fn register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("not used".into())) }
+    fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("not used".into())) }
+    fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, rust_comms::api::bingle_api::BingleError> { self.lookup_result.clone().ok_or_else(|| rust_comms::api::bingle_api::BingleError::Other("no lookup".into())) }
+    fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("not used".into())) }
 }
 
 // ---------------- Tests ----------------

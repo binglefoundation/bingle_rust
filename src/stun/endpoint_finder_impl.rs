@@ -104,7 +104,7 @@ impl StunEndpointFinderImpl {
 
     fn choose_interval(state: StunState, search: Duration, repeat: Duration) -> Duration {
         match state {
-            StunState::None | StunState::Single => search,
+            StunState::None | StunState::Single | StunState::Blocked => search,
             StunState::Consistent | StunState::Inconsistent => repeat,
         }
     }
@@ -187,7 +187,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                     let interval = StunEndpointFinderImpl::choose_interval(inner.state, inner.search, inner.repeat);
                     // Determine servers to poll
                     let to_poll: Vec<SocketAddr> = match inner.state {
-                        StunState::None | StunState::Single => inner.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
+                        StunState::None | StunState::Single | StunState::Blocked => inner.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
                         StunState::Consistent | StunState::Inconsistent => inner.servers.iter().map(|s| s.addr).collect(),
                     };
                     (to_poll, interval)
@@ -218,13 +218,23 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                     }
                     // Remove servers that have failed 3 times
                     inner.servers.retain(|s| s.failures < 3);
-                    // Error handling if we tried 3 intervals without collecting at least two servers
-                    if matches!(inner.state, StunState::None | StunState::Single) {
+                    // Error and Blocked handling
+                    if matches!(inner.state, StunState::None | StunState::Single | StunState::Blocked) {
                         inner.intervals_without_two = inner.intervals_without_two.saturating_add(1);
-                        if inner.intervals_without_two >= 3 && !inner.error_reported {
+                        if inner.intervals_without_two >= 3 {
                             let responders = inner.servers.iter().filter(|s| s.responded).count();
-                            if responders < 2 {
-                                if let Some(eh) = &inner.error { eh("Fewer than 2 STUN servers responded after 3 tries".to_string()); }
+                            if responders == 0 {
+                                if inner.state != StunState::Blocked {
+                                    inner.state = StunState::Blocked;
+                                    tracing::info!("[STUN] state change: Blocked (no responders after 3 intervals)");
+                                    if let Some(cb) = &inner.state_change {
+                                        cb(inner.state, None);
+                                    }
+                                }
+                            } else if responders < 2 && !inner.error_reported {
+                                if let Some(eh) = &inner.error {
+                                    eh("Fewer than 2 STUN servers responded after 3 tries".to_string());
+                                }
                                 inner.error_reported = true;
                             }
                         }

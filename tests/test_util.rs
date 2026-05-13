@@ -6,7 +6,7 @@ use std::env;
 use std::sync::{Arc, Once};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
-use rust_comms::util::logging::{BingleFormatter, HandleLayer};
+use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -136,9 +136,21 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
         let filter = EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| EnvFilter::new(final_filter));
 
+        let log_mode = if let Ok(val) = env::var("BINGLE_LOG_MODE") {
+            match val.to_ascii_lowercase().as_str() {
+                "plain" => LogMode::Plain,
+                "ansi" => LogMode::ANSI,
+                "aws" => LogMode::AWS,
+                "js" => LogMode::JS,
+                _ => LogMode::Plain,
+            }
+        } else {
+            LogMode::Plain
+        };
+
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_test_writer()
-            .event_format(BingleFormatter);
+            .event_format(BingleFormatter { mode: log_mode });
 
         let subscriber = tracing_subscriber::registry()
             .with(filter)

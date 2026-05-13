@@ -24,10 +24,10 @@ pub fn start_returns_err_on_invalid_passphrase() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
 
     let err = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect_err("start should fail for invalid passphrase");
     // Check that the error message includes context from private_key_bytes failure mapping
-    assert!(err.contains("Failed to get private key bytes"), "Unexpected error: {err}");
+    assert!(err.to_string().contains("Failed to get private key bytes"), "Unexpected error: {err}");
 }

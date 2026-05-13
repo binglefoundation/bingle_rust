@@ -14,3 +14,6 @@ pub mod simple_server_consistent;
 
 #[path = "simple_server_inconsistent.rs"]
 pub mod simple_server_inconsistent;
+
+#[path = "blocked_detection.rs"]
+pub mod blocked_detection;

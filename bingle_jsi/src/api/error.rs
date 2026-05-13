@@ -12,4 +12,7 @@ pub enum BingleJsiError {
 
     #[error("Internal error: {reason}")]
     InternalError { reason: String },
+
+    #[error("No blockchain: {reason}")]
+    NoBlockchain { reason: String },
 }

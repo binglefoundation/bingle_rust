@@ -3,20 +3,23 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender};
 
-use rust_comms::api::bingle_api::{BingleApi, OnConnectHandler, OnMessageHandler, OnListeningHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleError, OnConnectHandler, OnMessageHandler, OnListeningHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
+use rust_comms::blockchain::error::{AlgoError, AlgoErrorKind};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
-use rust_comms::util::logging::{BingleFormatter, HandleLayer};
+use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
+use rust_comms::util::version::VersionsMap;
 
 fn init_logger_from_args(args: &mut Vec<String>) {
     // Parse and strip global logging flags from args, choose the last-specified level if multiple are present
     let mut chosen: Option<LevelFilter> = None;
+    let mut chosen_mode: Option<LogMode> = None;
     let mut i = 0usize;
     while i < args.len() {
         let a = args[i].as_str();
@@ -55,6 +58,36 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             chosen = Some(lvl);
             args.remove(i);
             continue;
+        } else if a == "--log-mode" {
+            if i + 1 < args.len() {
+                let val = args[i + 1].to_ascii_lowercase();
+                let mode = match val.as_str() {
+                    "plain" => LogMode::Plain,
+                    "ansi" => LogMode::ANSI,
+                    "aws" => LogMode::AWS,
+                    "js" => LogMode::JS,
+                    _ => LogMode::Plain,
+                };
+                chosen_mode = Some(mode);
+                args.remove(i);
+                args.remove(i);
+                continue;
+            } else {
+                args.remove(i);
+                continue;
+            }
+        } else if let Some(rest) = a.strip_prefix("--log-mode=") {
+            let val = rest.to_ascii_lowercase();
+            let mode = match val.as_str() {
+                "plain" => LogMode::Plain,
+                "ansi" => LogMode::ANSI,
+                "aws" => LogMode::AWS,
+                "js" => LogMode::JS,
+                _ => LogMode::Plain,
+            };
+            chosen_mode = Some(mode);
+            args.remove(i);
+            continue;
         }
 
         let matched = match a {
@@ -71,8 +104,9 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         }
     }
     let level = chosen.unwrap_or(LevelFilter::INFO);
+    let mode = chosen_mode.unwrap_or(LogMode::Plain);
     let fmt_layer = tracing_subscriber::fmt::layer()
-        .event_format(BingleFormatter);
+        .event_format(BingleFormatter { mode });
 
     let subscriber = tracing_subscriber::registry()
         .with(level)
@@ -86,6 +120,13 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // Initialize logger from global flags and strip them from args (default Info)
     init_logger_from_args(&mut args);
+
+    // Build and output VersionsMap
+    let mut versions = VersionsMap::new();
+    versions.insert("Base".to_string(), rust_comms::module_version::get_version());
+    versions.insert("CLI".to_string(), rust_comms::module_version::get_version());
+    tracing::info!("Bingle CLI starting. Versions: {:?}", versions);
+
     if args.is_empty() {
         print_usage_and_exit(2);
     }
@@ -111,7 +152,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     if code == 0 { tracing::info!("{}", usage); } else { warn!("{}", usage); }
     std::process::exit(code);
 }
@@ -207,8 +248,8 @@ fn cmd_run(mut args: Vec<String>) {
                             let echo_msg = serde_json::json!({ "text": echo_text });
                             tracing::info!("[echo] Echoing back to {}: {}", sender, echo_msg);
                             let ok = api_for_echo.send_message_to_id(&sender, echo_msg, None);
-                            if !ok {
-                                tracing::warn!("[echo] Failed to send echo to {}", sender);
+                            if !matches!(ok, Ok(true)) {
+                                tracing::warn!("[echo] Failed to send echo to {}: {:?}", sender, ok);
                             }
                         }
                     }
@@ -248,13 +289,26 @@ fn cmd_run(mut args: Vec<String>) {
     }
 
     // Start API
-    {
+    loop {
+        let mut start_res = Ok(());
         api.access_unsafe_for_tests(|api_mut| {
-            if let Err(e) = api_mut.start(&opts) {
+            start_res = api_mut.start(&opts);
+        });
+
+        match start_res {
+            Ok(_) => break,
+            Err(e) => {
+                if let BingleError::Algo(ae) = &e {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
                 warn!("Failed to start: {}", e);
                 std::process::exit(1);
             }
-        });
+        }
     }
 
     // Install Ctrl-C handler
@@ -460,17 +514,31 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         log_level: None,
         handle_cache_expiry: None,
         dangerous_debug,
+        log_mode: LogMode::Plain,
     };
 
     // Create API and start engine minimal
     let api = BingleApiImpl::new(&opts);
-    {
+    loop {
+        let mut start_res = Ok(());
         api.access_unsafe_for_tests(|api_mut| {
-            if let Err(e) = api_mut.start(&opts) {
+            start_res = api_mut.start(&opts);
+        });
+
+        match start_res {
+            Ok(_) => break,
+            Err(e) => {
+                if let BingleError::Algo(ae) = &e {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
                 warn!("Failed to start API: {}", e);
                 std::process::exit(2);
             }
-        });
+        }
     }
 
     // After starting, wait for Engine to reach Registered state to ensure discovery is ready
@@ -604,15 +672,24 @@ fn cmd_register(args: Vec<String>) {
     };
 
     // Ensure the account is funded
-    let bal_algos = match ops.account_balance() {
-        Ok(Some(b)) => b,
-        Ok(None) => {
-            warn!("Account {} not found or balance unavailable. Please ensure the account exists and is funded.", address);
-            std::process::exit(2);
-        }
-        Err(e) => {
-            warn!("Failed to query account balance: {}", e);
-            std::process::exit(2);
+    let bal_algos = loop {
+        match ops.account_balance() {
+            Ok(Some(b)) => break b,
+            Ok(None) => {
+                warn!("Account {} not found or balance unavailable. Please ensure the account exists and is funded.", address);
+                std::process::exit(2);
+            }
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>() {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+                warn!("Failed to query account balance: {}", e);
+                std::process::exit(2);
+            }
         }
     };
     if bal_algos <= 0.0 {
@@ -623,13 +700,23 @@ fn cmd_register(args: Vec<String>) {
 
     // Register the handle on-chain
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
-    match bingle.register(app_id, asset_id, &handle, price_units) {
-        Ok(txid) => {
-            tracing::info!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
-        }
-        Err(e) => {
-            warn!("Failed to register handle: {}", e);
-            std::process::exit(1);
+    loop {
+        match bingle.register(app_id, asset_id, &handle, price_units) {
+            Ok(txid) => {
+                tracing::info!("Successfully registered handle '{}' for {} (tx: {})", handle, address, txid);
+                break;
+            }
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>() {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+                warn!("Failed to register handle: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -678,14 +765,44 @@ fn cmd_buybingle(args: Vec<String>) {
     // Ops
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
-    let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
+    let bal_algos = loop {
+        match ops.account_balance() {
+            Ok(Some(b)) => break b,
+            Ok(None) => break 0.0,
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>() {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+                break 0.0;
+            }
+        }
+    };
     if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
     tracing::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
-    match bingle.buy_bingle(app_id, asset_id, price_micro) {
-        Ok(txid) => { tracing::info!("buybingle submitted (tx: {})", txid); }
-        Err(e) => { warn!("buybingle failed: {}", e); std::process::exit(1); }
+    loop {
+        match bingle.buy_bingle(app_id, asset_id, price_micro) {
+            Ok(txid) => {
+                tracing::info!("buybingle submitted (tx: {})", txid);
+                break;
+            }
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>() {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+                warn!("buybingle failed: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -734,14 +851,44 @@ fn cmd_sellbingle(args: Vec<String>) {
     // Ops
     let ops = AlgoOps::new(Some(passphrase.clone()), None, Some(cfg));
     let address = ops.address.as_ref().cloned().unwrap_or_else(|| { warn!("Invalid passphrase: unable to derive address."); std::process::exit(2); });
-    let bal_algos = ops.account_balance().ok().flatten().unwrap_or(0.0);
+    let bal_algos = loop {
+        match ops.account_balance() {
+            Ok(Some(b)) => break b,
+            Ok(None) => break 0.0,
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>() {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+                break 0.0;
+            }
+        }
+    };
     if bal_algos <= 0.0 { warn!("Account {} has zero/unavailable balance. Please fund it and retry.", address); std::process::exit(2); }
     tracing::info!("Using account {} (balance {:.6} ALGO)", address, bal_algos);
 
     let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id);
-    match bingle.sell_bingle(app_id, asset_id, amount_units, price_micro) {
-        Ok(txid) => { tracing::info!("sellbingle submitted (tx: {})", txid); }
-        Err(e) => { warn!("sellbingle failed: {}", e); std::process::exit(1); }
+    loop {
+        match bingle.sell_bingle(app_id, asset_id, amount_units, price_micro) {
+            Ok(txid) => {
+                tracing::info!("sellbingle submitted (tx: {})", txid);
+                break;
+            }
+            Err(e) => {
+                if let Some(ae) = e.downcast_ref::<AlgoError>() {
+                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+                warn!("sellbingle failed: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }
 

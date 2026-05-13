@@ -60,10 +60,8 @@ impl AlgoBingle {
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let client = self.algod_client()?;
-        let app_info = match self.rt_block_on(client.application_information(app_id))? {
-            Ok(info) => info,
-            Err(e) => return Err(anyhow!("failed to fetch application information: {e}")),
-        };
+        let res = self.rt_block_on(client.application_information(app_id));
+        let app_info = crate::blockchain::error::AlgoError::map_node_err("application_information", res)?;
         let v = serde_json::to_value(&app_info)
             .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
         // Navigate to params.global-state (or global_state depending on casing)
@@ -258,11 +256,15 @@ impl AlgoBingle {
             let resp = match req.send() {
                 Ok(r) => r,
                 Err(e) => {
+                    let ae = anyhow!(e.to_string());
+                    if crate::blockchain::error::AlgoError::is_host_unreachable(&ae) {
+                        return Err(crate::blockchain::error::AlgoError::unreachable("indexer request", &ae.to_string()).into());
+                    }
                     tracing::error!(
                         "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer request failed: {}",
-                        e
+                        ae
                     );
-                    return Err(anyhow!("indexer request failed: {e}"));
+                    return Err(anyhow!("indexer request failed: {ae}"));
                 }
             };
             algo_log!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);

@@ -53,7 +53,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -65,7 +65,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
 
     // Start both nodes
@@ -86,7 +86,7 @@ pub fn engine_basic_bingle_dtls_layer() {
 
     tracing::info!("[test] client sending message to {}", server_addr);
     let uid = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id()).expect("server id Some");
-    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&dest, &uid, payload, Some(progress)));
+    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&dest, &uid, payload, Some(progress))).unwrap();
     assert!(ok, "client send_message_to_network should return true");
 
     // Wait for on_message to be called on the server

@@ -13,6 +13,7 @@ use bingle_local::api::bingle_local_api::BingleLocalApi;
 
 pub mod handlers;
 pub mod models;
+pub mod module_version;
 
 #[derive(Clone)]
 pub struct AppState {

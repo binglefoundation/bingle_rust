@@ -1,6 +1,7 @@
 uniffi::setup_scaffolding!();
 
 pub mod api;
+pub mod module_version;
 
 use std::sync::Arc;
 

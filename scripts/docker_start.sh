@@ -144,6 +144,10 @@ fi
 
 CMD+=("--stun-servers-file" "$STUN_FILE" "--node-file" "$NODE_FILE")
 
+if [[ "${AWS:-0}" == "1" ]]; then
+  CMD+=("--log-mode" "AWS")
+fi
+
 # Append sentinel-file argument if provided
 if [[ -n "$SENTINEL_FILE" ]]; then
   CMD+=("--sentinel-file" "$SENTINEL_FILE")

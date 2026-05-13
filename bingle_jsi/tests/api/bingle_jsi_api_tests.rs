@@ -93,6 +93,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn get_versions(&self) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "get_versions".to_string(),
+        })
+    }
+
     fn get_nat_type(&self) -> Result<NatTypeResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "get_nat_type".to_string(),

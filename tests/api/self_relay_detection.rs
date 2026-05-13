@@ -80,7 +80,7 @@ pub fn self_relay_converts_to_direct_send() {
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&relay_nsk, &target_uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
 
     assert!(ok, "send_message_to_network should succeed by converting self-relay to direct");
     let locked = sent_vec.lock().unwrap();
@@ -112,7 +112,7 @@ pub fn self_relay_no_relay_address_returns_false() {
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&relay_nsk, &target_uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
 
     assert!(!ok, "send_message_to_network should return false for self-relay with no relay_address");
     assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
@@ -143,7 +143,7 @@ pub fn non_self_relay_is_not_converted() {
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&relay_nsk, &target_uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
 
     // The relay Call path is attempted (sends a Call message to the relay via MockDtls),
     // but the response times out since there is no actual relay, so result should be false.
@@ -170,7 +170,7 @@ pub fn self_relay_no_issuer_does_not_match() {
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
         a.send_message_to_network(&relay_nsk, &target_uid, serde_json::json!({"test": true}), None)
-    });
+    }).unwrap();
 
     // With no issuer, my_id is None, so is_self_relay is false.
     // The relay Call path is attempted but times out, so result should be false.

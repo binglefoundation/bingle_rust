@@ -36,6 +36,8 @@ pub struct VersionInfo {
     pub build_number: String,
 }
 
+pub type VersionsMap = HashMap<String, VersionInfo>;
+
 /// An Algorand keypair (address + passphrase).
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct Keypair {

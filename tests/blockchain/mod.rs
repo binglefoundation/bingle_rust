@@ -46,3 +46,6 @@ pub mod generate_keypair;
 #[path = "account_balance_test.rs"]
 pub mod account_balance_test;
 
+#[path = "test_node_errors.rs"]
+pub mod test_node_errors;
+

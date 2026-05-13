@@ -66,6 +66,9 @@ pub trait BingleJsiApi: Send + Sync {
     /// Get current server version information.
     fn version(&self) -> Result<VersionInfo, BingleJsiError>;
 
+    /// Get version information for all library modules.
+    fn get_versions(&self) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError>;
+
     /// Get the current detected NAT type.
     fn get_nat_type(&self) -> Result<NatTypeResponse, BingleJsiError>;
 

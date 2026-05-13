@@ -197,7 +197,7 @@ pub fn bingle_api_send_via_relay() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let start_res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     if let Err(e) = start_res { eprintln!("api.start error: {}", e); }
@@ -229,7 +229,7 @@ pub fn bingle_api_send_via_relay() {
     // Retry send a few times to avoid flakiness due to startup races
     let mut ok = false;
     for _ in 0..10 {
-        if api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, payload.clone(), None)) { ok = true; break; }
+        if api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, payload.clone(), None)).unwrap_or(false) { ok = true; break; }
         std::thread::sleep(Duration::from_millis(100));
     }
     assert!(ok, "send_message_to_network returned false");

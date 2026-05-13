@@ -32,7 +32,7 @@ security:
 - ~~ensure runs in live with full encryption~~
 - ~~test encryption for entropy~~
 - ensure id is checked and fails on impersonation
-- ~~add a cipher suite string to messages with DTLS cipher suite~~
+- add a cipher suite string to messages with DTLS cipher suite
 - ~~TLS1.2 vuln tests:~~
   ~~1. Protocol Downgrade Attacks~~
   ~~2. Weak Cipher Suite Acceptance~~
@@ -47,7 +47,7 @@ security:
 - ~~Test for extended master secret support~~
 
 robustness:
-- fix error 40 on live device
+- fix error 40 on live device (?)
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
 - implement retry for packet loss and retryable fails
@@ -55,14 +55,15 @@ robustness:
 - lookup matches handles with downcase and some punctuation normalized (as Gmail?)
 - ensure ipv6 is unsupported consistently
 - indicate when we get no STUN responses (UDP blocked)
-
+- ensure handle uniqueness
+- 
 network:
+- handle network change and clear caches / rediscover nat type
 - remove DDB entries on node stop
 - handle clean relay shutdown
 - cache DDB locally with timeout / cancel
 - cache blockchain locally
 - detect relay unresponsive from peers and remove
-- handle network change and clear caches / rediscover nat type
 
 tokenomics:
 - develop tokenomics model

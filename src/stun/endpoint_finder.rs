@@ -9,6 +9,7 @@ pub enum StunState {
     Single,
     Inconsistent,
     Consistent,
+    Blocked,
 }
 
 pub type StateChangeHandler = Arc<dyn Fn(StunState, Option<SocketAddr>) + Send + Sync + 'static>;

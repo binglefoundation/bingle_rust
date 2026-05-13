@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
-use crate::api::bingle_api::NetworkEndpoint;
+use crate::api::bingle_api::{BingleError, NetworkEndpoint};
 use crate::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use crate::ddb::client::DdbClient;
 use crate::messages::{Message, RelayMessage};
@@ -31,14 +31,14 @@ impl RelayClient {
 
     /// Open a channel via the relay identified in `relay_nsk` to the provided `target_id`.
     /// Returns a NetworkEndpoint suitable for sending data via the relay (with channel and address set).
-    pub fn call(&self, relay_nsk: &NetworkEndpoint, target_id: &str) -> Result<NetworkEndpoint, String> {
+    pub fn call(&self, relay_nsk: &NetworkEndpoint, target_id: &str) -> Result<NetworkEndpoint, BingleError> {
         tracing::info!("[RelayClient::call] my_id={:?}, relay_nsk: {:?}, target_id: {}", 
             self.api.access_unsafe_for_tests(|a| a.get_my_id()), relay_nsk, target_id);
         
         // Validate the relay id is present
         let relay_id = relay_nsk
             .relay_id()
-            .ok_or_else(|| "RelayClient::call: relay_nsk has no relay_id".to_string())?
+            .ok_or_else(|| BingleError::Other("RelayClient::call: relay_nsk has no relay_id".to_string()))?
             .to_string();
 
         // Ensure we have a relay address (SocketAddr)
@@ -46,11 +46,11 @@ impl RelayClient {
             addr
         } else {
             // Resolve via DDB using the relay's id
-            let resolved = self.ddb.lookup(&relay_id)?;
+            let resolved = self.ddb.lookup(&relay_id).map_err(|e| BingleError::Other(e.to_string()))?;
             // The relay should advertise a direct endpoint in DDB
             resolved
                 .inet_socket_address()
-                .ok_or_else(|| "RelayClient::call: DDB lookup for relay did not return a direct endpoint".to_string())?
+                .ok_or_else(|| BingleError::Other("RelayClient::call: DDB lookup for relay did not return a direct endpoint".to_string()))?
         };
 
         // Build the Relay::Call message
@@ -68,7 +68,7 @@ impl RelayClient {
             "CallResponse" | "RelayCallResponse" => resp.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).map(|v| v as u16),
             _ => None,
         };
-        let channel = channel_opt.ok_or_else(|| "RelayClient::call: unexpected response (missing channel)".to_string())?;
+        let channel = channel_opt.ok_or_else(|| BingleError::Other("RelayClient::call: unexpected response (missing channel)".to_string()))?;
 
         // Return a relay endpoint configured with address + channel + relay id
         Ok(NetworkEndpoint::new_relay(relay_id, Some(relay_addr), Some(channel)))

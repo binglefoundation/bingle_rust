@@ -6,7 +6,7 @@ use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 // Minimal mock API that returns a positive CheckResponse for send_message_to_network_with_response
 struct MockApi;
 impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let app = message.get("app");
         if ty == "Check" && app.map(|v| v.is_null()).unwrap_or(false) {
@@ -26,13 +26,13 @@ impl InnerBingleApi for MockApi {
                 "relayIds": []
             }))
         } else {
-            Err("unexpected message".into())
+            Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
         }
     }
 }
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTestTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;

@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 use bingle_webserver::{start_server, AppState};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::util::cli_utils::parse_start_options_from_args;
+use rust_comms::util::logging::{BingleFormatter, LogMode, HandleLayer};
+use tracing_subscriber::prelude::*;
 use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler};
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::path::PathBuf;
@@ -11,10 +13,6 @@ use bingle_local::api::bingle_local_api::BingleLocalApi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info,rust_comms=debug"))
-        .init();
-
     let mut port = 12121;
     let mut address = "127.0.0.1".to_string();
     let mut other_args = Vec::new();
@@ -22,8 +20,24 @@ async fn main() -> anyhow::Result<()> {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
+    let mut log_mode = LogMode::Plain;
     while i < args.len() {
         match args[i].as_str() {
+            "--log-mode" => {
+                if i + 1 < args.len() {
+                    let val = args[i + 1].to_ascii_lowercase();
+                    log_mode = match val.as_str() {
+                        "plain" => LogMode::Plain,
+                        "ansi" => LogMode::ANSI,
+                        "aws" => LogMode::AWS,
+                        "js" => LogMode::JS,
+                        _ => LogMode::Plain,
+                    };
+                    i += 2;
+                } else {
+                    anyhow::bail!("--log-mode requires a value");
+                }
+            }
             "--port" | "-p" => {
                 if i + 1 < args.len() {
                     port = args[i + 1].parse()?;
@@ -66,6 +80,18 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => return Err(anyhow::anyhow!(e)),
     };
+    // Initialize logger with selected mode
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .event_format(BingleFormatter { mode: log_mode });
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,rust_comms=debug"));
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(HandleLayer)
+        .with(fmt_layer)
+        .init();
+
     let addr: SocketAddr = format!("{}:{}", address, port).parse()?;
 
     // Initialize network API

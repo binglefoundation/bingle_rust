@@ -22,7 +22,7 @@ impl InnerBingleApiInternal for MockInternal {
         // Accept EndpointAvailable too but do not record; test only checks final Registered
     }
     fn get_last_public_addr(&self) -> Option<SocketAddr> { Some(self.last_public_addr) }
-    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), String> {
+    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         assert_eq!(endpoint, self.last_public_addr, "handler should register the discovered public address");
         assert!(!am_relay, "this test simulates a non-relay");
         self.register_called.store(true, Ordering::SeqCst);
@@ -67,7 +67,7 @@ pub fn triangle_test3_triggers_relay_registration_sequence() {
         fn is_relay(&self) -> bool { true }
         fn get_last_public_addr(&self) -> Option<SocketAddr> { Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45002)) }
         fn initialize_relay(&self) { self.calls.lock().unwrap().push(("init".to_string(), false)); }
-        fn ddb_register_ip(&self, _ep: SocketAddr, am_relay: bool) -> Result<(), String> {
+        fn ddb_register_ip(&self, _ep: SocketAddr, am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
             self.calls.lock().unwrap().push(("register".to_string(), am_relay));
             Ok(())
         }

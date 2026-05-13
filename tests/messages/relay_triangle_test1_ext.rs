@@ -121,17 +121,17 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         fn debug_print_options(&self) {}
         fn get_my_id(&self) -> Option<String> { Some("MYID".into()) }
         fn get_app_id(&self) -> Option<u64> { None }
-        fn start(&mut self, _o: &StartOptions) -> Result<(), String> { Ok(()) }
+        fn start(&mut self, _o: &StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> { Ok(()) }
         fn stop(&mut self) {}
         fn network_change(&mut self) {}
-        fn handle_lookup(&self, _h: &Handle) -> Result<Option<UserId>, String> { Ok(None) }
+        fn handle_lookup(&self, _h: &Handle) -> Result<Option<UserId>, rust_comms::api::bingle_api::BingleError> { Ok(None) }
         fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> { None }
-        fn send_message_to_id(&self, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> bool { false }
-        fn send_message_to_handle(&self, _h: &Handle, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> bool { false }
-        fn send_message_to_network(&self, _n: &NetworkEndpoint, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> bool { false }
-        fn send_message_to_id_with_response(&self, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_handle_with_response(&self, _h: &Handle, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
-        fn send_message_to_network_with_response(&self, _n: &NetworkEndpoint, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> { Err("ni".into()) }
+        fn send_message_to_id(&self, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
+        fn send_message_to_handle(&self, _h: &Handle, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
+        fn send_message_to_network(&self, _n: &NetworkEndpoint, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
+        fn send_message_to_id_with_response(&self, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
+        fn send_message_to_handle_with_response(&self, _h: &Handle, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
+        fn send_message_to_network_with_response(&self, _n: &NetworkEndpoint, _u: &UserId, _m: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
         fn set_on_message(&mut self, _h: Option<Arc<OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _h: Option<Arc<OnConnectHandler>>) {}
     }
@@ -168,13 +168,13 @@ pub fn test_relay_ping_handler_honors_exclusions() {
 pub fn test_relay_finder_honors_exclusions() {
     use std::sync::Arc;
     use std::time::Duration;
-    use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
+    use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
     use crate::util::reusable_mock_api::{MockApiBoth, InnerBingleApi};
     use rust_comms::api::bingle_api::{NetworkEndpoint, UserId, ProgressCallback};
 
     struct CheckMockApi;
     impl InnerBingleApi for CheckMockApi {
-        fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _msg: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, String> {
+        fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _msg: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
             Ok(serde_json::json!({
                 "type": "CheckResponse",
                 "state": "available"

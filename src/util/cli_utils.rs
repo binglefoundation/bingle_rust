@@ -2,6 +2,7 @@ use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 use crate::api::bingle_api::StartOptions;
+use crate::util::logging::LogMode;
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use serde::Deserialize;
 
@@ -137,6 +138,7 @@ where
     let mut node_app_id: Option<u64> = None;
     let mut node_asset_id: Option<u64> = None;
     let mut log_level: Option<String> = None;
+    let mut log_mode = LogMode::Plain;
     let mut handle_cache_expiry: Option<std::time::Duration> = None;
     let mut dangerous_debug = false;
 
@@ -179,6 +181,16 @@ where
             "--log-level" => {
                 let v = it.next().ok_or("--log-level requires a value (trace|debug|info|warn|error)")?;
                 log_level = Some(v);
+            }
+            "--log-mode" => {
+                let v = it.next().ok_or("--log-mode requires a value (Plain|ANSI|AWS|JS)")?;
+                log_mode = match v.to_ascii_lowercase().as_str() {
+                    "plain" => LogMode::Plain,
+                    "ansi" => LogMode::ANSI,
+                    "aws" => LogMode::AWS,
+                    "js" => LogMode::JS,
+                    _ => return Err(format!("Invalid --log-mode '{}': must be Plain|ANSI|AWS|JS", v)),
+                };
             }
             "--app-id" => {
                 let v = it.next().ok_or("--app-id requires a value")?;
@@ -235,6 +247,7 @@ where
         log_level,
         handle_cache_expiry,
         dangerous_debug,
+        log_mode,
     })
 }
 

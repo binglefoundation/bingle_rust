@@ -1,6 +1,5 @@
 Pod::Spec.new do |s|
-  s.name         = "bingle_jsi"
-  s.version      = "0.0.1"
+  s.name         = "BingleJsiRN"
   s.summary      = "React Native native module for Bingle P2P messaging (iOS)"
   s.description  = "Provides the Bingle JSI API to React Native iOS apps via uniffi-generated Swift bindings and a pre-built XCFramework."
   s.homepage     = "https://github.com/example/bingle_jsi"
@@ -28,15 +27,7 @@ Pod::Spec.new do |s|
 
   s.swift_version = "5.7"
   s.static_framework = true
-
-  # The Rust static library inside the XCFramework has the same name
-  # (libbingle_jsi.a) as the pod's own compiled Swift archive. Without
-  # force_load the linker only picks up the Swift object code and misses
-  # the Rust FFI symbols. This flag ensures the Rust library is linked
-  # into the final app binary.
-  s.user_target_xcconfig = {
-    'OTHER_LDFLAGS' => '$(inherited) -force_load "${PODS_XCFRAMEWORKS_BUILD_DIR}/bingle_jsi/libbingle_jsi.a"'
-  }
+  s.version      = "0.0.4"
 
   s.dependency "React-Core"
 end

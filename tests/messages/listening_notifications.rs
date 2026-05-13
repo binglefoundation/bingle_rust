@@ -19,7 +19,7 @@ impl MockInternal {
 impl InnerBingleApiInternal for MockInternal {
     fn get_state(&self) -> EngineState { EngineState::StunIdentify }
     fn get_last_public_addr(&self) -> Option<SocketAddr> { Some(self.last_public_addr) }
-    fn ddb_register_ip(&self, endpoint: SocketAddr, _am_relay: bool) -> Result<(), String> {
+    fn ddb_register_ip(&self, endpoint: SocketAddr, _am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         assert_eq!(endpoint, self.last_public_addr);
         self.register_called.store(true, Ordering::SeqCst);
         Ok(())

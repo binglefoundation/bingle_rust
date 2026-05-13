@@ -3,6 +3,7 @@ name = "bingle-local"
 version = "0.0.1"
 edition = "2024"
 description = "Local API crate for storing messages and contacts for Bingle (placeholder)."
+autotests = false
 
 [lib]
 name = "bingle_local"
@@ -14,6 +15,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[test]]
+name = "bingle_local_tests"
+path = "tests/api.rs"
 
 [dev-dependencies]
 tempfile = "3"

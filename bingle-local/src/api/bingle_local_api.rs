@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
+use rust_comms::api::bingle_api::BingleError;
+
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContactSource {
@@ -55,31 +57,31 @@ pub struct KeypairStatus {
 /// Do not provide default method implementations per project guidelines.
 pub trait BingleLocalApi: Send + Sync {
     /// Generate a new Algorand keypair (id and passphrase) and set it as current.
-    fn generate_keypair(&mut self) -> Result<Keypair, String>;
+    fn generate_keypair(&mut self) -> Result<Keypair, BingleError>;
 
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:
     /// - handle: the user's unique handle to register on-chain
-    fn register_keypair(&self, handle: String) -> Result<(), String>;
+    fn register_keypair(&self, handle: String) -> Result<bool, BingleError>;
 
     /// Get an AlgoOps instance configured with the current keypair.
-    fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, String>;
+    fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, BingleError>;
 
     /// Add a contact to the local store.
-    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), String>;
+    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), BingleError>;
 
     /// Block a contact by id.
-    fn block_contact(&mut self, id: String) -> Result<(), String>;
+    fn block_contact(&mut self, id: String) -> Result<(), BingleError>;
 
     /// Remove a contact by id (without blocking it).
-    fn remove_contact(&mut self, id: String) -> Result<(), String>;
+    fn remove_contact(&mut self, id: String) -> Result<(), BingleError>;
 
     /// Check if a contact id is blocked.
-    fn is_blocked(&self, id: &str) -> Result<bool, String>;
+    fn is_blocked(&self, id: &str) -> Result<bool, BingleError>;
 
     /// Get the list of unblocked contacts.
-    fn get_contacts(&self) -> Result<Vec<Contact>, String>;
+    fn get_contacts(&self) -> Result<Vec<Contact>, BingleError>;
 
     /// Add a message to the local store.
     fn add_message(
@@ -88,21 +90,21 @@ pub trait BingleLocalApi: Send + Sync {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
-    ) -> Result<(), String>;
+    ) -> Result<(), BingleError>;
 
     /// Get the list of stored messages.
-    fn get_messages(&self) -> Result<Vec<Message>, String>;
+    fn get_messages(&self) -> Result<Vec<Message>, BingleError>;
 
     /// Save all local state to a JSON file at the given path.
-    fn save(&self, path: &str) -> Result<(), String>;
+    fn save(&self, path: &str) -> Result<(), BingleError>;
 
     /// Load all local state from a JSON file at the given path, replacing current state.
-    fn load(&mut self, path: &str) -> Result<(), String>;
+    fn load(&mut self, path: &str) -> Result<(), BingleError>;
 
     /// Check the status of the current keypair.
     /// Returns a KeypairStatus indicating None, UNFUNDED, FUNDED, or ACTIVE.
-    fn keypair_status(&self) -> Result<KeypairStatus, String>;
+    fn keypair_status(&self) -> Result<KeypairStatus, BingleError>;
 
     /// Return the current keypair, if one has been generated.
-    fn get_keypair(&self) -> Result<Option<Keypair>, String>;
+    fn get_keypair(&self) -> Result<Option<Keypair>, BingleError>;
 }

@@ -38,7 +38,7 @@ pub fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
 
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("api.start should succeed");

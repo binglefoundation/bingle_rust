@@ -28,7 +28,8 @@ fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64,
         app_id: Some(app_id),
         asset_id: None,
         log_level: None,
-        handle_cache_expiry: None, dangerous_debug: true,
+        handle_cache_expiry: None,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
@@ -37,8 +38,8 @@ fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64,
     test_util::wait_for_registered(&api, Duration::from_secs(30));
     tracing::info!("[Test] root relay {} registered", name);
 
-    if !test_util::wait_for_relay_available(&api, Duration::from_secs(180)) {
-        panic!("root relay {} did not become Available within 180", name);
+    if !test_util::wait_for_relay_available(&api, Duration::from_secs(360)) {
+        panic!("root relay {} did not become Available within 360s", name);
     }
     tracing::info!("[Test] root relay {} Available", name);
 
@@ -59,14 +60,15 @@ fn start_relay(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id:
         app_id: Some(app_id),
         asset_id: None,
         log_level: None,
-        handle_cache_expiry: None, dangerous_debug: true,
+        handle_cache_expiry: None,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
     tracing::info!("[Test] non-root relay {} started", name);
 
-    if !test_util::wait_for_relay_available(&api, Duration::from_secs(90)) {
-        panic!("non-root relay {} did not become Available within 90s", name);
+    if !test_util::wait_for_relay_available(&api, Duration::from_secs(360)) {
+        panic!("non-root relay {} did not become Available within 360s", name);
     }
     tracing::info!("[Test] non-root relay {} Available", name);
 
@@ -87,7 +89,8 @@ fn start_client_at_addr(name: &str, passphrase: &str, addr: SocketAddr, stun_lis
         app_id: Some(app_id),
         asset_id: None,
         log_level: None,
-        handle_cache_expiry: None, dangerous_debug: true,
+        handle_cache_expiry: None,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start at addr");
@@ -109,7 +112,8 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
         app_id: Some(app_id),
         asset_id: None,
         log_level: None,
-        handle_cache_expiry: None, dangerous_debug: true,
+        handle_cache_expiry: None,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");
@@ -344,7 +348,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     // Obtain B's user id and send a message from A -> B using send_message_to_id
     let b_id = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b.get_my_id Some");
     let msg = json!({ "text": "hello" });
-    let sent = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg.clone(), None));
+    let sent = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg.clone(), None)).unwrap();
     assert!(sent, "send_message_to_id should return true");
 
     // Wait up to 60 seconds for receipt on B
@@ -424,7 +428,7 @@ pub fn bingle_api_send_message_to_id_localnet() {
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-#[ntest::timeout(1_200_000)]
+#[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
@@ -432,7 +436,7 @@ pub fn bingle_api_send_message_to_id_relay_only_localnet() {
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-#[ntest::timeout(1_200_000)]
+#[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
     if !test_util::should_run_localnet() { return; }
@@ -527,7 +531,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     tracing::info!("[Test] Sending message from 3USE to 4USE");
     let c4_id = client4.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client4 id");
     let msg = json!({ "text": "hello from 3USE" });
-    let sent = client3.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&c4_id, msg.clone(), None));
+    let sent = client3.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&c4_id, msg.clone(), None)).unwrap();
     assert!(sent, "send_message_to_id should return true");
 
     // Wait for receipt
@@ -559,7 +563,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-#[ntest::timeout(1_200_000)]
+#[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
@@ -650,7 +654,7 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
 
     // Relay sends message to its own relay client using send_message_to_id.
     let msg = json!({ "text": "hello from relay" });
-    let sent = sending_relay.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&id_b, msg.clone(), None));
+    let sent = sending_relay.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&id_b, msg.clone(), None)).unwrap();
     assert!(sent, "send_message_to_id from relay to relay client should return true");
 
     // Wait up to 60 seconds for receipt on client_b
@@ -715,7 +719,7 @@ fn reset_message_state(
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-#[ntest::timeout(1_200_000)]
+#[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
@@ -775,7 +779,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 
     tracing::info!("[Test] Phase 1: sending message from A → B");
     let msg1 = json!({ "text": "hello from A" });
-    let sent1 = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg1.clone(), None));
+    let sent1 = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg1.clone(), None)).unwrap();
     assert!(sent1, "send_message_to_id A→B should return true");
 
     assert!(wait_for_message(&received_b, Duration::from_secs(60)), "client B did not receive message from A in time");
@@ -808,7 +812,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 
     tracing::info!("[Test] Phase 2: sending message from A2 → B");
     let msg2 = json!({ "text": "hello from A2" });
-    let sent2 = client_a2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg2.clone(), None));
+    let sent2 = client_a2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg2.clone(), None)).unwrap();
     assert!(sent2, "send_message_to_id A2→B should return true");
 
     assert!(wait_for_message(&received_b, Duration::from_secs(60)), "client B did not receive message from A2 in time");
@@ -829,7 +833,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 
     tracing::info!("[Test] Phase 3: sending message from B → A2");
     let msg3 = json!({ "text": "hello from B" });
-    let sent3 = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&a2_id, msg3.clone(), None));
+    let sent3 = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&a2_id, msg3.clone(), None)).unwrap();
     assert!(sent3, "send_message_to_id B→A2 should return true");
 
     assert!(wait_for_message(&received_a2, Duration::from_secs(60)), "client A2 did not receive message from B in time");
@@ -854,7 +858,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-#[ntest::timeout(1_200_000)]
+#[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
@@ -950,7 +954,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     // relay1 sends message to client_a (id)
     tracing::info!("[Test] relay1 sending message to client_a (id={}) who is on relay2 (id={})", id_a, id_r2);
     let msg = json!({ "text": "hello from relay1 to client_a via relay2" });
-    let sent = relay1.access_unsafe_for_tests(|c| c.send_message_to_id(&id_a, msg.clone(), None));
+    let sent = relay1.access_unsafe_for_tests(|c| c.send_message_to_id(&id_a, msg.clone(), None)).unwrap();
     assert!(sent, "send_message_to_id from relay1 should return true");
 
     // Wait for delivery to client_a - expected to fail

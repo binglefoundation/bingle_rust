@@ -34,7 +34,7 @@ pub trait InnerBingleApi {
         None
     }
 
-    fn start(&self, _options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), String> {
+    fn start(&self, _options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         Ok(())
     }
 
@@ -42,7 +42,7 @@ pub trait InnerBingleApi {
 
     fn network_change(&self) {}
 
-    fn handle_lookup(&self, _handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, String> {
+    fn handle_lookup(&self, _handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, rust_comms::api::bingle_api::BingleError> {
         Ok(None)
     }
 
@@ -55,8 +55,8 @@ pub trait InnerBingleApi {
         _user_id: &rust_comms::api::bingle_api::UserId,
         _message: serde_json::Value,
         _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> bool {
-        false
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
+        Ok(false)
     }
 
     fn send_message_to_handle(
@@ -64,8 +64,8 @@ pub trait InnerBingleApi {
         _handle: &rust_comms::api::bingle_api::Handle,
         _message: serde_json::Value,
         _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> bool {
-        false
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
+        Ok(false)
     }
 
     fn send_message_to_network(
@@ -74,8 +74,8 @@ pub trait InnerBingleApi {
         _user_id: &rust_comms::api::bingle_api::UserId,
         _message: serde_json::Value,
         _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> bool {
-        false
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
+        Ok(false)
     }
 
     fn send_message_to_id_with_response(
@@ -83,8 +83,8 @@ pub trait InnerBingleApi {
         _user_id: &rust_comms::api::bingle_api::UserId,
         _message: serde_json::Value,
         _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> Result<serde_json::Value, String> {
-        Err("ni".into())
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
     fn send_message_to_handle_with_response(
@@ -92,8 +92,8 @@ pub trait InnerBingleApi {
         _handle: &rust_comms::api::bingle_api::Handle,
         _message: serde_json::Value,
         _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> Result<serde_json::Value, String> {
-        Err("ni".into())
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
     fn send_message_to_network_with_response(
@@ -102,8 +102,8 @@ pub trait InnerBingleApi {
         _user_id: &rust_comms::api::bingle_api::UserId,
         _message: serde_json::Value,
         _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> Result<serde_json::Value, String> {
-        Err("ni".into())
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
     fn set_on_message(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
@@ -192,7 +192,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.get_app_id()
     }
 
-    fn start(&mut self, options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), String> {
+    fn start(&mut self, options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api.start(options)
     }
 
@@ -204,7 +204,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.network_change();
     }
 
-    fn handle_lookup(&self, handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, String> {
+    fn handle_lookup(&self, handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api.handle_lookup(handle)
     }
 
@@ -217,7 +217,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         user_id: &rust_comms::api::bingle_api::UserId,
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> bool {
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api.send_message_to_id(user_id, message, progress)
     }
 
@@ -226,7 +226,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         handle: &rust_comms::api::bingle_api::Handle,
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> bool {
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api.send_message_to_handle(handle, message, progress)
     }
 
@@ -236,7 +236,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         user_id: &rust_comms::api::bingle_api::UserId,
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> bool {
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api
             .send_message_to_network(network_source_key, user_id, message, progress)
     }
@@ -246,7 +246,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         user_id: &rust_comms::api::bingle_api::UserId,
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api
             .send_message_to_id_with_response(user_id, message, progress)
     }
@@ -256,7 +256,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         handle: &rust_comms::api::bingle_api::Handle,
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api
             .send_message_to_handle_with_response(handle, message, progress)
     }
@@ -267,7 +267,7 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         user_id: &rust_comms::api::bingle_api::UserId,
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api
             .send_message_to_network_with_response(network_source_key, user_id, message, progress)
     }
@@ -302,15 +302,15 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.get_last_public_addr()
     }
 
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), String> {
+    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api_internal.ddb_register_ip(endpoint, am_relay)
     }
 
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), String> {
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api_internal.ddb_register_relay(relay_id, relay_sig)
     }
 
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), String> {
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api_internal.update_turn_listener_relay(relay_id, relay_addr)
     }
 
@@ -395,16 +395,16 @@ pub trait InnerBingleApiInternal {
         None
     }
 
-    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), String> {
-        Err("ni".into())
+    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
-    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), String> {
-        Err("ni".into())
+    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
-    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), String> {
-        Err("ni".into())
+    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
     fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
