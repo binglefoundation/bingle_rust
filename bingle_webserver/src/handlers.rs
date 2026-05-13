@@ -15,7 +15,7 @@ use crate::models::{
 use crate::AppState;
 use crate::try_start_api;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
-use rust_comms::api::bingle_api::{BingleApi, BingleError};
+use rust_comms::api::bingle_api::BingleError;
 use rust_comms::blockchain::error::AlgoErrorKind;
 
 fn handle_bingle_error(e: BingleError) -> AxumResponse {

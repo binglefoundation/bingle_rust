@@ -1,4 +1,5 @@
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError};
+use crate::relay::relay_finder::RelayFinderTrait;
 use crate::engine::BingleAccessUnsafeForTests;
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;

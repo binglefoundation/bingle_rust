@@ -29,12 +29,13 @@ security:
 * ~~Network Partitioning Algorithm: fixed this inconsistency in the spec~~
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
-- ensure runs in live with full encryption
+- ensure runs in live with full encryption - test encryption
+- test against known DTLS vulnerabilities
 - ensure endpoint is checked and fails on impersonation
 - add a cipher suite string to messages with DTLS cipher suite
 
 robustness:
-- fix error 40 on live device
+- fix error 40 on live device (?)
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
 - implement retry for packet loss and retryable fails

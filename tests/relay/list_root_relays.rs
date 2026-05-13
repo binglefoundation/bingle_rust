@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 use std::time::Duration;
 
-use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo, RelayFinderTrait};
 use crate::util::reusable_mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[derive(Clone)]

@@ -10,6 +10,7 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
 use crate::api::bingle_api::{BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use crate::relay::relay_finder::RelayFinderTrait;
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::blockchain::error::{AlgoError, AlgoErrorKind};
@@ -271,6 +272,7 @@ impl BingleApiImpl {
     }
 
     fn send_over_dtls(&self, nsk: &NetworkEndpoint, message: JsonValue) -> Result<bool, BingleError> {
+        tracing::info!("[BingleApiImpl::send_over_dtls][enter] nsk={:?}, message={:?}", nsk, message);
         // Guard: reject incomplete relay endpoints (missing channel); fully-configured
         // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
         if nsk.is_relay() && nsk.relay_channel().is_none() {
@@ -304,7 +306,7 @@ impl Drop for BingleApiImpl {
     }
 }
 
-const TIMEOUT_SECONDS_WAIT_RESPONSE: u64 = 60;
+const TIMEOUT_SECONDS_WAIT_RESPONSE: u64 = 90;
 
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
@@ -681,6 +683,7 @@ impl BingleApi for BingleApiImpl {
                     }
                 }
             }
+            tracing::info!("[BingleApiImpl::send_message_to_network] send_over_dtls {:?}, {}", effective_nsk, message);
             self.send_over_dtls(&effective_nsk, message)
         } else { Ok(false) };
 
@@ -745,7 +748,7 @@ impl BingleApi for BingleApiImpl {
 
         // Send the request synchronously before waiting to avoid races and ensure handshake starts
         if let Some(cb) = progress.as_ref() { cb(5, "Sending request".to_string()); }
-        let sent_ok = self.send_message_to_network(network_source_key, user_id, msg_with_tag, progress.clone())?;
+        let sent_ok = self.send_message_to_network(network_source_key, user_id, msg_with_tag.clone(), progress.clone())?;
         if let Some(cb) = progress.as_ref() { cb(20, if sent_ok { "Request sent" } else { "Failed to send request" }.to_string()); }
         if !sent_ok {
             return Err(BingleError::Other("Failed to send request".to_string()));
@@ -761,7 +764,7 @@ impl BingleApi for BingleApiImpl {
         } else {
             if let Some(cb) = progress.as_ref() { cb(100, "Timed out waiting for response".to_string()); }
             let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
-            tracing::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Err({})", err);
+            tracing::warn!("[BingleApiImpl::send_message_to_network_with_response][exit] nsk={} user_id={} msg={} Err({})", network_source_key, user_id, msg_with_tag.clone(), err);
             #[allow(unused)] {  }
             Err(BingleError::Other(err))
         }

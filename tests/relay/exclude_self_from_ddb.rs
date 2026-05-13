@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;

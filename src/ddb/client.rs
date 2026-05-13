@@ -8,7 +8,7 @@ use crate::api::bingle_api::{BingleError, NetworkEndpoint};
 use crate::messages::types::*;
 use crate::messages::{to_json_value, Message};
 use crate::engine::BingleAccess;
-use crate::relay::relay_finder::RelayInfo;
+use crate::relay::relay_finder::{RelayInfo, RelayFinderTrait};
 
 /// Public DDB client interface used by higher layers.
 /// Provides register_ip and lookup helpers that send DDB messages over the network

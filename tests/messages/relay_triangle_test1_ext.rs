@@ -166,7 +166,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
 pub fn test_relay_finder_honors_exclusions() {
     use std::sync::Arc;
     use std::time::Duration;
-    use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
+    use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
     use crate::util::reusable_mock_api::{MockApiBoth, InnerBingleApi};
     use rust_comms::api::bingle_api::{NetworkEndpoint, UserId, ProgressCallback};
 

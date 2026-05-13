@@ -8,7 +8,7 @@ use crate::{info_theme, warn_theme};
 
 use crate::api::bingle_api::NetworkEndpoint;
 use data_encoding::BASE32_NOPAD;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::engine::{BingleAccess, RelayState};
 
 #[derive(Debug, Clone)]
@@ -37,6 +37,22 @@ struct CachedAllRelayList {
     pub expires_at: Instant,
 }
 
+pub trait RelayFinderTrait: Send + Sync {
+    fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo>;
+    fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String>;
+    fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String>;
+    fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo>;
+    fn load_relay_states(&self, my_id: &str);
+    fn clear_state_cache(&self);
+    fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint>;
+}
+
+pub trait RelayFinderTestTrait {
+    fn select_indices(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize);
+    fn relays_available(&self) -> HashMap<RelayState, usize>;
+    fn find_root_relay(&self, my_id: &str) -> Result<RelayInfo, String>;
+}
+
 /// RelayFinder: finds and caches the preferred root relay per spec (root relays only).
 ///
 /// Behaviour (root relays only):
@@ -54,9 +70,62 @@ pub struct RelayFinder {
     all_list_cache: Mutex<Option<CachedAllRelayList>>, // cached list of all relays
     // Injection point for discovery (keeps this component testable and avoids tying to indexer here)
     discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
+    unavailable_relays: Mutex<HashSet<String>>,
 }
 
 pub type RootRelayInfo = RelayInfo;
+
+impl RelayFinderTrait for RelayFinder {
+    fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+        self.clear_unavailable_relays_internal();
+        self.list_all_relays_internal(my_id, include_self)
+    }
+
+    fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
+        self.clear_unavailable_relays_internal();
+        self.find_relay_internal(my_id)
+    }
+
+    fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
+        self.clear_unavailable_relays_internal();
+        self.find_relay_excluding_internal(my_id, exclude)
+    }
+
+    fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+        self.clear_unavailable_relays_internal();
+        self.list_root_relays_internal(my_id, include_self)
+    }
+
+    fn load_relay_states(&self, my_id: &str) {
+        self.clear_unavailable_relays_internal();
+        self.load_relay_states_internal(my_id)
+    }
+
+    fn clear_state_cache(&self) {
+        self.clear_unavailable_relays_internal();
+        self.clear_state_cache_internal()
+    }
+
+    fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint> {
+        self.clear_unavailable_relays_internal();
+        self.lookup_root_id_internal(id)
+    }
+}
+
+impl RelayFinderTestTrait for RelayFinder {
+    fn select_indices(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
+        self.select_indices_internal(relays, my_id)
+    }
+
+    fn relays_available(&self) -> HashMap<RelayState, usize> {
+        self.relays_available_internal()
+    }
+
+    fn find_root_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
+        self.clear_unavailable_relays_internal();
+        self.find_root_relay_internal(my_id)
+    }
+}
 
 impl RelayFinder {
     pub fn new(
@@ -64,12 +133,20 @@ impl RelayFinder {
         cache_ttl: Duration,
         discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
     ) -> Self {
-        Self { api, cache_ttl, cache: Mutex::new(None), root_list_cache: Mutex::new(None), all_list_cache: Mutex::new(None), discover_roots }
+        Self {
+            api,
+            cache_ttl,
+            cache: Mutex::new(None),
+            root_list_cache: Mutex::new(None),
+            all_list_cache: Mutex::new(None),
+            discover_roots,
+            unavailable_relays: Mutex::new(HashSet::new()),
+        }
     }
 
     /// Return the list of all relays (root and non-root) using the DDB client get_relays.
     /// Requires that the root relay cache has been populated (list_root_relays called recently).
-    pub fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+    fn list_all_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
         info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
 
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
@@ -87,7 +164,7 @@ impl RelayFinder {
         // }
         // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
         info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
-        let _ = self.list_root_relays(my_id, true);
+        let _ = self.list_root_relays_internal(my_id, true);
         info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
 
         // 2) Pick preferred root relay and fetch all relays via DDB from that single root only
@@ -97,22 +174,33 @@ impl RelayFinder {
             let roots_opt = self.root_list_cache.lock().ok().and_then(|g| g.clone());
             if let Some(roots) = roots_opt {
                 // Exclude self from the roots list before selecting which root to query via DDB
-                let candidates: Vec<RelayInfo> = roots
-                    .root_relays
-                    .iter()
-                    .cloned()
-                    .filter(|r| r.id != my_id_norm)
-                    .collect();
+                let candidates: Vec<RelayInfo> = {
+                    let unavailable = self.unavailable_relays.lock().ok();
+                    roots.root_relays
+                        .iter()
+                        .cloned()
+                        .filter(|r| {
+                            r.id != my_id_norm && 
+                            unavailable.as_ref().map_or(true, |g| !g.contains(&r.id))
+                        })
+                        .collect()
+                };
 
                     if !candidates.is_empty() {
-                        let (pref_idx, _alt_idx) = self.select_indices(&candidates, my_id_norm);
+                        let (pref_idx, _alt_idx) = self.select_indices_internal(&candidates, my_id_norm);
                         let chosen = &candidates[pref_idx];
                         match cli.get_relays_from(chosen) {
                             Ok(pairs) => pairs
                                 .into_iter()
                                 .map(|(id, addr)| RelayInfo { id, address: addr, state: None })
                                 .collect(),
-                            Err(_e) => Vec::new(),
+                            Err(_e) => {
+                                if let Ok(mut g) = self.unavailable_relays.lock() {
+                                    g.insert(chosen.id.clone());
+                                }
+                                self.update_cached_state(&chosen.id, RelayState::Off);
+                                Vec::new()
+                            }
                         }
                     } else {
                         Vec::new()
@@ -170,13 +258,13 @@ impl RelayFinder {
     // Deprecated convenience constructor using AlgoBingle discovery has been removed.
 
     /// Find any relay suitable for us (root or non-root). Uses DDB getEpoch via list_all_relays.
-    pub fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
-        self.find_relay_excluding(my_id, &[])
+    fn find_relay_internal(&self, my_id: &str) -> Result<RelayInfo, String> {
+        self.find_relay_excluding_internal(my_id, &[])
     }
 
     /// Find any relay suitable for us (root or non-root), excluding specific addresses.
     /// Does not use the single-relay cache if exclusions are provided.
-    pub fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
+    fn find_relay_excluding_internal(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
         tracing::info!("[RelayFinder] find_relay_excluding: my_id={} exclude={:?}", my_id, exclude);
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
 
@@ -191,7 +279,7 @@ impl RelayFinder {
         }
 
         // 2) Get all relays (requires root cache populated; list_all_relays ensures this)
-        let mut relays = self.list_all_relays(my_id, false);
+        let mut relays = self.list_all_relays_internal(my_id, false);
         if !exclude.is_empty() {
             relays.retain(|r| !exclude.contains(&r.address));
         }
@@ -199,7 +287,7 @@ impl RelayFinder {
         tracing::info!("[RelayFinder] find_relay: candidates = {:?}", relays);
 
         // 3) Choose preferred and alternate per partitioning rule
-        let (pref_idx, alt_idx) = self.select_indices(&relays, my_id_norm);
+        let (pref_idx, alt_idx) = self.select_indices_internal(&relays, my_id_norm);
 
         // 4) Try preferred then alternate via RelayCheck
         for &idx in &[pref_idx, alt_idx] {
@@ -221,7 +309,7 @@ impl RelayFinder {
     }
 
     /// Return the list of root relays discovered via the blockchain (discover_roots), optionally including ourselves.
-    pub fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+    fn list_root_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
         tracing::info!("[RelayFinder] list_root_relays: my_id={} include_self={}", my_id, include_self);
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 1) Use cached list if valid
@@ -258,7 +346,8 @@ impl RelayFinder {
     }
 
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
-    pub fn find_root_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
+    #[allow(dead_code)]
+    fn find_root_relay_internal(&self, my_id: &str) -> Result<RelayInfo, String> {
         tracing::info!("[RelayFinder] find_root_relay: my_id={}", my_id);
         // Normalize our id to raw address
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
@@ -272,14 +361,14 @@ impl RelayFinder {
         }
 
         // 2) Get candidate list (cached when possible)
-        let relays = self.list_root_relays(my_id, false);
+        let relays = self.list_root_relays_internal(my_id, false);
         if relays.is_empty() {
             return Err("no root relays discovered (after excluding self)".to_string());
         }
         tracing::info!("[RelayFinder] find_root_relay: candidates = {:?}", relays);
 
         // 3) Choose preferred and alternate per partitioning rule
-        let (pref_idx, alt_idx) = self.select_indices(&relays, my_id_norm);
+        let (pref_idx, alt_idx) = self.select_indices_internal(&relays, my_id_norm);
 
         // 4) Try preferred then alternate via RelayCheck
         for &idx in &[pref_idx, alt_idx] {
@@ -299,7 +388,7 @@ impl RelayFinder {
         Err("no available root relay (preferred and alternate failed RelayCheck)".to_string())
     }
 
-    pub fn select_indices(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
+    fn select_indices_internal(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
         let n = relays.len();
         if n == 1 { return (0usize, 0usize); }
         let bucket = self.id_bucket_u32(my_id);
@@ -359,15 +448,16 @@ impl RelayFinder {
         }
     }
 
-    pub fn load_relay_states(&self, my_id: &str) {
+    pub fn load_relay_states_internal(&self, my_id: &str) {
         // Ensure we have a list of all relays cached (includes self)
-        let relays = self.list_all_relays(my_id, true);
+        let relays = self.list_all_relays_internal(my_id, true);
         for r in relays {
             let _ = self.relay_check(my_id, &r.id, r.address);
         }
     }
 
-    pub fn relays_available(&self) -> HashMap<RelayState, usize> {
+    #[allow(dead_code)]
+    fn relays_available_internal(&self) -> HashMap<RelayState, usize> {
         let mut out: HashMap<RelayState, usize> = HashMap::new();
         let mut accumulate = |v: &Vec<RelayInfo>| {
             for r in v {
@@ -386,6 +476,10 @@ impl RelayFinder {
     }
 
     fn relay_check(&self, my_id: &str, id: &str, addr: SocketAddr) -> bool {
+        if self.is_unavailable(id) {
+            self.update_cached_state(id, RelayState::Off);
+            return false;
+        }
         // If this is our own relay id, do not perform a network check; mark as Own and return false
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if id == my_id_norm {
@@ -413,6 +507,9 @@ impl RelayFinder {
                 false
             }
             Err(_) => {
+                if let Ok(mut g) = self.unavailable_relays.lock() {
+                    g.insert(id.to_string());
+                }
                 self.update_cached_state(id, RelayState::Off);
                 false
             },
@@ -421,7 +518,7 @@ impl RelayFinder {
 
     /// Clear cached relay selection and expire lists; reset all cached states to None.
     /// After calling this, subsequent list/load calls will refresh via discovery and checks.
-    pub fn clear_state_cache(&self) {
+    fn clear_state_cache_internal(&self) {
         // Clear single-relay cache
         if let Ok(mut g) = self.cache.lock() { *g = None; }
         // Expire root list and reset states
@@ -443,10 +540,10 @@ impl RelayFinder {
 
     /// Lookup a root relay id and return its direct NetworkEndpoint if known.
     /// Uses list_root_relays to ensure the root list cache is populated, then searches the cache.
-    pub fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint> {
+    fn lookup_root_id_internal(&self, id: &str) -> Option<NetworkEndpoint> {
         let id_norm = id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // Ensure root list is populated/cached (include_self=true to avoid filtering out the queried id)
-        let _ = self.list_root_relays(id_norm, true);
+        let _ = self.list_root_relays_internal(id_norm, true);
         if let Ok(g) = self.root_list_cache.lock() {
             if let Some(list) = &*g {
                 if let Some(r) = list.root_relays.iter().find(|r| r.id == id_norm) {
@@ -455,5 +552,18 @@ impl RelayFinder {
             }
         }
         None
+    }
+
+    fn clear_unavailable_relays_internal(&self) {
+        if let Ok(mut g) = self.unavailable_relays.lock() {
+            g.clear();
+        }
+    }
+
+    fn is_unavailable(&self, id: &str) -> bool {
+        if let Ok(g) = self.unavailable_relays.lock() {
+            return g.contains(id);
+        }
+        false
     }
 }

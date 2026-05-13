@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait, RelayFinderTestTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;

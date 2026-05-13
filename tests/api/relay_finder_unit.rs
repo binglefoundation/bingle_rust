@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo};
+use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo, RelayFinderTestTrait};
 use serde_json::Value as JsonValue;
 
 #[derive(Clone)]

@@ -13,7 +13,7 @@ use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{from_json_str, DefaultPrintingHandler};
-use crate::relay::relay_finder::{RelayFinder, RelayInfo};
+use crate::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(
-    finder: &crate::relay::relay_finder::RelayFinder,
+    finder: &dyn RelayFinderTrait,
     my_id: &str,
 ) -> (usize, usize) {
     let peers = finder.list_root_relays(my_id, false);
@@ -825,6 +825,7 @@ impl Engine {
         to: &crate::api::bingle_api::NetworkEndpoint,
         data: &[u8],
     ) -> Result<(), String> {
+        tracing::info!("[Engine::send_to_peer] {}, {:?}", to, data);
         // Guard: reject incomplete relay endpoints (missing channel); fully-configured
         // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
         if to.is_relay() && to.relay_channel().is_none() {
@@ -862,6 +863,12 @@ impl Engine {
                         }
                     }
                 }
+                else {
+                    tracing::warn!("[Engine::send_to_peer] could not lock connections");
+                }
+            }
+            else {
+                tracing::warn!("[Engine::send_to_peer] could not get key from NetworkEndpoint");
             }
         }
         res
@@ -1301,7 +1308,7 @@ impl Engine {
                         tracing::info!("[Engine::initialize_relay] cleared finder state cache");
                         finder_arc_for_mtx.load_relay_states(&my_id);
                         tracing::info!("[Engine::initialize_relay] loaded peer relay states");
-                        let (avail_cnt, starting_cnt) = count_peer_states(&finder_arc_for_mtx, &my_id_for_mtx);
+                        let (avail_cnt, starting_cnt) = count_peer_states(&*finder_arc_for_mtx, &my_id_for_mtx);
                         tracing::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
                         if avail_cnt == 0 {
                             tracing::info!("[Engine::initialize_relay] No peers available; initializing DDB directly");
