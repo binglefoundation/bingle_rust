@@ -95,8 +95,8 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
         null_encryption
     );
 
-    // 3) Send 15 messages with 1500 '@' signs
-    let plaintext_payload = "@".repeat(1500);
+    // 3) Send 15 messages with 2000 '@' signs
+    let plaintext_payload = "@".repeat(2000);
     let message_count = 15;
     let receiver_id = test_util::ADDRESS_RECEIVE.to_string();
     let receiver_addr = addr(receiver_port);
@@ -121,9 +121,9 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
     std::thread::sleep(Duration::from_secs(2));
 
     let all_packets = captured_packets.lock().unwrap().clone();
-    // Filter for our messages based on size (1500 payload + JSON overhead + DTLS overhead)
+    // Filter for our messages based on size (2000 payload + JSON overhead + DTLS overhead)
     let packets: Vec<Vec<u8>> = all_packets.into_iter()
-        .filter(|p| p.len() > 1500 && p.len() < 1700)
+        .filter(|p| p.len() > 2000 && p.len() < 2300)
         .collect();
 
     println!("Analyzed {}/{} DTLS application data packets", packets.len(), captured_packets.lock().unwrap().len());
