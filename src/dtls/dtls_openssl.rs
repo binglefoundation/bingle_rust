@@ -295,7 +295,7 @@ pub mod openssl_impl {
             // Lower security level to avoid strict policy rejections in test envs
             builder.set_security_level(0);
         }
-        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION);
+        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("client: set_min_proto_version failed: {}", e))?;
@@ -314,7 +314,7 @@ pub mod openssl_impl {
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
             builder.set_keylog_callback(keylog_callback("server", handle));
         }
-        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION);
+        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("server: set_min_proto_version failed: {}", e))?;

@@ -6,3 +6,4 @@ pub mod weak_key_exchange_test;
 pub mod cert_verification_test;
 pub mod padding_oracle_test;
 pub mod compression_test;
+pub mod renegotiation_test;
