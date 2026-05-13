@@ -43,6 +43,8 @@ security:
   7. Insecure Randomness
   8. Insecure Renegotiation
   9. ROBOT (Return of Bleichenbacher's Oracle Threat)
+- Ensure and test we have PFS via ECDHE  
+- Test for extended master secret support
 
 robustness:
 - fix error 40 on live device
