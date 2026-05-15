@@ -87,7 +87,7 @@ fn dtls_session_randomness_test() {
             msg,
             None,
         );
-        assert!(ok, "Failed to send message in session {}", s);
+        assert!(ok.expect("send_message_to_network should succeed"), "Failed to send message in session {}", s);
 
         // Wait for completion (handshake + application data)
         std::thread::sleep(Duration::from_secs(2));

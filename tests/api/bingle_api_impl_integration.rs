@@ -3,6 +3,7 @@ use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleA
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use crate::api::bingle_api_impl_integration::test_util::ADDRESS_SPEND;
+use crate::relay::relay_states::test_util::init_test_logging;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -55,6 +56,8 @@ pub mod pki;
     fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
         Ok(test_util::ADDRESS_SPEND.to_string())
     }
+
+    init_test_logging();
 
     #[allow(dead_code)]
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();

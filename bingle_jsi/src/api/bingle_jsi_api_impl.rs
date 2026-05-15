@@ -593,7 +593,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         guard.register_keypair(handle).map_err(|e| BingleJsiError::InternalError {
-            reason: e,
+            reason: e.to_string(),
         })?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);

@@ -84,7 +84,7 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
         payload.clone(),
         None,
     );
-    assert!(ok, "Failed to send message");
+    assert!(ok.expect("send_message_to_network should succeed"), "Failed to send message");
 
     // 5) Verify message is NOT received
     std::thread::sleep(Duration::from_secs(2));
@@ -110,7 +110,7 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
         payload,
         None,
     );
-    assert!(ok, "Failed to send second message");
+    assert!(ok.expect("send_message_to_network should succeed"), "Failed to send second message");
 
     // 8) Verify message IS received
     std::thread::sleep(Duration::from_secs(2));

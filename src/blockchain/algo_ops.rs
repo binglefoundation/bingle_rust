@@ -373,11 +373,11 @@ impl AlgoOps {
             }
         };
         algo_log!("[account_balance] Retrieved account info for address: {} => {:?}", address, res);
-        let info = match AlgoError::map_node_err("account_information", res) {
+        let info = match AlgoError::map_node_err("account_information", Ok(res)) {
             Ok(v) => v,
             Err(e) => {
                 tracing::error!("[account_balance] Account information request failed for {}: {}", address, e);
-                return Ok(None);
+                return Err(e);
             }
         };
         // amount is in microalgos

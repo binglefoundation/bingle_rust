@@ -111,7 +111,7 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
             msg,
             None,
         );
-        assert!(ok, "Failed to send message {}", i);
+        assert!(ok.expect("send_message_to_network should succeed"), "Failed to send message {}", i);
         // Small delay to allow processing
         std::thread::sleep(Duration::from_millis(100));
     }
