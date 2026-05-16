@@ -355,7 +355,7 @@ pub fn send_waits_for_ack_complete_before_returning() {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-pub fn send_waits_for_ack_complete_timeout_and_then_continues() {
+pub fn send_handles_ack_complete_timeout_failure_path_by_waiting_then_continuing() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_ack_wait_timeout(Duration::from_millis(25));
 
