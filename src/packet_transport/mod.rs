@@ -20,13 +20,15 @@ pub trait PacketTransport {
 
 pub struct DtlsReliablePacketTransport {
     dtls: Box<dyn Dtls + Send + Sync>,
+    mtu: usize,
     handle_message: Arc<Mutex<Option<PacketTransportHandleMessage>>>,
 }
 
 impl DtlsReliablePacketTransport {
-    pub fn new(dtls: Box<dyn Dtls + Send + Sync>) -> Self {
+    pub fn new(dtls: Box<dyn Dtls + Send + Sync>, mtu: usize) -> Self {
         let mut transport = Self {
             dtls,
+            mtu,
             handle_message: Arc::new(Mutex::new(None)),
         };
 
@@ -68,6 +70,14 @@ impl DtlsReliablePacketTransport {
 
     pub fn dtls_mut(&mut self) -> &mut (dyn Dtls + Send + Sync) {
         self.dtls.as_mut()
+    }
+
+    pub fn set_mtu(&mut self, mtu: usize) {
+        self.mtu = mtu;
+    }
+
+    pub fn mtu(&self) -> usize {
+        self.mtu
     }
 
     pub fn dispatch_handle_message(

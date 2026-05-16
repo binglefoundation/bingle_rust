@@ -158,7 +158,7 @@ impl Dtls for MockDtls {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn new_installs_dtls_handler_that_uses_transport_handler() {
-    let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()));
+    let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
 
     let calls: Arc<Mutex<Vec<(String, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
@@ -200,7 +200,7 @@ pub fn with_handle_message_and_dispatch_handle_message_are_transport_instance_sc
         Ok(Some(vec![0xAA]))
     });
 
-    let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new())).with_handle_message(handler);
+    let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492).with_handle_message(handler);
     assert!(transport.get_handle_message().is_some());
 
     let from_addr: SocketAddr = "127.0.0.1:9191".parse().expect("valid socket address");
@@ -215,4 +215,13 @@ pub fn with_handle_message_and_dispatch_handle_message_are_transport_instance_sc
         .lock()
         .expect("captured lock should not be poisoned after handle_message");
     assert_eq!(captured_packets.as_slice(), &[b"payload".to_vec()]);
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn mtu_is_set_in_constructor_and_can_be_updated() {
+    let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
+    assert_eq!(transport.mtu(), 1492);
+
+    transport.set_mtu(1200);
+    assert_eq!(transport.mtu(), 1200);
 }

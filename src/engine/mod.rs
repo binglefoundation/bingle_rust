@@ -23,6 +23,8 @@ use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
 use uuid::Uuid;
 
+pub const MINIMUM_MTU: usize = 1492;
+
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(
     finder: &dyn RelayFinderTrait,
@@ -520,7 +522,7 @@ impl Engine {
             relay_init_mutex: None,
             options: options.clone(),
             mux: None,
-            packet_transport: DtlsReliablePacketTransport::new(dtls),
+            packet_transport: DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU),
             state: EngineState::StunIdentify,
             relay_state: RelayState::Off,
             last_public_addr_shared: Arc::new(Mutex::new(None)),
@@ -564,7 +566,7 @@ impl Engine {
 
     /// Test helper: Inject a custom DTLS implementation.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
-        self.packet_transport = DtlsReliablePacketTransport::new(dtls);
+        self.packet_transport = DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU);
     }
 
     /// Access the configured DTLS instance, if any (read-only).
