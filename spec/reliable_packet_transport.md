@@ -21,6 +21,23 @@ Constants:
 
 - `PACKET_MAX = 64 * 1024 * 1024` bytes (64 MiB).
 
+## Implementation status in this branch
+
+Implemented now:
+
+- `DATA_SINGLE` framing for blocks that fit in one packet (`block.len() <= mtu - 4`).
+- `ACK_COMPLETE` handling for single-packet sends.
+- Duplicate suppression for `DATA_SINGLE` by `(peer, tx_id)`.
+
+Not yet implemented (large-packet path):
+
+- `DATA_FRAG` send path for multi-packet blocks.
+- `ACK_WINDOW` generation/processing.
+- Fragment reassembly state machine and completion for large blocks.
+- Fragment retransmit/windowed retry behavior for large blocks.
+
+This document includes the full target protocol; sections describing fragmented large-packet behavior remain the intended next implementation stage.
+
 ---
 
 ## 2. Placement and Integration
@@ -181,7 +198,7 @@ If `block.len() <= mtu - 4`:
 3. Retry same `DATA_SINGLE` after `2s`, `4s`, `8s` if no terminal ACK.
 4. Fail after 3 timeouts.
 
-### 5.3 Fragmented send
+### 5.3 Fragmented send (planned, not yet implemented)
 
 If block needs fragmentation:
 
@@ -220,7 +237,7 @@ Duplicate `DATA_SINGLE` handling:
 - Do not re-deliver block.
 - Rationale: duplicate `DATA_SINGLE` usually means prior terminal ACK was lost; re-sending terminal ACK stops sender retries without duplicating delivery.
 
-### 6.3 `DATA_FRAG`
+### 6.3 `DATA_FRAG` (planned, not yet implemented)
 
 1. Upsert reassembly context keyed by `(peer, tx_id)`.
 2. Validate `frag_count`, `frag_index`, `block_len`, and metadata consistency across fragments.
@@ -371,16 +388,15 @@ Decision:
 
 ---
 
-## 12. Implementation Checklist (for follow-up task)
+## 12. Implementation Checklist (status)
 
-- Add `PacketTransport` trait.
-- Implement `DtlsReliablePacketTransport` with owned DTLS instance.
-- Add mandatory MTU constructor parameter and setter.
-- Wire Engine send/receive paths to transport.
-- Add unit/integration tests for:
-  - single packet terminal ACK (`ACK_COMPLETE`),
-  - fragment out-of-order reassembly,
-  - selective ACK + retransmit,
-  - duplicate suppression,
-  - timeout failure path,
-  - PACKET_MAX boundary.
+- [x] Add `PacketTransport` trait.
+- [x] Implement `DtlsReliablePacketTransport` with owned DTLS instance.
+- [x] Add mandatory MTU constructor parameter and setter.
+- [x] Wire Engine send/receive paths to transport.
+- [x] Add test coverage for single packet terminal ACK (`ACK_COMPLETE`).
+- [x] Add test coverage for duplicate suppression.
+- [x] Add test coverage for timeout failure path.
+- [ ] Implement fragment out-of-order reassembly.
+- [ ] Implement selective ACK (`ACK_WINDOW`) + retransmit for fragmented transfers.
+- [ ] Add explicit `PACKET_MAX` boundary coverage.
