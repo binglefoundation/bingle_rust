@@ -82,6 +82,7 @@ pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     let (mock_dtls, sends) = MockDtls::new();
     let handler = RelayPingHandler::new(Arc::new(mock_dtls), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 34567)));
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
+    let router = Arc::new(rust_comms::messages::router::Router::new(Arc::downgrade(&api)));
     let t1 = RelayTriangleTest1 { 
         app: None, 
         checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345).into(),
@@ -89,7 +90,11 @@ pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     };
 
     // Act: invoke handler directly
-    let from = rust_comms::messages::handlers::FromStruct { id: "FROM-OTHER-ID".to_string(), network_source_key: rust_comms::api::bingle_api::NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
+    let from = rust_comms::messages::handlers::FromStruct {
+        id: "FROM-OTHER-ID".to_string(),
+        network_source_key: rust_comms::api::bingle_api::NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()),
+        router,
+    };
     handler.on_triangle_test1(api, &from, &t1);
 
     // Assert: one send to the configured peer, and TriangleTest2 has checkingId == "MYID"

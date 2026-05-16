@@ -22,7 +22,7 @@ pub mod test_util;
 // Registered with the expected public address.
 // Note this has morphed as we register with the relays now after EndpointAvailable
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore] // requires localnet
+#[ignore] // needs localnet
 #[serial]
 pub fn bingle_api_register_via_forced_stun() {
     init_test_logging();

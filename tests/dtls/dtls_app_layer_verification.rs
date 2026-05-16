@@ -38,6 +38,7 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
     let delivered_clone = delivered.clone();
 
     let mut server = DtlsOpenSsl::new("server".to_string())
+        .with_dangerous_debug(true)
         .with_null_encryption()
         .with_server_signing_cert(certs.server_crt.clone())
         .with_server_signing_private_key(certs.server_key.clone())
@@ -55,6 +56,7 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
     let cmux = Arc::new(cmux0);
     let mut client = DtlsOpenSsl::new("client".to_string())
+        .with_dangerous_debug(true)
         .with_null_encryption()
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())

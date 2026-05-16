@@ -28,15 +28,16 @@ pub fn route_invokes_on_ping_ping() {
     let flag = Arc::new(Mutex::new(false));
     let handler = CapturingHandler::new(flag.clone());
 
-    if let Some(router) = Router::current() {
-        // Provide API to router so it can be passed into handler per new signature
-        router.set_bingle_api(Some(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
+    let router = Arc::new(Router::new(
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
+    ));
+    // Provide API to router so it can be passed into handler per new signature
+    router.set_bingle_api(Some(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
 
-        let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
-        let msg = Message::Ping(PingMessage::Ping(ping));
-        router.route(&handler, &msg, "SOMEISSUER.");
+    let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
+    let msg = Message::Ping(PingMessage::Ping(ping));
+    router.route(&handler, &msg, "SOMEISSUER.");
 
-        let got = flag.lock().unwrap().clone();
-        assert!(got, "on_ping_ping was not called");
-    }
+    let got = flag.lock().unwrap().clone();
+    assert!(got, "on_ping_ping was not called");
 }

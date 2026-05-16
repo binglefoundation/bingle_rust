@@ -1,17 +1,11 @@
 use crate::messages::handlers::{MessageHandler, FromStruct};
 use crate::messages::types::*;
 
-use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError, NetworkEndpoint, UserId, Handle};
 use crate::engine::BingleAccess;
-
-// Thread-local current router used to avoid globals and isolate per-API state.
-thread_local! {
-    static CURRENT_ROUTER: RefCell<Option<Arc<Router>>> = RefCell::new(None);
-}
 
 #[derive(Default)]
 pub struct Router {
@@ -86,6 +80,60 @@ impl BingleApiInternal for LockingApiWrapper {
 
 
 impl Router {
+    /// Backward-compatible helper retained for tests; no TLS state is used.
+    pub fn with_current_router<R>(_router: Arc<Router>, f: impl FnOnce() -> R) -> R {
+        f()
+    }
+
+    /// Backward-compatible helper retained for tests; no TLS state is kept.
+    pub fn current() -> Option<Arc<Router>> {
+        None
+    }
+
+    fn dispatch_message<H: MessageHandler + ?Sized>(handler: &H, api: Arc<dyn BingleApiBoth>, msg: &Message, from: &FromStruct) {
+        match msg {
+            Message::PlainText(pt) => handler.on_plain_text(api.clone(), from, pt),
+            Message::Relay(r) => match r {
+                RelayMessage::Call(m) => handler.on_relay_call(api.clone(), from, m),
+                RelayMessage::RelayResponse(m) => handler.on_relay_response(api.clone(), from, m),
+                RelayMessage::TriangleTest1(m) => handler.on_triangle_test1(api.clone(), from, m),
+                RelayMessage::TriangleTest2(m) => handler.on_triangle_test2(api.clone(), from, m),
+                RelayMessage::TriangleTest3(m) => handler.on_triangle_test3(api.clone(), from, m),
+                RelayMessage::TriangleTest1Response(m) => handler.on_triangle_test1_response(api.clone(), from, m),
+                RelayMessage::Listen(m) => handler.on_relay_listen(api.clone(), from, m),
+                RelayMessage::Check(m) => handler.on_relay_check(api.clone(), from, m),
+                RelayMessage::ListenResponse(m) => handler.on_relay_listen_response(api.clone(), from, m),
+                RelayMessage::CheckResponse(m) => handler.on_relay_check_response(api.clone(), from, m),
+                RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), from, m),
+                RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), from, m),
+                RelayMessage::RelayCalled(m) => handler.on_relay_called(api.clone(), from, m),
+            },
+            Message::Ddb(d) => match d {
+                DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), from, m),
+                DdbMessage::QueryResolve(m) => handler.on_ddb_query_resolve(api.clone(), from, m),
+                DdbMessage::InitResolve(m) => handler.on_ddb_init_resolve(api.clone(), from, m),
+                DdbMessage::DumpResolve(m) => handler.on_ddb_dump_resolve(api.clone(), from, m),
+                DdbMessage::GetEpoch(m) => handler.on_ddb_get_epoch(api.clone(), from, m),
+                DdbMessage::EpochInfo(m) => handler.on_ddb_epoch_info(api.clone(), from, m),
+                DdbMessage::Signon(m) => handler.on_ddb_signon(api.clone(), from, m),
+                DdbMessage::SignonResponse(m) => handler.on_ddb_signon_response(api.clone(), from, m),
+                _ => handler.on_unimplemented(msg),
+            },
+            Message::Ping(p) => match p {
+                PingMessage::Ping(m) => handler.on_ping_ping(api.clone(), from, m),
+                PingMessage::Response(m) => handler.on_ping_response(api.clone(), from, m),
+            },
+            Message::Mutex(m) => {
+                match m {
+                    MutexMessage::Request(req) => api.mutex_handle_request(from.id.clone(), req.clone()),
+                    MutexMessage::Response(resp) => api.mutex_handle_response(from.id.clone(), resp.clone()),
+                    MutexMessage::Release(rel) => api.mutex_handle_release(from.id.clone(), rel.clone()),
+                }
+            }
+            Message::Unknown(v) => handler.on_unknown(api.clone(), from, v),
+        }
+    }
+
     pub fn new(api: crate::api::bingle_api::BingleApiBothType) -> Self {
         Self {
             sender: Mutex::new(None),
@@ -99,12 +147,6 @@ impl Router {
         }
     }
 
-    pub fn with_current_router<R>(router: Arc<Router>, f: impl FnOnce() -> R) -> R {
-        let prev = CURRENT_ROUTER.with(|cell| cell.replace(Some(router)));
-        let out = f();
-        CURRENT_ROUTER.with(|cell| { let _ = cell.replace(prev); });
-        out
-    }
 
     pub fn set_sender(&self, cb: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>) {
         if let Ok(mut g) = self.sender.lock() { *g = cb; }
@@ -138,7 +180,10 @@ impl Router {
     pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
     pub fn take_outbound_response(&self) -> Option<serde_json::Value> { match self.outbound_response.lock() { Ok(mut g) => g.take(), Err(_) => None } }
 
-    pub fn route_with_network<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint) {
+    pub fn route_with_network<H>(self: &Arc<Self>, handler: H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint)
+    where
+        H: MessageHandler + Send + Sync + 'static,
+    {
         let api_opt = self.get_bingle_api();
         if api_opt.is_none() {
             tracing::warn!("[router::route_with_network] No BingleApi available to pass to handler");
@@ -148,57 +193,44 @@ impl Router {
         let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
             api: Arc::downgrade(&api_base),
         });
-        let from = FromStruct { id: from_id.to_string(), network_source_key: from_ep.clone() };
-        match msg {
-            Message::PlainText(pt) => handler.on_plain_text(api.clone(), &from, pt),
-            Message::Relay(r) => match r {
-                RelayMessage::Call(m) => handler.on_relay_call(api.clone(), &from, m),
-                RelayMessage::RelayResponse(m) => handler.on_relay_response(api.clone(), &from, m),
-                RelayMessage::TriangleTest1(m) => handler.on_triangle_test1(api.clone(), &from, m),
-                RelayMessage::TriangleTest2(m) => handler.on_triangle_test2(api.clone(), &from, m),
-                RelayMessage::TriangleTest3(m) => handler.on_triangle_test3(api.clone(), &from, m),
-                RelayMessage::TriangleTest1Response(m) => handler.on_triangle_test1_response(api.clone(), &from, m),
-                RelayMessage::Listen(m) => handler.on_relay_listen(api.clone(), &from, m),
-                RelayMessage::Check(m) => handler.on_relay_check(api.clone(), &from, m),
-                RelayMessage::ListenResponse(m) => handler.on_relay_listen_response(api.clone(), &from, m),
-                RelayMessage::CheckResponse(m) => handler.on_relay_check_response(api.clone(), &from, m),
-                RelayMessage::CallResponse(m) => handler.on_relay_call_response(api.clone(), &from, m),
-                RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), &from, m),
-                RelayMessage::RelayCalled(m) => handler.on_relay_called(api.clone(), &from, m),
-            },
-            Message::Ddb(d) => match d {
-                DdbMessage::UpsertResolve(m) => handler.on_ddb_upsert_resolve(api.clone(), &from, m),
-                DdbMessage::QueryResolve(m) => handler.on_ddb_query_resolve(api.clone(), &from, m),
-                DdbMessage::InitResolve(m) => handler.on_ddb_init_resolve(api.clone(), &from, m),
-                DdbMessage::DumpResolve(m) => handler.on_ddb_dump_resolve(api.clone(), &from, m),
-                DdbMessage::GetEpoch(m) => handler.on_ddb_get_epoch(api.clone(), &from, m),
-                DdbMessage::EpochInfo(m) => handler.on_ddb_epoch_info(api.clone(), &from, m),
-                DdbMessage::Signon(m) => handler.on_ddb_signon(api.clone(), &from, m),
-                DdbMessage::SignonResponse(m) => handler.on_ddb_signon_response(api.clone(), &from, m),
-                _ => handler.on_unimplemented(msg),
-            },
-            Message::Ping(p) => match p {
-                PingMessage::Ping(m) => handler.on_ping_ping(api.clone(), &from, m),
-                PingMessage::Response(m) => handler.on_ping_response(api.clone(), &from, m),
-            },
-            Message::Mutex(m) => {
-                            match m {
-                                MutexMessage::Request(req) => api.mutex_handle_request(from.id.clone(), req.clone()),
-                                MutexMessage::Response(resp) => api.mutex_handle_response(from.id.clone(), resp.clone()),
-                                MutexMessage::Release(rel) => api.mutex_handle_release(from.id.clone(), rel.clone()),
-                            }
-                        },
-            Message::Unknown(v) => handler.on_unknown(api.clone(), &from, v),
+        let from = FromStruct {
+            id: from_id.to_string(),
+            network_source_key: from_ep.clone(),
+            router: self.clone(),
+        };
+        let msg = msg.clone();
+        if std::thread::Builder::new()
+            .name("router-handler-thread".to_string())
+            .spawn(move || {
+                Self::dispatch_message(&handler, api, &msg, &from);
+            })
+            .is_err()
+        {
+            tracing::warn!("[router::route_with_network] failed to spawn background handler thread");
         }
     }
 
-    pub fn route<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str) {
+    pub fn route<H: MessageHandler + ?Sized>(self: &Arc<Self>, handler: &H, msg: &Message, from_id: &str) {
         let nsk = if let Some(addr) = self.get_last_from() {
             NetworkEndpoint::new_direct(addr)
         } else {
             NetworkEndpoint::new_direct("0.0.0.0:0".parse().unwrap())
         };
-        self.route_with_network(handler, msg, from_id, &nsk);
+        let api_opt = self.get_bingle_api();
+        if api_opt.is_none() {
+            tracing::warn!("[router::route] No BingleApi available to pass to handler");
+            return;
+        }
+        let api_base = api_opt.unwrap();
+        let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
+            api: Arc::downgrade(&api_base),
+        });
+        let from = FromStruct {
+            id: from_id.to_string(),
+            network_source_key: nsk,
+            router: self.clone(),
+        };
+        Self::dispatch_message(handler, api, msg, &from);
     }
 
     pub fn clear_for_tests(&self) {
@@ -212,8 +244,3 @@ impl Router {
     }
 }
 
-impl Router {
-    pub fn current() -> Option<Arc<Router>> {
-        CURRENT_ROUTER.with(|cell| cell.borrow().clone())
-    }
-}

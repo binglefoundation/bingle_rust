@@ -192,8 +192,8 @@ pub struct Engine {
     issuer: Option<Arc<String>>,
     // In-memory DDB backend used by relay nodes (and for tests)
     ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>,
-    // Per-API router instance used to avoid global mutable state
-    router: Option<std::sync::Arc<crate::messages::router::Router>>,
+    // Per-API router instance bound to this engine
+    router: std::sync::Arc<crate::messages::router::Router>,
     // DDB client bound to the API instance (always present; may be a NullDdbClient)
     ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
     // TURN handlers (split): client and relay variants
@@ -530,7 +530,7 @@ impl Engine {
             relay_finder: None,
             triangle_wait: None,
             send_via_bingle: None,
-            bingle_api: api,
+            bingle_api: api.clone(),
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
             registered: std::sync::atomic::AtomicBool::new(false),
@@ -541,7 +541,7 @@ impl Engine {
             ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::ddb::InMemoryDdbBackend::new(),
             )),
-            router: None,
+            router: std::sync::Arc::new(crate::messages::router::Router::new(api.clone())),
             ddb_client: ddb,
             turn_handler_client: if options.am_relay { None } else { Some(std::sync::Arc::new(
                 crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new(),
@@ -561,7 +561,7 @@ impl Engine {
 
     /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
     pub fn set_router(&mut self, router: std::sync::Arc<crate::messages::router::Router>) {
-        self.router = Some(router);
+        self.router = router;
     }
 
     /// Test helper: Inject a custom DTLS implementation.
@@ -606,13 +606,9 @@ impl Engine {
                 return;
             },
         };
-        if let Some(r) = &self.router {
-            let handler = DefaultPrintingHandler;
-            let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
-            r.route_with_network(&handler, &msg, issuer, from_ep);
-        } else {
-            tracing::warn!("[Engine::receive_message_for_tests] no router available");
-        }
+        let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
+        self.router
+            .route_with_network(DefaultPrintingHandler, &msg, issuer, from_ep);
     }
 
     /// Apply a closure to the DTLS instance.
@@ -800,9 +796,7 @@ impl Engine {
     /// Clear bindings to API instance and global router callbacks to avoid dangling pointers between tests.
     pub fn clear_api_bindings(&mut self) {
         // Clear per-API router instance only (no global fallbacks)
-        if let Some(r) = &self.router {
-            r.clear_for_tests();
-        }
+        self.router.clear_for_tests();
         // Also drop local references
         self.send_via_bingle = None;
     }
@@ -1004,16 +998,14 @@ impl Engine {
                     // No inline DDB handling; use Router + handlers instead
 
                     // 2) Provide per-message API bindings to router; sender remains as configured by API layer
-                    if let Some(r) = &router_arc { r.set_bingle_api(Some(bingle_api.clone())); }
+                    router_arc.set_bingle_api(Some(bingle_api.clone()));
                     // Provide DDB/relay context to router
-                    if let Some(r) = &router_arc {
-                        r.set_am_relay(am_relay);
-                        r.set_ddb_backend(Some(ddb_backend.clone()));
-                    }
+                    router_arc.set_am_relay(am_relay);
+                    router_arc.set_ddb_backend(Some(ddb_backend.clone()));
 
                     // 3) Engine routing logic (inline to avoid &self)
                     // Record last sender for reply helpers
-                    if let Some(r) = &router_arc { r.set_last_from(from.inet_socket_address()); }
+                    router_arc.set_last_from(from.inet_socket_address());
 
                     // Try JSON parse to extract responseTag and fulfill waiters
                     if let Ok(s) = std::str::from_utf8(data) {
@@ -1021,9 +1013,9 @@ impl Engine {
                             tracing::info!("[Engine::install_dtls_handler][cb] checking for responseTag in {}", v);
                             // Expose last responseTag (if this is a request). Handlers may echo it back.
                             if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
-                                if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
+                                router_arc.set_last_response_tag(Some(tag.to_string()));
                             } else {
-                                if let Some(r) = &router_arc { r.set_last_response_tag(None); }
+                                router_arc.set_last_response_tag(None);
                             }
                             // If this is a response, fulfill any waiter registered with Engine (supports both keys)
                             let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
@@ -1052,23 +1044,20 @@ impl Engine {
                         Ok(s) => match from_json_str(s) {
                             Ok(msg) => {
                                 tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
-                                if let Some(r) = &router_arc {
-                                    r.route_with_network(&handler, &msg, issuer, &from);
-                                    if let Some(out) = r.take_outbound_response() {
-                                        tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
-                                        if let Some(api) = bingle_api.upgrade() {
-                                            let user_id = issuer.to_string();
-                                            if let Err(e) = api.send_message_to_network(from, &user_id, out, None) {
-                                                tracing::warn!(
-                                                    "[Engine::install_dtls_handler][send outbound_response] failed: {}",
-                                                    e
-                                                );
-                                            }
-                                        } else {
-                                            tracing::warn!(
-                                                "[Engine::install_dtls_handler][send outbound_response] api unavailable"
-                                            );
-                                        }
+                                router_arc.route_with_network(DefaultPrintingHandler, &msg, issuer, &from);
+                                let mut outbound = None;
+                                for _ in 0..50 {
+                                    if let Some(out) = router_arc.take_outbound_response() {
+                                        outbound = Some(out);
+                                        break;
+                                    }
+                                    std::thread::sleep(Duration::from_millis(2));
+                                }
+                                if let Some(out) = outbound {
+                                    tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
+                                    let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
+                                    {
+                                        if let Err(e) = server.send(&from, &bytes) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                     }
                                 }
                             }
@@ -1092,17 +1081,7 @@ impl Engine {
                     }
                 };
 
-                let routed = if let Some(r) = &router_arc {
-                    crate::messages::router::Router::with_current_router(r.clone(), || work())
-                } else {
-                    work()
-                };
-
-                if let Err(e) = &routed {
-                    tracing::warn!("[Engine::install_dtls_handler][cb] handler failed: {}", e);
-                }
-
-                routed
+                work();
             })));
         Ok(())
     }

@@ -9,6 +9,9 @@ pub mod marshal_unit;
 #[path = "messages/router_from_id.rs"]
 pub mod router_from_id;
 
+#[path = "messages/router_route_with_network_background.rs"]
+pub mod router_route_with_network_background;
+
 #[path = "messages/triangle_response_routing.rs"]
 pub mod triangle_response_routing;
 
