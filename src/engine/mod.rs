@@ -601,9 +601,8 @@ impl Engine {
             },
         };
         if let Some(r) = &self.router {
-            let handler = DefaultPrintingHandler;
             let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
-            r.route_with_network(&handler, &msg, issuer, from_ep);
+            r.route_with_network(DefaultPrintingHandler, &msg, issuer, from_ep);
         } else {
             tracing::warn!("[Engine::receive_message_for_tests] no router available");
         }
@@ -1051,8 +1050,16 @@ impl Engine {
                             Ok(msg) => {
                                 tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
                                 if let Some(r) = &router_arc {
-                                    r.route_with_network(&handler, &msg, issuer, &from);
-                                    if let Some(out) = r.take_outbound_response() {
+                                    r.route_with_network(DefaultPrintingHandler, &msg, issuer, &from);
+                                    let mut outbound = None;
+                                    for _ in 0..50 {
+                                        if let Some(out) = r.take_outbound_response() {
+                                            outbound = Some(out);
+                                            break;
+                                        }
+                                        std::thread::sleep(Duration::from_millis(2));
+                                    }
+                                    if let Some(out) = outbound {
                                         tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
                                         {

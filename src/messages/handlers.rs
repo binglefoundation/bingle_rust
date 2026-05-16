@@ -90,7 +90,7 @@ pub trait MessageHandler {
             }
         }
         // Fallback to logging if no on_message callback is installed
-        tracing::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::warn!("[MessageHandler::on_plain_text] No callback set up {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
     }
 
     // Ping messages
