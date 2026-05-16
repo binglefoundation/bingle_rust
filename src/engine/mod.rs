@@ -13,6 +13,10 @@ use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{from_json_str, DefaultPrintingHandler};
+use crate::packet_transport::{
+    DtlsReliablePacketTransport,
+    PacketTransport,
+};
 use crate::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
@@ -154,8 +158,8 @@ pub struct Engine {
         Option<std::sync::Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
     options: StartOptions,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
-    // Underlying DTLS listener; per-connection adapters delegate to this
-    dtls: Box<dyn Dtls + Send + Sync>,
+    // Packet transport layer (step 1: pass-through) that owns DTLS.
+    packet_transport: DtlsReliablePacketTransport,
     state: EngineState,
     relay_state: RelayState,
     last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
@@ -516,7 +520,7 @@ impl Engine {
             relay_init_mutex: None,
             options: options.clone(),
             mux: None,
-            dtls,
+            packet_transport: DtlsReliablePacketTransport::new(dtls),
             state: EngineState::StunIdentify,
             relay_state: RelayState::Off,
             last_public_addr_shared: Arc::new(Mutex::new(None)),
@@ -560,12 +564,12 @@ impl Engine {
 
     /// Test helper: Inject a custom DTLS implementation.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
-        self.dtls = dtls;
+        self.packet_transport = DtlsReliablePacketTransport::new(dtls);
     }
 
     /// Access the configured DTLS instance, if any (read-only).
     pub fn dtls(&self) -> &(dyn Dtls + Send + Sync) {
-        self.dtls.as_ref()
+        self.packet_transport.dtls()
     }
 
     /// Test helper: Inject a custom DDB client.
@@ -606,7 +610,7 @@ impl Engine {
 
     /// Apply a closure to the DTLS instance.
     pub fn with_dtls_mut<F: FnOnce(&mut (dyn Dtls + Send + Sync))>(&mut self, f: F) {
-        f(self.dtls.as_mut())
+        f(self.packet_transport.dtls_mut())
     }
 
     /// Set and get issuer moved from API layer.
@@ -837,10 +841,10 @@ impl Engine {
                 return Err(format!("[Engine::send_to_peer] rejecting send to self: {}", target_addr));
             }
         }
-        // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
+        // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
-        let res = self.dtls.send(to, data);
+        let res = self.packet_transport.send(to, data);
         if res.is_ok() {
             // Track seen endpoints
             if let Some(addr) = to.inet_socket_address() {
@@ -952,8 +956,8 @@ impl Engine {
     /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
     /// This avoids duplicating the same closure in different Engine start paths.
     fn install_dtls_handler(&mut self) -> Result<(), BingleError> {
-        // Capture any existing handler without taking a mutable borrow to self.dtls
-        let existing = self.dtls.get_handle_message();
+        // Capture any existing packet transport handler before installing Engine routing.
+        let existing = self.packet_transport.get_handle_message();
 
         // Capture safe, shareable state for the handler closure (avoid raw self pointers)
         let connections = self.connections.clone();
@@ -963,14 +967,13 @@ impl Engine {
         let am_relay = self.options.am_relay;
         let ddb_backend = self.ddb_backend.clone();
         let span = self.span.clone();
-
-        // Now obtain a mutable reference to dtls only for installing the new handler
-        let d = self.dtls.as_mut();
         let router_arc = self.router.clone();
-        d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
+
+        self.packet_transport
+            .set_handle_message(Some(std::sync::Arc::new(move |from, issuer, data| {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
-                let work = || {
+                let work = || -> Result<Option<Vec<u8>>, String> {
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
@@ -1019,7 +1022,7 @@ impl Engine {
                                                 g.responded = true;
                                                 g.response = Some(v.clone());
                                                 wait.1.notify_all();
-                                                return; // consumed by waiter; do not forward
+                                                return Ok(None); // consumed by waiter; do not forward
                                             }
                                         }
                                     }
@@ -1038,9 +1041,18 @@ impl Engine {
                                     r.route_with_network(&handler, &msg, issuer, &from);
                                     if let Some(out) = r.take_outbound_response() {
                                         tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
-                                        let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
-                                        {
-                                            if let Err(e) = server.send(&from, &bytes) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
+                                        if let Some(api) = bingle_api.upgrade() {
+                                            let user_id = issuer.to_string();
+                                            if let Err(e) = api.send_message_to_network(from, &user_id, out, None) {
+                                                tracing::warn!(
+                                                    "[Engine::install_dtls_handler][send outbound_response] failed: {}",
+                                                    e
+                                                );
+                                            }
+                                        } else {
+                                            tracing::warn!(
+                                                "[Engine::install_dtls_handler][send outbound_response] api unavailable"
+                                            );
                                         }
                                     }
                                 }
@@ -1059,11 +1071,23 @@ impl Engine {
 
                     // Then delegate to any previously-registered handler from API
                     if let Some(h) = &existing {
-                        h(server, from, issuer, data);
+                        h(from, issuer, data)
+                    } else {
+                        Ok(Some(data.to_vec()))
                     }
                 };
 
-                if let Some(r) = &router_arc { crate::messages::router::Router::with_current_router(r.clone(), || work()); } else { work(); }
+                let routed = if let Some(r) = &router_arc {
+                    crate::messages::router::Router::with_current_router(r.clone(), || work())
+                } else {
+                    work()
+                };
+
+                if let Err(e) = &routed {
+                    tracing::warn!("[Engine::install_dtls_handler][cb] handler failed: {}", e);
+                }
+
+                routed
             })));
         Ok(())
     }
@@ -1127,7 +1151,9 @@ impl Engine {
             .map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
-        self.dtls.start(mux.clone())
+        self.packet_transport
+            .dtls_mut()
+            .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // Persist mux, STUN finder, and triangle wait handle before initializing STUN
@@ -1476,7 +1502,9 @@ impl Engine {
         mux.start().map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS accept loop with the mux
-        self.dtls.start(mux.clone())
+        self.packet_transport
+            .dtls_mut()
+            .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
@@ -1698,7 +1726,7 @@ impl Engine {
         tracing::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
         // First, clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
-        self.dtls.stop().expect(&format!(
+        self.packet_transport.dtls_mut().stop().expect(&format!(
             "DTLS stop failed in Engine::stop {}:{}",
             self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
             last_addr
