@@ -162,26 +162,6 @@ impl DtlsReliablePacketTransport {
         }
     }
 
-    fn endpoint_key(from: &NetworkEndpoint) -> Option<NetworkEndpointKey> {
-        if let Some(inet_socket_address) = from.inet_socket_address() {
-            return Some(NetworkEndpointKey {
-                inet_socket_address: Some(inet_socket_address),
-                relay_id: None,
-                relay_channel: None,
-            });
-        }
-
-        if let (Some(relay_id), Some(relay_channel)) = (from.relay_id(), from.relay_channel()) {
-            return Some(NetworkEndpointKey {
-                inet_socket_address: None,
-                relay_id: Some(relay_id.to_string()),
-                relay_channel: Some(relay_channel),
-            });
-        }
-
-        None
-    }
-
     fn send_ack_complete(
         dtls: &dyn Dtls,
         to: &NetworkEndpoint,
@@ -233,7 +213,7 @@ impl DtlsReliablePacketTransport {
             Some(ParsedPacket::DataSingle { tx_id, payload }) => {
                 Self::send_ack_complete(dtls, from, tx_id)?;
 
-                let should_deliver = if let Some(from_key) = Self::endpoint_key(from) {
+                let should_deliver = if let Some(from_key) = from.get_key() {
                     let mut delivered = received_single_blocks.lock().map_err(|e| {
                         format!(
                             "[DtlsReliablePacketTransport::dispatch_inbound_packet] failed to lock receive cache: {}",

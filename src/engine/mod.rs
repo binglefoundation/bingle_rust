@@ -986,7 +986,7 @@ impl Engine {
                     let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
                     if handle_opt.is_none() {
                         tracing::warn!("[Engine::install_dtls_handler][cb] dropping message from unauthenticated id: {}", sender_id);
-                        return;
+                        return Ok(None);
                     }
 
                     // 1) Track connection last_seen using captured connections map

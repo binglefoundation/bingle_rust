@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use serde_json::json;
@@ -13,6 +13,14 @@ pub mod test_util;
 
 fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
+
+fn allocate_udp_port() -> u16 {
+    let socket = UdpSocket::bind(addr(0)).expect("bind ephemeral UDP port");
+    socket
+        .local_addr()
+        .expect("read bound ephemeral UDP local addr")
+        .port()
 }
 
 fn calculate_entropy(data: &[u8]) -> f64 {
@@ -63,7 +71,7 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
     println!("Starting entropy test: {} (null_encryption={})", test_name, null_encryption);
 
     // 1) Setup receiver
-    let receiver_port = if null_encryption { 15002 } else { 15000 };
+    let receiver_port = allocate_udp_port();
     let receiver_api = setup_node(
         &format!("{}_receiver", test_name),
         receiver_port,
@@ -87,7 +95,10 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
     })));
 
     // 2) Setup sender
-    let sender_port = if null_encryption { 15003 } else { 15001 };
+    let mut sender_port = allocate_udp_port();
+    while sender_port == receiver_port {
+        sender_port = allocate_udp_port();
+    }
     let sender_api = setup_node(
         &format!("{}_sender", test_name),
         sender_port,
@@ -95,8 +106,8 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
         null_encryption
     );
 
-    // 3) Send 15 messages with 2000 '@' signs
-    let plaintext_payload = "@".repeat(2000);
+    // 3) Send 15 messages with payload sized to fit current DATA_SINGLE transport capacity
+    let plaintext_payload = "@".repeat(1200);
     let message_count = 15;
     let receiver_id = test_util::ADDRESS_RECEIVE.to_string();
     let receiver_addr = addr(receiver_port);
@@ -121,9 +132,10 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
     std::thread::sleep(Duration::from_secs(2));
 
     let all_packets = captured_packets.lock().unwrap().clone();
-    // Filter for our messages based on size (2000 payload + JSON overhead + DTLS overhead)
+    // Filter for our messages based on size (1200 payload + JSON overhead + DTLS overhead).
+    // Keep bounds narrow enough to exclude cert-announce DTLS application records.
     let packets: Vec<Vec<u8>> = all_packets.into_iter()
-        .filter(|p| p.len() > 2000 && p.len() < 2300)
+        .filter(|p| p.len() > 1200 && p.len() < 1500)
         .collect();
 
     println!("Analyzed {}/{} DTLS application data packets", packets.len(), captured_packets.lock().unwrap().len());

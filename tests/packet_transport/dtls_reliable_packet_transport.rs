@@ -171,6 +171,9 @@ impl Dtls for MockDtls {
     {
         self
     }
+
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
