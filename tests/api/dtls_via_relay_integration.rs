@@ -191,10 +191,11 @@ pub fn dtls_send_via_relay_end_to_end() {
     let call_msg_bytes = serde_json::to_vec(&call_msg).expect("serialize call_msg");
     dtls_client.send(&NetworkEndpoint::new_direct(relay_addr), &call_msg_bytes).expect("send listenMsg");
 
-    // Wait up to 3s for the channel to be captured from RelayResponse
+    // Wait long enough for relay-side send to include packet-transport ACK wait.
+    // Without retries implemented yet, send may pause for the ACK wait timeout.
     let start = Instant::now();
     let mut channel_received = false;
-    while start.elapsed() < Duration::from_secs(3) {
+    while start.elapsed() < Duration::from_secs(7) {
         if let Ok(guard) = captured_channel.lock() {
             if guard.is_some() {
                 channel_received = true;

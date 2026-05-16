@@ -8,17 +8,24 @@ use rust_comms::packet_transport::{
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 struct MockDtls {
     handle_message: Option<HandleMessage>,
     sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    auto_ack_on_send: bool,
 }
 
 impl MockDtls {
     fn new() -> Self {
+        Self::new_with_auto_ack(false)
+    }
+
+    fn new_with_auto_ack(auto_ack_on_send: bool) -> Self {
         Self {
             handle_message: None,
             sent_packets: Arc::new(Mutex::new(vec![])),
+            auto_ack_on_send,
         }
     }
 }
@@ -29,10 +36,21 @@ fn new_transport_with_sent_packets(
     DtlsReliablePacketTransport,
     Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
 ) {
+    new_transport_with_sent_packets_and_ack(mtu, true)
+}
+
+fn new_transport_with_sent_packets_and_ack(
+    mtu: usize,
+    auto_ack_on_send: bool,
+) -> (
+    DtlsReliablePacketTransport,
+    Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+) {
     let sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let dtls = MockDtls {
         handle_message: None,
         sent_packets: sent_packets.clone(),
+        auto_ack_on_send,
     };
     (
         DtlsReliablePacketTransport::new(Box::new(dtls), mtu),
@@ -57,6 +75,17 @@ impl Dtls for MockDtls {
             .lock()
             .expect("sent_packets lock should not be poisoned")
             .push((address, data.to_vec()));
+
+        if self.auto_ack_on_send && data.len() >= 4 {
+            let packet_type = data[0] & 0x0F;
+            if packet_type == 0x01 {
+                if let Some(handler) = self.handle_message.clone() {
+                    let ack_complete_packet = vec![0x14, 0x00, data[2], data[3]];
+                    handler(self, to, "mock-auto-ack", &ack_complete_packet);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -280,6 +309,76 @@ pub fn send_rejects_payload_that_requires_fragmentation() {
         .send(&to, b"12345")
         .expect_err("payload larger than mtu-4 should fail until fragmentation is implemented");
     assert!(err.contains("exceeds DATA_SINGLE capacity"));
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_waits_for_ack_complete_before_returning() {
+    let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    transport.set_ack_wait_timeout(Duration::from_millis(300));
+
+    let transport = Arc::new(transport);
+    let to_addr: SocketAddr = "127.0.0.1:7005".parse().expect("valid socket address");
+    let to = NetworkEndpoint::new_direct(to_addr);
+
+    let transport_for_ack = transport.clone();
+    let ack_thread = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(80));
+        let from = NetworkEndpoint::new_direct(to_addr);
+        let ack_complete_packet = vec![0x14, 0x00, 0x00, 0x00];
+        let handled = transport_for_ack
+            .dispatch_handle_message(&from, "issuer-ack", &ack_complete_packet)
+            .expect("ACK_COMPLETE dispatch should succeed");
+        assert!(handled.is_none());
+    });
+
+    let started = Instant::now();
+    transport
+        .send(&to, b"hello")
+        .expect("send should succeed after ACK_COMPLETE arrives");
+    let elapsed = started.elapsed();
+
+    ack_thread
+        .join()
+        .expect("ack thread should complete without panic");
+
+    assert!(
+        elapsed >= Duration::from_millis(60),
+        "send should wait for ACK_COMPLETE before returning; elapsed={elapsed:?}"
+    );
+
+    let packets = sent_packets
+        .lock()
+        .expect("sent_packets lock should not be poisoned");
+    assert_eq!(packets.len(), 1);
+    assert_eq!(packets[0].0, to_addr);
+    assert_eq!(packets[0].1, vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']);
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_waits_for_ack_complete_timeout_and_then_continues() {
+    let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    transport.set_ack_wait_timeout(Duration::from_millis(25));
+
+    let to_addr: SocketAddr = "127.0.0.1:7006".parse().expect("valid socket address");
+    let to = NetworkEndpoint::new_direct(to_addr);
+
+    let started = Instant::now();
+    transport
+        .send(&to, b"hello")
+        .expect("send should continue after waiting for ACK_COMPLETE timeout");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed >= Duration::from_millis(20),
+        "send should wait approximately for timeout; elapsed={elapsed:?}"
+    );
+
+    let packets = sent_packets
+        .lock()
+        .expect("sent_packets lock should not be poisoned");
+    assert_eq!(packets.len(), 1);
+    assert_eq!(packets[0].0, to_addr);
+    assert_eq!(packets[0].1, vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']);
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
