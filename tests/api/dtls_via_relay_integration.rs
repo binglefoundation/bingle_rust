@@ -97,6 +97,13 @@ pub fn dtls_send_via_relay_end_to_end() {
         dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
     };
     let relay_api = BingleApiImpl::new(&relay_opts);
+    relay_api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
+        if user_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some("mock-dtls-peer".to_string()))
+        }
+    }));
     relay_api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");
     if !test_util::wait_for_relay_available(&relay_api, Duration::from_secs(30)) {
         panic!("relay did not become Available within 30s");

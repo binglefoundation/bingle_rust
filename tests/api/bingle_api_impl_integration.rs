@@ -111,6 +111,13 @@ pub mod pki;
 
     // Build BingleApiImpl client
     let api = BingleApiImpl::new(&StartOptions::default());
+    api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
+        if user_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Handle::from("mock-server-handle")))
+        }
+    }));
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain };
     let start_result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
