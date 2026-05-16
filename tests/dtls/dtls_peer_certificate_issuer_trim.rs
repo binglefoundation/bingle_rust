@@ -16,7 +16,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     use openssl::hash::MessageDigest;
     use openssl::nid::Nid;
     use openssl::pkey::{PKey, Private};
-    use openssl::rsa::Rsa;
+    use openssl::x509::extension::{BasicConstraints, KeyUsage};
     use openssl::x509::{X509NameBuilder, X509};
 
     init_test_logging();
@@ -38,13 +38,18 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let na = Asn1Time::days_from_now(365).expect("na");
     ca_builder.set_not_before(&nb).expect("set nb");
     ca_builder.set_not_after(&na).expect("set na");
+    let bc = BasicConstraints::new().critical().ca().build().expect("bc");
+    ca_builder.append_extension(bc).expect("append bc");
+    let ku = KeyUsage::new().critical().key_cert_sign().crl_sign().build().expect("ku");
+    ca_builder.append_extension(ku).expect("append ku");
     ca_builder.sign(&ca_pkey, MessageDigest::null()).expect("sign ca");
     let ca_cert = ca_builder.build();
     let ca_pem = ca_cert.to_pem().expect("ca pem");
 
-    // Server key (RSA-2048) + cert signed by CA
-    let server_rsa = Rsa::generate(2048).expect("rsa gen");
-    let server_key = PKey::from_rsa(server_rsa).expect("pkey from rsa");
+    // Server key (EC P-256) + cert signed by CA
+    let group = openssl::ec::EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).expect("ec group");
+    let server_ec = openssl::ec::EcKey::generate(&group).expect("ec gen");
+    let server_key = PKey::from_ec_key(server_ec).expect("pkey from ec");
     let mut server_name_b = X509NameBuilder::new().expect("srv name builder");
     server_name_b.append_entry_by_nid(Nid::COMMONNAME, "server.").expect("srv cn");
     let server_name = server_name_b.build();
@@ -59,13 +64,17 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     server_b.set_pubkey(&server_key).expect("set pubkey");
     server_b.set_not_before(&nb).expect("set nb");
     server_b.set_not_after(&na).expect("set na");
+    let bc = BasicConstraints::new().critical().build().expect("bc");
+    server_b.append_extension(bc).expect("append bc");
+    let ku = KeyUsage::new().digital_signature().build().expect("ku");
+    server_b.append_extension(ku).expect("append ku");
     server_b.sign(&ca_pkey, MessageDigest::null()).expect("sign srv");
     let server_cert_pem = server_b.build().to_pem().expect("srv pem");
     let server_key_pem = server_key.private_key_to_pem_pkcs8().expect("srv key pem");
 
-    // Client key (RSA-2048) + cert signed by CA, subject CN ends with ISSUER_SUFFIX
-    let client_rsa = Rsa::generate(2048).expect("rsa gen");
-    let client_key = PKey::from_rsa(client_rsa).expect("pkey from rsa");
+    // Client key (EC P-256) + cert signed by CA, subject CN ends with ISSUER_SUFFIX
+    let client_ec = openssl::ec::EcKey::generate(&group).expect("ec gen");
+    let client_key = PKey::from_ec_key(client_ec).expect("pkey from ec");
     let id_without_suffix = "user";
     let client_cn = format!("{}{}", id_without_suffix, ISSUER_SUFFIX);
     let mut client_name_b = X509NameBuilder::new().expect("cli name builder");
@@ -82,6 +91,10 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     client_b.set_pubkey(&client_key).expect("set pubkey");
     client_b.set_not_before(&nb).expect("set nb");
     client_b.set_not_after(&na).expect("set na");
+    let bc = BasicConstraints::new().critical().build().expect("bc");
+    client_b.append_extension(bc).expect("append bc");
+    let ku = KeyUsage::new().digital_signature().build().expect("ku");
+    client_b.append_extension(ku).expect("append ku");
     client_b.sign(&ca_pkey, MessageDigest::null()).expect("sign client");
     let client_cert_pem = client_b.build().to_pem().expect("cli pem");
     let client_key_pem = client_key.private_key_to_pem_pkcs8().expect("cli key pem");
@@ -93,6 +106,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let (seen_flag, seen_issuer): (Arc<AtomicBool>, Arc<OnceLock<String>>) = (Arc::new(AtomicBool::new(false)), Arc::new(OnceLock::new()));
 
     let mut server = DtlsOpenSsl::new("server".to_string())
+        .with_dangerous_debug(true)
         .with_null_encryption()
         .with_handle_peer_certificate(rust_comms::protocol::cert_verify::peer_certificate_handler())
         .with_server_signing_cert(server_cert_pem.clone())
@@ -115,6 +129,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let cmux = std::sync::Arc::new(cmux0);
     cmux.start().expect("cmux start");
     let mut client = DtlsOpenSsl::new("client".to_string())
+        .with_dangerous_debug(true)
         .with_null_encryption()
         .with_handle_peer_certificate(rust_comms::protocol::cert_verify::peer_certificate_handler())
         .with_client_cert(client_cert_pem.clone())

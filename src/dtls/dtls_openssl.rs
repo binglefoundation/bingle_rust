@@ -3,7 +3,7 @@ use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result
 pub mod openssl_impl {
     use super::*;
     use crate::themes;
-    use crate::{info_theme, warn_theme, debug_theme};
+
     use crate::dtls::network_mux_trait::NetworkMux;
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]
@@ -334,14 +334,14 @@ pub mod openssl_impl {
 
     // trace at ERROR level when using these
     #[inline]
-    fn configure_dtls12_connector(builder: &mut SslConnectorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
+    pub fn configure_dtls12_connector(builder: &mut SslConnectorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
         if dangerous_debug {
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
             builder.set_keylog_callback(keylog_callback("client", handle));
             // Lower security level to avoid strict policy rejections in test envs
             builder.set_security_level(0);
         }
-        builder.set_options(SslOptions::NO_DTLSV1);
+        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("client: set_min_proto_version failed: {}", e))?;
@@ -353,14 +353,14 @@ pub mod openssl_impl {
     }
 
     #[inline]
-    fn configure_dtls12_acceptor(builder: &mut SslAcceptorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
+    pub fn configure_dtls12_acceptor(builder: &mut SslAcceptorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
         if dangerous_debug {
             // Lower security level to avoid strict policy rejections in test envs
             builder.set_security_level(0);
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
             builder.set_keylog_callback(keylog_callback("server", handle));
         }
-        builder.set_options(SslOptions::NO_DTLSV1);
+        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION);
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("server: set_min_proto_version failed: {}", e))?;
@@ -668,7 +668,9 @@ pub mod openssl_impl {
         fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
         fn with_app_layer_only_verification(self, _enabled: bool) -> Self { self }
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
-        fn with_dangerous_debug(self, _enabled: bool) -> Self { self }
+        fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+        fn set_null_encryption(&mut self, _enabled: bool) {}
+        fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             let key = to
                 .get_key()
@@ -1573,6 +1575,23 @@ pub mod openssl_impl {
                 tracing::error!("[DtlsOpenSsl] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
             }
             self.dangerous_debug = enabled;
+            self
+        }
+
+        fn set_null_encryption(&mut self, enabled: bool) {
+            if self.dangerous_debug {
+                self.null_encryption = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+            }
+        }
+
+        fn with_null_encryption(mut self, enabled: bool) -> Self {
+            if self.dangerous_debug {
+                self.null_encryption = enabled;
+            } else if enabled {
+                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+            }
             self
         }
     }

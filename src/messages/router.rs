@@ -188,7 +188,7 @@ impl Router {
                                 MutexMessage::Release(rel) => api.mutex_handle_release(from.id.clone(), rel.clone()),
                             }
                         },
-            Message::Unknown(v) => handler.on_unknown(api.clone(), v),
+            Message::Unknown(v) => handler.on_unknown(api.clone(), &from, v),
         }
     }
 

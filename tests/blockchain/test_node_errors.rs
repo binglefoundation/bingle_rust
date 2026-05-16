@@ -1,8 +1,11 @@
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use rust_comms::blockchain::error::{AlgoError, AlgoErrorKind};
+use crate::engine::ddb_upsert::test_util::init_test_logging;
 
 #[tokio::test]
 async fn test_node_unreachable() {
+    init_test_logging();
+    
     let mut config = AlgoChainConfig::default();
     // Use an unreachable address
     config.client_api_url = "http://localhost".to_string();

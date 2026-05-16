@@ -135,4 +135,18 @@ pub trait Dtls {
     fn with_dangerous_debug(self, enabled: bool) -> Self
     where
         Self: Sized;
+
+    /**
+     * Set the null encryption mode
+     * This enables NULL cipher suites for DTLS handshakes (no encryption).
+     * Only effective if dangerous_debug is also enabled.
+     */
+    fn set_null_encryption(&mut self, enabled: bool);
+
+    /**
+     * Fluently set the null encryption mode
+     */
+    fn with_null_encryption(self, enabled: bool) -> Self
+    where
+        Self: Sized;
 }

@@ -1,6 +1,5 @@
 use crate::api::bingle_api::NetworkEndpoint;
 use crate::themes;
-use crate::{info_theme, warn_theme};
 use crate::turn::turn_handler::{TurnHandler, TurnRelayHandler, TurnMessageWithAddress, WrappedMessageWithNetworkEndpoint};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};

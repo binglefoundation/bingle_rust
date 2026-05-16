@@ -106,14 +106,15 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
     ) -> Result<(X509, PKey<openssl::pkey::Private>), String> {
         use openssl::asn1::Asn1Time;
         use openssl::bn::BigNum;
+        use openssl::ec::{EcGroup, EcKey};
         use openssl::hash::MessageDigest;
         use openssl::nid::Nid;
-        use openssl::rsa::Rsa;
         use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier};
         use openssl::x509::{X509NameBuilder, X509};
-        // Generate RSA 2048 private key
-        let rsa = Rsa::generate(2048).map_err(|e| format!("rsa gen: {}", e))?;
-        let pkey = PKey::from_rsa(rsa).map_err(|e| format!("pkey from rsa: {}", e))?;
+        // Generate EC (P-256) private key
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).map_err(|e| format!("ec group: {}", e))?;
+        let ec_key = EcKey::generate(&group).map_err(|e| format!("ec key gen: {}", e))?;
+        let pkey = PKey::from_ec_key(ec_key).map_err(|e| format!("pkey from ec: {}", e))?;
         // Subject name
         let mut nb = X509NameBuilder::new().map_err(|e| format!("name builder: {}", e))?;
         nb.append_entry_by_nid(Nid::COMMONNAME, cn)
@@ -139,7 +140,7 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
         b.set_not_after(&na2).map_err(|e| format!("na set: {}", e))?;
         let bc = BasicConstraints::new().critical().build().map_err(|e| format!("bc: {}", e))?;
         b.append_extension(bc).map_err(|e| format!("append bc: {}", e))?;
-        let ku = KeyUsage::new().digital_signature().key_encipherment().build().map_err(|e| format!("ku: {}", e))?;
+        let ku = KeyUsage::new().digital_signature().build().map_err(|e| format!("ku: {}", e))?;
         b.append_extension(ku).map_err(|e| format!("append ku: {}", e))?;
         let eku = ExtendedKeyUsage::new()
             .server_auth()

@@ -102,12 +102,12 @@ The DTLS protocol uses the Algorand blockchain to facilitate a serverless PKI.
 Each `id` is a registered Algorand address which is opted in to the Bingle DAPP.
 The DTLS implementation MUST check that the `id` is opted in to the Bingle DAPP and has a `Handle` field in local storage.
 
-The CA certificate is specific to the source node and has the `id` stored in the issuer CN
-(in the format \<address\>.ids.bingle.home.arpa).
+The end-entity certificate has the `id` stored in the subject CN with a suffix of "." 
+(e.g. \<address\>.). This minimal suffix is used because the 58-character Algorand address plus a standard URI suffix would exceed the 64-character limit for X.509 Common Name fields.
 
 The CA certificate is signed using the Algorand (ed25519) private key, ensuring that only the owner of the `id` can sign.
 
-Server and client certificates use the `RSASSA-PSS` algorithm with a 2048 bit key and a SHA-512 hash.
+Server and client certificates use the EC (NIST P-256) algorithm for signing, and the DTLS protocol uses ECDHE for key exchange.
 They are signed by the CA private key. Their private keys are generated for each connection and deleted afterwards.
 
 This process enables secure message delivery between DTLS endpoints with encryption and identity verification.

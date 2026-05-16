@@ -11,14 +11,14 @@ UX:
 security:
 - ensure protocol is built as documented, changes as follows:
 *   ~~Update spec to match correct message changes~~
-*   Update spec for issuer suffix of "."
-*   **DTLS Identity Validation**:
-*   **Spec**: Explicitly requires that the DTLS implementation "MUST check that the `id` is opted in to the Bingle DAPP and has a `Handle` field in local storage."
-*   **Code**: The `peer_certificate_handler` in `src/protocol/cert_verify.rs` only verifies the certificate signature and CN/OrganizationName alignment. It does not perform any blockchain-based opt-in or handle verification.
-*   Implement a check on incoming messages (in the Engine) to validate the id, look it up in blockchain local storage and retrieve/check the handle.
-*   **Certificate Algorithms**: Analyse further should be Ed25519 on CA key, RSA on server/client keys.
-    *   **Spec**: States that server and client certificates use the `RSASSA-PSS` algorithm with a 2048-bit key.
-    *   **Code**: Uses RSA 2048-bit keys, but since they are signed by an Ed25519 CA key, the signatures on the certificates are Ed25519, not `RSASSA-PSS`.
+*   ~~Update spec for issuer suffix of "."~~
+*   ~~**DTLS Identity Validation**:~~
+*   ~~**Spec**: Explicitly requires that the DTLS implementation "MUST check that the `id` is opted in to the Bingle DAPP and has a `Handle` field in local storage."~~
+*   ~~**Code**: The `peer_certificate_handler` in `src/protocol/cert_verify.rs` only verifies the certificate signature and CN/OrganizationName alignment. It does not perform any blockchain-based opt-in or handle verification.~~
+*   ~~Implement a check on incoming messages (in the Engine) to validate the id, look it up in blockchain local storage and retrieve/check the handle.~~
+*   ~~**Certificate Algorithms**: Ed25519 on CA key, EC (P-256) for signing and ECDHE for protocol on server/client keys.~~
+    *   ~~**Spec**: Updated to reflect EC (NIST P-256).~~
+    *   ~~**Code**: Updated to use EC (P-256).~~
 -*   **`DdbDumpResolve` vs. `DdbDumpResolveResponse`**: Resolve the following
     *   **Spec**: The description for `DdbInitResolve` says it is followed by `DdbDumpResolveResponse` messages.
     *   **Code**: The implementation in `src/ddb/mod.rs` sends `DdbDumpResolve` messages.
@@ -29,10 +29,22 @@ security:
 * ~~Network Partitioning Algorithm: fixed this inconsistency in the spec~~
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
-- ensure runs in live with full encryption - test encryption
-- test against known DTLS vulnerabilities
-- ensure endpoint is checked and fails on impersonation
+- ~~ensure runs in live with full encryption~~
+- ~~test encryption for entropy~~
+- ensure id is checked and fails on impersonation
 - add a cipher suite string to messages with DTLS cipher suite
+- ~~TLS1.2 vuln tests:~~
+  ~~1. Protocol Downgrade Attacks~~
+  ~~2. Weak Cipher Suite Acceptance~~
+  ~~3. Weak Key Exchange and Small Keys~~
+  ~~4. Certificate Verification Vulnerabilities (Custom Handler)~~
+  ~~5. Padding Oracle Attacks (Lucky13)~~
+  ~~6. Compression-Related Attacks (CRIME)~~
+  ~~7. Insecure Randomness~~
+  ~~8. Insecure Renegotiation~~
+  ~~9. ROBOT (Return of Bleichenbacher's Oracle Threat)~~
+- ~~Ensure and test we have PFS via ECDHE~~  
+- ~~Test for extended master secret support~~
 
 robustness:
 - fix error 40 on live device (?)

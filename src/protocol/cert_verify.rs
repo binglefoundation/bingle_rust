@@ -118,6 +118,26 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
                 return log_fail("CA certificate missing CN");
             }
         };
+
+        // Validate certificate expiration
+        let now = match openssl::asn1::Asn1Time::days_from_now(0) {
+            Ok(t) => t,
+            Err(e) => return log_fail(format!("failed to get current time for expiration check: {}", e)),
+        };
+
+        if ca.not_before() > now {
+            return log_fail(format!("CA certificate not yet valid (not_before={})", ca.not_before()));
+        }
+        if ca.not_after() < now {
+            return log_fail(format!("CA certificate expired (not_after={})", ca.not_after()));
+        }
+        if cert.not_before() > now {
+            return log_fail(format!("peer certificate not yet valid (not_before={})", cert.not_before()));
+        }
+        if cert.not_after() < now {
+            return log_fail(format!("peer certificate expired (not_after={})", cert.not_after()));
+        }
+
         // CA CN must be our virtual CA value
         if ca_cn != VIRTUAL_CA {
             return log_fail(format!("unexpected CA CN: '{}' (expected '{}')", ca_cn, VIRTUAL_CA));
@@ -139,6 +159,28 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 
         if !ca.verify(&ca_pub).unwrap_or(false) {
             return log_fail("CA self-signature verification failed".to_string());
+        }
+
+        // Validate Basic Constraints: CA must be true, EE must be false
+        // We use the presence of BasicConstraints extension to check the CA flag.
+        fn is_cert_ca(cert: &X509) -> bool {
+            // Search for the BasicConstraints extension and check if it contains "CA:TRUE".
+            if let Ok(exts) = cert.to_text() {
+                let text = String::from_utf8_lossy(&exts);
+                // Look for "CA:TRUE" or "CA:ALWAYS" in the text representation
+                // as a fallback if direct extension access is difficult.
+                text.contains("CA:TRUE") || text.contains("CA:ALWAYS")
+            } else {
+                false
+            }
+        }
+
+        if !is_cert_ca(&ca) {
+             return log_fail("CA certificate basic constraints: CA is false");
+        }
+
+        if is_cert_ca(&cert) {
+             return log_fail("end-entity certificate basic constraints: CA is true");
         }
 
         // Validate that end-entity certificate is issued by CA and signature verifies

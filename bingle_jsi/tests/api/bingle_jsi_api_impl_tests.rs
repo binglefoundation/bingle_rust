@@ -182,6 +182,7 @@ fn generate_keypair_succeeds() {
 }
 
 #[test]
+#[ignore] // needs localnet
 fn generate_keypair_changes_status_to_unfunded() {
     let api = init_with_local_helper();
     let _kp = api.generate_keypair().expect("generate_keypair should succeed");
@@ -356,6 +357,7 @@ fn start_fails_when_keypair_none() {
 }
 
 #[test]
+#[ignore] // Need localnet
 fn start_fails_when_keypair_unfunded() {
     let api = init_with_local_helper();
     let _kp = api.generate_keypair().expect("generate_keypair should succeed");

@@ -60,7 +60,7 @@ pub trait BingleLocalApi: Send + Sync {
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError>;
 
     /// Register the current keypair with Bingle (requires credited funds).
-    /// Returns Ok(true) on success, or Err(message) on failure.
+    /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:
     /// - handle: the user's unique handle to register on-chain
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError>;

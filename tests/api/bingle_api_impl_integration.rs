@@ -3,6 +3,7 @@ use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleA
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use crate::api::bingle_api_impl_integration::test_util::ADDRESS_SPEND;
+use crate::relay::relay_states::test_util::init_test_logging;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -55,6 +56,8 @@ pub mod pki;
     fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
         Ok(test_util::ADDRESS_SPEND.to_string())
     }
+
+    init_test_logging();
 
     #[allow(dead_code)]
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
@@ -109,6 +112,13 @@ pub mod pki;
 
     // Build BingleApiImpl client
     let api = BingleApiImpl::new(&StartOptions::default());
+    api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
+        if user_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Handle::from("mock-server-handle")))
+        }
+    }));
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain };
     let start_result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());

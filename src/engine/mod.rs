@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
-use crate::{info_theme, warn_theme, debug_theme};
+
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
@@ -574,6 +574,7 @@ impl Engine {
         self.packet_transport.dtls()
     }
 
+
     /// Test helper: Inject a custom DDB client.
     pub fn set_ddb_client_for_tests(&mut self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         self.ddb_client = ddb;
@@ -590,6 +591,10 @@ impl Engine {
         } else {
             None
         }
+    }
+
+    pub fn mux_for_tests(&self) -> Option<Arc<UdpNetworkMux>> {
+        self.mux.clone()
     }
 
     /// Test helper: simulate receiving a message from the network.
@@ -976,6 +981,14 @@ impl Engine {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || -> Result<Option<Vec<u8>>, String> {
+                    // Validate identity (opted in and has handle)
+                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                    let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
+                    if handle_opt.is_none() {
+                        tracing::warn!("[Engine::install_dtls_handler][cb] dropping message from unauthenticated id: {}", sender_id);
+                        return;
+                    }
+
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
