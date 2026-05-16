@@ -94,9 +94,10 @@ pub fn bingle_api_send_via_relay() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
         .with_handle_message(Arc::new(move |_server: &dyn Dtls, _from: &NetworkEndpoint, _issuer: &str, data: &[u8]| {
-            tracing::info!("Received message from B: {:?}", std::str::from_utf8(data));
+            let unwrapped = test_util::maybe_unwrap_data_single(data);
+            tracing::info!("Received message from B: {:?}", std::str::from_utf8(unwrapped));
             if let Ok(mut v) = rec_clone.lock() {
-                v.push(data.to_vec());
+                v.push(unwrapped.to_vec());
             } else {
                 panic!("received mutex poisoned");
             }
@@ -255,7 +256,7 @@ pub fn bingle_api_send_via_relay() {
     tracing::info!("Validating received message content");
     if let Ok(v) = received.lock() {
         if let Some(first) = v.first() {
-            if let Ok(txt) = std::str::from_utf8(first) {
+            if let Ok(txt) = std::str::from_utf8(test_util::maybe_unwrap_data_single(first)) {
                 let parsed: serde_json::Value = serde_json::from_str(txt).unwrap_or(serde_json::Value::Null);
                 assert_eq!(parsed.get("type").and_then(|s| s.as_str()), Some("HelloRelay"));
             } else {

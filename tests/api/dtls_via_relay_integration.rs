@@ -49,7 +49,9 @@ pub fn dtls_send_via_relay_end_to_end() {
         // App-layer verification keeps things simple for tests using custom PKI
         .with_app_layer_only_verification(true)
         .with_handle_message(Arc::new(move |_server, _from, _issuer, data| {
-            if let Ok(mut g) = received_clone.lock() { g.push(data.to_vec()); }
+            if let Ok(mut g) = received_clone.lock() {
+                g.push(test_util::maybe_unwrap_data_single(data).to_vec());
+            }
         }));
 
     // Add TURN handler to dtls_server for client mode (non-relay)
@@ -157,8 +159,9 @@ pub fn dtls_send_via_relay_end_to_end() {
         // App-layer verification keeps things simple for tests using custom PKI
         .with_app_layer_only_verification(true)
         .with_handle_message(Arc::new(move |_server, _from, issuer, data| {
-            tracing::info!("dtls_client received: {:?} on ${issuer}", data);
-            if let Ok(message) = serde_json::from_slice::<Message>(data) {
+            let unwrapped = test_util::maybe_unwrap_data_single(data);
+            tracing::info!("dtls_client received: {:?} on ${issuer}", unwrapped);
+            if let Ok(message) = serde_json::from_slice::<Message>(unwrapped) {
                 tracing::info!("Parsed message: {:?}", message);
                 if let Message::Relay(RelayMessage::RelayResponse(relay_response)) = message {
                     if let Some(channel) = relay_response.channel {

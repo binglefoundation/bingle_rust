@@ -72,7 +72,8 @@ pub mod pki;
 
     // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing tag
     fn server_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-        if let Ok(text) = std::str::from_utf8(data) {
+        let unwrapped = test_util::maybe_unwrap_data_single(data);
+        if let Ok(text) = std::str::from_utf8(unwrapped) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
                 let is_check = v.get("type").and_then(|x| x.as_str()) == Some("Check")
                     && v.get("app").map(|a| a.is_null()).unwrap_or(true);

@@ -26,7 +26,8 @@ impl Dtls for MockDtls {
     fn stop(&mut self) -> Result<()> { Ok(()) }
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()> {
         let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
-        let json: serde_json::Value = serde_json::from_slice(data).expect("valid json");
+        let json: serde_json::Value = serde_json::from_slice(test_util::maybe_unwrap_data_single(data))
+            .expect("valid json");
         self.sends.lock().unwrap().push((addr, "unknown".to_string(), json));
         Ok(())
     }

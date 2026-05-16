@@ -67,7 +67,10 @@ pub fn unit_send_message_to_network_calls_dtls_send() {
     let locked = sent_vec.lock().unwrap();
     assert_eq!(locked.len(), 1);
     assert_eq!(locked[0].0, addr);
-    assert_eq!(locked[0].1, serde_json::to_vec(&msg).unwrap());
+    assert_eq!(
+        test_util::maybe_unwrap_data_single(&locked[0].1),
+        serde_json::to_vec(&msg).unwrap().as_slice()
+    );
     assert!(progress_calls.lock().unwrap().iter().any(|(p, _)| *p == 100));
 }
 
