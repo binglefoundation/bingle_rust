@@ -90,7 +90,12 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
         fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
-    let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
+    let router = Arc::new(rust_comms::messages::router::Router::new(Arc::downgrade(&api)));
+    let from = rust_comms::messages::handlers::FromStruct {
+        id: "FROM".into(),
+        network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()),
+        router,
+    };
     handler.on_triangle_test1(api, &from, &t1);
 
     let records = mock.sent.lock().unwrap().clone();
@@ -144,7 +149,12 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
         fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
-    let from = rust_comms::messages::handlers::FromStruct { id: "FROM".into(), network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()) };
+    let router = Arc::new(rust_comms::messages::router::Router::new(Arc::downgrade(&api)));
+    let from = rust_comms::messages::handlers::FromStruct {
+        id: "FROM".into(),
+        network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()),
+        router,
+    };
     handler.on_triangle_test2(api, &from, &t2);
 
     let records = mock.sent.lock().unwrap().clone();

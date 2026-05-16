@@ -1,17 +1,11 @@
 use crate::messages::handlers::{MessageHandler, FromStruct};
 use crate::messages::types::*;
 
-use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError, NetworkEndpoint, UserId, Handle};
 use crate::engine::BingleAccess;
-
-// Thread-local current router used to avoid globals and isolate per-API state.
-thread_local! {
-    static CURRENT_ROUTER: RefCell<Option<Arc<Router>>> = RefCell::new(None);
-}
 
 #[derive(Default)]
 pub struct Router {
@@ -86,6 +80,16 @@ impl BingleApiInternal for LockingApiWrapper {
 
 
 impl Router {
+    /// Backward-compatible helper retained for tests; no TLS state is used.
+    pub fn with_current_router<R>(_router: Arc<Router>, f: impl FnOnce() -> R) -> R {
+        f()
+    }
+
+    /// Backward-compatible helper retained for tests; no TLS state is kept.
+    pub fn current() -> Option<Arc<Router>> {
+        None
+    }
+
     fn dispatch_message<H: MessageHandler + ?Sized>(handler: &H, api: Arc<dyn BingleApiBoth>, msg: &Message, from: &FromStruct) {
         match msg {
             Message::PlainText(pt) => handler.on_plain_text(api.clone(), from, pt),
@@ -143,12 +147,6 @@ impl Router {
         }
     }
 
-    pub fn with_current_router<R>(router: Arc<Router>, f: impl FnOnce() -> R) -> R {
-        let prev = CURRENT_ROUTER.with(|cell| cell.replace(Some(router)));
-        let out = f();
-        CURRENT_ROUTER.with(|cell| { let _ = cell.replace(prev); });
-        out
-    }
 
     pub fn set_sender(&self, cb: Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>) {
         if let Ok(mut g) = self.sender.lock() { *g = cb; }
@@ -182,7 +180,7 @@ impl Router {
     pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
     pub fn take_outbound_response(&self) -> Option<serde_json::Value> { match self.outbound_response.lock() { Ok(mut g) => g.take(), Err(_) => None } }
 
-    pub fn route_with_network<H>(&self, handler: H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint)
+    pub fn route_with_network<H>(self: &Arc<Self>, handler: H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint)
     where
         H: MessageHandler + Send + Sync + 'static,
     {
@@ -195,7 +193,11 @@ impl Router {
         let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
             api: Arc::downgrade(&api_base),
         });
-        let from = FromStruct { id: from_id.to_string(), network_source_key: from_ep.clone() };
+        let from = FromStruct {
+            id: from_id.to_string(),
+            network_source_key: from_ep.clone(),
+            router: self.clone(),
+        };
         let msg = msg.clone();
         if std::thread::Builder::new()
             .name("router-handler-thread".to_string())
@@ -208,7 +210,7 @@ impl Router {
         }
     }
 
-    pub fn route<H: MessageHandler + ?Sized>(&self, handler: &H, msg: &Message, from_id: &str) {
+    pub fn route<H: MessageHandler + ?Sized>(self: &Arc<Self>, handler: &H, msg: &Message, from_id: &str) {
         let nsk = if let Some(addr) = self.get_last_from() {
             NetworkEndpoint::new_direct(addr)
         } else {
@@ -223,7 +225,11 @@ impl Router {
         let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
             api: Arc::downgrade(&api_base),
         });
-        let from = FromStruct { id: from_id.to_string(), network_source_key: nsk };
+        let from = FromStruct {
+            id: from_id.to_string(),
+            network_source_key: nsk,
+            router: self.clone(),
+        };
         Self::dispatch_message(handler, api, msg, &from);
     }
 
@@ -238,8 +244,3 @@ impl Router {
     }
 }
 
-impl Router {
-    pub fn current() -> Option<Arc<Router>> {
-        CURRENT_ROUTER.with(|cell| cell.borrow().clone())
-    }
-}

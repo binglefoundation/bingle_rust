@@ -15,6 +15,7 @@ pub mod setup_localnet;
 pub mod test_util;
 
 #[cfg_attr(not(target_os = "ios"), test)]
+#[ignore] // needs localnet
 pub fn test_register_collision_same_block() {
     test_util::init_test_logging();
     skip_if_no_localnet!();
