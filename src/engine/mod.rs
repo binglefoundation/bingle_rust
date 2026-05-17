@@ -1029,7 +1029,16 @@ impl Engine {
                                                 wait.1.notify_all();
                                                 return; // consumed by waiter; do not forward
                                             }
+                                            else {
+                                                tracing::warn!("[Engine::install_dtls_handler][cb] could not lock response waiter");
+                                            }
                                         }
+                                        else {
+                                            tracing::warn!("[Engine::install_dtls_handler][cb] no waiter found for responseTag={}", tag_str);
+                                        }
+                                    }
+                                    else {
+                                        tracing::warn!("[Engine::install_dtls_handler][cb] pending_responses lock poisoned, ignoring response");
                                     }
                                 }
                             }
@@ -1043,21 +1052,6 @@ impl Engine {
                             Ok(msg) => {
                                 tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
                                 router_arc.route_with_network(DefaultPrintingHandler, &msg, issuer, &from);
-                                let mut outbound = None;
-                                for _ in 0..50 {
-                                    if let Some(out) = router_arc.take_outbound_response() {
-                                        outbound = Some(out);
-                                        break;
-                                    }
-                                    std::thread::sleep(Duration::from_millis(2));
-                                }
-                                if let Some(out) = outbound {
-                                    tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
-                                    let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
-                                    {
-                                        if let Err(e) = server.send(&from, &bytes) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
-                                    }
-                                }
                             }
                             Err(e) => {
                                 // Not valid JSON per our schema; treat as plaintext with raw bytes

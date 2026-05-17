@@ -91,6 +91,7 @@ impl Router {
     }
 
     fn dispatch_message<H: MessageHandler + ?Sized>(handler: &H, api: Arc<dyn BingleApiBoth>, msg: &Message, from: &FromStruct) {
+        tracing::info!("Router::dispatch_message: {:?}", msg);
         match msg {
             Message::PlainText(pt) => handler.on_plain_text(api.clone(), from, pt),
             Message::Relay(r) => match r {
@@ -132,6 +133,7 @@ impl Router {
             }
             Message::Unknown(v) => handler.on_unknown(api.clone(), from, v),
         }
+        tracing::info!("Router::dispatch_message done: {:?}", msg);
     }
 
     pub fn new(api: crate::api::bingle_api::BingleApiBothType) -> Self {
@@ -180,16 +182,47 @@ impl Router {
     pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
     pub fn take_outbound_response(&self) -> Option<serde_json::Value> { match self.outbound_response.lock() { Ok(mut g) => g.take(), Err(_) => None } }
 
+    fn send_outbound_response(&self, from: &FromStruct, outbound: serde_json::Value) {
+        if let Some(sender) = self.get_sender() {
+            if !sender(&from.network_source_key, &from.id, outbound.clone()) {
+                tracing::warn!(
+                    "[router::send_outbound_response] sender callback returned false for {}",
+                    from.id
+                );
+            }
+            return;
+        }
+
+        if let Some(api) = self.get_bingle_api() {
+            match api.send_message_to_network(&from.network_source_key, &from.id, outbound, None) {
+                Ok(true) => {}
+                Ok(false) => tracing::warn!(
+                    "[router::send_outbound_response] api send returned false for {}",
+                    from.id
+                ),
+                Err(e) => tracing::warn!(
+                    "[router::send_outbound_response] api send failed for {}: {}",
+                    from.id,
+                    e
+                ),
+            }
+            return;
+        }
+
+        tracing::warn!(
+            "[router::send_outbound_response] no sender and no api available for {}",
+            from.id
+        );
+    }
+
     pub fn route_with_network<H>(self: &Arc<Self>, handler: H, msg: &Message, from_id: &str, from_ep: &NetworkEndpoint)
     where
         H: MessageHandler + Send + Sync + 'static,
     {
-        let api_opt = self.get_bingle_api();
-        if api_opt.is_none() {
+        let Some(api_base) = self.get_bingle_api() else {
             tracing::warn!("[router::route_with_network] No BingleApi available to pass to handler");
             return;
-        }
-        let api_base = api_opt.unwrap();
+        };
         let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
             api: Arc::downgrade(&api_base),
         });
@@ -199,15 +232,25 @@ impl Router {
             router: self.clone(),
         };
         let msg = msg.clone();
+        let msg2 = msg.clone();
+        tracing::info!("[router::route_with_network] spawn handler thread to route message: {:?}", msg);
         if std::thread::Builder::new()
             .name("router-handler-thread".to_string())
             .spawn(move || {
+                from.router.set_outbound_response(None);
                 Self::dispatch_message(&handler, api, &msg, &from);
+                if let Some(outbound) = from.router.take_outbound_response() {
+                    tracing::info!("[router::route_with_network] sending outbound response: {:?}", outbound);
+                    let outbound2 = outbound.clone();
+                    from.router.send_outbound_response(&from, outbound);
+                    tracing::info!("[router::route_with_network] sent outbound response: {:?}", outbound2);
+                }
             })
             .is_err()
         {
             tracing::warn!("[router::route_with_network] failed to spawn background handler thread");
         }
+        tracing::info!("[router::route_with_network] handler thread spawned for message: {:?}", msg2);
     }
 
     pub fn route<H: MessageHandler + ?Sized>(self: &Arc<Self>, handler: &H, msg: &Message, from_id: &str) {
@@ -216,12 +259,10 @@ impl Router {
         } else {
             NetworkEndpoint::new_direct("0.0.0.0:0".parse().unwrap())
         };
-        let api_opt = self.get_bingle_api();
-        if api_opt.is_none() {
+        let Some(api_base) = self.get_bingle_api() else {
             tracing::warn!("[router::route] No BingleApi available to pass to handler");
             return;
-        }
-        let api_base = api_opt.unwrap();
+        };
         let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
             api: Arc::downgrade(&api_base),
         });

@@ -672,6 +672,7 @@ pub mod openssl_impl {
         fn set_null_encryption(&mut self, _enabled: bool) {}
         fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
+            tracing::debug!("[Dtls for PeerAdapter][send] {}", to);
             let key = to
                 .get_key()
                 .expect("PeerAdapter::send requires a NetworkEndpointKey (inet_socket_address or relay_id)");
