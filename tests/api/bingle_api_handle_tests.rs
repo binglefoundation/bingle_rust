@@ -112,7 +112,10 @@ fn test_send_message_to_handle_success() {
     let locked_sends = sends.lock().unwrap();
     assert_eq!(locked_sends.len(), 1);
     assert_eq!(locked_sends[0].0, dest_addr);
-    assert_eq!(locked_sends[0].1, serde_json::to_vec(&msg).unwrap());
+    assert_eq!(
+        test_util::maybe_unwrap_data_single(&locked_sends[0].1),
+        serde_json::to_vec(&msg).unwrap().as_slice()
+    );
 }
 
 #[test]
@@ -176,7 +179,10 @@ fn test_send_message_to_handle_with_response_success() {
             {
                 let sends_vec = sends_clone.lock().unwrap();
                 if sends_vec.len() == 1 {
-                    let sent_msg: serde_json::Value = serde_json::from_slice(&sends_vec[0].1).unwrap();
+                    let sent_msg: serde_json::Value = serde_json::from_slice(
+                        test_util::maybe_unwrap_data_single(&sends_vec[0].1),
+                    )
+                    .unwrap();
                     if let Some(tag_str) = sent_msg.get("tag").and_then(|t| t.as_str()) {
                         assert!(sent_msg.get("responseTag").is_none(), "request should not use responseTag");
                         let tag = uuid::Uuid::parse_str(tag_str).unwrap();

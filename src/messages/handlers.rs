@@ -3,7 +3,7 @@ use crate::relay::relay_finder::RelayFinderTrait;
 use crate::engine::BingleAccessUnsafeForTests;
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
-use tracing::warn;
+use tracing::{error, warn};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -193,7 +193,7 @@ pub trait MessageHandler {
             let ok = sender(&nsk, &called_id_raw, json_val);
             if !ok { warn!("[handlers::on_relay_call] sender returned false when sending RelayCalled"); }
         } else {
-            warn!("[handlers::on_relay_call] No sender available to notify called node");
+            error!("[handlers::on_relay_call] No sender available to notify called node");
         }
 
         // Build RelayResponse { app: null, channel }

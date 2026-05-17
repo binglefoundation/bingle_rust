@@ -1,5 +1,5 @@
 use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions, UserId};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
@@ -94,9 +94,10 @@ pub fn bingle_api_send_via_relay() {
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
         .with_handle_message(Arc::new(move |_server: &dyn Dtls, _from: &NetworkEndpoint, _issuer: &str, data: &[u8]| {
-            tracing::info!("Received message from B: {:?}", std::str::from_utf8(data));
+            let unwrapped = test_util::maybe_unwrap_data_single(data);
+            tracing::info!("Received message from B: {:?}", std::str::from_utf8(unwrapped));
             if let Ok(mut v) = rec_clone.lock() {
-                v.push(data.to_vec());
+                v.push(unwrapped.to_vec());
             } else {
                 panic!("received mutex poisoned");
             }
@@ -167,6 +168,12 @@ pub fn bingle_api_send_via_relay() {
     let mock_internal = Arc::new(MockInternal { turn: turn.clone() });
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_internal_override(mock_internal))));
     router.set_am_relay(true);
+    let captured_relay_called: Arc<Mutex<Option<(NetworkEndpoint, String, serde_json::Value)>>> = Arc::new(Mutex::new(None));
+    let captured_relay_called_clone = captured_relay_called.clone();
+    router.set_sender(Some(Arc::new(move |nsk: &NetworkEndpoint, uid: &UserId, json: serde_json::Value| {
+        *captured_relay_called_clone.lock().expect("capture relay called") = Some((nsk.clone(), uid.to_string(), json.clone()));
+        true
+    })));
     let handler = DefaultPrintingHandler;
 
     // 3) B sends RelayListen to the relay to register its id -> address mapping
@@ -177,6 +184,15 @@ pub fn bingle_api_send_via_relay() {
         router.route(&handler, &listen_msg, b_id);
     });
     assert_eq!(turn.lookup_addr_by_id(b_id), Some(b_addr));
+    let listen_out = router
+        .take_outbound_response()
+        .expect("ListenResponse present");
+    assert_eq!(
+        listen_out
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str()),
+        Some("ListenResponse")
+    );
 
     tracing::info!("Relay sending RelayListenResponse to B");
     let resp = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None }));
@@ -215,6 +231,15 @@ pub fn bingle_api_send_via_relay() {
     });
     let out = router.take_outbound_response().expect("RelayResponse present");
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
+    let relay_called = captured_relay_called
+        .lock()
+        .expect("relay called lock")
+        .clone()
+        .expect("RelayCalled should be sent to called id");
+    assert_eq!(relay_called.0, NetworkEndpoint::new_direct(b_addr));
+    assert_eq!(relay_called.1, b_id);
+    assert_eq!(relay_called.2.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("RelayCalled"));
+    assert_eq!(relay_called.2.get("channel").and_then(|v: &serde_json::Value| v.as_u64()), Some(ch as u64));
 
     tracing::info!("Node A faking handle_call_response for relay channel");
     let turn_client_a = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_turn_client_handler_for_tests());
@@ -255,7 +280,7 @@ pub fn bingle_api_send_via_relay() {
     tracing::info!("Validating received message content");
     if let Ok(v) = received.lock() {
         if let Some(first) = v.first() {
-            if let Ok(txt) = std::str::from_utf8(first) {
+            if let Ok(txt) = std::str::from_utf8(test_util::maybe_unwrap_data_single(first)) {
                 let parsed: serde_json::Value = serde_json::from_str(txt).unwrap_or(serde_json::Value::Null);
                 assert_eq!(parsed.get("type").and_then(|s| s.as_str()), Some("HelloRelay"));
             } else {

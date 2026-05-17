@@ -109,6 +109,19 @@ pub fn find_unused_loopback_port() -> u16 {
     port
 }
 
+#[allow(dead_code)]
+pub fn maybe_unwrap_data_single(packet: &[u8]) -> &[u8] {
+    if packet.len() >= 4 {
+        let version = packet[0] >> 4;
+        let packet_type = packet[0] & 0x0F;
+        if version == 1 && packet_type == 1 {
+            return &packet[4..];
+        }
+    }
+
+    packet
+}
+
 // Helper: print current working directory for debugging path issues in tests
 #[allow(dead_code)]
 pub fn print_cwd_for_debug() {

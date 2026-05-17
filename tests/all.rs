@@ -12,6 +12,7 @@ pub mod blockchain;
 pub mod dtls;
 pub mod engine;
 pub mod protocol;
+pub mod packet_transport;
 pub mod relay;
 pub mod stun;
 pub mod cli;
