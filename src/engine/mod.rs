@@ -1074,7 +1074,7 @@ impl Engine {
                     }
                 };
 
-                work();
+                work()
             })));
         Ok(())
     }
