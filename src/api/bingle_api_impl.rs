@@ -734,16 +734,17 @@ impl BingleApi for BingleApiImpl {
             (tag, eng.pending_responses_arc())
         });
 
-        // Ensure message has the responseTag field
+        // Ensure outbound request has a correlation tag (responses must echo this as responseTag)
         let msg_with_tag = match message {
             JsonValue::Object(mut m) => {
-                m.insert("responseTag".to_string(), JsonValue::String(tag.to_string()));
+                m.remove("responseTag");
+                m.insert("tag".to_string(), JsonValue::String(tag.to_string()));
                 JsonValue::Object(m)
             }
             other => {
                 let mut m = JsonMap::new();
                 m.insert("payload".to_string(), other);
-                m.insert("responseTag".to_string(), JsonValue::String(tag.to_string()));
+                m.insert("tag".to_string(), JsonValue::String(tag.to_string()));
                 JsonValue::Object(m)
             }
         };

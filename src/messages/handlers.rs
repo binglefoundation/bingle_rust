@@ -408,7 +408,10 @@ impl MessageHandler for DefaultPrintingHandler {
         let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
 
         // Invoke backend handle_init: snapshot and send InitResponse + DumpResolve per record.
-        backend.handle_init(&nsk, &user_id, msg.response_tag.clone(), &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
+        let response_tag = router
+            .get_last_response_tag()
+            .or(msg.response_tag.clone());
+        backend.handle_init(&nsk, &user_id, response_tag, &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
     }
 
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, up: &DdbUpsertResolve) {
@@ -418,6 +421,10 @@ impl MessageHandler for DefaultPrintingHandler {
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if up.record.id != up.start_id { return; }
         if !up.rippled && up.record.id != sender_id { return; }
+        if up.tag.is_none() {
+            tracing::error!("[handlers::on_ddb_upsert_resolve] No responseTag in DdbUpsertResolve {:?}", up);
+            return;
+        }
         // Upsert to backend
         if let Some(backend) = router.get_ddb_backend() {
             if let Ok(mut b) = backend.lock()
@@ -444,9 +451,11 @@ impl MessageHandler for DefaultPrintingHandler {
             }
 
             // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+            let response_tag = up.tag.clone();
+
             let resp = crate::messages::types::Message::Ddb(
                 crate::messages::types::DdbMessage::UpdateResponse(
-                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
+                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag, text: None, data: None }
                 )
             );
             let json = crate::messages::marshal::to_json_value(&resp);
@@ -467,9 +476,12 @@ impl MessageHandler for DefaultPrintingHandler {
         }
 
         // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+        let response_tag = router
+            .get_last_response_tag()
+            .or(msg.response_tag.clone());
         let resp = crate::messages::types::Message::Ddb(
             crate::messages::types::DdbMessage::UpdateResponse(
-                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: msg.response_tag.clone(), text: None, data: None }
+                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -495,9 +507,12 @@ impl MessageHandler for DefaultPrintingHandler {
         let (found, advert_opt) = if let Some(backend) = router.get_ddb_backend() {
             if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
         } else { (false, None) };
+        let response_tag = router
+            .get_last_response_tag()
+            .or(q.response_tag.clone());
         let resp = crate::messages::types::Message::Ddb(
             crate::messages::types::DdbMessage::QueryResponse(
-                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag: q.response_tag.clone(), text: None, data: None }
+                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
