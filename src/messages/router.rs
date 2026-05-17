@@ -1,6 +1,7 @@
 use crate::messages::handlers::{MessageHandler, FromStruct};
 use crate::messages::types::*;
 
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -17,8 +18,8 @@ pub struct Router {
     // DDB/relay context
     am_relay: std::sync::atomic::AtomicBool,
     ddb_backend: Mutex<Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>>,
-    // Outbound response produced by handlers during routing (consumed by Engine/DTLS layer)
-    outbound_response: Mutex<Option<serde_json::Value>>,
+    // Outbound responses produced by handlers during routing.
+    outbound_responses: Mutex<VecDeque<serde_json::Value>>,
 }
 
 struct LockingApiWrapper {
@@ -145,7 +146,7 @@ impl Router {
             on_message: Mutex::new(None),
             am_relay: std::sync::atomic::AtomicBool::new(false),
             ddb_backend: Mutex::new(None),
-            outbound_response: Mutex::new(None),
+            outbound_responses: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -179,8 +180,21 @@ impl Router {
     pub fn set_ddb_backend(&self, backend: Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
     pub fn get_ddb_backend(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
-    pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) { if let Ok(mut g) = self.outbound_response.lock() { *g = resp; } }
-    pub fn take_outbound_response(&self) -> Option<serde_json::Value> { match self.outbound_response.lock() { Ok(mut g) => g.take(), Err(_) => None } }
+    pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) {
+        if let Ok(mut g) = self.outbound_responses.lock() {
+            if let Some(resp_json) = resp {
+                g.push_back(resp_json);
+            } //else {
+             //   g.clear();
+            //}
+        }
+    }
+    pub fn take_outbound_response(&self) -> Option<serde_json::Value> {
+        match self.outbound_responses.lock() {
+            Ok(mut g) => g.pop_front(),
+            Err(_) => None,
+        }
+    }
 
     fn send_outbound_response(&self, from: &FromStruct, outbound: serde_json::Value) {
         if let Some(sender) = self.get_sender() {
@@ -239,7 +253,7 @@ impl Router {
             .spawn(move || {
                 from.router.set_outbound_response(None);
                 Self::dispatch_message(&handler, api, &msg, &from);
-                if let Some(outbound) = from.router.take_outbound_response() {
+                while let Some(outbound) = from.router.take_outbound_response() {
                     tracing::info!("[router::route_with_network] sending outbound response: {:?}", outbound);
                     let outbound2 = outbound.clone();
                     from.router.send_outbound_response(&from, outbound);
@@ -254,6 +268,7 @@ impl Router {
     }
 
     pub fn route<H: MessageHandler + ?Sized>(self: &Arc<Self>, handler: &H, msg: &Message, from_id: &str) {
+        self.set_outbound_response(None);
         let nsk = if let Some(addr) = self.get_last_from() {
             NetworkEndpoint::new_direct(addr)
         } else {
@@ -282,6 +297,7 @@ impl Router {
         self.set_on_message(None);
         self.set_am_relay(false);
         self.set_ddb_backend(None);
+        self.set_outbound_response(None);
     }
 }
 

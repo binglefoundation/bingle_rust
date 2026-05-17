@@ -177,7 +177,8 @@ fn test_send_message_to_handle_with_response_success() {
                 let sends_vec = sends_clone.lock().unwrap();
                 if sends_vec.len() == 1 {
                     let sent_msg: serde_json::Value = serde_json::from_slice(&sends_vec[0].1).unwrap();
-                    if let Some(tag_str) = sent_msg.get("responseTag").and_then(|t| t.as_str()) {
+                    if let Some(tag_str) = sent_msg.get("tag").and_then(|t| t.as_str()) {
+                        assert!(sent_msg.get("responseTag").is_none(), "request should not use responseTag");
                         let tag = uuid::Uuid::parse_str(tag_str).unwrap();
                         api_clone.engine_for_tests().access(|e: &rust_comms::engine::Engine| e.fulfill_pending(&tag, json!({"response": "ok"})));
                         return;

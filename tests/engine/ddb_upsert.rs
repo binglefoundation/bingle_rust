@@ -84,7 +84,7 @@ pub fn ddb_upsert_success_when_server_is_relay() {
         original_signature: "SIG".into(),
         rippled: false,
         tag: None,
-        response_tag: Some("rt1".into()),
+        response_tag: None,
         text: None,
         data: None,
     }));
@@ -97,7 +97,9 @@ pub fn ddb_upsert_success_when_server_is_relay() {
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.set_on_message(Some(Arc::new(move |_sender, _handle, msg| {
         if let Some(t) = msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) {
             if t == "updateResponse" && msg.get("app").and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
-                if msg.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()) == Some("rt1") {
+                if msg.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()).is_some()
+                    && msg.get("tag").is_none()
+                {
                     got_update_flag.store(true, Ordering::SeqCst);
                 }
             }

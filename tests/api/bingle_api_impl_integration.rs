@@ -73,7 +73,7 @@ pub mod pki;
     let mux = std::sync::Arc::new(mux0);
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
-    // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing tag
+    // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing caller tag via responseTag
     fn server_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
         if let Ok(text) = std::str::from_utf8(data) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
@@ -84,8 +84,8 @@ pub mod pki;
                     obj.insert("app".to_string(), serde_json::Value::Null);
                     obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
                     obj.insert("state".to_string(), serde_json::Value::String("available".to_string()));
-                    if let Some(tag) = v.get("responseTag").and_then(|t| t.as_str()) {
-                        obj.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
+                    if let Some(tag) = v.get("tag").and_then(|t| t.as_str()) {
+                        obj.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string()));
                     }
                     if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
                         let _ = server.send(&from, &bytes);
@@ -124,9 +124,7 @@ pub mod pki;
 
     // Prepare a direct NetworkSourceKey to server and send RelayCheck
     let nsk = NetworkEndpoint::new_direct(addr);
-    use uuid::Uuid;
-    let req_tag = Uuid::new_v4().to_string();
-    let payload = serde_json::json!({ "app": null, "type": "Check", "responseTag": req_tag });
+    let payload = serde_json::json!({ "app": null, "type": "Check" });
 
     let uid2 = test_util::ADDRESS_SPEND.to_string();
     let response = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network_with_response(&nsk, &uid2, payload, None));
@@ -136,4 +134,6 @@ pub mod pki;
     assert_eq!(response_content.get("app"), Some(&serde_json::Value::Null));
     assert_eq!(response_content.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("CheckResponse"));
     assert_eq!(response_content.get("state").and_then(|v: &serde_json::Value| v.as_str()), Some("available"));
+    assert!(response_content.get("responseTag").is_some(), "response should include responseTag");
+    assert!(response_content.get("tag").is_none(), "response should not include request tag field");
 }
