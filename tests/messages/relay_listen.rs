@@ -28,7 +28,7 @@ pub fn relay_listen_registers_and_responds() {
 
     // Act: route a Relay::Listen message via DefaultPrintingHandler
     let handler = DefaultPrintingHandler;
-    let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
+    let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         // from_id not used in this path
         router.route(&handler, &msg, "ALGOADDR123");

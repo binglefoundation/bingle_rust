@@ -20,7 +20,6 @@ pub fn unit_ping_response_to_json() {
     let resp = rust_comms::messages::types::PingResponse {
         app: "ping".into(),
         verified_id: "SOMEID".into(),
-        tag: None,
         response_tag: Some("abc".into()),
         text: Some("ACK: hi".into()),
         data: None,

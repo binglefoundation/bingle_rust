@@ -37,7 +37,6 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
         original_signature: Some("sig-123".to_string()),
         rippled: None,
         tag: Some("my-tag".to_string()),
-        response_tag: None,
         text: None,
         data: None,
     };

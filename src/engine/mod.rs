@@ -633,6 +633,7 @@ impl Engine {
 
     /// Pending response registration/fulfillment helpers
     pub fn register_pending(&self, tag: Uuid) {
+        tracing::info!("[Engine::register_pending] tag={:?}", tag);
         let pair = Arc::new((Mutex::new(ResponseWait::default()), Condvar::new()));
         if let Ok(mut m) = self.pending_responses.lock() {
             m.insert(tag, pair);
@@ -710,9 +711,11 @@ impl Engine {
                 }
                 out
             } else {
+                tracing::warn!("[Engine::wait_for_response] failed to lock pending responses");
                 None
             }
         } else {
+            tracing::warn!("[Engine::wait_for_response] no pending response for tag={:?}", tag);
             None
         }
     }
@@ -1011,13 +1014,14 @@ impl Engine {
                     if let Ok(s) = std::str::from_utf8(data) {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
                             tracing::info!("[Engine::install_dtls_handler][cb] checking for request/response tags in {}", v);
-                            // Expose request tag (if present). Handlers may echo it back as responseTag.
+                            // Expose request tag (if present). Handlers will echo it back as responseTag.
                             if let Some(tag) = v.get("tag").and_then(|vv| vv.as_str()) {
                                 router_arc.set_last_response_tag(Some(tag.to_string()));
                             } else {
                                 router_arc.set_last_response_tag(None);
                             }
                             // If this is a response, fulfill waiter by responseTag only.
+                            // This has been camelcased
                             let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str());
                             if let Some(tag_str) = tag_str_opt {
                                 if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
@@ -1605,6 +1609,7 @@ impl Engine {
                 app: None,
                 checking_endpoint: checking_ep.into(),
                 do_not_use_endpoints: seen,
+                tag: None
             }));
             let nsk = NetworkEndpoint::new_direct(to_addr);
             // Build JSON value for the message

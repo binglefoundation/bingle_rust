@@ -159,7 +159,7 @@ impl ModifiedLamportDistributedMutex {
             let msg = crate::messages::types::MutexRequest {
                 app: "mutex".into(),
                 lamport_timestamp: ts,
-                response_tag: None,
+                tag: None,
                 known_ids: Some(ids.clone().into_iter().collect()),
             };
             (ids, msg)
@@ -196,8 +196,8 @@ impl ModifiedLamportDistributedMutex {
             let ids: Vec<String> = st.dynamic_node_ids.iter().cloned().collect();
             let msg = crate::messages::types::MutexResponse {
                 app: "mutex".into(),
-                tag: Some("membership_only".into()),
                 known_ids: Some(ids.clone().into_iter().collect()),
+                response_tag: None,
             };
             (ids, msg)
         };
@@ -269,7 +269,7 @@ impl ModifiedLamportDistributedMutex {
             self.broadcast_membership();
         }
         if should_send_reply {
-            let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
+            let resp = crate::messages::types::MutexResponse { app: "mutex".into(), response_tag: None, known_ids };
             tracing::debug!("[mutex:{}] [handle_request] grant_now - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(from_id, &resp);
         }
@@ -284,7 +284,7 @@ impl ModifiedLamportDistributedMutex {
             self.cv.notify_all();
         }
 
-        if st.current_request_ts.is_some() && resp.tag.as_deref() != Some("membership_only") {
+        if st.current_request_ts.is_some() && resp.response_tag.as_deref() != Some("membership_only") {
             st.acks.insert(from_id.to_string());
             if st.acks.len() >= st.required_acks() {
                 self.cv.notify_all();
@@ -326,7 +326,7 @@ impl ModifiedLamportDistributedMutex {
         }
 
         if let Some(id) = next_grant {
-            let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
+            let resp = crate::messages::types::MutexResponse { app: "mutex".into(), response_tag: None, known_ids };
             tracing::debug!("[mutex:{}] [handle_release] grant deferred - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(&id, &resp);
         }
@@ -448,7 +448,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
         };
         // Send a single reply outside the lock (if any)
         if let Some((_ts, id)) = maybe_grant {
-            let resp = crate::messages::types::MutexResponse { app: "mutex".into(), tag: None, known_ids };
+            let resp = crate::messages::types::MutexResponse { app: "mutex".into(), response_tag: None, known_ids };
             tracing::debug!("[mutex:{}] [acquire] maybe_grant - send REPLY: {:?}", self.self_id, resp);
             (self.send_reply)(&id, &resp);
         }

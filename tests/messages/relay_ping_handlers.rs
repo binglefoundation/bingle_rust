@@ -60,6 +60,7 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
         app: None, 
         checking_endpoint: "127.0.0.1:12345".parse().unwrap(),
         do_not_use_endpoints: Vec::new(),
+        tag: None,
     };
     // Construct minimal API and FromStruct
     struct MockApi;

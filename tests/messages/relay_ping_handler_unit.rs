@@ -87,6 +87,8 @@ pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
         app: None, 
         checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345).into(),
         do_not_use_endpoints: Vec::new(),
+        tag: None,
+
     };
 
     // Act: invoke handler directly

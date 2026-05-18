@@ -94,6 +94,8 @@ pub struct RelayCall {
     pub app: Option<String>, // must be None (null)
     #[serde(rename = "calledId")]
     pub called_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,6 +104,8 @@ pub struct RelayResponse {
     pub app: Option<String>, // must be None (null)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel: Option<u16>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -119,6 +123,8 @@ pub struct RelayTriangleTest1 {
     pub checking_endpoint: InetSocketAddress,
     #[serde(rename = "doNotUseEndpoints", default, skip_serializing_if = "Vec::is_empty")]
     pub do_not_use_endpoints: Vec<InetSocketAddress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -145,24 +151,32 @@ pub struct RelayTriangleTest1Response {
     /// (all known relays were already excluded by the client).
     #[serde(rename = "noCornerNode", default)]
     pub no_corner_node: bool,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelayListen {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelayCheck {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelayListenResponse {
     #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
     pub app: Option<String>, // must be None (null)
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -171,6 +185,8 @@ pub struct RelayCheckResponse {
     pub app: Option<String>, // must be None (null)
     #[serde(rename = "state")]
     pub relay_state: String,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -180,6 +196,8 @@ pub struct RelayCallResponse {
     #[serde(rename = "calledId")]
     pub called_id: String,
     pub channel: u16,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -232,9 +250,6 @@ pub struct DdbUpsertResolve {
     pub rippled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
@@ -252,8 +267,6 @@ pub struct DdbDeleteResolve {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
@@ -265,8 +278,6 @@ pub struct DdbQueryResolve {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -279,8 +290,6 @@ pub struct DdbQueryResponse {
     pub found: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub advert: Option<AdvertRecord>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -292,8 +301,6 @@ pub struct DdbQueryResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DdbUpdateResponse {
     pub app: String, // "ddb"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -313,8 +320,6 @@ pub struct DdbSignon {
     pub rippled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -324,8 +329,6 @@ pub struct DdbSignon {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DdbSignonResponse {
     pub app: String, // "ddb"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -341,8 +344,6 @@ pub struct DdbGetEpoch {
     pub epoch_id: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -360,8 +361,6 @@ pub struct DdbEpochInfo {
     pub relay_ids: Vec<String>,
     #[serde(rename = "relayEndpoints", default, skip_serializing_if = "Option::is_none")]
     pub relay_endpoints: Option<Vec<InetSocketAddress>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -375,8 +374,6 @@ pub struct DdbInitResolve {
     pub app: String, // "ddb"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -388,8 +385,6 @@ pub struct DdbInitResponse {
     pub app: String, // "ddb"
     #[serde(rename = "dbCount")]
     pub db_count: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -404,8 +399,6 @@ pub struct DdbDumpResolve {
     pub record: AdvertRecord,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -420,8 +413,6 @@ pub struct DdbDumpResolveResponse {
     #[serde(rename = "recordId")]
     pub record_id: String,
     pub record: AdvertRecord,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -445,8 +436,6 @@ pub struct PingPing {
     pub app: String, // must be "ping"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -458,8 +447,6 @@ pub struct PingResponse {
     pub app: String, // must be "ping"
     #[serde(rename = "verifiedId")]
     pub verified_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -485,8 +472,8 @@ pub struct MutexRequest {
     pub app: String, // must be "mutex"
     #[serde(rename = "lamport_timestamp")]
     pub lamport_timestamp: i64,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     #[serde(rename = "known_ids", default, skip_serializing_if = "Option::is_none")]
     pub known_ids: Option<HashSet<String>>,
 }
@@ -494,8 +481,8 @@ pub struct MutexRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MutexResponse {
     pub app: String, // must be "mutex"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
     #[serde(rename = "known_ids", default, skip_serializing_if = "Option::is_none")]
     pub known_ids: Option<HashSet<String>>,
 }

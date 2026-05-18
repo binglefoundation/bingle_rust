@@ -84,7 +84,6 @@ pub fn ddb_upsert_success_when_server_is_relay() {
         original_signature: "SIG".into(),
         rippled: false,
         tag: None,
-        response_tag: None,
         text: None,
         data: None,
     }));
@@ -123,7 +122,7 @@ pub fn ddb_upsert_ignored_when_not_relay() {
 
     let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
     let record = AdvertRecord { id: client_id.clone(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
-    let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve { app: "ddb".into(), start_id: client_id.clone(), epoch: 1, record, original_signature: "SIG".into(), rippled: false, tag: None, response_tag: Some("r2".into()), text: None, data: None }));
+    let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve { app: "ddb".into(), start_id: client_id.clone(), epoch: 1, record, original_signature: "SIG".into(), rippled: false, tag: None, text: None, data: None }));
 
     let json = marshal::to_json_value(&up);
 
@@ -153,7 +152,7 @@ pub fn ddb_upsert_rejected_on_id_mismatch() {
     let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
     // Mismatch: record.id != start_id
     let record = AdvertRecord { id: format!("{}X", client_id), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
-    let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve { app: "ddb".into(), start_id: client_id.clone(), epoch: 1, record, original_signature: "SIG".into(), rippled: false, tag: None, response_tag: Some("r3".into()), text: None, data: None }));
+    let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve { app: "ddb".into(), start_id: client_id.clone(), epoch: 1, record, original_signature: "SIG".into(), rippled: false, tag: None, text: None, data: None }));
 
     let json = marshal::to_json_value(&up);
 

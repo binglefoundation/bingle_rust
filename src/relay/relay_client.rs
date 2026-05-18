@@ -54,7 +54,7 @@ impl RelayClient {
         };
 
         // Build the Relay::Call message
-        let msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: target_id.to_string() }));
+        let msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: target_id.to_string(), tag: None }));
         let json: JsonValue = to_json_value(&msg);
 
         // Send to the relay and await response

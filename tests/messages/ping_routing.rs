@@ -34,7 +34,7 @@ pub fn route_invokes_on_ping_ping() {
     // Provide API to router so it can be passed into handler per new signature
     router.set_bingle_api(Some(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
 
-    let ping = PingPing { app: "ping".into(), tag: None, response_tag: None, text: Some("hello".into()), data: None };
+    let ping = PingPing { app: "ping".into(), tag: None, text: Some("hello".into()), data: None };
     let msg = Message::Ping(PingMessage::Ping(ping));
     router.route(&handler, &msg, "SOMEISSUER.");
 

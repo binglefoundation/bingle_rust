@@ -41,7 +41,7 @@ impl InnerBingleApiInternal for MockInternal {
 /// Serialization: no_corner_node=false serializes as false.
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn no_corner_node_false_serializes_as_false() {
-    let resp = RelayTriangleTest1Response { app: None, no_corner_node: false };
+    let resp = RelayTriangleTest1Response { app: None, no_corner_node: false, response_tag: None };
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(resp));
     let json = to_json_value(&msg);
     let json_str = serde_json::to_string(&json).expect("serialize");
@@ -51,7 +51,7 @@ pub fn no_corner_node_false_serializes_as_false() {
 /// Serialization: no_corner_node=true appears in JSON.
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn no_corner_node_true_serializes_with_field() {
-    let resp = RelayTriangleTest1Response { app: None, no_corner_node: true };
+    let resp = RelayTriangleTest1Response { app: None, no_corner_node: true, response_tag: None };
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(resp));
     let json = to_json_value(&msg);
     let json_str = serde_json::to_string(&json).expect("serialize");
@@ -97,6 +97,7 @@ pub fn no_corner_node_sets_nat_restricted_immediately() {
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response {
         app: None,
         no_corner_node: true,
+        response_tag: None
     }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
@@ -140,6 +141,7 @@ pub fn no_corner_node_does_not_override_endpoint_available() {
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response {
         app: None,
         no_corner_node: true,
+        response_tag: None
     }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");

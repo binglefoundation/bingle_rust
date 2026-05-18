@@ -95,7 +95,7 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
 
     // 1) Simulate B sending RelayListen to the relay
     router.set_last_from(Some(b_addr));
-    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
+    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &listen_msg, "BID");
     });
@@ -114,7 +114,7 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     // 2) Simulate A sending RelayCall(calledId=BID) to the relay
     let a_addr = addr(test_util::find_unused_loopback_port());
     router.set_last_from(Some(a_addr));
-    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "BID".to_string() }));
+    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "BID".to_string(), tag: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &call_msg, "AID");
     });

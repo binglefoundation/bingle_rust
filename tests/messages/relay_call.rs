@@ -43,7 +43,7 @@ pub fn relay_call_allocates_channel_and_maps_pair() {
 
     // Act: send Relay::Call(calledId = CALLEEID)
     let handler = DefaultPrintingHandler;
-    let call = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "CALLEEID".to_string() }));
+    let call = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "CALLEEID".to_string(), tag: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &call, "CALLERID");
     });

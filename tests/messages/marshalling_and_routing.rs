@@ -126,7 +126,7 @@ pub fn integration_decode_keep_alive() {
 pub fn integration_unimplemented_handler_prints_without_panic() {
 
     // Marshal to JSON and route using DefaultPrintingHandler; ensure no panic
-    let msg = Message::Relay(RelayMessage::Check(RelayCheck { app: None }));
+    let msg = Message::Relay(RelayMessage::Check(RelayCheck { app: None, tag: None }));
     let _json = to_json_string(&msg);
     let handler = DefaultPrintingHandler;
     // Should simply print unimplemented message; we just ensure it runs

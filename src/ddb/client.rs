@@ -79,7 +79,7 @@ impl DdbClientImpl {
                 return Err(e);
             }
         };
-        let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, response_tag: None, text: None, data: None }));
+        let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, text: None, data: None }));
         let json: JsonValue = to_json_value(&req);
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user, json, None)) {
             Ok(r) => r,
@@ -190,7 +190,7 @@ impl DdbClient for DdbClientImpl {
         };
 
         // Compose InitResolve
-        let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve { app: "ddb".into(), tag: None, response_tag: None, text: None, data: None }));
+        let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve { app: "ddb".into(), tag: None, text: None, data: None }));
         let json: JsonValue = to_json_value(&init);
 
         // Send and await InitResponse
@@ -326,7 +326,6 @@ impl DdbClient for DdbClientImpl {
             original_signature: "SIG".to_string(),
             rippled: false,
             tag: None,
-            response_tag: None,
             text: None,
             data: None,
         }));
@@ -397,7 +396,6 @@ impl DdbClient for DdbClientImpl {
             original_signature: "SIG".to_string(),
             rippled: false,
             tag: None,
-            response_tag: None,
             text: None,
             data: None,
         }));
@@ -442,7 +440,6 @@ impl DdbClient for DdbClientImpl {
             app: "ddb".to_string(),
             id: id.to_string(),
             tag: None,
-            response_tag: None,
             text: None,
             data: None,
         }));

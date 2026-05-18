@@ -144,7 +144,7 @@ pub trait MessageHandler {
             }
     }
     fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingResponse) {
-        if msg.tag.is_none() && msg.response_tag.is_none() {
+        if msg.response_tag.is_none() {
             // Build JSON for callback
             let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"verifiedId": msg.verified_id}));
             // Delegate to API on_message via the per-API Router if installed
@@ -320,7 +320,7 @@ pub trait MessageHandler {
 
     // Default unimplemented handler: prints the message JSON
     fn on_unimplemented(&self, msg: &Message) {
-        tracing::info!("[UNIMPLEMENTED] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::info!("[on_unimplemented] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
     }
 }
 
@@ -328,6 +328,7 @@ pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
     fn on_ddb_get_epoch(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbGetEpoch) {
+        let msg_tag = msg.tag.clone();
         let router = &from.router;
         // Only relays in Available state may serve getEpoch
         if !router.get_am_relay() {
@@ -345,7 +346,7 @@ impl MessageHandler for DefaultPrintingHandler {
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+            if let Some(tag) = msg_tag { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
             obj.insert("text".to_string(), serde_json::Value::String("relay not available".into()));
             router.set_outbound_response(Some(serde_json::Value::Object(obj)));
             return;
@@ -360,8 +361,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     tree_order: 2,
                     relay_ids,
                     relay_endpoints,
-                    tag: None,
-                    response_tag: router.get_last_response_tag(),
+                    response_tag: msg_tag,
                     text: None,
                     data: None,
                 };
@@ -408,9 +408,7 @@ impl MessageHandler for DefaultPrintingHandler {
         let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
 
         // Invoke backend handle_init: snapshot and send InitResponse + DumpResolve per record.
-        let response_tag = router
-            .get_last_response_tag()
-            .or(msg.response_tag.clone());
+        let response_tag = msg.tag.clone();
         backend.handle_init(&nsk, &user_id, response_tag, &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
     }
 
@@ -455,7 +453,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
             let resp = crate::messages::types::Message::Ddb(
                 crate::messages::types::DdbMessage::UpdateResponse(
-                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag, text: None, data: None }
+                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
                 )
             );
             let json = crate::messages::marshal::to_json_value(&resp);
@@ -476,12 +474,10 @@ impl MessageHandler for DefaultPrintingHandler {
         }
 
         // Prepare response JSON and stash on router for Engine/DTLS layer to send.
-        let response_tag = router
-            .get_last_response_tag()
-            .or(msg.response_tag.clone());
+        let response_tag = msg.tag.clone();
         let resp = crate::messages::types::Message::Ddb(
             crate::messages::types::DdbMessage::UpdateResponse(
-                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag, text: None, data: None }
+                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -507,12 +503,10 @@ impl MessageHandler for DefaultPrintingHandler {
         let (found, advert_opt) = if let Some(backend) = router.get_ddb_backend() {
             if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
         } else { (false, None) };
-        let response_tag = router
-            .get_last_response_tag()
-            .or(q.response_tag.clone());
+        let response_tag = q.tag.clone();
         let resp = crate::messages::types::Message::Ddb(
             crate::messages::types::DdbMessage::QueryResponse(
-                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
+                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -539,7 +533,6 @@ impl MessageHandler for DefaultPrintingHandler {
                     original_signature: None,
                     rippled: Some(false),
                     tag: None,
-                    response_tag: None,
                     text: None,
                     data: None,
                 };
@@ -601,11 +594,9 @@ impl MessageHandler for DefaultPrintingHandler {
         // Queue SignonResponse FIRST — the new relay needs to receive this and
         // transition to Available before other relays learn about it and try
         // getEpoch on it.
-        let response_tag = router.get_last_response_tag();
         let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
             app: "ddb".to_string(),
-            tag: None,
-            response_tag,
+            response_tag: msg.tag.clone(),
             text: None,
             data: None,
         }));
@@ -638,6 +629,9 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_triangle_test1(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayTriangleTest1) {
         // Print options via API for debugging
         api.debug_print_options();
+        tracing::info!("[handlers::on_triangle_test1] received {:?} from {}", msg, from.id);
+
+        let msg_tag = msg.tag.clone();
         // Run in a thread per requirements
         let checking = msg.checking_endpoint.clone();
         let exclusions: Vec<std::net::SocketAddr> = msg.do_not_use_endpoints.iter()
@@ -649,10 +643,12 @@ impl MessageHandler for DefaultPrintingHandler {
         let from_nsk = from.network_source_key.clone();
         // Convert issuer-form id to raw Algorand address (base32) for network send
         let from_user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let msg2 = msg.clone();
         std::thread::spawn(move || {
             // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use std::time::Duration;
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
+            tracing::info!("[handlers::on_triangle_test1] in thread for triangle test1: {:?}", msg2);
             let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                 // Prefer app_id from API options; fallback to env var for legacy
                 let app_id_opt = api_for_thread
@@ -677,7 +673,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 Err(e) => {
                     warn!("[handlers::on_triangle_test1] find_relay failed: {}", e);
                     // No corner node available — send TriangleTest1Response with no_corner_node=true
-                    let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: true }));
+                    let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: true, response_tag: msg_tag }));
                     let resp_json = crate::messages::marshal::to_json_value(&resp);
                     if !from_user_id.is_empty() {
                         let ok = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
@@ -703,7 +699,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
             // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
 
-            let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: false }));
+            let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: false, response_tag: msg_tag }));
             let resp_json = crate::messages::marshal::to_json_value(&resp);
 
             if from_user_id.is_empty() {
@@ -712,6 +708,8 @@ impl MessageHandler for DefaultPrintingHandler {
                 let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
                 tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={:?}", ok2);
             }
+
+            tracing::info!("[handlers::on_triangle_test1] done for {:?}", msg2);
         });
     }
 
@@ -835,7 +833,7 @@ impl DefaultPrintingHandler {
             };
 
             // Send Relay::Listen and expect Relay::ListenResponse
-            let listen = crate::messages::types::RelayListen { app: None };
+            let listen = crate::messages::types::RelayListen { app: None, tag: None };
             let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
             let json = crate::messages::marshal::to_json_value(&msg);
             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);

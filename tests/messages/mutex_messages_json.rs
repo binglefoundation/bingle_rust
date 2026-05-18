@@ -21,7 +21,7 @@ pub fn unit_mutex_response_to_json() {
     known_ids.insert("ID2".to_string());
     let resp = MutexResponse {
         app: "mutex".into(),
-        tag: Some("t1".into()),
+        response_tag: Some("t1".into()),
         known_ids: Some(known_ids),
     };
     let msg = Message::Mutex(MutexMessage::Response(resp));
@@ -32,7 +32,7 @@ pub fn unit_mutex_response_to_json() {
     let ids = v.get("known_ids").and_then(|x| x.as_array()).expect("array");
     assert_eq!(ids.len(), 2);
     // Ensure forbidden fields are absent
-    assert!(v.get("responseTag").is_none());
+    assert!(v.get("response_tag").is_none());
     assert!(v.get("text").is_none());
     assert!(v.get("data").is_none());
 
@@ -54,7 +54,7 @@ pub fn unit_mutex_release_roundtrip() {
     let msg = Message::Mutex(MutexMessage::Release(rel));
     let v = to_json_value(&msg);
     assert_eq!(v.get("type").and_then(|x| x.as_str()), Some("release"));
-    assert!(v.get("responseTag").is_none());
+    assert!(v.get("response_tag").is_none());
     assert!(v.get("text").is_none());
     assert!(v.get("data").is_none());
 

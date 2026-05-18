@@ -179,7 +179,7 @@ pub fn bingle_api_send_via_relay() {
     // 3) B sends RelayListen to the relay to register its id -> address mapping
     tracing::info!("B sending RelayListen");
     router.set_last_from(Some(b_addr));
-    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
+    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &listen_msg, b_id);
     });
@@ -195,7 +195,7 @@ pub fn bingle_api_send_via_relay() {
     );
 
     tracing::info!("Relay sending RelayListenResponse to B");
-    let resp = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None }));
+    let resp = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None, response_tag: None }));
     let resp_bytes = serde_json::to_vec(&resp).expect("marshal ListenResponse");
     let b_nsk = NetworkEndpoint::new_direct(b_addr);
     mux_relay.write(&b_nsk, &resp_bytes).expect("relay write to B");
@@ -225,7 +225,7 @@ pub fn bingle_api_send_via_relay() {
         .expect("api local bind addr");
     router.set_last_from(Some(a_addr));
     api.engine_for_tests().access_unsafe_for_tests(|e| e.set_last_public_addr(Some(a_addr)));
-    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: b_id.to_string() }));
+    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: b_id.to_string(), tag: None }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &call_msg, "AID");
     });

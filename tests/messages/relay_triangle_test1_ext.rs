@@ -36,6 +36,7 @@ pub fn test_relay_triangle_test1_json_with_exclusions() {
             "5.6.7.8:5678".parse().unwrap(),
             "9.10.11.12:9012".parse().unwrap(),
         ],
+        tag: None,
     };
     let out_json = to_json_string(&Message::Relay(RelayMessage::TriangleTest1(t1)));
     let v: serde_json::Value = serde_json::from_str(&out_json).expect("json parse");
@@ -53,6 +54,7 @@ pub fn test_relay_triangle_test1_json_no_exclusions() {
         app: None,
         checking_endpoint: "1.2.3.4:1234".parse().unwrap(),
         do_not_use_endpoints: Vec::new(),
+        tag: None,
     };
     let out_json = to_json_string(&Message::Relay(RelayMessage::TriangleTest1(t1)));
     let v: serde_json::Value = serde_json::from_str(&out_json).expect("json parse");
@@ -153,6 +155,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         app: None,
         checking_endpoint: "10.0.0.1:1000".parse().unwrap(),
         do_not_use_endpoints: vec!["5.6.7.8:5678".parse().unwrap()],
+        tag: None,
     };
     handler.on_triangle_test1(api.clone(), &from, &t1_ok);
     assert_eq!(sends.lock().unwrap().len(), 1);
@@ -164,6 +167,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
         app: None,
         checking_endpoint: "10.0.0.1:1000".parse().unwrap(),
         do_not_use_endpoints: vec![peer_addr.into()],
+        tag: None,
     };
     handler.on_triangle_test1(api, &from, &t1_ex);
     assert_eq!(sends.lock().unwrap().len(), 0, "should have skipped send because peer is excluded");

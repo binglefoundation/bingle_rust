@@ -60,7 +60,7 @@ pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
     router.set_ddb_backend(Some(backend.clone()));
 
     // Route an InitResolve message from issuer "NEWPEER." (note trailing dot)
-    let init = DdbInitResolve { app: "ddb".into(), tag: None, response_tag: Some("rt1".into()), text: None, data: None };
+    let init = DdbInitResolve { app: "ddb".into(), tag: Some("init_resolve_tag".to_string()), text: None, data: None };
     let msg = Message::Ddb(DdbMessage::InitResolve(init));
 
     let handler = DefaultPrintingHandler;
@@ -78,7 +78,7 @@ pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
     assert_eq!(j0.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
     assert_eq!(j0.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("initResponse"));
     assert_eq!(j0.get("dbCount").and_then(|v| v.as_i64()), Some(2));
-    assert_eq!(j0.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("rt1"));
+    assert_eq!(j0.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("init_resolve_tag"));
 
     // The remaining messages should be dumpResolve, count equals number of records (2)
     let dumps: Vec<&serde_json::Value> = sent.iter().skip(1).map(|(_, j)| j).collect();

@@ -37,7 +37,6 @@ pub fn test_on_ping_response_no_tag_calls_on_message() {
     let resp = PingResponse {
         app: "ping".into(),
         verified_id: "VERIFIED".into(),
-        tag: None,
         response_tag: None,
         text: Some("hello".into()),
         data: None,
@@ -79,8 +78,7 @@ pub fn test_on_ping_response_with_tag_does_not_call_on_message() {
     let resp = PingResponse {
         app: "ping".into(),
         verified_id: "VERIFIED".into(),
-        tag: Some("some-tag".into()),
-        response_tag: None,
+        response_tag: Some("ping_tag".to_string()),
         text: Some("hello".into()),
         data: None,
     };

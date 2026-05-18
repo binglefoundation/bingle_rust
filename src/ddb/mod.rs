@@ -163,7 +163,6 @@ impl DdbBackend for InMemoryDdbBackend {
                 crate::messages::types::DdbInitResponse {
                     app: "ddb".to_string(),
                     db_count,
-                    tag: None,
                     response_tag: response_tag.clone(),
                     text: None,
                     data: None,
@@ -178,7 +177,7 @@ impl DdbBackend for InMemoryDdbBackend {
         for rec in records.into_iter() {
             let dump = crate::messages::types::Message::Ddb(
                 crate::messages::types::DdbMessage::DumpResolve(
-                    crate::messages::types::DdbDumpResolve { app: "ddb".into(), record: rec, tag: None, response_tag: None, text: None, data: None }
+                    crate::messages::types::DdbDumpResolve { app: "ddb".into(), record: rec, tag: None, text: None, data: None }
                 )
             );
             let dump_json = crate::messages::marshal::to_json_value(&dump);

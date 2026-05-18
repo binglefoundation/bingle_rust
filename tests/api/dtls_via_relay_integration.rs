@@ -112,7 +112,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     }
 
     // 3) Send RelayListen from the DTLS target node to the relay and validate registration
-    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None }));
+    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
     let listen_msg_bytes = serde_json::to_vec(&listen_msg).expect("serialize listenMsg");
     dtls_server.send(&NetworkEndpoint::new_direct(relay_addr), &listen_msg_bytes).expect("send listenMsg");
 
@@ -187,7 +187,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     dtls_client.start(mux_client_arc.clone()).expect("start dtls client");
 
     // 4) Send RelayCall from dtls client to relay
-    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: ADDRESS_RECEIVE.to_string() }));
+    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: ADDRESS_RECEIVE.to_string(), tag: None }));
     let call_msg_bytes = serde_json::to_vec(&call_msg).expect("serialize call_msg");
     dtls_client.send(&NetworkEndpoint::new_direct(relay_addr), &call_msg_bytes).expect("send listenMsg");
 

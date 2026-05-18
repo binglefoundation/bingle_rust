@@ -32,6 +32,7 @@ pub fn route_passes_from_id_into_handler() {
         app: None, 
         checking_endpoint: "127.0.0.1:5000".parse().unwrap(),
         do_not_use_endpoints: Vec::new(),
+        tag: None,
     }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "ALGOADDR123");
