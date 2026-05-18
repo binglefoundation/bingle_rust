@@ -235,7 +235,7 @@ pub trait MessageHandler {
         }
         router.set_outbound_response(Some(serde_json::Value::Object(obj)));
     }
-    fn on_relay_check(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayCheck) {
+    fn on_relay_check(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayCheck) {
         // Send CheckResponse with current relay state back to the last sender address using the real Bingle API sender
         let router_opt = Some(from.router.clone());
         let sender_opt = router_opt.as_ref().and_then(|r| r.get_sender());
@@ -256,7 +256,7 @@ pub trait MessageHandler {
         json_obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
         let state = api.get_relay_state();
         json_obj.insert("state".to_string(), serde_json::Value::String(state));
-        if let Some(tag) = from.router.get_last_response_tag() {
+        if let Some(tag) = msg.tag.clone() {
             json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }
         let json_val = serde_json::Value::Object(json_obj);
@@ -320,7 +320,7 @@ pub trait MessageHandler {
 
     // Default unimplemented handler: prints the message JSON
     fn on_unimplemented(&self, msg: &Message) {
-        tracing::info!("[on_unimplemented] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::warn!("[on_unimplemented] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
     }
 }
 

@@ -1036,17 +1036,25 @@ impl Engine {
                                             }
                                             else {
                                                 tracing::warn!("[Engine::install_dtls_handler][cb] could not lock response waiter");
+                                                return Err("could not lock response waiter".to_string());
                                             }
                                         }
                                         else {
                                             tracing::warn!("[Engine::install_dtls_handler][cb] no waiter found for responseTag={}", tag_str);
+                                            return Err("no waiter found for responseTag".to_string());
                                         }
                                     }
                                     else {
                                         tracing::warn!("[Engine::install_dtls_handler][cb] pending_responses lock poisoned, ignoring response");
+                                        return Err("pending_responses lock poisoned".to_string());
                                     }
                                 }
+                                else {
+                                    tracing::warn!("[Engine::install_dtls_handler][cb] invalid responseTag={}", tag_str);
+                                    return Err("invalid responseTag".to_string());
+                                }
                             }
+                            // No response tag is normal assuming we are an outbound message
                         }
                     }
 
