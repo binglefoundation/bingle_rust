@@ -67,3 +67,6 @@ pub mod dtls_send_signature;
 pub mod network_mux_udp_socket_close;
 #[path = "dtls_handshake_failure_retry.rs"]
 pub mod dtls_handshake_failure_retry;
+
+#[path = "dtls_send_stream_lock_contention.rs"]
+pub mod dtls_send_stream_lock_contention;
