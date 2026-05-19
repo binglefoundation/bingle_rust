@@ -146,7 +146,7 @@ impl RelayFinder {
     /// Return the list of all relays (root and non-root) using the DDB client get_relays.
     /// Requires that the root relay cache has been populated (list_root_relays called recently).
     fn list_all_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
-        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
 
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // 0) Return cached all-relays list if valid
@@ -162,9 +162,9 @@ impl RelayFinder {
         //     }
         // }
         // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
-        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
         let _ = self.list_root_relays_internal(my_id, true);
-        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
 
         // 2) Pick preferred root relay and fetch all relays via DDB from that single root only
         let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
@@ -208,7 +208,7 @@ impl RelayFinder {
                 Vec::new()
             }
         };
-        info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from DDB: {:?}", relays);
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from DDB: {:?}", relays);
 
         // 3) Fallback: if none from DDB, use the cached root list
         if relays.is_empty() {
@@ -227,7 +227,7 @@ impl RelayFinder {
                 if let Some(api) = self.api.upgrade() {
                     if api.is_relay() {
                         if let Some(addr) = api.get_last_public_addr() {
-                            info_theme!(themes::RELAY, "[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
+                            debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
                             relays.push(RelayInfo { id: my_id_norm.to_string(), address: addr, state: None });
                             added = true;
                         }

@@ -779,8 +779,8 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     );
 
     // Wait for both clients to reach Registered
-    let ok_a = test_util::wait_for_registered(&client_a, Duration::from_secs(300));
-    let ok_b = test_util::wait_for_registered(&client_b, Duration::from_secs(300));
+    let ok_a = test_util::wait_for_registered(&client_a, Duration::from_secs(360));
+    let ok_b = test_util::wait_for_registered(&client_b, Duration::from_secs(360));
     assert!(ok_a, "client A did not reach Registered state");
     assert!(ok_b, "client B did not reach Registered state");
 

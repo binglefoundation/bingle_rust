@@ -50,11 +50,11 @@ impl DdbClientImpl {
     }
 
     fn find_relay(&self) -> Result<RelayInfo, BingleError> {
-        tracing::info!("[DdbClientImpl::find_relay] create RelayFinder");
+        tracing::debug!("[DdbClientImpl::find_relay] create RelayFinder");
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
-        tracing::info!("[DdbClientImpl::find_relay] get_my_id");
+        tracing::trace!("[DdbClientImpl::find_relay] get_my_id");
         let my_id = self.api.access(|a| a.get_my_id()).ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
-        tracing::info!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
+        tracing::trace!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
         finder.find_relay(&my_id).map_err(BingleError::Other)
     }
 
@@ -70,7 +70,7 @@ impl DdbClientImpl {
     /// Send a single getEpoch request to the specified relay and parse the relay list.
     /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
     pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, BingleError> {
-        tracing::info!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
+        tracing::debug!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
         let nsk = NetworkEndpoint::new_direct(relay.address);
         let relay_user = match Self::relay_user_id(&relay.id) {
             Ok(u) => u,
@@ -155,7 +155,7 @@ impl DdbClient for NullDdbClient {
 
 impl DdbClient for DdbClientImpl {
     fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, BingleError> {
-        tracing::info!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
+        tracing::debug!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
         // Resolve the peer relay's direct endpoint using RelayFinder first, then fall back to DDB lookup
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
         let mut nsk_opt = finder.lookup_root_id(peer_id);
@@ -227,7 +227,7 @@ impl DdbClient for DdbClientImpl {
             }
         };
 
-        tracing::info!("[DdbClientImpl::start_load_from_peer][exit] Ok({})", out);
+        tracing::debug!("[DdbClientImpl::start_load_from_peer][exit] Ok({})", out);
         Ok(out)
     }
 
@@ -332,7 +332,7 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&up);
 
         // 3) Send and wait for response; validate UpdateResponse
-        tracing::info!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
+        tracing::debug!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
             Ok(r) => r,
             Err(e) => {
@@ -340,7 +340,7 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        tracing::info!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
+        tracing::debug!("[DdbClientImpl::register_ip] received DdbUpdateResponse: {:?}", resp);
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
@@ -402,7 +402,7 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&up);
 
         // 3) Send and wait for response; validate UpdateResponse
-        tracing::info!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
+        tracing::debug!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
             Ok(r) => r,
             Err(e) => {
@@ -410,7 +410,7 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        tracing::info!("[DdbClientImpl::register_relay] received DdbUpdateResponse: {:?}", resp);
+        tracing::debug!("[DdbClientImpl::register_relay] received DdbUpdateResponse: {:?}", resp);
 
         let app_ok = resp.get("app").and_then(|v| v.as_str()).is_some_and(|s| s == "ddb") || resp.get("app").is_none();
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");

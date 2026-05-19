@@ -982,7 +982,15 @@ impl Engine {
                     let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
                     let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
                     if handle_opt.is_none() {
-                        tracing::warn!("[Engine::install_dtls_handler][cb] dropping message from unauthenticated id: {}", sender_id);
+                        let claimed_handle = std::str::from_utf8(data)
+                            .ok()
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                            .and_then(|v| v.get("handle").and_then(|hv| hv.as_str()).map(|h| h.to_string()));
+                        tracing::warn!(
+                            "[Engine::install_dtls_handler][cb] dropping message from unauthenticated id={} handle={}",
+                            sender_id,
+                            claimed_handle.as_deref().unwrap_or("<missing>")
+                        );
                         return Ok(None);
                     }
 

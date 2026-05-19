@@ -51,7 +51,7 @@ pub mod openssl_impl {
         trim_issuer_suffix: bool,
         handle: String,
         log_tag: &str,
-        dangerous_debug: bool,
+        _dangerous_debug: bool,
     ) {
         let _span = tracing::info_span!("BingleApi", handle = %handle);
         let _guard = _span.enter();
@@ -208,7 +208,7 @@ pub mod openssl_impl {
                         }
                     }
                 } else {
-                    tracing::info!("[DtlsOpenSsl:{}][peer_cert_handler][announce][{}] malformed announce payload (no END CERTIFICATE)", log_tag, from);
+                    tracing::error!("[DtlsOpenSsl:{}][peer_cert_handler][announce][{}] malformed announce payload (no END CERTIFICATE)", log_tag, from);
                     break;
                 }
                 continue; // do not deliver control message to application
@@ -237,7 +237,7 @@ pub mod openssl_impl {
                                             CaMode::None => None,
                                         };
                                         if let Some(ca_vec) = ca_bytes_opt.as_ref() {
-                                            tracing::info!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] cert_len={} ca_len={}", log_tag, from, cert_pem.len(), ca_vec.len());
+                                            tracing::debug!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] cert_len={} ca_len={}", log_tag, from, cert_pem.len(), ca_vec.len());
                                             match h(&cert_pem, ca_vec) {
                                                 Ok(mut s) if !s.is_empty() => {
                                                     if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
@@ -251,17 +251,17 @@ pub mod openssl_impl {
                                                         Err(e) => e,
                                                         Ok(_) => "empty issuer".to_string(),
                                                     };
-                                                    tracing::info!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] validation failed: {}", log_tag, from, err_msg);
+                                                    tracing::warn!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] validation failed: {}", log_tag, from, err_msg);
                                                     let dump = match openssl::x509::X509::from_pem(&cert_pem) {
                                                         Ok(x) => String::from_utf8_lossy(&x.to_text().unwrap_or_default()).to_string(),
                                                         Err(_) => String::from_utf8_lossy(&cert_pem).to_string(),
                                                     };
-                                                    tracing::info!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] certificate dump:\n{}", log_tag, from, dump);
+                                                    tracing::debug!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] certificate dump:\n{}", log_tag, from, dump);
                                                     break;
                                                 }
                                             }
                                         } else {
-                                            tracing::info!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] no CA available; skipping handler invocation", log_tag, from);
+                                            tracing::warn!("[DtlsOpenSsl:{}][peer_cert_handler][first-data][{}] no CA available; skipping handler invocation", log_tag, from);
                                         }
                                     } else {
                                         let s: String = String::from_utf8_lossy(&cert_pem).into();
@@ -280,12 +280,12 @@ pub mod openssl_impl {
             // Gate application delivery on issuer
             let issuer_opt = get_issuer();
             if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
-                tracing::info!("[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated", log_tag, from);
+                tracing::warn!("[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated", log_tag, from);
                 continue;
             }
-            if dangerous_debug {
-                tracing::info!("[DtlsOpenSsl:{}][read-loop {}] application data {} bytes", log_tag, from, n);
-            }
+
+            tracing::debug!("[DtlsOpenSsl:{}][read-loop {}] application data {} bytes", log_tag, from, n);
+
             if let Some(h) = &handle_message {
                 let issuer = issuer_opt.unwrap_or_default();
                 let adapter = PeerAdapter(peers.clone());
@@ -403,7 +403,7 @@ pub mod openssl_impl {
             let _span = tracing::info_span!("BingleApi", handle = %handle);
             let _guard = _span.enter();
             // Debug: print parameters received by the verify callback (client)
-            tracing::info!(
+            tracing::debug!(
                 "[DtlsOpenSsl::][verify][client] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
                 preverify_ok,
                 x509_ctx.error_depth(),
@@ -430,7 +430,7 @@ pub mod openssl_impl {
                 }
             }
             if peer_ca_pem.is_none() {
-                tracing::info!("[DtlsOpenSsl::][verify][client] no peer CA certificate in presented chain; rejecting per policy");
+                tracing::warn!("[DtlsOpenSsl::][verify][client] no peer CA certificate in presented chain; rejecting per policy");
                 return false;
             }
 
@@ -441,19 +441,19 @@ pub mod openssl_impl {
                         match h(&pem, &ca_vec) {
                             Ok(_issuer) => true,
                             Err(e) => {
-                                tracing::info!("[DtlsOpenSsl::][verify][client] handler rejected server cert: {}", e);
+                                tracing::warn!("[DtlsOpenSsl::][verify][client] handler rejected server cert: {}", e);
                                 return false
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::info!("[DtlsOpenSsl::][verify][client] to_pem failed: {}", e);
+                        tracing::warn!("[DtlsOpenSsl::][verify][client] to_pem failed: {}", e);
                         false
                     }
                 }
             } else {
                 // No certificate presented by server; reject.
-                tracing::info!("[DtlsOpenSsl::][verify][client] no server certificate presented");
+                tracing::warn!("[DtlsOpenSsl::][verify][client] no server certificate presented");
                 false
             };
 
@@ -476,7 +476,7 @@ pub mod openssl_impl {
             let _span = tracing::info_span!("BingleApi", handle = %handle);
             let _guard = _span.enter();
             // Debug: print parameters received by the verify callback (server)
-            tracing::info!(
+            tracing::debug!(
                 "[DtlsOpenSsl::][verify][server] callback: preverify_ok={} depth={} error={:?} has_cert={} chain_len={}",
                 preverify_ok,
                 x509_ctx.error_depth(),
@@ -499,7 +499,7 @@ pub mod openssl_impl {
                 }
             }
             if peer_ca_pem.is_none() {
-                tracing::info!("[DtlsOpenSsl::][verify][server] no peer CA certificate in presented chain; rejecting per policy");
+                tracing::warn!("[DtlsOpenSsl::][verify][server] no peer CA certificate in presented chain; rejecting per policy");
                 return false;
             }
             if let Some(cert) = x509_ctx.current_cert() {
@@ -509,19 +509,19 @@ pub mod openssl_impl {
                         match h(&pem, &ca_vec) {
                             Ok(_issuer) => true,
                             Err(e) => {
-                                tracing::info!("[DtlsOpenSsl::][verify][server] handler rejected client cert: {}", e);
+                                tracing::warn!("[DtlsOpenSsl::][verify][server] handler rejected client cert: {}", e);
                                 false
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::info!("[DtlsOpenSsl::][verify][server] to_pem failed: {}", e);
+                        tracing::warn!("[DtlsOpenSsl::][verify][server] to_pem failed: {}", e);
                         false
                     }
                 }
             } else {
                 // No certificate from client (but we required one): reject.
-                tracing::info!("[DtlsOpenSsl::][verify][server] no client certificate presented");
+                tracing::warn!("[DtlsOpenSsl::][verify][server] no client certificate presented");
                 false
             }
         });
@@ -616,7 +616,7 @@ pub mod openssl_impl {
                 if n > 0 {
                     let to_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                     if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n]) {
-                        tracing::info!("[dtls muxconn][recv from queue][{} -> {}] {} [{} queued b4]", self.peer, to_ip, json, self.queue.len());
+                        tracing::trace!("[dtls muxconn][recv from queue][{} -> {}] {} [{} queued b4]", self.peer, to_ip, json, self.queue.len());
                     } else {
                         tracing::warn!("[dtls muxconn][recv from queue][{} -> {}] <parse error> ({} bytes)", self.peer, to_ip, n);
                     }
@@ -1208,7 +1208,7 @@ pub mod openssl_impl {
             // We require a running UDP mux to perform client handshake and writes
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
-            tracing::debug!("[DtlsOpenSsl:::send] {:?} -> {} ({} bytes)", mux.local_addr(), to, data.len());
+            tracing::info!("[DtlsOpenSsl:::send] {:?} -> {} ({} bytes)", mux.local_addr(), to, data.len());
             // Validate destination key: allow either direct inet address or relay channel+address
             let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some() {
                 to
@@ -1223,14 +1223,20 @@ pub mod openssl_impl {
             // If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
             let stream_to_use = {
                 let peers = &self.peer_states;
+                tracing::info!("[DtlsOpenSsl:::send] Locking peers");
                 if let Ok(map) = peers.lock() {
+                    tracing::info!("[DtlsOpenSsl:::send] locked peers");
                     map.get(&key_to).and_then(|ps| ps.stream.clone())
-                } else { None }
+                } else {
+                    tracing::error!("[DtlsOpenSsl:::send] peers lock poisoned");
+                    None
+                }
             };
 
             if let Some(s_arc) = stream_to_use {
+                tracing::info!("[DtlsOpenSsl:::send] locking existing stream");
                 if let Ok(mut guard) = s_arc.lock() {
-                    tracing::info!("[DtlsOpenSsl:::send] using existing stream to {} ({} bytes)", to, data.len());
+                    tracing::info!("[DtlsOpenSsl:::send] got lock, using existing stream to {} ({} bytes)", to, data.len());
                     return guard.write_all(data).map_err(|e| format!("send existing dtls write failed: {}", e));
                 }
             }
@@ -1318,7 +1324,7 @@ pub mod openssl_impl {
                                     m.remove(&key);
                                 }
                             }
-                            tracing::info!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
+                            tracing::warn!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
                             return Err("dtls client connect timeout".to_string());
                         }
                         // Check if we were told to abort by the tie-breaker
@@ -1327,7 +1333,7 @@ pub mod openssl_impl {
                             if let Ok(map) = peers.lock() {
                                 if let Some(ps) = map.get(&key_to) {
                                     if !ps.is_connecting_peer {
-                                        tracing::info!("[DtlsOpenSsl:::send] aborting outbound connect to {} (tie-breaker decided I am server)", to);
+                                        tracing::warn!("[DtlsOpenSsl:::send] aborting outbound connect to {} (tie-breaker decided I am server)", to);
                                         return Err("dtls client connect aborted by tie-breaker".to_string());
                                     }
                                 }
@@ -1335,7 +1341,7 @@ pub mod openssl_impl {
                         }
                         if iter % 100 == 1 {
                             let remaining = (deadline - elapsed).as_millis();
-                            tracing::info!("[DtlsOpenSsl:::send] handshake/write WouldBlock to {} (elapsed={}ms, remaining={}ms, iter={})", to, elapsed.as_millis(), remaining, iter);
+                            tracing::trace!("[DtlsOpenSsl:::send] handshake/write WouldBlock to {} (elapsed={}ms, remaining={}ms, iter={})", to, elapsed.as_millis(), remaining, iter);
                         }
                         std::thread::yield_now();
                         continue;
@@ -1349,7 +1355,7 @@ pub mod openssl_impl {
                                 m.remove(&key);
                             }
                         }
-                        tracing::info!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, e);
+                        tracing::warn!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, e);
                         return Err(format!("dtls client write failed: {}", e));
                     }
                 }
@@ -1374,14 +1380,14 @@ pub mod openssl_impl {
                                 }
                             }
                             let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
-                            tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{:?} -> {}] cert_len={} ca_len={} (from peer chain)", mux.local_addr(), to, cert_pem.len(), ca_len);
+                            tracing::debug!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{:?} -> {}] cert_len={} ca_len={} (from peer chain)", mux.local_addr(), to, cert_pem.len(), ca_len);
                             #[allow(unused)] {}
                             if let Some(ca) = peer_ca_pem.as_ref() {
                                 match h(&cert_pem, ca) {
                                     Ok(issuer) if !issuer.is_empty() => {
                                         // Convert issuer (subject CN) to id by trimming the trailing ISSUER_SUFFIX
                                         let id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                                        tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] issuer={} id={}", to, issuer, id);
+                                        tracing::debug!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] issuer={} id={}", to, issuer, id);
                                         let peers = &self.peer_states;
                                         let _ = peers.lock().map(|mut m| {
                                             m.entry(key_to.clone())
@@ -1393,26 +1399,26 @@ pub mod openssl_impl {
                                         });
                                     }
                                     Ok(_) => {
-                                        tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to);
+                                        tracing::warn!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to);
                                         #[allow(unused)] {}
                                     }
                                     Err(e) => {
-                                        tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e);
+                                        tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e);
                                         #[allow(unused)] {}
                                     }
                                 }
                             } else {
-                                tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to);
+                                tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to);
                                 #[allow(unused)] {}
                             }
                         }
                         Err(e) => {
-                            tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] to_pem failed: {}", to, e);
+                            tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] to_pem failed: {}", to, e);
                             #[allow(unused)] {}
                         }
                     }
                 } else {
-                    tracing::info!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no server certificate available", to);
+                    tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no server certificate available", to);
                     #[allow(unused)] {}
                     return Err("no peer certificate presented".to_string());
                 }
@@ -1489,7 +1495,7 @@ pub mod openssl_impl {
                     // Separate with a newline if the cert block doesn't already end with one
                     if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) { msg.push(b'\n'); }
                     msg.extend_from_slice(ca_pem);
-                    tracing::info!("[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
+                    tracing::debug!("[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
                     #[allow(unused)] {}
                     let _ = stream_guard.write_all(&msg);
                 }

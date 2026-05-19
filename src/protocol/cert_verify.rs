@@ -48,23 +48,23 @@ pub fn dump_ca_public_key_info(ca_pub: &openssl::pkey::PKey<openssl::pkey::Publi
         }
     }
 
-    tracing::info!(
+    tracing::debug!(
         "[cert_verify][dump][ca_pub] sha256(spki)={} len_der={} bytes",
         ca_pub_der_fp,
         ca_pub_der.len()
     );
 
     // Print raw public key hex dump in a certificate-like style
-    tracing::info!(
+    tracing::debug!(
         "[cert_verify][dump][ca_pub] RAW PUBLIC KEY (len={}):",
         raw_len
     );
-    tracing::info!("[cert_verify][dump][ca_pub] pub:");
+    tracing::debug!("[cert_verify][dump][ca_pub] pub:");
     for l in &raw_hex_lines {
-        tracing::info!("[cert_verify][dump][ca_pub]     {}", l);
+        tracing::debug!("[cert_verify][dump][ca_pub]     {}", l);
     }
 
-    tracing::info!(
+    tracing::debug!(
         "[cert_verify][dump][ca_pub] BEGIN PUBLIC KEY\n{}[cert_verify][dump][ca_pub] END PUBLIC KEY",
         ca_pub_pem
     );
@@ -77,13 +77,13 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         use openssl::x509::X509;
 
         // Entry log
-        tracing::info!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len());
+        tracing::debug!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len());
         
         // Small helper to log a failure reason and return Err(msg) consistently.
         #[inline]
         fn log_fail<M: Into<String>>(msg: M) -> Result<String> {
             let s = msg.into();
-            tracing::info!("[cert_verify][fail] {}", s);
+            tracing::warn!("[cert_verify][fail] {}", s);
             Err(s)
         }
         
@@ -200,7 +200,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             return log_fail(format!("end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA));
         }
         if !cert.verify(&ca_pub).unwrap_or(false) {
-            tracing::info!("[cert_verify][fail] verification failed with cert/PK/ca cert");
+            tracing::warn!("[cert_verify][fail] verification failed with cert/PK/ca cert");
 
             return log_fail("end-entity certificate signature verification failed".to_string());
         }
@@ -248,7 +248,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 
 pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
     fn handler(cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> {
-        tracing::info!("[cert_verify] accept_all handler called: cert_len={}", cert_pem.len());
+        tracing::debug!("[cert_verify] accept_all handler called: cert_len={}", cert_pem.len());
         #[allow(unused)] {  }
         Ok("accept-all".to_string())
     }
@@ -265,7 +265,7 @@ pub fn dump_cert_info(tag: &str, cert: &openssl::x509::X509, use_pem: bool) {
         .map(|b| data_encoding::HEXLOWER.encode(&b))
         .unwrap_or_else(|| "<digest failed>".to_string());
     let der_len = cert.to_der().map(|v| v.len()).unwrap_or(0);
-    tracing::info!(
+    tracing::debug!(
         "[cert_verify][dump][{}] sha256={} len={} bytes",
         tag, cert_fp, der_len
     );
@@ -276,13 +276,13 @@ pub fn dump_cert_info(tag: &str, cert: &openssl::x509::X509, use_pem: bool) {
             .map(|v| String::from_utf8_lossy(&v).into_owned())
             .unwrap_or_else(|_| "<x509 to_pem failed>".to_string());
         // Already includes proper -----BEGIN/END CERTIFICATE----- markers
-        tracing::info!("[cert_verify][dump][{}] PEM\n{}", tag, pem);
+        tracing::debug!("[cert_verify][dump][{}] PEM\n{}", tag, pem);
     } else {
         let cert_text: String = cert
             .to_text()
             .map(|v| String::from_utf8_lossy(&v).into_owned())
             .unwrap_or_else(|_| "<x509 to_text failed>".to_string());
-        tracing::info!(
+        tracing::debug!(
             "[cert_verify][dump][{}] BEGIN CERT\n{}\n[cert_verify][dump][{}] END CERT",
             tag, cert_text, tag
         );
