@@ -70,3 +70,6 @@ pub mod dtls_handshake_failure_retry;
 
 #[path = "dtls_send_stream_lock_contention.rs"]
 pub mod dtls_send_stream_lock_contention;
+
+#[path = "dtls_peer_worker_stage1.rs"]
+pub mod dtls_peer_worker_stage1;

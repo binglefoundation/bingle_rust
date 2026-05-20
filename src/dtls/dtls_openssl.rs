@@ -9,6 +9,7 @@ pub mod openssl_impl {
     #[allow(unused_imports)]
     use openssl::ssl::{HandshakeError, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslStream, SslVerifyMode};
     use std::collections::HashMap;
+    use std::sync::mpsc;
     use std::sync::{Arc, Mutex};
 
     type ServerWriter = Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync>;
@@ -18,6 +19,43 @@ pub mod openssl_impl {
     use openssl::x509::store::X509StoreBuilder;
     #[allow(unused_imports)]
     use openssl::x509::X509;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum PeerCmd {
+        Send(Vec<u8>),
+        Inbound(Vec<u8>),
+        Stop,
+    }
+
+    #[derive(Clone)]
+    pub struct PeerHandle {
+        tx: mpsc::Sender<PeerCmd>,
+    }
+
+    impl PeerHandle {
+        pub fn send(&self, cmd: PeerCmd) -> Result<()> {
+            self.tx.send(cmd).map_err(|e| format!("peer command send failed: {}", e))
+        }
+    }
+
+    pub fn spawn_peer_worker<F>(peer_label: &str, mut on_command: F) -> Result<PeerHandle>
+    where
+        F: FnMut(PeerCmd) -> bool + Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel::<PeerCmd>();
+        let worker_name = format!("dtls-peer-{}", peer_label);
+        std::thread::Builder::new()
+            .name(worker_name)
+            .spawn(move || {
+                while let Ok(cmd) = rx.recv() {
+                    if !on_command(cmd) {
+                        break;
+                    }
+                }
+            })
+            .map_err(|e| format!("failed to spawn peer worker: {}", e))?;
+        Ok(PeerHandle { tx })
+    }
 
     // Combined per-endpoint state: writer + verified issuer string + per-peer queue + optional active stream
     #[derive(Clone)]

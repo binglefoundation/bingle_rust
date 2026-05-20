@@ -58,6 +58,11 @@ vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }
 name = "all"
 path = "tests/all.rs"
 
+# Dedicated DTLS stage-1 worker test target to make RustRover run/debug directly.
+[[test]]
+name = "dtls_peer_worker_stage1"
+path = "tests/dtls/dtls_peer_worker_stage1.rs"
+
 # Keep endpoint_available as its own test target for Docker-based testnet runs
 [[test]]
 name = "endpoint_available"
