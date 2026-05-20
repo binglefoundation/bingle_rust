@@ -1049,8 +1049,8 @@ pub mod openssl_impl {
                 tracing::warn!("[DtlsOpenSsl:::accept][inbound][{} -> {:?}] <parse error> ({} bytes)", from, my_ip, data.len());
                 #[allow(unused)] {}
             }
-            // Find or create the queue for this peer in peer_states and push the datagram
-            let q_arc = {
+            // Find or create the queue and worker handle for this peer.
+            let (q_arc, peer_handle) = {
                 let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
 
@@ -1083,18 +1083,64 @@ pub mod openssl_impl {
                 }
 
                 if let Some(ps) = pm.get(&key) {
-                    ps.queue.clone()
+                    (ps.queue.clone(), ps.peer_handle.clone())
                 } else {
                     tracing::info!("[DtlsOpenSsl:::accept] new queue for {} (key: {})", from, key);
                     let q = Arc::new(PeerQueue::default());
                     tracing::debug!("[DtlsOpenSsl:::accept] no peer, initialize is_connecting_peer=false for {}", from);
                     pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false });
-                    q
+                    (q, None)
                 }
             };
-            tracing::debug!("[DtlsOpenSsl:::accept] enqueue datagram [{} -> {:?}] ({} bytes) [{} queued b4]", from, my_ip, data.len(), q_arc.len());
+
+            let peer_handle = if let Some(existing_peer_handle) = peer_handle {
+                existing_peer_handle
+            } else {
+                let peers_for_worker = peers.clone();
+                let key_for_worker = from.get_key().expect("direct endpoint key");
+                let key_for_worker_lookup = key_for_worker.clone();
+                let key_for_worker_log = key_for_worker.clone();
+                let q_for_worker = q_arc.clone();
+                let peer_label = format!("accept-{}", key_for_worker);
+                let new_peer_handle = spawn_peer_worker(&peer_label, move |cmd| {
+                    match cmd {
+                        PeerCmd::Inbound(payload) => {
+                            q_for_worker.push(payload);
+                            true
+                        }
+                        PeerCmd::Send(payload) => {
+                            let maybe_writer = if let Ok(map) = peers_for_worker.lock() {
+                                map.get(&key_for_worker_lookup).and_then(|ps| ps.writer.clone())
+                            } else {
+                                None
+                            };
+                            if let Some(writer) = maybe_writer {
+                                if let Err(err) = writer(&payload) {
+                                    tracing::warn!("[DtlsOpenSsl:::accept] peer worker write failed: {}", err);
+                                }
+                            } else {
+                                tracing::warn!("[DtlsOpenSsl:::accept] peer worker send dropped: writer not ready for {}", key_for_worker_log);
+                            }
+                            true
+                        }
+                        PeerCmd::Stop => false,
+                    }
+                }).expect("accept peer worker should spawn");
+
+                if let Ok(mut map) = peers.lock() {
+                    if let Some(ps) = map.get_mut(&key_for_worker) {
+                        ps.peer_handle = Some(new_peer_handle.clone());
+                    }
+                }
+                new_peer_handle
+            };
+
+            tracing::debug!("[DtlsOpenSsl:::accept] enqueue datagram via worker [{} -> {:?}] ({} bytes) [{} queued b4]", from, my_ip, data.len(), q_arc.len());
             #[allow(unused)] {}
-            q_arc.push(data.to_vec());
+            if let Err(err) = peer_handle.send(PeerCmd::Inbound(data.to_vec())) {
+                tracing::warn!("[DtlsOpenSsl:::accept] inbound enqueue failed for {}: {}", from, err);
+                q_arc.push(data.to_vec());
+            }
 
             let create_stream = {
                 let key = from.get_key().expect("direct endpoint key");
@@ -1323,17 +1369,21 @@ pub mod openssl_impl {
                     guard.write_all(payload).map_err(|e| format!("send writer stream dtls write failed: {}", e))
                 });
                 let worker_writer = writer_fn.clone();
+                let worker_queue = q_arc.clone();
                 let peer_label = format!("send-{}", key_to);
                 let peer_handle = spawn_peer_worker(&peer_label, move |cmd| {
                     match cmd {
                         PeerCmd::Send(payload) => {
                             if let Err(err) = worker_writer(&payload) {
                                 tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}", err);
-                                return false;
+                                return true;
                             }
                             true
                         }
-                        PeerCmd::Inbound(_) => true,
+                        PeerCmd::Inbound(payload) => {
+                            worker_queue.push(payload);
+                            true
+                        }
                         PeerCmd::Stop => false,
                     }
                 })?;
