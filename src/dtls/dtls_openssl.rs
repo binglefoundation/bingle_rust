@@ -59,7 +59,7 @@ pub mod openssl_impl {
 
     // Combined per-endpoint state: writer + verified issuer string + per-peer queue + optional active stream
     #[derive(Clone)]
-    struct PeerState { writer: Option<ServerWriter>, issuer: String, queue: Arc<PeerQueue>, stream: Option<Arc<Mutex<SslStream<CommonNetworkMuxConn>>>>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
+    struct PeerState { writer: Option<ServerWriter>, issuer: String, queue: Arc<PeerQueue>, stream: Option<Arc<Mutex<SslStream<CommonNetworkMuxConn>>>>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
     // Internal control message prefix used to announce our own certificate to the peer at the
@@ -223,7 +223,7 @@ pub mod openssl_impl {
                                             .and_modify(|ps| ps.issuer = s.clone())
                                             .or_insert_with(|| {
                                 debug_theme!(themes::DTLS, "[DtlsOpenSsl:{}::read_loop][peer_cert_handler] no peers entry, HandlePeerCertificate returned ok, initialize is_connecting_peer=false for {}", log_tag, from);
-                                                PeerState { writer: None, issuer: s.clone(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
+                                                PeerState { writer: None, issuer: s.clone(), queue: Arc::new(PeerQueue::default()), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
                                             });
                                     });
                                 }
@@ -240,7 +240,7 @@ pub mod openssl_impl {
                                     .and_modify(|ps| ps.issuer = String::new())
                                     .or_insert_with(|| {
                                         tracing::debug!("[DtlsOpenSsl:{}::read_loop] no peers entry, no HandlePeerCertificate, initialize is_connecting_peer=false for {}", log_tag, from);
-                                        PeerState { writer: None, issuer: String::new(), queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
+                                        PeerState { writer: None, issuer: String::new(), queue: Arc::new(PeerQueue::default()), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
                                     });
                             });
                         }
@@ -281,7 +281,7 @@ pub mod openssl_impl {
                                                     if trim_issuer_suffix { s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(); }
                                                     m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert_with(|| {
                                                         tracing::debug!("[DtlsOpenSsl:{}::read_loop][peer_cert_handler][first-data], no peers entry, HandlePeerCertificate passed, initialize is_connecting_peer=false for {}", log_tag, from);
-                                                        PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
+                                                        PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
                                                     });
                                                 }
                                                 res => {
@@ -305,7 +305,7 @@ pub mod openssl_impl {
                                         let s: String = String::from_utf8_lossy(&cert_pem).into();
                                         m.entry(key_from.clone()).and_modify(|ps| ps.issuer = s.clone()).or_insert_with(|| {
                                             tracing::debug!("[DtlsOpenSsl:{}::read_loop][peer_cert_handler][first-data], no peers entry, no HandlePeerCertificate, initialize is_connecting_peer=false for {}", log_tag, from);
-                                            PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
+                                            PeerState { writer: None, issuer: s, queue: Arc::new(PeerQueue::default()), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
                                         });
                                     }
                                 }
@@ -1088,7 +1088,7 @@ pub mod openssl_impl {
                     tracing::info!("[DtlsOpenSsl:::accept] new queue for {} (key: {})", from, key);
                     let q = Arc::new(PeerQueue::default());
                     tracing::debug!("[DtlsOpenSsl:::accept] no peer, initialize is_connecting_peer=false for {}", from);
-                    pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false });
+                    pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false });
                     q
                 }
             };
@@ -1113,9 +1113,9 @@ pub mod openssl_impl {
                 // Persist stream in unified peer_states entry
                 if let Ok(mut pm) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
-                    let (prev_writer, prev_issuer, prev_queue, prev_conn, prev_ann) = if let Some(ps) = pm.get(&key) { (ps.writer.clone(), ps.issuer.clone(), ps.queue.clone(), ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (None, String::new(), q_arc.clone(), false, false) };
+                    let (prev_writer, prev_issuer, prev_queue, prev_peer_handle, prev_conn, prev_ann) = if let Some(ps) = pm.get(&key) { (ps.writer.clone(), ps.issuer.clone(), ps.queue.clone(), ps.peer_handle.clone(), ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (None, String::new(), q_arc.clone(), None, false, false) };
                     tracing::debug!("[DtlsOpenSsl:::accept] create_stream, issuer {}, clone peer, is_connection_peer={}", prev_issuer, prev_conn);
-                    pm.insert(key, PeerState { writer: prev_writer, issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn, is_announced_client_cert_peer: prev_ann, handshake_logged: false });
+                    pm.insert(key, PeerState { writer: prev_writer, issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), peer_handle: prev_peer_handle, is_connecting_peer: prev_conn, is_announced_client_cert_peer: prev_ann, handshake_logged: false });
                 }
 
                 // Install writer for this peer
@@ -1130,9 +1130,9 @@ pub mod openssl_impl {
                 if let Ok(mut m) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
                     let (issuer_prev, queue_prev) = if let Some(ps) = m.get(&key) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), Arc::new(PeerQueue::default())) };
-                    let (prev_conn_flag, prev_ann_flag) = if let Some(ps) = m.get(&key) { (ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (false, false) };
+                    let (prev_peer_handle, prev_conn_flag, prev_ann_flag) = if let Some(ps) = m.get(&key) { (ps.peer_handle.clone(), ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (None, false, false) };
                     tracing::debug!("[DtlsOpenSsl:::accept] create_stream, with writer, clone peer again, is_connection_peer={}", prev_conn_flag);
-                    m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, stream: Some(stream_arc.clone()), is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag, handshake_logged: false });
+                    m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, stream: Some(stream_arc.clone()), peer_handle: prev_peer_handle, is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag, handshake_logged: false });
                     tracing::debug!("[DtlsOpenSsl:::accept] installed writer for {}", from);
                 }
 
@@ -1223,6 +1223,9 @@ pub mod openssl_impl {
             // Clear peer states and close their queues to signal EOF to background reader threads
             if let Ok(mut map) = self.peer_states.lock() {
                 for (_, ps) in map.drain() {
+                    if let Some(peer_handle) = &ps.peer_handle {
+                        let _ = peer_handle.send(PeerCmd::Stop);
+                    }
                     ps.queue.close();
                 }
             }
@@ -1259,17 +1262,26 @@ pub mod openssl_impl {
             let key_to = to.get_key().expect("direct endpoint key");
 
             // If there is an existing inbound (server-accepted) connection for `to_addr`, use its writer from peer_states.
-            let stream_to_use = {
+            let (peer_handle_to_use, stream_to_use) = {
                 let peers = &self.peer_states;
                 tracing::info!("[DtlsOpenSsl:::send] Locking peers");
                 if let Ok(map) = peers.lock() {
                     tracing::info!("[DtlsOpenSsl:::send] locked peers");
-                    map.get(&key_to).and_then(|ps| ps.stream.clone())
+                    if let Some(ps) = map.get(&key_to) {
+                        (ps.peer_handle.clone(), ps.stream.clone())
+                    } else {
+                        (None, None)
+                    }
                 } else {
                     tracing::error!("[DtlsOpenSsl:::send] peers lock poisoned");
-                    None
+                    (None, None)
                 }
             };
+
+            if let Some(peer_handle) = peer_handle_to_use {
+                tracing::info!("[DtlsOpenSsl:::send] enqueueing send via existing peer worker for {} ({} bytes)", to, data.len());
+                return peer_handle.send(PeerCmd::Send(data.to_vec()));
+            }
 
             if let Some(s_arc) = stream_to_use {
                 tracing::info!("[DtlsOpenSsl:::send] locking existing stream");
@@ -1290,7 +1302,7 @@ pub mod openssl_impl {
 
             // Create SslStream and persist it in peer_states BEFORE the handshake.
             // This ensures that the inbound handler will see the existing stream and not create a duplicate.
-            let (q_arc, stream_arc) = {
+            let (q_arc, stream_arc, peer_handle) = {
                 let peers = &self.peer_states;
                 let mut map = peers.lock().map_err(|_| "peers lock poisoned".to_string())?;
 
@@ -1304,19 +1316,41 @@ pub mod openssl_impl {
                 let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc.clone() };
                 let stream = SslStream::new(ssl, conn).map_err(|e| e.to_string())?;
                 let s_arc = Arc::new(Mutex::new(stream));
+                let writer_stream = s_arc.clone();
+                let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
+                    let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
+                    use std::io::Write;
+                    guard.write_all(payload).map_err(|e| format!("send writer stream dtls write failed: {}", e))
+                });
+                let worker_writer = writer_fn.clone();
+                let peer_label = format!("send-{}", key_to);
+                let peer_handle = spawn_peer_worker(&peer_label, move |cmd| {
+                    match cmd {
+                        PeerCmd::Send(payload) => {
+                            if let Err(err) = worker_writer(&payload) {
+                                tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}", err);
+                                return false;
+                            }
+                            true
+                        }
+                        PeerCmd::Inbound(_) => true,
+                        PeerCmd::Stop => false,
+                    }
+                })?;
 
                 tracing::debug!("[DtlsOpenSsl:::send] on {:?}, initialize/update peer state with stream and is_connecting_peer=true for {}", mux.local_addr(), to);
                 map.insert(key_to.clone(), PeerState {
-                    writer: None,
+                    writer: Some(writer_fn),
                     issuer: String::new(),
                     queue: q_arc.clone(),
                     stream: Some(s_arc.clone()),
+                    peer_handle: Some(peer_handle.clone()),
                     is_connecting_peer: true,
                     is_announced_client_cert_peer: false,
                     handshake_logged: false
                 });
 
-                (q_arc, s_arc)
+                (q_arc, s_arc, peer_handle)
             };
 
             let mut stream = stream_arc.lock().map_err(|_| "newly created stream lock poisoned".to_string())?;
@@ -1432,7 +1466,7 @@ pub mod openssl_impl {
                                                 .and_modify(|ps| ps.issuer = id.clone())
                                                 .or_insert_with(|| {
                                                     tracing::debug!("[DtlsOpenSsl:::send] initialize is_connecting_peer=false for {}", to);
-                                                    PeerState { writer: None, issuer: id.clone(), queue: std::sync::Arc::new(PeerQueue::default()), stream: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
+                                                    PeerState { writer: None, issuer: id.clone(), queue: std::sync::Arc::new(PeerQueue::default()), stream: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false }
                                                 });
                                         });
                                     }
@@ -1468,16 +1502,10 @@ pub mod openssl_impl {
             // Also install/update the writer for this peer in the unified peer_states map.
             {
                 let peers = &self.peer_states;
-                let writer_stream = stream_arc.clone();
-                let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
-                    let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                    use std::io::Write;
-                    guard.write_all(payload).map_err(|e| format!("send writer stream dtls write failed: {}", e))
-                });
                 let _ = peers.lock().map(|mut m| {
-                    let (prev_issuer, prev_queue) = if let Some(ps) = m.get(&key_to) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), q_arc.clone()) };
+                    let (prev_writer, prev_issuer, prev_queue, prev_ann) = if let Some(ps) = m.get(&key_to) { (ps.writer.clone(), ps.issuer.clone(), ps.queue.clone(), ps.is_announced_client_cert_peer) } else { (None, String::new(), q_arc.clone(), false) };
                     tracing::debug!("[DtlsOpenSsl:::send] change is_connecting_peer to false for {} (post-connect update)", to);
-                    m.insert(key_to.clone(), PeerState { writer: Some(writer_fn.clone()), issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: true });
+                    m.insert(key_to.clone(), PeerState { writer: prev_writer, issuer: prev_issuer, queue: prev_queue, stream: Some(stream_arc.clone()), peer_handle: Some(peer_handle.clone()), is_connecting_peer: false, is_announced_client_cert_peer: prev_ann, handshake_logged: true });
                 });
             }
 
