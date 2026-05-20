@@ -12,6 +12,8 @@ use rust_comms::api::bingle_api::NetworkEndpoint;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 use test_util::init_test_logging;
 
+const FAST_ENQUEUE_BUDGET: Duration = Duration::from_millis(500);
+
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())
 }
@@ -43,7 +45,7 @@ fn second_send_should_queue_without_waiting_for_stream_lock() {
     let endpoint = NetworkEndpoint::new_direct(unreachable_addr);
     let first_started = Arc::new(AtomicBool::new(false));
 
-    let second_send_elapsed = std::thread::scope(|scope| {
+    let send_elapsed_samples = std::thread::scope(|scope| {
         let client_ref = &client;
         let first_started_for_thread = first_started.clone();
         let endpoint_for_thread = endpoint.clone();
@@ -57,25 +59,43 @@ fn second_send_should_queue_without_waiting_for_stream_lock() {
         while !first_started.load(Ordering::SeqCst) && wait_start.elapsed() < Duration::from_secs(2) {
             thread::sleep(Duration::from_millis(5));
         }
+        assert!(
+            first_started.load(Ordering::SeqCst),
+            "first send thread did not start in time"
+        );
 
         // Give the first send time to create/connect and enter the write loop.
         thread::sleep(Duration::from_millis(200));
 
-        let second_start = Instant::now();
-        let second_send_result = client.send(&endpoint, b"second-payload");
-        let elapsed = second_start.elapsed();
+        let mut elapsed_samples = Vec::new();
+        for payload in [b"second-payload".as_slice(), b"third-payload", b"fourth-payload"] {
+            let send_start = Instant::now();
+            let send_result = client.send(&endpoint, payload);
+            let elapsed = send_start.elapsed();
+            assert!(
+                send_result.is_ok(),
+                "send should be enqueued while connect is in progress"
+            );
+            elapsed_samples.push(elapsed);
+        }
 
-        assert!(second_send_result.is_ok(), "second send should be queued while connect is in progress");
-        elapsed
+        elapsed_samples
     });
 
-    // Regression guard: if stream lock is held for the whole handshake timeout,
-    // this takes roughly 10s. We expect quick return even while another send is in progress.
-    assert!(
-        second_send_elapsed < Duration::from_secs(2),
-        "second send waited too long for stream lock: {:?}",
-        second_send_elapsed
+    assert_eq!(
+        send_elapsed_samples.len(),
+        3,
+        "expected elapsed timing for all queued sends"
     );
+    tracing::info!("send elapsed samples: {:?}", send_elapsed_samples);
+    for (index, elapsed) in send_elapsed_samples.iter().enumerate() {
+        assert!(
+            *elapsed < FAST_ENQUEUE_BUDGET,
+            "queued send {} waited too long (suggesting stream-lock wait): {:?}",
+            index + 2,
+            elapsed
+        );
+    }
 
     client.stop().expect("client stop");
     mux.stop();
