@@ -48,6 +48,7 @@ security:
 
 robustness:
 - fix error 40 on live device (?)
+- Refactor DTLS OpenSSL with PeerCmd to remove polling delays
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
 - implement retry for packet loss and retryable fails (FRPT implementation, no large blocks yet)
@@ -57,6 +58,7 @@ robustness:
 - ensure ipv6 is unsupported consistently
 - indicate when we get no STUN responses (UDP blocked)
 - ensure handle uniqueness
+- fix fragile tests
 - 
 network:
 - handle network change and clear caches / rediscover nat type
