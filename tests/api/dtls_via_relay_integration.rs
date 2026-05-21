@@ -195,7 +195,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     // Without retries implemented yet, send may pause for the ACK wait timeout.
     let start = Instant::now();
     let mut channel_received = false;
-    while start.elapsed() < Duration::from_secs(7) {
+    while start.elapsed() < Duration::from_secs(60) {
         if let Ok(guard) = captured_channel.lock() {
             if guard.is_some() {
                 channel_received = true;

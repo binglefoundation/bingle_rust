@@ -8,7 +8,7 @@ const FRPT_VERSION: u8 = 0x1;
 const PACKET_TYPE_DATA_SINGLE: u8 = 0x1;
 const PACKET_TYPE_ACK_COMPLETE: u8 = 0x4;
 const FRPT_HEADER_LEN: usize = 4;
-const DEFAULT_ACK_WAIT_TIMEOUT: Duration = Duration::from_secs(3);
+const DEFAULT_ACK_WAIT_TIMEOUT: Duration = Duration::from_secs(20);
 
 type AckWaiter = Arc<(Mutex<bool>, Condvar)>;
 

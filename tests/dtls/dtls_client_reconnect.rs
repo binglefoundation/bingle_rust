@@ -57,7 +57,7 @@ pub fn dtls_client_reconnect() {
     let addr_srv = mux_srv.local_addr().expect("server addr");
 
     let mut server = DtlsOpenSsl::new("server".to_string())
-        .with_null_encryption()
+       // .with_null_encryption()
         .with_handle_message(Arc::new(server_handler_2))
         .with_server_signing_cert(certs.server_crt.clone())
         .with_server_signing_private_key(certs.server_key.clone())
@@ -77,7 +77,7 @@ pub fn dtls_client_reconnect() {
 
     let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 1 mux"));
     let mut client1 = DtlsOpenSsl::new("client1".to_string())
-        .with_null_encryption()
+      //  .with_null_encryption()
         .with_handle_message(Arc::new(client_handler_2))
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
@@ -131,6 +131,7 @@ pub fn dtls_client_reconnect() {
 }
 
 fn do_roundtrip(client: &dyn Dtls, server_addr: SocketAddr, label: &str) {
+    tracing::info!("[Test] {}: Sending Hello...", label);
     let endpoint = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr);
     let mut ok = false;
     for _ in 0..1 {

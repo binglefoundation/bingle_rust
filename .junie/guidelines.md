@@ -5,6 +5,8 @@ Do not put Rust tests inline with the code, put unit tests in the test tree (lik
 
 Do not use default values on traits.
 
+Generally, all state should be part of a struct, not global or thread local except in very special cases. Ask before using global or thraed local storage.
+
 Always validate that a call which returns Option succeeds
 
 When a parameter is in use, do not start the name with'_' as this is the unused parameter marker.

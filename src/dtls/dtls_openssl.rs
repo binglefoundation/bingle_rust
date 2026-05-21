@@ -7,10 +7,14 @@ pub mod openssl_impl {
     use crate::dtls::network_mux_trait::NetworkMux;
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]
-    use openssl::ssl::{HandshakeError, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslStream, SslVerifyMode};
+    use openssl::ssl::{HandshakeError, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode};
     use std::collections::HashMap;
+    use std::pin::Pin;
     use std::sync::mpsc;
     use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll};
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+    use tokio_openssl::SslStream as TokioSslStream;
 
     type ServerWriter = Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync>;
     #[allow(unused_imports)]
@@ -48,9 +52,13 @@ pub mod openssl_impl {
             .name(worker_name)
             .spawn(move || {
                 while let Ok(cmd) = rx.recv() {
+                    let cmd2 = cmd.clone();
+                    tracing::debug!("[DtlsOpenSsl] received peer command: {:?}", cmd2);
                     if !on_command(cmd) {
+                        tracing::warn!("[DtlsOpenSsl] peer command handler returned false; terminating worker");
                         break;
                     }
+                    tracing::debug!("[DtlsOpenSsl] peer command handler {:?} returned true; continuing", cmd2);
                 }
             })
             .map_err(|e| format!("failed to spawn peer worker: {}", e))?;
@@ -79,7 +87,8 @@ pub mod openssl_impl {
     }
 
     fn run_read_loop(
-        stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>>,
+        stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
+        dtls_async_runtime: Arc<tokio::runtime::Runtime>,
         from: &NetworkEndpoint,
         peers: PeerStates,
         handle_message: Option<HandleMessage>,
@@ -94,7 +103,6 @@ pub mod openssl_impl {
         let _span = tracing::info_span!("BingleApi", handle = %handle);
         let _guard = _span.enter();
         tracing::info!("[DTLS][DtlsOpenSsl:{}] run_read_loop starting for {}", log_tag, from);
-        use std::io::{ErrorKind, Read};
         // Precompute the NetworkEndpointKey for this peer (direct)
         let key_from = from
             .get_key()
@@ -135,7 +143,9 @@ pub mod openssl_impl {
                     }
                 }
 
-                let read_res = guard.read(&mut buf);
+                let read_res = dtls_async_runtime
+                    .block_on(async { guard.read(&mut buf).await })
+                    .map_err(|e| e.to_string());
 
                 // Check if handshake finished and we haven't logged it yet
                 let mut should_log = false;
@@ -174,7 +184,7 @@ pub mod openssl_impl {
                         logged_wouldblock = false;
                         n
                     }
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                    Err(ref e) if e.contains("would block") || e.contains("WouldBlock") => {
                         // Release the stream lock immediately - the channel-based queue will handle blocking
                         drop(guard);
                         if !logged_wouldblock {
@@ -556,6 +566,7 @@ pub mod openssl_impl {
     use crate::api::network_endpoint::NetworkEndpoint;
     // Per-peer datagram queue and blocking mechanism.
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+    use crate::util::logging;
 
     pub(crate) struct PeerQueue {
         sender: std::sync::mpsc::Sender<Vec<u8>>,
@@ -683,6 +694,46 @@ pub mod openssl_impl {
         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
     }
 
+    impl AsyncRead for CommonNetworkMuxConn {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let mut read_buf = vec![0u8; buf.remaining()];
+            match std::io::Read::read(&mut *self, &mut read_buf) {
+                Ok(0) => Poll::Ready(Ok(())),
+                Ok(n) => {
+                    buf.put_slice(&read_buf[..n]);
+                    Poll::Ready(Ok(()))
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                Err(err) => Poll::Ready(Err(err)),
+            }
+        }
+    }
+
+    impl AsyncWrite for CommonNetworkMuxConn {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(std::io::Write::write(&mut *self, buf))
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(std::io::Write::flush(&mut *self))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
     // Minimal adapter that implements Dtls::send by delegating to the unified peer_states map.
     // Used by the background reader to allow handlers to reply using the same DTLS stream.
     struct PeerAdapter(PeerStates);
@@ -767,6 +818,7 @@ pub mod openssl_impl {
         // Lifecycle control for accept loop or background tasks
         pub(crate) stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
         pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
+        pub(crate) dtls_async_runtime: Arc<tokio::runtime::Runtime>,
         pub(crate) handle: String,
         pub(crate) span: tracing::Span,
     }
@@ -781,6 +833,12 @@ pub mod openssl_impl {
             use std::collections::HashMap;
             use std::sync::{Arc, Mutex};
             let peers: PeerStates = Arc::new(Mutex::new(HashMap::new()));
+            let dtls_async_runtime = Arc::new(
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build dtls async runtime"),
+            );
             let span = tracing::info_span!("BingleApi", handle = %handle);
             // Build struct with explicit defaults
             Self {
@@ -801,6 +859,7 @@ pub mod openssl_impl {
                 peer_states: peers,
                 stop_flag: None,
                 server_thread: None,
+                dtls_async_runtime,
                 handle,
                 span,
             }
@@ -1012,6 +1071,7 @@ pub mod openssl_impl {
             mux: Arc<crate::dtls::UdpNetworkMux>,
             acceptor: Arc<SslAcceptor>,
             peers: PeerStates,
+            dtls_async_runtime: Arc<tokio::runtime::Runtime>,
             handle_message: Option<HandleMessage>,
             peer_cert_handler: Option<HandlePeerCertificate>,
             from: &NetworkEndpoint,
@@ -1085,9 +1145,12 @@ pub mod openssl_impl {
                             true
                         }
                         PeerCmd::Send(payload) => {
+                            tracing::debug!("[DtlsOpenSsl:::accept] send to worker for {}: {}, locking writer", key_for_worker_log, payload.len());
                             let maybe_writer = if let Ok(map) = peers_for_worker.lock() {
+                                tracing::debug!("[DtlsOpenSsl:::accept] lock acquired for {}", key_for_worker_log);
                                 map.get(&key_for_worker_lookup).and_then(|ps| ps.writer.clone())
                             } else {
+                                tracing::error!("[DtlsOpenSsl:::accept] lock acquisition failed for {}", key_for_worker_log);
                                 None
                             };
                             if let Some(writer) = maybe_writer {
@@ -1130,18 +1193,20 @@ pub mod openssl_impl {
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
                 let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: from.clone(), queue: q_arc.clone() };
-                let ssl_stream = SslStream::new(ssl, conn).expect("ssl stream new");
-                let stream_arc: Arc<Mutex<SslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
+                let ssl_stream = TokioSslStream::new(ssl, conn).expect("ssl stream new");
+                let stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
 
                 // Install writer for this peer
                 let writer_stream = stream_arc.clone();
+                let writer_runtime = dtls_async_runtime.clone();
                 let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
                     let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                    use std::io::Write;
-                    guard.write_all(payload).map_err(|e| format!("writer stream dtls write failed: {}", e))
+                    writer_runtime
+                        .block_on(async { guard.write_all(payload).await })
+                        .map_err(|e| format!("writer stream dtls write failed: {}", e))
                 });
                 // Install or update peer state with writer
-                // is this a duplicate!
+
                 if let Ok(mut m) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
                     let (issuer_prev, queue_prev) = if let Some(ps) = m.get(&key) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), Arc::new(PeerQueue::default())) };
@@ -1158,6 +1223,7 @@ pub mod openssl_impl {
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc.clone(),
+                        dtls_async_runtime.clone(),
                         &from2,
                         peers2.clone(),
                         handle_message2.clone(),
@@ -1188,6 +1254,7 @@ pub mod openssl_impl {
 
             // Shared state maps
             let peers: PeerStates = self.peer_states.clone();
+            let dtls_async_runtime = self.dtls_async_runtime.clone();
             let handle_message = self.handle_message.clone();
             let peer_cert_handler = self.handle_peer_certificate;
             let handle = self.handle.clone();
@@ -1200,6 +1267,7 @@ pub mod openssl_impl {
                     mux.clone(),
                     acceptor.clone(),
                     peers.clone(),
+                    dtls_async_runtime.clone(),
                     handle_message.clone(),
                     peer_cert_handler,
                     from,
@@ -1260,7 +1328,6 @@ pub mod openssl_impl {
 
         fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
             let _guard = self.span.enter();
-            use std::io::Write;
             // We require a running UDP mux to perform client handshake and writes
             let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
 
@@ -1319,13 +1386,15 @@ pub mod openssl_impl {
                 };
 
                 let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc.clone() };
-                let stream = SslStream::new(ssl, conn).map_err(|e| e.to_string())?;
+                let stream = TokioSslStream::new(ssl, conn).map_err(|e| e.to_string())?;
                 let s_arc = Arc::new(Mutex::new(stream));
                 let writer_stream = s_arc.clone();
+                let writer_runtime = self.dtls_async_runtime.clone();
                 let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
                     let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                    use std::io::Write;
-                    guard.write_all(payload).map_err(|e| format!("send writer stream dtls write failed: {}", e))
+                    writer_runtime
+                        .block_on(async { guard.write_all(payload).await })
+                        .map_err(|e| format!("send writer stream dtls write failed: {}", e))
                 });
                 let worker_writer = writer_fn.clone();
                 let worker_queue = q_arc.clone();
@@ -1363,81 +1432,47 @@ pub mod openssl_impl {
 
             let mut stream = stream_arc.lock().map_err(|_| "newly created stream lock poisoned".to_string())?;
 
-            tracing::info!("[DtlsOpenSsl:::send] starting DTLS connect/handshake (via first write) to {} with 10s deadline", to);
-
-            use std::time::{Duration, Instant};
+            tracing::info!("[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with 10s deadline", to);
+            use std::time::Instant;
             let start = Instant::now();
-            let deadline = Duration::from_millis(10000); // reduce to 10s
-            let mut iter: u32 = 0;
+            let runtime = self.dtls_async_runtime.clone();
 
-            // We use a loop to handle the non-blocking nature of the underlying connection.
-            // The first call to write_all will initiate the handshake.
-            loop {
-                // To initiate connect on sending first packet, we call write_all(data)
-                match stream.write_all(data) {
-                    Ok(_) => {
-                        let ms = start.elapsed().as_millis();
-                        let ssl = stream.ssl();
-                        let selected = ssl.current_cipher().map(|c| c.name().to_string()).unwrap_or_else(|| "none".to_string());
-                        let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
-                        
-                        // Mark as logged so run_read_loop doesn't log it again
-                        if let Ok(mut m) = self.peer_states.lock() {
-                            if let Some(ps) = m.get_mut(&key_to) {
-                                ps.handshake_logged = true;
-                            }
-                        }
+            let io_result = runtime.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_millis(10_000), async {
+                    stream.write_all(data).await.map_err(|e| e.to_string())
+                })
+                .await
+            });
 
-                        tracing::info!("[DTLS][handshake {}] completed (client). Selected: {}. Our available: {}", to, selected, our_ciphers);
-                        tracing::info!("[DtlsOpenSsl:::send] first packet sent and handshake completed to {} in {}ms after {} iterations", to, ms, iter);
-                        break;
+            match io_result {
+                Ok(Ok(())) => {
+                    let ms = start.elapsed().as_millis();
+                    let ssl = stream.ssl();
+                    let selected = ssl.current_cipher().map(|c| c.name().to_string()).unwrap_or_else(|| "none".to_string());
+                    let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
+                    if let Ok(mut m) = self.peer_states.lock() {
+                        if let Some(ps) = m.get_mut(&key_to) {
+                            ps.handshake_logged = true;
+                        }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        iter += 1;
-                        let elapsed = start.elapsed();
-                        if elapsed > deadline {
-                            {
-                                let peers = &self.peer_states;
-                                if let Ok(mut m) = peers.lock() {
-                                    let key = to.get_key().expect("direct endpoint key");
-                                    tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (timeout)", to);
-                                    m.remove(&key);
-                                }
-                            }
-                            tracing::warn!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms ({} iterations)", to, elapsed.as_millis(), iter);
-                            return Err("dtls client connect timeout".to_string());
-                        }
-                        // Check if we were told to abort by the tie-breaker
-                        {
-                            let peers = &self.peer_states;
-                            if let Ok(map) = peers.lock() {
-                                if let Some(ps) = map.get(&key_to) {
-                                    if !ps.is_connecting_peer {
-                                        tracing::warn!("[DtlsOpenSsl:::send] aborting outbound connect to {} (tie-breaker decided I am server)", to);
-                                        return Err("dtls client connect aborted by tie-breaker".to_string());
-                                    }
-                                }
-                            }
-                        }
-                        if iter % 100 == 1 {
-                            let remaining = (deadline - elapsed).as_millis();
-                            tracing::trace!("[DtlsOpenSsl:::send] handshake/write WouldBlock to {} (elapsed={}ms, remaining={}ms, iter={})", to, elapsed.as_millis(), remaining, iter);
-                        }
-                        std::thread::yield_now();
-                        continue;
+                    tracing::info!("[DTLS][handshake {}] completed (client). Selected: {}. Our available: {}", to, selected, our_ciphers);
+                    tracing::info!("[DtlsOpenSsl:::send] first packet sent and handshake completed to {} in {}ms", to, ms);
+                }
+                Ok(Err(err)) => {
+                    if let Ok(mut m) = self.peer_states.lock() {
+                        tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (write failure)", to);
+                        m.remove(&key_to);
                     }
-                    Err(e) => {
-                        {
-                            let peers = &self.peer_states;
-                            if let Ok(mut m) = peers.lock() {
-                                let key = to.get_key().expect("direct endpoint key");
-                                tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (write failure)", to);
-                                m.remove(&key);
-                            }
-                        }
-                        tracing::warn!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, e);
-                        return Err(format!("dtls client write failed: {}", e));
+                    tracing::warn!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, err);
+                    return Err(format!("dtls client write failed: {}", err));
+                }
+                Err(_) => {
+                    if let Ok(mut m) = self.peer_states.lock() {
+                        tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (timeout)", to);
+                        m.remove(&key_to);
                     }
+                    tracing::warn!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms", to, start.elapsed().as_millis());
+                    return Err("dtls client connect timeout".to_string());
                 }
             }
             // Connected new DTLS stream
@@ -1529,6 +1564,7 @@ pub mod openssl_impl {
                 std::thread::spawn(move || {
                     run_read_loop(
                         stream_arc_for_reader.clone(),
+                        runtime,
                         &from2,
                         peers2.clone(),
                         handle_message2.clone(),
