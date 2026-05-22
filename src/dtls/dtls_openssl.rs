@@ -16,7 +16,49 @@ pub mod openssl_impl {
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
     use tokio_openssl::SslStream as TokioSslStream;
 
-    type ServerWriter = Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync>;
+    #[derive(Clone)]
+    struct PeerWriter {
+        tx: mpsc::Sender<Vec<u8>>,
+    }
+
+    impl PeerWriter {
+        fn new(tx: mpsc::Sender<Vec<u8>>) -> Self {
+            Self { tx }
+        }
+
+        fn send(&self, payload: &[u8]) -> Result<()> {
+            self.tx
+                .send(payload.to_vec())
+                .map_err(|e| format!("peer writer channel send failed: {}", e))
+        }
+    }
+
+    fn spawn_stream_writer_task(
+        runtime: Arc<tokio::runtime::Runtime>,
+        stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
+        peer_label: String,
+    ) -> Result<PeerWriter> {
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        std::thread::Builder::new()
+            .name(format!("dtls-writer-{}", peer_label))
+            .spawn(move || {
+                while let Ok(payload) = rx.recv() {
+                    let mut guard = match stream_arc.lock() {
+                        Ok(g) => g,
+                        Err(_) => {
+                            tracing::warn!("[DtlsOpenSsl:::writer] {} stream lock poisoned", peer_label);
+                            break;
+                        }
+                    };
+                    if let Err(e) = runtime.block_on(async { guard.write_all(&payload).await }) {
+                        tracing::warn!("[DtlsOpenSsl:::writer] {} write failed: {}", peer_label, e);
+                        break;
+                    }
+                }
+            })
+            .map_err(|e| format!("failed to spawn writer task: {}", e))?;
+        Ok(PeerWriter::new(tx))
+    }
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
     #[allow(unused_imports)]
@@ -67,7 +109,7 @@ pub mod openssl_impl {
 
     // Combined per-endpoint state: writer + verified issuer string + per-peer queue
     #[derive(Clone)]
-    struct PeerState { writer: Option<ServerWriter>, issuer: String, queue: Arc<PeerQueue>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
+    struct PeerState { writer: Option<PeerWriter>, issuer: String, queue: Arc<PeerQueue>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
     // Internal control message prefix used to announce our own certificate to the peer at the
@@ -758,7 +800,7 @@ pub mod openssl_impl {
             match self.0.lock() {
                 Ok(map) => {
                     if let Some(ps) = map.get(&key) {
-                        if let Some(w) = &ps.writer { w(data) } else { Err("no writer for peer".to_string()) }
+                        if let Some(w) = &ps.writer { w.send(data) } else { Err("no writer for peer".to_string()) }
                     } else { Err("no writer for peer".to_string()) }
                 }
                 Err(_) => Err("peers lock poisoned".to_string()),
@@ -1156,7 +1198,7 @@ pub mod openssl_impl {
                                 None
                             };
                             if let Some(writer) = maybe_writer {
-                                if let Err(err) = writer(&payload) {
+                                if let Err(err) = writer.send(&payload) {
                                     tracing::warn!("[DtlsOpenSsl:::accept] peer worker write failed: {}", err);
                                 }
                             } else {
@@ -1198,20 +1240,16 @@ pub mod openssl_impl {
                 let ssl_stream = TokioSslStream::new(ssl, conn).expect("ssl stream new");
                 let stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
 
-                // Install writer for this peer
-                let writer_stream = stream_arc.clone();
-                let writer_runtime = dtls_async_runtime.clone();
-                let from_for_writer = from.clone();
-                let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
-                    tracing::debug!("[DtlsOpenSsl:::accept] locking writer [{} -> {:?}]", from_for_writer, my_ip);
-                    let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                    tracing::debug!("[DtlsOpenSsl:::accept] write to writer for {}: {}, locking writer", from_for_writer, payload.len());
-                    let res = writer_runtime
-                        .block_on(async { guard.write_all(payload).await })
-                        .map_err(|e| format!("writer stream dtls write failed: {}", e));
-                    tracing::debug!("[DtlsOpenSsl:::accept] write to writer for {}: done with {:?}", from_for_writer, res);
-                    res
-                });
+                let writer = spawn_stream_writer_task(
+                    dtls_async_runtime.clone(),
+                    stream_arc.clone(),
+                    format!("accept-{}", from.get_key().expect("direct endpoint key")),
+                )
+                .map_err(|e| {
+                    tracing::warn!("[DtlsOpenSsl:::accept] failed to spawn writer task for {}: {}", from, e);
+                    e
+                })
+                .ok();
                 // Install or update peer state with writer
 
                 if let Ok(mut m) = peers.lock() {
@@ -1219,7 +1257,7 @@ pub mod openssl_impl {
                     let (issuer_prev, queue_prev) = if let Some(ps) = m.get(&key) { (ps.issuer.clone(), ps.queue.clone()) } else { (String::new(), Arc::new(PeerQueue::default())) };
                     let (prev_peer_handle, prev_conn_flag, prev_ann_flag) = if let Some(ps) = m.get(&key) { (ps.peer_handle.clone(), ps.is_connecting_peer, ps.is_announced_client_cert_peer) } else { (None, false, false) };
                     tracing::debug!("[DtlsOpenSsl:::accept] create_stream, with writer, clone peer again, is_connection_peer={}", prev_conn_flag);
-                    m.insert(key, PeerState { writer: Some(writer_fn.clone()), issuer: issuer_prev, queue: queue_prev, peer_handle: prev_peer_handle, is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag, handshake_logged: false });
+                    m.insert(key, PeerState { writer, issuer: issuer_prev, queue: queue_prev, peer_handle: prev_peer_handle, is_connecting_peer: prev_conn_flag, is_announced_client_cert_peer: prev_ann_flag, handshake_logged: false });
                     tracing::debug!("[DtlsOpenSsl:::accept] installed writer for {}", from);
                 }
 
@@ -1395,15 +1433,12 @@ pub mod openssl_impl {
                 let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc.clone() };
                 let stream = TokioSslStream::new(ssl, conn).map_err(|e| e.to_string())?;
                 let s_arc = Arc::new(Mutex::new(stream));
-                let writer_stream = s_arc.clone();
-                let writer_runtime = self.dtls_async_runtime.clone();
-                let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
-                    let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                    writer_runtime
-                        .block_on(async { guard.write_all(payload).await })
-                        .map_err(|e| format!("send writer stream dtls write failed: {}", e))
-                });
-                let worker_writer = writer_fn.clone();
+                let writer = spawn_stream_writer_task(
+                    self.dtls_async_runtime.clone(),
+                    s_arc.clone(),
+                    format!("send-{}", key_to),
+                )?;
+                let worker_writer = writer.clone();
                 let worker_queue = q_arc.clone();
                 let peer_label = format!("send-{}", key_to);
                 let key_to2 = key_to.clone();
@@ -1411,7 +1446,7 @@ pub mod openssl_impl {
                     match cmd {
                         PeerCmd::Send(payload) => {
                             tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: {} bytes, locking writer", key_to2, payload.len());
-                            if let Err(err) = worker_writer(&payload) {
+                            if let Err(err) = worker_writer.send(&payload) {
                                 tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}", err);
                                 return true;
                             }
@@ -1428,7 +1463,7 @@ pub mod openssl_impl {
 
                 tracing::debug!("[DtlsOpenSsl:::send] on {:?}, initialize/update peer state with stream and is_connecting_peer=true for {}", mux.local_addr(), to);
                 map.insert(key_to.clone(), PeerState {
-                    writer: Some(writer_fn),
+                    writer: Some(writer),
                     issuer: String::new(),
                     queue: q_arc.clone(),
                     peer_handle: Some(peer_handle.clone()),
