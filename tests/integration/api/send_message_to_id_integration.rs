@@ -257,7 +257,7 @@ fn setup_on_message(
 }
 
 fn run_send_message_to_id_test(broken_nat: bool) {
-    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=debug");
 
     // This test requires a running local Algorand localnet + indexer.
     if !test_util::should_run_localnet() {

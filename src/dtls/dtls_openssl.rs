@@ -143,9 +143,12 @@ pub mod openssl_impl {
                     }
                 }
 
-                let read_res = dtls_async_runtime
-                    .block_on(async { guard.read(&mut buf).await })
-                    .map_err(|e| e.to_string());
+                let read_res = dtls_async_runtime.block_on(async {
+                    match tokio::time::timeout(std::time::Duration::from_millis(20), guard.read(&mut buf)).await {
+                        Ok(res) => res.map_err(|e| e.to_string()),
+                        Err(_) => Err("read timeout".to_string()),
+                    }
+                });
 
                 // Check if handshake finished and we haven't logged it yet
                 let mut should_log = false;
@@ -184,11 +187,11 @@ pub mod openssl_impl {
                         logged_wouldblock = false;
                         n
                     }
-                    Err(ref e) if e.contains("would block") || e.contains("WouldBlock") => {
+                    Err(ref e) if e == "read timeout" || e.contains("would block") || e.contains("WouldBlock") => {
                         // Release the stream lock immediately - the channel-based queue will handle blocking
                         drop(guard);
                         if !logged_wouldblock {
-                            info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] WouldBlock (no datagram yet)", log_tag, from);
+                            info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] WouldBlock/timeout (no datagram yet)", log_tag, from);
                             logged_wouldblock = true;
                         }
                         continue;
@@ -566,7 +569,6 @@ pub mod openssl_impl {
     use crate::api::network_endpoint::NetworkEndpoint;
     // Per-peer datagram queue and blocking mechanism.
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-    use crate::util::logging;
 
     pub(crate) struct PeerQueue {
         sender: std::sync::mpsc::Sender<Vec<u8>>,
@@ -1145,7 +1147,7 @@ pub mod openssl_impl {
                             true
                         }
                         PeerCmd::Send(payload) => {
-                            tracing::debug!("[DtlsOpenSsl:::accept] send to worker for {}: {}, locking writer", key_for_worker_log, payload.len());
+                            tracing::debug!("[DtlsOpenSsl:::accept] send to worker for {}: {} bytes, locking writer", key_for_worker_log, payload.len());
                             let maybe_writer = if let Ok(map) = peers_for_worker.lock() {
                                 tracing::debug!("[DtlsOpenSsl:::accept] lock acquired for {}", key_for_worker_log);
                                 map.get(&key_for_worker_lookup).and_then(|ps| ps.writer.clone())
@@ -1199,11 +1201,16 @@ pub mod openssl_impl {
                 // Install writer for this peer
                 let writer_stream = stream_arc.clone();
                 let writer_runtime = dtls_async_runtime.clone();
+                let from_for_writer = from.clone();
                 let writer_fn: Arc<dyn Fn(&[u8]) -> Result<()> + Send + Sync> = Arc::new(move |payload: &[u8]| {
+                    tracing::debug!("[DtlsOpenSsl:::accept] locking writer [{} -> {:?}]", from_for_writer, my_ip);
                     let mut guard = writer_stream.lock().map_err(|_| "writer stream poisoned".to_string())?;
-                    writer_runtime
+                    tracing::debug!("[DtlsOpenSsl:::accept] write to writer for {}: {}, locking writer", from_for_writer, payload.len());
+                    let res = writer_runtime
                         .block_on(async { guard.write_all(payload).await })
-                        .map_err(|e| format!("writer stream dtls write failed: {}", e))
+                        .map_err(|e| format!("writer stream dtls write failed: {}", e));
+                    tracing::debug!("[DtlsOpenSsl:::accept] write to writer for {}: done with {:?}", from_for_writer, res);
+                    res
                 });
                 // Install or update peer state with writer
 
@@ -1399,13 +1406,16 @@ pub mod openssl_impl {
                 let worker_writer = writer_fn.clone();
                 let worker_queue = q_arc.clone();
                 let peer_label = format!("send-{}", key_to);
+                let key_to2 = key_to.clone();
                 let peer_handle = spawn_peer_worker(&peer_label, move |cmd| {
                     match cmd {
                         PeerCmd::Send(payload) => {
+                            tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: {} bytes, locking writer", key_to2, payload.len());
                             if let Err(err) = worker_writer(&payload) {
                                 tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}", err);
                                 return true;
                             }
+                            tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: done", key_to2);
                             true
                         }
                         PeerCmd::Inbound(payload) => {

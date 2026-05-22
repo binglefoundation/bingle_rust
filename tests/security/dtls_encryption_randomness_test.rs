@@ -129,7 +129,7 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
 
     // 4) Analyze captured packets
     // Wait a bit for all packets to be received
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_secs(5));
 
     let all_packets = captured_packets.lock().unwrap().clone();
     // Filter for our messages based on size (1200 payload + JSON overhead + DTLS overhead).
