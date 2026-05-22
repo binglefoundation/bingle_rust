@@ -17,19 +17,73 @@ pub mod openssl_impl {
     use tokio_openssl::SslStream as TokioSslStream;
 
     #[derive(Clone)]
+    enum PeerWriterKind {
+        Direct {
+            runtime: Arc<tokio::runtime::Runtime>,
+            stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
+        },
+        Channel {
+            tx: mpsc::Sender<Vec<u8>>,
+        },
+    }
+
+    #[derive(Clone)]
     struct PeerWriter {
-        tx: mpsc::Sender<Vec<u8>>,
+        inner: Arc<Mutex<PeerWriterKind>>,
     }
 
     impl PeerWriter {
-        fn new(tx: mpsc::Sender<Vec<u8>>) -> Self {
-            Self { tx }
+        fn from_direct(runtime: Arc<tokio::runtime::Runtime>, stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>) -> Self {
+            Self {
+                inner: Arc::new(Mutex::new(PeerWriterKind::Direct { runtime, stream_arc })),
+            }
+        }
+
+        fn from_channel(tx: mpsc::Sender<Vec<u8>>) -> Self {
+            Self {
+                inner: Arc::new(Mutex::new(PeerWriterKind::Channel { tx })),
+            }
+        }
+
+        fn switch_to_channel(&self, tx: mpsc::Sender<Vec<u8>>) -> Result<()> {
+            let mut guard = self.inner.lock().map_err(|_| "peer writer lock poisoned".to_string())?;
+            *guard = PeerWriterKind::Channel { tx };
+            Ok(())
         }
 
         fn send(&self, payload: &[u8]) -> Result<()> {
-            self.tx
-                .send(payload.to_vec())
-                .map_err(|e| format!("peer writer channel send failed: {}", e))
+            enum SendPath {
+                Direct {
+                    runtime: Arc<tokio::runtime::Runtime>,
+                    stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
+                },
+                Channel {
+                    tx: mpsc::Sender<Vec<u8>>,
+                },
+            }
+
+            let send_path = {
+                let guard = self.inner.lock().map_err(|_| "peer writer lock poisoned".to_string())?;
+                match &*guard {
+                    PeerWriterKind::Direct { runtime, stream_arc } => SendPath::Direct {
+                        runtime: runtime.clone(),
+                        stream_arc: stream_arc.clone(),
+                    },
+                    PeerWriterKind::Channel { tx } => SendPath::Channel { tx: tx.clone() },
+                }
+            };
+
+            match send_path {
+                SendPath::Direct { runtime, stream_arc } => {
+                    let mut guard = stream_arc.lock().map_err(|_| "writer stream poisoned".to_string())?;
+                    runtime
+                        .block_on(async { guard.write_all(payload).await })
+                        .map_err(|e| format!("send writer stream dtls write failed: {}", e))
+                }
+                SendPath::Channel { tx } => tx
+                    .send(payload.to_vec())
+                    .map_err(|e| format!("peer writer channel send failed: {}", e)),
+            }
         }
     }
 
@@ -37,7 +91,7 @@ pub mod openssl_impl {
         runtime: Arc<tokio::runtime::Runtime>,
         stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
         peer_label: String,
-    ) -> Result<PeerWriter> {
+    ) -> Result<mpsc::Sender<Vec<u8>>> {
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         std::thread::Builder::new()
             .name(format!("dtls-writer-{}", peer_label))
@@ -57,7 +111,7 @@ pub mod openssl_impl {
                 }
             })
             .map_err(|e| format!("failed to spawn writer task: {}", e))?;
-        Ok(PeerWriter::new(tx))
+        Ok(tx)
     }
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
@@ -1249,7 +1303,8 @@ pub mod openssl_impl {
                     tracing::warn!("[DtlsOpenSsl:::accept] failed to spawn writer task for {}: {}", from, e);
                     e
                 })
-                .ok();
+                .ok()
+                .map(PeerWriter::from_channel);
                 // Install or update peer state with writer
 
                 if let Ok(mut m) = peers.lock() {
@@ -1433,11 +1488,7 @@ pub mod openssl_impl {
                 let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc.clone() };
                 let stream = TokioSslStream::new(ssl, conn).map_err(|e| e.to_string())?;
                 let s_arc = Arc::new(Mutex::new(stream));
-                let writer = spawn_stream_writer_task(
-                    self.dtls_async_runtime.clone(),
-                    s_arc.clone(),
-                    format!("send-{}", key_to),
-                )?;
+                let writer = PeerWriter::from_direct(self.dtls_async_runtime.clone(), s_arc.clone());
                 let worker_writer = writer.clone();
                 let worker_queue = q_arc.clone();
                 let peer_label = format!("send-{}", key_to);
@@ -1523,6 +1574,19 @@ pub mod openssl_impl {
             // Connected new DTLS stream
             tracing::info!("[DtlsOpenSsl:::send] connected new DTLS stream to {}", to);
             #[allow(unused)] {}
+
+            let writer_tx = spawn_stream_writer_task(
+                self.dtls_async_runtime.clone(),
+                stream_arc.clone(),
+                format!("send-{}", key_to),
+            )?;
+            if let Ok(mut m) = self.peer_states.lock() {
+                if let Some(ps) = m.get_mut(&key_to) {
+                    if let Some(w) = &ps.writer {
+                        let _ = w.switch_to_channel(writer_tx.clone());
+                    }
+                }
+            }
 
             // Immediately invoke peer certificate handler on the client side with the server's certificate
             if let Some(h) = self.handle_peer_certificate {
