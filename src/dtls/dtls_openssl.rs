@@ -668,7 +668,6 @@ pub mod openssl_impl {
 
     pub(crate) struct PeerQueue {
         sender: std::sync::mpsc::Sender<Vec<u8>>,
-        receiver: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
         closed: AtomicBool,
     }
 
@@ -728,7 +727,6 @@ pub mod openssl_impl {
             let (sender, receiver) = std::sync::mpsc::channel();
             Self {
                 sender,
-                receiver: std::sync::Mutex::new(receiver),
                 closed: AtomicBool::new(false),
             }
         }
@@ -750,35 +748,6 @@ pub mod openssl_impl {
             }
         }
 
-        fn pop_blocking(&self, buf: &mut [u8]) -> std::io::Result<usize> {
-            use std::io::{Error, ErrorKind};
-
-            if self.closed.load(AtomicOrdering::SeqCst) {
-                return Ok(0);
-            }
-
-            // Get the receiver - this is the only lock we need
-            let receiver = match self.receiver.lock() {
-                Ok(r) => r,
-                Err(_) => return Err(Error::new(ErrorKind::Other, "receiver lock poisoned")),
-            };
-
-            // Block on the channel without holding any other locks
-            match receiver.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(data) => {
-                    let n = data.len().min(buf.len());
-                    buf[..n].copy_from_slice(&data[..n]);
-                    Ok(n)
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    Err(Error::from(ErrorKind::WouldBlock))
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    Ok(0) // EOF
-                }
-            }
-        }
-
         #[allow(dead_code)]
         fn close(&self) {
             self.closed.store(true, AtomicOrdering::SeqCst);
@@ -792,29 +761,10 @@ pub mod openssl_impl {
     pub(crate) struct CommonNetworkMuxConn {
         mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
         peer: crate::api::bingle_api::NetworkEndpoint,
-        queue: Arc<PeerQueue>,
         async_queue: Arc<AsyncPeerQueue>,
         read_remainder: Vec<u8>,
     }
-    impl std::io::Read for CommonNetworkMuxConn {
-        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            // tracing::warn!("[dtls muxconn][Read:read] legacy call");
 
-            let n = self.queue.pop_blocking(buf)?;
-            #[cfg(debug_assertions)]
-            {
-                if n > 0 {
-                    let to_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                    if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(&buf[..n]) {
-                        tracing::trace!("[dtls muxconn][recv from queue][{} -> {}] {} [{} queued b4]", self.peer, to_ip, json, self.queue.len());
-                    } else {
-                        tracing::warn!("[dtls muxconn][recv from queue][{} -> {}] <parse error> ({} bytes)", self.peer, to_ip, n);
-                    }
-                }
-            }
-            Ok(n)
-        }
-    }
     impl std::io::Write for CommonNetworkMuxConn {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             tracing::warn!("[dtls muxconn][Write:write] legacy call {} bytes", buf.len());
@@ -1390,7 +1340,6 @@ pub mod openssl_impl {
                 let conn = CommonNetworkMuxConn {
                     mux: mux.clone(),
                     peer: from.clone(),
-                    queue: q_arc.clone(),
                     async_queue: async_q_arc.clone(),
                     read_remainder: Vec::new(),
                 };
@@ -1598,7 +1547,6 @@ pub mod openssl_impl {
                 let conn = CommonNetworkMuxConn {
                     mux: mux.clone(),
                     peer: endpoint.clone(),
-                    queue: q_arc.clone(),
                     async_queue: async_q_arc.clone(),
                     read_remainder: Vec::new(),
                 };

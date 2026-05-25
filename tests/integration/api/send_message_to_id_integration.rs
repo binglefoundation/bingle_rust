@@ -14,6 +14,9 @@ use crate::setup_localnet;
 use crate::util::test_util;
 use serial_test::serial;
 
+const ADDRESS_B: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
+const PASSPHRASE_B: &str = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
+
 // Helper: start a relay node at a fixed address
 fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
     tracing::info!("[Test] start_root_relay name={} addr={} app_id={}", name, addr, app_id);
@@ -214,6 +217,13 @@ fn register_client_on_blockchain(
 ) {
     let ops = test_util::ops_from_mnemonic(address, passphrase, cfg);
     // opt_in_app/asset may fail if already opted in (e.g. relays registered via register_relays)
+    if let Err(e) = creator.opt_in_app(app_id) {
+        tracing::info!("[register_client_on_blockchain] opt-in creator to app skipped (may already be opted in): {}", e);
+    }
+    if let Err(e) = creator.opt_in_to_asset(asset_id) {
+        tracing::info!("[register_client_on_blockchain] opt-in creator to asset skipped (may already be opted in): {}",e);
+    }
+
     if let Err(e) = ops.opt_in_app(app_id) {
         tracing::info!("[register_client_on_blockchain] {} opt-in app skipped (may already be opted in): {}", handle, e);
     }
@@ -266,7 +276,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     }
 
     let cfg = test_util::localnet_config();
-    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, test_util::ADDRESS_10MIL]);
+    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, test_util::ADDRESS_10MIL, ADDRESS_B]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
@@ -294,20 +304,18 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     let (mut s1, mut s2, stun_list) = setup_stun_servers(broken_nat);
 
     // Before sending: ensure clients have handles registered on-chain so reverse lookup by id succeeds.
-    let address_b = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
-    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
     register_client_on_blockchain(
         test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client_a",
         app_id, asset_id, &creator, cfg.clone(),
     );
     register_client_on_blockchain(
-        address_b, passphrase_b, "client_b",
+        ADDRESS_B, PASSPHRASE_B, "client_b",
         app_id, asset_id, &creator, cfg.clone(),
     );
 
     // Start two clients A and B; B will receive
     let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
-    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
+    let client_b = start_client("client_b", PASSPHRASE_B, stun_list.clone(), app_id, cfg.clone());
 
     // Install OnMessage handler for client B to capture delivery and who sent it
     let received = Arc::new(AtomicBool::new(false));
@@ -588,7 +596,7 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     }
 
     let cfg = test_util::localnet_config();
-    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
+    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, ADDRESS_B]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
@@ -625,17 +633,13 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
 
     // Register client_b on blockchain so handle lookup works
-    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
-    let ops_b_tmp = rust_comms::algo_ops::AlgoOps::new(Some(passphrase_b.to_string()), None, Some(cfg.clone()));
-    let address_b = ops_b_tmp.address.as_deref().expect("derive client_b address from passphrase");
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[address_b]).expect("fund client_b");
     register_client_on_blockchain(
-        address_b, passphrase_b, "client_b",
+        ADDRESS_B, PASSPHRASE_B, "client_b",
         app_id, asset_id, &creator, cfg.clone(),
     );
 
     // Start a single client that will be forced to use a relay due to broken NAT
-    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
+    let client_b = start_client("client_b", PASSPHRASE_B, stun_list.clone(), app_id, cfg.clone());
 
     // Wait for client to reach Registered (it should register via a relay)
     let ok_b = test_util::wait_for_registered(&client_b, Duration::from_secs(120));
@@ -764,9 +768,8 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     let (mut s1, mut s2, stun_list) = setup_stun_servers(false);
 
     // ── Clients A and B ────────────────────────────────────────────────
-    let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
     let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
-    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
+    let client_b = start_client("client_b", PASSPHRASE_B, stun_list.clone(), app_id, cfg.clone());
 
     // Register client A on blockchain for reverse handle lookup
     register_client_on_blockchain(
@@ -774,7 +777,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
         app_id, asset_id, &creator, cfg.clone(),
     );
     register_client_on_blockchain(
-        &*client_b.get_my_id().expect("Client B must have id"), passphrase_b, "client_b",
+        &*client_b.get_my_id().expect("Client B must have id"), PASSPHRASE_B, "client_b",
         app_id, asset_id, &creator, cfg.clone(),
     );
 
@@ -883,7 +886,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     }
 
     let cfg = test_util::localnet_config();
-    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE]);
+    let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, ADDRESS_B]);
 
     // Fixed relay endpoints on loopback
     let r1_port = test_util::find_unused_loopback_port();
