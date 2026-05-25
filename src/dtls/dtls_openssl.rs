@@ -160,11 +160,11 @@ pub mod openssl_impl {
         Ok(PeerHandle { tx })
     }
 
-    // Combined per-endpoint state: writer + verified issuer string + per-peer queue
+    // Combined per-endpoint state: writer + verified issuer string + per-peer async queue
     const ASYNC_PEER_QUEUE_CAPACITY: usize = 8192;
 
     #[derive(Clone)]
-    struct PeerState { writer: Option<PeerWriter>, issuer: String, queue: Arc<PeerQueue>, async_queue: Arc<AsyncPeerQueue>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
+    struct PeerState { writer: Option<PeerWriter>, issuer: String, async_queue: Arc<AsyncPeerQueue>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
     fn get_or_create_peer_state<'a>(
@@ -174,7 +174,6 @@ pub mod openssl_impl {
         map.entry(key.clone()).or_insert_with(|| PeerState {
             writer: None,
             issuer: String::new(),
-            queue: Arc::new(PeerQueue::default()),
             async_queue: Arc::new(AsyncPeerQueue::new(ASYNC_PEER_QUEUE_CAPACITY)),
             peer_handle: None,
             is_connecting_peer: false,
@@ -187,7 +186,6 @@ pub mod openssl_impl {
         if let Some(peer_handle) = peer_state.peer_handle {
             let _ = peer_handle.send(PeerCmd::Stop);
         }
-        peer_state.queue.close();
         peer_state.async_queue.close();
     }
 
@@ -309,7 +307,7 @@ pub mod openssl_impl {
                         n
                     }
                     Err(ref e) if e == "read timeout" || e.contains("would block") || e.contains("WouldBlock") => {
-                        // Release the stream lock immediately - the channel-based queue will handle blocking
+                        // Release the stream lock immediately - async queue wakeup will resume reads.
                         drop(guard);
                         if !logged_wouldblock {
                             info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] WouldBlock/timeout (no datagram yet)", log_tag, from);
@@ -682,21 +680,15 @@ pub mod openssl_impl {
     }
 
     use crate::api::network_endpoint::NetworkEndpoint;
-    // Per-peer datagram queue and blocking mechanism.
+    // Per-peer datagram queue with async wakeup semantics.
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
-    pub(crate) struct PeerQueue {
-        closed: AtomicBool,
-    }
-
-    #[allow(dead_code)]
     pub(crate) struct AsyncPeerQueue {
         sender: tokio::sync::mpsc::Sender<Vec<u8>>,
         receiver: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>,
         closed: AtomicBool,
     }
 
-    #[allow(dead_code)]
     impl AsyncPeerQueue {
         pub(crate) fn new(capacity: usize) -> Self {
             let (sender, receiver) = tokio::sync::mpsc::channel(capacity);
@@ -726,11 +718,6 @@ pub mod openssl_impl {
                 })
         }
 
-        pub(crate) async fn recv(&self) -> Option<Vec<u8>> {
-            let mut guard = self.receiver.lock().await;
-            guard.recv().await
-        }
-
         pub(crate) fn poll_recv(&self, cx: &mut Context<'_>) -> Poll<Option<Vec<u8>>> {
             if self.closed.load(AtomicOrdering::SeqCst) {
                 if let Ok(mut receiver) = self.receiver.try_lock() {
@@ -758,26 +745,9 @@ pub mod openssl_impl {
             self.closed.load(AtomicOrdering::SeqCst)
         }
 
-        pub(crate) fn sender(&self) -> tokio::sync::mpsc::Sender<Vec<u8>> {
-            self.sender.clone()
-        }
     }
 
-    impl Default for PeerQueue {
-        fn default() -> Self {
-            Self {
-                closed: AtomicBool::new(false),
-            }
-        }
-    }
-
-    impl PeerQueue {
-        fn close(&self) {
-            self.closed.store(true, AtomicOrdering::SeqCst);
-        }
-    }
-
-    // Shared NetworkMux-backed Read/Write adapter using a per-peer queue provided by the DTLS layer.
+    // Shared NetworkMux-backed Read/Write adapter using the per-peer async queue provided by the DTLS layer.
     pub(crate) struct CommonNetworkMuxConn {
         mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
         peer: crate::api::bingle_api::NetworkEndpoint,
@@ -1445,7 +1415,7 @@ pub mod openssl_impl {
                 tracing::warn!("[DtlsOpenSsl:::stop] already stopped");
             }
 
-            // Clear peer states and close their queues to signal EOF to background reader threads
+            // Clear peer states and close their async queues to signal EOF to background reader threads
             if let Ok(mut map) = self.peer_states.lock() {
                 for (_, ps) in map.drain() {
                     close_peer_state(ps);
