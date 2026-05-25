@@ -166,6 +166,16 @@ pub mod openssl_impl {
     struct PeerState { writer: Option<PeerWriter>, issuer: String, queue: Arc<PeerQueue>, async_queue: Option<Arc<AsyncPeerQueue>>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
+    fn close_peer_state(peer_state: PeerState) {
+        if let Some(peer_handle) = peer_state.peer_handle {
+            let _ = peer_handle.send(PeerCmd::Stop);
+        }
+        peer_state.queue.close();
+        if let Some(async_queue) = peer_state.async_queue {
+            async_queue.close();
+        }
+    }
+
     // Internal control message prefix used to announce our own certificate to the peer at the
     // application-data layer when the server's CertificateRequest CA list would otherwise prevent
     // the client from sending its certificate. This message is intercepted by the DTLS layer and
@@ -441,7 +451,9 @@ pub mod openssl_impl {
         }
         // Cleanup
         if let Ok(mut m) = peers.lock() {
-            m.remove(&key_from);
+            if let Some(peer_state) = m.remove(&key_from) {
+                close_peer_state(peer_state);
+            }
         }
         tracing::info!("[DtlsOpenSsl:{}][read-loop {}] exit and cleanup", log_tag, from);
     }
@@ -713,8 +725,31 @@ pub mod openssl_impl {
             guard.recv().await
         }
 
+        pub(crate) fn poll_recv(&self, cx: &mut Context<'_>) -> Poll<Option<Vec<u8>>> {
+            if self.closed.load(AtomicOrdering::SeqCst) {
+                if let Ok(mut receiver) = self.receiver.try_lock() {
+                    receiver.close();
+                    return receiver.poll_recv(cx);
+                }
+                return Poll::Ready(None);
+            }
+
+            let mut receiver = match self.receiver.try_lock() {
+                Ok(guard) => guard,
+                Err(_) => return Poll::Pending,
+            };
+            receiver.poll_recv(cx)
+        }
+
         pub(crate) fn close(&self) {
             self.closed.store(true, AtomicOrdering::SeqCst);
+            if let Ok(mut receiver) = self.receiver.try_lock() {
+                receiver.close();
+            }
+        }
+
+        pub(crate) fn is_closed(&self) -> bool {
+            self.closed.load(AtomicOrdering::SeqCst)
         }
 
         pub(crate) fn sender(&self) -> tokio::sync::mpsc::Sender<Vec<u8>> {
@@ -724,7 +759,7 @@ pub mod openssl_impl {
 
     impl Default for PeerQueue {
         fn default() -> Self {
-            let (sender, receiver) = std::sync::mpsc::channel();
+            let (sender, _receiver) = std::sync::mpsc::channel();
             Self {
                 sender,
                 closed: AtomicBool::new(false),
@@ -819,13 +854,7 @@ pub mod openssl_impl {
                 return Poll::Ready(Ok(()));
             }
 
-            let recv_result = {
-                let mut receiver = match self.async_queue.receiver.try_lock() {
-                    Ok(guard) => guard,
-                    Err(_) => return Poll::Pending,
-                };
-                receiver.poll_recv(cx)
-            };
+            let recv_result = self.async_queue.poll_recv(cx);
 
             match recv_result {
                 Poll::Ready(Some(packet)) => {
@@ -837,7 +866,13 @@ pub mod openssl_impl {
                     Poll::Ready(Ok(()))
                 }
                 Poll::Ready(None) => Poll::Ready(Ok(())),
-                Poll::Pending => Poll::Pending,
+                Poll::Pending => {
+                    if self.async_queue.is_closed() {
+                        Poll::Ready(Ok(()))
+                    } else {
+                        Poll::Pending
+                    }
+                }
             }
         }
     }
@@ -1458,10 +1493,7 @@ pub mod openssl_impl {
             // Clear peer states and close their queues to signal EOF to background reader threads
             if let Ok(mut map) = self.peer_states.lock() {
                 for (_, ps) in map.drain() {
-                    if let Some(peer_handle) = &ps.peer_handle {
-                        let _ = peer_handle.send(PeerCmd::Stop);
-                    }
-                    ps.queue.close();
+                    close_peer_state(ps);
                 }
             }
 
@@ -1622,7 +1654,9 @@ pub mod openssl_impl {
                 Ok(Err(err)) => {
                     if let Ok(mut m) = self.peer_states.lock() {
                         tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (write failure)", to);
-                        m.remove(&key_to);
+                        if let Some(peer_state) = m.remove(&key_to) {
+                            close_peer_state(peer_state);
+                        }
                     }
                     tracing::warn!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, err);
                     return Err(format!("dtls client write failed: {}", err));
@@ -1630,7 +1664,9 @@ pub mod openssl_impl {
                 Err(_) => {
                     if let Ok(mut m) = self.peer_states.lock() {
                         tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (timeout)", to);
-                        m.remove(&key_to);
+                        if let Some(peer_state) = m.remove(&key_to) {
+                            close_peer_state(peer_state);
+                        }
                     }
                     tracing::warn!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms", to, start.elapsed().as_millis());
                     return Err("dtls client connect timeout".to_string());
