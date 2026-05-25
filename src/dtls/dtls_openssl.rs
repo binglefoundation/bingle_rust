@@ -793,6 +793,8 @@ pub mod openssl_impl {
         mux: std::sync::Arc<crate::dtls::UdpNetworkMux>,
         peer: crate::api::bingle_api::NetworkEndpoint,
         queue: Arc<PeerQueue>,
+        async_queue: Arc<AsyncPeerQueue>,
+        read_remainder: Vec<u8>,
     }
     impl std::io::Read for CommonNetworkMuxConn {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -855,19 +857,37 @@ pub mod openssl_impl {
             cx: &mut Context<'_>,
             buf: &mut ReadBuf<'_>,
         ) -> Poll<std::io::Result<()>> {
-            // tracing::info!("[dtls muxconn][Poll_read] poll_read");
-            let mut read_buf = vec![0u8; buf.remaining()];
-            match std::io::Read::read(&mut *self, &mut read_buf) {
-                Ok(0) => Poll::Ready(Ok(())),
-                Ok(n) => {
-                    buf.put_slice(&read_buf[..n]);
+            let remaining = buf.remaining();
+            if remaining == 0 {
+                return Poll::Ready(Ok(()));
+            }
+
+            if !self.read_remainder.is_empty() {
+                let to_copy = std::cmp::min(remaining, self.read_remainder.len());
+                buf.put_slice(&self.read_remainder[..to_copy]);
+                self.read_remainder.drain(..to_copy);
+                return Poll::Ready(Ok(()));
+            }
+
+            let recv_result = {
+                let mut receiver = match self.async_queue.receiver.try_lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return Poll::Pending,
+                };
+                receiver.poll_recv(cx)
+            };
+
+            match recv_result {
+                Poll::Ready(Some(packet)) => {
+                    let to_copy = std::cmp::min(remaining, packet.len());
+                    buf.put_slice(&packet[..to_copy]);
+                    if to_copy < packet.len() {
+                        self.read_remainder.extend_from_slice(&packet[to_copy..]);
+                    }
                     Poll::Ready(Ok(()))
                 }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                    cx.waker().wake_by_ref();
-                    Poll::Pending
-                }
-                Err(err) => Poll::Ready(Err(err)),
+                Poll::Ready(None) => Poll::Ready(Ok(())),
+                Poll::Pending => Poll::Pending,
             }
         }
     }
@@ -1367,7 +1387,13 @@ pub mod openssl_impl {
                 #[allow(unused)] {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
-                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: from.clone(), queue: q_arc.clone() };
+                let conn = CommonNetworkMuxConn {
+                    mux: mux.clone(),
+                    peer: from.clone(),
+                    queue: q_arc.clone(),
+                    async_queue: async_q_arc.clone(),
+                    read_remainder: Vec::new(),
+                };
                 let ssl_stream = TokioSslStream::new(ssl, conn).expect("ssl stream new");
                 let stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>> = Arc::new(Mutex::new(ssl_stream));
 
@@ -1555,14 +1581,27 @@ pub mod openssl_impl {
                 let peers = &self.peer_states;
                 let mut map = peers.lock().map_err(|_| "peers lock poisoned".to_string())?;
 
-                let q_arc = if let Some(ps) = map.get(&key_to) {
-                    ps.queue.clone()
+                let (q_arc, async_q_arc) = if let Some(ps) = map.get_mut(&key_to) {
+                    let async_queue = if let Some(existing_async_queue) = ps.async_queue.clone() {
+                        existing_async_queue
+                    } else {
+                        let new_async_queue = Arc::new(AsyncPeerQueue::new(8192));
+                        ps.async_queue = Some(new_async_queue.clone());
+                        new_async_queue
+                    };
+                    (ps.queue.clone(), async_queue)
                 } else {
                     tracing::info!("[DtlsOpenSsl:::send] new queue for {} (key: {})", endpoint, key_to);
-                    Arc::new(PeerQueue::default())
+                    (Arc::new(PeerQueue::default()), Arc::new(AsyncPeerQueue::new(8192)))
                 };
 
-                let conn = CommonNetworkMuxConn { mux: mux.clone(), peer: endpoint.clone(), queue: q_arc.clone() };
+                let conn = CommonNetworkMuxConn {
+                    mux: mux.clone(),
+                    peer: endpoint.clone(),
+                    queue: q_arc.clone(),
+                    async_queue: async_q_arc.clone(),
+                    read_remainder: Vec::new(),
+                };
                 let stream = TokioSslStream::new(ssl, conn).map_err(|e| e.to_string())?;
                 let s_arc = Arc::new(Mutex::new(stream));
                 let writer = PeerWriter::from_direct(self.dtls_async_runtime.clone(), s_arc.clone());
@@ -1594,7 +1633,7 @@ pub mod openssl_impl {
                     writer: Some(writer),
                     issuer: String::new(),
                     queue: q_arc.clone(),
-                    async_queue: None,
+                    async_queue: Some(async_q_arc.clone()),
                     peer_handle: Some(peer_handle.clone()),
                     is_connecting_peer: true,
                     is_announced_client_cert_peer: false,
