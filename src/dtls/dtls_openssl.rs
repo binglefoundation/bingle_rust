@@ -1256,8 +1256,8 @@ pub mod openssl_impl {
                 tracing::warn!("[DtlsOpenSsl:::accept][inbound][{} -> {:?}] <parse error> ({} bytes)", from, my_ip, data.len());
                 #[allow(unused)] {}
             }
-            // Find or create the queue and worker handle for this peer.
-            let (q_arc, peer_handle) = {
+            // Find or create the queues and worker handle for this peer.
+            let (q_arc, async_q_arc, peer_handle) = {
                 let key = from.get_key().expect("direct endpoint key");
                 let mut pm = peers.lock().unwrap();
 
@@ -1273,18 +1273,29 @@ pub mod openssl_impl {
                         if let Some(ps) = pm.remove(&key) {
                             tracing::info!("[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect", from);
                             ps.queue.close();
+                            if let Some(async_queue) = ps.async_queue {
+                                async_queue.close();
+                            }
                         }
                     }
                 }
 
-                if let Some(ps) = pm.get(&key) {
-                    (ps.queue.clone(), ps.peer_handle.clone())
+                if let Some(ps) = pm.get_mut(&key) {
+                    let async_queue = if let Some(existing_async_queue) = ps.async_queue.clone() {
+                        existing_async_queue
+                    } else {
+                        let new_async_queue = Arc::new(AsyncPeerQueue::new(8192));
+                        ps.async_queue = Some(new_async_queue.clone());
+                        new_async_queue
+                    };
+                    (ps.queue.clone(), async_queue, ps.peer_handle.clone())
                 } else {
                     tracing::info!("[DtlsOpenSsl:::accept] new queue for {} (key: {})", from, key);
                     let q = Arc::new(PeerQueue::default());
+                    let async_q = Arc::new(AsyncPeerQueue::new(8192));
                     tracing::debug!("[DtlsOpenSsl:::accept] no peer, initialize is_connecting_peer=false for {}", from);
-                    pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), async_queue: None, peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false });
-                    (q, None)
+                    pm.insert(key, PeerState { writer: None, issuer: String::new(), queue: q.clone(), async_queue: Some(async_q.clone()), peer_handle: None, is_connecting_peer: false, is_announced_client_cert_peer: false, handshake_logged: false });
+                    (q, async_q, None)
                 }
             };
 
@@ -1335,6 +1346,11 @@ pub mod openssl_impl {
 
             tracing::debug!("[DtlsOpenSsl:::accept] enqueue datagram via worker [{} -> {:?}] ({} bytes) [{} queued b4]", from, my_ip, data.len(), q_arc.len());
             #[allow(unused)] {}
+            if let Err(async_err) = async_q_arc.try_push(data.to_vec()) {
+                if async_err.kind() != std::io::ErrorKind::WouldBlock {
+                    tracing::warn!("[DtlsOpenSsl:::accept] async inbound enqueue failed for {}: {}", from, async_err);
+                }
+            }
             if let Err(err) = peer_handle.send(PeerCmd::Inbound(data.to_vec())) {
                 tracing::warn!("[DtlsOpenSsl:::accept] inbound enqueue failed for {}: {}", from, err);
                 q_arc.push(data.to_vec());
