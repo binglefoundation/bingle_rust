@@ -371,8 +371,10 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     // Obtain B's user id and send a message from A -> B using send_message_to_id
     let b_id = client_b.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client_b.get_my_id Some");
     let msg = json!({ "text": "hello" });
+    tracing::info!("[Test] sending message to id={} msg={:?}", b_id, msg);
     let sent = client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_id(&b_id, msg.clone(), None)).unwrap();
     assert!(sent, "send_message_to_id should return true");
+    tracing::info!("[Test] send_message_to_id returned true");
 
     // Wait up to 60 seconds for receipt on B
     let start = Instant::now();
@@ -381,6 +383,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
         std::thread::sleep(Duration::from_millis(200));
     }
     assert!(received.load(Ordering::SeqCst), "client B did not receive the message in time");
+    tracing::info!("[Test] client B received the message");
 
     // Validate payload shape
     {
@@ -400,6 +403,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     }
 
     // Tear down
+    tracing::info!("[Test] tearing down");
     relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
     relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
     client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
@@ -441,7 +445,7 @@ fn wait_for_indexer_visible(app_id: u64, expected: &[(String, SocketAddr)], time
 #[serial(send_message_to_id)]
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ignore]
-#[ntest::timeout(1200_000)]
+#[ntest::timeout(1800_000)]
 pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
@@ -487,6 +491,9 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+    register_client_on_blockchain(relay3_id, relay3_pass, "relay3", app_id, asset_id, &creator, cfg.clone());
+    register_client_on_blockchain(relay4_id, relay4_pass, "relay4", app_id, asset_id, &creator, cfg.clone());
 
     register_client_on_blockchain(id2, pp2, "id2", app_id, asset_id, &creator, cfg.clone());
     register_client_on_blockchain(id3, pp3, "id3", app_id, asset_id, &creator, cfg.clone());

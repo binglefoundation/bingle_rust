@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 fn peer_worker_receives_send_commands_in_order() {
     let seen = Arc::new(Mutex::new(Vec::<PeerCmd>::new()));
     let seen_for_worker = seen.clone();
-    let peer = spawn_peer_worker("stage1-order", move |cmd| {
+    let peer = spawn_peer_worker("stage1-order", "test-handle-order", move |cmd| {
         let mut guard = seen_for_worker.lock().expect("worker log mutex should lock");
         guard.push(cmd.clone());
         cmd != PeerCmd::Stop
@@ -48,7 +48,7 @@ fn peer_worker_receives_send_commands_in_order() {
 fn peer_worker_stops_and_rejects_late_commands() {
     let seen = Arc::new(Mutex::new(0usize));
     let seen_for_worker = seen.clone();
-    let peer = spawn_peer_worker("stage1-stop", move |cmd| {
+    let peer = spawn_peer_worker("stage1-stop", "test-handle-stop", move |cmd| {
         let mut guard = seen_for_worker.lock().expect("worker counter mutex should lock");
         *guard += 1;
         cmd != PeerCmd::Stop

@@ -137,23 +137,24 @@ pub mod openssl_impl {
         }
     }
 
-    pub fn spawn_peer_worker<F>(peer_label: &str, mut on_command: F) -> Result<PeerHandle>
+    pub fn spawn_peer_worker<F>(peer_label: &str, handle: &str, mut on_command: F) -> Result<PeerHandle>
     where
         F: FnMut(PeerCmd) -> bool + Send + 'static,
     {
         let (tx, rx) = mpsc::channel::<PeerCmd>();
         let worker_name = format!("dtls-peer-{}", peer_label);
+        let handle_tag = handle.to_string();
         std::thread::Builder::new()
             .name(worker_name)
             .spawn(move || {
                 while let Ok(cmd) = rx.recv() {
                     let cmd2 = cmd.clone();
-                    tracing::debug!("[DtlsOpenSsl] received peer command: {:?}", cmd2);
+                    tracing::debug!("[DtlsOpenSsl:{}] received peer command: {:?}", handle_tag, cmd2);
                     if !on_command(cmd) {
-                        tracing::warn!("[DtlsOpenSsl] peer command handler returned false; terminating worker");
+                        tracing::warn!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
                         break;
                     }
-                    tracing::debug!("[DtlsOpenSsl] peer command handler {:?} returned true; continuing", cmd2);
+                    tracing::debug!("[DtlsOpenSsl:{}] peer command handler {:?} returned true; continuing", handle_tag, cmd2);
                 }
             })
             .map_err(|e| format!("failed to spawn peer worker: {}", e))?;
@@ -164,14 +165,28 @@ pub mod openssl_impl {
     const ASYNC_PEER_QUEUE_CAPACITY: usize = 8192;
 
     #[derive(Clone)]
-    struct PeerState { writer: Option<PeerWriter>, issuer: String, async_queue: Arc<AsyncPeerQueue>, peer_handle: Option<PeerHandle>, is_connecting_peer: bool, is_announced_client_cert_peer: bool, handshake_logged: bool }
+    struct PeerState {
+        writer: Option<PeerWriter>,
+        issuer: String,
+        async_queue: Arc<AsyncPeerQueue>,
+        peer_handle: Option<PeerHandle>,
+        is_connecting_peer: bool,
+        is_announced_client_cert_peer: bool,
+        handshake_logged: bool,
+        generation: u64,
+    }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
 
-    fn get_or_create_peer_state<'a>(
-        map: &'a mut HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>,
-        key: &crate::api::bingle_api::NetworkEndpointKey,
-    ) -> &'a mut PeerState {
-        map.entry(key.clone()).or_insert_with(|| PeerState {
+    fn next_peer_generation(current_generation: u64) -> u64 {
+        let mut next_generation = current_generation.wrapping_add(1);
+        if next_generation == 0 {
+            next_generation = 1;
+        }
+        next_generation
+    }
+
+    fn new_peer_state(generation: u64) -> PeerState {
+        PeerState {
             writer: None,
             issuer: String::new(),
             async_queue: Arc::new(AsyncPeerQueue::new(ASYNC_PEER_QUEUE_CAPACITY)),
@@ -179,11 +194,33 @@ pub mod openssl_impl {
             is_connecting_peer: false,
             is_announced_client_cert_peer: false,
             handshake_logged: false,
-        })
+            generation,
+        }
+    }
+
+    fn get_or_create_peer_state<'a>(
+        map: &'a mut HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>,
+        key: &crate::api::bingle_api::NetworkEndpointKey,
+    ) -> &'a mut PeerState {
+        map.entry(key.clone()).or_insert_with(|| new_peer_state(0))
+    }
+
+    fn take_peer_state_if_owner(
+        map: &mut HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>,
+        key: &crate::api::bingle_api::NetworkEndpointKey,
+        owner_generation: u64,
+    ) -> Option<PeerState> {
+        let current_generation = map.get(key).map(|ps| ps.generation);
+        if current_generation == Some(owner_generation) {
+            map.remove(key)
+        } else {
+            None
+        }
     }
 
     fn close_peer_state(peer_state: PeerState) {
         if let Some(peer_handle) = peer_state.peer_handle {
+            tracing::debug!("[DtlsOpenSsl] send stop to peer_handle");
             let _ = peer_handle.send(PeerCmd::Stop);
         }
         peer_state.async_queue.close();
@@ -216,12 +253,18 @@ pub mod openssl_impl {
         support_cert_announce: bool,
         trim_issuer_suffix: bool,
         handle: String,
+        owner_generation: u64,
         log_tag: &str,
         _dangerous_debug: bool,
     ) {
         let _span = tracing::info_span!("BingleApi", handle = %handle);
         let _guard = _span.enter();
-        tracing::info!("[DTLS][DtlsOpenSsl:{}] run_read_loop starting for {}", log_tag, from);
+        tracing::info!(
+            "[DTLS][DtlsOpenSsl:{}] run_read_loop starting for {} (generation={})",
+            log_tag,
+            from,
+            owner_generation
+        );
         // Precompute the NetworkEndpointKey for this peer (direct)
         let key_from = from
             .get_key()
@@ -456,8 +499,23 @@ pub mod openssl_impl {
         }
         // Cleanup
         if let Ok(mut m) = peers.lock() {
-            if let Some(peer_state) = m.remove(&key_from) {
+            let current_generation = m.get(&key_from).map(|ps| ps.generation);
+            if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_from, owner_generation) {
+                tracing::info!(
+                    "[DtlsOpenSsl:{}][read-loop {}] peer disconnected, owner generation matched ({}), call close_peer_state",
+                    log_tag,
+                    from,
+                    owner_generation
+                );
                 close_peer_state(peer_state);
+            } else {
+                tracing::info!(
+                    "[DtlsOpenSsl:{}][read-loop {}] skip cleanup due to ownership mismatch (owner generation={}, current generation={:?})",
+                    log_tag,
+                    from,
+                    owner_generation,
+                    current_generation
+                );
             }
         }
         tracing::info!("[DtlsOpenSsl:{}][read-loop {}] exit and cleanup", log_tag, from);
@@ -1231,8 +1289,10 @@ pub mod openssl_impl {
                 if is_client_hello {
                     if pm.get(&key).map(|ps| !ps.is_connecting_peer && ps.writer.is_some()).unwrap_or(false) {
                         if let Some(ps) = pm.remove(&key) {
+                            let next_generation = next_peer_generation(ps.generation);
                             tracing::info!("[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect", from);
                             close_peer_state(ps);
+                            pm.insert(key.clone(), new_peer_state(next_generation));
                         }
                     }
                 }
@@ -1247,7 +1307,7 @@ pub mod openssl_impl {
                 let key_for_worker_lookup = key_for_worker.clone();
                 let key_for_worker_log = key_for_worker.clone();
                 let peer_label = format!("accept-{}", key_for_worker);
-                let new_peer_handle = spawn_peer_worker(&peer_label, move |cmd| {
+                let new_peer_handle = spawn_peer_worker(&peer_label, &handle, move |cmd| {
                     match cmd {
                         PeerCmd::Send(payload) => {
                             tracing::debug!("[DtlsOpenSsl:::accept] send to worker for {}: {} bytes, locking writer", key_for_worker_log, payload.len());
@@ -1319,12 +1379,17 @@ pub mod openssl_impl {
                 .map(PeerWriter::from_channel);
                 // Install or update peer state with writer
 
+                let mut read_loop_generation = 0u64;
+
                 if let Ok(mut m) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
                     let ps = get_or_create_peer_state(&mut m, &key);
+                    read_loop_generation = next_peer_generation(ps.generation);
+                    ps.generation = read_loop_generation;
                     tracing::debug!("[DtlsOpenSsl:::accept] create_stream, with writer, is_connection_peer={}", ps.is_connecting_peer);
                     ps.writer = writer;
                     ps.handshake_logged = false;
+                    tracing::debug!("[DtlsOpenSsl:::accept] assigned generation {} for {}", read_loop_generation, from);
                     tracing::debug!("[DtlsOpenSsl:::accept] installed writer for {}", from);
                 }
 
@@ -1344,6 +1409,7 @@ pub mod openssl_impl {
                         true,   // support_cert_announce (server)
                         true,   // trim_issuer_suffix (record ids)
                         handle.clone(),
+                        read_loop_generation,
                         "::accept",
                         dangerous_debug,
                     );
@@ -1418,6 +1484,7 @@ pub mod openssl_impl {
             // Clear peer states and close their async queues to signal EOF to background reader threads
             if let Ok(mut map) = self.peer_states.lock() {
                 for (_, ps) in map.drain() {
+                    tracing::info!("[DtlsOpenSsl:::stop] close peer state");
                     close_peer_state(ps);
                 }
             }
@@ -1483,11 +1550,13 @@ pub mod openssl_impl {
             ssl.set_connect_state();
 
             // Create SslStream and publish writer/worker in peer_states BEFORE the handshake.
-            let (stream_arc, peer_handle) = {
+            let (stream_arc, peer_handle, owner_generation) = {
                 let peers = &self.peer_states;
                 let mut map = peers.lock().map_err(|_| "peers lock poisoned".to_string())?;
 
                 let ps = get_or_create_peer_state(&mut map, &key_to);
+                let owner_generation = next_peer_generation(ps.generation);
+                ps.generation = owner_generation;
                 let async_q_arc = ps.async_queue.clone();
 
                 let conn = CommonNetworkMuxConn {
@@ -1502,7 +1571,7 @@ pub mod openssl_impl {
                 let worker_writer = writer.clone();
                 let peer_label = format!("send-{}", key_to);
                 let key_to2 = key_to.clone();
-                let peer_handle = spawn_peer_worker(&peer_label, move |cmd| {
+                let peer_handle = spawn_peer_worker(&peer_label, &self.handle, move |cmd| {
                     match cmd {
                         PeerCmd::Send(payload) => {
                             tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: {} bytes, locking writer", key_to2, payload.len());
@@ -1524,8 +1593,9 @@ pub mod openssl_impl {
                 ps.is_connecting_peer = true;
                 ps.is_announced_client_cert_peer = false;
                 ps.handshake_logged = false;
+                tracing::debug!("[DtlsOpenSsl:::send] assigned generation {} for {}", owner_generation, to);
 
-                (s_arc, peer_handle)
+                (s_arc, peer_handle, owner_generation)
             };
 
             let mut stream = stream_arc.lock().map_err(|_| "newly created stream lock poisoned".to_string())?;
@@ -1550,7 +1620,16 @@ pub mod openssl_impl {
                     let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
                     if let Ok(mut m) = self.peer_states.lock() {
                         if let Some(ps) = m.get_mut(&key_to) {
-                            ps.handshake_logged = true;
+                            if ps.generation != owner_generation {
+                                tracing::debug!(
+                                    "[DtlsOpenSsl:::send] skip handshake_logged update for {} due to generation mismatch (owner={}, current={})",
+                                    to,
+                                    owner_generation,
+                                    ps.generation
+                                );
+                            } else {
+                                ps.handshake_logged = true;
+                            }
                         }
                     }
                     tracing::info!("[DTLS][handshake {}] completed (client). Selected: {}. Our available: {}", to, selected, our_ciphers);
@@ -1558,9 +1637,18 @@ pub mod openssl_impl {
                 }
                 Ok(Err(err)) => {
                     if let Ok(mut m) = self.peer_states.lock() {
-                        tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (write failure)", to);
-                        if let Some(peer_state) = m.remove(&key_to) {
+                        tracing::debug!(
+                            "[DtlsOpenSsl:::send] removing peer state for {} (write failure, owner generation={})",
+                            to,
+                            owner_generation
+                        );
+                        if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_to, owner_generation) {
                             close_peer_state(peer_state);
+                        } else {
+                            tracing::debug!(
+                                "[DtlsOpenSsl:::send] skip write-failure cleanup for {} due to generation mismatch",
+                                to
+                            );
                         }
                     }
                     tracing::warn!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, err);
@@ -1568,9 +1656,18 @@ pub mod openssl_impl {
                 }
                 Err(_) => {
                     if let Ok(mut m) = self.peer_states.lock() {
-                        tracing::debug!("[DtlsOpenSsl:::send] removing peer state for {} (timeout)", to);
-                        if let Some(peer_state) = m.remove(&key_to) {
+                        tracing::debug!(
+                            "[DtlsOpenSsl:::send] removing peer state for {} (timeout, owner generation={})",
+                            to,
+                            owner_generation
+                        );
+                        if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_to, owner_generation) {
                             close_peer_state(peer_state);
+                        } else {
+                            tracing::debug!(
+                                "[DtlsOpenSsl:::send] skip timeout cleanup for {} due to generation mismatch",
+                                to
+                            );
                         }
                     }
                     tracing::warn!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms", to, start.elapsed().as_millis());
@@ -1588,7 +1685,14 @@ pub mod openssl_impl {
             )?;
             if let Ok(mut m) = self.peer_states.lock() {
                 if let Some(ps) = m.get_mut(&key_to) {
-                    if let Some(w) = &ps.writer {
+                    if ps.generation != owner_generation {
+                        tracing::debug!(
+                            "[DtlsOpenSsl:::send] skip writer channel install for {} due to generation mismatch (owner={}, current={})",
+                            to,
+                            owner_generation,
+                            ps.generation
+                        );
+                    } else if let Some(w) = &ps.writer {
                         let _ = w.switch_to_channel(writer_tx.clone());
                     }
                 }
@@ -1620,9 +1724,12 @@ pub mod openssl_impl {
                                         tracing::debug!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] issuer={} id={}", to, issuer, id);
                                         let peers = &self.peer_states;
                                         let _ = peers.lock().map(|mut m| {
-                                            tracing::debug!("[DtlsOpenSsl:::send] initialize is_connecting_peer=false for {}", to);
-                                            let ps = get_or_create_peer_state(&mut m, &key_to);
-                                            ps.issuer = id.clone();
+                                            if let Some(ps) = m.get_mut(&key_to) {
+                                                if ps.generation == owner_generation {
+                                                    tracing::debug!("[DtlsOpenSsl:::send] initialize is_connecting_peer=false for {}", to);
+                                                    ps.issuer = id.clone();
+                                                }
+                                            }
                                         });
                                     }
                                     Ok(_) => {
@@ -1658,11 +1765,21 @@ pub mod openssl_impl {
             {
                 let peers = &self.peer_states;
                 let _ = peers.lock().map(|mut m| {
-                    let ps = get_or_create_peer_state(&mut m, &key_to);
-                    tracing::debug!("[DtlsOpenSsl:::send] change is_connecting_peer to false for {} (post-connect update)", to);
-                    ps.peer_handle = Some(peer_handle.clone());
-                    ps.is_connecting_peer = false;
-                    ps.handshake_logged = true;
+                    if let Some(ps) = m.get_mut(&key_to) {
+                        if ps.generation == owner_generation {
+                            tracing::debug!("[DtlsOpenSsl:::send] change is_connecting_peer to false for {} (post-connect update)", to);
+                            ps.peer_handle = Some(peer_handle.clone());
+                            ps.is_connecting_peer = false;
+                            ps.handshake_logged = true;
+                        } else {
+                            tracing::debug!(
+                                "[DtlsOpenSsl:::send] skip post-connect state update for {} due to generation mismatch (owner={}, current={})",
+                                to,
+                                owner_generation,
+                                ps.generation
+                            );
+                        }
+                    }
                 });
             }
 
@@ -1687,6 +1804,7 @@ pub mod openssl_impl {
                         false,  // no cert announce on client
                         false,  // don't trim suffix; server path records trimmed ids
                         handle,
+                        owner_generation,
                         "::send",
                         dangerous_debug,
                     );

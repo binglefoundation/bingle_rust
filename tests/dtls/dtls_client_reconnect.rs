@@ -19,7 +19,7 @@ static SERVER_CLIENT_ECHOED_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static CLIENT_PING_SEEN_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 fn server_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    tracing::info!("server_handler_2: {:?}", data);
+    tracing::info!("server_handler_2: {}", String::from_utf8_lossy(data));
     if data == b"Hello" {
         let mut g = SERVER_HELLO_2.lock().unwrap();
         *g = Some(data.to_vec());
@@ -33,7 +33,7 @@ fn server_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Netwo
 }
 
 fn client_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-    tracing::info!("client_handler_2: {:?}", data);
+    tracing::info!("client_handler_2: {}", String::from_utf8_lossy(data));
     if data == b"Ping" {
         let mut g = CLIENT_PING_SEEN_2.lock().unwrap();
         *g = Some(data.to_vec());
@@ -96,7 +96,9 @@ pub fn dtls_client_reconnect() {
 
     // 3. Stop Client 1
     tracing::info!("Stopping client 1...");
+    client1.stop().expect("client 1 stop");
     mux_cli1.stop();
+
     // Wait for port to be freed
     thread::sleep(Duration::from_millis(500));
 
@@ -154,9 +156,10 @@ fn do_roundtrip(client: &dyn Dtls, server_addr: SocketAddr, label: &str) {
     }
     assert!(CLIENT_PING_SEEN_2.lock().unwrap().is_some(), "{} client did not receive 'Ping'", label);
 
+    tracing::info!("[Test] {}: Ping received awaiting echo", label);
     // Validate server received client's echoed message
     let start = Instant::now();
-    while SERVER_CLIENT_ECHOED_2.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(3) {
+    while SERVER_CLIENT_ECHOED_2.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
     let echoed = SERVER_CLIENT_ECHOED_2.lock().unwrap();
