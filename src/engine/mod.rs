@@ -1230,6 +1230,7 @@ impl Engine {
                         id: my_id.clone(),
                         address: addr,
                         state: Some(RelayState::Starting),
+                        ttl: None,
                     });
                 }
 

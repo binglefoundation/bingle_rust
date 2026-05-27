@@ -86,8 +86,8 @@ pub fn relay_finder_caches_successful_root_relay() {
     let id2 = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE".to_string();
     // Discovery closure
     let discover = Arc::new(move || vec![
-        RootRelayInfo { id: id1.clone(), address: a1, state: None },
-        RootRelayInfo { id: id2.clone(), address: a2, state: None },
+        RootRelayInfo { id: id1.clone(), address: a1, state: None, ttl: None },
+        RootRelayInfo { id: id2.clone(), address: a2, state: None, ttl: None },
     ]);
 
     let finder = RelayFinder::new(api_weak, Duration::from_millis(200), discover);

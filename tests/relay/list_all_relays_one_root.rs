@@ -45,7 +45,7 @@ pub fn list_all_relays_queries_root_even_if_only_one() {
 
     let discover = Arc::new(move || -> Vec<RelayInfo> {
         vec![
-            RelayInfo { id: root_id.to_string(), address: "127.0.0.1:10000".parse().unwrap(), state: None },
+            RelayInfo { id: root_id.to_string(), address: "127.0.0.1:10000".parse().unwrap(), state: None, ttl: None },
         ]
     });
 

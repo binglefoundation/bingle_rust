@@ -84,9 +84,9 @@ pub fn clear_state_cache_resets_and_reloads() {
     // Root discovery closure returns the same three as roots
     let discover = {
         let ids = vec![
-            RelayInfo { id: id1.clone(), address: a1, state: None },
-            RelayInfo { id: id2.clone(), address: a2, state: None },
-            RelayInfo { id: id3.clone(), address: a3, state: None },
+            RelayInfo { id: id1.clone(), address: a1, state: None, ttl: None },
+            RelayInfo { id: id2.clone(), address: a2, state: None, ttl: None },
+            RelayInfo { id: id3.clone(), address: a3, state: None, ttl: None },
         ];
         Arc::new(move || ids.clone())
     };

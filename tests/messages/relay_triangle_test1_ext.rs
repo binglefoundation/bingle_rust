@@ -203,9 +203,9 @@ pub fn test_relay_finder_honors_exclusions() {
     let id3 = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     // Create 3 relays
-    let r1 = RelayInfo { id: id1.into(), address: "1.1.1.1:1111".parse().unwrap(), state: None };
-    let r2 = RelayInfo { id: id2.into(), address: "2.2.2.2:2222".parse().unwrap(), state: None };
-    let r3 = RelayInfo { id: id3.into(), address: "3.3.3.3:3333".parse().unwrap(), state: None };
+    let r1 = RelayInfo { id: id1.into(), address: "1.1.1.1:1111".parse().unwrap(), state: None, ttl: None };
+    let r2 = RelayInfo { id: id2.into(), address: "2.2.2.2:2222".parse().unwrap(), state: None, ttl: None };
+    let r3 = RelayInfo { id: id3.into(), address: "3.3.3.3:3333".parse().unwrap(), state: None, ttl: None };
     let all_relays = vec![r1.clone(), r2.clone(), r3.clone()];
     
     let discover = Arc::new(move || all_relays.clone());

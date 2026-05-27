@@ -66,7 +66,7 @@ pub fn test_unavailable_relays_no_retry() {
     
     // discover_roots returns the same relay twice
     let discover = {
-        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None };
+        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None, ttl: None };
         let rs = vec![r1.clone(), r1];
         Arc::new(move || rs.clone())
     };
@@ -95,7 +95,7 @@ pub fn test_unavailable_relays_reset_on_entry() {
     let check_calls = api_inner.check_calls.clone();
     
     let discover = {
-        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None };
+        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None, ttl: None };
         Arc::new(move || vec![r1.clone()])
     };
 
@@ -123,7 +123,7 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     let check_calls = api_inner.check_calls.clone();
     
     let discover = {
-        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None };
+        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None, ttl: None };
         Arc::new(move || vec![r1.clone()])
     };
 
@@ -153,7 +153,7 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     
     // R1 is the only root
     let discover = {
-        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None };
+        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None, ttl: None };
         Arc::new(move || vec![r1.clone()])
     };
 
@@ -183,7 +183,7 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     let check_calls = api_inner.check_calls.clone();
     
     let discover = {
-        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None };
+        let r1 = RelayInfo { id: id1.clone(), address: addr1, state: None, ttl: None };
         Arc::new(move || vec![r1.clone()])
     };
 

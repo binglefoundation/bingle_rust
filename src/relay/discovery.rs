@@ -29,7 +29,7 @@ pub fn indexer_discover_closure(
                 let mut out: Vec<RelayInfo> = Vec::new();
                 for (id, ep) in list {
                     if let Some(addr) = AlgoBingle::parse_relay_ip(&ep) {
-                        out.push(RelayInfo { id, address: addr, state: None });
+                        out.push(RelayInfo { id, address: addr, state: None, ttl: None });
                     }
                 }
                 if out.is_empty() {
