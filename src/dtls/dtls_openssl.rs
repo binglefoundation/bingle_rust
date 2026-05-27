@@ -1,4 +1,4 @@
-use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result};
+use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandleNewSession, HandlePeerCertificate, Result};
 
 pub mod openssl_impl {
     use super::*;
@@ -220,8 +220,11 @@ pub mod openssl_impl {
 
     fn close_peer_state(peer_state: PeerState) {
         if let Some(peer_handle) = peer_state.peer_handle {
-            tracing::debug!("[DtlsOpenSsl] send stop to peer_handle");
+            tracing::debug!("[DtlsOpenSsl][close_peer_state] send stop to peer_handle");
             let _ = peer_handle.send(PeerCmd::Stop);
+        }
+        else {
+            tracing::debug!("[DtlsOpenSsl][close_peer_state] peer_handle is None, skipping stop command");
         }
         peer_state.async_queue.close();
     }
@@ -942,6 +945,7 @@ pub mod openssl_impl {
         fn get_handle_message(&self) -> Option<HandleMessage> { None }
         fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
         fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+        fn set_handle_new_session(&mut self, _handler: Option<HandleNewSession>) {}
         fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
         fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
         fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
@@ -974,6 +978,7 @@ pub mod openssl_impl {
         pub(crate) client_mux: Option<std::sync::Arc<crate::dtls::UdpNetworkMux>>,
         // Handlers
         pub(crate) handle_message: Option<HandleMessage>,
+        pub(crate) handle_new_session: Option<HandleNewSession>,
         pub(crate) handle_peer_certificate: Option<HandlePeerCertificate>,
 
         // Credentials
@@ -1023,6 +1028,7 @@ pub mod openssl_impl {
                 owned_udp_mux: None,
                 client_mux: None,
                 handle_message: None,
+                handle_new_session: None,
                 handle_peer_certificate: None,
                 ca_cert: None,
                 client_cert: None,
@@ -1250,6 +1256,7 @@ pub mod openssl_impl {
             peers: PeerStates,
             dtls_async_runtime: Arc<tokio::runtime::Runtime>,
             handle_message: Option<HandleMessage>,
+            handle_new_session: Option<HandleNewSession>,
             peer_cert_handler: Option<HandlePeerCertificate>,
             from: &NetworkEndpoint,
             data: &[u8],
@@ -1290,9 +1297,12 @@ pub mod openssl_impl {
                     if pm.get(&key).map(|ps| !ps.is_connecting_peer && ps.writer.is_some()).unwrap_or(false) {
                         if let Some(ps) = pm.remove(&key) {
                             let next_generation = next_peer_generation(ps.generation);
-                            tracing::info!("[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect", from);
+                            tracing::info!("[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect, next_generation={}", from, next_generation);
                             close_peer_state(ps);
                             pm.insert(key.clone(), new_peer_state(next_generation));
+                            if let Some(handler) = handle_new_session.as_ref() {
+                                handler(from);
+                            }
                         }
                     }
                 }
@@ -1434,6 +1444,7 @@ pub mod openssl_impl {
             let peers: PeerStates = self.peer_states.clone();
             let dtls_async_runtime = self.dtls_async_runtime.clone();
             let handle_message = self.handle_message.clone();
+            let handle_new_session = self.handle_new_session.clone();
             let peer_cert_handler = self.handle_peer_certificate;
             let handle = self.handle.clone();
             let dangerous_debug = self.dangerous_debug;
@@ -1447,6 +1458,7 @@ pub mod openssl_impl {
                     peers.clone(),
                     dtls_async_runtime.clone(),
                     handle_message.clone(),
+                    handle_new_session.clone(),
                     peer_cert_handler,
                     from,
                     data,
@@ -1850,6 +1862,10 @@ pub mod openssl_impl {
         fn with_handle_message(mut self, handler: HandleMessage) -> Self {
             self.handle_message = Some(handler);
             self
+        }
+
+        fn set_handle_new_session(&mut self, handler: Option<HandleNewSession>) {
+            self.handle_new_session = handler;
         }
 
         fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { self.handle_peer_certificate }

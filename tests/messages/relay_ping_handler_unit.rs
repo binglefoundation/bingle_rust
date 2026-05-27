@@ -20,6 +20,7 @@ impl Dtls for MockDtls {
     fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> DtlsResult<()> { let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address"); self.sends.lock().unwrap().push((addr, data.to_vec())); Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}

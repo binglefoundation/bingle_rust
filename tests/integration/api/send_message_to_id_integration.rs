@@ -747,7 +747,7 @@ fn reset_message_state(
 #[ignore]
 #[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
-    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=debug");
 
     if !test_util::should_run_localnet() {
         eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");

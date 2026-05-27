@@ -38,6 +38,7 @@ impl Dtls for FakeDtls {
 
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
     fn with_handle_message(self, handler: HandleMessage) -> Self where Self: Sized { let _ = self.handler.lock().map(|mut g| *g = Some(handler)); self }
 
     fn get_handle_peer_certificate(&self) -> Option<rust_comms::dtls::HandlePeerCertificate> { None }

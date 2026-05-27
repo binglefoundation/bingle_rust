@@ -97,6 +97,8 @@ impl Dtls for MockDtls {
         self.handle_message = handler;
     }
 
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+
     fn with_handle_message(mut self, handler: HandleMessage) -> Self
     where
         Self: Sized,

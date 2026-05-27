@@ -13,6 +13,9 @@ pub type Result<T = ()> = core::result::Result<T, String>;
  */
 pub type HandleMessage = Arc<dyn Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) + Send + Sync>;
 
+/// Notifies listeners that a peer endpoint has rolled over to a new DTLS session.
+pub type HandleNewSession = Arc<dyn Fn(&NetworkEndpoint) + Send + Sync>;
+
 /**
  * Handle certificates presented by the peer for verification
  * @param certificate the certificate presented by the peer in PEM format
@@ -64,6 +67,12 @@ pub trait Dtls {
     fn with_handle_message(self, handler: HandleMessage) -> Self
     where
         Self: Sized;
+
+    /**
+     * Set a callback invoked when DTLS detects a new session for a peer endpoint.
+     * @param handler callback invoked with the endpoint whose session rolled over
+     */
+    fn set_handle_new_session(&mut self, handler: Option<HandleNewSession>);
 
     /**
      * Get the peer certificate handler function

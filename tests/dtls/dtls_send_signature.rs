@@ -12,6 +12,7 @@ impl Dtls for DummyDtls {
     fn send(&self, _to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> Result<(), String> { Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { None }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}

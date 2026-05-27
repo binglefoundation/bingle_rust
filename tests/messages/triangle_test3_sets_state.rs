@@ -20,6 +20,7 @@ impl Dtls for MockDtls {
     fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> Result<()> { Ok(()) }
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().unwrap().clone() }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { *self.handler.lock().unwrap() = handler; }
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
     fn with_handle_message(self, handler: HandleMessage) -> Self where Self: Sized { let mut s = self; s.set_handle_message(Some(handler)); s }
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
