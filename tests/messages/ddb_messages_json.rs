@@ -97,7 +97,7 @@ pub fn ddb_signon_and_response_roundtrip() {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-pub fn ddb_get_epoch_and_info_roundtrip() {
+pub fn ddb_get_relays_status_and_response_roundtrip() {
     let get = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus {
         app: "ddb".into(),
         epoch_id: -1,

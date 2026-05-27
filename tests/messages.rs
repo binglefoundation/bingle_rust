@@ -75,8 +75,8 @@ pub mod relay_triangle_test1_ext;
 #[path = "messages/ping_response_handler.rs"]
 pub mod ping_response_handler;
 
-#[path = "messages/ddb_get_epoch_handler.rs"]
-pub mod ddb_get_epoch_handler;
+#[path = "messages/ddb_get_relays_status_handler.rs"]
+pub mod ddb_get_relays_status_handler;
 
 #[path = "messages/ddb_init_handler.rs"]
 pub mod ddb_init_handler;

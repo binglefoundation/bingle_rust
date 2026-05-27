@@ -11,16 +11,16 @@ use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 
 struct MockApi {
     check_calls: Arc<Mutex<usize>>,
-    get_epoch_calls: Arc<Mutex<usize>>,
-    get_epoch_fail_for: Arc<Mutex<Option<SocketAddr>>>,
+    get_relays_status_calls: Arc<Mutex<usize>>,
+    get_relays_status_fail_for: Arc<Mutex<Option<SocketAddr>>>,
 }
 
 impl MockApi {
     fn new() -> Self {
         Self {
             check_calls: Arc::new(Mutex::new(0)),
-            get_epoch_calls: Arc::new(Mutex::new(0)),
-            get_epoch_fail_for: Arc::new(Mutex::new(None)),
+            get_relays_status_calls: Arc::new(Mutex::new(0)),
+            get_relays_status_fail_for: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -35,10 +35,10 @@ impl InnerBingleApi for MockApi {
             return Err(BingleError::Other("Connection failed".into()));
         }
         if ty == "getRelaysStatus" {
-            let mut count = self.get_epoch_calls.lock().unwrap();
+            let mut count = self.get_relays_status_calls.lock().unwrap();
             *count += 1;
             let addr = nsk.inet_socket_address().expect("direct endpoint required");
-            if let Some(fail_addr) = *self.get_epoch_fail_for.lock().unwrap() {
+            if let Some(fail_addr) = *self.get_relays_status_fail_for.lock().unwrap() {
                 if addr == fail_addr {
                     return Err(BingleError::Other("DDB query failed".into()));
                 }
@@ -147,9 +147,9 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
     let api_inner = Arc::new(MockApi::new());
-    *api_inner.get_epoch_fail_for.lock().unwrap() = Some(addr1);
+    *api_inner.get_relays_status_fail_for.lock().unwrap() = Some(addr1);
     let check_calls = api_inner.check_calls.clone();
-    let get_epoch_calls = api_inner.get_epoch_calls.clone();
+    let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
     
     // R1 is the only root
     let discover = {
@@ -167,7 +167,7 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     let res = finder.find_relay("MYID");
     assert!(res.is_err());
     
-    assert_eq!(*get_epoch_calls.lock().unwrap(), 1, "Should have attempted DDB query to R1");
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Should have attempted DDB query to R1");
     // Since R1 failed DDB query, it should be in unavailable list.
     // find_relay_internal calls relay_check(R1).
     // relay_check(R1) should see R1 is unavailable and skip network call.
@@ -200,12 +200,12 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
 
     mark_unavailable(&finder);
     assert_eq!(*check_calls.lock().unwrap(), 1);
-    assert_eq!(*api_inner.get_epoch_calls.lock().unwrap(), 1);
+    assert_eq!(*api_inner.get_relays_status_calls.lock().unwrap(), 1);
 
     // list_all_relays clears
     let _ = finder.list_all_relays("MYID", false);
     // If it cleared, list_all_relays_internal will query R1 for DDB again.
-    assert_eq!(*api_inner.get_epoch_calls.lock().unwrap(), 2);
+    assert_eq!(*api_inner.get_relays_status_calls.lock().unwrap(), 2);
 
     mark_unavailable(&finder);
     assert_eq!(*check_calls.lock().unwrap(), 2);

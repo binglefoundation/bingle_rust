@@ -55,7 +55,7 @@ impl BingleApiInternal for InternalStarting {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
+pub fn ddb_get_relays_status_returns_response_when_relay_available() {
     // Arrange router as relay with internal state available and ddb backend
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(true);
@@ -70,7 +70,7 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     router.set_ddb_backend(Some(backend.clone()));
 
     // Act: route getRelaysStatus to router
-    let get = DdbGetRelaysStatus { app: "ddb".into(), epoch_id: -1, tag: Some("get_epoch_tag".to_string()), text: None, data: None };
+    let get = DdbGetRelaysStatus { app: "ddb".into(), epoch_id: -1, tag: Some("get_relays_status_tag".to_string()), text: None, data: None };
     router.set_last_response_tag(Some("rt1".to_string()));
     let msg = Message::Ddb(DdbMessage::GetRelaysStatus(get));
 
@@ -79,11 +79,11 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
         router.route(&handler, &msg, "SENDER.");
     });
 
-    // Assert: outbound response exists and is EpochInfo
+    // Assert: outbound response exists and is relays status response
     let out = router.take_outbound_response().expect("expected response");
     assert_eq!(out.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
     assert_eq!(out.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("relaysStatusResponse"));
-    assert_eq!(out.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("get_epoch_tag"));
+    assert_eq!(out.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("get_relays_status_tag"));
     assert_eq!(out.get("responderState").and_then(|v| v.as_str()), Some("available"));
     let ids = out.get("relayIds").and_then(|v| v.as_array()).expect("relayIds array");
     let id_list: Vec<String> = ids.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
@@ -100,7 +100,7 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-pub fn ddb_get_epoch_returns_fail_when_not_allowed() {
+pub fn ddb_get_relays_status_returns_fail_when_not_allowed() {
     // Case 1: not a relay
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router.set_am_relay(false);
