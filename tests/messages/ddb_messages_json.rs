@@ -1,5 +1,6 @@
 use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
+use rust_comms::engine::RelayState;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn ddb_upsert_serde_roundtrip() {
@@ -110,10 +111,12 @@ pub fn ddb_get_epoch_and_info_roundtrip() {
 
     let info = Message::Ddb(DdbMessage::RelaysStatusResponse(DdbRelaysStatusResponse {
         app: "ddb".into(),
+        responder_state: RelayState::Available,
         epoch_id: 7,
         tree_order: 4,
         relay_ids: vec!["RID1".into(), "RID2".into()],
         relay_endpoints: Some(vec![InetSocketAddress { host: "192.168.1.1".into(), port: 3456 }]),
+        relay_states: vec![RelayState::Available, RelayState::Starting],
         response_tag: None,
         text: None,
         data: None,

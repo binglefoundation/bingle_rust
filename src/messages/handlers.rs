@@ -1,6 +1,6 @@
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError};
 use crate::relay::relay_finder::RelayFinderTrait;
-use crate::engine::BingleAccessUnsafeForTests;
+use crate::engine::{BingleAccessUnsafeForTests, RelayState};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use tracing::{error, warn};
@@ -341,8 +341,16 @@ impl MessageHandler for DefaultPrintingHandler {
             return;
         }
         // Consult API for relay state
-        let state_ok = api.get_relay_state() == "available";
-        if !state_ok {
+        let responder_state = match api.get_relay_state().to_ascii_lowercase().as_str() {
+            "off" => RelayState::Off,
+            "starting" => RelayState::Starting,
+            "loading" => RelayState::Loading,
+            "loaded" => RelayState::Loaded,
+            "available" => RelayState::Available,
+            "own" => RelayState::Own,
+            _ => RelayState::Off,
+        };
+        if responder_state != RelayState::Available {
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
@@ -355,12 +363,15 @@ impl MessageHandler for DefaultPrintingHandler {
         if let Some(backend_arc) = router.get_ddb_backend() {
             if let Ok(backend) = backend_arc.lock() {
                 let (relay_ids, relay_endpoints) = backend.make_epoch_info();
+                let relay_states = vec![responder_state; relay_ids.len()];
                 let info = crate::messages::types::DdbRelaysStatusResponse {
                     app: "ddb".into(),
+                    responder_state,
                     epoch_id: msg.epoch_id,
                     tree_order: 2,
                     relay_ids,
                     relay_endpoints,
+                    relay_states,
                     response_tag: msg_tag,
                     text: None,
                     data: None,

@@ -84,10 +84,17 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     assert_eq!(out.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
     assert_eq!(out.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("relaysStatusResponse"));
     assert_eq!(out.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("get_epoch_tag"));
+    assert_eq!(out.get("responderState").and_then(|v| v.as_str()), Some("available"));
     let ids = out.get("relayIds").and_then(|v| v.as_array()).expect("relayIds array");
     let id_list: Vec<String> = ids.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
     assert!(id_list.contains(&"RID1".to_string()));
     assert!(id_list.contains(&"RID2".to_string()));
+    let relay_states = out
+        .get("relayStates")
+        .and_then(|v| v.as_array())
+        .expect("relayStates array");
+    assert_eq!(relay_states.len(), ids.len());
+    assert!(relay_states.iter().all(|s| s.as_str() == Some("available")));
     let eps = out.get("relayEndpoints").and_then(|v| v.as_array()).expect("relayEndpoints array");
     assert!(eps.len() >= 2);
 }

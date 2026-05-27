@@ -21,6 +21,7 @@ use crate::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const MINIMUM_MTU: usize = 1492;
@@ -72,7 +73,8 @@ pub enum NatType {
     FullCone = 4,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RelayState {
     Off,
     Starting,

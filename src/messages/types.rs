@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use crate::engine::RelayState;
 
 // Re-export common DDB types for convenience
 pub use crate::ddb::{AdvertRecord, InetSocketAddress};
@@ -353,6 +354,8 @@ pub struct DdbGetRelaysStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DdbRelaysStatusResponse {
     pub app: String, // "ddb"
+    #[serde(rename = "responderState")]
+    pub responder_state: RelayState,
     #[serde(rename = "epochId")]
     pub epoch_id: i64,
     #[serde(rename = "treeOrder")]
@@ -361,6 +364,8 @@ pub struct DdbRelaysStatusResponse {
     pub relay_ids: Vec<String>,
     #[serde(rename = "relayEndpoints", default, skip_serializing_if = "Option::is_none")]
     pub relay_endpoints: Option<Vec<InetSocketAddress>>,
+    #[serde(rename = "relayStates")]
+    pub relay_states: Vec<RelayState>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
