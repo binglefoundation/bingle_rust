@@ -69,10 +69,10 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     }
     router.set_ddb_backend(Some(backend.clone()));
 
-    // Act: route GetEpoch
-    let get = DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: Some("get_epoch_tag".to_string()), text: None, data: None };
+    // Act: route getRelaysStatus to router
+    let get = DdbGetRelaysStatus { app: "ddb".into(), epoch_id: -1, tag: Some("get_epoch_tag".to_string()), text: None, data: None };
     router.set_last_response_tag(Some("rt1".to_string()));
-    let msg = Message::Ddb(DdbMessage::GetEpoch(get));
+    let msg = Message::Ddb(DdbMessage::GetRelaysStatus(get));
 
     let handler = DefaultPrintingHandler;
     Router::with_current_router(router.clone(), || {
@@ -82,7 +82,7 @@ pub fn ddb_get_epoch_returns_epoch_info_when_relay_available() {
     // Assert: outbound response exists and is EpochInfo
     let out = router.take_outbound_response().expect("expected response");
     assert_eq!(out.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
-    assert_eq!(out.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("getEpochResponse"));
+    assert_eq!(out.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("relaysStatusResponse"));
     assert_eq!(out.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("get_epoch_tag"));
     let ids = out.get("relayIds").and_then(|v| v.as_array()).expect("relayIds array");
     let id_list: Vec<String> = ids.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
@@ -99,8 +99,8 @@ pub fn ddb_get_epoch_returns_fail_when_not_allowed() {
     router.set_am_relay(false);
     // router.set_bingle_api_internal(Some(Arc::new(InternalStarting) as Arc<dyn BingleApiInternal>));
     let handler = DefaultPrintingHandler;
-    let get = DdbGetEpoch { app: "ddb".into(), epoch_id: 0, tag: None, text: None, data: None };
-    let msg = Message::Ddb(DdbMessage::GetEpoch(get));
+    let get = DdbGetRelaysStatus { app: "ddb".into(), epoch_id: 0, tag: None, text: None, data: None };
+    let msg = Message::Ddb(DdbMessage::GetRelaysStatus(get));
     Router::with_current_router(router.clone(), || { router.route(&handler, &msg, "SENDER."); });
     let out1 = router.take_outbound_response().expect("response");
     assert_eq!(out1.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("fail"));

@@ -256,7 +256,7 @@ impl RelayFinder {
 
     // Deprecated convenience constructor using AlgoBingle discovery has been removed.
 
-    /// Find any relay suitable for us (root or non-root). Uses DDB getEpoch via list_all_relays.
+    /// Find any relay suitable for us (root or non-root). Uses DDB getRelaysStatus via list_all_relays.
     fn find_relay_internal(&self, my_id: &str) -> Result<RelayInfo, String> {
         self.find_relay_excluding_internal(my_id, &[])
     }

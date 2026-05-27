@@ -97,7 +97,7 @@ pub fn ddb_signon_and_response_roundtrip() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn ddb_get_epoch_and_info_roundtrip() {
-    let get = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch {
+    let get = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus {
         app: "ddb".into(),
         epoch_id: -1,
         tag: None,
@@ -108,7 +108,7 @@ pub fn ddb_get_epoch_and_info_roundtrip() {
     let g2 = marshal::from_json_str(&jg).unwrap();
     assert_eq!(get, g2);
 
-    let info = Message::Ddb(DdbMessage::EpochInfo(DdbEpochInfo {
+    let info = Message::Ddb(DdbMessage::RelaysStatusResponse(DdbRelaysStatusResponse {
         app: "ddb".into(),
         epoch_id: 7,
         tree_order: 4,

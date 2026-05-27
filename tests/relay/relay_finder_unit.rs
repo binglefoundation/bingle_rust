@@ -16,11 +16,11 @@ impl InnerBingleApi for MockApi {
             obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".into()));
             obj.insert("state".to_string(), serde_json::Value::String("available".into()));
             Ok(serde_json::Value::Object(obj))
-        } else if ty == "getEpoch" && app.and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
-            // Respond to DdbGetEpoch with minimal EpochInfo; keep relayIds empty so client falls back to discovery
+        } else if ty == "getRelaysStatus" && app.and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
+            // Respond to DdbGetRelaysStatus with minimal DdbRelaysStatusResponse; keep relayIds empty so client falls back to discovery
             Ok(serde_json::json!({
                 "app": "ddb",
-                "type": "getEpochResponse",
+                "type": "relaysStatusResponse",
                 "epochId": -1,
                 "treeOrder": 2,
                 "relayIds": []

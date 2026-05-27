@@ -25,7 +25,7 @@ impl InnerBingleApi for MockApi {
     fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         match (message.get("app"), ty) {
-            (Some(app), "getEpoch") if app.as_str() == Some("ddb") => {
+            (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
                 // Return aligned relayIds and relayEndpoints from entries
                 let mut ids: Vec<serde_json::Value> = Vec::new();
                 let mut eps: Vec<serde_json::Value> = Vec::new();
@@ -35,7 +35,7 @@ impl InnerBingleApi for MockApi {
                 }
                 Ok(serde_json::json!({
                     "app": "ddb",
-                    "type": "getEpochResponse",
+                    "type": "relaysStatusResponse",
                     "epochId": -1,
                     "treeOrder": 2,
                     "relayIds": ids,

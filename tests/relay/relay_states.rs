@@ -12,7 +12,7 @@ use rust_comms::engine::RelayState;
 
 #[derive(Clone)]
 struct MockApi {
-    // vector of (id, addr, state) for deterministic getEpoch ordering
+    // vector of (id, addr, state) for deterministic getRelaysStatus ordering
     entries: Arc<Vec<(String, SocketAddr, String)>>,
     // map of address -> state string used to respond to RelayCheck fast
     states: Arc<std::collections::HashMap<SocketAddr, String>>,
@@ -34,8 +34,8 @@ impl InnerBingleApi for MockApi {
     fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         match (message.get("app"), ty) {
-            (Some(app), "getEpoch") if app.as_str() == Some("ddb") => {
-                // Return a DDB getEpochResponse with relayIds and aligned relayEndpoints based on entries
+            (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
+                // Return a DDB RelaysStatusResponse with relayIds and aligned relayEndpoints based on entries
                 let mut ids: Vec<serde_json::Value> = Vec::new();
                 let mut eps: Vec<serde_json::Value> = Vec::new();
                 for (id, addr, _st) in self.entries.iter() {
@@ -44,7 +44,7 @@ impl InnerBingleApi for MockApi {
                 }
                 Ok(serde_json::json!({
                     "app": "ddb",
-                    "type": "getEpochResponse",
+                    "type": "relaysStatusResponse",
                     "epochId": -1,
                     "treeOrder": 2,
                     "relayIds": ids,
@@ -92,7 +92,7 @@ pub fn load_and_summarize_states() {
 
     let finder = RelayFinder::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
 
-    // Load states (will internally call list_all_relays which uses DDB getEpoch from preferred root)
+    // Load states (will internally call list_all_relays which uses DDB getRelaysStatus from preferred root)
     finder.load_relay_states("MYID");
 
     // Summarize and assert counts

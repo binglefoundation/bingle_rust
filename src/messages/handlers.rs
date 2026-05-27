@@ -294,8 +294,8 @@ pub trait MessageHandler {
     fn on_ddb_dump_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DumpResolve(msg.clone()))); }
     fn on_ddb_signon(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignon) { self.on_unimplemented(&Message::Ddb(DdbMessage::Signon(msg.clone()))); }
     fn on_ddb_signon_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignonResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::SignonResponse(msg.clone()))); }
-    fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetEpoch(msg.clone()))); }
-    fn on_ddb_epoch_info(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbEpochInfo) { self.on_unimplemented(&Message::Ddb(DdbMessage::EpochInfo(msg.clone()))); }
+    fn on_ddb_get_relays_status(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetRelaysStatus) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetRelaysStatus(msg.clone()))); }
+    fn on_ddb_relays_status_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbRelaysStatusResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::RelaysStatusResponse(msg.clone()))); }
 
     // Unknown
     fn on_unknown(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, raw: &serde_json::Value) {
@@ -327,10 +327,10 @@ pub trait MessageHandler {
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
-    fn on_ddb_get_epoch(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbGetEpoch) {
+    fn on_ddb_get_relays_status(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbGetRelaysStatus) {
         let msg_tag = msg.tag.clone();
         let router = &from.router;
-        // Only relays in Available state may serve getEpoch
+        // Only relays in Available state may serve getRelaysStatus
         if !router.get_am_relay() {
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
@@ -355,7 +355,7 @@ impl MessageHandler for DefaultPrintingHandler {
         if let Some(backend_arc) = router.get_ddb_backend() {
             if let Ok(backend) = backend_arc.lock() {
                 let (relay_ids, relay_endpoints) = backend.make_epoch_info();
-                let info = crate::messages::types::DdbEpochInfo {
+                let info = crate::messages::types::DdbRelaysStatusResponse {
                     app: "ddb".into(),
                     epoch_id: msg.epoch_id,
                     tree_order: 2,
@@ -366,7 +366,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     data: None,
                 };
                 let resp = crate::messages::types::Message::Ddb(
-                    crate::messages::types::DdbMessage::EpochInfo(info)
+                    crate::messages::types::DdbMessage::RelaysStatusResponse(info)
                 );
                 let json = crate::messages::marshal::to_json_value(&resp);
                 router.set_outbound_response(Some(json));
@@ -593,7 +593,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
         // Queue SignonResponse FIRST — the new relay needs to receive this and
         // transition to Available before other relays learn about it and try
-        // getEpoch on it.
+        // getRelaysStatus on it.
         let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
             app: "ddb".to_string(),
             response_tag: msg.tag.clone(),
@@ -605,7 +605,7 @@ impl MessageHandler for DefaultPrintingHandler {
 
         // Ripple asynchronously with a delay so the new relay has time to
         // process SignonResponse and transition to Available state before
-        // other relays discover it and try getEpoch on it.
+        // other relays discover it and try getRelaysStatus on it.
         if msg.rippled != Some(true) {
             let mut rippled_msg = msg.clone();
             rippled_msg.rippled = Some(true);

@@ -15,12 +15,12 @@ impl InnerBingleApi for GetRelaysMockApi {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let app = message.get("app").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
 
-        if ty == "getEpoch" && app == "ddb" {
+        if ty == "getRelaysStatus" && app == "ddb" {
             self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             // Return two relays, different from the root.
             Ok(serde_json::json!({
                 "app": "ddb",
-                "type": "getEpochResponse",
+                "type": "relaysStatusResponse",
                 "epochId": 1,
                 "relayIds": ["R-SUB-1", "R-SUB-2"],
                 "relayEndpoints": [

@@ -6,6 +6,7 @@ use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBo
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::engine::RelayState;
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait, RelayFinderTestTrait};
+use crate::util::test_util::init_test_logging;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -32,8 +33,8 @@ impl InnerBingleApi for MockApi {
     fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         match (message.get("app"), ty) {
-            (Some(app), "getEpoch") if app.as_str() == Some("ddb") => {
-                // Return a DDB getEpochResponse with relayIds and aligned relayEndpoints based on entries
+            (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
+                // Return a DDB RelaysStatusResponse with relayIds and aligned relayEndpoints based on entries
                 let mut ids: Vec<serde_json::Value> = Vec::new();
                 let mut eps: Vec<serde_json::Value> = Vec::new();
                 for (id, addr, _st) in self.entries.iter() {
@@ -42,7 +43,7 @@ impl InnerBingleApi for MockApi {
                 }
                 Ok(serde_json::json!({
                     "app": "ddb",
-                    "type": "getEpochResponse",
+                    "type": "relaysStatusResponse",
                     "epochId": -1,
                     "treeOrder": 2,
                     "relayIds": ids,
@@ -64,6 +65,8 @@ fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOS
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn own_state_is_marked_and_not_checked() {
+    init_test_logging();
+
     let a1 = addr(41101);
     let a2 = addr(41102);
 

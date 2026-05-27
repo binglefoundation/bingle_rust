@@ -67,7 +67,7 @@ impl DdbClientImpl {
         }
     }
 
-    /// Send a single getEpoch request to the specified relay and parse the relay list.
+    /// Send a single getRelaysStatus request to the specified relay and parse the relay list.
     /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
     pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, BingleError> {
         tracing::debug!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
@@ -79,7 +79,7 @@ impl DdbClientImpl {
                 return Err(e);
             }
         };
-        let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, text: None, data: None }));
+        let req = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus { app: "ddb".into(), epoch_id: -1, tag: None, text: None, data: None }));
         let json: JsonValue = to_json_value(&req);
         let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user, json, None)) {
             Ok(r) => r,
@@ -89,8 +89,8 @@ impl DdbClientImpl {
             }
         };
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
-        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("getEpochResponse");
-        if !app_ok || !ty_ok { return Err(BingleError::Other("unexpected response to getEpoch".to_string())); }
+        let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("relaysStatusResponse");
+        if !app_ok || !ty_ok { return Err(BingleError::Other("unexpected response to getRelaysStatus".to_string())); }
         let ids_arr = match resp.get("relayIds").and_then(|v| v.as_array()) {
             Some(a) => a,
             None => {
@@ -230,57 +230,6 @@ impl DdbClient for DdbClientImpl {
         tracing::debug!("[DdbClientImpl::start_load_from_peer][exit] Ok({})", out);
         Ok(out)
     }
-
-    // fn get_relays(&self) -> Result<Vec<(String, SocketAddr)>, String> {
-    //     // Try each discovered relay to obtain epoch info
-    //     let discovered: Vec<RelayInfo> = (self.discover)();
-    //     let mut last_err: Option<String> = None;
-    //     for cand in &discovered {
-    //         let nsk = NetworkEndpoint::new_direct(cand.address);
-    //         let relay_user = match Self::relay_user_id(&cand.id) { Ok(u) => u, Err(e) => { last_err = Some(e); continue; } };
-    //         let req = Message::Ddb(DdbMessage::GetEpoch(DdbGetEpoch { app: "ddb".into(), epoch_id: -1, tag: None, response_tag: None, text: None, data: None }));
-    //         let json: JsonValue = to_json_value(&req);
-    //         match self.api.send_message_to_network_with_response(&nsk, &relay_user, json, None) {
-    //             Ok(resp) => {
-    //                 let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
-    //                 let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("getEpochResponse");
-    //                 if !app_ok || !ty_ok { last_err = Some("unexpected response to getEpoch".to_string()); continue; }
-    //                 let ids_arr = match resp.get("relayIds").and_then(|v| v.as_array()) { Some(a) => a, None => { last_err = Some("missing relayIds".into()); continue; } };
-    //                 let ids: Vec<String> = ids_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
-    //                 let eps_opt = resp.get("relayEndpoints").and_then(|v| v.as_array());
-    //                 // If endpoints provided and length matches, pair by index
-    //                 if let Some(eps) = eps_opt {
-    //                     if eps.len() == ids.len() {
-    //                         let mut out: Vec<(String, SocketAddr)> = Vec::new();
-    //                         for (i, id) in ids.iter().enumerate() {
-    //                             let ep = &eps[i];
-    //                             let host = match ep.get("host").and_then(|v| v.as_str()) { Some(h) => h, None => { last_err = Some("endpoint missing host".into()); continue; } };
-    //                             let port = match ep.get("port").and_then(|v| v.as_u64()) { Some(p) => p as u16, None => { last_err = Some("endpoint missing port".into()); continue; } };
-    //                             if let Ok(ip) = host.parse::<IpAddr>() { out.push((id.clone(), SocketAddr::new(ip, port))); }
-    //                         }
-    //                         if !out.is_empty() { return Ok(out); }
-    //                     }
-    //                 }
-    //                 // Fallback: map using discovered addresses where ids match
-    //                 if !discovered.is_empty() {
-    //                     let map: std::collections::HashMap<String, SocketAddr> = discovered.iter().map(|r| (r.id.clone(), r.address)).collect();
-    //                     let mut out: Vec<(String, SocketAddr)> = Vec::new();
-    //                     for id in ids.into_iter() { if let Some(addr) = map.get(&id) { out.push((id, *addr)); } }
-    //                     if !out.is_empty() { return Ok(out); }
-    //                 }
-    //             }
-    //             Err(e) => { last_err = Some(e); continue; }
-    //         }
-    //     }
-    //     // Final fallback: use discovery directly
-    //     if !discovered.is_empty() {
-    //         let mut out: Vec<(String, SocketAddr)> = discovered.into_iter().map(|r| (r.id, r.address)).collect();
-    //         // Sort by id for deterministic order
-    //         out.sort_by(|a, b| a.0.cmp(&b.0));
-    //         return Ok(out);
-    //     }
-    //     Err(last_err.unwrap_or_else(|| "no relays discovered".to_string()))
-    // }
 
     fn register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> {
         // 1) Find relay to talk to

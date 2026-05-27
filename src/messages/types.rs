@@ -230,8 +230,8 @@ pub enum DdbMessage {
     #[serde(rename = "updateResponse")] UpdateResponse(DdbUpdateResponse),
     #[serde(rename = "signon")] Signon(DdbSignon),
     #[serde(rename = "signonResponse")] SignonResponse(DdbSignonResponse),
-    #[serde(rename = "getEpoch")] GetEpoch(DdbGetEpoch),
-    #[serde(rename = "getEpochResponse")] EpochInfo(DdbEpochInfo),
+    #[serde(rename = "getRelaysStatus")] GetRelaysStatus(DdbGetRelaysStatus),
+    #[serde(rename = "relaysStatusResponse")] RelaysStatusResponse(DdbRelaysStatusResponse),
     #[serde(rename = "initResolve")] InitResolve(DdbInitResolve),
     #[serde(rename = "initResponse")] InitResponse(DdbInitResponse),
     #[serde(rename = "dumpResolve")] DumpResolve(DdbDumpResolve),
@@ -338,7 +338,7 @@ pub struct DdbSignonResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DdbGetEpoch {
+pub struct DdbGetRelaysStatus {
     pub app: String, // "ddb"
     #[serde(rename = "epochId")]
     pub epoch_id: i64,
@@ -351,7 +351,7 @@ pub struct DdbGetEpoch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DdbEpochInfo {
+pub struct DdbRelaysStatusResponse {
     pub app: String, // "ddb"
     #[serde(rename = "epochId")]
     pub epoch_id: i64,

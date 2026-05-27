@@ -48,11 +48,11 @@ security:
 
 robustness:
 - fix error 40 on live device (?)
-- Refactor DTLS OpenSSL with PeerCmd to remove polling delays
+- ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
-- implement retry for packet loss and retryable fails (FRPT implementation, no large blocks yet)
-- run command processing in a thread
+- ~~implement retry for packet loss and retryable fails (FRPT implementation, no large blocks yet)~~
+- ~~run command processing in a thread~~
 - implement relay cache properly with expiry
 - lookup matches handles with downcase and some punctuation normalized (as Gmail?)
 - ensure ipv6 is unsupported consistently

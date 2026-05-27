@@ -63,7 +63,7 @@ fn relay_record(id: &str, host: &str, port: u16) -> AdvertRecord {
 
 /// When there is already a live relay in the DDB and a second relay is added
 /// (simulating the self-upsert after ddb_load_from_peer), both relays must
-/// appear in the getEpoch response (make_epoch_info).
+/// appear in the getRelaysStatus response (make_epoch_info).
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn both_relays_listed_in_epoch_after_second_relay_added() {
     let mut db = InMemoryDdbBackend::new();

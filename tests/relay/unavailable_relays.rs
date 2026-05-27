@@ -34,7 +34,7 @@ impl InnerBingleApi for MockApi {
             // Always fail
             return Err(BingleError::Other("Connection failed".into()));
         }
-        if ty == "getEpoch" {
+        if ty == "getRelaysStatus" {
             let mut count = self.get_epoch_calls.lock().unwrap();
             *count += 1;
             let addr = nsk.inet_socket_address().expect("direct endpoint required");
@@ -45,7 +45,7 @@ impl InnerBingleApi for MockApi {
             }
             return Ok(serde_json::json!({
                 "app": "ddb",
-                "type": "getEpochResponse",
+                "type": "relaysStatusResponse",
                 "epochId": -1,
                 "treeOrder": 2,
                 "relayIds": [],
