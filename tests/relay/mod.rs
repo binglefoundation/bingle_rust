@@ -9,6 +9,9 @@ pub mod relay_finder_unit;
 #[path = "relay_info_cache.rs"]
 pub mod relay_info_cache;
 
+#[path = "relay_updater.rs"]
+pub mod relay_updater;
+
 #[path = "relay_client_unit.rs"]
 pub mod relay_client_unit;
 
