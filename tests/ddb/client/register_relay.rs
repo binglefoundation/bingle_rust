@@ -93,7 +93,7 @@ pub fn ddb_client_register_relay_ok_and_persisted() {
     // Discover closure returns the started relay
     let relay_id = relay.get_my_id().expect("relay id should be Some");
     let relay_id_for_discovery = relay_id.clone();
-    let discover = Arc::new(move || vec![RelayInfo { id: relay_id_for_discovery.clone(), address: relay_addr, state: None, ttl: None }]);
+    let discover = Arc::new(move || vec![RelayInfo::root(relay_id_for_discovery.clone(), relay_addr)]);
     let cli = DdbClientImpl::with_discovery(to_weak_api_both(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
     // Perform register_relay against the relay

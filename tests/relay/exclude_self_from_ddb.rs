@@ -70,8 +70,8 @@ pub fn list_all_relays_excludes_self_from_ddb() {
     // Root discovery can return any roots; ensure deterministic order
     let discover = {
         let roots = vec![
-            RelayInfo { id: other.clone(), address: a2, state: None, ttl: None },
-            RelayInfo { id: my_id.clone(), address: a1, state: None, ttl: None },
+            RelayInfo::root(other.clone(), a2),
+            RelayInfo::root(my_id.clone(), a1),
         ];
         Arc::new(move || roots.clone())
     };
@@ -99,8 +99,8 @@ pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
 
     let discover = {
         let roots = vec![
-            RelayInfo { id: other.clone(), address: a2, state: None, ttl: None },
-            RelayInfo { id: my_id.clone(), address: a1, state: None, ttl: None },
+            RelayInfo::root(other.clone(), a2),
+            RelayInfo::root(my_id.clone(), a1),
         ];
         Arc::new(move || roots.clone())
     };

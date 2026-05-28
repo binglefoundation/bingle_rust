@@ -27,10 +27,7 @@ pub fn lookup_known_root_returns_endpoint() {
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
 
     let discover = {
-        let roots = vec![
-            RelayInfo { id: id1.clone(), address: a1, state: None, ttl: None },
-            RelayInfo { id: id2.clone(), address: a2, state: None, ttl: None },
-        ];
+        let roots = vec![RelayInfo::root(id1.clone(), a1), RelayInfo::root(id2.clone(), a2)];
         Arc::new(move || roots.clone())
     };
 
@@ -53,7 +50,7 @@ pub fn lookup_unknown_root_returns_none() {
 
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
     let discover = {
-        let roots = vec![RelayInfo { id: id1.clone(), address: a1, state: None, ttl: None }];
+        let roots = vec![RelayInfo::root(id1.clone(), a1)];
         Arc::new(move || roots.clone())
     };
 

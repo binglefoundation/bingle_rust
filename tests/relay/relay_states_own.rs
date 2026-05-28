@@ -81,10 +81,7 @@ pub fn own_state_is_marked_and_not_checked() {
 
     // Root discovery closure returns both
     let discover = {
-        let ids = vec![
-            RelayInfo { id: id1.clone(), address: a1, state: None, ttl: None },
-            RelayInfo { id: id2.clone(), address: a2, state: None, ttl: None },
-        ];
+        let ids = vec![RelayInfo::root(id1.clone(), a1), RelayInfo::root(id2.clone(), a2)];
         Arc::new(move || ids.clone())
     };
 

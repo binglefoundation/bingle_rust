@@ -44,9 +44,10 @@ pub fn list_all_relays_queries_root_even_if_only_one() {
     let root_id = "IAOSUGCPN6WTPI3LCXLHXMJU3UT3VIGP3CKZ6H3P6XYZND4JYKZJSFYZ3I";
 
     let discover = Arc::new(move || -> Vec<RelayInfo> {
-        vec![
-            RelayInfo { id: root_id.to_string(), address: "127.0.0.1:10000".parse().unwrap(), state: None, ttl: None },
-        ]
+        vec![RelayInfo::root(
+            root_id.to_string(),
+            "127.0.0.1:10000".parse().unwrap(),
+        )]
     });
 
     let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);

@@ -41,8 +41,14 @@ pub mod test_util;
 pub fn find_root_relay_rejects_self() {
     let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
-            RelayInfo { id: test_util::ADDRESS_SPEND.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345), state: None, ttl: None },
-            RelayInfo { id: test_util::ADDRESS_RECEIVE.to_string(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346), state: None, ttl: None },
+            RelayInfo::root(
+                test_util::ADDRESS_SPEND.to_string(),
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345),
+            ),
+            RelayInfo::root(
+                test_util::ADDRESS_RECEIVE.to_string(),
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346),
+            ),
         ]
     });
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
@@ -66,10 +72,10 @@ pub fn select_indices_partitions_for_multiple_ids() {
     );
 
     let relays = vec![
-        RelayInfo { id: "R1".into(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10001), state: None, ttl: None },
-        RelayInfo { id: "R2".into(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10002), state: None, ttl: None },
-        RelayInfo { id: "R3".into(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10003), state: None, ttl: None },
-        RelayInfo { id: "R4".into(), address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10004), state: None, ttl: None },
+        RelayInfo::root("R1", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10001)),
+        RelayInfo::root("R2", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10002)),
+        RelayInfo::root("R3", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10003)),
+        RelayInfo::root("R4", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10004)),
     ];
 
     let ids = [

@@ -37,6 +37,7 @@ fn count_peer_states(
     for r in peers {
         if let Some(st) = r.state {
             match st {
+                RelayState::Unknown => {}
                 RelayState::Available => available += 1,
                 RelayState::Starting => starting += 1,
                 RelayState::Loading => {}
@@ -76,6 +77,7 @@ pub enum NatType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RelayState {
+    Unknown,
     Off,
     Starting,
     Loading,
@@ -218,6 +220,7 @@ pub struct Engine {
 impl Engine {
     pub fn relay_state_str(&self) -> String {
         match self.relay_state {
+            RelayState::Unknown => "unknown".to_string(),
             RelayState::Off => "off".to_string(),
             RelayState::Starting => "starting".to_string(),
             RelayState::Loading => "loading".to_string(),
@@ -229,6 +232,7 @@ impl Engine {
 
     fn relay_state_to_str_static(st: RelayState) -> &'static str {
         match st {
+            RelayState::Unknown => "unknown",
             RelayState::Off => "off",
             RelayState::Starting => "starting",
             RelayState::Loading => "loading",
@@ -1226,12 +1230,12 @@ impl Engine {
                     let addr = self
                         .last_public_addr()
                         .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
-                    all_relays.push(RelayInfo {
-                        id: my_id.clone(),
-                        address: addr,
-                        state: Some(RelayState::Starting),
-                        ttl: None,
-                    });
+                    all_relays.push(RelayInfo::root_with(
+                        my_id.clone(),
+                        addr,
+                        Some(RelayState::Starting),
+                        None,
+                    ));
                 }
 
                 // Count peer states (excluding self)
