@@ -12,6 +12,9 @@ pub mod relay_info_cache;
 #[path = "relay_updater.rs"]
 pub mod relay_updater;
 
+#[path = "relay_updater_localnet.rs"]
+pub mod relay_updater_localnet;
+
 #[path = "relay_client_unit.rs"]
 pub mod relay_client_unit;
 

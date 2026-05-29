@@ -1,6 +1,7 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg};
 use rust_comms::api::bingle_api::BingleApiInternal;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::env;
 use std::sync::{Arc, Once};
@@ -226,6 +227,54 @@ pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units:
     ops.set_asset_clawback_to_app(app_id, asset_id).expect("set_asset_clawback_to_app call");
 
     (app_id, asset_id)
+}
+
+#[allow(dead_code)]
+pub fn register_client_on_blockchain(
+    address: &str,
+    passphrase: &str,
+    handle: &str,
+    app_id: u64,
+    asset_id: u64,
+    creator: &AlgoOps,
+    cfg: AlgoChainConfig,
+) {
+    let ops = ops_from_mnemonic(address, passphrase, cfg);
+    // opt_in_app/asset may fail if already opted in (e.g. relays registered via register_relays)
+    if let Err(e) = creator.opt_in_app(app_id) {
+        tracing::info!("[register_client_on_blockchain] opt-in creator to app skipped (may already be opted in): {}", e);
+    }
+    if let Err(e) = creator.opt_in_to_asset(asset_id) {
+        tracing::info!("[register_client_on_blockchain] opt-in creator to asset skipped (may already be opted in): {}", e);
+    }
+
+    if let Err(e) = ops.opt_in_app(app_id) {
+        tracing::info!("[register_client_on_blockchain] {} opt-in app skipped (may already be opted in): {}", handle, e);
+    }
+    if let Err(e) = ops.opt_in_to_asset(asset_id) {
+        tracing::info!("[register_client_on_blockchain] {} opt-in asset skipped (may already be opted in): {}", handle, e);
+    }
+    creator
+        .send_asset(asset_id, 10, address)
+        .unwrap_or_else(|e| panic!("fund {} with ASA: {}", handle, e));
+    let ab = AlgoBingle::new(ops.clone(), app_id, asset_id);
+    ab.register(app_id, asset_id, handle, 1)
+        .unwrap_or_else(|e| panic!("register handle for {}: {}", handle, e));
+
+    // Wait until local state for the client reflects the Handle key to avoid race conditions
+    let start = Instant::now();
+    let timeout = Duration::from_secs(30);
+    let mut ok = false;
+    while start.elapsed() < timeout {
+        if let Ok(Some(entries)) = ops.local_state_for_account(app_id, address) {
+            if entries.iter().any(|(k, v)| k == "Handle" && v == handle) {
+                ok = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(ok, "{} Handle not visible in local state within timeout", handle);
 }
 
 #[allow(dead_code)]

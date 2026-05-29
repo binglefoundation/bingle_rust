@@ -12,6 +12,7 @@ use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
 use crate::setup_localnet;
 use crate::util::test_util;
+use crate::util::test_util::register_client_on_blockchain;
 use serial_test::serial;
 
 const ADDRESS_B: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
@@ -204,47 +205,6 @@ fn setup_stun_servers(broken_nat: bool) -> (SimpleStunServer, SimpleStunServer, 
     let s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat }).expect("start s2");
 
     (s1, s2, vec![a1, a2])
-}
-
-fn register_client_on_blockchain(
-    address: &str,
-    passphrase: &str,
-    handle: &str,
-    app_id: u64,
-    asset_id: u64,
-    creator: &rust_comms::algo_ops::AlgoOps,
-    cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig,
-) {
-    let ops = test_util::ops_from_mnemonic(address, passphrase, cfg);
-    // opt_in_app/asset may fail if already opted in (e.g. relays registered via register_relays)
-    if let Err(e) = creator.opt_in_app(app_id) {
-        tracing::info!("[register_client_on_blockchain] opt-in creator to app skipped (may already be opted in): {}", e);
-    }
-    if let Err(e) = creator.opt_in_to_asset(asset_id) {
-        tracing::info!("[register_client_on_blockchain] opt-in creator to asset skipped (may already be opted in): {}",e);
-    }
-
-    if let Err(e) = ops.opt_in_app(app_id) {
-        tracing::info!("[register_client_on_blockchain] {} opt-in app skipped (may already be opted in): {}", handle, e);
-    }
-    if let Err(e) = ops.opt_in_to_asset(asset_id) {
-        tracing::info!("[register_client_on_blockchain] {} opt-in asset skipped (may already be opted in): {}", handle, e);
-    }
-    creator.send_asset(asset_id, 10, address).expect(&format!("fund {} with ASA", handle));
-    let ab = AlgoBingle::new(ops.clone(), app_id, asset_id);
-    ab.register(app_id, asset_id, handle, 1).expect(&format!("register handle for {}", handle));
-
-    // Wait until local state for the client reflects the Handle key to avoid race conditions
-    let start = Instant::now();
-    let timeout = Duration::from_secs(30);
-    let mut ok = false;
-    while start.elapsed() < timeout {
-        if let Ok(Some(entries)) = ops.local_state_for_account(app_id, address) {
-            if entries.iter().any(|(k, v)| k == "Handle" && v == handle) { ok = true; break; }
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    assert!(ok, "{} Handle not visible in local state within timeout", handle);
 }
 
 fn setup_on_message(
