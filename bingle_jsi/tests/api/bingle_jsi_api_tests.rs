@@ -158,6 +158,7 @@ impl BingleJsiApi for StubApi {
         _recipient_handles: Vec<String>,
         _timestamp: i64,
         _text: String,
+        _cipher_suite: Option<String>,
     ) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "add_message".to_string(),
@@ -237,6 +238,7 @@ fn stub_send_message_to_id_returns_not_implemented() {
         response_tag: None,
         text: Some("hi".to_string()),
         data: None,
+        cipher_suite: None,
     };
     let result = api.send_message_to_id("user1".to_string(), msg);
     assert!(result.is_err());
@@ -252,6 +254,7 @@ fn stub_send_message_to_handle_returns_not_implemented() {
         response_tag: None,
         text: Some("hi".to_string()),
         data: None,
+        cipher_suite: None,
     };
     let result = api.send_message_to_handle("alice".to_string(), msg);
     assert!(result.is_err());

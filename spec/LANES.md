@@ -6,7 +6,7 @@ UX:
 - ~~contact UX~~
 - ~~build iOS~~ 
 - ~~tidy up bugs~~
-- info option to show cipher suite
+- info option to show cipher suite (now in API, needs UX)
 
 security:
 - ensure protocol is built as documented, changes as follows:
@@ -30,7 +30,7 @@ security:
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
 - ensure runs in live with full encryption - test encryption
-- test against known DTLS vulnerabilities
+- ~~test against known DTLS vulnerabilities~~
 - ensure endpoint is checked and fails on impersonation
 - add a cipher suite string to messages with DTLS cipher suite
 

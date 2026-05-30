@@ -135,4 +135,11 @@ pub trait Dtls {
     fn with_dangerous_debug(self, enabled: bool) -> Self
     where
         Self: Sized;
+
+    /**
+     * Get the cipher suite negotiated for the DTLS session with the given endpoint.
+     * Returns None if the handshake has not completed yet or the endpoint is unknown.
+     * This value is derived from the connection and is not transmitted on the wire.
+     */
+    fn get_cipher_suite(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> Option<String>;
 }

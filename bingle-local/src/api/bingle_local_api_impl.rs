@@ -266,6 +266,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
+        cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
         tracing::debug!("[BingleLocalApi] Adding message from: {} to: {:?}", sender_handle, recipient_handles);
         // Basic input validation
@@ -274,7 +275,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err(BingleError::Other("recipient_handles cannot contain empty handles".to_string())); }
         if text.trim().is_empty() { return Err(BingleError::Other("text cannot be empty".to_string())); }
 
-        let msg = Message { sender_handle, recipient_handles, timestamp, text };
+        let msg = Message { sender_handle, recipient_handles, timestamp, text, cipher_suite };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
             Err(e) => {

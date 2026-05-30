@@ -90,6 +90,7 @@ fn json_to_message(val: &JsonValue) -> BingleMessage {
         response_tag: val.get("responseTag").and_then(|v| v.as_str()).map(|s| s.to_string()),
         text: val.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
         data: val.get("data").map(|v| v.to_string()),
+        cipher_suite: val.get("cipher_suite").and_then(|v| v.as_str()).map(|s| s.to_string()),
     }
 }
 
@@ -350,6 +351,10 @@ impl BingleJsiApiImpl {
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| message.to_string());
+                        let cipher_suite = message
+                            .get("cipher_suite")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         let mut m = msgs.lock().unwrap();
                         m.push(message.clone());
                         // Store message in local API if configured
@@ -371,6 +376,7 @@ impl BingleJsiApiImpl {
                                     vec![recipient],
                                     timestamp,
                                     text,
+                                    cipher_suite,
                                 ) {
                                     tracing::warn!("[on_message] failed to add message: {}", e);
                                 }
@@ -665,10 +671,11 @@ impl BingleJsiApi for BingleJsiApiImpl {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
+        cipher_suite: Option<String>,
     ) -> Result<(), BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
         guard
-            .add_message(sender_handle, recipient_handles, timestamp, text)
+            .add_message(sender_handle, recipient_handles, timestamp, text, cipher_suite)
             .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
@@ -687,6 +694,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 recipient_handles: m.recipient_handles,
                 timestamp: m.timestamp,
                 text: m.text,
+                cipher_suite: m.cipher_suite,
             })
             .collect())
     }
