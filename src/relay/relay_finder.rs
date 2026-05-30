@@ -20,6 +20,7 @@ pub struct RelayInfo {
     pub is_root: bool,
     pub state: Option<RelayState>, // Optional known state from RelayCheck
     pub ttl: Option<u64>,
+    pub last_updated: Instant, // Time this entry was last created or updated
 }
 
 impl RelayInfo {
@@ -39,6 +40,7 @@ impl RelayInfo {
             is_root: true,
             state,
             ttl,
+            last_updated: Instant::now(),
         }
     }
 
@@ -58,7 +60,14 @@ impl RelayInfo {
             is_root: false,
             state,
             ttl,
+            last_updated: Instant::now(),
         }
+    }
+
+    /// Refresh the `last_updated` timestamp to now, returning `self`.
+    pub fn with_updated(mut self) -> Self {
+        self.last_updated = Instant::now();
+        self
     }
 }
 

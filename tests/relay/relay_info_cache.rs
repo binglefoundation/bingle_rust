@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::{Duration, Instant};
 
 use rust_comms::engine::RelayState;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo, RelayInfoCache};
@@ -96,4 +97,73 @@ pub fn relay_info_cache_trait_behaviour() {
     assert_eq!(cleared[1].state, None);
     assert_eq!(cleared[0].ttl, Some(25));
     assert_eq!(cleared[1].ttl, Some(35));
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_info_last_updated_set_on_construction() {
+    let before = Instant::now();
+    let relay = RelayInfo::root("RID1", addr(52001));
+    let after = Instant::now();
+    assert!(relay.last_updated >= before, "last_updated should be >= before construction");
+    assert!(relay.last_updated <= after, "last_updated should be <= after construction");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_info_last_updated_set_on_root_with_construction() {
+    let before = Instant::now();
+    let relay = RelayInfo::root_with("RID1", addr(52002), Some(RelayState::Available), Some(30));
+    let after = Instant::now();
+    assert!(relay.last_updated >= before);
+    assert!(relay.last_updated <= after);
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_info_last_updated_set_on_non_root_construction() {
+    let before = Instant::now();
+    let relay = RelayInfo::non_root("RID1", addr(52003));
+    let after = Instant::now();
+    assert!(relay.last_updated >= before);
+    assert!(relay.last_updated <= after);
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_info_cache_update_relay_refreshes_last_updated() {
+    let cache = RelayInfoCache::new(vec![RelayInfo::root_with(
+        "RID1",
+        addr(53001),
+        Some(RelayState::Starting),
+        Some(15),
+    )]);
+
+    std::thread::sleep(Duration::from_millis(10));
+
+    let original_updated = cache
+        .list_all_relays("RID1", true)
+        .into_iter()
+        .next()
+        .expect("relay should exist in cache")
+        .last_updated;
+
+    std::thread::sleep(Duration::from_millis(10));
+    let before_update = Instant::now();
+
+    let updated = cache.update_relay(RelayInfo::root_with(
+        "RID1",
+        addr(53001),
+        Some(RelayState::Available),
+        Some(30),
+    ));
+    assert!(updated, "update_relay should return true for existing id");
+
+    let after_update = Instant::now();
+    let stored = cache
+        .list_all_relays("RID1", true)
+        .into_iter()
+        .next()
+        .expect("relay should still exist after update")
+        .last_updated;
+
+    assert!(stored > original_updated, "last_updated should advance after update_relay");
+    assert!(stored >= before_update, "last_updated should be >= before_update instant");
+    assert!(stored <= after_update, "last_updated should be <= after_update instant");
 }

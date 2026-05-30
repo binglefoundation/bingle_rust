@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleApiBothType, NetworkEndpoint};
 use crate::engine::{BingleAccess, RelayState};
@@ -64,6 +65,35 @@ impl RelayUpdater {
             .collect();
 
         self.relay_info_cache.replace_relays(updated_relays);
+    }
+
+    /// Update stale entries. If no entries are past their expiry (last_updated + ttl), returns
+    /// immediately. If any root relay entries are expired, refreshes all roots from the blockchain
+    /// via `init_from_blockchain`. Otherwise (only non-root entries expired), queries the
+    /// selected relay via `relay_select_and_query` to update non-root state.
+    pub fn update_when_expired(&self) {
+        let my_id_norm = self.my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        let now = Instant::now();
+
+        let is_expired = |relay: &RelayInfo| {
+            let ttl = Duration::from_secs(relay.ttl.unwrap_or(SHORT_TTL_SECS));
+            relay.last_updated + ttl < now
+        };
+
+        let all_relays = self.relay_info_cache.list_all_relays(my_id_norm, true);
+
+        let root_expired = all_relays.iter().filter(|relay| relay.is_root).any(|relay| is_expired(relay));
+        let non_root_expired = all_relays.iter().filter(|relay| !relay.is_root).any(|relay| is_expired(relay));
+
+        if !root_expired && !non_root_expired {
+            return;
+        }
+
+        if root_expired {
+            self.init_from_blockchain();
+        } else {
+            self.relay_select_and_query();
+        }
     }
 
     pub fn relay_select_and_query(&self) -> Option<RelayInfo> {

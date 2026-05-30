@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::engine::RelayState;
@@ -330,4 +331,90 @@ pub fn relay_select_and_query_returns_none_after_all_candidates_fail() {
         assert_eq!(relay.state, Some(RelayState::Off));
         assert_eq!(relay.ttl, Some(30));
     }
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn update_when_expired_is_noop_when_nothing_expired() {
+    // All entries have a long TTL (30_000 s) so nothing is expired immediately after construction.
+    let discover_call_count = Arc::new(Mutex::new(0u32));
+    let counter_clone = discover_call_count.clone();
+    let updater = RelayUpdater::new(
+        "MYID.".to_string(),
+        Arc::new(move || {
+            *counter_clone.lock().expect("lock should succeed") += 1;
+            vec![RelayInfo::root_with("ROOT1", addr(57001), Some(RelayState::Unknown), Some(30_000))]
+        }),
+    );
+    updater.init_from_blockchain();
+
+    // Reset the counter after init so we only track calls from update_when_expired
+    *discover_call_count.lock().expect("lock should succeed") = 0;
+
+    updater.update_when_expired();
+
+    let calls = *discover_call_count.lock().expect("lock should succeed");
+    assert_eq!(calls, 0, "discover_roots should not be called when no entries are expired");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn update_when_expired_calls_init_from_blockchain_when_root_expired() {
+    let discover_call_count = Arc::new(Mutex::new(0u32));
+    let counter_clone = discover_call_count.clone();
+    let updater = RelayUpdater::new(
+        "MYID.".to_string(),
+        Arc::new(move || {
+            *counter_clone.lock().expect("lock should succeed") += 1;
+            vec![RelayInfo::root_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(30_000))]
+        }),
+    );
+
+    // Directly populate the cache with a ttl=0 root entry so we can trigger expiry without
+    // waiting 30 seconds (init_from_blockchain always sets SHORT_TTL_SECS=30 for non-own relays)
+    updater.relay_info_cache().replace_relays(vec![
+        RelayInfo::root_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(0)),
+    ]);
+
+    // Sleep so the ttl=0 entry is now expired (last_updated + 0s < now)
+    std::thread::sleep(Duration::from_millis(5));
+
+    updater.update_when_expired();
+
+    let calls = *discover_call_count.lock().expect("lock should succeed");
+    assert!(calls > 0, "discover_roots should be called when a root entry is expired");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn update_when_expired_calls_relay_select_when_only_non_root_expired() {
+    let queried_ids = Arc::new(Mutex::new(Vec::<String>::new()));
+    let queried_clone = queried_ids.clone();
+
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(57201), RelayState::Own),
+            ("ROOT1", addr(57202), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(QueryMockApi {
+        queried_ids: queried_clone,
+        responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
+    });
+
+    // Root relay has a long TTL (not expired); non-root has ttl=0 (will expire immediately)
+    let relays = vec![
+        RelayInfo::root_with("MYID", addr(57201), Some(RelayState::Own), Some(30_000)),
+        RelayInfo::root_with("ROOT1", addr(57202), Some(RelayState::Unknown), Some(30_000)),
+        RelayInfo::non_root_with("NR1", addr(57203), Some(RelayState::Unknown), Some(0)),
+    ];
+    let updater = updater_with_api("MYID.", relays.clone(), api);
+    updater.relay_info_cache().replace_relays(relays);
+
+    // Sleep so the ttl=0 non-root entry becomes expired
+    std::thread::sleep(Duration::from_millis(5));
+
+    updater.update_when_expired();
+
+    let ids = queried_ids.lock().expect("lock should succeed").clone();
+    assert!(!ids.is_empty(), "relay_select_and_query should have queried a root relay for non-root expiry");
 }
