@@ -254,6 +254,7 @@ fn add_and_get_messages() {
         vec!["bob".to_string()],
         1000,
         "Hello Bob".to_string(),
+        Some("TLS_AES_256_GCM_SHA384".to_string()),
     )
     .expect("add_message should succeed");
 
@@ -263,6 +264,8 @@ fn add_and_get_messages() {
     assert_eq!(messages[0].recipient_handles, vec!["bob".to_string()]);
     assert_eq!(messages[0].timestamp, 1000);
     assert_eq!(messages[0].text, "Hello Bob");
+    let cs = messages[0].cipher_suite.as_ref().expect("cipher_suite should be Some");
+    assert_eq!(cs, "TLS_AES_256_GCM_SHA384");
 }
 
 #[test]

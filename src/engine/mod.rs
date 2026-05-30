@@ -205,6 +205,8 @@ pub struct Engine {
     // Set of endpoints we have seen (sent to)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
     pub(crate) span: tracing::Span,
+    // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
+    custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
 }
 
 impl Engine {
@@ -548,6 +550,7 @@ impl Engine {
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
             span: tracing::Span::none(),
+            custom_message_handler: None,
         };
         eng.set_last_public_addr(options.static_ip.clone());
         eng
@@ -571,6 +574,15 @@ impl Engine {
     /// Test helper: Inject a custom DDB client.
     pub fn set_ddb_client_for_tests(&mut self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         self.ddb_client = ddb;
+    }
+
+    /// Test helper: install a custom MessageHandler that replaces DefaultPrintingHandler
+    /// during routing in `install_dtls_handler`.  Must be called before `install_dtls_handler`.
+    pub fn set_custom_message_handler(
+        &mut self,
+        handler: Arc<dyn MessageHandler + Send + Sync>,
+    ) {
+        self.custom_message_handler = Some(handler);
     }
 
     /// Test helper: get the local UDP bind address of the mux, if started.
@@ -607,6 +619,34 @@ impl Engine {
     /// Apply a closure to the DTLS instance.
     pub fn with_dtls_mut<F: FnOnce(&mut (dyn Dtls + Send + Sync))>(&mut self, f: F) {
         f(self.dtls.as_mut())
+    }
+
+    /// Test helper: install the DTLS message handler without starting the network stack.
+    /// This allows unit tests to invoke the installed handler directly via `dtls.get_handle_message()`.
+    pub fn install_dtls_handler_for_tests(&mut self) -> Result<(), BingleError> {
+        self.install_dtls_handler()
+    }
+
+    /// Test helper: install the DTLS handler and call `dtls.start()` with a bound UDP mux,
+    /// but skip all relay initialisation and STUN logic.  Suitable for unit tests that need
+    /// a real installed handler without network side-effects.
+    pub fn start_with_addr_for_tests(
+        &mut self,
+        _options: &StartOptions,
+        bind_addr: std::net::SocketAddr,
+    ) -> Result<(), BingleError> {
+        use std::net::{IpAddr, Ipv4Addr};
+        let port = bind_addr.port();
+        let bind_all = std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+        let mux = Arc::new(
+            UdpNetworkMux::bind(bind_all)
+                .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?,
+        );
+        self.install_dtls_handler()?;
+        self.dtls
+            .start(mux)
+            .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
+        Ok(())
     }
 
     /// Set and get issuer moved from API layer.
@@ -963,6 +1003,7 @@ impl Engine {
         let am_relay = self.options.am_relay;
         let ddb_backend = self.ddb_backend.clone();
         let span = self.span.clone();
+        let custom_handler = self.custom_message_handler.clone();
 
         // Now obtain a mutable reference to dtls only for installing the new handler
         let d = self.dtls.as_mut();
@@ -1028,14 +1069,34 @@ impl Engine {
                         }
                     }
 
+                    // Get the cipher suite from the DTLS session for this endpoint
+                    let cipher_suite_opt = server.get_cipher_suite(&from);
+
                     // Route through the message framework for internal handlers (triangle tests etc.)
-                    let handler = DefaultPrintingHandler;
+                    // Use a custom handler when injected (e.g. for tests), otherwise DefaultPrintingHandler.
+                    let use_custom = custom_handler.as_ref().map(|h| h.as_ref() as &dyn MessageHandler);
+                    let default_handler = DefaultPrintingHandler;
+                    let handler: &dyn MessageHandler = use_custom.unwrap_or(&default_handler);
                     match std::str::from_utf8(data) {
-                        Ok(s) => match from_json_str(s) {
+                        Ok(s) => {
+                            // Inject cipher_suite into the raw JSON before parsing/routing
+                            let s_with_cipher = if let Some(ref cs) = cipher_suite_opt {
+                                if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(s) {
+                                    if let Some(obj) = v.as_object_mut() {
+                                        obj.insert("cipher_suite".to_string(), serde_json::Value::String(cs.clone()));
+                                    }
+                                    serde_json::to_string(&v).unwrap_or_else(|_| s.to_string())
+                                } else {
+                                    s.to_string()
+                                }
+                            } else {
+                                s.to_string()
+                            };
+                            match from_json_str(&s_with_cipher) {
                             Ok(msg) => {
                                 tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
                                 if let Some(r) = &router_arc {
-                                    r.route_with_network(&handler, &msg, issuer, &from);
+                                    r.route_with_network(handler, &msg, issuer, &from);
                                     if let Some(out) = r.take_outbound_response() {
                                         tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
                                         let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
@@ -1047,9 +1108,10 @@ impl Engine {
                             }
                             Err(e) => {
                                 // Not valid JSON per our schema; treat as plaintext with raw bytes
-                                tracing::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s, e);
-                                handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s.to_string())));
+                                tracing::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s_with_cipher, e);
+                                handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s_with_cipher.clone())));
                             }
+                        }
                         },
                         Err(e) => {
                             tracing::warn!("[Engine::install_dtls_handler][cb] not UTF-8 {:?}", e);

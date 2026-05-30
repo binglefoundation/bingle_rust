@@ -186,6 +186,7 @@ async fn test_on_message_saves_to_local_api_get_messages() {
                 vec!["me".to_string()],
                 timestamp,
                 "hello from alice".to_string(),
+                None,
             )
             .expect("add_message should succeed");
     }
@@ -219,6 +220,7 @@ async fn test_on_message_multiple_messages_accessible_via_get_messages() {
                 vec!["bob".to_string()],
                 1000,
                 "first message".to_string(),
+                None,
             )
             .expect("add_message 1");
         guard
@@ -227,6 +229,7 @@ async fn test_on_message_multiple_messages_accessible_via_get_messages() {
                 vec!["bob".to_string()],
                 2000,
                 "second message".to_string(),
+                None,
             )
             .expect("add_message 2");
     }

@@ -144,6 +144,9 @@ async fn main() -> anyhow::Result<()> {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| message.to_string());
+                let cipher_suite = message.get("cipher_suite")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 let mut m = msgs.lock().unwrap();
                 m.push(message);
                 // Store message in local API buffer so it is accessible via getMessages
@@ -165,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
                             vec![recipient],
                             timestamp,
                             text,
+                            cipher_suite,
                         ) {
                             tracing::warn!("[on_message] failed to add message to local API: {}", e);
                         }

@@ -64,8 +64,9 @@ impl BingleLocalApi for DummyLocal {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
+        cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
-        self.messages.push(Message { sender_handle, recipient_handles, timestamp, text });
+        self.messages.push(Message { sender_handle, recipient_handles, timestamp, text, cipher_suite });
         Ok(())
     }
 
@@ -117,7 +118,7 @@ fn test_bingle_local_api_smoke() {
     assert!(api.is_blocked("ID_BOB").unwrap());
 
     // messages
-    api.add_message("alice".into(), vec!["bob".into()], 1_725_000_000_000, "hi".into()).unwrap();
+    api.add_message("alice".into(), vec!["bob".into()], 1_725_000_000_000, "hi".into(), None).unwrap();
     let msgs = api.get_messages().unwrap();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].text, "hi");
