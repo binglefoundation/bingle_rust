@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::{BingleAccess, RelayState};
 
 pub use crate::relay::relay_info_cache::RelayInfoCache;
+use crate::relay::relay_updater::RelayUpdater;
 
 #[derive(Debug, Clone)]
 pub struct RelayInfo {
@@ -115,6 +116,7 @@ pub struct RelayFinder {
     // Injection point for discovery (keeps this component testable and avoids tying to indexer here)
     discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
     unavailable_relays: Mutex<HashSet<String>>,
+    relay_updater: OnceLock<RelayUpdater>,
 }
 
 pub type RootRelayInfo = RelayInfo;
@@ -185,6 +187,7 @@ impl RelayFinder {
             all_list_cache: Mutex::new(None),
             discover_roots,
             unavailable_relays: Mutex::new(HashSet::new()),
+            relay_updater: OnceLock::new(),
         }
     }
 
@@ -361,10 +364,12 @@ impl RelayFinder {
     }
 
     /// Return the list of root relays discovered via the blockchain (discover_roots), optionally including ourselves.
+    /// Uses RelayUpdater (init_from_blockchain on first call) to obtain root relay details from the RelayInfoCache.
     fn list_root_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
         tracing::info!("[RelayFinder] list_root_relays: my_id={} include_self={}", my_id, include_self);
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        // 1) Use cached list if valid
+
+        // 1) Use root_list_cache if valid (populated below or by previous call)
         if let Ok(guard) = self.root_list_cache.lock() {
             if let Some(list) = &*guard {
                 if Instant::now() < list.expires_at {
@@ -378,13 +383,16 @@ impl RelayFinder {
             }
         }
 
-        // 2) Discover roots via provided closure
-        tracing::info!("[RelayFinder] list_root_relays: discovering roots");
-        let mut relays = (self.discover_roots)();
-        tracing::info!("[RelayFinder] list_root_relays: discover_roots found {} root relays", relays.len());
+        // 2) Lazy-initialise RelayUpdater on first call using the caller's my_id; call init_from_blockchain
+        let updater = self.relay_updater.get_or_init(|| {
+            RelayUpdater::new(my_id_norm.to_string(), self.discover_roots.clone())
+        });
+        updater.init_from_blockchain();
+
+        // 3) Obtain relays from the updater's RelayInfoCache and repopulate root_list_cache
+        let mut relays = updater.relay_info_cache().list_root_relays(my_id_norm, true);
         relays.sort_by(|a, b| a.id.cmp(&b.id));
 
-        // 3) Cache FULL list of root relays (including ourselves if present in discovery)
         let expires = Instant::now() + self.cache_ttl;
         if let Ok(mut guard) = self.root_list_cache.lock() {
             *guard = Some(CachedRelayList { root_relays: relays.clone(), expires_at: expires });

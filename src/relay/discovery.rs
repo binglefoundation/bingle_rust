@@ -16,6 +16,7 @@ pub fn indexer_discover_closure(
     cfg: Option<AlgoChainConfig>,
 ) -> Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> {
     // Provide a placeholder address to satisfy AlgoOps constructor requirement (read-only ops)
+    // TODO: remove the need for this
     let placeholder_addr = "P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string();
     let ops = AlgoOps::new(None, Some(placeholder_addr), cfg);
     let ab = AlgoBingle::new(ops, app_id, 0);

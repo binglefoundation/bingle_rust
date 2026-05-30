@@ -8,6 +8,7 @@ use rust_comms::algo_ops::AlgoOps;
 use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::{BingleAccessUnsafeForTests, RelayState};
+use rust_comms::relay::discovery::indexer_discover_closure;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use rust_comms::relay::relay_updater::RelayUpdater;
 use crate::relay::relay_states::test_util::init_test_logging;
@@ -134,6 +135,8 @@ fn relay_updater_localnet_e2e_matrix() {
         "one_registered_one_available",
         client1_id.clone(),
         client1.clone(),
+        app_id,
+        cfg.clone(),
         vec![relay1_root.clone()],
         true,
         0,
@@ -144,6 +147,8 @@ fn relay_updater_localnet_e2e_matrix() {
         "one_registered_zero_available",
         client1_id.clone(),
         client1.clone(),
+        app_id,
+        cfg.clone(),
         vec![relay1_root.clone()],
         false,
         0,
@@ -183,6 +188,8 @@ fn relay_updater_localnet_e2e_matrix() {
         "two_registered_two_available",
         client1_id.clone(),
         client1.clone(),
+        app_id,
+        cfg.clone(),
         two_roots.clone(),
         true,
         0
@@ -229,12 +236,14 @@ fn run_scenario(
     scenario_name: &str,
     my_id: String,
     api: Arc<BingleApiImpl>,
+    app_id: u64,
+    cfg: rust_comms::algo_ops::AlgoChainConfig,
     registered_roots: Vec<RelayInfo>,
     expect_selected: bool,
     min_expected_non_root_count: usize,
 ) {
     tracing::info!("[Test] Running scenario: {}", scenario_name);
-    let updater = make_updater(my_id.clone(), api, registered_roots.clone());
+    let updater = make_updater(my_id.clone(), api, app_id, cfg);
     updater.init_from_blockchain();
 
     let init_cache = updater.relay_info_cache().list_all_relays(my_id.as_str(), false);
@@ -262,7 +271,7 @@ fn run_scenario(
 
     // The following should return a consistent result immediately
     // Assumes test nodes are stable by here
-    let mut selected = updater.relay_select_and_query();
+    let selected = updater.relay_select_and_query();
     if !expect_selected {
         assert!(selected.is_none(), "{scenario_name}: expected no relay selected");
         return;
@@ -296,12 +305,12 @@ fn run_scenario(
     );
 }
 
-fn make_updater(my_id: String, api: Arc<BingleApiImpl>, roots: Vec<RelayInfo>) -> RelayUpdater {
+fn make_updater(my_id: String, api: Arc<BingleApiImpl>, app_id: u64, cfg: rust_comms::algo_ops::AlgoChainConfig) -> RelayUpdater {
     let api_both: Arc<dyn BingleApiBoth> = api;
     RelayUpdater::new_with_api(
         my_id,
         Arc::downgrade(&api_both),
-        Arc::new(move || roots.clone()),
+        indexer_discover_closure(app_id, Some(cfg)),
     )
 }
 
