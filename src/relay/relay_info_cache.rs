@@ -49,6 +49,10 @@ impl RelayInfoCache {
         false
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.relays.lock().map(|guard| guard.is_empty()).unwrap_or(true)
+    }
+
     pub fn replace_relays(&self, relays: Vec<RelayInfo>) {
         if let Ok(mut guard) = self.relays.lock() {
             *guard = relays;
