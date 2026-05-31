@@ -125,7 +125,7 @@ impl RelayFinderTrait for RelayFinder {
 
     fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String> {
         self.clear_unavailable_relays_internal();
-        self.find_relay_internal(my_id)
+        self.find_relay_excluding_internal(my_id, &[])
     }
 
     fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
@@ -185,14 +185,9 @@ impl RelayFinder {
         }
     }
 
-    /// Return the list of all relays (root and non-root) using the DDB client get_relays.
-    /// Requires that the root relay cache has been populated (list_root_relays called recently).
-    fn list_all_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
-
-        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-
-        // 1) Ensure relay_updater is initialised and cache is populated/refreshed
+    /// Lazy-initialise the `RelayUpdater` and ensure the `RelayInfoCache` is populated.
+    /// Calls `init_from_blockchain` when the cache is empty, otherwise `update_when_expired`.
+    fn get_or_init_updater(&self, my_id_norm: &str) -> &RelayUpdater {
         let updater = self.relay_updater.get_or_init(|| {
             RelayUpdater::new_with_api(my_id_norm.to_string(), self.api.clone(), self.discover_roots.clone())
         });
@@ -201,6 +196,18 @@ impl RelayFinder {
         } else {
             updater.update_when_expired();
         }
+        updater
+    }
+
+    /// Return the list of all relays (root and non-root) using the DDB client get_relays.
+    /// Requires that the root relay cache has been populated (list_root_relays called recently).
+    fn list_all_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
+
+        let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+
+        // 1) Ensure relay_updater is initialised and cache is populated/refreshed
+        let updater = self.get_or_init_updater(my_id_norm);
         debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relay cache populated, querying relay status");
 
         // 2) Select a root relay, query its status and update the cache with all relay details
@@ -253,13 +260,6 @@ impl RelayFinder {
         if !include_self { relays.retain(|r| r.id != my_id_norm); }
         tracing::info!("[RelayFinder] list_all_relays: returning relay list: {:?}", relays);
         relays
-    }
-
-    // Deprecated convenience constructor using AlgoBingle discovery has been removed.
-
-    /// Find any relay suitable for us (root or non-root). Uses DDB getRelaysStatus via list_all_relays.
-    fn find_relay_internal(&self, my_id: &str) -> Result<RelayInfo, String> {
-        self.find_relay_excluding_internal(my_id, &[])
     }
 
     /// Find any relay suitable for us (root or non-root), excluding specific addresses.
@@ -318,19 +318,10 @@ impl RelayFinder {
         tracing::info!("[RelayFinder] list_root_relays: my_id={} include_self={}", my_id, include_self);
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
 
-        // 1) Lazy-initialise RelayUpdater on first call
-        let updater = self.relay_updater.get_or_init(|| {
-            RelayUpdater::new_with_api(my_id_norm.to_string(), self.api.clone(), self.discover_roots.clone())
-        });
+        // 1) Lazy-initialise RelayUpdater and ensure cache is populated/refreshed
+        let updater = self.get_or_init_updater(my_id_norm);
 
-        // 2) If the cache is empty seed it from the blockchain; otherwise refresh any expired entries
-        if updater.relay_info_cache().is_empty() {
-            updater.init_from_blockchain();
-        } else {
-            updater.update_when_expired();
-        }
-
-        // 3) Obtain relays from the updater's RelayInfoCache
+        // 2) Obtain relays from the updater's RelayInfoCache
         let mut relays = updater.relay_info_cache().list_root_relays(my_id_norm, true);
         relays.sort_by(|a, b| a.id.cmp(&b.id));
 
