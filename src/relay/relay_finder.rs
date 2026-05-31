@@ -79,11 +79,6 @@ struct CachedRelay {
     pub expires_at: Instant,
 }
 
-#[derive(Debug, Clone)]
-struct CachedAllRelayList {
-    relays: Vec<RelayInfo>,
-    pub expires_at: Instant,
-}
 
 pub trait RelayFinderTrait: Send + Sync {
     fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo>;
@@ -114,7 +109,6 @@ pub struct RelayFinder {
     api: crate::api::bingle_api::BingleApiBothType,
     cache_ttl: Duration,
     cache: Mutex<Option<CachedRelay>>, // single selected relay cache
-    all_list_cache: Mutex<Option<CachedAllRelayList>>, // cached list of all relays
     // Injection point for discovery (keeps this component testable and avoids tying to indexer here)
     discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
     unavailable_relays: Mutex<HashSet<String>>,
@@ -185,7 +179,6 @@ impl RelayFinder {
             api,
             cache_ttl,
             cache: Mutex::new(None),
-            all_list_cache: Mutex::new(None),
             discover_roots,
             unavailable_relays: Mutex::new(HashSet::new()),
             relay_updater: OnceLock::new(),
@@ -198,79 +191,37 @@ impl RelayFinder {
         debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
 
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        // 0) Return cached all-relays list if valid
-        // if let Ok(guard) = self.all_list_cache.lock() {
-        //     if let Some(list) = &*guard {
-        //         if Instant::now() < list.expires_at {
-        //             let mut result = list.relays.clone();
-        //             if !include_self { result.retain(|r| r.id != my_id_norm); }
-        //             result.sort_by(|a, b| a.id.cmp(&b.id));
-        //             tracing::info!("[RelayFinder] list_all_relays: returning cached relay list: {:?}", result);
-        //             return result;
-        //         }
-        //     }
-        // }
-        // 1) Ensure root relays are cached; list_root_relays performs discovery and caches
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: ensuring root relays are cached, call list_root_relays");
-        let _ = self.list_root_relays_internal(my_id, true);
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: root relays are cached, access DDB from root");
 
-        // 2) Pick preferred root relay and fetch all relays via DDB from that single root only
-        let cli = crate::ddb::DdbClientImpl::with_discovery(self.api.clone(), self.discover_roots.clone());
-        let mut relays: Vec<RelayInfo> = {
-            // Access root relays from relay_info_cache
-            let roots_opt: Option<Vec<RelayInfo>> = self.relay_updater.get()
-                .map(|u| u.relay_info_cache().list_root_relays(my_id_norm, true));
-            if let Some(roots) = roots_opt {
-                // Exclude self from the roots list before selecting which root to query via DDB
-                let candidates: Vec<RelayInfo> = {
-                    let unavailable = self.unavailable_relays.lock().ok();
-                    roots
-                        .iter()
-                        .cloned()
-                        .filter(|r| {
-                            r.id != my_id_norm && 
-                            unavailable.as_ref().map_or(true, |g| !g.contains(&r.id))
-                        })
-                        .collect()
-                };
+        // 1) Ensure relay_updater is initialised and cache is populated/refreshed
+        let updater = self.relay_updater.get_or_init(|| {
+            RelayUpdater::new_with_api(my_id_norm.to_string(), self.api.clone(), self.discover_roots.clone())
+        });
+        if updater.relay_info_cache().is_empty() {
+            updater.init_from_blockchain();
+        } else {
+            updater.update_when_expired();
+        }
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relay cache populated, querying relay status");
 
-                    if !candidates.is_empty() {
-                        let (pref_idx, _alt_idx) = self.select_indices_internal(&candidates, my_id_norm);
-                        let chosen = &candidates[pref_idx];
-                        match cli.get_relays_from(chosen) {
-                            Ok(pairs) => pairs
-                                .into_iter()
-                                .map(|(id, addr)| RelayInfo::non_root(id, addr))
-                                .collect(),
-                            Err(_e) => {
-                                if let Ok(mut g) = self.unavailable_relays.lock() {
-                                    g.insert(chosen.id.clone());
-                                }
-                                self.update_cached_state(&chosen.id, RelayState::Off);
-                                Vec::new()
-                            }
-                        }
-                    } else {
-                        Vec::new()
-                    }
-            } else {
-                Vec::new()
-            }
-        };
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from DDB: {:?}", relays);
-
-        // 3) Fallback: if none from DDB, use root relays from relay_info_cache
-        if relays.is_empty() {
-            if let Some(updater) = self.relay_updater.get() {
-                let roots = updater.relay_info_cache().list_root_relays(my_id_norm, true);
-                if !roots.is_empty() {
-                    warn_theme!(themes::RELAY, "[RelayFinder] list_all_relays: no relays from DDB, using root relay cache: {:?}", roots);
-                    relays = roots;
+        // 2) Select a root relay, query its status and update the cache with all relay details
+        updater.relay_select_and_query();
+        // If the query wiped the cache (e.g. relay DDB has no entries), re-seed from blockchain
+        if updater.relay_info_cache().is_empty() {
+            updater.init_from_blockchain();
+        }
+        // Mark any relays that are now Off as unavailable so relay_check skips them
+        {
+            let all = updater.relay_info_cache().list_all_relays(my_id_norm, true);
+            if let Ok(mut unavailable) = self.unavailable_relays.lock() {
+                for relay in all.iter().filter(|r| r.state == Some(crate::engine::RelayState::Off)) {
+                    unavailable.insert(relay.id.clone());
                 }
             }
         }
-        // 4) Cache all-relays list. We ensure our own relay is included in the cached list if it was excluded by DDB.
+        let mut relays: Vec<RelayInfo> = updater.relay_info_cache().list_all_relays(my_id_norm, true);
+        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from cache: {:?}", relays);
+
+        // 3) Ensure our own relay is included in the list if it was not returned by the query.
         {
             let has_self = relays.iter().any(|r| r.id == my_id_norm);
             if !has_self {
@@ -285,23 +236,19 @@ impl RelayFinder {
                     }
                 }
                 if !added {
-                    if let Some(updater) = self.relay_updater.get() {
-                        let roots = updater.relay_info_cache().list_root_relays(my_id_norm, true);
-                        if let Some(me) = roots.iter().find(|r| r.id == my_id_norm) {
-                            tracing::info!("[RelayFinder] list_all_relays: adding self (from relay_info_cache) to relay list for cache: {}", me.id);
-                            relays.push(if me.is_root {
-                                RelayInfo::root_with(me.id.clone(), me.address, None, me.ttl)
-                            } else {
-                                RelayInfo::non_root_with(me.id.clone(), me.address, None, me.ttl)
-                            });
-                        }
+                    let roots = updater.relay_info_cache().list_root_relays(my_id_norm, true);
+                    if let Some(me) = roots.iter().find(|r| r.id == my_id_norm) {
+                        tracing::info!("[RelayFinder] list_all_relays: adding self (from relay_info_cache) to relay list for cache: {}", me.id);
+                        relays.push(if me.is_root {
+                            RelayInfo::root_with(me.id.clone(), me.address, None, me.ttl)
+                        } else {
+                            RelayInfo::non_root_with(me.id.clone(), me.address, None, me.ttl)
+                        });
                     }
                 }
             }
         }
         relays.sort_by(|a, b| a.id.cmp(&b.id));
-        let expires = Instant::now() + self.cache_ttl;
-        if let Ok(mut g) = self.all_list_cache.lock() { *g = Some(CachedAllRelayList { relays: relays.clone(), expires_at: expires }); }
 
         if !include_self { relays.retain(|r| r.id != my_id_norm); }
         tracing::info!("[RelayFinder] list_all_relays: returning relay list: {:?}", relays);
@@ -373,7 +320,7 @@ impl RelayFinder {
 
         // 1) Lazy-initialise RelayUpdater on first call
         let updater = self.relay_updater.get_or_init(|| {
-            RelayUpdater::new(my_id_norm.to_string(), self.discover_roots.clone())
+            RelayUpdater::new_with_api(my_id_norm.to_string(), self.api.clone(), self.discover_roots.clone())
         });
 
         // 2) If the cache is empty seed it from the blockchain; otherwise refresh any expired entries
@@ -492,16 +439,6 @@ impl RelayFinder {
                 cache.update_relay(updated);
             }
         }
-        if let Ok(mut g) = self.all_list_cache.lock() {
-            if let Some(list) = &mut *g {
-                for r in &mut list.relays {
-                    if r.id == id { r.state = Some(st); }
-                }
-            }
-        }
-        else {
-            tracing::error!("[RelayFinder] update_cached_state: all_list_cache lock poisoned");
-        }
     }
 
     pub fn load_relay_states_internal(&self, my_id: &str) {
@@ -522,9 +459,6 @@ impl RelayFinder {
                 }
             }
         };
-        if let Ok(g) = self.all_list_cache.lock() {
-            if let Some(list) = &*g { accumulate(&list.relays); return out; }
-        }
         if let Some(updater) = self.relay_updater.get() {
             let relays = updater.relay_info_cache().list_all_relays("", true);
             accumulate(&relays);
@@ -581,13 +515,6 @@ impl RelayFinder {
         // Clear states in relay_info_cache
         if let Some(updater) = self.relay_updater.get() {
             updater.relay_info_cache().clear_state_cache();
-        }
-        // Expire all-relays list and reset states
-        if let Ok(mut g) = self.all_list_cache.lock() {
-            if let Some(list) = &mut *g {
-                for r in &mut list.relays { r.state = None; }
-                list.expires_at = Instant::now() - Duration::from_secs(1);
-            }
         }
     }
 

@@ -22,7 +22,7 @@ impl MockApi {
 }
 
 impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         match (message.get("app"), ty) {
             (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
@@ -33,18 +33,22 @@ impl InnerBingleApi for MockApi {
                     ids.push(serde_json::Value::String(id.clone()));
                     eps.push(serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}));
                 }
+                let states: Vec<serde_json::Value> = self.entries.iter()
+                    .map(|_| serde_json::Value::String("available".to_string()))
+                    .collect();
                 Ok(serde_json::json!({
                     "app": "ddb",
                     "type": "relaysStatusResponse",
                     "epochId": -1,
                     "treeOrder": 2,
+                    "responderState": "available",
                     "relayIds": ids,
                     "relayEndpoints": eps,
+                    "relayStates": states,
                 }))
             }
             (app, "Check") if app.is_none() || app.unwrap().is_null() => {
                 // Respond available for RelayCheck
-                let _addr = nsk.inet_socket_address().expect("direct endpoint required");
                 Ok(serde_json::json!({ "app": null, "type": "CheckResponse", "state": "available" }))
             }
                 _ => Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))

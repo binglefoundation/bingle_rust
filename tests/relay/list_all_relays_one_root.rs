@@ -22,11 +22,14 @@ impl InnerBingleApi for GetRelaysMockApi {
                 "app": "ddb",
                 "type": "relaysStatusResponse",
                 "epochId": 1,
+                "treeOrder": 0,
+                "responderState": "available",
                 "relayIds": ["R-SUB-1", "R-SUB-2"],
                 "relayEndpoints": [
                     {"host": "127.0.0.1", "port": 20001},
                     {"host": "127.0.0.1", "port": 20002}
-                ]
+                ],
+                "relayStates": ["available", "available"]
             }))
         } else {
             Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))

@@ -38,17 +38,21 @@ impl InnerBingleApi for MockApi {
                 // Return a DDB RelaysStatusResponse with relayIds and aligned relayEndpoints based on entries
                 let mut ids: Vec<serde_json::Value> = Vec::new();
                 let mut eps: Vec<serde_json::Value> = Vec::new();
-                for (id, addr, _st) in self.entries.iter() {
+                let mut states: Vec<serde_json::Value> = Vec::new();
+                for (id, addr, st) in self.entries.iter() {
                     ids.push(serde_json::Value::String(id.clone()));
                     eps.push(serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}));
+                    states.push(serde_json::Value::String(st.clone()));
                 }
                 Ok(serde_json::json!({
                     "app": "ddb",
                     "type": "relaysStatusResponse",
                     "epochId": -1,
                     "treeOrder": 2,
+                    "responderState": "available",
                     "relayIds": ids,
                     "relayEndpoints": eps,
+                    "relayStates": states,
                 }))
             }
             (app, "Check") if app.is_none() || app.unwrap().is_null() => {

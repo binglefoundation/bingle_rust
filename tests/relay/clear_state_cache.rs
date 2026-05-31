@@ -42,13 +42,18 @@ impl InnerBingleApi for MockApi {
                     ids.push(serde_json::Value::String(id.clone()));
                     eps.push(serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}));
                 }
+                let states: Vec<serde_json::Value> = self.entries.iter()
+                    .map(|(_, _, st)| serde_json::Value::String(st.clone()))
+                    .collect();
                 Ok(serde_json::json!({
                     "app": "ddb",
                     "type": "relaysStatusResponse",
                     "epochId": -1,
                     "treeOrder": 2,
+                    "responderState": "available",
                     "relayIds": ids,
                     "relayEndpoints": eps,
+                    "relayStates": states,
                 }))
             }
             (app, "Check") if app.is_none() || app.unwrap().is_null() => {

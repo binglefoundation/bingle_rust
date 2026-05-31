@@ -13,14 +13,18 @@ struct MockApi {
     check_calls: Arc<Mutex<usize>>,
     get_relays_status_calls: Arc<Mutex<usize>>,
     get_relays_status_fail_for: Arc<Mutex<Option<SocketAddr>>>,
+    relay_id: String,
+    relay_addr: SocketAddr,
 }
 
 impl MockApi {
-    fn new() -> Self {
+    fn new(relay_id: String, relay_addr: SocketAddr) -> Self {
         Self {
             check_calls: Arc::new(Mutex::new(0)),
             get_relays_status_calls: Arc::new(Mutex::new(0)),
             get_relays_status_fail_for: Arc::new(Mutex::new(None)),
+            relay_id,
+            relay_addr,
         }
     }
 }
@@ -43,13 +47,17 @@ impl InnerBingleApi for MockApi {
                     return Err(BingleError::Other("DDB query failed".into()));
                 }
             }
+            let host = self.relay_addr.ip().to_string();
+            let port = self.relay_addr.port();
             return Ok(serde_json::json!({
                 "app": "ddb",
                 "type": "relaysStatusResponse",
                 "epochId": -1,
                 "treeOrder": 2,
-                "relayIds": [],
-                "relayEndpoints": [],
+                "responderState": "available",
+                "relayIds": [self.relay_id],
+                "relayEndpoints": [{"host": host, "port": port}],
+                "relayStates": ["available"],
             }));
         }
         Err(BingleError::Other("unexpected message".into()))
@@ -61,7 +69,7 @@ pub fn test_unavailable_relays_no_retry() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
-    let api_inner = Arc::new(MockApi::new());
+    let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
     let check_calls = api_inner.check_calls.clone();
     
     // discover_roots returns the same relay twice
@@ -91,7 +99,7 @@ pub fn test_unavailable_relays_reset_on_entry() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
-    let api_inner = Arc::new(MockApi::new());
+    let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
     let check_calls = api_inner.check_calls.clone();
     
     let discover = {
@@ -119,7 +127,7 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
-    let api_inner = Arc::new(MockApi::new());
+    let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
     let check_calls = api_inner.check_calls.clone();
     
     let discover = {
@@ -146,7 +154,7 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
-    let api_inner = Arc::new(MockApi::new());
+    let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
     *api_inner.get_relays_status_fail_for.lock().unwrap() = Some(addr1);
     let check_calls = api_inner.check_calls.clone();
     let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
@@ -179,7 +187,7 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
-    let api_inner = Arc::new(MockApi::new());
+    let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
     let check_calls = api_inner.check_calls.clone();
     
     let discover = {
