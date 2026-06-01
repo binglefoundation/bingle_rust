@@ -205,6 +205,7 @@ impl Dtls for MockDtls {
 
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -213,7 +214,7 @@ pub fn new_installs_dtls_handler_that_uses_transport_handler() {
 
     let calls: Arc<Mutex<Vec<(String, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
-    let transport_handler: PacketTransportHandleMessage = Arc::new(move |_from, issuer, packet| {
+    let transport_handler: PacketTransportHandleMessage = Arc::new(move |_server, _from, issuer, packet| {
         calls_clone
             .lock()
             .expect("calls lock should not be poisoned")
@@ -243,7 +244,7 @@ pub fn new_installs_dtls_handler_that_uses_transport_handler() {
 pub fn with_handle_message_and_dispatch_handle_message_are_transport_instance_scoped() {
     let captured: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let captured_clone = captured.clone();
-    let handler: PacketTransportHandleMessage = Arc::new(move |_from, _issuer, packet| {
+    let handler: PacketTransportHandleMessage = Arc::new(move |_server, _from, _issuer, packet| {
         captured_clone
             .lock()
             .expect("captured lock should not be poisoned")
@@ -389,7 +390,7 @@ pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
 
     let delivered_payloads: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let delivered_payloads_clone = delivered_payloads.clone();
-    transport.set_handle_message(Some(Arc::new(move |_from, _issuer, packet| {
+    transport.set_handle_message(Some(Arc::new(move |_server, _from, _issuer, packet| {
         delivered_payloads_clone
             .lock()
             .expect("delivered_payloads lock should not be poisoned")
@@ -432,7 +433,7 @@ pub fn ack_complete_is_consumed_and_not_forwarded_to_handler() {
 
     let calls: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
-    transport.set_handle_message(Some(Arc::new(move |_from, _issuer, packet| {
+    transport.set_handle_message(Some(Arc::new(move |_server, _from, _issuer, packet| {
         calls_clone
             .lock()
             .expect("calls lock should not be poisoned")

@@ -10,7 +10,7 @@ use rust_comms::engine::Engine;
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::router::Router;
 
-use crate::util::reusable_mock_api::MockApiBoth;
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 
 /// A fake DTLS implementation that stores any installed handler and returns a configured cipher suite.
 struct CipherFakeDtls {
@@ -60,6 +60,9 @@ impl Dtls for CipherFakeDtls {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
@@ -100,6 +103,9 @@ impl Dtls for FakeServer {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
@@ -111,8 +117,16 @@ struct CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, raw: &serde_json::Value) {
+    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _from: &rust_comms::messages::handlers::FromStruct, raw: &serde_json::Value) {
         self.captured.lock().expect("captured lock").push(raw.clone());
+    }
+}
+
+/// A mock API that returns a known handle for any user id, allowing engine auth check to pass.
+struct AlwaysAuthApi;
+impl InnerBingleApi for AlwaysAuthApi {
+    fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+        Some("test_handle".to_string())
     }
 }
 
@@ -125,7 +139,9 @@ fn build_engine_and_get_handler(
     let capturing_handler = Arc::new(CapturingHandler { captured: captured.clone() });
 
     let fake_dtls = CipherFakeDtls::new(cipher_suite);
-    let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());
+    let api = crate::util::reusable_mock_api::to_weak_api_both(
+        MockApiBoth::new_with_api_override(Arc::new(AlwaysAuthApi))
+    );
     let mut engine = Engine::new_with_dtls(&StartOptions::default(), api, Box::new(fake_dtls));
 
     let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));

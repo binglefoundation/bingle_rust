@@ -16,7 +16,7 @@ type AckKey = (NetworkEndpointKey, SessionGeneration, u16);
 type DeliveredKey = (NetworkEndpointKey, SessionGeneration, u16);
 
 pub type PacketTransportHandleMessage = Arc<
-    dyn Fn(&NetworkEndpoint, &str, &[u8]) -> Result<Option<Vec<u8>>, String> + Send + Sync,
+    dyn Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) -> Result<Option<Vec<u8>>, String> + Send + Sync,
 >;
 
 pub trait PacketTransport {
@@ -419,7 +419,7 @@ impl DtlsReliablePacketTransport {
         match Self::parse_packet(packet) {
             None => {
                 if let Some(handler) = Self::get_handler(handle_message, "dispatch_inbound_packet") {
-                    handler(from, issuer, packet)
+                    handler(dtls, from, issuer, packet)
                 } else {
                     tracing::warn!(
                         "[DtlsReliablePacketTransport::dispatch_inbound_packet] received legacy packet but no packet transport handler configured"
@@ -466,7 +466,7 @@ impl DtlsReliablePacketTransport {
                 }
 
                 if let Some(handler) = Self::get_handler(handle_message, "dispatch_inbound_packet") {
-                    handler(from, issuer, payload)
+                    handler(dtls, from, issuer, payload)
                 } else {
                     tracing::warn!(
                         "[DtlsReliablePacketTransport::dispatch_inbound_packet] received DATA_SINGLE but no packet transport handler configured"

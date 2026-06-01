@@ -656,7 +656,8 @@ impl Engine {
                 .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?,
         );
         self.install_dtls_handler()?;
-        self.dtls
+        self.packet_transport
+            .dtls_mut()
             .start(mux)
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
         Ok(())
@@ -1019,12 +1020,10 @@ impl Engine {
         let span = self.span.clone();
         let custom_handler = self.custom_message_handler.clone();
 
-        // Now obtain a mutable reference to dtls only for installing the new handler
-        let d = self.dtls.as_mut();
         let router_arc = self.router.clone();
 
         self.packet_transport
-            .set_handle_message(Some(std::sync::Arc::new(move |from, issuer, data| {
+            .set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let work = || -> Result<Option<Vec<u8>>, String> {
@@ -1116,14 +1115,11 @@ impl Engine {
                         }
                     }
 
-                    // Get the cipher suite from the DTLS session for this endpoint
-                    let cipher_suite_opt = server.get_cipher_suite(&from);
+                    // Get cipher suite from the DTLS session for this endpoint
+                    let cipher_suite_opt: Option<String> = server.get_cipher_suite(from);
 
                     // Route through the message framework for internal handlers (triangle tests etc.)
                     // Use a custom handler when injected (e.g. for tests), otherwise DefaultPrintingHandler.
-                    let use_custom = custom_handler.as_ref().map(|h| h.as_ref() as &dyn MessageHandler);
-                    let default_handler = DefaultPrintingHandler;
-                    let handler: &dyn MessageHandler = use_custom.unwrap_or(&default_handler);
                     match std::str::from_utf8(data) {
                         Ok(s) => {
                             // Inject cipher_suite into the raw JSON before parsing/routing
@@ -1142,33 +1138,35 @@ impl Engine {
                             match from_json_str(&s_with_cipher) {
                             Ok(msg) => {
                                 tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
-                                if let Some(r) = &router_arc {
-                                    r.route_with_network(handler, &msg, issuer, &from);
-                                    if let Some(out) = r.take_outbound_response() {
-                                        tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
-                                        let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
-                                        {
-                                            if let Err(e) = server.send(&from, &bytes) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
-                                        }
+                                if let Some(h) = &custom_handler {
+                                    router_arc.route(h.as_ref(), &msg, issuer);
+                                } else {
+                                    router_arc.route_with_network(DefaultPrintingHandler, &msg, issuer, &from);
+                                }
+                                if let Some(out) = router_arc.take_outbound_response() {
+                                    tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
+                                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                                    if let Some(api) = bingle_api.upgrade() {
+                                        if let Err(e) = api.send_message_to_network(&from, &sender_id, out, None) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
                                     }
                                 }
                             }
                             Err(e) => {
                                 // Not valid JSON per our schema; treat as plaintext with raw bytes
                                 tracing::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s_with_cipher, e);
-                                handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s_with_cipher.clone())));
+                                DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s_with_cipher.clone())));
                             }
                         }
                         },
                         Err(e) => {
                             tracing::warn!("[Engine::install_dtls_handler][cb] not UTF-8 {:?}", e);
-                            handler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
+                            DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
                         }
                     }
 
                     // Then delegate to any previously-registered handler from API
                     if let Some(h) = &existing {
-                        h(from, issuer, data)
+                        h(server, from, issuer, data)
                     } else {
                         Ok(Some(data.to_vec()))
                     }

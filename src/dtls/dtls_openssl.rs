@@ -199,6 +199,7 @@ pub mod openssl_impl {
         is_connecting_peer: bool,
         is_announced_client_cert_peer: bool,
         handshake_logged: bool,
+        cipher_suite: Option<String>,
         generation: u64,
     }
     type PeerStates = Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, PeerState>>>;
@@ -220,6 +221,7 @@ pub mod openssl_impl {
             is_connecting_peer: false,
             is_announced_client_cert_peer: false,
             handshake_logged: false,
+            cipher_suite: None,
             generation,
         }
     }
@@ -328,6 +330,7 @@ pub mod openssl_impl {
                 let key = from.get_key().expect("direct endpoint key");
                 if let Some(ps) = m.get_mut(&key) {
                     ps.handshake_logged = true;
+                    ps.cipher_suite = Some(selected);
                 }
             }
         }
@@ -488,21 +491,8 @@ pub mod openssl_impl {
         };
         let mut buf = [0u8; 2048];
         let mut logged_wouldblock = false;
-        loop {
-            if !local_handshake_logged && peer_ciphers_raw.is_none() {
-                if let Some(bytes) = guard.ssl().client_hello_ciphers() {
-                    if let Ok(lists) = guard.ssl().bytes_to_cipher_list(bytes, false) {
-                        let mut names = Vec::new();
-                        for i in 0..lists.suites.len() {
-                            if let Some(c) = lists.suites.get(i) {
-                                names.push(c.name().to_string());
-                            }
-                        }
-                        peer_ciphers_raw = Some(names);
-                    }
-                }
-            }
 
+        loop {
             let read_res = dtls_async_runtime.block_on(async {
                 match tokio::time::timeout(
                     std::time::Duration::from_millis(20),
@@ -535,38 +525,6 @@ pub mod openssl_impl {
             };
             if n == 0 { break; }
 
-          // Check if handshake finished and we haven't logged it yet
-                let mut should_log = false;
-                if !local_handshake_logged && guard.ssl().is_init_finished() {
-                    if let Ok(mut m) = peers.lock() {
-                        if let Some(ps) = m.get_mut(&key_from) {
-                            if !ps.handshake_logged {
-                                ps.handshake_logged = true;
-                                should_log = true;
-                            }
-                        }
-                    }
-                    local_handshake_logged = true;
-                }
-
-            if should_log {
-                    let ssl = guard.ssl();
-                    let selected = ssl.current_cipher().map(|c| c.name().to_string()).unwrap_or_else(|| "none".to_string());
-                    let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
-                    if let Some(peer_names) = &peer_ciphers_raw {
-                        tracing::info!("[DTLS][handshake {}] completed. Selected: {}. Our available: {}. Peer available: [{}]",
-                            from, selected, our_ciphers, peer_names.join(", "));
-                    } else {
-                        tracing::info!("[DTLS][handshake {}] completed. Selected: {}. Our available: {}",
-                            from, selected, our_ciphers);
-                    }
-                    // Record the cipher suite in peer state
-                    if let Ok(mut m) = peers.lock() {
-                        if let Some(ps) = m.get_mut(&key_from) {
-                            ps.cipher_suite = Some(selected);
-                        }
-                    }
-                }
             // Gate application delivery on issuer being set (only when peer_cert_handler is configured)
             let issuer_opt = get_issuer();
             if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
