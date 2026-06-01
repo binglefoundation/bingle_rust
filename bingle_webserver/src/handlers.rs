@@ -90,6 +90,7 @@ pub async fn send_message_to_id(
                         vec![recipient_handle],
                         timestamp,
                         text,
+                        None,
                     ) {
                         tracing::warn!("[send_message_to_id] failed to add sent message to local API: {}", e);
                     }
@@ -361,6 +362,7 @@ pub async fn local_add_message(
                 req.recipient_handles,
                 req.timestamp,
                 req.text,
+                req.cipher_suite,
             );
             drop(api);
             match res {

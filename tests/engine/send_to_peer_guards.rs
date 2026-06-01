@@ -70,6 +70,7 @@ impl Dtls for FakeDtls {
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
 fn make_engine_with_public_addr(addr: SocketAddr) -> Engine {
@@ -108,7 +109,7 @@ pub fn send_to_peer_rejects_incomplete_relay_endpoint() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn send_to_peer_allows_complete_relay_endpoint() {
     init_test_logging();
-    
+
     let engine = make_engine_no_public_addr();
     // Relay endpoint with channel+address+id is valid (handled by TURN layer)
     let relay_nsk = NetworkEndpoint::new_relay(

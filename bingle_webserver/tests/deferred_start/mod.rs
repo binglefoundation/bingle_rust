@@ -48,6 +48,7 @@ impl BingleLocalApi for ControllableLocalApi {
         _recipient_handles: Vec<String>,
         _timestamp: i64,
         _text: String,
+        _cipher_suite: Option<String>,
     ) -> Result<(), BingleError> { Ok(()) }
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(Vec::new()) }

@@ -43,3 +43,5 @@
 /bingle_jsi/example/package-lock.json
 
 **/react-native-bingle-jsi*.tgz
+
+**/.build_number

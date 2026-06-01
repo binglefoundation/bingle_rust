@@ -489,6 +489,20 @@ pub mod openssl_impl {
         let mut buf = [0u8; 2048];
         let mut logged_wouldblock = false;
         loop {
+            if !local_handshake_logged && peer_ciphers_raw.is_none() {
+                if let Some(bytes) = guard.ssl().client_hello_ciphers() {
+                    if let Ok(lists) = guard.ssl().bytes_to_cipher_list(bytes, false) {
+                        let mut names = Vec::new();
+                        for i in 0..lists.suites.len() {
+                            if let Some(c) = lists.suites.get(i) {
+                                names.push(c.name().to_string());
+                            }
+                        }
+                        peer_ciphers_raw = Some(names);
+                    }
+                }
+            }
+
             let read_res = dtls_async_runtime.block_on(async {
                 match tokio::time::timeout(
                     std::time::Duration::from_millis(20),
@@ -520,6 +534,39 @@ pub mod openssl_impl {
                 }
             };
             if n == 0 { break; }
+
+          // Check if handshake finished and we haven't logged it yet
+                let mut should_log = false;
+                if !local_handshake_logged && guard.ssl().is_init_finished() {
+                    if let Ok(mut m) = peers.lock() {
+                        if let Some(ps) = m.get_mut(&key_from) {
+                            if !ps.handshake_logged {
+                                ps.handshake_logged = true;
+                                should_log = true;
+                            }
+                        }
+                    }
+                    local_handshake_logged = true;
+                }
+
+            if should_log {
+                    let ssl = guard.ssl();
+                    let selected = ssl.current_cipher().map(|c| c.name().to_string()).unwrap_or_else(|| "none".to_string());
+                    let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
+                    if let Some(peer_names) = &peer_ciphers_raw {
+                        tracing::info!("[DTLS][handshake {}] completed. Selected: {}. Our available: {}. Peer available: [{}]",
+                            from, selected, our_ciphers, peer_names.join(", "));
+                    } else {
+                        tracing::info!("[DTLS][handshake {}] completed. Selected: {}. Our available: {}",
+                            from, selected, our_ciphers);
+                    }
+                    // Record the cipher suite in peer state
+                    if let Ok(mut m) = peers.lock() {
+                        if let Some(ps) = m.get_mut(&key_from) {
+                            ps.cipher_suite = Some(selected);
+                        }
+                    }
+                }
             // Gate application delivery on issuer being set (only when peer_cert_handler is configured)
             let issuer_opt = get_issuer();
             if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
@@ -997,6 +1044,13 @@ pub mod openssl_impl {
         fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
         fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
         fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
+        fn get_cipher_suite(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> Option<String> {
+            let key = endpoint.get_key()?;
+            match self.0.lock() {
+                Ok(m) => m.get(&key).and_then(|ps| ps.cipher_suite.clone()),
+                Err(_) => None,
+            }
+        }
     }
 
     /// OpenSSL-backed DTLS implementation (non-iOS).
@@ -1261,7 +1315,7 @@ pub mod openssl_impl {
         ///     retransmitted.
         ///
         /// ### State-Based Processing
-        /// 1. **No Existing State**: Creates a new async queue and `PeerState`, enqueues the 
+        /// 1. **No Existing State**: Creates a new async queue and `PeerState`, enqueues the
         ///    packet, and initiates a new `SslStream` in `accept_state`.
         ///
         /// 2. **Existing Established Stream**:
@@ -1989,6 +2043,14 @@ pub mod openssl_impl {
                 tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
             }
             self
+        }
+
+        fn get_cipher_suite(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> Option<String> {
+            let key = endpoint.get_key()?;
+            match self.peer_states.lock() {
+                Ok(m) => m.get(&key).and_then(|ps| ps.cipher_suite.clone()),
+                Err(_) => None,
+            }
         }
     }
 }

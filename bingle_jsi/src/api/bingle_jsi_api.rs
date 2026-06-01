@@ -107,6 +107,7 @@ pub trait BingleJsiApi: Send + Sync {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
+        cipher_suite: Option<String>,
     ) -> Result<(), BingleJsiError>;
 
     /// Get the list of stored messages.

@@ -44,6 +44,7 @@ impl Dtls for MockDtls {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
@@ -84,7 +85,7 @@ pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     let handler = RelayPingHandler::new(Arc::new(mock_dtls), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 34567)));
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let router = Arc::new(rust_comms::messages::router::Router::new(Arc::downgrade(&api)));
-    let t1 = RelayTriangleTest1 { 
+    let t1 = RelayTriangleTest1 {
         app: None, 
         checking_endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345).into(),
         do_not_use_endpoints: Vec::new(),

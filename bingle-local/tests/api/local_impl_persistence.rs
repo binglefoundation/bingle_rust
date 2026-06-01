@@ -15,9 +15,9 @@ fn persistence_roundtrip_preserves_state() {
     api.block_contact("ID_BOB".into()).expect("block bob");
 
     // Messages
-    api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into())
+    api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into(), None)
         .expect("add m1");
-    api.add_message("bob".into(), vec!["alice".into()], 2, "m2".into())
+    api.add_message("bob".into(), vec!["alice".into()], 2, "m2".into(), None)
         .expect("add m2");
 
     // Save to a temporary file

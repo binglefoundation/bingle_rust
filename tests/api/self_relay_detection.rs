@@ -56,6 +56,7 @@ impl Dtls for MockDtls {
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
 /// When a relay endpoint's relay_id matches our own id, send_message_to_network

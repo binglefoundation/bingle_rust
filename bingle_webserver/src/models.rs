@@ -96,6 +96,7 @@ pub struct AddMessageRequest {
     pub recipient_handles: Vec<String>,
     pub timestamp: i64,
     pub text: String,
+    pub cipher_suite: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

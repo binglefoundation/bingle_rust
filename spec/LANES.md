@@ -6,7 +6,7 @@ UX:
 - ~~contact UX~~
 - ~~build iOS~~ 
 - ~~tidy up bugs~~
-- info option to show cipher suite
+- info option to show cipher suite (now in API, needs UX)
 
 security:
 - ensure protocol is built as documented, changes as follows:
@@ -31,8 +31,9 @@ security:
 - delegate admin tasks to not be creator
 - ~~ensure runs in live with full encryption~~
 - ~~test encryption for entropy~~
+- - ~~test against known DTLS vulnerabilities~~
 - ensure id is checked and fails on impersonation
-- add a cipher suite string to messages with DTLS cipher suite
+- ~~add a cipher suite string to messages with DTLS cipher suite~~
 - ~~TLS1.2 vuln tests:~~
   ~~1. Protocol Downgrade Attacks~~
   ~~2. Weak Cipher Suite Acceptance~~
@@ -76,3 +77,11 @@ android:
 - support NDK in library
 - support Android for react native UX
 - build APK
+
+deploy:
+- run unit tests on CD
+- stabilise integration tests and run on CD with localnet
+- run staging tests on CD / AWS
+- production deploy
+- release of iOS app
+- release of Android app

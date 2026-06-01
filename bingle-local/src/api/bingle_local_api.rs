@@ -27,6 +27,10 @@ pub struct Message {
     /// Timestamp (e.g., epoch millis)
     pub timestamp: i64,
     pub text: String,
+    /// The cipher suite negotiated for the DTLS session on which this message was received.
+    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cipher_suite: Option<String>,
 }
 
 /// Generated Algorand keypair details.
@@ -90,6 +94,7 @@ pub trait BingleLocalApi: Send + Sync {
         recipient_handles: Vec<String>,
         timestamp: i64,
         text: String,
+        cipher_suite: Option<String>,
     ) -> Result<(), BingleError>;
 
     /// Get the list of stored messages.

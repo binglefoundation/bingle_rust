@@ -25,6 +25,9 @@ pub struct BingleMessage {
     pub response_tag: Option<String>,
     pub text: Option<String>,
     pub data: Option<String>,
+    /// The cipher suite negotiated for the DTLS session on which this message was received.
+    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    pub cipher_suite: Option<String>,
 }
 
 /// Server version information.
@@ -67,6 +70,9 @@ pub struct Message {
     pub recipient_handles: Vec<String>,
     pub timestamp: i64,
     pub text: String,
+    /// The cipher suite negotiated for the DTLS session on which this message was received.
+    /// Derived by the receiving client from the connection; not transmitted on the wire.
+    pub cipher_suite: Option<String>,
 }
 
 /// Keypair funding / registration status.

@@ -64,6 +64,7 @@ fn bingle_message_plain_text() {
         response_tag: None,
         text: Some("hello".to_string()),
         data: None,
+        cipher_suite: None,
     };
     assert!(msg.app.is_none());
     assert!(msg.r#type.is_none());
@@ -80,6 +81,7 @@ fn bingle_message_typed() {
         response_tag: Some("resp1".to_string()),
         text: Some("Hello".to_string()),
         data: Some(r#"{"markdown":"**Hello**"}"#.to_string()),
+        cipher_suite: None,
     };
     let app = msg.app.expect("app should be Some");
     assert_eq!(app, "chat");
@@ -164,11 +166,26 @@ fn message_construction() {
         recipient_handles: vec!["bob".to_string(), "carol".to_string()],
         timestamp: 1700000000,
         text: "Hello everyone".to_string(),
+        cipher_suite: None,
     };
     assert_eq!(msg.sender_handle, "alice");
     assert_eq!(msg.recipient_handles.len(), 2);
     assert_eq!(msg.timestamp, 1700000000);
     assert_eq!(msg.text, "Hello everyone");
+    assert!(msg.cipher_suite.is_none());
+}
+
+#[test]
+fn message_with_cipher_suite() {
+    let msg = Message {
+        sender_handle: "alice".to_string(),
+        recipient_handles: vec!["bob".to_string()],
+        timestamp: 1700000001,
+        text: "Encrypted hello".to_string(),
+        cipher_suite: Some("TLS_AES_256_GCM_SHA384".to_string()),
+    };
+    let cs = msg.cipher_suite.expect("cipher_suite should be Some");
+    assert_eq!(cs, "TLS_AES_256_GCM_SHA384");
 }
 
 #[test]
