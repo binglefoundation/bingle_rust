@@ -148,7 +148,7 @@ fn wait_for_relays_visible(ab: &AlgoBingle, app_id: u64, expected: &[(String, So
     false
 }
 
-fn register_relays(app_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
+fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
     let cfg = test_util::localnet_config();
     let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let ops_relay1 = ops_creator.clone();
@@ -165,6 +165,16 @@ fn register_relays(app_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr
     // Grant allow_static for relay accounts via creator
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
+
+    // handle must be registered
+    register_client_on_blockchain(
+        test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, "relay1",
+        app_id, asset_id, &ops_creator, cfg.clone(),
+    );
+    register_client_on_blockchain(
+        test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, "relay2",
+        app_id, asset_id, &ops_creator, cfg.clone(),
+    );
 
     // Register endpoints for both relays
     ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
@@ -274,7 +284,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
-    register_relays(app_id, relay1_addr, relay2_addr);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
     // Start two relays
     let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
@@ -283,16 +293,21 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     // Start two local STUN servers
     let (mut s1, mut s2, stun_list) = setup_stun_servers(broken_nat);
 
-    // Start two clients A and B; B will receive
+    // Before sending: ensure clients have handles registered on-chain so reverse lookup by id succeeds.
+    let address_b = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
     let passphrase_b = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
-    let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
-    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
-
-    // Before sending: ensure client A has its handle registered on-chain so reverse lookup by id succeeds.
     register_client_on_blockchain(
         test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client_a",
         app_id, asset_id, &creator, cfg.clone(),
     );
+    register_client_on_blockchain(
+        address_b, passphrase_b, "client_b",
+        app_id, asset_id, &creator, cfg.clone(),
+    );
+
+    // Start two clients A and B; B will receive
+    let client_a = start_client("client_a", test_util::PASSPHRASE_10MIL, stun_list.clone(), app_id, cfg.clone());
+    let client_b = start_client("client_b", passphrase_b, stun_list.clone(), app_id, cfg.clone());
 
     // Install OnMessage handler for client B to capture delivery and who sent it
     let received = Arc::new(AtomicBool::new(false));
@@ -474,7 +489,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
     let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
 
-    register_relays(app_id, relay1_addr, relay2_addr);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
     // Wait for root relays to be visible via indexer too, as the engine's initialization depends on it
     tracing::info!("[Test] Waiting for root relay ids to be visible via indexer");
@@ -600,7 +615,7 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
         app_id, asset_id, &creator, cfg.clone(),
     );
 
-    register_relays(app_id, relay1_addr, relay2_addr);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
     // Start two root relays
     let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
@@ -741,7 +756,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
-    register_relays(app_id, relay1_addr, relay2_addr);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
     let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
     let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
@@ -927,8 +942,6 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
         app_id, asset_id, &creator, cfg.clone(),
     );
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
-    let ab_r1 = AlgoBingle::new(creator.clone(), app_id, 0);
-    ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
 
     let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
 

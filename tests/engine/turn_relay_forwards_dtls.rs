@@ -1,4 +1,5 @@
 use rust_comms::api::network_endpoint::NetworkEndpoint;
+use rust_comms::api::bingle_api::UserId;
 use rust_comms::dtls::network_mux_trait::NetworkMux;
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::messages::handlers::DefaultPrintingHandler;
@@ -82,6 +83,14 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_internal_override(mock_internal))));
     router.set_am_relay(true);
 
+    // Relay::Call emits RelayCalled via sender; install a sender mock for deterministic behavior.
+    let captured_relay_called: Arc<Mutex<Option<(NetworkEndpoint, String, serde_json::Value)>>> = Arc::new(Mutex::new(None));
+    let captured_relay_called_clone = captured_relay_called.clone();
+    router.set_sender(Some(Arc::new(move |nsk: &NetworkEndpoint, uid: &UserId, json: serde_json::Value| {
+        *captured_relay_called_clone.lock().expect("capture relay called") = Some((nsk.clone(), uid.to_string(), json.clone()));
+        true
+    })));
+
     let handler = DefaultPrintingHandler;
 
     // 1) Simulate B sending RelayListen to the relay
@@ -92,6 +101,15 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     });
     // Validate id->addr registration
     assert_eq!(turn.lookup_addr_by_id("BID"), Some(b_addr));
+    let listen_out = router
+        .take_outbound_response()
+        .expect("ListenResponse present");
+    assert_eq!(
+        listen_out
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str()),
+        Some("ListenResponse")
+    );
 
     // 2) Simulate A sending RelayCall(calledId=BID) to the relay
     let a_addr = addr(test_util::find_unused_loopback_port());
@@ -103,6 +121,15 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     // Extract channel from outbound response
     let out = router.take_outbound_response().expect("RelayResponse present");
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
+    let relay_called = captured_relay_called
+        .lock()
+        .expect("relay called lock")
+        .clone()
+        .expect("RelayCalled should be sent to called id");
+    assert_eq!(relay_called.0, NetworkEndpoint::new_direct(b_addr));
+    assert_eq!(relay_called.1, "BID");
+    assert_eq!(relay_called.2.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("RelayCalled"));
+    assert_eq!(relay_called.2.get("channel").and_then(|v: &serde_json::Value| v.as_u64()), Some(ch as u64));
 
     // 3) Send TURN ChannelData from A to the relay containing a DTLS-shaped payload (first byte 20..=63)
     let dtls_payload: [u8; 6] = [20, 1, 2, 3, 4, 5]; // classified as DTLS by mux_type_for

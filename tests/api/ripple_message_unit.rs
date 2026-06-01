@@ -26,7 +26,8 @@ impl Dtls for MockDtls {
     fn stop(&mut self) -> Result<()> { Ok(()) }
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()> {
         let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
-        let json: serde_json::Value = serde_json::from_slice(data).expect("valid json");
+        let json: serde_json::Value = serde_json::from_slice(test_util::maybe_unwrap_data_single(data))
+            .expect("valid json");
         self.sends.lock().unwrap().push((addr, "unknown".to_string(), json));
         Ok(())
     }
@@ -55,6 +56,8 @@ impl Dtls for MockDtls {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 

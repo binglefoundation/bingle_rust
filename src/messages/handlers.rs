@@ -3,13 +3,23 @@ use crate::relay::relay_finder::RelayFinderTrait;
 use crate::engine::BingleAccessUnsafeForTests;
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
-use tracing::warn;
+use tracing::{error, warn};
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FromStruct {
     pub id: String,
     pub network_source_key: crate::api::bingle_api::NetworkEndpoint,
+    pub router: std::sync::Arc<crate::messages::router::Router>,
+}
+
+impl std::fmt::Debug for FromStruct {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FromStruct")
+            .field("id", &self.id)
+            .field("network_source_key", &self.network_source_key)
+            .finish()
+    }
 }
 
 // Adapter to allow passing the composite API where a plain BingleApi is required (e.g., RelayFinder)
@@ -68,42 +78,39 @@ impl BingleApi for BothAsApi {
 
 pub trait MessageHandler {
     // Plain text
-    fn on_plain_text(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &PlainTextMessage) {
+    fn on_plain_text(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PlainTextMessage) {
         // Build JSON for callback
         let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
         // Delegate to API on_message via the per-API Router if installed
-        if let Some(router) = crate::messages::router::Router::current() {
-            if let Some(cb) = router.get_on_message() {
-                // Normalize sender id: issuer without suffix
-                let sender_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                // Look up the sender's handle by id via the API. If not found, log an error and abort.
-                match _api.handle_lookup_by_id(&sender_id) {
-                    Some(sender_handle) => cb(sender_id, sender_handle, json),
-                    None => {
-                        tracing::error!(
-                            "[MessageHandler::on_plain_text] failed to resolve handle for sender id {}",
-                            sender_id
-                        );
-                    }
+        if let Some(cb) = from.router.get_on_message() {
+            // Normalize sender id: issuer without suffix
+            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            // Look up the sender's handle by id via the API. If not found, log an error and abort.
+            match api.handle_lookup_by_id(&sender_id) {
+                Some(sender_handle) => cb(sender_id, sender_handle, json),
+                None => {
+                    tracing::error!(
+                        "[MessageHandler::on_plain_text] failed to resolve handle for sender id {}",
+                        sender_id
+                    );
                 }
-                return;
             }
+            return;
         }
         // Fallback to logging if no on_message callback is installed
-        tracing::info!("[MessageHandler::on_plain_text][default] {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::warn!("[MessageHandler::on_plain_text] No callback set up {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
     }
 
     // Ping messages
     fn on_ping_ping(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingPing) {
         tracing::info!("[on_ping_ping] handling ping {:?} from {:?}", msg, from);
         // Reply with PingResponse: app="ping", type="response", verifiedId from API, text="ACK: {text}"
-        if let Some(router) = crate::messages::router::Router::current() {
-            let sender_opt = router.get_sender();
-            if sender_opt.is_none() {
-                warn!("[handlers::on_ping_ping] No sender available");
-                return;
-            }
-            let sender = sender_opt.unwrap();
+        let sender_opt = from.router.get_sender();
+        if sender_opt.is_none() {
+            warn!("[handlers::on_ping_ping] No sender available");
+            return;
+        }
+        let sender = sender_opt.unwrap();
 
             // Obtain our id (verifiedId)
             let my_id = match api.get_my_id() {
@@ -120,7 +127,7 @@ pub trait MessageHandler {
             json_obj.insert("type".to_string(), serde_json::Value::String("response".to_string()));
             json_obj.insert("verifiedId".to_string(), serde_json::Value::String(my_id));
             // If responseTag was provided on request context, echo it
-            if let Some(tag) = router.get_last_response_tag() {
+            if let Some(tag) = from.router.get_last_response_tag() {
                 json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
             }
             let ack_text = format!("ACK: {}", msg.text.clone().unwrap_or_default());
@@ -135,26 +142,23 @@ pub trait MessageHandler {
             if !ok {
                 tracing::warn!("[handlers::on_ping_ping] sender returned false");
             }
-        }
     }
-    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &PingResponse) {
+    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingResponse) {
         if msg.tag.is_none() && msg.response_tag.is_none() {
             // Build JSON for callback
             let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"verifiedId": msg.verified_id}));
             // Delegate to API on_message via the per-API Router if installed
-            if let Some(router) = crate::messages::router::Router::current() {
-                if let Some(cb) = router.get_on_message() {
-                    // Normalize sender id: issuer without suffix
-                    let sender_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                    // Use direct socket address as sender_handle when available
-                    let sender_handle = _from
-                        .network_source_key
-                        .inet_socket_address()
-                        .map(|a: std::net::SocketAddr| a.to_string())
-                        .unwrap_or_else(|| "".to_string());
-                    cb(sender_id, sender_handle, json);
-                    return;
-                }
+            if let Some(cb) = from.router.get_on_message() {
+                // Normalize sender id: issuer without suffix
+                let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                // Use direct socket address as sender_handle when available
+                let sender_handle = from
+                    .network_source_key
+                    .inet_socket_address()
+                    .map(|a: std::net::SocketAddr| a.to_string())
+                    .unwrap_or_else(|| "".to_string());
+                cb(sender_id, sender_handle, json);
+                return;
             }
         }
         self.on_unimplemented(&Message::Ping(PingMessage::Response(msg.clone())));
@@ -162,84 +166,78 @@ pub trait MessageHandler {
 
     // Relay messages
     fn on_relay_call(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayCall) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() {
-                warn!("[handlers::on_relay_call] Not a relay: ignoring Call");
-                return;
-            }
-            let src = match router.get_last_from() {
-                Some(a) => a,
-                None => { warn!("[handlers::on_relay_call] No source address available"); return; }
-            };
-            // Resolve destination address by id recorded via Listen using internal API
-            let called_id_raw = msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            let dest = match api.turn_lookup_addr_by_id(called_id_raw.clone()) {
-                Some(a) => a,
-                None => { warn!("[handlers::on_relay_call] called id not registered: {}", called_id_raw); return; }
-            };
-            let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            let ch = api.turn_handle_call(source_id, called_id_raw.clone(), src, dest);
-            if ch < 0 { warn!("[handlers::on_relay_call] turn_handle_call failed"); return; }
-
-            // Before setting the response, notify the called node with a RelayCalled message
-            if let Some(sender) = router.get_sender() {
-                let msg = Message::Relay(RelayMessage::RelayCalled(RelayCalled { app: None, channel: ch as u16 }));
-                let json_val = crate::messages::marshal::to_json_value(&msg);
-                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(dest);
-                let ok = sender(&nsk, &called_id_raw, json_val);
-                if !ok { warn!("[handlers::on_relay_call] sender returned false when sending RelayCalled"); }
-            } else {
-                warn!("[handlers::on_relay_call] No sender available to notify called node");
-            }
-
-            // Build RelayResponse { app: null, channel }
-            let mut obj = serde_json::Map::new();
-            obj.insert("app".to_string(), serde_json::Value::Null);
-            obj.insert("type".to_string(), serde_json::Value::String("RelayResponse".to_string()));
-            obj.insert("channel".to_string(), serde_json::Value::Number(serde_json::Number::from(ch as u64)));
-            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
-        } else {
-            warn!("[handlers::on_relay_call] No router context available");
+        let router = &from.router;
+        if !router.get_am_relay() {
+            warn!("[handlers::on_relay_call] Not a relay: ignoring Call");
+            return;
         }
+        let src = match router.get_last_from() {
+            Some(a) => a,
+            None => { warn!("[handlers::on_relay_call] No source address available"); return; }
+        };
+        // Resolve destination address by id recorded via Listen using internal API
+        let called_id_raw = msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let dest = match api.turn_lookup_addr_by_id(called_id_raw.clone()) {
+            Some(a) => a,
+            None => { warn!("[handlers::on_relay_call] called id not registered: {}", called_id_raw); return; }
+        };
+        let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let ch = api.turn_handle_call(source_id, called_id_raw.clone(), src, dest);
+        if ch < 0 { warn!("[handlers::on_relay_call] turn_handle_call failed"); return; }
+
+        // Before setting the response, notify the called node with a RelayCalled message
+        if let Some(sender) = router.get_sender() {
+            let msg = Message::Relay(RelayMessage::RelayCalled(RelayCalled { app: None, channel: ch as u16 }));
+            let json_val = crate::messages::marshal::to_json_value(&msg);
+            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(dest);
+            let ok = sender(&nsk, &called_id_raw, json_val);
+            if !ok { warn!("[handlers::on_relay_call] sender returned false when sending RelayCalled"); }
+        } else {
+            error!("[handlers::on_relay_call] No sender available to notify called node");
+        }
+
+        // Build RelayResponse { app: null, channel }
+        let mut obj = serde_json::Map::new();
+        obj.insert("app".to_string(), serde_json::Value::Null);
+        obj.insert("type".to_string(), serde_json::Value::String("RelayResponse".to_string()));
+        obj.insert("channel".to_string(), serde_json::Value::Number(serde_json::Number::from(ch as u64)));
+        if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+        router.set_outbound_response(Some(serde_json::Value::Object(obj)));
     }
     fn on_relay_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
     fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone()))); }
     fn on_triangle_test2(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
     fn on_triangle_test3(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
     fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(_msg.clone()))); }
-    fn on_relay_listen(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListen) {
+    fn on_relay_listen(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayListen) {
         // Only process on relay nodes
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() {
-                warn!("[handlers::on_relay_listen] Not a relay: ignoring Listen request");
+        let router = &from.router;
+        if !router.get_am_relay() {
+            warn!("[handlers::on_relay_listen] Not a relay: ignoring Listen request");
+            return;
+        }
+        // Source address must be known from DTLS/mux layer
+        let src = match router.get_last_from() {
+            Some(a) => a,
+            None => {
+                warn!("[handlers::on_relay_listen] No source address available");
                 return;
             }
-            // Source address must be known from DTLS/mux layer
-            let src = match router.get_last_from() {
-                Some(a) => a,
-                None => {
-                    warn!("[handlers::on_relay_listen] No source address available");
-                    return;
-                }
-            };
-            let source_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            let _ok = api.turn_handle_listen(source_id, src);
-            // Build and stash a ListenResponse; include responseTag if present
-            let mut obj = serde_json::Map::new();
-            obj.insert("app".to_string(), serde_json::Value::Null);
-            obj.insert("type".to_string(), serde_json::Value::String("ListenResponse".to_string()));
-            if let Some(tag) = router.get_last_response_tag() {
-                obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
-            }
-            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
-        } else {
-            warn!("[handlers::on_relay_listen] No router context available");
+        };
+        let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let _ok = api.turn_handle_listen(source_id, src);
+        // Build and stash a ListenResponse; include responseTag if present
+        let mut obj = serde_json::Map::new();
+        obj.insert("app".to_string(), serde_json::Value::Null);
+        obj.insert("type".to_string(), serde_json::Value::String("ListenResponse".to_string()));
+        if let Some(tag) = router.get_last_response_tag() {
+            obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }
+        router.set_outbound_response(Some(serde_json::Value::Object(obj)));
     }
     fn on_relay_check(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayCheck) {
         // Send CheckResponse with current relay state back to the last sender address using the real Bingle API sender
-        let router_opt = crate::messages::router::Router::current();
+        let router_opt = Some(from.router.clone());
         let sender_opt = router_opt.as_ref().and_then(|r| r.get_sender());
         if sender_opt.is_none() {
             warn!("[handlers::on_relay_check] No sender available");
@@ -258,7 +256,7 @@ pub trait MessageHandler {
         json_obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
         let state = api.get_relay_state();
         json_obj.insert("state".to_string(), serde_json::Value::String(state));
-        if let Some(tag) = crate::messages::router::Router::current().and_then(|r| r.get_last_response_tag()) {
+        if let Some(tag) = from.router.get_last_response_tag() {
             json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }
         let json_val = serde_json::Value::Object(json_obj);
@@ -274,22 +272,18 @@ pub trait MessageHandler {
     fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayKeepAlive) { self.on_unimplemented(&Message::Relay(RelayMessage::KeepAlive(_msg.clone()))); }
 
     // New: RelayCalled handler (client-side) – register TURN mapping via internal API
-    fn on_relay_called(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayCalled) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            // The UDP sender of this message should be the relay address
-            let relay_addr = match router.get_last_from() {
-                Some(a) => a,
-                None => { warn!("[handlers::on_relay_called] No relay address (last_from) available"); return; }
-            };
-            // Our public address must be known (from STUN/static); use API to obtain
-            let my_pub = match api.get_last_public_addr() {
-                Some(a) => a,
-                None => { warn!("[handlers::on_relay_called] No public address available to register TURN mapping"); return; }
-            };
-            api.turn_handle_called(relay_addr, my_pub, msg.channel);
-        } else {
-            warn!("[handlers::on_relay_called] No router context available");
-        }
+    fn on_relay_called(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayCalled) {
+        // The UDP sender of this message should be the relay address
+        let relay_addr = match from.router.get_last_from() {
+            Some(a) => a,
+            None => { warn!("[handlers::on_relay_called] No relay address (last_from) available"); return; }
+        };
+        // Our public address must be known (from STUN/static); use API to obtain
+        let my_pub = match api.get_last_public_addr() {
+            Some(a) => a,
+            None => { warn!("[handlers::on_relay_called] No public address available to register TURN mapping"); return; }
+        };
+        api.turn_handle_called(relay_addr, my_pub, msg.channel);
     }
 
     // DDB messages (default to unimplemented unless overridden)
@@ -304,8 +298,24 @@ pub trait MessageHandler {
     fn on_ddb_epoch_info(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbEpochInfo) { self.on_unimplemented(&Message::Ddb(DdbMessage::EpochInfo(msg.clone()))); }
 
     // Unknown
-    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _raw: &serde_json::Value) {
-        tracing::info!("[UNIMPLEMENTED] Unknown message: {}", _raw);
+    fn on_unknown(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, raw: &serde_json::Value) {
+        // Delegate to API on_message via the per-API Router if installed
+        if let Some(cb) = from.router.get_on_message() {
+            // Normalize sender id: issuer without suffix
+            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            // Look up the sender's handle by id via the API.
+            match api.handle_lookup_by_id(&sender_id) {
+                Some(sender_handle) => cb(sender_id, sender_handle, raw.clone()),
+                None => {
+                    tracing::error!(
+                        "[MessageHandler::on_unknown] failed to resolve handle for sender id {}",
+                        sender_id
+                    );
+                }
+            }
+            return;
+        }
+        tracing::info!("[UNIMPLEMENTED] Unknown message: {}", raw);
     }
 
     // Default unimplemented handler: prints the message JSON
@@ -317,192 +327,199 @@ pub trait MessageHandler {
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
-    fn on_ddb_get_epoch(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetEpoch) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            // Only relays in Available state may serve getEpoch
-            if !router.get_am_relay() {
-                let mut obj = serde_json::Map::new();
-                obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
-                obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-                if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-                obj.insert("text".to_string(), serde_json::Value::String("not a relay".into()));
-                router.set_outbound_response(Some(serde_json::Value::Object(obj)));
-                return;
-            }
-            // Consult API for relay state
-            let state_ok = crate::messages::router::Router::current()
-                .and_then(|r| r.get_bingle_api())
-                .map(|i| i.get_relay_state() == "available")
-                .unwrap_or(false);
-            if !state_ok {
-                let mut obj = serde_json::Map::new();
-                obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
-                obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-                if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-                obj.insert("text".to_string(), serde_json::Value::String("relay not available".into()));
-                router.set_outbound_response(Some(serde_json::Value::Object(obj)));
-                return;
-            }
-            // Build DdbEpochInfo from backend snapshot
-            if let Some(backend_arc) = router.get_ddb_backend() {
-                if let Ok(backend) = backend_arc.lock() {
-                    let (relay_ids, relay_endpoints) = backend.make_epoch_info();
-                    let info = crate::messages::types::DdbEpochInfo {
-                        app: "ddb".into(),
-                        epoch_id: msg.epoch_id,
-                        tree_order: 2,
-                        relay_ids,
-                        relay_endpoints,
-                        tag: None,
-                        response_tag: router.get_last_response_tag(),
-                        text: None,
-                        data: None,
-                    };
-                    let resp = crate::messages::types::Message::Ddb(
-                        crate::messages::types::DdbMessage::EpochInfo(info)
-                    );
-                    let json = crate::messages::marshal::to_json_value(&resp);
-                    router.set_outbound_response(Some(json));
-                } else {
-                    let mut obj = serde_json::Map::new();
-                    obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
-                    obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-                    if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-                    obj.insert("text".to_string(), serde_json::Value::String("ddb backend unavailable".into()));
-                    router.set_outbound_response(Some(serde_json::Value::Object(obj)));
-                }
+    fn on_ddb_get_epoch(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbGetEpoch) {
+        let router = &from.router;
+        // Only relays in Available state may serve getEpoch
+        if !router.get_am_relay() {
+            let mut obj = serde_json::Map::new();
+            obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+            obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+            obj.insert("text".to_string(), serde_json::Value::String("not a relay".into()));
+            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+            return;
+        }
+        // Consult API for relay state
+        let state_ok = api.get_relay_state() == "available";
+        if !state_ok {
+            let mut obj = serde_json::Map::new();
+            obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+            obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+            obj.insert("text".to_string(), serde_json::Value::String("relay not available".into()));
+            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+            return;
+        }
+        // Build DdbEpochInfo from backend snapshot
+        if let Some(backend_arc) = router.get_ddb_backend() {
+            if let Ok(backend) = backend_arc.lock() {
+                let (relay_ids, relay_endpoints) = backend.make_epoch_info();
+                let info = crate::messages::types::DdbEpochInfo {
+                    app: "ddb".into(),
+                    epoch_id: msg.epoch_id,
+                    tree_order: 2,
+                    relay_ids,
+                    relay_endpoints,
+                    tag: None,
+                    response_tag: router.get_last_response_tag(),
+                    text: None,
+                    data: None,
+                };
+                let resp = crate::messages::types::Message::Ddb(
+                    crate::messages::types::DdbMessage::EpochInfo(info)
+                );
+                let json = crate::messages::marshal::to_json_value(&resp);
+                router.set_outbound_response(Some(json));
             } else {
                 let mut obj = serde_json::Map::new();
                 obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
                 obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
                 if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-                obj.insert("text".to_string(), serde_json::Value::String("no ddb backend".into()));
+                obj.insert("text".to_string(), serde_json::Value::String("ddb backend unavailable".into()));
                 router.set_outbound_response(Some(serde_json::Value::Object(obj)));
             }
+        } else {
+            let mut obj = serde_json::Map::new();
+            obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
+            obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
+            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+            obj.insert("text".to_string(), serde_json::Value::String("no ddb backend".into()));
+            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
         }
     }
 
     fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbInitResolve) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() { return; }
-            let sender_opt = router.get_sender();
-            if sender_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No sender available"); return; }
-            let sender = sender_opt.unwrap();
+        let router = &from.router;
+        if !router.get_am_relay() { return; }
+        let sender_opt = router.get_sender();
+        if sender_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No sender available"); return; }
+        let sender = sender_opt.unwrap();
 
-            // Get backend
-            let backend_opt = router.get_ddb_backend();
-            if backend_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No DDB backend available"); return; }
-            let backend_arc = backend_opt.unwrap();
-            let guard = backend_arc.lock();
-            if guard.is_err() { warn!("[handlers::on_ddb_init_resolve] Backend lock poisoned"); return; }
-            let backend = guard.unwrap();
+        // Get backend
+        let backend_opt = router.get_ddb_backend();
+        if backend_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No DDB backend available"); return; }
+        let backend_arc = backend_opt.unwrap();
+        let guard = backend_arc.lock();
+        if guard.is_err() { warn!("[handlers::on_ddb_init_resolve] Backend lock poisoned"); return; }
+        let backend = guard.unwrap();
 
-            // Prepare destination from FromStruct
-            let nsk = from.network_source_key.clone();
-            let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        // Prepare destination from FromStruct
+        let nsk = from.network_source_key.clone();
+        let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
 
-            // Invoke backend handle_init: snapshot and send InitResponse + DumpResolve per record.
-            backend.handle_init(&nsk, &user_id, msg.response_tag.clone(), &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
-        }
+        // Invoke backend handle_init: snapshot and send InitResponse + DumpResolve per record.
+        let response_tag = router
+            .get_last_response_tag()
+            .or(msg.response_tag.clone());
+        backend.handle_init(&nsk, &user_id, response_tag, &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
     }
 
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, up: &DdbUpsertResolve) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() { return; }
-            // Validate sender id
-            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-            if up.record.id != up.start_id { return; }
-            if !up.rippled && up.record.id != sender_id { return; }
-            // Upsert to backend
-            if let Some(backend) = router.get_ddb_backend() {
-                if let Ok(mut b) = backend.lock()
-                {
-                    tracing::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
-                    b.upsert(up.record.clone()); }
-                else {
-                    tracing::error!("[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert");
-                }
-            }
+        let router = &from.router;
+        if !router.get_am_relay() { return; }
+        // Validate sender id
+        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        if up.record.id != up.start_id { return; }
+        if !up.rippled && up.record.id != sender_id { return; }
+        if up.tag.is_none() {
+            tracing::error!("[handlers::on_ddb_upsert_resolve] No responseTag in DdbUpsertResolve {:?}", up);
+            return;
+        }
+        // Upsert to backend
+        if let Some(backend) = router.get_ddb_backend() {
+            if let Ok(mut b) = backend.lock()
+            {
+                tracing::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
+                b.upsert(up.record.clone()); }
             else {
-                tracing::error!("[handlers::on_ddb_upsert_resolve] No DDB backend available");
+                tracing::error!("[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert");
             }
+        }
+        else {
+            tracing::error!("[handlers::on_ddb_upsert_resolve] No DDB backend available");
+        }
 
-            if !up.rippled {
-                let mut rippled_up = up.clone();
-                rippled_up.rippled = true;
-                let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
-                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-                if let Some(backend) = router.get_ddb_backend() {
-                    if let Ok(b) = backend.lock() {
-                        _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
-                    }
+        if !up.rippled {
+            let mut rippled_up = up.clone();
+            rippled_up.rippled = true;
+            let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
+            let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+            if let Some(backend) = router.get_ddb_backend() {
+                if let Ok(b) = backend.lock() {
+                    _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
                 }
-
-                // Prepare response JSON and stash on router for Engine/DTLS layer to send.
-                let resp = crate::messages::types::Message::Ddb(
-                    crate::messages::types::DdbMessage::UpdateResponse(
-                        crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: up.response_tag.clone(), text: None, data: None }
-                    )
-                );
-                let json = crate::messages::marshal::to_json_value(&resp);
-                router.set_outbound_response(Some(json));
             }
+
+            // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+            let response_tag = up.tag.clone();
+
+            let resp = crate::messages::types::Message::Ddb(
+                crate::messages::types::DdbMessage::UpdateResponse(
+                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag, text: None, data: None }
+                )
+            );
+            let json = crate::messages::marshal::to_json_value(&resp);
+            router.set_outbound_response(Some(json));
         }
     }
 
     fn on_ddb_delete_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDeleteResolve) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() { return; }
-            // Validate sender id
-            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-            if !msg.rippled && msg.start_id != sender_id { return; }
+        let router = &from.router;
+        if !router.get_am_relay() { return; }
+        // Validate sender id
+        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        if !msg.rippled && msg.start_id != sender_id { return; }
 
-            // Delete from backend
+        // Delete from backend
+        if let Some(backend) = router.get_ddb_backend() {
+            if let Ok(mut b) = backend.lock() { b.delete(&msg.start_id); }
+        }
+
+        // Prepare response JSON and stash on router for Engine/DTLS layer to send.
+        let response_tag = router
+            .get_last_response_tag()
+            .or(msg.response_tag.clone());
+        let resp = crate::messages::types::Message::Ddb(
+            crate::messages::types::DdbMessage::UpdateResponse(
+                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag, text: None, data: None }
+            )
+        );
+        let json = crate::messages::marshal::to_json_value(&resp);
+        router.set_outbound_response(Some(json));
+
+        if !msg.rippled {
+            let mut rippled_msg = msg.clone();
+            rippled_msg.rippled = true;
+            let ripple_msg = Message::Ddb(DdbMessage::DeleteResolve(rippled_msg));
+            let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
             if let Some(backend) = router.get_ddb_backend() {
-                if let Ok(mut b) = backend.lock() { b.delete(&msg.start_id); }
-            }
-
-            // Prepare response JSON and stash on router for Engine/DTLS layer to send.
-            let resp = crate::messages::types::Message::Ddb(
-                crate::messages::types::DdbMessage::UpdateResponse(
-                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), tag: None, response_tag: msg.response_tag.clone(), text: None, data: None }
-                )
-            );
-            let json = crate::messages::marshal::to_json_value(&resp);
-            router.set_outbound_response(Some(json));
-
-            if !msg.rippled {
-                let mut rippled_msg = msg.clone();
-                rippled_msg.rippled = true;
-                let ripple_msg = Message::Ddb(DdbMessage::DeleteResolve(rippled_msg));
-                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-                if let Some(backend) = router.get_ddb_backend() {
-                    if let Ok(b) = backend.lock() {
-                        api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
-                    }
+                if let Ok(b) = backend.lock() {
+                    api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
                 }
             }
         }
     }
 
-    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, q: &DdbQueryResolve) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() { return; }
-            // Lookup
-            let (found, advert_opt) = if let Some(backend) = router.get_ddb_backend() {
-                if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
-            } else { (false, None) };
-            let resp = crate::messages::types::Message::Ddb(
-                crate::messages::types::DdbMessage::QueryResponse(
-                    crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag: q.response_tag.clone(), text: None, data: None }
-                )
-            );
-            let json = crate::messages::marshal::to_json_value(&resp);
-            router.set_outbound_response(Some(json));
-        }
+    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, q: &DdbQueryResolve) {
+        let router = &from.router;
+        if !router.get_am_relay() { return; }
+        // Lookup
+        let (found, advert_opt) = if let Some(backend) = router.get_ddb_backend() {
+            if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
+        } else { (false, None) };
+        let response_tag = router
+            .get_last_response_tag()
+            .or(q.response_tag.clone());
+        let resp = crate::messages::types::Message::Ddb(
+            crate::messages::types::DdbMessage::QueryResponse(
+                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
+            )
+        );
+        let json = crate::messages::marshal::to_json_value(&resp);
+        router.set_outbound_response(Some(json));
     }
 
-    fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) {
+    fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDumpResolve) {
         tracing::info!("[handlers::on_ddb_dump_resolve] upserting from {:?}", msg);
         api.ddb_upsert_record(msg.record.clone());
         if let Some(target) = api.get_peer_ddb_target() {
@@ -529,8 +546,8 @@ impl MessageHandler for DefaultPrintingHandler {
                 let msg_out = Message::Ddb(DdbMessage::Signon(signon));
                 let json = crate::messages::marshal::to_json_value(&msg_out);
 
-                let nsk = _from.network_source_key.clone();
-                let peer_id = _from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                let nsk = from.network_source_key.clone();
+                let peer_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
 
                 let api_for_thread = api.clone();
                 std::thread::spawn(move || {
@@ -548,75 +565,73 @@ impl MessageHandler for DefaultPrintingHandler {
     }
 
     fn on_ddb_signon(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignon) {
-        if let Some(router) = crate::messages::router::Router::current() {
-            if !router.get_am_relay() { return; }
-            tracing::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
+        let router = &from.router;
+        if !router.get_am_relay() { return; }
+        tracing::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
 
-            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-            if msg.rippled != Some(true) && msg.start_id != sender_id {
-                tracing::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
-                return;
+        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        if msg.rippled != Some(true) && msg.start_id != sender_id {
+            tracing::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
+            return;
+        }
+
+        // Create and insert relay record for the new peer
+        let endpoint = from.network_source_key.inet_socket_address().map(|addr| {
+            InetSocketAddress {
+                host: match addr.ip() {
+                    std::net::IpAddr::V4(v4) => v4.to_string(),
+                    std::net::IpAddr::V6(v6) => v6.to_string(),
+                },
+                port: addr.port(),
             }
+        });
 
-            // Create and insert relay record for the new peer
-            let endpoint = from.network_source_key.inet_socket_address().map(|addr| {
-                InetSocketAddress {
-                    host: match addr.ip() {
-                        std::net::IpAddr::V4(v4) => v4.to_string(),
-                        std::net::IpAddr::V6(v6) => v6.to_string(),
-                    },
-                    port: addr.port(),
+        let record = AdvertRecord {
+            id: msg.start_id.clone(),
+            endpoint,
+            am_relay: Some(true),
+            relay_id: None,
+            relay_sig: None,
+            date: "1970-01-01T00:00:00Z".to_string(),
+            sig: msg.original_signature.clone(),
+        };
+        api.ddb_upsert_record(record);
+        tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
+
+        // Queue SignonResponse FIRST — the new relay needs to receive this and
+        // transition to Available before other relays learn about it and try
+        // getEpoch on it.
+        let response_tag = router.get_last_response_tag();
+        let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
+            app: "ddb".to_string(),
+            tag: None,
+            response_tag,
+            text: None,
+            data: None,
+        }));
+        let json = crate::messages::marshal::to_json_value(&resp);
+        router.set_outbound_response(Some(json));
+
+        // Ripple asynchronously with a delay so the new relay has time to
+        // process SignonResponse and transition to Available state before
+        // other relays discover it and try getEpoch on it.
+        if msg.rippled != Some(true) {
+            let mut rippled_msg = msg.clone();
+            rippled_msg.rippled = Some(true);
+            let ripple_msg = Message::Ddb(DdbMessage::Signon(rippled_msg));
+            let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+            let start_id = msg.start_id.clone();
+            let api_clone = api.clone();
+            let router_clone = from.router.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                tracing::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
+                if let Some(backend) = router_clone.get_ddb_backend() {
+                    if let Ok(b) = backend.lock() {
+                        api_clone.ripple_message(ripple_json, start_id, &*b);
+                    }
                 }
             });
-
-            let record = AdvertRecord {
-                id: msg.start_id.clone(),
-                endpoint,
-                am_relay: Some(true),
-                relay_id: None,
-                relay_sig: None,
-                date: "1970-01-01T00:00:00Z".to_string(),
-                sig: msg.original_signature.clone(),
-            };
-            api.ddb_upsert_record(record);
-            tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
-
-            // Queue SignonResponse FIRST — the new relay needs to receive this and
-            // transition to Available before other relays learn about it and try
-            // getEpoch on it.
-            let response_tag = router.get_last_response_tag();
-            let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
-                app: "ddb".to_string(),
-                tag: None,
-                response_tag,
-                text: None,
-                data: None,
-            }));
-            let json = crate::messages::marshal::to_json_value(&resp);
-            router.set_outbound_response(Some(json));
-
-            // Ripple asynchronously with a delay so the new relay has time to
-            // process SignonResponse and transition to Available state before
-            // other relays discover it and try getEpoch on it.
-            if msg.rippled != Some(true) {
-                let mut rippled_msg = msg.clone();
-                rippled_msg.rippled = Some(true);
-                let ripple_msg = Message::Ddb(DdbMessage::Signon(rippled_msg));
-                let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-                let start_id = msg.start_id.clone();
-                let api_clone = api.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
-                    tracing::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
-                    if let Some(router) = crate::messages::router::Router::current() {
-                        if let Some(backend) = router.get_ddb_backend() {
-                            if let Ok(b) = backend.lock() {
-                                api_clone.ripple_message(ripple_json, start_id, &*b);
-                            }
-                        }
-                    }
-                });
-            }
         }
     }
 

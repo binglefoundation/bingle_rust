@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
-use crate::{info_theme, warn_theme, debug_theme};
+
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use crate::distributed_mutex::DistributedMutex;
@@ -13,11 +13,17 @@ use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{from_json_str, DefaultPrintingHandler};
+use crate::packet_transport::{
+    DtlsReliablePacketTransport,
+    PacketTransport,
+};
 use crate::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
 use crate::stun::endpoint_finder::StunEndpointFinder;
 use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
 use uuid::Uuid;
+
+pub const MINIMUM_MTU: usize = 1492;
 
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(
@@ -154,8 +160,8 @@ pub struct Engine {
         Option<std::sync::Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
     options: StartOptions,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
-    // Underlying DTLS listener; per-connection adapters delegate to this
-    dtls: Box<dyn Dtls + Send + Sync>,
+    // Packet transport layer (step 1: pass-through) that owns DTLS.
+    packet_transport: DtlsReliablePacketTransport,
     state: EngineState,
     relay_state: RelayState,
     last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
@@ -186,8 +192,8 @@ pub struct Engine {
     issuer: Option<Arc<String>>,
     // In-memory DDB backend used by relay nodes (and for tests)
     ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>,
-    // Per-API router instance used to avoid global mutable state
-    router: Option<std::sync::Arc<crate::messages::router::Router>>,
+    // Per-API router instance bound to this engine
+    router: std::sync::Arc<crate::messages::router::Router>,
     // DDB client bound to the API instance (always present; may be a NullDdbClient)
     ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
     // TURN handlers (split): client and relay variants
@@ -518,7 +524,7 @@ impl Engine {
             relay_init_mutex: None,
             options: options.clone(),
             mux: None,
-            dtls,
+            packet_transport: DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU),
             state: EngineState::StunIdentify,
             relay_state: RelayState::Off,
             last_public_addr_shared: Arc::new(Mutex::new(None)),
@@ -526,7 +532,7 @@ impl Engine {
             relay_finder: None,
             triangle_wait: None,
             send_via_bingle: None,
-            bingle_api: api,
+            bingle_api: api.clone(),
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
             registered: std::sync::atomic::AtomicBool::new(false),
@@ -537,7 +543,7 @@ impl Engine {
             ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::ddb::InMemoryDdbBackend::new(),
             )),
-            router: None,
+            router: std::sync::Arc::new(crate::messages::router::Router::new(api.clone())),
             ddb_client: ddb,
             turn_handler_client: if options.am_relay { None } else { Some(std::sync::Arc::new(
                 crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new(),
@@ -558,18 +564,19 @@ impl Engine {
 
     /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
     pub fn set_router(&mut self, router: std::sync::Arc<crate::messages::router::Router>) {
-        self.router = Some(router);
+        self.router = router;
     }
 
     /// Test helper: Inject a custom DTLS implementation.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
-        self.dtls = dtls;
+        self.packet_transport = DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU);
     }
 
     /// Access the configured DTLS instance, if any (read-only).
     pub fn dtls(&self) -> &(dyn Dtls + Send + Sync) {
-        self.dtls.as_ref()
+        self.packet_transport.dtls()
     }
+
 
     /// Test helper: Inject a custom DDB client.
     pub fn set_ddb_client_for_tests(&mut self, ddb: Arc<dyn crate::ddb::DdbClient>) {
@@ -598,6 +605,10 @@ impl Engine {
         }
     }
 
+    pub fn mux_for_tests(&self) -> Option<Arc<UdpNetworkMux>> {
+        self.mux.clone()
+    }
+
     /// Test helper: simulate receiving a message from the network.
     pub fn receive_message_for_tests(&mut self, from_ep: &NetworkEndpoint, data: &[u8]) {
         let msg = match crate::messages::marshal::from_json_str(&String::from_utf8_lossy(data)) {
@@ -607,18 +618,14 @@ impl Engine {
                 return;
             },
         };
-        if let Some(r) = &self.router {
-            let handler = DefaultPrintingHandler;
-            let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
-            r.route_with_network(&handler, &msg, issuer, from_ep);
-        } else {
-            tracing::warn!("[Engine::receive_message_for_tests] no router available");
-        }
+        let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
+        self.router
+            .route_with_network(DefaultPrintingHandler, &msg, issuer, from_ep);
     }
 
     /// Apply a closure to the DTLS instance.
     pub fn with_dtls_mut<F: FnOnce(&mut (dyn Dtls + Send + Sync))>(&mut self, f: F) {
-        f(self.dtls.as_mut())
+        f(self.packet_transport.dtls_mut())
     }
 
     /// Test helper: install the DTLS message handler without starting the network stack.
@@ -829,9 +836,7 @@ impl Engine {
     /// Clear bindings to API instance and global router callbacks to avoid dangling pointers between tests.
     pub fn clear_api_bindings(&mut self) {
         // Clear per-API router instance only (no global fallbacks)
-        if let Some(r) = &self.router {
-            r.clear_for_tests();
-        }
+        self.router.clear_for_tests();
         // Also drop local references
         self.send_via_bingle = None;
     }
@@ -877,10 +882,10 @@ impl Engine {
                 return Err(format!("[Engine::send_to_peer] rejecting send to self: {}", target_addr));
             }
         }
-        // Perform the DTLS send using the configured DTLS instance (avoid pre-locking connections to
+        // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
-        let res = self.dtls.send(to, data);
+        let res = self.packet_transport.send(to, data);
         if res.is_ok() {
             // Track seen endpoints
             if let Some(addr) = to.inet_socket_address() {
@@ -992,8 +997,8 @@ impl Engine {
     /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
     /// This avoids duplicating the same closure in different Engine start paths.
     fn install_dtls_handler(&mut self) -> Result<(), BingleError> {
-        // Capture any existing handler without taking a mutable borrow to self.dtls
-        let existing = self.dtls.get_handle_message();
+        // Capture any existing packet transport handler before installing Engine routing.
+        let existing = self.packet_transport.get_handle_message();
 
         // Capture safe, shareable state for the handler closure (avoid raw self pointers)
         let connections = self.connections.clone();
@@ -1008,10 +1013,20 @@ impl Engine {
         // Now obtain a mutable reference to dtls only for installing the new handler
         let d = self.dtls.as_mut();
         let router_arc = self.router.clone();
-        d.set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
+
+        self.packet_transport
+            .set_handle_message(Some(std::sync::Arc::new(move |from, issuer, data| {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
-                let work = || {
+                let work = || -> Result<Option<Vec<u8>>, String> {
+                    // Validate identity (opted in and has handle)
+                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                    let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
+                    if handle_opt.is_none() {
+                        tracing::warn!("[Engine::install_dtls_handler][cb] dropping message from unauthenticated id: {}", sender_id);
+                        return Ok(None);
+                    }
+
                     // 1) Track connection last_seen using captured connections map
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
@@ -1027,30 +1042,27 @@ impl Engine {
                     // No inline DDB handling; use Router + handlers instead
 
                     // 2) Provide per-message API bindings to router; sender remains as configured by API layer
-                    if let Some(r) = &router_arc { r.set_bingle_api(Some(bingle_api.clone())); }
+                    router_arc.set_bingle_api(Some(bingle_api.clone()));
                     // Provide DDB/relay context to router
-                    if let Some(r) = &router_arc {
-                        r.set_am_relay(am_relay);
-                        r.set_ddb_backend(Some(ddb_backend.clone()));
-                    }
+                    router_arc.set_am_relay(am_relay);
+                    router_arc.set_ddb_backend(Some(ddb_backend.clone()));
 
                     // 3) Engine routing logic (inline to avoid &self)
                     // Record last sender for reply helpers
-                    if let Some(r) = &router_arc { r.set_last_from(from.inet_socket_address()); }
+                    router_arc.set_last_from(from.inet_socket_address());
 
-                    // Try JSON parse to extract responseTag and fulfill waiters
+                    // Try JSON parse to extract request/response tags and fulfill waiters
                     if let Ok(s) = std::str::from_utf8(data) {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                            tracing::info!("[Engine::install_dtls_handler][cb] checking for responseTag in {}", v);
-                            // Expose last responseTag (if this is a request). Handlers may echo it back.
-                            if let Some(tag) = v.get("responseTag").and_then(|vv| vv.as_str()) {
-                                if let Some(r) = &router_arc { r.set_last_response_tag(Some(tag.to_string())); }
+                            tracing::info!("[Engine::install_dtls_handler][cb] checking for request/response tags in {}", v);
+                            // Expose request tag (if present). Handlers may echo it back as responseTag.
+                            if let Some(tag) = v.get("tag").and_then(|vv| vv.as_str()) {
+                                router_arc.set_last_response_tag(Some(tag.to_string()));
                             } else {
-                                if let Some(r) = &router_arc { r.set_last_response_tag(None); }
+                                router_arc.set_last_response_tag(None);
                             }
-                            // If this is a response, fulfill any waiter registered with Engine (supports both keys)
-                            let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str())
-                                .or_else(|| v.get("tag").and_then(|vv| vv.as_str()));
+                            // If this is a response, fulfill waiter by responseTag only.
+                            let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str());
                             if let Some(tag_str) = tag_str_opt {
                                 if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
                                     if let Ok(map) = pending_responses.lock() {
@@ -1060,9 +1072,18 @@ impl Engine {
                                                 g.responded = true;
                                                 g.response = Some(v.clone());
                                                 wait.1.notify_all();
-                                                return; // consumed by waiter; do not forward
+                                                return Ok(None); // consumed by waiter; do not forward
+                                            }
+                                            else {
+                                                tracing::warn!("[Engine::install_dtls_handler][cb] could not lock response waiter");
                                             }
                                         }
+                                        else {
+                                            tracing::warn!("[Engine::install_dtls_handler][cb] no waiter found for responseTag={}", tag_str);
+                                        }
+                                    }
+                                    else {
+                                        tracing::warn!("[Engine::install_dtls_handler][cb] pending_responses lock poisoned, ignoring response");
                                     }
                                 }
                             }
@@ -1121,11 +1142,13 @@ impl Engine {
 
                     // Then delegate to any previously-registered handler from API
                     if let Some(h) = &existing {
-                        h(server, from, issuer, data);
+                        h(from, issuer, data)
+                    } else {
+                        Ok(Some(data.to_vec()))
                     }
                 };
 
-                if let Some(r) = &router_arc { crate::messages::router::Router::with_current_router(r.clone(), || work()); } else { work(); }
+                work()
             })));
         Ok(())
     }
@@ -1189,7 +1212,9 @@ impl Engine {
             .map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
-        self.dtls.start(mux.clone())
+        self.packet_transport
+            .dtls_mut()
+            .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // Persist mux, STUN finder, and triangle wait handle before initializing STUN
@@ -1538,7 +1563,9 @@ impl Engine {
         mux.start().map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS accept loop with the mux
-        self.dtls.start(mux.clone())
+        self.packet_transport
+            .dtls_mut()
+            .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
@@ -1760,7 +1787,7 @@ impl Engine {
         tracing::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
         // First, clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
-        self.dtls.stop().expect(&format!(
+        self.packet_transport.dtls_mut().stop().expect(&format!(
             "DTLS stop failed in Engine::stop {}:{}",
             self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
             last_addr

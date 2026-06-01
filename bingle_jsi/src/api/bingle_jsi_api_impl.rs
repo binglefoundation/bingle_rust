@@ -596,12 +596,14 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
-    fn register_keypair(&self, handle: String) -> Result<bool, BingleJsiError> {
+    fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
-        let result = guard.register_keypair(handle).map_err(bingle_error_to_jsi)?;
+        guard.register_keypair(handle).map_err(|e| BingleJsiError::InternalError {
+            reason: e.to_string(),
+        })?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
-        Ok(result)
+        Ok(())
     }
 
     fn add_contact(

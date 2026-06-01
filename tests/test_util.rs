@@ -109,6 +109,19 @@ pub fn find_unused_loopback_port() -> u16 {
     port
 }
 
+#[allow(dead_code)]
+pub fn maybe_unwrap_data_single(packet: &[u8]) -> &[u8] {
+    if packet.len() >= 4 {
+        let version = packet[0] >> 4;
+        let packet_type = packet[0] & 0x0F;
+        if version == 1 && packet_type == 1 {
+            return &packet[4..];
+        }
+    }
+
+    packet
+}
+
 // Helper: print current working directory for debugging path issues in tests
 #[allow(dead_code)]
 pub fn print_cwd_for_debug() {
@@ -127,8 +140,14 @@ pub fn init_test_logging() {
 pub fn init_test_logging_with_filter(filter_str: &str) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
+        let mut final_filter = filter_str.to_string();
+        if !rust_comms::util::logging::is_algo_debug_enabled() {
+            // Suppress noisy external Algorand connection logs
+            final_filter.push_str(",hyper=info,reqwest=info,rustls=info,h2=info");
+        }
+
         let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new(filter_str));
+            .unwrap_or_else(|_| EnvFilter::new(final_filter));
 
         let log_mode = if let Ok(val) = env::var("BINGLE_LOG_MODE") {
             match val.to_ascii_lowercase().as_str() {

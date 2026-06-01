@@ -4,6 +4,28 @@ use tracing_subscriber::layer::{Layer, Context};
 use tracing::span::{Attributes, Id};
 use tracing::{Subscriber, field::{Visit, Field}};
 use std::fmt;
+use std::sync::OnceLock;
+
+static ALGO_DEBUG: OnceLock<bool> = OnceLock::new();
+
+pub fn is_algo_debug_enabled() -> bool {
+    *ALGO_DEBUG.get_or_init(|| {
+        std::env::var("BINGLE_ALGO_DEBUG")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false)
+    })
+}
+
+#[macro_export]
+macro_rules! algo_log {
+    ($($arg:tt)*) => {
+        if $crate::util::logging::is_algo_debug_enabled() {
+            tracing::info!($($arg)*);
+        } else {
+            tracing::trace!($($arg)*);
+        }
+    };
+}
 use chrono::Local;
 
 // Deprecated file logger shim. All logging should go through the `log` facade.

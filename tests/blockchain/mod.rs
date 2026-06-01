@@ -22,6 +22,12 @@ pub mod get_bingle_price;
 #[path = "algo_bingle/handle_lookup.rs"]
 pub mod handle_lookup;
 
+#[path = "algo_bingle/register_collision.rs"]
+pub mod register_collision;
+
+#[path = "algo_bingle/register_uniqueness.rs"]
+pub mod register_uniqueness;
+
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
 

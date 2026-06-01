@@ -41,7 +41,7 @@ pub struct AlgoBingle {
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
-        tracing::info!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
+        algo_log!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
         Self { ops, app_id, asset_id }
     }
 
@@ -164,7 +164,7 @@ impl AlgoBingle {
             .note(AlgoOps::unique_note())
             .build()
             .map_err(|e| anyhow!("build app call: {e}"))?;
-        tracing::info!("register_endpoint tx: {:?}", tx);
+        algo_log!("register_endpoint tx: {:?}", tx);
         let signed = account
             .sign_transaction(tx)
             .map_err(|e| anyhow!("sign app call: {e}"))?
@@ -182,27 +182,27 @@ impl AlgoBingle {
     /// Use the Indexer API to list accounts that have a non-empty "static_endpoint" in local state for the given app_id.
     /// Returns Vec of (account_address, static_endpoint_value).
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
-        tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer] app_id={}", app_id);
+        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] app_id={}", app_id);
         if tokio::runtime::Handle::try_current().is_ok() {
-            tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer] running in tokio runtime, spawning thread");
+            algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] running in tokio runtime, spawning thread");
             let thread_result = std::thread::scope(|s| {
                 s.spawn(|| self.list_static_endpoints_via_indexer_sync(app_id))
                     .join()
                     .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
             });
-            tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer] thread result={:?}", thread_result);
+            algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] thread result={:?}", thread_result);
             return thread_result;
         }
 
-        tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer] not running in tokio runtime, calling sync");
+        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] not running in tokio runtime, calling sync");
         let sync_result = self.list_static_endpoints_via_indexer_sync(app_id);
-        tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer] sync result={:?}", sync_result);
+        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] sync result={:?}", sync_result);
         sync_result
     }
 
     pub(crate) fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
-        tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
+        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
         let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -228,7 +228,7 @@ impl AlgoBingle {
             Err(e)
         }
         else {
-            tracing::info!("[AlgoBingle::list_static_endpoints_via_indexer_sync] results={:?}", results);
+            algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] results={:?}", results);
             Ok(results)
         }
     }
@@ -238,7 +238,7 @@ impl AlgoBingle {
     where
         F: FnMut(&serde_json::Value) -> Result<()>,
     {
-        tracing::info!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={}", app_id);
+        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={}", app_id);
         if app_id == 0 { bail!("app_id must be > 0"); }
         let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
         let client = reqwest::blocking::Client::new();
@@ -252,7 +252,7 @@ impl AlgoBingle {
                 req = req.header("X-Indexer-API-Token", tok.clone())
                          .header(self.ops.config.token_key.clone().unwrap_or_else(|| "X-Algo-API-Token".to_string()), tok.clone());
             }
-            tracing::debug!("[indexer_query_opted_in_accounts_sync] Sending indexer request {:?}", req);
+            algo_log!("[indexer_query_opted_in_accounts_sync] Sending indexer request {:?}", req);
             let resp = match req.send() {
                 Ok(r) => r,
                 Err(e) => {
@@ -267,7 +267,7 @@ impl AlgoBingle {
                     return Err(anyhow!("indexer request failed: {ae}"));
                 }
             };
-            tracing::trace!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);
+            algo_log!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);
             if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
             let v: serde_json::Value = match resp.json() {
                 Ok(v) => v,
@@ -280,10 +280,10 @@ impl AlgoBingle {
                 }
             };
             // Debug: dump the full JSON returned from /v2/accounts for visibility
-            tracing::trace!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
+            algo_log!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
             let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
             for acct in accounts {
-                tracing::trace!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", acct);
+                algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", acct);
                 if let Err(e) = f(&acct) {
                     // Log explicit error rather than propagating implicitly with '?'
                     tracing::error!(
@@ -297,14 +297,16 @@ impl AlgoBingle {
             if next.is_none() { break; }
         }
 
-        tracing::info!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done");
+        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done");
         Ok(())
     }
 
     /// Lookup a Bingle handle on-chain using the Indexer.
     /// Returns the address of the oldest account that has this handle registered in its local state.
     pub fn handle_lookup(&self, handle: &str) -> Result<Option<String>> {
-        let app_id = self.ops.config.app_id.ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?;
+        let app_id = if self.app_id != 0 { self.app_id } else {
+            self.ops.config.app_id.ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?
+        };
         if tokio::runtime::Handle::try_current().is_ok() {
             return std::thread::scope(|s| {
                 s.spawn(|| self.handle_lookup_sync(app_id, handle))
@@ -321,7 +323,7 @@ impl AlgoBingle {
             Self::extract_handle_match(acct, app_id, handle, &mut matches);
             Ok(())
         })?;
-        tracing::info!("[handle_lookup_sync] handle={} matches={:?}", handle, matches);
+        algo_log!("[handle_lookup_sync] handle={} matches={:?}", handle, matches);
         Ok(Self::pick_oldest_match(matches))
     }
 
@@ -335,7 +337,7 @@ impl AlgoBingle {
                 if id == Some(app_id) {
                     let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                     let kvs = Self::decode_state_entries(&keyvals);
-                    tracing::debug!("[extract_handle_match] address={} decoded_state={:?}", addr, kvs);
+                    algo_log!("[extract_handle_match] address={} decoded_state={:?}", addr, kvs);
                     if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle") {
                         if h == handle {
                             let time = kvs.iter().find(|(k, _)| k == "HandleTime")
@@ -354,7 +356,14 @@ impl AlgoBingle {
         if matches.is_empty() {
             None
         } else {
-            matches.sort_by(|a, b| a.1.cmp(&b.1));
+            matches.sort_by(|a, b| {
+                let res = a.1.cmp(&b.1);
+                if res == std::cmp::Ordering::Equal {
+                    a.0.cmp(&b.0)
+                } else {
+                    res
+                }
+            });
             Some(matches[0].0.clone())
         }
     }
@@ -448,7 +457,7 @@ impl AlgoBingle {
         Address::from_str(&addr_str).map_err(|e| anyhow!("invalid app address: {e}"))
     }
 
-    fn broadcast_group(&self, client: &Algod, signed_group: Vec<Vec<u8>>) -> Result<String> {
+    pub fn broadcast_group(&self, client: &Algod, signed_group: Vec<Vec<u8>>) -> Result<String> {
         // Concatenate msgpack-encoded signed transactions into one byte array as per Algod API.
         let mut bytes: Vec<u8> = Vec::new();
         for s in signed_group { bytes.extend_from_slice(&s); }
@@ -464,7 +473,7 @@ impl AlgoBingle {
         Ok(txid)
     }
 
-    fn assign_group_id(txns: &mut [Transaction]) -> Result<()> {
+    pub fn assign_group_id(txns: &mut [Transaction]) -> Result<()> {
         // Try to use algonaut's internal grouping if available via feature gates; otherwise compute manually.
         // We attempt the canonical SDK approach from Python: gid = sha512_256("TG" || msgpack({txlist:[txid...]})).
         // algonaut exposes a helper under transaction::transaction::assign_group_id in recent versions.
@@ -537,7 +546,7 @@ impl AlgoBingle {
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
-        tracing::debug!("[buy_bingle] app_addr: {:#?}", app_addr);
+        algo_log!("[buy_bingle] app_addr: {:#?}", app_addr);
 
         // 1) Payment: sender -> app address for price. The app will verify this and perform
         //    an inner tx moving 1 unit of the ASA from the creator-held reserve to the sender.
@@ -546,13 +555,13 @@ impl AlgoBingle {
             .note(AlgoOps::unique_note())
             .build()
             .map_err(|e| anyhow!("build pay: {e}"))?;
-        tracing::trace!("[buy_bingle] tx_pay: {:#?}", tx_pay);
+        algo_log!("[buy_bingle] tx_pay: {:#?}", tx_pay);
 
         // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
         let tx_app = self
             .ops
             .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
-        tracing::trace!("[buy_bingle] tx_app: {:#?}", tx_app);
+        algo_log!("[buy_bingle] tx_app: {:#?}", tx_app);
 
         // Group, sign, and send
         let mut txs = vec![tx_pay, tx_app];
@@ -626,6 +635,19 @@ impl AlgoBingle {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if handle.is_empty() { bail!("handle must not be empty"); }
+
+        let client = self.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
+        let sender_str = sender.to_string();
+
+        // 1. Pre-check: Handle uniqueness via indexer
+        if let Some(existing_owner) = self.handle_lookup(handle)? {
+            if existing_owner != sender_str {
+                bail!("Handle already in use by {}", existing_owner);
+            }
+        }
+
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
         self.opt_in_app_to_asset(app_id, asset_id)?;
         
@@ -633,21 +655,18 @@ impl AlgoBingle {
         let _ = self.opt_in_sender_to_asset(asset_id)?;
         // Ensure the caller is opted-in to the application local state to avoid logic eval error
         self.ops.opt_in_app(app_id)?;
-        let client = self.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
 
-        // 1) ASA fee: sender -> app address amount = price_units
+        // 2) ASA fee: sender -> app address amount = price_units
         let ax = TransferAsset::new(sender, asset_id, price_units, app_addr).build();
         let tx_ax = TxnBuilder::with(&params, ax)
             .note(AlgoOps::unique_note())
             .build()
             .map_err(|e| anyhow!("build axfer: {e}"))?;
         // Print the full asset transfer transaction (tx_ax) with all fields for visibility
-        tracing::info!("tx_ax: {:#?}", tx_ax);
+        algo_log!("tx_ax: {:#?}", tx_ax);
 
-        // 2) App call: register(string)void with handle arg
+        // 3) App call: register(string)void with handle arg
         // ARC-4 string encoding: 2-byte big-endian length prefix + UTF-8 bytes
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(AlgoOps::arc4_selector("register(string)void").to_vec());
@@ -673,7 +692,28 @@ impl AlgoBingle {
         let s1 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign axfer: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed axfer: {e}"))?;
         let s2 = account.sign_transaction(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
 
-        self.broadcast_group(&client, vec![s1, s2])
+        let tx_id = self.broadcast_group(&client, vec![s1, s2])?;
+
+        // 4. Post-check: Validate that we are the deterministic winner for this handle
+        // Wait up to 15 seconds for indexer to catch up and verify
+        let mut winner_verified = false;
+        for i in 0..15 {
+            if i > 0 { std::thread::sleep(std::time::Duration::from_secs(1)); }
+            if let Some(winner) = self.handle_lookup(handle)? {
+                if winner == sender_str {
+                    winner_verified = true;
+                    break;
+                } else {
+                    bail!("Handle registration post-check failed: handle '{}' was taken by {} (race condition)", handle, winner);
+                }
+            }
+        }
+
+        if !winner_verified {
+            algo_log!("Warning: handle registration post-check timed out for handle '{}'. It may still be pending in indexer.", handle);
+        }
+
+        Ok(tx_id)
     }
 
     /// Admin method: Opt the application account into the given ASA by calling the

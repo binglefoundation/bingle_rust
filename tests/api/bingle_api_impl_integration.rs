@@ -3,6 +3,7 @@ use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleA
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use crate::api::bingle_api_impl_integration::test_util::ADDRESS_SPEND;
+use crate::relay::relay_states::test_util::init_test_logging;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -56,6 +57,8 @@ pub mod pki;
         Ok(test_util::ADDRESS_SPEND.to_string())
     }
 
+    init_test_logging();
+
     #[allow(dead_code)]
     static CLIENT_SEEN: OnceLock<serde_json::Value> = OnceLock::new();
 
@@ -70,9 +73,10 @@ pub mod pki;
     let mux = std::sync::Arc::new(mux0);
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
-    // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing tag
+    // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing caller tag via responseTag
     fn server_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
-        if let Ok(text) = std::str::from_utf8(data) {
+        let unwrapped = test_util::maybe_unwrap_data_single(data);
+        if let Ok(text) = std::str::from_utf8(unwrapped) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
                 let is_check = v.get("type").and_then(|x| x.as_str()) == Some("Check")
                     && v.get("app").map(|a| a.is_null()).unwrap_or(true);
@@ -81,8 +85,8 @@ pub mod pki;
                     obj.insert("app".to_string(), serde_json::Value::Null);
                     obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
                     obj.insert("state".to_string(), serde_json::Value::String("available".to_string()));
-                    if let Some(tag) = v.get("responseTag").and_then(|t| t.as_str()) {
-                        obj.insert("tag".to_string(), serde_json::Value::String(tag.to_string()));
+                    if let Some(tag) = v.get("tag").and_then(|t| t.as_str()) {
+                        obj.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string()));
                     }
                     if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
                         let _ = server.send(&from, &bytes);
@@ -108,15 +112,20 @@ pub mod pki;
 
     // Build BingleApiImpl client
     let api = BingleApiImpl::new(&StartOptions::default());
+    api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
+        if user_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Handle::from("mock-server-handle")))
+        }
+    }));
     let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain };
     let start_result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 
     // Prepare a direct NetworkSourceKey to server and send RelayCheck
     let nsk = NetworkEndpoint::new_direct(addr);
-    use uuid::Uuid;
-    let req_tag = Uuid::new_v4().to_string();
-    let payload = serde_json::json!({ "app": null, "type": "Check", "responseTag": req_tag });
+    let payload = serde_json::json!({ "app": null, "type": "Check" });
 
     let uid2 = test_util::ADDRESS_SPEND.to_string();
     let response = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network_with_response(&nsk, &uid2, payload, None));
@@ -126,4 +135,6 @@ pub mod pki;
     assert_eq!(response_content.get("app"), Some(&serde_json::Value::Null));
     assert_eq!(response_content.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("CheckResponse"));
     assert_eq!(response_content.get("state").and_then(|v: &serde_json::Value| v.as_str()), Some("available"));
+    assert!(response_content.get("responseTag").is_some(), "response should include responseTag");
+    assert!(response_content.get("tag").is_none(), "response should not include request tag field");
 }

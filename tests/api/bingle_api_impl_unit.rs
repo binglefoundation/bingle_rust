@@ -46,6 +46,8 @@ impl Dtls for MockDtls {
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -68,7 +70,10 @@ pub fn unit_send_message_to_network_calls_dtls_send() {
     let locked = sent_vec.lock().unwrap();
     assert_eq!(locked.len(), 1);
     assert_eq!(locked[0].0, addr);
-    assert_eq!(locked[0].1, serde_json::to_vec(&msg).unwrap());
+    assert_eq!(
+        test_util::maybe_unwrap_data_single(&locked[0].1),
+        serde_json::to_vec(&msg).unwrap().as_slice()
+    );
     assert!(progress_calls.lock().unwrap().iter().any(|(p, _)| *p == 100));
 }
 
@@ -115,6 +120,8 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
         fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
         fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     }
 
     // Deterministic 32-byte secret and its Algorand address

@@ -7,6 +7,7 @@ class BingleDapp(ARC4Contract):
     # Global state: price of 1 Bingle$ in microAlgos
     def __init__(self) -> None:
         self.bingle_price = GlobalState(UInt64, key="BinglePrice")
+        self.last_handle_time = GlobalState(UInt64, key="LastHandleTime")
         # Local state for registration
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
@@ -171,11 +172,18 @@ class BingleDapp(ARC4Contract):
                 saw_fee = True
         assert saw_fee
 
+        # Ensure HandleTime is unique and strictly increasing
+        last_time = self.last_handle_time.get(default=UInt64(0))
+        handle_time = Global.latest_timestamp
+        if handle_time <= last_time:
+            handle_time = last_time + 1
+        self.last_handle_time.value = handle_time
+
         # Only set if not previously set (keep oldest)
         current, exists = self.handle.maybe(Txn.sender)
         if not exists or current == String():
             self.handle[Txn.sender] = handle
-            self.handle_time[Txn.sender] = Global.latest_timestamp
+            self.handle_time[Txn.sender] = handle_time
 
     @abimethod()
     def set_allow_static(self, target_address: Account, allow: UInt64) -> None:

@@ -4,6 +4,7 @@ use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::dtls::{Dtls, HandleMessage};
 use rust_comms::engine::Engine;
 use std::net::SocketAddr;
+use crate::relay::lookup_root_id::test_util::init_test_logging;
 
 #[derive(Default)]
 struct FakeDtls {
@@ -17,7 +18,23 @@ impl FakeDtls {
 impl Dtls for FakeDtls {
     fn start(&mut self, _mux: std::sync::Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
     fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { Ok(()) }
+    fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> rust_comms::dtls::Result<()> {
+        let has_frpt_header = data.len() >= 4;
+        let is_data_single = has_frpt_header && data[0] == 0x11;
+
+        if is_data_single {
+            let tx_id_hi = data[2];
+            let tx_id_lo = data[3];
+            let ack_complete_packet = [0x14, 0x00, tx_id_hi, tx_id_lo];
+
+            let handler = self
+                .get_handle_message()
+                .ok_or_else(|| "FakeDtls::send expected a handle_message callback".to_string())?;
+            handler(self, to, "fake-dtls", &ack_complete_packet);
+        }
+
+        Ok(())
+    }
 
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }
@@ -50,6 +67,8 @@ impl Dtls for FakeDtls {
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
@@ -88,6 +107,8 @@ pub fn send_to_peer_rejects_incomplete_relay_endpoint() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn send_to_peer_allows_complete_relay_endpoint() {
+    init_test_logging();
+
     let engine = make_engine_no_public_addr();
     // Relay endpoint with channel+address+id is valid (handled by TURN layer)
     let relay_nsk = NetworkEndpoint::new_relay(

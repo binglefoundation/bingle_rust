@@ -47,6 +47,21 @@ fn start_pair() -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAd
     let relay = BingleApiImpl::new(&relay_opts);
     let client = BingleApiImpl::new(&client_opts);
 
+    relay.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
+        if user_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some("mock-client".to_string()))
+        }
+    }));
+    client.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
+        if user_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some("mock-relay".to_string()))
+        }
+    }));
+
     relay.access_unsafe_for_tests(|r| r.start(&relay_opts)).expect("relay start ok");
     if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {
         panic!("relay did not become Available within 30s");

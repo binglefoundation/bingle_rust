@@ -245,11 +245,11 @@ pub async fn local_register_keypair(
             Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned".to_string()).into_response(),
         };
         match api.register_keypair(req.handle) {
-            Ok(ok) => {
+            Ok(_) => {
                 drop(api); // release lock before save and start attempt
                 save_if_configured(&state);
                 try_start_api(&state);
-                AxumJson(ok).into_response()
+                StatusCode::OK.into_response()
             }
             Err(e) => handle_bingle_error(e),
         }

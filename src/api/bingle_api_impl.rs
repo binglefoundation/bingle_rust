@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use tracing::warn;
 use crate::themes;
-use crate::{info_theme, warn_theme};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
@@ -201,6 +200,9 @@ impl BingleApiImpl {
         let a = self.engine.access(|e| e.local_bind_addr_for_tests());
         tracing::info!("[BingleApiImpl::engine_local_bind_addr_for_tests][exit] addr={:?}", a);
         a
+    }
+    pub fn engine_mux_for_tests(&self) -> Option<Arc<crate::dtls::UdpNetworkMux>> {
+        self.engine.access(|e| e.mux_for_tests())
     }
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
         self.engine.access_unsafe_for_tests(|e: &mut Engine| e.receive_message_for_tests(from_ep, data));
@@ -732,16 +734,17 @@ impl BingleApi for BingleApiImpl {
             (tag, eng.pending_responses_arc())
         });
 
-        // Ensure message has the responseTag field
+        // Ensure outbound request has a correlation tag (responses must echo this as responseTag)
         let msg_with_tag = match message {
             JsonValue::Object(mut m) => {
-                m.insert("responseTag".to_string(), JsonValue::String(tag.to_string()));
+                m.remove("responseTag");
+                m.insert("tag".to_string(), JsonValue::String(tag.to_string()));
                 JsonValue::Object(m)
             }
             other => {
                 let mut m = JsonMap::new();
                 m.insert("payload".to_string(), other);
-                m.insert("responseTag".to_string(), JsonValue::String(tag.to_string()));
+                m.insert("tag".to_string(), JsonValue::String(tag.to_string()));
                 JsonValue::Object(m)
             }
         };

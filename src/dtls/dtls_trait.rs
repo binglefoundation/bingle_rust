@@ -137,6 +137,20 @@ pub trait Dtls {
         Self: Sized;
 
     /**
+     * Set the null encryption mode
+     * This enables NULL cipher suites for DTLS handshakes (no encryption).
+     * Only effective if dangerous_debug is also enabled.
+     */
+    fn set_null_encryption(&mut self, enabled: bool);
+
+    /**
+     * Fluently set the null encryption mode
+     */
+    fn with_null_encryption(self, enabled: bool) -> Self
+    where
+        Self: Sized;
+
+    /**
      * Get the cipher suite negotiated for the DTLS session with the given endpoint.
      * Returns None if the handshake has not completed yet or the endpoint is unknown.
      * This value is derived from the connection and is not transmitted on the wire.

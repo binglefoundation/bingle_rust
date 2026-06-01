@@ -22,11 +22,13 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
     let internal = Arc::new(TrackUpsertInternal { upserts: upserts.clone() });
     let api_weak = to_weak_api_both(MockApiBoth::new_with_internal_override(internal));
     let api = api_weak.upgrade().expect("upgrade");
+    let router = Arc::new(rust_comms::messages::router::Router::new(api_weak.clone()));
     
     let sender_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 1234);
     let from = FromStruct {
         id: "NEWNODE".to_string() + rust_comms::protocol::ISSUER_SUFFIX,
         network_source_key: NetworkEndpoint::new_direct(sender_addr),
+        router: router.clone(),
     };
     
     let signon = DdbSignon {
@@ -40,15 +42,12 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
         data: None,
     };
     
-    let router = Arc::new(rust_comms::messages::router::Router::new(api_weak));
     router.set_am_relay(true);
     
     // Set last response tag in router manually
     router.set_last_response_tag(Some("my-tag".to_string()));
     
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        handler.on_ddb_signon(api.clone(), &from, &signon);
-    });
+    handler.on_ddb_signon(api.clone(), &from, &signon);
     
     // Check upsert
     {
