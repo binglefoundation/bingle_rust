@@ -18,10 +18,16 @@ pub mod openssl_impl {
 
     #[derive(Clone)]
     enum PeerWriterKind {
+        /// Writes directly to the SSL stream from the calling thread using a blocking
+        /// `block_on` call on the provided Tokio runtime.  Used during the initial
+        /// handshake phase before a dedicated writer thread has been spawned.
         Direct {
             runtime: Arc<tokio::runtime::Runtime>,
             stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
         },
+        /// Sends payloads over an mpsc channel to a dedicated writer thread that owns
+        /// the SSL stream write half.  Used after the handshake is complete so that
+        /// the calling thread is never blocked waiting for I/O.
         Channel {
             tx: mpsc::Sender<Vec<u8>>,
         },
@@ -73,17 +79,25 @@ pub mod openssl_impl {
                 }
             };
 
-            match send_path {
+            let res = match send_path {
                 SendPath::Direct { runtime, stream_arc } => {
+                    tracing::debug!("[DtlsOpenSsl:::PeerWriter][send] Direct {} bytes to peer", payload.len());
+
                     let mut guard = stream_arc.lock().map_err(|_| "writer stream poisoned".to_string())?;
                     runtime
                         .block_on(async { guard.write_all(payload).await })
                         .map_err(|e| format!("send writer stream dtls write failed: {}", e))
                 }
-                SendPath::Channel { tx } => tx
-                    .send(payload.to_vec())
-                    .map_err(|e| format!("peer writer channel send failed: {}", e)),
-            }
+                SendPath::Channel { tx } => {
+                    tracing::debug!("[DtlsOpenSsl:::PeerWriter][send] Channel {} bytes to peer", payload.len());
+                    tx
+                        .send(payload.to_vec())
+                        .map_err(|e| format!("peer writer channel send failed: {}", e))
+                },
+            };
+
+            tracing::debug!("[DtlsOpenSsl:::PeerWriter][send] {} bytes done", payload.len());
+            res
         }
     }
 
@@ -113,6 +127,28 @@ pub mod openssl_impl {
             .map_err(|e| format!("failed to spawn writer task: {}", e))?;
         Ok(tx)
     }
+
+    /// Like `spawn_stream_writer_task` but owns an exclusive `WriteHalf` so it never
+    /// contends with the reader thread on a shared mutex.
+    fn spawn_stream_writer_task_split(
+        runtime: Arc<tokio::runtime::Runtime>,
+        mut write_half: tokio::io::WriteHalf<TokioSslStream<CommonNetworkMuxConn>>,
+        peer_label: String,
+    ) -> Result<mpsc::Sender<Vec<u8>>> {
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        std::thread::Builder::new()
+            .name(format!("dtls-writer-{}", peer_label))
+            .spawn(move || {
+                while let Ok(payload) = rx.recv() {
+                    if let Err(e) = runtime.block_on(async { write_half.write_all(&payload).await }) {
+                        tracing::warn!("[DtlsOpenSsl:::writer] {} write failed: {}", peer_label, e);
+                        break;
+                    }
+                }
+            })
+            .map_err(|e| format!("failed to spawn split writer task: {}", e))?;
+        Ok(tx)
+    }
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
     #[allow(unused_imports)]
@@ -124,6 +160,23 @@ pub mod openssl_impl {
     pub enum PeerCmd {
         Send(Vec<u8>),
         Stop,
+    }
+
+    impl std::fmt::Display for PeerCmd {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                PeerCmd::Send(payload) => {
+                    if let Ok(text) = std::str::from_utf8(payload) {
+                        if text.chars().all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t') {
+                            return write!(f, "Send(\"{}\")", text);
+                        }
+                    }
+                    let preview: String = payload.iter().take(8).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                    write!(f, "Send({} bytes, [{} ...])", payload.len(), preview)
+                }
+                PeerCmd::Stop => write!(f, "Stop"),
+            }
+        }
     }
 
     #[derive(Clone)]
@@ -149,12 +202,12 @@ pub mod openssl_impl {
             .spawn(move || {
                 while let Ok(cmd) = rx.recv() {
                     let cmd2 = cmd.clone();
-                    tracing::debug!("[DtlsOpenSsl:{}] received peer command: {:?}", handle_tag, cmd2);
+                    tracing::debug!("[DtlsOpenSsl:{}] received peer command: {}", handle_tag, cmd2);
                     if !on_command(cmd) {
                         tracing::warn!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
                         break;
                     }
-                    tracing::debug!("[DtlsOpenSsl:{}] peer command handler {:?} returned true; continuing", handle_tag, cmd2);
+                    tracing::debug!("[DtlsOpenSsl:{}] peer command handler {} returned true; continuing", handle_tag, cmd2);
                 }
             })
             .map_err(|e| format!("failed to spawn peer worker: {}", e))?;
@@ -243,6 +296,107 @@ pub mod openssl_impl {
         PeerChain,
         #[allow(dead_code)]
         None,
+    }
+
+    /// Post-handshake reader loop for the client (outbound) path.
+    ///
+    /// Takes exclusive ownership of a `ReadHalf` so it never contends with the
+    /// writer thread on a shared mutex. The handshake is already complete and the
+    /// peer issuer is already recorded in `peers` before this is called, so no
+    /// mid-loop SSL inspection is required.
+    fn run_read_loop_split(
+        mut read_half: tokio::io::ReadHalf<TokioSslStream<CommonNetworkMuxConn>>,
+        dtls_async_runtime: Arc<tokio::runtime::Runtime>,
+        from: &NetworkEndpoint,
+        peers: PeerStates,
+        handle_message: Option<HandleMessage>,
+        peer_cert_handler: Option<HandlePeerCertificate>,
+        owner_generation: u64,
+        log_tag: &str,
+    ) {
+        tracing::info!(
+            "[DTLS][DtlsOpenSsl:{}] run_read_loop_split starting for {} (generation={})",
+            log_tag,
+            from,
+            owner_generation
+        );
+        let key_from = from.get_key().expect("direct endpoint key");
+        let get_issuer = || -> Option<String> {
+            let key = from.get_key().expect("direct endpoint key");
+            match peers.lock() {
+                Ok(m) => m.get(&key).map(|ps| ps.issuer.clone()),
+                Err(_) => None,
+            }
+        };
+        let mut buf = [0u8; 2048];
+        let mut logged_wouldblock = false;
+        loop {
+            let read_res = dtls_async_runtime.block_on(async {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    tokio::io::AsyncReadExt::read(&mut read_half, &mut buf),
+                ).await {
+                    Ok(res) => res.map_err(|e| e.to_string()),
+                    Err(_) => Err("read timeout".to_string()),
+                }
+            });
+            let n = match read_res {
+                Ok(0) => {
+                    info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] EOF/peer closed", log_tag, from);
+                    break;
+                }
+                Ok(n) => {
+                    logged_wouldblock = false;
+                    n
+                }
+                Err(ref e) if e == "read timeout" || e.contains("would block") || e.contains("WouldBlock") => {
+                    if !logged_wouldblock {
+                        info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] WouldBlock/timeout (no datagram yet)", log_tag, from);
+                        logged_wouldblock = true;
+                    }
+                    continue;
+                }
+                Err(e) => {
+                    info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] read error: {}", log_tag, from, e);
+                    break;
+                }
+            };
+            if n == 0 { break; }
+            // Gate application delivery on issuer being set (only when peer_cert_handler is configured)
+            let issuer_opt = get_issuer();
+            if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
+                tracing::warn!("[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated", log_tag, from);
+                continue;
+            }
+            tracing::debug!("[DtlsOpenSsl:{}][read-loop {}] application data {} bytes", log_tag, from, n);
+            if let Some(h) = &handle_message {
+                let issuer = issuer_opt.unwrap_or_default();
+                let adapter = PeerAdapter(peers.clone());
+                (h)(&adapter as &dyn Dtls, from, &issuer, &buf[..n]);
+            }
+        }
+        // Cleanup
+        if let Ok(mut m) = peers.lock() {
+            let current_generation = m.get(&key_from).map(|ps| ps.generation);
+            if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_from, owner_generation) {
+                tracing::info!(
+                    "[DtlsOpenSsl:{}][read-loop {}] peer disconnected, owner generation matched ({}), call close_peer_state",
+                    log_tag,
+                    from,
+                    owner_generation
+                );
+                close_peer_state(peer_state);
+            } else {
+                tracing::info!(
+                    "[DtlsOpenSsl:{}][read-loop {}] skip cleanup due to ownership mismatch (owner generation={}, current generation={:?})",
+                    log_tag,
+                    from,
+                    owner_generation,
+                    current_generation
+                );
+            }
+        }
+        tracing::info!("[DtlsOpenSsl:{}][read-loop {}] exit and cleanup", log_tag, from);
     }
 
     fn run_read_loop(
@@ -1690,27 +1844,8 @@ pub mod openssl_impl {
             tracing::info!("[DtlsOpenSsl:::send] connected new DTLS stream to {}", to);
             #[allow(unused)] {}
 
-            let writer_tx = spawn_stream_writer_task(
-                self.dtls_async_runtime.clone(),
-                stream_arc.clone(),
-                format!("send-{}", key_to),
-            )?;
-            if let Ok(mut m) = self.peer_states.lock() {
-                if let Some(ps) = m.get_mut(&key_to) {
-                    if ps.generation != owner_generation {
-                        tracing::debug!(
-                            "[DtlsOpenSsl:::send] skip writer channel install for {} due to generation mismatch (owner={}, current={})",
-                            to,
-                            owner_generation,
-                            ps.generation
-                        );
-                    } else if let Some(w) = &ps.writer {
-                        let _ = w.switch_to_channel(writer_tx.clone());
-                    }
-                }
-            }
-
             // Immediately invoke peer certificate handler on the client side with the server's certificate
+            // (while we still hold the `stream` guard, before splitting the stream).
             if let Some(h) = self.handle_peer_certificate {
                 if let Some(cert) = stream.ssl().peer_certificate() {
                     match cert.to_pem() {
@@ -1770,8 +1905,79 @@ pub mod openssl_impl {
                 }
             }
 
-            // Drop the guard before spawning the reader loop to avoid immediate contention
+            // Announce client certificate to the server while we still hold the stream guard.
+            // This must happen before we split the stream, so that the guard is the only writer.
+            if let Some(cert_pem) = self.client_cert.as_ref() {
+                let mut should_send = false;
+                {
+                    let peers = &self.peer_states;
+                    let _ = peers.lock().map(|mut m| {
+                        if let Some(ps) = m.get_mut(&key_to) {
+                            if !ps.is_announced_client_cert_peer {
+                                ps.is_announced_client_cert_peer = true;
+                                should_send = true;
+                            }
+                        }
+                    });
+                }
+                if should_send {
+                    let ca_pem = self.ca_cert.as_deref().unwrap_or(&[]);
+                    let mut msg = Vec::with_capacity(CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len());
+                    msg.extend_from_slice(CERT_ANNOUNCE_PREFIX);
+                    msg.extend_from_slice(cert_pem);
+                    // Separate with a newline if the cert block doesn't already end with one
+                    if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) { msg.push(b'\n'); }
+                    msg.extend_from_slice(ca_pem);
+                    tracing::debug!("[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
+                    #[allow(unused)] {}
+                    let _ = stream.write_all(&msg);
+                }
+            }
+
+            // Release the guard.  Before we can split the stream we must drop all
+            // other clones of `stream_arc` — the `PeerWriter::Direct` variant (held by
+            // both `ps.writer` and the peer-worker closure via `worker_writer`) still
+            // references it.  Switching to a temporary dead channel first drops those
+            // references atomically through the shared `Arc<Mutex<PeerWriterKind>>`.
             drop(stream);
+            if let Ok(m) = self.peer_states.lock() {
+                if let Some(ps) = m.get(&key_to) {
+                    if let Some(w) = &ps.writer {
+                        let (dead_tx, _dead_rx) = mpsc::channel::<Vec<u8>>();
+                        let _ = w.switch_to_channel(dead_tx);
+                    }
+                }
+            }
+
+            // Now the only remaining owner is `stream_arc` itself; unwrap and split.
+            let inner_stream = Arc::try_unwrap(stream_arc)
+                .map_err(|_| "stream_arc still has other owners after clearing Direct variant; cannot split".to_string())?
+                .into_inner()
+                .map_err(|_| "stream mutex poisoned".to_string())?;
+            let (read_half, write_half) = tokio::io::split(inner_stream);
+
+            // Spawn a dedicated writer thread that owns the write half exclusively — no mutex needed.
+            let writer_tx = spawn_stream_writer_task_split(
+                self.dtls_async_runtime.clone(),
+                write_half,
+                format!("send-{}", key_to),
+            )?;
+
+            // Switch the PeerWriter to the real channel (replacing the temporary dead channel).
+            if let Ok(mut m) = self.peer_states.lock() {
+                if let Some(ps) = m.get_mut(&key_to) {
+                    if ps.generation != owner_generation {
+                        tracing::debug!(
+                            "[DtlsOpenSsl:::send] skip writer channel install for {} due to generation mismatch (owner={}, current={})",
+                            to,
+                            owner_generation,
+                            ps.generation
+                        );
+                    } else if let Some(w) = &ps.writer {
+                        let _ = w.switch_to_channel(writer_tx.clone());
+                    }
+                }
+            }
 
             // Also install/update the writer for this peer in the unified peer_states map.
             {
@@ -1795,64 +2001,24 @@ pub mod openssl_impl {
                 });
             }
 
-            // Spawn a background reader loop for this outbound stream to deliver application data to the handler
+            // Spawn a background reader loop owning the read half exclusively — no mutex contention.
             {
                 let handle_message2 = self.handle_message.clone();
-                let peer_cert_handler = self.handle_peer_certificate;
-                let stream_arc_for_reader = stream_arc.clone();
+                let peer_cert_handler2 = self.handle_peer_certificate;
                 let from2: NetworkEndpoint = endpoint.clone();
                 let peers2: PeerStates = self.peer_states.clone();
-                let handle = self.handle.clone();
-                let dangerous_debug = self.dangerous_debug;
                 std::thread::spawn(move || {
-                    run_read_loop(
-                        stream_arc_for_reader.clone(),
+                    run_read_loop_split(
+                        read_half,
                         runtime,
                         &from2,
                         peers2.clone(),
                         handle_message2.clone(),
-                        peer_cert_handler,
-                        CaMode::PeerChain,
-                        false,  // no cert announce on client
-                        false,  // don't trim suffix; server path records trimmed ids
-                        handle,
+                        peer_cert_handler2,
                         owner_generation,
                         "::send",
-                        dangerous_debug,
                     );
                 });
-            }
-
-            // If configured with a client certificate, announce it to the server once per peer.
-            // Since we've already sent the first data packet to initiate the handshake,
-            // we'll send the announcement as a second packet if needed.
-            if let Some(cert_pem) = self.client_cert.as_ref() {
-                let mut should_send = false;
-                {
-                    let peers = &self.peer_states;
-                    let _ = peers.lock().map(|mut m| {
-                        if let Some(ps) = m.get_mut(&key_to) {
-                            if !ps.is_announced_client_cert_peer {
-                                ps.is_announced_client_cert_peer = true;
-                                should_send = true;
-                            }
-                        }
-                    });
-                }
-                if should_send {
-                    let mut stream_guard = stream_arc.lock().map_err(|_| "stream lock poisoned".to_string())?;
-                    // Include the peer CA certificate in the announcement payload to avoid relying on local CA
-                    let ca_pem = self.ca_cert.as_deref().unwrap_or(&[]);
-                    let mut msg = Vec::with_capacity(CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len());
-                    msg.extend_from_slice(CERT_ANNOUNCE_PREFIX);
-                    msg.extend_from_slice(cert_pem);
-                    // Separate with a newline if the cert block doesn't already end with one
-                    if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) { msg.push(b'\n'); }
-                    msg.extend_from_slice(ca_pem);
-                    tracing::debug!("[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
-                    #[allow(unused)] {}
-                    let _ = stream_guard.write_all(&msg);
-                }
             }
             Ok(())
         }

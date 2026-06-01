@@ -73,3 +73,6 @@ pub mod dtls_send_stream_lock_contention;
 
 #[path = "dtls_peer_worker_stage1.rs"]
 pub mod dtls_peer_worker_stage1;
+
+#[path = "peer_cmd_display.rs"]
+pub mod peer_cmd_display;
