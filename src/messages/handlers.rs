@@ -297,6 +297,11 @@ pub trait MessageHandler {
     fn on_ddb_get_relays_status(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetRelaysStatus) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetRelaysStatus(msg.clone()))); }
     fn on_ddb_relays_status_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbRelaysStatusResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::RelaysStatusResponse(msg.clone()))); }
 
+    // ReportFail messages
+    fn on_report_fail(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &ReportFailMessage) {
+        self.on_unimplemented(&Message::ReportFail(msg.clone()));
+    }
+
     // Unknown
     fn on_unknown(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, raw: &serde_json::Value) {
         // Delegate to API on_message via the per-API Router if installed
@@ -517,7 +522,7 @@ impl MessageHandler for DefaultPrintingHandler {
         let response_tag = q.tag.clone();
         let resp = crate::messages::types::Message::Ddb(
             crate::messages::types::DdbMessage::QueryResponse(
-                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, response_tag, text: None, data: None }
+                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -544,6 +549,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     original_signature: None,
                     rippled: Some(false),
                     tag: None,
+                    response_tag: None,
                     text: None,
                     data: None,
                 };
@@ -607,6 +613,7 @@ impl MessageHandler for DefaultPrintingHandler {
         // getRelaysStatus on it.
         let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
             app: "ddb".to_string(),
+            tag: None,
             response_tag: msg.tag.clone(),
             text: None,
             data: None,

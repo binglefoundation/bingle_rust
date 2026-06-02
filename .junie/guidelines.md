@@ -26,6 +26,8 @@ When a parameter is in use, do not start the name with'_' as this is the unused 
 When running grep, exclude binaries (for performance)
 Create any temp files (logging, etc) in tmp so that they are gitignored
 
+Do Not use Trump Case in Comments, etc.
+
 Before finishing a task:
 
 - Ensure the tests tree compiles

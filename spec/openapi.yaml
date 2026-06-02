@@ -267,10 +267,6 @@ components:
           type: string
           nullable: true
           description: Optional correlation tag for request/response association.
-        responseTag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for responses.
         text:
           type: string
           nullable: true
@@ -652,10 +648,6 @@ components:
           type: string
           nullable: true
           description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
         responseTag:
           type: string
           nullable: true
@@ -829,10 +821,6 @@ components:
           type: string
           nullable: true
           description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
         responseTag:
           type: string
           nullable: true
@@ -1031,8 +1019,11 @@ components:
             When true, indicates that no corner node was available for the
             triangle test (all known relay nodes were already excluded by the
             client). The receiver should assume NAT is restricted.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
       required: [app, type]
-
     RelayListen:
       type: object
       description: |

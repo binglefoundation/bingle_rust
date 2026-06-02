@@ -188,8 +188,8 @@ The alternate root relay server will be at `(pref_idx + 1) % number_of_root_rela
 
 We can then call `RelayCheck` on the prime server to check it is available, and if not try the alternate.
 
-Now we can find other non-root relay servers by sending a `DdbGetEpoch` to the root relay server.
-This will return a `DdbEpochInfo` with a list of server ids for all relay servers.
+Now we can find other non-root relay servers by sending a `DdbGetRelaysStatus` to the root relay server.
+This will return a `DdbRelaysStatusResponse` with a list of server ids for all relay servers.
 
 Using the above partitioning algorithm on the full list of relay servers, we can obtain the `id` of the preferred relay server and the IP endpoint.
 
@@ -262,7 +262,7 @@ On network change, the process is similar to initialization.
 When the available relays change, the distributed database `epochId` will increment (see below),
 and our preferred relay server will alter.
 
-This can be notified by an unsolicited `DdbEpochInfo` message from our relay server.
+This can be notified by an unsolicited `DdbRelaysStatusResponse` message from our relay server.
 
 This will contain the updated list of server ids for all relay servers.
 
@@ -388,7 +388,7 @@ This ensures that we synchronise to the same state as the peer relay.
 The final step is to send a "DdbSignon" message to the peer relay. This will result in a "DdbSignonResponse" return which will be awaited by the new relay.
 The peer relay will increment the epoch number, indicating a new configuration.
 The message ripples onward to all configured nodes in the graph who will process it likewise.
-The peer relay follows this with a "DdbEpochInfo" message containing the new epoch number, which is sent to its peer and rippled to all nodes, notifying them of the new relay graph configuration.
+The peer relay follows this with a "DdbRelaysStatusResponse" message containing the new epoch number, which is sent to its peer and rippled to all nodes, notifying them of the new relay graph configuration.
 
 The new relay is now initialized and live, it shoud expect to receive requests from selected peers.
 

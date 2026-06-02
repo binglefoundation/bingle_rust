@@ -93,3 +93,6 @@ pub mod triangle_test3_sets_state;
 
 #[path = "messages/triangle_test1_response_no_corner_node.rs"]
 pub mod triangle_test1_response_no_corner_node;
+
+#[path = "messages/report_fail_messages_json.rs"]
+pub mod report_fail_messages_json;

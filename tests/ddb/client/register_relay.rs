@@ -103,7 +103,7 @@ pub fn ddb_client_register_relay_ok_and_persisted() {
     // Verify via an explicit DDB QueryResolve request: advert.relayId should equal relay_id
     let client_id = api_arc.get_my_id().expect("client id should be Some");
     let q = rust_comms::messages::types::Message::Ddb(rust_comms::messages::types::DdbMessage::QueryResolve(
-        rust_comms::messages::types::DdbQueryResolve { app: "ddb".to_string(), id: client_id.clone(), tag: None, response_tag: None, text: None, data: None }
+        rust_comms::messages::types::DdbQueryResolve { app: "ddb".to_string(), id: client_id.clone(), tag: None, text: None, data: None }
     ));
     let json = rust_comms::messages::marshal::to_json_value(&q);
     let nsk = NetworkEndpoint::new_direct(relay_addr);

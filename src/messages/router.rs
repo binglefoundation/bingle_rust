@@ -132,6 +132,7 @@ impl Router {
                     MutexMessage::Release(rel) => api.mutex_handle_release(from.id.clone(), rel.clone()),
                 }
             }
+            Message::ReportFail(rf) => handler.on_report_fail(api.clone(), from, rf),
             Message::Unknown(v) => handler.on_unknown(api.clone(), from, v),
         }
         tracing::info!("Router::dispatch_message done: {:?}", msg);
