@@ -37,6 +37,17 @@ If multiple entries exist, we want the *oldest* one. This is to ensure handle un
 (This version does not support changing a handle).
 If no entry is found, we want to return NULL/Fail.
 
+The handle is a text string with the following constraints:
+- uppercase is treated as lowercase
+- non-alphanumeric characters are ignored
+
+e.g: `Fred123` => `fred123`
+`James.Jones` => `jamesjones`
+`james-jones` => `jamesjones`
+`#user$100` => `user100`
+
+The handle value is stored in the registered form and compared in the normalised form.
+
 Steps for this are as follows:
 
 - get or create a blockchain (Algorand) connection

@@ -327,9 +327,19 @@ impl AlgoBingle {
         Ok(Self::pick_oldest_match(matches))
     }
 
+    /// Normalises a handle for comparison: lowercase and alphanumeric characters only.
+    pub fn normalize_handle(handle: &str) -> String {
+        handle
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
+    }
+
     /// Extracted logic to find a handle match in an account's local state and append to matches list.
     pub fn extract_handle_match(acct: &serde_json::Value, app_id: u64, handle: &str, matches: &mut Vec<(String, u64)>) {
         let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let normalised_handle = Self::normalize_handle(handle);
         // Find local state for this app id
         if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
             for st in als {
@@ -339,7 +349,7 @@ impl AlgoBingle {
                     let kvs = Self::decode_state_entries(&keyvals);
                     algo_log!("[extract_handle_match] address={} decoded_state={:?}", addr, kvs);
                     if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle") {
-                        if h == handle {
+                        if Self::normalize_handle(h) == normalised_handle {
                             let time = kvs.iter().find(|(k, _)| k == "HandleTime")
                                 .and_then(|(_, v)| v.parse::<u64>().ok())
                                 .unwrap_or(0);
