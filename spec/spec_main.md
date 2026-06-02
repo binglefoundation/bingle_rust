@@ -413,6 +413,62 @@ The peer relay responds with a "DdbUpsertResponse" message containing the update
 A "DdbDeleteResolve" message is sent to the peer relay to delete a record from the database.
 The peer relay responds with a "DdbDeleteResponse" message.
 
+# API Message Format
+
+Messages are polymorphic based on the pair of fields `app` and `type`:
+- When both `app` and `type` are present and non-null, the message is a typed message and
+  its specific class is determined by the values of (`app`, `type`).
+- When `app` and `type` are null or not present, the message is a plain text message with a single
+  string field `text`.
+
+All messages carry a `cipher_suite` field (nullable string) indicating the cipher suite
+that was in use on the connection when the message was received. This field is derived by
+the receiving client from the connection and is not transmitted on the wire.
+
+Notes on modeling:
+- OpenAPI 3.0 only supports a single-field discriminator, so we model the (`app`, `type`) based
+  polymorphism with `oneOf` and schema constraints. Specific typed messages can be defined by
+  constraining `app` and `type` with single-value enums in composed schemas.
+
+## Relay Failure Reporting
+
+When a node detects that a relay has failed (e.g. because all retries were exhausted when
+trying to send to it), it initiates a failure-report round to gather consensus from its peers.
+The round uses four message types under `app: "reportFail"`:
+
+### 1. RelayReportFailed
+The detecting node broadcasts a `RelayReportFailed` message to its directly connected peers.
+This message identifies the failed relay (`failed_relay_id`), the category of failure
+(`fail_type`), and the timestamp at which the failure was observed.
+
+### 2. ReportFailedRipple
+Each peer that receives a `RelayReportFailed` (or a forwarded `ReportFailedRipple`) casts
+its own vote — confirming or disputing the failure — signs across
+`(failed_relay_id, fail_type, timestamp)`, and appends its `FailVote` to the appropriate
+list (`confirmations` or `disputes`). It then forwards the accumulated message as a
+`ReportFailedRipple` to the remaining peers it needs to contact.
+
+### 3. ReportFailedRippleResponse
+When a node completes processing a `ReportFailedRipple` (i.e. it has added its own vote),
+it sends a `ReportFailedRippleResponse` back to the node that sent the ripple. This response
+contains the same accumulated `confirmations` and `disputes` with the responding node's own
+`FailVote` added. The originator (or intermediate node) merges these responses to build the
+complete vote tally.
+
+### 4. ReportFailedComplete
+Once the originating node has received responses from all peers and the vote tally is final,
+it broadcasts a `ReportFailedComplete` to all peers. This message carries the definitive
+`confirmations` and `disputes` lists and signals that the failure-report round is closed.
+
+### FailVote
+Both `confirmations` and `disputes` lists contain `FailVote` objects:
+- `confirming_id` — Algorand address of the voting node.
+- `signature` — ed25519 signature of the voting node across `(failed_relay_id, fail_type, timestamp)`.
+
+Nodes that agree the relay failed add their `FailVote` to `confirmations`; nodes that
+disagree add theirs to `disputes`. Any node processing a `ReportFailedComplete` can verify
+every vote by checking the corresponding signature.
+
 # Message reference
 
 Polymorphism is based on the pair (app, type). If those fields are absent or null, the message is plain text with field text.
