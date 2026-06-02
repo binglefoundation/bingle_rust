@@ -18,7 +18,15 @@ impl FakeDtls {
 impl Dtls for FakeDtls {
     fn start(&mut self, _mux: std::sync::Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
     fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address()); Ok(()) }
+    fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> rust_comms::dtls::Result<()> {
+        let _ = self.last_send.lock().map(|mut g| *g = to.inet_socket_address());
+        if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
+            if let Some(h) = self.handler.lock().ok().and_then(|g| g.clone()) {
+                h(self, to, "mock-auto-ack", &vec![0x14, 0x00, data[2], data[3]]);
+            }
+        }
+        Ok(())
+    }
 
     fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }

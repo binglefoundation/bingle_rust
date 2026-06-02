@@ -578,6 +578,11 @@ impl Engine {
         self.packet_transport = DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU);
     }
 
+    /// Test helper: Override retry delays on the packet transport (use short delays in unit tests).
+    pub fn set_retry_delays_for_packet_transport(&mut self, delays: Vec<std::time::Duration>) {
+        self.packet_transport.set_retry_delays(delays);
+    }
+
     /// Access the configured DTLS instance, if any (read-only).
     pub fn dtls(&self) -> &(dyn Dtls + Send + Sync) {
         self.packet_transport.dtls()

@@ -8,7 +8,11 @@ const FRPT_VERSION: u8 = 0x1;
 const PACKET_TYPE_DATA_SINGLE: u8 = 0x1;
 const PACKET_TYPE_ACK_COMPLETE: u8 = 0x4;
 const FRPT_HEADER_LEN: usize = 4;
-const DEFAULT_ACK_WAIT_TIMEOUT: Duration = Duration::from_secs(20);
+const DEFAULT_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
 
 type AckWaiter = Arc<(Mutex<bool>, Condvar)>;
 type SessionGeneration = u64;
@@ -34,7 +38,7 @@ pub trait PacketTransport {
 pub struct DtlsReliablePacketTransport {
     dtls: Box<dyn Dtls + Send + Sync>,
     mtu: usize,
-    ack_wait_timeout: Duration,
+    retry_delays: Vec<Duration>,
     handle_message: Arc<Mutex<Option<PacketTransportHandleMessage>>>,
     next_tx_id: Arc<Mutex<u16>>,
     endpoint_sessions: Arc<Mutex<HashMap<NetworkEndpointKey, SessionGeneration>>>,
@@ -53,7 +57,7 @@ impl DtlsReliablePacketTransport {
         let mut transport = Self {
             dtls,
             mtu,
-            ack_wait_timeout: DEFAULT_ACK_WAIT_TIMEOUT,
+            retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
             handle_message: Arc::new(Mutex::new(None)),
             next_tx_id: Arc::new(Mutex::new(0)),
             endpoint_sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -119,16 +123,12 @@ impl DtlsReliablePacketTransport {
         self.mtu = mtu;
     }
 
-    pub fn set_ack_wait_timeout(&mut self, timeout: Duration) {
-        self.ack_wait_timeout = timeout;
+    pub fn set_retry_delays(&mut self, delays: Vec<Duration>) {
+        self.retry_delays = delays;
     }
 
     pub fn mtu(&self) -> usize {
         self.mtu
-    }
-
-    pub fn ack_wait_timeout(&self) -> Duration {
-        self.ack_wait_timeout
     }
 
     pub fn dispatch_handle_message(
@@ -339,7 +339,11 @@ impl DtlsReliablePacketTransport {
         Ok(())
     }
 
-    fn wait_for_ack_complete(&self, tx_id: u16, waiter: AckWaiter) -> Result<bool, String> {
+    fn wait_for_ack_complete_with_timeout(
+        tx_id: u16,
+        waiter: &AckWaiter,
+        timeout: Duration,
+    ) -> Result<bool, String> {
         let (ack_lock, ack_condvar) = (&waiter.0, &waiter.1);
         let ack_received = ack_lock.lock().map_err(|e| {
             format!(
@@ -349,7 +353,7 @@ impl DtlsReliablePacketTransport {
         })?;
 
         let (ack_received_after_wait, wait_result) = ack_condvar
-            .wait_timeout_while(ack_received, self.ack_wait_timeout, |ack_complete| !*ack_complete)
+            .wait_timeout_while(ack_received, timeout, |ack_complete| !*ack_complete)
             .map_err(|e| {
                 format!(
                     "[DtlsReliablePacketTransport::send] failed while waiting for ACK_COMPLETE for tx_id={}: {}",
@@ -509,34 +513,57 @@ impl PacketTransport for DtlsReliablePacketTransport {
             return Err(e);
         }
 
-        match self.wait_for_ack_complete(tx_id, waiter) {
-            Ok(true) => Ok(()),
-            Ok(false) => {
-                if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
+        // Wait for ACK with retry backoff: try each delay in sequence, re-sending on timeout.
+        // After all delays are exhausted without an ACK, fail with an error.
+        let delays = self.retry_delays.clone();
+        for (attempt, delay) in delays.iter().enumerate() {
+            match Self::wait_for_ack_complete_with_timeout(tx_id, &waiter, *delay) {
+                Ok(true) => return Ok(()),
+                Ok(false) => {
                     tracing::warn!(
-                        "[DtlsReliablePacketTransport::send] failed to clear pending ACK after timeout for tx_id={}: {}",
+                        "[DtlsReliablePacketTransport::send] timed out waiting {:?} for ACK_COMPLETE tx_id={} attempt={}",
+                        delay,
                         tx_id,
-                        cleanup_err
+                        attempt
                     );
+                    if attempt + 1 < delays.len() {
+                        if let Err(e) = self.dtls.send(to, &packet) {
+                            if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
+                                tracing::warn!(
+                                    "[DtlsReliablePacketTransport::send] failed to clear pending ACK after retry send error for tx_id={}: {}",
+                                    tx_id,
+                                    cleanup_err
+                                );
+                            }
+                            return Err(e);
+                        }
+                    }
                 }
-                tracing::warn!(
-                    "[DtlsReliablePacketTransport::send] timed out waiting {:?} for ACK_COMPLETE tx_id={}; continuing without terminal ACK",
-                    self.ack_wait_timeout,
-                    tx_id
-                );
-                Ok(())
-            }
-            Err(e) => {
-                if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
-                    tracing::warn!(
-                        "[DtlsReliablePacketTransport::send] failed to clear pending ACK after wait failure for tx_id={}: {}",
-                        tx_id,
-                        cleanup_err
-                    );
+                Err(e) => {
+                    if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
+                        tracing::warn!(
+                            "[DtlsReliablePacketTransport::send] failed to clear pending ACK after wait failure for tx_id={}: {}",
+                            tx_id,
+                            cleanup_err
+                        );
+                    }
+                    return Err(e);
                 }
-                Err(e)
             }
         }
+
+        if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
+            tracing::warn!(
+                "[DtlsReliablePacketTransport::send] failed to clear pending ACK after all retries exhausted for tx_id={}: {}",
+                tx_id,
+                cleanup_err
+            );
+        }
+        Err(format!(
+            "[DtlsReliablePacketTransport::send] no ACK_COMPLETE received after {} retries for tx_id={}",
+            delays.len(),
+            tx_id
+        ))
     }
 
     fn get_handle_message(&self) -> Option<PacketTransportHandleMessage> {

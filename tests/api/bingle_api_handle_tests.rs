@@ -13,12 +13,13 @@ pub mod test_util;
 #[derive(Clone)]
 struct MockDtls {
     pub sends: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    pub handle_message: Arc<Mutex<Option<HandleMessage>>>,
 }
 
 impl MockDtls {
     fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) {
         let v = Arc::new(Mutex::new(vec![]));
-        (Self { sends: v.clone() }, v)
+        (Self { sends: v.clone(), handle_message: Arc::new(Mutex::new(None)) }, v)
     }
 }
 
@@ -28,12 +29,18 @@ impl Dtls for MockDtls {
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> DtlsResult<()> {
         let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
         self.sends.lock().unwrap().push((addr, data.to_vec()));
+        if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
+            if let Some(handler) = self.handle_message.lock().unwrap().clone() {
+                let ack = vec![0x14, 0x00, data[2], data[3]];
+                handler(self, to, "mock-auto-ack", &ack);
+            }
+        }
         Ok(())
     }
-    fn get_handle_message(&self) -> Option<HandleMessage> { None }
-    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn get_handle_message(&self) -> Option<HandleMessage> { self.handle_message.lock().unwrap().clone() }
+    fn set_handle_message(&mut self, handler: Option<HandleMessage>) { *self.handle_message.lock().unwrap() = handler; }
     fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
-    fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
+    fn with_handle_message(mut self, handler: HandleMessage) -> Self where Self: Sized { self.set_handle_message(Some(handler)); self }
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
@@ -106,7 +113,6 @@ fn test_send_message_to_handle_success() {
     let ddb = Arc::new(MockDdbClient::new());
     ddb.set_lookup(user_id.clone(), NetworkEndpoint::new_direct(dest_addr));
     api.engine_set_ddb_client_for_tests(ddb);
-    
     let msg = json!({"hello": "world"});
     let ok = api.send_message_to_handle(&handle, msg.clone(), None).unwrap();
     
@@ -169,7 +175,6 @@ fn test_send_message_to_handle_with_response_success() {
     let ddb = Arc::new(MockDdbClient::new());
     ddb.set_lookup(user_id.clone(), NetworkEndpoint::new_direct(dest_addr));
     api.engine_set_ddb_client_for_tests(ddb);
-    
     let msg = json!({"hello": "world"});
     let api_clone = api.clone();
     let sends_clone = sends.clone();
