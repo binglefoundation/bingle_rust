@@ -27,6 +27,7 @@ pub fn ddb_query_and_response_roundtrip() {
         app: "ddb".into(),
         id: "ID123".into(),
         tag: None,
+        response_tag: None,
         text: None,
         data: None,
     }));

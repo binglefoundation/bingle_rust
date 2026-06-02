@@ -389,6 +389,7 @@ impl DdbClient for DdbClientImpl {
             app: "ddb".to_string(),
             id: id.to_string(),
             tag: None,
+            response_tag: None,
             text: None,
             data: None,
         }));
