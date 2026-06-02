@@ -28,6 +28,9 @@ export interface BingleMessage {
   response_tag: string | null;
   text: string | null;
   data: string | null;
+  /** The cipher suite negotiated for the DTLS session on which this message was received.
+   * Derived by the receiving client from the connection; not transmitted on the wire. */
+  cipher_suite: string | null;
 }
 
 export interface VersionInfo {
@@ -53,6 +56,9 @@ export interface Message {
   recipient_handles: string[];
   timestamp: number;
   text: string;
+  /** The cipher suite negotiated for the DTLS session on which this message was received.
+   * Derived by the receiving client from the connection; not transmitted on the wire. */
+  cipher_suite: string | null;
 }
 
 export interface KeypairStatusResponse {

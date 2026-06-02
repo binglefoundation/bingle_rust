@@ -54,13 +54,20 @@ robustness:
 - ensure fails result in a fail message which gets handled
 - ~~implement retry for packet loss and retryable fails (FRPT implementation, no large blocks yet)~~
 - ~~run command processing in a thread~~
-- implement relay cache properly with expiry
-- lookup matches handles with downcase and some punctuation normalized (as Gmail?)
+- ~~implement relay cache properly with expiry~~
+- ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
 - ensure ipv6 is unsupported consistently
 - indicate when we get no STUN responses (UDP blocked)
 - ensure handle uniqueness
+- handle fails correctly
+  + ~~node~~
+  + relay on node
+  + relay on relay
+- use relay cache efficently during relay init
 - fix fragile tests
-- 
+ + retry on indexer lookups
+ + cache indexer lookups
+
 network:
 - handle network change and clear caches / rediscover nat type
 - remove DDB entries on node stop
