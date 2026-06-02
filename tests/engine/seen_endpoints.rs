@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, StartOptions};
 use rust_comms::engine::Engine;
@@ -7,15 +7,24 @@ use rust_comms::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, R
 use rust_comms::dtls::UdpNetworkMux;
 
 #[derive(Default, Clone)]
-struct MockDtls;
+struct MockDtls {
+    handler: Arc<Mutex<Option<HandleMessage>>>,
+}
 impl Dtls for MockDtls {
     fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
     fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> DtlsResult<()> { Ok(()) }
-    fn get_handle_message(&self) -> Option<HandleMessage> { None }
-    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> DtlsResult<()> {
+        if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
+            if let Some(h) = self.handler.lock().ok().and_then(|g| g.clone()) {
+                h(self, to, "mock-auto-ack", &vec![0x14, 0x00, data[2], data[3]]);
+            }
+        }
+        Ok(())
+    }
+    fn get_handle_message(&self) -> Option<HandleMessage> { self.handler.lock().ok().and_then(|g| g.clone()) }
+    fn set_handle_message(&mut self, handler: Option<HandleMessage>) { let _ = self.handler.lock().map(|mut g| *g = handler); }
     fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
-    fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+    fn with_handle_message(self, handler: HandleMessage) -> Self { let _ = self.handler.lock().map(|mut g| *g = Some(handler)); self }
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }

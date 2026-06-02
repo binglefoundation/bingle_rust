@@ -93,7 +93,12 @@ pub fn bingle_api_send_via_relay() {
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone())
-        .with_handle_message(Arc::new(move |_server: &dyn Dtls, _from: &NetworkEndpoint, _issuer: &str, data: &[u8]| {
+        .with_handle_message(Arc::new(move |server: &dyn Dtls, from: &NetworkEndpoint, _issuer: &str, data: &[u8]| {
+            // Send FRPT ACK_COMPLETE for DATA_SINGLE packets
+            if data.len() >= 4 && (data[0] >> 4) == 0x1 && (data[0] & 0x0F) == 0x1 {
+                let ack = vec![0x14u8, 0x00, data[2], data[3]];
+                let _ = server.send(from, &ack);
+            }
             let unwrapped = test_util::maybe_unwrap_data_single(data);
             tracing::info!("Received message from B: {:?}", std::str::from_utf8(unwrapped));
             if let Ok(mut v) = rec_clone.lock() {

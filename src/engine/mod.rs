@@ -25,6 +25,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const MINIMUM_MTU: usize = 1492;
+/// How long to suppress sends to a peer that recently failed.
+pub const SEND_FAIL_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(
@@ -214,6 +216,8 @@ pub struct Engine {
     signon_complete: Arc<(Mutex<bool>, Condvar)>,
     // Set of endpoints we have seen (sent to)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
+    // Tracks success/failure of the most recent send to each known endpoint
+    send_status: Arc<Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, SendStatus>>>,
     pub(crate) span: tracing::Span,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
@@ -490,6 +494,15 @@ struct ConnectionEntry {
     last_seen: Instant,
 }
 
+/// Tracks the outcome of the most recent send attempt to a specific network endpoint.
+#[derive(Clone)]
+pub struct SendStatus {
+    /// Timestamp of the last send attempt (success or failure).
+    pub last_checked_timestamp: Instant,
+    /// Whether the most recent send attempt succeeded.
+    pub success: bool,
+}
+
 impl Engine {
     pub fn new(options: &StartOptions, api: crate::api::bingle_api::BingleApiBothType) -> Self {
         let dtls: Box<dyn Dtls + Send + Sync> =
@@ -561,6 +574,7 @@ impl Engine {
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            send_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
             span: tracing::Span::none(),
             custom_message_handler: None,
         };
@@ -576,6 +590,11 @@ impl Engine {
     /// Test helper: Inject a custom DTLS implementation.
     pub fn set_dtls(&mut self, dtls: Box<dyn Dtls + Send + Sync>) {
         self.packet_transport = DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU);
+    }
+
+    /// Test helper: Override retry delays on the packet transport (use short delays in unit tests).
+    pub fn set_retry_delays_for_packet_transport(&mut self, delays: Vec<std::time::Duration>) {
+        self.packet_transport.set_retry_delays(delays);
     }
 
     /// Access the configured DTLS instance, if any (read-only).
@@ -873,6 +892,22 @@ impl Engine {
         self.seen_endpoints.lock().unwrap().iter().cloned().collect()
     }
 
+    /// Testing helper: get a copy of the send_status map.
+    pub fn send_status_for_tests(
+        &self,
+    ) -> std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, SendStatus> {
+        self.send_status.lock().unwrap().clone()
+    }
+
+    /// Testing helper: insert an entry directly into the send_status map.
+    pub fn set_send_status_for_tests(
+        &self,
+        key: crate::api::bingle_api::NetworkEndpointKey,
+        status: SendStatus,
+    ) {
+        self.send_status.lock().unwrap().insert(key, status);
+    }
+
     /// Send bytes to a peer and track the connection's last_seen.
     /// If this is the first interaction with the peer, create a connection entry on successful send.
     pub fn send_to_peer(
@@ -892,10 +927,35 @@ impl Engine {
                 return Err(format!("[Engine::send_to_peer] rejecting send to self: {}", target_addr));
             }
         }
+        // Guard: skip send if the peer recently failed (within SEND_FAIL_BACKOFF).
+        // Placed after structural guards so that get_key() is only called for valid endpoints.
+        if let Some(key) = to.get_key() {
+            if let Ok(status_map) = self.send_status.lock() {
+                if let Some(status) = status_map.get(&key) {
+                    if !status.success && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF {
+                        return Err("Sending is failing".to_string());
+                    }
+                }
+            }
+        }
         // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
         let res = self.packet_transport.send(to, data);
+        // Update send_status regardless of success or failure
+        if let Some(key) = to.get_key() {
+            if let Ok(mut status_map) = self.send_status.lock() {
+                status_map.insert(
+                    key.clone(),
+                    SendStatus {
+                        last_checked_timestamp: Instant::now(),
+                        success: res.is_ok(),
+                    },
+                );
+            } else {
+                tracing::warn!("[Engine::send_to_peer] could not lock send_status");
+            }
+        }
         if res.is_ok() {
             // Track seen endpoints
             if let Some(addr) = to.inet_socket_address() {

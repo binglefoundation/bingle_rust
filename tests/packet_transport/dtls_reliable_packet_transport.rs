@@ -317,7 +317,7 @@ pub fn send_rejects_payload_that_requires_fragmentation() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn send_waits_for_ack_complete_before_returning() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
-    transport.set_ack_wait_timeout(Duration::from_millis(300));
+    transport.set_retry_delays(vec![Duration::from_millis(300), Duration::from_millis(600), Duration::from_millis(1200)]);
 
     let transport = Arc::new(transport);
     let to_addr: SocketAddr = "127.0.0.1:7005".parse().expect("valid socket address");
@@ -358,30 +358,95 @@ pub fn send_waits_for_ack_complete_before_returning() {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-pub fn send_handles_ack_complete_timeout_failure_path_by_waiting_then_continuing() {
+pub fn send_succeeds_when_ack_arrives_after_first_retry() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
-    transport.set_ack_wait_timeout(Duration::from_millis(25));
+    transport.set_retry_delays(vec![
+        Duration::from_millis(30),
+        Duration::from_millis(300),
+        Duration::from_millis(600),
+    ]);
+
+    let transport = Arc::new(transport);
+    let to_addr: SocketAddr = "127.0.0.1:7007".parse().expect("valid socket address");
+    let to = NetworkEndpoint::new_direct(to_addr);
+
+    // Deliver ACK 60ms after start: after the first 30ms timeout fires and the retry is sent
+    let transport_for_ack = transport.clone();
+    let ack_thread = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(60));
+        let from = NetworkEndpoint::new_direct(to_addr);
+        let ack_complete_packet = vec![0x14, 0x00, 0x00, 0x00];
+        let handled = transport_for_ack
+            .dispatch_handle_message(&from, "issuer-ack", &ack_complete_packet)
+            .expect("ACK_COMPLETE dispatch should succeed");
+        assert!(handled.is_none());
+    });
+
+    let started = Instant::now();
+    transport
+        .send(&to, b"hello")
+        .expect("send should succeed when ACK arrives during second attempt");
+    let elapsed = started.elapsed();
+
+    ack_thread
+        .join()
+        .expect("ack thread should complete without panic");
+
+    assert!(
+        elapsed >= Duration::from_millis(30),
+        "send should have waited for at least the first retry delay; elapsed={elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(280),
+        "send should not have waited for the full second delay; elapsed={elapsed:?}"
+    );
+
+    // Two sends: initial + one retry
+    let packets = sent_packets
+        .lock()
+        .expect("sent_packets lock should not be poisoned");
+    assert_eq!(packets.len(), 2, "should have sent initial packet plus one retry");
+    assert!(packets.iter().all(|(addr, _)| *addr == to_addr));
+    assert!(packets.iter().all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']));
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
+    let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    transport.set_retry_delays(vec![
+        Duration::from_millis(20),
+        Duration::from_millis(20),
+        Duration::from_millis(20),
+    ]);
 
     let to_addr: SocketAddr = "127.0.0.1:7006".parse().expect("valid socket address");
     let to = NetworkEndpoint::new_direct(to_addr);
 
     let started = Instant::now();
-    transport
-        .send(&to, b"hello")
-        .expect("send should continue after waiting for ACK_COMPLETE timeout");
+    let result = transport.send(&to, b"hello");
     let elapsed = started.elapsed();
 
     assert!(
-        elapsed >= Duration::from_millis(20),
-        "send should wait approximately for timeout; elapsed={elapsed:?}"
+        result.is_err(),
+        "send should fail after all retries are exhausted without an ACK"
+    );
+    let err = result.expect_err("error expected after retries exhausted");
+    assert!(
+        err.contains("no ACK_COMPLETE received after"),
+        "error message should describe retry exhaustion; got: {err}"
+    );
+    assert!(
+        elapsed >= Duration::from_millis(50),
+        "send should have waited for all retry delays; elapsed={elapsed:?}"
     );
 
+    // Initial send + 2 retries (not 3, because after the last delay we fail without re-sending)
     let packets = sent_packets
         .lock()
         .expect("sent_packets lock should not be poisoned");
-    assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].0, to_addr);
-    assert_eq!(packets[0].1, vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']);
+    assert_eq!(packets.len(), 3, "should have sent initial packet plus 2 retries");
+    assert!(packets.iter().all(|(addr, _)| *addr == to_addr));
+    assert!(packets.iter().all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']));
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]

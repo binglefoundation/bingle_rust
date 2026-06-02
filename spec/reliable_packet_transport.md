@@ -29,6 +29,9 @@ Implemented now:
 - `ACK_COMPLETE` handling for single-packet sends.
 - Duplicate suppression for `DATA_SINGLE` by `(peer, tx_id)`.
 
+To implement:
+- retry after trimeout for single packets
+
 Not yet implemented (large-packet path):
 
 - `DATA_FRAG` send path for multi-packet blocks.

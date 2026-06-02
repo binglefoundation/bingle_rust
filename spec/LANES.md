@@ -56,6 +56,13 @@ robustness:
 - ~~run command processing in a thread~~
 - ~~implement relay cache properly with expiry~~
 - ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
+- ~~implement relay cache properly with expiry~~
+- handle fails correctly
+ + node
+ + relay on node
+ + relay on relay
+- use relay cache efficently during relay init
+- lookup matches handles with downcase and some punctuation normalized (as Gmail?)
 - ensure ipv6 is unsupported consistently
 - indicate when we get no STUN responses (UDP blocked)
 - ensure handle uniqueness

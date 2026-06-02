@@ -73,8 +73,13 @@ pub mod pki;
     let mux = std::sync::Arc::new(mux0);
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
-    // Server handler: parse JSON; if RelayCheck, reply with RelayCheckResponse echoing caller tag via responseTag
+    // Server handler: parse FRPT-wrapped packet; send ACK_COMPLETE, then handle RelayCheck
     fn server_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+        // Send FRPT ACK_COMPLETE for any DATA_SINGLE packet (version=1, type=1)
+        if data.len() >= 4 && (data[0] >> 4) == 0x1 && (data[0] & 0x0F) == 0x1 {
+            let ack = vec![0x14u8, 0x00, data[2], data[3]];
+            let _ = server.send(from, &ack);
+        }
         let unwrapped = test_util::maybe_unwrap_data_single(data);
         if let Ok(text) = std::str::from_utf8(unwrapped) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
@@ -89,7 +94,7 @@ pub mod pki;
                         obj.insert("responseTag".to_string(), serde_json::Value::String(tag.to_string()));
                     }
                     if let Ok(bytes) = serde_json::to_vec(&serde_json::Value::Object(obj)) {
-                        let _ = server.send(&from, &bytes);
+                        let _ = server.send(from, &bytes);
                     }
                     return;
                 }

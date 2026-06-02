@@ -222,6 +222,13 @@ impl BingleApiImpl {
         }
     }
 
+    pub fn engine_set_retry_delays_for_tests(&self, delays: Vec<std::time::Duration>) {
+        unsafe {
+            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
+            (*engine_ptr).set_retry_delays_for_packet_transport(delays);
+        }
+    }
+
     pub fn set_handle_lookup_mock_for_tests(&self, mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>) {
         let mut m = self.handle_lookup_mock.lock().unwrap();
         *m = Some(mock);
