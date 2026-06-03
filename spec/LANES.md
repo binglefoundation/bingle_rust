@@ -49,6 +49,7 @@ security:
 
 robustness:
 - fix error 40 on live device (?)
+- fail sensibly with message when Bingle network down (< 2 relays))
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
@@ -70,6 +71,8 @@ robustness:
 - fix fragile tests
  + retry on indexer lookups
  + cache indexer lookups
+- upgrade Algonaut
+- move indexer lookuops to use Algonaut
 
 network:
 - handle network change and clear caches / rediscover nat type
@@ -92,6 +95,7 @@ deploy:
 - run unit tests on CD
 - stabilise integration tests and run on CD with localnet
 - run staging tests on CD / AWS
+- deploy bingle_jsi into npm
 - production deploy
 - release of iOS app
 - release of Android app
