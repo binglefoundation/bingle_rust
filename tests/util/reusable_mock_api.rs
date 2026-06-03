@@ -154,6 +154,16 @@ impl MockApiBoth {
             inner_bingle_api_internal,
         }
     }
+
+    pub fn new_with_both_overrides(
+        inner_bingle_api: Arc<dyn InnerBingleApi + Send + Sync>,
+        inner_bingle_api_internal: Arc<dyn InnerBingleApiInternal + Send + Sync>,
+    ) -> Self {
+        Self {
+            inner_bingle_api,
+            inner_bingle_api_internal,
+        }
+    }
 }
 
 impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {

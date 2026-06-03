@@ -96,3 +96,6 @@ pub mod triangle_test1_response_no_corner_node;
 
 #[path = "messages/report_fail_messages_json.rs"]
 pub mod report_fail_messages_json;
+
+#[path = "messages/relay_report_failed_handler.rs"]
+pub mod relay_report_failed_handler;

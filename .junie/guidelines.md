@@ -3,7 +3,7 @@ corresponding to the src subfolder, eg tests for src/api go in tests/api
 
 Do not put Rust tests inline with the code, put unit tests in the test tree (like we do for Java).
 
-Do not use default values on traits.
+Do not use default values on traits (outside test-only code)
 
 Generally, all state should be part of a struct, not global or thread local except in very special cases. Ask before using global or thraed local storage.
 
