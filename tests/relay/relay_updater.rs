@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::engine::RelayState;
-use rust_comms::messages::marshal::to_json_value;
-use rust_comms::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message};
+use rust_comms::messages::marshal::{from_json_value, to_json_value};
+use rust_comms::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message, ReportFailMessage};
 use rust_comms::ddb::InetSocketAddress;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use rust_comms::relay::relay_updater::RelayUpdater;
@@ -417,4 +417,233 @@ pub fn update_when_expired_calls_relay_select_when_only_non_root_expired() {
 
     let ids = queried_ids.lock().expect("lock should succeed").clone();
     assert!(!ids.is_empty(), "relay_select_and_query should have queried a root relay for non-root expiry");
+}
+
+struct ReportTrackingApi {
+    queried_ids: Arc<Mutex<Vec<String>>>,
+    responder: Arc<QueryResponder>,
+    reported_failed_ids: Arc<Mutex<Vec<String>>>,
+    reported_to_relay_id: Arc<Mutex<Option<String>>>,
+}
+
+impl InnerBingleApi for ReportTrackingApi {
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &NetworkEndpoint,
+        user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        assert_eq!(message.get("type").and_then(|value| value.as_str()), Some("getRelaysStatus"));
+
+        let query_index = {
+            let mut queried_ids = self
+                .queried_ids
+                .lock()
+                .expect("queried_ids lock should succeed");
+            queried_ids.push(user_id.clone());
+            queried_ids.len() - 1
+        };
+
+        (self.responder)(user_id, query_index)
+    }
+
+    fn send_message_to_network(
+        &self,
+        _nsk: &NetworkEndpoint,
+        user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        let parsed = from_json_value(message).expect("relay report message should parse");
+        if let Message::ReportFail(ReportFailMessage::RelayReportFailed(report)) = parsed {
+            self.reported_failed_ids
+                .lock()
+                .expect("reported_failed_ids lock should succeed")
+                .push(report.failed_relay_id);
+            *self
+                .reported_to_relay_id
+                .lock()
+                .expect("reported_to_relay_id lock should succeed") = Some(user_id.clone());
+        }
+        Ok(true)
+    }
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_report_failed_sent_when_preferred_relay_errors() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_to_relay_id = Arc::new(Mutex::new(None));
+
+    let alternate_response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(58001), RelayState::Own),
+            ("ROOTA", addr(58002), RelayState::Off),
+            ("ROOTB", addr(58003), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ReportTrackingApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(move |_user_id: &str, query_index: usize| {
+            if query_index == 0 {
+                return Err(BingleError::Other("simulated preferred failure".to_string()));
+            }
+            Ok(alternate_response.clone())
+        }),
+        reported_failed_ids: reported_failed_ids.clone(),
+        reported_to_relay_id: reported_to_relay_id.clone(),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            RelayInfo::root("MYID", addr(58001)),
+            RelayInfo::root("ROOTA", addr(58002)),
+            RelayInfo::root("ROOTB", addr(58003)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let selected = updater
+        .relay_select_and_query()
+        .expect("alternate should be selected after preferred fails");
+
+    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    assert_eq!(ids.len(), 2, "should have queried preferred then alternate");
+
+    let failed = reported_failed_ids
+        .lock()
+        .expect("reported_failed_ids lock should succeed")
+        .clone();
+    assert_eq!(failed.len(), 1, "should have reported one failed relay");
+    assert_eq!(failed[0], ids[0], "reported failed relay should be the preferred one");
+
+    let reported_to = reported_to_relay_id
+        .lock()
+        .expect("reported_to_relay_id lock should succeed")
+        .clone()
+        .expect("should have a relay to report to");
+    assert_eq!(reported_to, selected.id, "should have reported to the selected relay");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_to_relay_id = Arc::new(Mutex::new(None));
+
+    let preferred_response = relays_status_response_json(
+        RelayState::Off,
+        vec![
+            ("MYID", addr(58101), RelayState::Own),
+            ("ROOTA", addr(58102), RelayState::Off),
+            ("ROOTB", addr(58103), RelayState::Available),
+        ],
+    );
+
+    let alternate_response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(58101), RelayState::Own),
+            ("ROOTA", addr(58102), RelayState::Off),
+            ("ROOTB", addr(58103), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ReportTrackingApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(move |_user_id: &str, query_index: usize| {
+            if query_index == 0 {
+                return Ok(preferred_response.clone());
+            }
+            Ok(alternate_response.clone())
+        }),
+        reported_failed_ids: reported_failed_ids.clone(),
+        reported_to_relay_id: reported_to_relay_id.clone(),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            RelayInfo::root("MYID", addr(58101)),
+            RelayInfo::root("ROOTA", addr(58102)),
+            RelayInfo::root("ROOTB", addr(58103)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let selected = updater
+        .relay_select_and_query()
+        .expect("alternate should be selected after preferred is not available");
+
+    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    assert_eq!(ids.len(), 2, "should have queried preferred then alternate");
+
+    let failed = reported_failed_ids
+        .lock()
+        .expect("reported_failed_ids lock should succeed")
+        .clone();
+    assert_eq!(failed.len(), 1, "should have reported one failed relay");
+    assert_eq!(failed[0], ids[0], "reported failed relay should be the preferred one");
+
+    let reported_to = reported_to_relay_id
+        .lock()
+        .expect("reported_to_relay_id lock should succeed")
+        .clone()
+        .expect("should have a relay to report to");
+    assert_eq!(reported_to, selected.id, "should have reported to the selected relay");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
+    let reported_to_relay_id = Arc::new(Mutex::new(None));
+
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(58201), RelayState::Own),
+            ("ROOT1", addr(58202), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ReportTrackingApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
+        reported_failed_ids: reported_failed_ids.clone(),
+        reported_to_relay_id: reported_to_relay_id.clone(),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            RelayInfo::root("MYID", addr(58201)),
+            RelayInfo::root("ROOT1", addr(58202)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let selected = updater
+        .relay_select_and_query()
+        .expect("preferred relay should be selected");
+    assert_eq!(selected.id, "ROOT1");
+
+    let failed = reported_failed_ids
+        .lock()
+        .expect("reported_failed_ids lock should succeed")
+        .clone();
+    assert!(failed.is_empty(), "no failed relays should be reported when preferred succeeds");
+
+    let reported_to = reported_to_relay_id
+        .lock()
+        .expect("reported_to_relay_id lock should succeed")
+        .clone();
+    assert!(reported_to.is_none(), "no report should be sent when preferred succeeds");
 }

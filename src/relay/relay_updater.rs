@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::api::bingle_api::{BingleApiBothType, NetworkEndpoint};
 use crate::engine::{BingleAccess, RelayState};
 use crate::messages::marshal::{from_json_value, to_json_value};
-use crate::messages::types::{DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message};
+use crate::messages::types::{DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed, ReportFailMessage};
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use crate::relay::relay_info_cache::RelayInfoCache;
 
@@ -106,6 +106,7 @@ impl RelayUpdater {
             return None;
         }
 
+        let mut failed_relay_ids: Vec<String> = Vec::new();
         let selection_order = self.selection_order(&root_relays, my_id_norm);
         for index in selection_order {
             let Some(candidate) = root_relays.get(index).cloned() else {
@@ -116,11 +117,13 @@ impl RelayUpdater {
                 Ok(status_response) => {
                     self.update_cached_relay_state(&candidate.id, status_response.responder_state);
                     if status_response.responder_state != RelayState::Available {
+                        failed_relay_ids.push(candidate.id.clone());
                         continue;
                     }
 
                     if !self.update_cache_from_status(&status_response, my_id_norm) {
                         self.update_cached_relay_state(&candidate.id, RelayState::Off);
+                        failed_relay_ids.push(candidate.id.clone());
                         continue;
                     }
 
@@ -131,25 +134,51 @@ impl RelayUpdater {
                         .find(|relay| relay.id == candidate.id);
 
                     if let Some(relay) = selected {
-                        // Now we have a selected relay, here is the place
-                        // to send RelayReportFailed for any relays detected as down
+                        self.report_failed_relays(&relay, &failed_relay_ids);
                         return Some(relay);
                     }
 
-                    return Some(RelayInfo::root_with(
+                    let relay = RelayInfo::root_with(
                         candidate.id,
                         candidate.address,
                         Some(RelayState::Available),
                         Some(MEDIUM_TTL_SECS),
-                    ));
+                    );
+                    self.report_failed_relays(&relay, &failed_relay_ids);
+                    return Some(relay);
                 }
                 Err(_) => {
                     self.update_cached_relay_state(&candidate.id, RelayState::Off);
+                    failed_relay_ids.push(candidate.id.clone());
                 }
             }
         }
 
         None
+    }
+
+    fn report_failed_relays(&self, selected_relay: &RelayInfo, failed_relay_ids: &[String]) {
+        if failed_relay_ids.is_empty() {
+            return;
+        }
+        let Some(api) = &self.api else {
+            return;
+        };
+        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let nsk = NetworkEndpoint::new_direct(selected_relay.address);
+        for failed_id in failed_relay_ids {
+            let report = Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
+                app: "reportFail".to_string(),
+                tag: None,
+                response_tag: None,
+                failed_relay_id: failed_id.clone(),
+                fail_type: "send_rejected".to_string(),
+                timestamp: timestamp.clone(),
+            }));
+            let _ = api.access(|api_ref| {
+                api_ref.send_message_to_network(&nsk, &selected_relay.id, to_json_value(&report), None)
+            });
+        }
     }
 
     fn selection_order(&self, relays: &[RelayInfo], my_id: &str) -> Vec<usize> {
