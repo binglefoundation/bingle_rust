@@ -1935,6 +1935,20 @@ impl Engine {
         }
     }
 
+    pub fn ddb_delete_record(&self, id: &str) {
+        if let Ok(mut b) = self.ddb_backend.lock() {
+            b.delete(id);
+        }
+    }
+
+    pub fn relay_finder_remove_relay(&self, relay_id: &str) {
+        if let Some(finder) = &self.relay_finder {
+            finder.remove_relay(relay_id);
+        } else {
+            tracing::warn!("[Engine::relay_finder_remove_relay] relay_finder not initialized, cannot remove relay {}", relay_id);
+        }
+    }
+
     pub fn ddb_backend_size(&self) -> usize {
         if let Ok(b) = self.ddb_backend.lock() {
             b.len()

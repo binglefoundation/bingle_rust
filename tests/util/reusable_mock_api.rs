@@ -361,6 +361,14 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.ddb_upsert_record(record);
     }
 
+    fn ddb_delete_record(&self, id: &str) {
+        self.inner_bingle_api_internal.ddb_delete_record(id);
+    }
+
+    fn relay_finder_remove_relay(&self, relay_id: &str) {
+        self.inner_bingle_api_internal.relay_finder_remove_relay(relay_id);
+    }
+
     fn ddb_backend_size(&self) -> usize {
         self.inner_bingle_api_internal.ddb_backend_size()
     }
@@ -442,6 +450,10 @@ pub trait InnerBingleApiInternal {
     }
 
     fn ddb_upsert_record(&self, _record: rust_comms::ddb::AdvertRecord) {}
+
+    fn ddb_delete_record(&self, _id: &str) {}
+
+    fn relay_finder_remove_relay(&self, _relay_id: &str) {}
 
     fn ddb_backend_size(&self) -> usize {
         0

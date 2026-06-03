@@ -879,6 +879,8 @@ impl MessageHandler for DefaultPrintingHandler {
         };
 
         if mark_failed {
+            Self::mark_relay_as_failed(api.clone(), failed_relay_id);
+
             // Build ReportFailedRipple and send to all peer relays
             let ripple = ReportFailedRipple {
                 app: "reportFail".to_string(),
@@ -905,6 +907,16 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
+}
+
+impl DefaultPrintingHandler {
+    /// Temporary utility: mark a relay as failed by removing it from the local DDB
+    /// and from the relay finder cache. Trusts the caller that the relay is indeed failed.
+    fn mark_relay_as_failed(api: Arc<dyn BingleApiBoth>, relay_id: &str) {
+        api.ddb_delete_record(relay_id);
+        api.relay_finder_remove_relay(relay_id);
+        warn!("[handlers::mark_relay_as_failed] removed relay {} from local DDB and relay finder cache", relay_id);
+    }
 }
 
 impl DefaultPrintingHandler {

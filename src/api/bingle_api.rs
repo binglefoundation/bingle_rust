@@ -92,6 +92,12 @@ pub trait BingleApiInternal: Send + Sync {
     /// Insert a DDB AdvertRecord into the local backend.
     fn ddb_upsert_record(&self, _record: crate::ddb::AdvertRecord) { /* default no-op */ }
 
+    /// Delete a DDB AdvertRecord from the local backend by id.
+    fn ddb_delete_record(&self, _id: &str) { /* default no-op */ }
+
+    /// Remove a relay from the relay finder cache.
+    fn relay_finder_remove_relay(&self, _relay_id: &str) { /* default no-op */ }
+
     /// Get current number of records in the DDB backend.
     fn ddb_backend_size(&self) -> usize { 0 }
 
@@ -136,6 +142,8 @@ macro_rules! impl_bingle_api_internal_noop {
             fn set_relay_state(&self, _state: $crate::engine::RelayState) {}
             fn get_peer_ddb_target(&self) -> Option<usize> { None }
             fn ddb_upsert_record(&self, _record: $crate::ddb::AdvertRecord) {}
+            fn ddb_delete_record(&self, _id: &str) {}
+            fn relay_finder_remove_relay(&self, _relay_id: &str) {}
             fn ddb_backend_size(&self) -> usize { 0 }
             fn initialize_relay(&self) {}
             fn is_relay(&self) -> bool { false }

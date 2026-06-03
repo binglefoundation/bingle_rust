@@ -42,11 +42,14 @@ fn relays_status_response_json(relay_state: RelayState) -> serde_json::Value {
 // - relay_id: the id returned by list_all_relays (empty string means no relay returned)
 // - send_response: controls what send_message_to_network_with_response returns
 // - ripple_called / ripple_originator: track calls to ripple_message
+// - ddb_deleted / relay_cache_removed: track calls to mark_relay_as_failed helpers
 struct TrackingApi {
     relay_id: String,
     send_response: Result<serde_json::Value, String>,
     ripple_called: Arc<Mutex<bool>>,
     ripple_originator: Arc<Mutex<Option<String>>>,
+    ddb_deleted: Arc<Mutex<Vec<String>>>,
+    relay_cache_removed: Arc<Mutex<Vec<String>>>,
 }
 
 impl InnerBingleApi for TrackingApi {
@@ -83,6 +86,14 @@ impl InnerBingleApiInternal for TrackingApi {
         *called = true;
         let mut orig = self.ripple_originator.lock().expect("lock ripple_originator");
         *orig = Some(originator_id);
+    }
+
+    fn ddb_delete_record(&self, id: &str) {
+        self.ddb_deleted.lock().expect("lock ddb_deleted").push(id.to_string());
+    }
+
+    fn relay_finder_remove_relay(&self, relay_id: &str) {
+        self.relay_cache_removed.lock().expect("lock relay_cache_removed").push(relay_id.to_string());
     }
 }
 
@@ -133,12 +144,16 @@ pub fn relay_report_failed_ignored_when_not_relay() {
 pub fn relay_report_failed_ripples_on_send_failure() {
     let ripple_called = Arc::new(Mutex::new(false));
     let ripple_originator: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let ddb_deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let relay_cache_removed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
     let tracking_api = Arc::new(TrackingApi {
         relay_id: "RELAY_B".into(),
         send_response: Err("connection refused".into()),
         ripple_called: ripple_called.clone(),
         ripple_originator: ripple_originator.clone(),
+        ddb_deleted: ddb_deleted.clone(),
+        relay_cache_removed: relay_cache_removed.clone(),
     });
 
     let router = router_with_api(tracking_api);
@@ -153,6 +168,10 @@ pub fn relay_report_failed_ripples_on_send_failure() {
     assert!(*called, "ripple_message should have been called when send fails");
     let orig = ripple_originator.lock().expect("lock ripple_originator");
     assert_eq!(orig.as_deref(), Some("RELAY_B"), "originator_id should be the failed relay id");
+    let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
+    assert!(deleted.contains(&"RELAY_B".to_string()), "ddb_delete_record should have been called for RELAY_B");
+    let removed = relay_cache_removed.lock().expect("lock relay_cache_removed");
+    assert!(removed.contains(&"RELAY_B".to_string()), "relay_finder_remove_relay should have been called for RELAY_B");
 }
 
 // Test: relay found, responds with non-Available state -> marks failed and ripples
@@ -160,12 +179,16 @@ pub fn relay_report_failed_ripples_on_send_failure() {
 pub fn relay_report_failed_ripples_on_non_available_response() {
     let ripple_called = Arc::new(Mutex::new(false));
     let ripple_originator: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let ddb_deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let relay_cache_removed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
     let tracking_api = Arc::new(TrackingApi {
         relay_id: "RELAY_C".into(),
         send_response: Ok(relays_status_response_json(RelayState::Starting)),
         ripple_called: ripple_called.clone(),
         ripple_originator: ripple_originator.clone(),
+        ddb_deleted: ddb_deleted.clone(),
+        relay_cache_removed: relay_cache_removed.clone(),
     });
 
     let router = router_with_api(tracking_api);
@@ -180,6 +203,10 @@ pub fn relay_report_failed_ripples_on_non_available_response() {
     assert!(*called, "ripple_message should have been called when relay responds with non-Available state");
     let orig = ripple_originator.lock().expect("lock ripple_originator");
     assert_eq!(orig.as_deref(), Some("RELAY_C"));
+    let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
+    assert!(deleted.contains(&"RELAY_C".to_string()), "ddb_delete_record should have been called for RELAY_C");
+    let removed = relay_cache_removed.lock().expect("lock relay_cache_removed");
+    assert!(removed.contains(&"RELAY_C".to_string()), "relay_finder_remove_relay should have been called for RELAY_C");
 }
 
 // Test: relay found, responds Available -> no ripple (just WARN)
