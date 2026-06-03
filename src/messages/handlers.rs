@@ -811,19 +811,30 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_report_fail(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &ReportFailMessage) {
         let router = &from.router;
 
-        // Only relays should handle RelayReportFailed
+        // Only relays should handle ReportFail messages
         if !router.get_am_relay() {
             warn!("[handlers::on_report_fail] received ReportFail but we are not a relay, ignoring");
             return;
         }
 
-        let relay_report_failed = match msg {
-            ReportFailMessage::RelayReportFailed(r) => r,
+        match msg {
+            ReportFailMessage::RelayReportFailed(relay_report_failed) => {
+                self.on_relay_report_failed(api, from, relay_report_failed);
+            }
+            ReportFailMessage::ReportFailedRipple(ripple) => {
+                self.on_report_failed_ripple(api, from, ripple);
+            }
             _ => {
                 self.on_unimplemented(&Message::ReportFail(msg.clone()));
-                return;
             }
-        };
+        }
+    }
+
+}
+
+impl DefaultPrintingHandler {
+    fn on_relay_report_failed(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, relay_report_failed: &RelayReportFailed) {
+        let router = &from.router;
 
         let failed_relay_id = &relay_report_failed.failed_relay_id;
 
@@ -905,6 +916,21 @@ impl MessageHandler for DefaultPrintingHandler {
                 warn!("[handlers::on_report_fail] no ddb backend available for ripple");
             }
         }
+    }
+
+    fn on_report_failed_ripple(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, ripple: &ReportFailedRipple) {
+        // Validate sender is a relay
+        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let sender_is_relay = api.list_all_relays(true)
+            .into_iter()
+            .any(|r| r.id == sender_id);
+        if !sender_is_relay {
+            warn!("[handlers::on_report_failed_ripple] received ReportFailedRipple from non-relay {}, ignoring", sender_id);
+            return;
+        }
+
+        Self::mark_relay_as_failed(api, &ripple.failed_relay_id);
+        // no response returned (temporary implementation)
     }
 
 }

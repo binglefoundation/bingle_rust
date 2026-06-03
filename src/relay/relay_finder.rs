@@ -340,6 +340,7 @@ impl RelayFinder {
 
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     #[allow(dead_code)]
+    // This code is questionable now
     fn find_root_relay_internal(&self, my_id: &str) -> Result<RelayInfo, String> {
         tracing::info!("[RelayFinder] find_root_relay: my_id={}", my_id);
         // Normalize our id to raw address

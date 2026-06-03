@@ -99,3 +99,6 @@ pub mod report_fail_messages_json;
 
 #[path = "messages/relay_report_failed_handler.rs"]
 pub mod relay_report_failed_handler;
+
+#[path = "messages/report_failed_ripple_handler.rs"]
+pub mod report_failed_ripple_handler;

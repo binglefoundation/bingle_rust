@@ -131,6 +131,8 @@ impl RelayUpdater {
                         .find(|relay| relay.id == candidate.id);
 
                     if let Some(relay) = selected {
+                        // Now we have a selected relay, here is the place
+                        // to send RelayReportFailed for any relays detected as down
                         return Some(relay);
                     }
 
