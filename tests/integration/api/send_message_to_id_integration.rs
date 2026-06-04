@@ -351,6 +351,13 @@ fn run_send_message_to_id_test(broken_nat: bool) {
         let p = guard.as_ref().expect("payload should be Some since received is true");
         tracing::info!("[Test] received payload: {}", p);
         assert_eq!(p.get("text").and_then(|v: &serde_json::Value| v.as_str()), Some("hello"));
+        // Validate that cipher_suite is present and non-empty in the inbound message.
+        // The engine injects the DTLS cipher suite into every received message.
+        let cs = p.get("cipher_suite")
+            .expect("cipher_suite field must be present in inbound message");
+        let cs_str = cs.as_str().expect("cipher_suite must be a string");
+        assert!(!cs_str.is_empty(), "cipher_suite must not be empty, got: {:?}", cs_str);
+        tracing::info!("[Test] cipher_suite in received message: {}", cs_str);
     }
 
     // Validate that reverse handle lookup on incoming message worked: sender_handle should be client_a

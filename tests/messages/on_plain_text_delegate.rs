@@ -30,7 +30,7 @@ pub fn on_plain_text_calls_handler_implementation() {
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
 
     // Build a PlainText message and route it through a custom handler implementation
-    let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None };
+    let pt = PlainTextMessage { text: "Hello".to_string(), app: None, r#type: None, cipher_suite: None };
     let msg = Message::PlainText(pt.clone());
 
     let handler = CapturingHandler { called: &CALLED, sink: received.clone() };

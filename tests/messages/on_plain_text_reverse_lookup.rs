@@ -38,7 +38,7 @@ fn on_plain_text_uses_reverse_lookup_success() {
     });
     router.set_on_message(Some(on_message));
 
-    let pt = PlainTextMessage { text: "hi".to_string(), app: None, r#type: None };
+    let pt = PlainTextMessage { text: "hi".to_string(), app: None, r#type: None, cipher_suite: None };
     let msg = Message::PlainText(pt);
     let handler = DefaultHandler;
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
@@ -64,7 +64,7 @@ fn on_plain_text_reverse_lookup_not_found_logs_and_skips_callback() {
     });
     router.set_on_message(Some(on_message));
 
-    let pt = PlainTextMessage { text: "hi".to_string(), app: None, r#type: None };
+    let pt = PlainTextMessage { text: "hi".to_string(), app: None, r#type: None, cipher_suite: None };
     let msg = Message::PlainText(pt);
     let handler = DefaultHandler;
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {

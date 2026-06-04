@@ -218,7 +218,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     
     let relay_endpoint = NetworkEndpoint::new_relay(ADDRESS_10MIL.to_string(), Some(relay_addr), Some(channel));
 
-    let test_msg = Message::PlainText(PlainTextMessage { app:None, r#type:None, text: "Via relay".to_string() });
+    let test_msg = Message::PlainText(PlainTextMessage { app:None, r#type:None, text: "Via relay".to_string(), cipher_suite: None });
     let test_msg_bytes = serde_json::to_vec(&test_msg).expect("serialize listenMsg");
 
     dtls_client.send(&relay_endpoint, &test_msg_bytes).expect("send test_msg");

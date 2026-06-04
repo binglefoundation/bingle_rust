@@ -25,6 +25,8 @@ pub struct PlainTextMessage {
     pub app: Option<Option<String>>, // allow explicit null via Some(None)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<Option<String>>, // allow explicit null via Some(None)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cipher_suite: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
