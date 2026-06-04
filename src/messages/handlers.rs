@@ -760,6 +760,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     Ok(()) => {
                         tracing::info!("[handlers::on_triangle_test3] initial DDB registration successful: {}", addr);
                         if api_for_thread.is_relay() {
+                            // We should have a relay_finder here, created in stun_consistent_process
                             api_for_thread.initialize_relay();
                             if let Err(e) = api_for_thread.ddb_register_ip(addr, true) {
                                 tracing::warn!("[handlers::on_triangle_test3] second ddb_register_ip(true) failed: {}", e);

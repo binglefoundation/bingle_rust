@@ -1316,275 +1316,242 @@ impl Engine {
         let span = self.span.clone();
         let _guard = span.enter();
         tracing::info!("[Engine::initialize_relay] starts for {:?}", self.issuer);
+
+        let finder_arc = match self.relay_finder.clone() {
+            Some(f) => f,
+            None => {
+                tracing::error!("[Engine::initialize_relay] relay_finder not initialized; cannot proceed");
+                return;
+            }
+        };
+
         self.set_relay_state(
             RelayState::Off,
             "initialize_relay: starting sequence (set Off before delay)",
         );
 
-        // Build discovery closure using indexer when app_id is configured; else skip
-        {
-            let app_id_opt = self.options.app_id.or_else(|| {
-                std::env::var("BINGLE_APP_ID")
-                    .ok()
-                    .and_then(|s| s.parse::<u64>().ok())
-            });
-            if let Some(app_id) = app_id_opt {
-                tracing::info!("[Engine::initialize_relay] app_id configured: {}", app_id);
+        tracing::info!("[Engine::initialize_relay] using existing RelayFinder");
 
-                let cfg = self.options.algo_provider_config.clone();
-                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
-                let finder = crate::relay::relay_finder::RelayFinder::new(
-                    self.bingle_api.clone(),
-                    Duration::from_secs(60),
-                    discover,
-                );
-                tracing::info!("[Engine::initialize_relay] RelayFinder constructed");
+        let finder = &*finder_arc;
 
-                // Determine our id for exclusion
-                let my_id = if let Some(iss) = self.issuer.as_deref() {
-                    iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX)
-                        .to_string()
-                } else {
-                    self.options.handle.clone()
-                };
-                tracing::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
+        // Determine our id for exclusion
+        let my_id = if let Some(iss) = self.issuer.as_deref() {
+            iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string()
+        } else {
+            self.options.handle.clone()
+        };
+        tracing::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
 
-                // Clear any stale state so that we always reload fresh on startup
-                finder.clear_state_cache();
-                tracing::info!("[Engine::initialize_relay] cleared finder state cache");
+        // Clear any stale state so that we always reload fresh on startup
+        finder.clear_state_cache();
+        tracing::info!("[Engine::initialize_relay] cleared finder state cache");
 
-                // 1) Seed caches and load current states across the network
-                // Load states via RelayCheck for all known relays (must include self)
-                finder.load_relay_states(&my_id);
-                tracing::info!("[Engine::initialize_relay] loaded peer relay states");
-                let mut all_relays = finder.list_all_relays(&my_id, true);
-                if !all_relays.iter().any(|r| r.id == my_id) {
-                    let addr = self
-                        .last_public_addr()
-                        .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
-                    all_relays.push(RelayInfo::root_with(
-                        my_id.clone(),
-                        addr,
-                        Some(RelayState::Starting),
-                        None,
-                    ));
-                }
+        // Load current states across the network via RelayCheck for all known relays
+        finder.load_relay_states(&my_id);
+        tracing::info!("[Engine::initialize_relay] loaded peer relay states");
+        let mut all_relays = finder.list_all_relays(&my_id, true);
+        if !all_relays.iter().any(|r| r.id == my_id) {
+            let addr = self
+                .last_public_addr()
+                .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
+            all_relays.push(RelayInfo::root_with(
+                my_id.clone(),
+                addr,
+                Some(RelayState::Starting),
+                None,
+            ));
+        }
 
-                // Count peer states (excluding self)
-                let (avail_cnt, starting_cnt) = count_peer_states(&finder, &my_id);
-                tracing::info!(
-                    "[Engine::initialize_relay] peer states after load: available={} starting={}",
-                    avail_cnt,
-                    starting_cnt
-                );
+        // Count peer states (excluding self)
+        let (avail_cnt, starting_cnt) = count_peer_states(finder, &my_id);
+        tracing::info!(
+            "[Engine::initialize_relay] peer states after load: available={} starting={}",
+            avail_cnt,
+            starting_cnt
+        );
 
-                // Build peer id list including self for the mutex
-                tracing::info!(
-                    "[Engine::initialize_relay] discovered {:?} relays (including self)",
-                    all_relays
-                );
-                let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
-                ids.sort();
-                ids.dedup();
-                tracing::info!(
-                    "[Engine::initialize_relay] mutex participants: {}",
-                    ids.len()
-                );
+        // Build peer id list including self for the mutex
+        tracing::info!(
+            "[Engine::initialize_relay] discovered {:?} relays (including self)",
+            all_relays
+        );
+        let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
+        ids.sort();
+        ids.dedup();
+        tracing::info!(
+            "[Engine::initialize_relay] mutex participants: {}",
+            ids.len()
+        );
 
-                // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
-                let api_weak = self.bingle_api.clone();
-                let finder_arc = Arc::new(finder);
-                let my_id_for_send = my_id.clone();
-                let send_common = move |dest_id: &str, json_val: serde_json::Value| {
-                    let uid = dest_id.to_string();
-                    // Progress logger for sending
-                    // let progress: Arc<ProgressCallback> = Arc::new({
-                    //     let uid = uid.clone();
-                    //     move |pct: u8, msg: String| {
-                    //         tracing::info!(
-                    //             "[Engine::initialize_relay][mutex] progress={} dest_id={} msg={}",
-                    //             pct,
-                    //             uid,
-                    //             msg
-                    //         );
-                    //     }
-                    // });
-                    let ok =
-                        api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None).unwrap_or(false));
-                    if !ok {
-                        tracing::warn!(
-                            "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
-                            dest_id,
-                            my_id_for_send,
-                            json_val
-                        );
-                    }
-                };
-                let send_request = {
-                    let send_common = send_common.clone();
-                    move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
-                        let msg = crate::messages::types::Message::Mutex(
-                            crate::messages::types::MutexMessage::Request(req.clone()),
-                        );
-                        let json_val = crate::messages::marshal::to_json_value(&msg);
-                        send_common(dest_id, json_val);
-                    }
-                };
-                let send_reply = {
-                    let send_common = send_common.clone();
-                    move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
-                        let msg = crate::messages::types::Message::Mutex(
-                            crate::messages::types::MutexMessage::Response(resp.clone()),
-                        );
-                        let json_val = crate::messages::marshal::to_json_value(&msg);
-                        send_common(dest_id, json_val);
-                    }
-                };
-                let send_release = {
-                    let send_common = send_common.clone();
-                    move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
-                        let msg = crate::messages::types::Message::Mutex(
-                            crate::messages::types::MutexMessage::Release(rel.clone()),
-                        );
-                        let json_val = crate::messages::marshal::to_json_value(&msg);
-                        send_common(dest_id, json_val);
-                    }
-                };
-                tracing::info!(
-                    "[Engine::initialize_relay] prepared distributed mutex messaging closures"
-                );
+        // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
+        let api_weak = self.bingle_api.clone();
+        let my_id_for_send = my_id.clone();
+        let send_common = move |dest_id: &str, json_val: serde_json::Value| {
+            let uid = dest_id.to_string();
 
-                // Create and store the distributed mutex
-                let mtx = crate::distributed_mutex::ModifiedLamportDistributedMutex::new(
-                    my_id.clone(),
-                    ids,
-                    send_request,
-                    send_reply,
-                    send_release,
-                );
-                self.relay_init_mutex = Some(std::sync::Arc::new(mtx));
-                tracing::info!("[Engine::initialize_relay] created distributed mutex");
-
-                // Use the mutex to serialize initialization of the DDB one node at a time
-                let ddb_backend_arc = self.ddb_backend.clone();
-                let roots_copy = all_relays.clone();
-                if let Some(m) = self.relay_init_mutex.as_ref().cloned() {
-                    let finder_arc_for_mtx = finder_arc.clone();
-                    let my_id_for_mtx = my_id.clone();
-                    m.acquire(|| {
-                        self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
-                        tracing::info!("[Engine::initialize_relay] entering CS: relay state set to Starting: {}", my_id_for_mtx);
-
-                        // Re-count peer states under the mutex to decide initialization strategy
-                        finder_arc_for_mtx.clear_state_cache();
-                        tracing::info!("[Engine::initialize_relay] cleared finder state cache");
-                        finder_arc_for_mtx.load_relay_states(&my_id);
-                        tracing::info!("[Engine::initialize_relay] loaded peer relay states");
-                        let (avail_cnt, starting_cnt) = count_peer_states(&*finder_arc_for_mtx, &my_id_for_mtx);
-                        tracing::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
-                        if avail_cnt == 0 {
-                            tracing::info!("[Engine::initialize_relay] No peers available; initializing DDB directly");
-                            // No available peers: upsert roots into backend as bootstrap
-                            if let Ok(mut b) = ddb_backend_arc.lock() {
-                                for r in &roots_copy {
-                                    let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
-                                    let rec = AdvertRecord {
-                                        id: r.id.clone(),
-                                        endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
-                                        am_relay: Some(true),
-                                        relay_id: None,
-                                        relay_sig: None,
-                                        date: "1970-01-01T00:00:00Z".to_string(),
-                                        sig: None,
-                                    };
-                                    b.upsert(rec);
-                                }
-                                tracing::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
-                            } else {
-                                tracing::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
-                            }
-                        } else {
-                            // Peers available: start DDB load from a peer
-                            // Choose a preferred root peer (not self)
-                            let relays = finder_arc_for_mtx.list_root_relays(&my_id_for_mtx, false);
-                            if let Some(first) = relays.first() {
-                                let peer_id: String = first.id.clone();
-                                // Reset signon signal before starting load
-                                self.reset_signon_complete();
-                                let count_res = self.ddb_client().start_load_from_peer(&peer_id);
-                                match count_res {
-                                    Ok(n) => {
-                                        self.peer_ddb_records = Some(n);
-                                        self.set_relay_state(RelayState::Loading, "initialize_relay: started DDB load from peer");
-                                        tracing::info!("[Engine::initialize_relay] started DDB load from peer {} with {} records", peer_id, n);
-
-                                        // Wait for signon to complete (signaled from MessageHandler::on_ddb_signon_response)
-                                        if !self.await_signon_complete(Duration::from_secs(60)) {
-                                            tracing::warn!("[Engine::initialize_relay] Timed out waiting for signon completion");
-                                        }
-
-                                        // After loading the peer's DDB state, upsert an AdvertRecord
-                                        // for ourselves so the DDB contains both the old state and our
-                                        // new relay entry.
-                                        let self_addr = self
-                                            .last_public_addr()
-                                            .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
-                                        let self_host = match self_addr.ip() {
-                                            IpAddr::V4(v4) => v4.to_string(),
-                                            IpAddr::V6(v6) => v6.to_string(),
-                                        };
-                                        let self_rec = AdvertRecord {
-                                            id: my_id_for_mtx.clone(),
-                                            endpoint: Some(InetSocketAddress { host: self_host, port: self_addr.port() }),
-                                            am_relay: Some(true),
-                                            relay_id: None,
-                                            relay_sig: None,
-                                            date: "1970-01-01T00:00:00Z".to_string(),
-                                            sig: None,
-                                        };
-                                        if let Ok(mut b) = ddb_backend_arc.lock() {
-                                            b.upsert(self_rec);
-                                            tracing::info!(
-                                                "[Engine::initialize_relay] upserted self AdvertRecord into DDB after peer load (id={})",
-                                                my_id_for_mtx
-                                            );
-                                        } else {
-                                            tracing::warn!("[Engine::initialize_relay] failed to lock ddb_backend for self upsert after peer load");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);
-                                    }
-                                }
-                            } else {
-                                tracing::warn!("[Engine::initialize_relay] no peer selected for DDB load");
-                            }
-                        }
-                        // Need to await DDB load complete here and signon response
-                        tracing::info!("[Engine::initialize_relay] relay initialization CS complete {}", my_id_for_mtx);
-                    });
-                    // After critical section completes, mark as Available
-                    self.set_relay_state(
-                        RelayState::Available,
-                        "initialize_relay: DDB initialized under mutex",
-                    );
-                    tracing::info!(
-                        "[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available"
-                    );
-                }
-                // Record the finder
-                self.relay_finder = Some(finder_arc);
-                tracing::info!("[Engine::initialize_relay] stored RelayFinder reference");
-            } else {
+            let ok =
+                api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None).unwrap_or(false));
+            if !ok {
                 tracing::warn!(
-                    "[Engine::initialize_relay] am_relay set but app_id not configured; skipping root relay discovery"
-                );
-                // Even if discovery is skipped, the relay is operational for local tests; mark available.
-                self.set_relay_state(RelayState::Available, "initialize_relay: app_id not configured; skipping discovery; mark Available for local operation");
-                tracing::warn!(
-                    "[Engine::initialize_relay] stage complete: discovery skipped, relay marked Available"
+                    "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
+                    dest_id,
+                    my_id_for_send,
+                    json_val
                 );
             }
+        };
+        let send_request = {
+            let send_common = send_common.clone();
+            move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
+                let msg = crate::messages::types::Message::Mutex(
+                    crate::messages::types::MutexMessage::Request(req.clone()),
+                );
+                let json_val = crate::messages::marshal::to_json_value(&msg);
+                send_common(dest_id, json_val);
+            }
+        };
+        let send_reply = {
+            let send_common = send_common.clone();
+            move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
+                let msg = crate::messages::types::Message::Mutex(
+                    crate::messages::types::MutexMessage::Response(resp.clone()),
+                );
+                let json_val = crate::messages::marshal::to_json_value(&msg);
+                send_common(dest_id, json_val);
+            }
+        };
+        let send_release = {
+            let send_common = send_common.clone();
+            move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
+                let msg = crate::messages::types::Message::Mutex(
+                    crate::messages::types::MutexMessage::Release(rel.clone()),
+                );
+                let json_val = crate::messages::marshal::to_json_value(&msg);
+                send_common(dest_id, json_val);
+            }
+        };
+        tracing::info!(
+            "[Engine::initialize_relay] prepared distributed mutex messaging closures"
+        );
+
+        // Create and store the distributed mutex
+        let mtx = crate::distributed_mutex::ModifiedLamportDistributedMutex::new(
+            my_id.clone(),
+            ids,
+            send_request,
+            send_reply,
+            send_release,
+        );
+        self.relay_init_mutex = Some(std::sync::Arc::new(mtx));
+        tracing::info!("[Engine::initialize_relay] created distributed mutex");
+
+        // Use the mutex to serialize initialization of the DDB one node at a time
+        let ddb_backend_arc = self.ddb_backend.clone();
+        let roots_copy = all_relays.clone();
+        if let Some(m) = self.relay_init_mutex.as_ref().cloned() {
+            let finder_arc_for_mtx = finder_arc.clone();
+            let my_id_for_mtx = my_id.clone();
+            m.acquire(|| {
+                self.set_relay_state(RelayState::Starting, "initialize_relay: mark self Starting before peer discovery and coordination");
+                tracing::info!("[Engine::initialize_relay] entering CS: relay state set to Starting: {}", my_id_for_mtx);
+
+                // Re-count peer states under the mutex to decide initialization strategy
+                finder_arc_for_mtx.clear_state_cache();
+                tracing::info!("[Engine::initialize_relay] cleared finder state cache");
+                finder_arc_for_mtx.load_relay_states(&my_id_for_mtx);
+                tracing::info!("[Engine::initialize_relay] loaded peer relay states");
+                let (avail_cnt, starting_cnt) = count_peer_states(&*finder_arc_for_mtx, &my_id_for_mtx);
+                tracing::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
+                if avail_cnt == 0 {
+                    tracing::info!("[Engine::initialize_relay] No peers available; initializing DDB directly");
+                    // No available peers: upsert roots into backend as bootstrap
+                    if let Ok(mut b) = ddb_backend_arc.lock() {
+                        for r in &roots_copy {
+                            let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
+                            let rec = AdvertRecord {
+                                id: r.id.clone(),
+                                endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
+                                am_relay: Some(true),
+                                relay_id: None,
+                                relay_sig: None,
+                                date: "1970-01-01T00:00:00Z".to_string(),
+                                sig: None,
+                            };
+                            b.upsert(rec);
+                        }
+                        tracing::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
+                    } else {
+                        tracing::warn!("[Engine::initialize_relay] failed to lock ddb_backend during upsert");
+                    }
+                } else {
+                    // Peers available: start DDB load from a peer
+                    // Choose a preferred root peer (not self)
+                    let relays = finder_arc_for_mtx.list_root_relays(&my_id_for_mtx, false);
+                    if let Some(first) = relays.first() {
+                        let peer_id: String = first.id.clone();
+                        // Reset signon signal before starting load
+                        self.reset_signon_complete();
+                        let count_res = self.ddb_client().start_load_from_peer(&peer_id);
+                        match count_res {
+                            Ok(n) => {
+                                self.peer_ddb_records = Some(n);
+                                self.set_relay_state(RelayState::Loading, "initialize_relay: started DDB load from peer");
+                                tracing::info!("[Engine::initialize_relay] started DDB load from peer {} with {} records", peer_id, n);
+
+                                // Wait for signon to complete (signaled from MessageHandler::on_ddb_signon_response)
+                                if !self.await_signon_complete(Duration::from_secs(60)) {
+                                    tracing::warn!("[Engine::initialize_relay] Timed out waiting for signon completion");
+                                }
+
+                                // After loading the peer's DDB state, upsert an AdvertRecord
+                                // for ourselves so the DDB contains both the old state and our
+                                // new relay entry.
+                                let self_addr = self
+                                    .last_public_addr()
+                                    .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
+                                let self_host = match self_addr.ip() {
+                                    IpAddr::V4(v4) => v4.to_string(),
+                                    IpAddr::V6(v6) => v6.to_string(),
+                                };
+                                let self_rec = AdvertRecord {
+                                    id: my_id_for_mtx.clone(),
+                                    endpoint: Some(InetSocketAddress { host: self_host, port: self_addr.port() }),
+                                    am_relay: Some(true),
+                                    relay_id: None,
+                                    relay_sig: None,
+                                    date: "1970-01-01T00:00:00Z".to_string(),
+                                    sig: None,
+                                };
+                                if let Ok(mut b) = ddb_backend_arc.lock() {
+                                    b.upsert(self_rec);
+                                    tracing::info!(
+                                        "[Engine::initialize_relay] upserted self AdvertRecord into DDB after peer load (id={})",
+                                        my_id_for_mtx
+                                    );
+                                } else {
+                                    tracing::warn!("[Engine::initialize_relay] failed to lock ddb_backend for self upsert after peer load");
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("[Engine::initialize_relay] start_load_from_peer failed for {}: {}", peer_id, e);
+                            }
+                        }
+                    } else {
+                        tracing::warn!("[Engine::initialize_relay] no peer selected for DDB load");
+                    }
+                }
+                // Need to await DDB load complete here and signon response
+                tracing::info!("[Engine::initialize_relay] relay initialization CS complete {}", my_id_for_mtx);
+            });
+            // After critical section completes, mark as Available
+            self.set_relay_state(
+                RelayState::Available,
+                "initialize_relay: DDB initialized under mutex",
+            );
+            tracing::info!(
+                "[Engine::initialize_relay] stage complete: DDB initialized and relay marked Available"
+            );
         }
         tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
@@ -1653,9 +1620,28 @@ impl Engine {
             .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
-        // If we are configured as a relay, pre-populate the in-memory DDB with known root relays.
+        // Initialize the relay finder now that we have a known static address.
         if self.options.am_relay {
-            self.initialize_relay_async();
+            let app_id_opt = self.options.app_id.or_else(|| {
+                std::env::var("BINGLE_APP_ID")
+                    .ok()
+                    .and_then(|s| s.parse::<u64>().ok())
+            });
+            if let Some(app_id) = app_id_opt {
+                let cfg = self.options.algo_provider_config.clone();
+                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+                let finder = crate::relay::relay_finder::RelayFinder::new(
+                    self.bingle_api.clone(),
+                    Duration::from_secs(60),
+                    discover,
+                );
+                tracing::info!("[Engine::start_with_addr] RelayFinder constructed");
+                self.relay_finder = Some(Arc::new(finder));
+                self.initialize_relay_async();
+            } else {
+                tracing::warn!("[Engine::start_with_addr] app_id not configured; skipping relay discovery and marking Available directly");
+                self.set_relay_state(RelayState::Available, "start_with_addr: no app_id; skipping discovery");
+            }
         }
         // Static address path: once DTLS accept loop is running and any relay is available, notify that we are listening.
         self.notify_listening(true);
