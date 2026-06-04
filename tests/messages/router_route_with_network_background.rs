@@ -36,6 +36,7 @@ pub fn route_with_network_runs_handler_on_background_thread() {
     let message = Message::Ping(PingMessage::Ping(PingPing {
         app: "ping".to_string(),
         tag: None,
+        response_tag: None,
         text: Some("background-thread-check".to_string()),
         data: None,
     }));

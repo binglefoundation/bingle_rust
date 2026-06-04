@@ -297,6 +297,11 @@ pub trait MessageHandler {
     fn on_ddb_get_relays_status(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetRelaysStatus) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetRelaysStatus(msg.clone()))); }
     fn on_ddb_relays_status_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbRelaysStatusResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::RelaysStatusResponse(msg.clone()))); }
 
+    // ReportFail messages
+    fn on_report_fail(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &ReportFailMessage) {
+        self.on_unimplemented(&Message::ReportFail(msg.clone()));
+    }
+
     // Unknown
     fn on_unknown(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, raw: &serde_json::Value) {
         // Delegate to API on_message via the per-API Router if installed
@@ -517,7 +522,7 @@ impl MessageHandler for DefaultPrintingHandler {
         let response_tag = q.tag.clone();
         let resp = crate::messages::types::Message::Ddb(
             crate::messages::types::DdbMessage::QueryResponse(
-                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, response_tag, text: None, data: None }
+                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -544,6 +549,7 @@ impl MessageHandler for DefaultPrintingHandler {
                     original_signature: None,
                     rippled: Some(false),
                     tag: None,
+                    response_tag: None,
                     text: None,
                     data: None,
                 };
@@ -607,6 +613,7 @@ impl MessageHandler for DefaultPrintingHandler {
         // getRelaysStatus on it.
         let resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
             app: "ddb".to_string(),
+            tag: None,
             response_tag: msg.tag.clone(),
             text: None,
             data: None,
@@ -801,6 +808,141 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
+    fn on_report_fail(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &ReportFailMessage) {
+        let router = &from.router;
+
+        // Only relays should handle ReportFail messages
+        if !router.get_am_relay() {
+            warn!("[handlers::on_report_fail] received ReportFail but we are not a relay, ignoring");
+            return;
+        }
+
+        match msg {
+            ReportFailMessage::RelayReportFailed(relay_report_failed) => {
+                self.on_relay_report_failed(api, from, relay_report_failed);
+            }
+            ReportFailMessage::ReportFailedRipple(ripple) => {
+                self.on_report_failed_ripple(api, from, ripple);
+            }
+            _ => {
+                self.on_unimplemented(&Message::ReportFail(msg.clone()));
+            }
+        }
+    }
+
+}
+
+impl DefaultPrintingHandler {
+    fn on_relay_report_failed(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, relay_report_failed: &RelayReportFailed) {
+        let router = &from.router;
+
+        let failed_relay_id = &relay_report_failed.failed_relay_id;
+
+        // Find the failed relay's address via list_all_relays
+        let relay_addr_opt = api.list_all_relays(true)
+            .into_iter()
+            .find(|r| &r.id == failed_relay_id)
+            .map(|r| r.address);
+
+        let mark_failed = match relay_addr_opt {
+            None => {
+                warn!("[handlers::on_report_fail] could not find address for failed relay {}", failed_relay_id);
+                true
+            }
+            Some(relay_addr) => {
+                // Send DdbGetRelaysStatus to the failed relay to check its status
+                let request = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus {
+                    app: "ddb".to_string(),
+                    epoch_id: 0,
+                    tag: None,
+                    text: None,
+                    data: None,
+                }));
+                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_addr);
+                let request_json = crate::messages::marshal::to_json_value(&request);
+                let send_result = api.send_message_to_network_with_response(&nsk, failed_relay_id, request_json, None);
+
+                match send_result {
+                    Err(e) => {
+                        warn!("[handlers::on_report_fail] failed to send DdbGetRelaysStatus to {}: {}", failed_relay_id, e);
+                        true
+                    }
+                    Ok(response_json) => {
+                        let parsed = crate::messages::marshal::from_json_value(response_json);
+                        match parsed {
+                            Ok(Message::Ddb(DdbMessage::RelaysStatusResponse(status))) => {
+                                if status.responder_state != RelayState::Available {
+                                    warn!("[handlers::on_report_fail] relay {} responded but state is {:?}, marking failed", failed_relay_id, status.responder_state);
+                                    true
+                                } else {
+                                    warn!("[handlers::on_report_fail] relay {} responded as Available, ignoring report", failed_relay_id);
+                                    false
+                                }
+                            }
+                            _ => {
+                                warn!("[handlers::on_report_fail] unexpected response from relay {}, marking failed", failed_relay_id);
+                                true
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        if mark_failed {
+            Self::mark_relay_as_failed(api.clone(), failed_relay_id);
+
+            // Build ReportFailedRipple and send to all peer relays
+            let ripple = ReportFailedRipple {
+                app: "reportFail".to_string(),
+                tag: None,
+                response_tag: None,
+                failed_relay_id: relay_report_failed.failed_relay_id.clone(),
+                fail_type: relay_report_failed.fail_type.clone(),
+                timestamp: relay_report_failed.timestamp.clone(),
+                confirmations: vec![],
+                disputes: vec![],
+            };
+            let ripple_msg = Message::ReportFail(ReportFailMessage::ReportFailedRipple(ripple));
+            let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+
+            if let Some(backend) = router.get_ddb_backend() {
+                if let Ok(b) = backend.lock() {
+                    api.ripple_message(ripple_json, relay_report_failed.failed_relay_id.clone(), &*b);
+                } else {
+                    warn!("[handlers::on_report_fail] could not lock ddb backend for ripple");
+                }
+            } else {
+                warn!("[handlers::on_report_fail] no ddb backend available for ripple");
+            }
+        }
+    }
+
+    fn on_report_failed_ripple(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, ripple: &ReportFailedRipple) {
+        // Validate sender is a relay
+        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let sender_is_relay = api.list_all_relays(true)
+            .into_iter()
+            .any(|r| r.id == sender_id);
+        if !sender_is_relay {
+            warn!("[handlers::on_report_failed_ripple] received ReportFailedRipple from non-relay {}, ignoring", sender_id);
+            return;
+        }
+
+        Self::mark_relay_as_failed(api, &ripple.failed_relay_id);
+        // no response returned (temporary implementation)
+    }
+
+}
+
+impl DefaultPrintingHandler {
+    /// Temporary utility: mark a relay as failed by removing it from the local DDB
+    /// and from the relay finder cache. Trusts the caller that the relay is indeed failed.
+    fn mark_relay_as_failed(api: Arc<dyn BingleApiBoth>, relay_id: &str) {
+        api.ddb_delete_record(relay_id);
+        api.relay_finder_remove_relay(relay_id);
+        warn!("[handlers::mark_relay_as_failed] removed relay {} from local DDB and relay finder cache", relay_id);
+    }
 }
 
 impl DefaultPrintingHandler {

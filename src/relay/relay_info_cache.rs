@@ -123,4 +123,8 @@ impl RelayFinderTrait for RelayInfoCache {
             .find(|relay| relay.id == id_norm && relay.is_root)
             .map(|relay| NetworkEndpoint::new_direct(relay.address))
     }
+
+    fn remove_relay(&self, relay_id: &str) {
+        self.delete_relay(relay_id);
+    }
 }
