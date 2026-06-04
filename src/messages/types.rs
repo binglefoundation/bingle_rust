@@ -14,6 +14,7 @@ pub enum Message {
     Ddb(DdbMessage),
     Ping(PingMessage),
     Mutex(MutexMessage),
+    ReportFail(ReportFailMessage),
     // Fallback for any unknown message shapes
     Unknown(serde_json::Value),
 }
@@ -253,6 +254,9 @@ pub struct DdbUpsertResolve {
     pub rippled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
@@ -270,6 +274,8 @@ pub struct DdbDeleteResolve {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
@@ -293,6 +299,8 @@ pub struct DdbQueryResponse {
     pub found: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub advert: Option<AdvertRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -323,6 +331,8 @@ pub struct DdbSignon {
     pub rippled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -332,6 +342,8 @@ pub struct DdbSignon {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DdbSignonResponse {
     pub app: String, // "ddb"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -381,6 +393,8 @@ pub struct DdbInitResolve {
     pub app: String, // "ddb"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -406,6 +420,8 @@ pub struct DdbDumpResolve {
     pub record: AdvertRecord,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -420,6 +436,8 @@ pub struct DdbDumpResolveResponse {
     #[serde(rename = "recordId")]
     pub record_id: String,
     pub record: AdvertRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
     pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,6 +461,8 @@ pub struct PingPing {
     pub app: String, // must be "ping"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -501,4 +521,74 @@ pub struct MutexRelease {
     pub tag: Option<String>,
     #[serde(rename = "known_ids", default, skip_serializing_if = "Option::is_none")]
     pub known_ids: Option<HashSet<String>>,
+}
+
+// ReportFail messages (app: "reportFail")
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailVote {
+    pub confirming_id: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayReportFailed {
+    pub app: String, // must be "reportFail"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    pub failed_relay_id: String,
+    pub fail_type: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportFailedRipple {
+    pub app: String, // must be "reportFail"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    pub failed_relay_id: String,
+    pub fail_type: String,
+    pub timestamp: String,
+    pub confirmations: Vec<FailVote>,
+    pub disputes: Vec<FailVote>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportFailedRippleResponse {
+    pub app: String, // must be "reportFail"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    pub failed_relay_id: String,
+    pub fail_type: String,
+    pub timestamp: String,
+    pub confirmations: Vec<FailVote>,
+    pub disputes: Vec<FailVote>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportFailedComplete {
+    pub app: String, // must be "reportFail"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    pub failed_relay_id: String,
+    pub fail_type: String,
+    pub timestamp: String,
+    pub confirmations: Vec<FailVote>,
+    pub disputes: Vec<FailVote>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ReportFailMessage {
+    #[serde(rename = "relayReportFailed")] RelayReportFailed(RelayReportFailed),
+    #[serde(rename = "reportFailedRipple")] ReportFailedRipple(ReportFailedRipple),
+    #[serde(rename = "reportFailedRippleResponse")] ReportFailedRippleResponse(ReportFailedRippleResponse),
+    #[serde(rename = "reportFailedComplete")] ReportFailedComplete(ReportFailedComplete),
 }

@@ -44,6 +44,7 @@ pub fn outbound_response_should_be_sent_from_router_processing_thread() {
     let message = Message::Ping(PingMessage::Ping(PingPing {
         app: "ping".to_string(),
         tag: None,
+        response_tag: None,
         text: Some("race".to_string()),
         data: None,
     }));
@@ -79,6 +80,7 @@ pub fn outbound_response_queue_should_send_all_responses_from_router_processing_
     let message = Message::Ping(PingMessage::Ping(PingPing {
         app: "ping".to_string(),
         tag: None,
+        response_tag: None,
         text: Some("queue".to_string()),
         data: None,
     }));

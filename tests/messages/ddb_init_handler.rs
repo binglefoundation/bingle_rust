@@ -60,7 +60,7 @@ pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
     router.set_ddb_backend(Some(backend.clone()));
 
     // Route an InitResolve message from issuer "NEWPEER." (note trailing dot)
-    let init = DdbInitResolve { app: "ddb".into(), tag: Some("init_resolve_tag".to_string()), text: None, data: None };
+    let init = DdbInitResolve { app: "ddb".into(), tag: Some("init_resolve_tag".to_string()), response_tag: None, text: None, data: None };
     let msg = Message::Ddb(DdbMessage::InitResolve(init));
 
     let handler = DefaultPrintingHandler;

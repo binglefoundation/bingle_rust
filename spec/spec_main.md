@@ -188,8 +188,8 @@ The alternate root relay server will be at `(pref_idx + 1) % number_of_root_rela
 
 We can then call `RelayCheck` on the prime server to check it is available, and if not try the alternate.
 
-Now we can find other non-root relay servers by sending a `DdbGetEpoch` to the root relay server.
-This will return a `DdbEpochInfo` with a list of server ids for all relay servers.
+Now we can find other non-root relay servers by sending a `DdbGetRelaysStatus` to the root relay server.
+This will return a `DdbRelaysStatusResponse` with a list of server ids for all relay servers.
 
 Using the above partitioning algorithm on the full list of relay servers, we can obtain the `id` of the preferred relay server and the IP endpoint.
 
@@ -262,7 +262,7 @@ On network change, the process is similar to initialization.
 When the available relays change, the distributed database `epochId` will increment (see below),
 and our preferred relay server will alter.
 
-This can be notified by an unsolicited `DdbEpochInfo` message from our relay server.
+This can be notified by an unsolicited `DdbRelaysStatusResponse` message from our relay server.
 
 This will contain the updated list of server ids for all relay servers.
 
@@ -388,7 +388,7 @@ This ensures that we synchronise to the same state as the peer relay.
 The final step is to send a "DdbSignon" message to the peer relay. This will result in a "DdbSignonResponse" return which will be awaited by the new relay.
 The peer relay will increment the epoch number, indicating a new configuration.
 The message ripples onward to all configured nodes in the graph who will process it likewise.
-The peer relay follows this with a "DdbEpochInfo" message containing the new epoch number, which is sent to its peer and rippled to all nodes, notifying them of the new relay graph configuration.
+The peer relay follows this with a "DdbRelaysStatusResponse" message containing the new epoch number, which is sent to its peer and rippled to all nodes, notifying them of the new relay graph configuration.
 
 The new relay is now initialized and live, it shoud expect to receive requests from selected peers.
 
@@ -412,6 +412,62 @@ The peer relay responds with a "DdbUpsertResponse" message containing the update
 
 A "DdbDeleteResolve" message is sent to the peer relay to delete a record from the database.
 The peer relay responds with a "DdbDeleteResponse" message.
+
+# API Message Format
+
+Messages are polymorphic based on the pair of fields `app` and `type`:
+- When both `app` and `type` are present and non-null, the message is a typed message and
+  its specific class is determined by the values of (`app`, `type`).
+- When `app` and `type` are null or not present, the message is a plain text message with a single
+  string field `text`.
+
+All messages carry a `cipher_suite` field (nullable string) indicating the cipher suite
+that was in use on the connection when the message was received. This field is derived by
+the receiving client from the connection and is not transmitted on the wire.
+
+Notes on modeling:
+- OpenAPI 3.0 only supports a single-field discriminator, so we model the (`app`, `type`) based
+  polymorphism with `oneOf` and schema constraints. Specific typed messages can be defined by
+  constraining `app` and `type` with single-value enums in composed schemas.
+
+## Relay Failure Reporting
+
+When a node detects that a relay has failed (e.g. because all retries were exhausted when
+trying to send to it), it initiates a failure-report round to gather consensus from its peers.
+The round uses four message types under `app: "reportFail"`:
+
+### 1. RelayReportFailed
+The detecting node broadcasts a `RelayReportFailed` message to its directly connected peers.
+This message identifies the failed relay (`failed_relay_id`), the category of failure
+(`fail_type`), and the timestamp at which the failure was observed.
+
+### 2. ReportFailedRipple
+Each peer that receives a `RelayReportFailed` (or a forwarded `ReportFailedRipple`) casts
+its own vote — confirming or disputing the failure — signs across
+`(failed_relay_id, fail_type, timestamp)`, and appends its `FailVote` to the appropriate
+list (`confirmations` or `disputes`). It then forwards the accumulated message as a
+`ReportFailedRipple` to the remaining peers it needs to contact.
+
+### 3. ReportFailedRippleResponse
+When a node completes processing a `ReportFailedRipple` (i.e. it has added its own vote),
+it sends a `ReportFailedRippleResponse` back to the node that sent the ripple. This response
+contains the same accumulated `confirmations` and `disputes` with the responding node's own
+`FailVote` added. The originator (or intermediate node) merges these responses to build the
+complete vote tally.
+
+### 4. ReportFailedComplete
+Once the originating node has received responses from all peers and the vote tally is final,
+it broadcasts a `ReportFailedComplete` to all peers. This message carries the definitive
+`confirmations` and `disputes` lists and signals that the failure-report round is closed.
+
+### FailVote
+Both `confirmations` and `disputes` lists contain `FailVote` objects:
+- `confirming_id` — Algorand address of the voting node.
+- `signature` — ed25519 signature of the voting node across `(failed_relay_id, fail_type, timestamp)`.
+
+Nodes that agree the relay failed add their `FailVote` to `confirmations`; nodes that
+disagree add theirs to `disputes`. Any node processing a `ReportFailedComplete` can verify
+every vote by checking the corresponding signature.
 
 # Message reference
 

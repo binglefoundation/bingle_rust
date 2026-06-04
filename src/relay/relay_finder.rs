@@ -88,6 +88,8 @@ pub trait RelayFinderTrait: Send + Sync {
     fn load_relay_states(&self, my_id: &str);
     fn clear_state_cache(&self);
     fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint>;
+    /// Remove a relay entry from the cache by id. No-op if not present.
+    fn remove_relay(&self, relay_id: &str);
 }
 
 pub trait RelayFinderTestTrait {
@@ -151,6 +153,10 @@ impl RelayFinderTrait for RelayFinder {
     fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint> {
         self.clear_unavailable_relays_internal();
         self.lookup_root_id_internal(id)
+    }
+
+    fn remove_relay(&self, relay_id: &str) {
+        self.remove_relay_internal(relay_id);
     }
 }
 
@@ -334,6 +340,7 @@ impl RelayFinder {
 
     /// Find the preferred root relay for the provided id, performing RelayCheck and caching the result.
     #[allow(dead_code)]
+    // This code is questionable now
     fn find_root_relay_internal(&self, my_id: &str) -> Result<RelayInfo, String> {
         tracing::info!("[RelayFinder] find_root_relay: my_id={}", my_id);
         // Normalize our id to raw address
@@ -522,6 +529,23 @@ impl RelayFinder {
     fn clear_unavailable_relays_internal(&self) {
         if let Ok(mut g) = self.unavailable_relays.lock() {
             g.clear();
+        }
+    }
+
+    fn remove_relay_internal(&self, relay_id: &str) {
+        // Clear the single-relay selection cache in case the removed relay was cached
+        if let Ok(mut g) = self.cache.lock() {
+            if g.as_ref().map(|c| c.id == relay_id).unwrap_or(false) {
+                *g = None;
+            }
+        }
+        // Remove from relay_info_cache
+        if let Some(updater) = self.relay_updater.get() {
+            updater.relay_info_cache().delete_relay(relay_id);
+        }
+        // Remove from unavailable set if present
+        if let Ok(mut g) = self.unavailable_relays.lock() {
+            g.remove(relay_id);
         }
     }
 

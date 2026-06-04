@@ -13,6 +13,7 @@ pub fn ddb_upsert_serde_roundtrip() {
         original_signature: "SIG".into(),
         rippled: true,
         tag: Some("t1".into()),
+        response_tag: None,
         text: None,
         data: None,
     }));
@@ -38,6 +39,7 @@ pub fn ddb_query_and_response_roundtrip() {
         app: "ddb".into(),
         found: true,
         advert: Some(AdvertRecord { id: "ID123".into(), endpoint: None, am_relay: None, relay_id: None, relay_sig: None, date: "2025-01-02T03:04:05Z".into(), sig: None }),
+        tag: None,
         response_tag: Some("corr".into()),
         text: None,
         data: None,
@@ -61,6 +63,7 @@ pub fn ddb_update_and_delete_roundtrip() {
         original_signature: "OSIG".into(),
         rippled: false,
         tag: None,
+        response_tag: None,
         text: None,
         data: None,
     }));
@@ -78,6 +81,7 @@ pub fn ddb_signon_and_response_roundtrip() {
         original_signature: Some("SIG2".into()),
         rippled: Some(true),
         tag: Some("t".into()),
+        response_tag: None,
         text: None,
         data: None,
     }));
@@ -87,6 +91,7 @@ pub fn ddb_signon_and_response_roundtrip() {
 
     let signon_resp = Message::Ddb(DdbMessage::SignonResponse(DdbSignonResponse {
         app: "ddb".into(),
+        tag: None,
         response_tag: None,
         text: None,
         data: None,
@@ -131,6 +136,7 @@ pub fn ddb_init_and_dump_roundtrip() {
     let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve {
         app: "ddb".into(),
         tag: None,
+        response_tag: None,
         text: None,
         data: None,
     }));
@@ -150,7 +156,7 @@ pub fn ddb_init_and_dump_roundtrip() {
     assert_eq!(init_resp, ir2);
 
     let rec = AdvertRecord { id: "ID9".into(), endpoint: Some(InetSocketAddress { host: "host".into(), port: 9999 }), am_relay: Some(true), relay_id: Some("RID".into()), relay_sig: None, date: "2025-01-03T00:00:00Z".into(), sig: Some("RSIG".into()) };
-    let dump = Message::Ddb(DdbMessage::DumpResolve(DdbDumpResolve { app: "ddb".into(), record: rec.clone(), tag: None, text: None, data: None }));
+    let dump = Message::Ddb(DdbMessage::DumpResolve(DdbDumpResolve { app: "ddb".into(), record: rec.clone(), tag: None, response_tag: None, text: None, data: None }));
     let jd = marshal::to_json_string(&dump);
     let d2 = marshal::from_json_str(&jd).unwrap();
     assert_eq!(dump, d2);
@@ -160,6 +166,7 @@ pub fn ddb_init_and_dump_roundtrip() {
         record_index: 1,
         record_id: rec.id.clone(),
         record: rec.clone(),
+        tag: None,
         response_tag: None,
         text: None,
         data: None,

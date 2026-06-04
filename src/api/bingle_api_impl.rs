@@ -980,6 +980,12 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) {
         self.engine.access(|e| e.ddb_upsert_record(record))
     }
+    fn ddb_delete_record(&self, id: &str) {
+        self.engine.access(|e| e.ddb_delete_record(id))
+    }
+    fn relay_finder_remove_relay(&self, relay_id: &str) {
+        self.engine.access(|e| e.relay_finder_remove_relay(relay_id))
+    }
     fn ddb_backend_size(&self) -> usize {
         self.engine.access(|e| e.ddb_backend_size())
     }

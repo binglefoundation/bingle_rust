@@ -190,7 +190,7 @@ impl DdbClient for DdbClientImpl {
         };
 
         // Compose InitResolve
-        let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve { app: "ddb".into(), tag: None, text: None, data: None }));
+        let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve { app: "ddb".into(), tag: None, response_tag: None, text: None, data: None }));
         let json: JsonValue = to_json_value(&init);
 
         // Send and await InitResponse
@@ -275,6 +275,7 @@ impl DdbClient for DdbClientImpl {
             original_signature: "SIG".to_string(),
             rippled: false,
             tag: None,
+            response_tag: None,
             text: None,
             data: None,
         }));
@@ -345,6 +346,7 @@ impl DdbClient for DdbClientImpl {
             original_signature: "SIG".to_string(),
             rippled: false,
             tag: None,
+            response_tag: None,
             text: None,
             data: None,
         }));

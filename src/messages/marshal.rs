@@ -36,6 +36,10 @@ pub fn from_json_value(val: JsonValue) -> Result<Message, MarshalError> {
                     if let Ok(mx) = serde_json::from_value::<MutexMessage>(JsonValue::Object(map.clone())) {
                         return Ok(Message::Mutex(mx));
                     }
+                } else if app_str == "reportFail" {
+                    if let Ok(rf) = serde_json::from_value::<ReportFailMessage>(JsonValue::Object(map.clone())) {
+                        return Ok(Message::ReportFail(rf));
+                    }
                 }
             }
 
@@ -72,6 +76,7 @@ pub fn to_json_value(msg: &Message) -> JsonValue {
         Message::Ddb(d) => serde_json::to_value(d).unwrap_or(JsonValue::Null),
         Message::Ping(p) => serde_json::to_value(p).unwrap_or(JsonValue::Null),
         Message::Mutex(m) => serde_json::to_value(m).unwrap_or(JsonValue::Null),
+        Message::ReportFail(rf) => serde_json::to_value(rf).unwrap_or(JsonValue::Null),
         Message::Unknown(v) => v.clone(),
     }
 }

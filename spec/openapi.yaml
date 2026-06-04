@@ -3,22 +3,7 @@ info:
   title: Bingle Message API
   version: 0.1.0
   description: |
-    OpenAPI 3 specification for a message-based interface.
-
-    Messages are polymorphic based on the pair of fields `app` and `type`:
-    - When both `app` and `type` are present and non-null, the message is a typed message and
-      its specific class is determined by the values of (`app`, `type`).
-    - When `app` and `type` are null or not present, the message is a plain text message with a single
-      string field `text`.
-
-    All messages carry a `cipher_suite` field (nullable string) indicating the cipher suite
-    that was in use on the connection when the message was received. This field is derived by
-    the receiving client from the connection and is not transmitted on the wire.
-
-    Notes on modeling:
-    - OpenAPI 3.0 only supports a single-field discriminator, so we model the (`app`, `type`) based
-      polymorphism with `oneOf` and schema constraints. Specific typed messages can be defined by
-      constraining `app` and `type` with single-value enums in composed schemas.
+    OpenAPI 3 specification for Bingle message types. See spec/spec_main.md for the full narrative description.
   contact:
     name: Bingle
     url: https://example.com
@@ -40,7 +25,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         text:
           type: string
           description: Message text content
@@ -64,7 +49,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         text:
           type: string
           description: Message text content
@@ -89,7 +74,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -130,7 +115,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -175,7 +160,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -227,7 +212,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -277,15 +262,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
           description: Optional correlation tag for request/response association.
-        responseTag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for responses.
         text:
           type: string
           nullable: true
@@ -320,7 +301,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -349,13 +330,12 @@ components:
       required: [app, type, startId]
       additionalProperties: true
 
-    DdbGetEpoch:
+    DdbGetRelaysStatus:
       type: object
       description: |
-        Get an epoch number together with database graph configuration details.
+        Get the relay status information for all relay nodes in the graph.
         Can be sent to any initialized relay node.
-        This retrieves data for any loaded epoch including the current one.
-        The relay node responds with a `DdbEpochInfo` message.
+        The relay node responds with a `DdbRelaysStatusResponse` message.
       properties:
         app:
           type: string
@@ -363,20 +343,16 @@ components:
           description: ddb
         type:
           type: string
-          enum: ["getEpoch"]
-          description: getEpoch
+          enum: ["getRelaysStatus"]
+          description: getRelaysStatus
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
           description: Optional correlation tag for request/response association.
-        responseTag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for responses.
         text:
           type: string
           nullable: true
@@ -409,7 +385,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -446,7 +422,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -486,11 +462,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         responseTag:
           type: string
           nullable: true
@@ -523,7 +495,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -543,11 +515,11 @@ components:
       required: [app, type]
       additionalProperties: true
 
-    DdbEpochInfo:
+    DdbRelaysStatusResponse:
       type: object
       description: |
-        Sent from a relay node to the sender of a `DdbGetEpoch` message, or sent to all nodes when the epoch changes.
-        Provides the database graph configuration details.
+        Sent from a relay node to the sender of a `DdbGetRelaysStatus` message.
+        Provides the relay node status and graph configuration details.
       properties:
         app:
           type: string
@@ -555,16 +527,12 @@ components:
           description: ddb
         type:
           type: string
-          enum: ["getEpochResponse"]
-          description: getEpochResponse
+          enum: ["relaysStatusResponse"]
+          description: relaysStatusResponse
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         responseTag:
           type: string
           nullable: true
@@ -577,9 +545,12 @@ components:
           type: object
           description: Optional structured payload; schema depends on (`app`, `type`)
           additionalProperties: true
+        responderState:
+          type: string
+          description: The state of the responding relay node.
         epochId:
           type: integer
-          description: The epoch number requested, or the current epoch number if -1 was specified.
+          description: The current epoch number.
         treeOrder:
           type: integer
           description: The tree order of the database graph, indicating the number of leaves on a node in the NetDet algorithm.
@@ -591,6 +562,7 @@ components:
         relayEndpoints:
           type: array
           description: The IP endpoints of all active relay nodes in the graph.
+          nullable: true
           items:
             type: object
             properties:
@@ -605,7 +577,12 @@ components:
             required: [ host, port ]
             additionalProperties: false
             description: Host and port of the relay node.
-      required: [app, type, epochId, treeOrder, relayIds]
+        relayStates:
+          type: array
+          description: The states of all relay nodes in the graph, in the same order as relayIds.
+          items:
+            type: string
+      required: [app, type, responderState, epochId, treeOrder, relayIds, relayStates]
       additionalProperties: true
 
     DdbQueryResponse:
@@ -625,7 +602,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -670,11 +647,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         responseTag:
           type: string
           nullable: true
@@ -711,7 +684,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -813,7 +786,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -847,11 +820,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         responseTag:
           type: string
           nullable: true
@@ -903,7 +872,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
         calledId:
           type: string
           description: The identifier of the node to call.
@@ -926,7 +899,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
         channel:
           type: integer
           description: The channel number of the relay channel.
@@ -954,7 +931,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
         checkingEndpoint:
           $ref: '#/components/schemas/InetSocketAddress'
         doNotUseEndpoints:
@@ -982,7 +963,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         checkingId:
           type: string
           description: The identifier of the node that initiated the test.
@@ -1007,7 +988,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
       required: [app, type]
 
     RelayTriangleTest1Response:
@@ -1030,7 +1011,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         noCornerNode:
           type: boolean
           default: false
@@ -1038,8 +1019,11 @@ components:
             When true, indicates that no corner node was available for the
             triangle test (all known relay nodes were already excluded by the
             client). The receiver should assume NAT is restricted.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
       required: [app, type]
-
     RelayListen:
       type: object
       description: |
@@ -1057,7 +1041,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
       required: [app, type]
 
     RelayCheck:
@@ -1077,7 +1065,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
       required: [app, type]
 
     RelayListenResponse:
@@ -1099,7 +1091,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
       required: [app, type]
 
     RelayCheckResponse:
@@ -1118,7 +1114,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
         state:
           type: string
           description: |
@@ -1142,7 +1142,14 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        calledId:
+          type: string
+          description: The identifier of the node that was called.
         channel:
           type: integer
       required: [app, type, channel]
@@ -1164,7 +1171,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         channel:
           type: integer
           description: The channel number of the relay channel.
@@ -1187,7 +1194,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
       required: [app, type]
 
     Fail:
@@ -1207,7 +1214,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         responseTag:
           type: string
           nullable: true
@@ -1235,11 +1242,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
-        responseTag:
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
           type: string
           nullable: true
-          description: Optional correlation tag for responses.
+          description: Optional correlation tag for request/response association.
         lamport_timestamp:
           type: integer
           format: int64
@@ -1269,11 +1276,11 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
-        tag:
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        responseTag:
           type: string
           nullable: true
-          description: Optional correlation tag for request/response association.
+          description: Optional correlation tag for responses.
         known_ids:
           type: array
           items:
@@ -1299,7 +1306,7 @@ components:
         cipher_suite:
           type: string
           nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client, not transmitted on the wire.
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
         tag:
           type: string
           nullable: true
@@ -1312,3 +1319,212 @@ components:
           description: Unique list of node IDs known by the holder.
       required: [app, type]
       additionalProperties: true
+
+    # Relay failure reporting messages (app: "reportFail")
+    RelayReportFailed:
+      type: object
+      description: |
+        Sent by a node to its peers to report that a relay has failed.
+        Peers respond by casting their own vote and rippling the report onward as a `ReportFailedRipple`.
+      properties:
+        app:
+          type: string
+          enum: ["reportFail"]
+          description: reportFail
+        type:
+          type: string
+          enum: ["relayReportFailed"]
+          description: relayReportFailed
+        cipher_suite:
+          type: string
+          nullable: true
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        failed_relay_id:
+          type: string
+          description: The identifier (Algorand address) of the relay being reported as failed.
+        fail_type:
+          type: string
+          description: A string identifying the category of failure (e.g. "send_rejected").
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp at which the failure was observed by the reporting node.
+      required: [app, type, failed_relay_id, fail_type, timestamp]
+      additionalProperties: true
+
+    ReportFailedRipple:
+      type: object
+      description: |
+        Rippled form of a relay failure report, accumulated with votes from each node that
+        has processed the report. Carries lists of confirmations (nodes that agree the relay
+        has failed) and disputes (nodes that disagree).
+        Each node that forwards this message adds its own vote before passing it on.
+        A `ReportFailedRippleResponse` is sent back to the sender with the receiver's vote added.
+      properties:
+        app:
+          type: string
+          enum: ["reportFail"]
+          description: reportFail
+        type:
+          type: string
+          enum: ["reportFailedRipple"]
+          description: reportFailedRipple
+        cipher_suite:
+          type: string
+          nullable: true
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        failed_relay_id:
+          type: string
+          description: The identifier (Algorand address) of the relay being reported as failed.
+        fail_type:
+          type: string
+          description: A string identifying the category of failure (e.g. "send_rejected").
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp at which the failure was observed by the original reporting node.
+        confirmations:
+          type: array
+          description: Nodes that agree the relay has failed.
+          items:
+            $ref: '#/components/schemas/FailVote'
+        disputes:
+          type: array
+          description: Nodes that disagree that the relay has failed.
+          items:
+            $ref: '#/components/schemas/FailVote'
+      required: [app, type, failed_relay_id, fail_type, timestamp, confirmations, disputes]
+      additionalProperties: true
+
+    ReportFailedRippleResponse:
+      type: object
+      description: |
+        Sent back to the sender of a `ReportFailedRipple`. Contains the accumulated confirmations
+        and disputes with the responding node's own vote added to the appropriate list.
+      properties:
+        app:
+          type: string
+          enum: ["reportFail"]
+          description: reportFail
+        type:
+          type: string
+          enum: ["reportFailedRippleResponse"]
+          description: reportFailedRippleResponse
+        cipher_suite:
+          type: string
+          nullable: true
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        failed_relay_id:
+          type: string
+          description: The identifier (Algorand address) of the relay being reported as failed.
+        fail_type:
+          type: string
+          description: A string identifying the category of failure (e.g. "send_rejected").
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp at which the failure was observed by the original reporting node.
+        confirmations:
+          type: array
+          description: Nodes that agree the relay has failed, including the sender's own vote.
+          items:
+            $ref: '#/components/schemas/FailVote'
+        disputes:
+          type: array
+          description: Nodes that disagree that the relay has failed, including the sender's own vote.
+          items:
+            $ref: '#/components/schemas/FailVote'
+      required: [app, type, failed_relay_id, fail_type, timestamp, confirmations, disputes]
+      additionalProperties: true
+
+    ReportFailedComplete:
+      type: object
+      description: |
+        Broadcast by the originator once all votes have been received.
+        Indicates that the failure-report round is complete and carries the final
+        confirmations and disputes tallies.
+      properties:
+        app:
+          type: string
+          enum: ["reportFail"]
+          description: reportFail
+        type:
+          type: string
+          enum: ["reportFailedComplete"]
+          description: reportFailedComplete
+        cipher_suite:
+          type: string
+          nullable: true
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        failed_relay_id:
+          type: string
+          description: The identifier (Algorand address) of the relay that was reported as failed.
+        fail_type:
+          type: string
+          description: A string identifying the category of failure (e.g. "send_rejected").
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp at which the failure was observed by the original reporting node.
+        confirmations:
+          type: array
+          description: Final list of nodes that confirmed the relay has failed.
+          items:
+            $ref: '#/components/schemas/FailVote'
+        disputes:
+          type: array
+          description: Final list of nodes that disputed the relay failure.
+          items:
+            $ref: '#/components/schemas/FailVote'
+      required: [app, type, failed_relay_id, fail_type, timestamp, confirmations, disputes]
+      additionalProperties: true
+
+    FailVote:
+      type: object
+      description: |
+        A single node's vote in a relay failure report, carried in the `confirmations`
+        or `disputes` list of `ReportFailedRipple`, `ReportFailedRippleResponse`, and
+        `ReportFailedComplete` messages.
+        The signature is an ed25519 signature by the voting node across
+        `(failed_relay_id, fail_type, timestamp)`.
+      properties:
+        confirming_id:
+          type: string
+          description: The identifier (Algorand address) of the node casting this vote.
+        signature:
+          type: string
+          description: ed25519 signature of the voting node across (failed_relay_id, fail_type, timestamp).
+      required: [confirming_id, signature]
+      additionalProperties: false
