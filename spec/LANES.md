@@ -69,7 +69,7 @@ robustness:
 - ensure handle uniqueness
 - handle fails correctly
   + ~~node~~
-  + relay on node
+  + ~~relay on node~~
   + relay on relay
 - use relay cache efficently during relay init
 - fix fragile tests
