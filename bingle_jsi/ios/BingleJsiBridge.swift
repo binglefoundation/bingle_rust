@@ -279,7 +279,13 @@ class BingleJsiBridge: RCTEventEmitter {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                try api.addMessage(senderHandle: senderHandle, recipientHandles: recipientHandles, timestamp: Int64(timestamp), text: text)
+                try api.addMessage(
+                    senderHandle: senderHandle,
+                    recipientHandles: recipientHandles,
+                    timestamp: Int64(timestamp),
+                    text: text,
+                    cipherSuite: nil
+                )
                 resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
@@ -436,7 +442,8 @@ class BingleJsiBridge: RCTEventEmitter {
             tag: dict["tag"] as? String,
             responseTag: dict["response_tag"] as? String,
             text: dict["text"] as? String,
-            data: dict["data"] as? String
+            data: dict["data"] as? String,
+            cipherSuite: dict["cipher_suite"] as? String
         )
     }
 
@@ -448,6 +455,7 @@ class BingleJsiBridge: RCTEventEmitter {
             "response_tag": msg.responseTag,
             "text": msg.text,
             "data": msg.data,
+            "cipher_suite": msg.cipherSuite,
         ]
     }
 
@@ -514,6 +522,7 @@ class MessageCallbackBridge: MessageCallback {
                 "response_tag": message.responseTag as Any,
                 "text": message.text as Any,
                 "data": message.data as Any,
+                "cipher_suite": message.cipherSuite as Any,
             ],
         ])
     }
