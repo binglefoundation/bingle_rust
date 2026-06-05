@@ -82,6 +82,7 @@ network:
 - cache DDB locally with timeout / cancel
 - cache blockchain locally
 - detect relay unresponsive from peers and remove
+- reregister after a network restart
 
 tokenomics:
 - develop tokenomics model

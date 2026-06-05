@@ -25,10 +25,20 @@ bingle_jsi/
 │       └── bingle_jsi_api_impl.rs# Concrete implementation + create_bingle_api()
 ├── scripts/
 │   ├── build_ios.sh              # iOS cross-compile + XCFramework
-│   └── build_android.sh          # Android cross-compile + jniLibs
+│   ├── build_android.sh          # Android cross-compile + jniLibs
+│   ├── run_ios_bridge_tests.sh   # run Layer 2 Swift XCTests headlessly
+│   ├── add_swift_test_target.rb  # one-time: add BingleJsiBridgeTests Xcode target
+│   └── fix_test_target_settings.rb # one-time: configure test target build settings
 ├── ios/
 │   ├── generated/                # (created by build_ios.sh) Swift + C headers
-│   └── BingleJsi.xcframework/   # (created by build_ios.sh)
+│   ├── BingleJsi.xcframework/    # (created by build_ios.sh)
+│   ├── BingleJsiBridge.swift     # React Native ↔ uniffi bridge
+│   └── BingleJsiBridge.m         # Objective-C bridge method declarations
+├── example/
+│   └── ios/
+│       └── BingleJsiBridgeTests/ # Swift XCTest target (Layer 2 tests)
+│           ├── MockBingleJsiApi.swift     # mock BingleJsiApiProtocol
+│           └── BingleJsiBridgeTests.swift # 17 test cases
 ├── android/
 │   ├── build.gradle              # Android library configuration
 │   ├── generated/                # (created by build_android.sh) Kotlin bindings
@@ -287,6 +297,129 @@ cargo test -p bingle_jsi
 
 # Run all workspace tests
 cargo test
+```
+
+---
+
+### iOS Bridge Tests (Layer 2 — Swift XCTest)
+
+The Swift bridge (`BingleJsiBridge.swift`) is tested independently of the
+real Bingle engine using a mock implementation of `BingleJsiApiProtocol`.
+This lets the full call path through the bridge be exercised — including
+Promise resolution, error propagation, and the "not initialized" rejection
+path — without a passphrase, a live network, or a running Bingle node.
+
+#### How it works
+
+`BingleJsiBridge.swift` holds its API instance as `(any BingleJsiApiProtocol)?`
+rather than the concrete `BingleJsiApi` type. A package-internal
+`injectApi(_ api:)` method allows a test-supplied mock to be injected
+before any test case runs.
+
+The test target (`BingleJsiBridgeTests`) lives in:
+
+```
+bingle_jsi/example/ios/BingleJsiBridgeTests/
+├── MockBingleJsiApi.swift      # mock implementing all protocol methods
+└── BingleJsiBridgeTests.swift  # 23 XCTest cases
+```
+
+The mock records every call, exposes configurable return values, and can
+be made to throw on demand — enabling both happy-path and error-path
+coverage.
+
+A `SpyBingleJsiBridge` subclass overrides `sendEvent(withName:body:)` to
+capture React Native events in memory, allowing tests to assert the exact
+event name and payload delivered to the JS layer.
+
+Tests covered:
+
+| Test | What it exercises |
+|------|-------------------|
+| `testHandleLookup_resolvesWithExpectedUserId` | successful handle → user-id lookup |
+| `testHandleLookup_rejectsOnApiError` | bridge rejects when mock throws |
+| `testHandleLookup_notInitialized_rejectsWithCorrectCode` | rejection before `initialize` |
+| `testSendMessageToId_resolvesAndRecordsCall` | message forwarded to mock, bool result resolved |
+| `testSendMessageToId_mapsAllMessageFields` | all message fields (including `cipher_suite`) mapped correctly |
+| `testSendMessageToId_rejectsOnApiError` | bridge rejects when mock throws |
+| `testSendMessageToId_notInitialized_rejectsWithCorrectCode` | rejection before `initialize` |
+| `testSendMessageToHandle_resolvesAndRecordsCall` | handle-based send forwarded to mock |
+| `testVersion_resolvesWithVersionInfo` | `VersionInfo` fields returned via Promise |
+| `testIsStarted_resolvesWithTrueWhenStarted` | `true` resolved when mock returns started |
+| `testIsStarted_resolvesWithFalseWhenNotStarted` | `false` resolved when mock returns not started |
+| `testStart_callsApiStart` | `start()` forwarded and resolved |
+| `testSetMessageCallback_registersCallback` | callback registered on mock |
+| `testSetMessageCallback_deliversMessageToEventEmitter` | inbound message fires `onMessage` event with correct payload |
+| `testKeypairStatus_resolvesWithExpectedFields` | `KeypairStatusResponse` fields resolved |
+| `testGetNatType_resolvesWithNatTypeString` | `NatTypeResponse` nat type string resolved |
+| `testGenerateKeypair_resolvesWithKeypairFields` | `Keypair` id and passphrase resolved |
+| `testIsBlocked_resolvesWithFalseByDefault` | `false` resolved for unblocked contact |
+| `testIsBlocked_resolvesWithTrueForBlockedContact` | `true` resolved for blocked contact |
+
+#### Prerequisites
+
+- macOS with Xcode installed
+- CocoaPods (`brew install cocoapods`)
+- An iOS 18.x simulator runtime available (`xcrun simctl list runtimes`)
+- The example workspace already pod-installed:
+  ```bash
+  cd bingle_jsi/example/ios && pod install
+  ```
+
+The XCFramework (`bingle_jsi/ios/BingleJsi.xcframework`) must exist.
+If it is missing, build it first:
+
+```bash
+bash bingle_jsi/scripts/build_ios.sh
+```
+
+#### Running the tests
+
+Use the provided script from the project root:
+
+```bash
+./bingle_jsi/scripts/run_ios_bridge_tests.sh
+```
+
+The script will:
+1. Boot the `iPhone 16` (iOS 18.6) simulator if it is not already running
+2. Run `xcodebuild test` against the `BingleJsiBridgeTests` scheme
+3. Write the full `xcodebuild` log to `tmp/ios_bridge_tests.log`
+4. Print a pass/fail summary and exit with code 0 (pass) or 1 (fail)
+
+To run directly with `xcodebuild` (from `bingle_jsi/example/ios`):
+
+```bash
+xcodebuild test \
+  -workspace BingleJsiExample.xcworkspace \
+  -scheme BingleJsiBridgeTests \
+  -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.6' \
+  -sdk iphonesimulator \
+  -quiet
+```
+
+The simulator runs headlessly — no display or UI interaction is required,
+so the tests are suitable for CI.
+
+#### Project setup scripts
+
+The Xcode test target was added to `BingleJsiExample.xcodeproj` using two
+Ruby scripts (invoked once; do not need to be re-run unless the project
+file is regenerated):
+
+| Script | Purpose |
+|--------|---------|
+| `bingle_jsi/scripts/add_swift_test_target.rb` | Adds the `BingleJsiBridgeTests` target and registers source files |
+| `bingle_jsi/scripts/fix_test_target_settings.rb` | Configures `PRODUCT_NAME`, deployment target, and standalone bundle settings (`TEST_HOST = ''`) |
+
+Both scripts use the `xcodeproj` gem bundled with CocoaPods and are
+invoked with:
+
+```bash
+GEM_PATH=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec \
+GEM_HOME=/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec \
+ruby -I /opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/xcodeproj-1.27.0/lib \
+  bingle_jsi/scripts/<script>.rb
 ```
 
 ---

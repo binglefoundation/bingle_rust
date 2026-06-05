@@ -8,7 +8,13 @@ import React
 @objc(BingleJsi)
 class BingleJsiBridge: RCTEventEmitter {
 
-    private var apiInstance: BingleJsiApi?
+    private var apiInstance: (any BingleJsiApiProtocol)?
+
+    /// Inject a mock or alternative API instance for testing.
+    /// Call this before any bridge methods that require initialization.
+    func injectApi(_ api: any BingleJsiApiProtocol) {
+        self.apiInstance = api
+    }
 
     override static func requiresMainQueueSetup() -> Bool {
         return false

@@ -1,5 +1,5 @@
 PODS:
-  - bingle_jsi (0.0.1):
+  - BingleJsiRN (0.0.4):
     - React-Core
   - FBLazyVector (0.85.2)
   - hermes-engine (250829098.0.10):
@@ -1752,7 +1752,7 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
-  - bingle_jsi (from `../..`)
+  - BingleJsiRN (from `../..`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -1829,7 +1829,7 @@ DEPENDENCIES:
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
-  bingle_jsi:
+  BingleJsiRN:
     :path: "../.."
   FBLazyVector:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
@@ -1980,7 +1980,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  bingle_jsi: 596e7cc780833012f407098b6b16516aac5e33ba
+  BingleJsiRN: fc00e506640a77b4aa27235e726d0b2173847569
   FBLazyVector: 26fd21c75314e101f280d401e97f27d54f3f7064
   hermes-engine: a5057ef6344f95db49768aa61c0c0fb4ff1e5665
   RCTDeprecation: c7a2768f905d76ca6d2cfefb26e4349eacbdfca3
@@ -2055,6 +2055,6 @@ SPEC CHECKSUMS:
   ReactNativeDependencies: fce4f459e687ad35e014c876a4a900e650c1cb3a
   Yoga: 04bb4bfeb02c0000b940c1e6e89e856cd8de5a71
 
-PODFILE CHECKSUM: 3863518b97c5dc2b5ee9a762b1d7996fd902f83e
+PODFILE CHECKSUM: b8eb18d1f80913d27f11d5f52b949bbcef2aef94
 
 COCOAPODS: 1.16.2
