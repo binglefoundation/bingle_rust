@@ -217,7 +217,7 @@ pub struct Engine {
     // Set of endpoints we have seen (sent to)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
     // Tracks success/failure of the most recent send to each known endpoint
-    send_status: Arc<Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, SendStatus>>>,
+    endpoint_status: Arc<Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus>>>,
     pub(crate) span: tracing::Span,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
@@ -496,11 +496,11 @@ struct ConnectionEntry {
 
 /// Tracks the outcome of the most recent send attempt to a specific network endpoint.
 #[derive(Clone)]
-pub struct SendStatus {
+pub struct EndpointStatus {
     /// Timestamp of the last send attempt (success or failure).
     pub last_checked_timestamp: Instant,
     /// Whether the most recent send attempt succeeded.
-    pub success: bool,
+    pub is_working: bool,
 }
 
 impl Engine {
@@ -574,7 +574,7 @@ impl Engine {
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            send_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            endpoint_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
             span: tracing::Span::none(),
             custom_message_handler: None,
         };
@@ -893,19 +893,19 @@ impl Engine {
     }
 
     /// Testing helper: get a copy of the send_status map.
-    pub fn send_status_for_tests(
+    pub fn endpoint_status_for_tests(
         &self,
-    ) -> std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, SendStatus> {
-        self.send_status.lock().unwrap().clone()
+    ) -> std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus> {
+        self.endpoint_status.lock().unwrap().clone()
     }
 
     /// Testing helper: insert an entry directly into the send_status map.
-    pub fn set_send_status_for_tests(
+    pub fn set_endpoint_status_for_tests(
         &self,
         key: crate::api::bingle_api::NetworkEndpointKey,
-        status: SendStatus,
+        status: EndpointStatus,
     ) {
-        self.send_status.lock().unwrap().insert(key, status);
+        self.endpoint_status.lock().unwrap().insert(key, status);
     }
 
     /// Send bytes to a peer and track the connection's last_seen.
@@ -930,9 +930,9 @@ impl Engine {
         // Guard: skip send if the peer recently failed (within SEND_FAIL_BACKOFF).
         // Placed after structural guards so that get_key() is only called for valid endpoints.
         if let Some(key) = to.get_key() {
-            if let Ok(status_map) = self.send_status.lock() {
+            if let Ok(status_map) = self.endpoint_status.lock() {
                 if let Some(status) = status_map.get(&key) {
-                    if !status.success && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF {
+                    if !status.is_working && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF {
                         return Err("Sending is failing".to_string());
                     }
                 }
@@ -944,12 +944,12 @@ impl Engine {
         let res = self.packet_transport.send(to, data);
         // Update send_status regardless of success or failure
         if let Some(key) = to.get_key() {
-            if let Ok(mut status_map) = self.send_status.lock() {
+            if let Ok(mut status_map) = self.endpoint_status.lock() {
                 status_map.insert(
                     key.clone(),
-                    SendStatus {
+                    EndpointStatus {
                         last_checked_timestamp: Instant::now(),
-                        success: res.is_ok(),
+                        is_working: res.is_ok(),
                     },
                 );
             } else {
