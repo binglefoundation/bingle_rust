@@ -78,6 +78,9 @@ fn message_to_json(msg: &BingleMessage) -> JsonValue {
             map.insert("data".to_string(), JsonValue::String(data.clone()));
         }
     }
+    if let Some(cipher_suite) = &msg.cipher_suite {
+        map.insert("cipherSuite".to_string(), JsonValue::String(cipher_suite.clone()));
+    }
     JsonValue::Object(map)
 }
 
@@ -90,7 +93,7 @@ fn json_to_message(val: &JsonValue) -> BingleMessage {
         response_tag: val.get("responseTag").and_then(|v| v.as_str()).map(|s| s.to_string()),
         text: val.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
         data: val.get("data").map(|v| v.to_string()),
-        cipher_suite: val.get("cipher_suite").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        cipher_suite: val.get("cipherSuite").and_then(|v| v.as_str()).map(|s| s.to_string()),
     }
 }
 

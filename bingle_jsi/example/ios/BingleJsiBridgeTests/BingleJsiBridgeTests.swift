@@ -435,4 +435,49 @@ final class BingleJsiBridgeTests: XCTestCase {
         waitForExpectations(timeout: 2.0)
         XCTAssertEqual(resolvedValue as? Bool, true)
     }
+
+    // MARK: - getMessages
+
+    func testGetMessages_includesCipherSuite() {
+        mockApi.messagesResult = [
+            Message(
+                senderHandle: "alice",
+                recipientHandles: ["bob"],
+                timestamp: 1700000000,
+                text: "hi",
+                cipherSuite: "TLS_AES_256_GCM_SHA384"
+            ),
+            Message(
+                senderHandle: "carol",
+                recipientHandles: ["bob"],
+                timestamp: 1700000001,
+                text: "hey",
+                cipherSuite: nil
+            ),
+        ]
+        let expectation = self.expectation(description: "resolve called")
+        var resolvedArray: [[String: Any]]?
+
+        bridge.getMessages(
+            { value in
+                resolvedArray = value as? [[String: Any]]
+                expectation.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+
+        waitForExpectations(timeout: 2.0)
+        XCTAssertNotNil(resolvedArray)
+        XCTAssertEqual(resolvedArray?.count, 2)
+
+        let first = resolvedArray?[0]
+        XCTAssertEqual(first?["sender_handle"] as? String, "alice")
+        XCTAssertEqual(first?["text"] as? String, "hi")
+        XCTAssertEqual(first?["cipher_suite"] as? String, "TLS_AES_256_GCM_SHA384")
+
+        let second = resolvedArray?[1]
+        XCTAssertEqual(second?["sender_handle"] as? String, "carol")
+        // nil cipher_suite is mapped to NSNull/nil, not a String
+        XCTAssertNil(second?["cipher_suite"] as? String)
+    }
 }

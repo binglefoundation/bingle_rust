@@ -119,6 +119,7 @@ export const BingleJsi = BingleJsiNative as {
       recipient_handles: string[];
       timestamp: number;
       text: string;
+      cipher_suite: string | null;
     }[]
   >;
   keypairStatus(): Promise<{

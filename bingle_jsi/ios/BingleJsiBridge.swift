@@ -314,6 +314,7 @@ class BingleJsiBridge: RCTEventEmitter {
                         "recipient_handles": $0.recipientHandles,
                         "timestamp": $0.timestamp,
                         "text": $0.text,
+                        "cipher_suite": $0.cipherSuite as Any,
                     ] as [String: Any]
                 })
             } catch {

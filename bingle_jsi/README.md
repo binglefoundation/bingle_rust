@@ -321,7 +321,7 @@ The test target (`BingleJsiBridgeTests`) lives in:
 ```
 bingle_jsi/example/ios/BingleJsiBridgeTests/
 ├── MockBingleJsiApi.swift      # mock implementing all protocol methods
-└── BingleJsiBridgeTests.swift  # 23 XCTest cases
+└── BingleJsiBridgeTests.swift  # 24 XCTest cases
 ```
 
 The mock records every call, exposes configurable return values, and can
@@ -355,6 +355,7 @@ Tests covered:
 | `testGenerateKeypair_resolvesWithKeypairFields` | `Keypair` id and passphrase resolved |
 | `testIsBlocked_resolvesWithFalseByDefault` | `false` resolved for unblocked contact |
 | `testIsBlocked_resolvesWithTrueForBlockedContact` | `true` resolved for blocked contact |
+| `testGetMessages_includesCipherSuite` | `cipher_suite` present (or nil) for each returned message |
 
 #### Prerequisites
 

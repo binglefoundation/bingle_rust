@@ -6,7 +6,8 @@ UX:
 - ~~contact UX~~
 - ~~build iOS~~ 
 - ~~tidy up bugs~~
-- info option to show cipher suite (now in API, needs UX)
+- ~~info option to show cipher suite (now in API, needs UX)~~
+- fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close
 
 security:
 - ensure protocol is built as documented, changes as follows:
