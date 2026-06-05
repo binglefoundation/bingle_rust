@@ -1,10 +1,46 @@
-use crate::util::reusable_mock_api::MockApiBoth;
+use std::sync::Arc;
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, StartOptions};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use rust_comms::dtls::{Dtls, HandleMessage};
 use rust_comms::engine::{Engine, EndpointStatus, SEND_FAIL_BACKOFF};
+use rust_comms::messages::router::Router;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+
+/// A mock API that authenticates any sender, allowing the engine auth check to pass.
+struct AlwaysAuthenticatedApi;
+impl InnerBingleApi for AlwaysAuthenticatedApi {
+    fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+        Some("test_handle".to_string())
+    }
+}
+
+/// Build an engine where any sender is authenticated; return the engine, installed DTLS callback,
+/// and the router (needed for `Router::with_current_router` when invoking the handler in tests).
+fn build_engine_with_auth() -> (Engine, HandleMessage, Arc<Router>) {
+    let api = crate::util::reusable_mock_api::to_weak_api_both(
+        MockApiBoth::new_with_api_override(Arc::new(AlwaysAuthenticatedApi))
+    );
+    let mut engine = Engine::new_with_dtls(&StartOptions::default(), api.clone(), Box::new(SucceedingDtls::new()));
+    let router = Arc::new(Router::new(api));
+    engine.set_router(router.clone());
+    engine.install_dtls_handler_for_tests().expect("install_dtls_handler_for_tests failed");
+    let handler = {
+        let mut h: Option<HandleMessage> = None;
+        engine.with_dtls_mut(|dtls| { h = dtls.get_handle_message(); });
+        h.expect("DTLS handler should be installed")
+    };
+    (engine, handler, router)
+}
+
+/// Simulate a packet arriving from the given endpoint via the installed DTLS handler.
+fn simulate_packet_arrival(handler: &HandleMessage, router: Arc<Router>, from: &NetworkEndpoint, issuer: &str, data: &[u8]) {
+    let fake_dtls = SucceedingDtls::new();
+    Router::with_current_router(router, || {
+        handler(&fake_dtls as &dyn Dtls, from, issuer, data);
+    });
+}
 
 /// A mock DTLS implementation that always succeeds and auto-acks FRPT DATA_SINGLE packets.
 struct SucceedingDtls {
@@ -264,4 +300,68 @@ pub fn send_to_peer_sends_normally_when_previous_send_succeeded() {
     // Act: backoff guard must not fire for a success entry
     let result = engine.send_to_peer(&endpoint, b"data");
     assert!(result.is_ok(), "expected Ok since status is success, got {:?}", result);
+}
+
+// --- Packet arrival tests ---
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn packet_arrival_sets_endpoint_status_is_working_true() {
+    let (engine, handler, router) = build_engine_with_auth();
+
+    let addr: SocketAddr = "127.0.0.1:9020".parse().unwrap();
+    let from = NetworkEndpoint::new_direct(addr);
+    let key = from.get_key().expect("endpoint must have a key");
+    let before = Instant::now();
+
+    simulate_packet_arrival(&handler, router, &from, "SENDER.", b"{}");
+
+    let status_map = engine.endpoint_status_for_tests();
+    let status = status_map.get(&key).expect("endpoint_status should have an entry after packet arrival");
+    assert!(status.is_working, "is_working should be true after packet arrival");
+    assert!(
+        status.last_checked_timestamp >= before,
+        "last_checked_timestamp should be recent"
+    );
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn no_packet_means_no_endpoint_status_entry() {
+    let (engine, _handler, _router) = build_engine_with_auth();
+
+    let addr: SocketAddr = "127.0.0.1:9021".parse().unwrap();
+    let from = NetworkEndpoint::new_direct(addr);
+    let key = from.get_key().expect("endpoint must have a key");
+
+    let status_map = engine.endpoint_status_for_tests();
+    assert!(
+        status_map.get(&key).is_none(),
+        "endpoint_status should have no entry when no packet has arrived"
+    );
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn unauthenticated_packet_does_not_set_endpoint_status() {
+    // Use a plain MockApiBoth (handle_lookup_by_id returns None) — auth will fail.
+    let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());
+    let mut engine = Engine::new_with_dtls(&StartOptions::default(), api.clone(), Box::new(SucceedingDtls::new()));
+    let router = Arc::new(Router::new(api));
+    engine.set_router(router.clone());
+    engine.install_dtls_handler_for_tests().expect("install failed");
+    let handler = {
+        let mut h: Option<HandleMessage> = None;
+        engine.with_dtls_mut(|dtls| { h = dtls.get_handle_message(); });
+        h.expect("handler must be installed")
+    };
+
+    let addr: SocketAddr = "127.0.0.1:9022".parse().unwrap();
+    let from = NetworkEndpoint::new_direct(addr);
+    let key = from.get_key().expect("endpoint must have a key");
+
+    simulate_packet_arrival(&handler, router, &from, "UNKNOWN_SENDER.", b"{}");
+
+    let status_map = engine.endpoint_status_for_tests();
+    assert!(
+        status_map.get(&key).is_none(),
+        "endpoint_status should not be updated for unauthenticated sender"
+    );
 }

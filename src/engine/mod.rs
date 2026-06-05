@@ -1072,6 +1072,7 @@ impl Engine {
 
         // Capture safe, shareable state for the handler closure (avoid raw self pointers)
         let connections = self.connections.clone();
+        let endpoint_status = self.endpoint_status.clone();
         let pending_responses = self.pending_responses.clone();
         let _ = self.send_via_bingle.clone();
         let bingle_api = self.bingle_api.clone();
@@ -1115,15 +1116,27 @@ impl Engine {
                         }
                     }
 
+                    // 2) Mark endpoint as working: an arriving application packet confirms reachability
+                    if let Some(key) = from.get_key() {
+                        if let Ok(mut status_map) = endpoint_status.lock() {
+                            status_map.insert(key, EndpointStatus {
+                                last_checked_timestamp: Instant::now(),
+                                is_working: true,
+                            });
+                        } else {
+                            tracing::warn!("[Engine::install_dtls_handler][cb] could not lock endpoint_status");
+                        }
+                    }
+
                     // No inline DDB handling; use Router + handlers instead
 
-                    // 2) Provide per-message API bindings to router; sender remains as configured by API layer
+                    // 3) Provide per-message API bindings to router; sender remains as configured by API layer
                     router_arc.set_bingle_api(Some(bingle_api.clone()));
                     // Provide DDB/relay context to router
                     router_arc.set_am_relay(am_relay);
                     router_arc.set_ddb_backend(Some(ddb_backend.clone()));
 
-                    // 3) Engine routing logic (inline to avoid &self)
+                    // 4) Engine routing logic (inline to avoid &self)
                     // Record last sender for reply helpers
                     router_arc.set_last_from(from.inet_socket_address());
 
