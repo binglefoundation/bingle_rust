@@ -233,34 +233,34 @@ impl RelayFinder {
         }
         let mut relays: Vec<RelayInfo> = updater.relay_info_cache().list_all_relays(my_id_norm, true);
         debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from cache: {:?}", relays);
-
-        // 3) Ensure our own relay is included in the list if it was not returned by the query.
-        {
-            let has_self = relays.iter().any(|r| r.id == my_id_norm);
-            if !has_self {
-                let mut added = false;
-                if let Some(api) = self.api.upgrade() {
-                    if api.is_relay() {
-                        if let Some(addr) = api.get_last_public_addr() {
-                            debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
-                            relays.push(RelayInfo::root(my_id_norm.to_string(), addr));
-                            added = true;
-                        }
-                    }
-                }
-                if !added {
-                    let roots = updater.relay_info_cache().list_root_relays(my_id_norm, true);
-                    if let Some(me) = roots.iter().find(|r| r.id == my_id_norm) {
-                        tracing::info!("[RelayFinder] list_all_relays: adding self (from relay_info_cache) to relay list for cache: {}", me.id);
-                        relays.push(if me.is_root {
-                            RelayInfo::root_with(me.id.clone(), me.address, None, me.ttl)
-                        } else {
-                            RelayInfo::non_root_with(me.id.clone(), me.address, None, me.ttl)
-                        });
-                    }
-                }
-            }
-        }
+        //
+        // // 3) Ensure our own relay is included in the list if it was not returned by the query.
+        // {
+        //     let has_self = relays.iter().any(|r| r.id == my_id_norm);
+        //     if !has_self {
+        //         let mut added = false;
+        //         if let Some(api) = self.api.upgrade() {
+        //             if api.is_relay() {
+        //                 if let Some(addr) = api.get_last_public_addr() {
+        //                     debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: adding self (from api) to relay list for cache: {}", my_id_norm);
+        //                     relays.push(RelayInfo::root(my_id_norm.to_string(), addr));
+        //                     added = true;
+        //                 }
+        //             }
+        //         }
+        //         if !added {
+        //             let roots = updater.relay_info_cache().list_root_relays(my_id_norm, true);
+        //             if let Some(me) = roots.iter().find(|r| r.id == my_id_norm) {
+        //                 tracing::info!("[RelayFinder] list_all_relays: adding self (from relay_info_cache) to relay list for cache: {}", me.id);
+        //                 relays.push(if me.is_root {
+        //                     RelayInfo::root_with(me.id.clone(), me.address, None, me.ttl)
+        //                 } else {
+        //                     RelayInfo::non_root_with(me.id.clone(), me.address, None, me.ttl)
+        //                 });
+        //             }
+        //         }
+        //     }
+        // }
         relays.sort_by(|a, b| a.id.cmp(&b.id));
 
         if !include_self { relays.retain(|r| r.id != my_id_norm); }
