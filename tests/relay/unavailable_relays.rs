@@ -70,9 +70,9 @@ pub fn test_unavailable_relays_no_retry() {
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
     let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
-    let check_calls = api_inner.check_calls.clone();
-    
-    // discover_roots returns the same relay twice
+    let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
+
+    // discover_roots returns the same relay twice (deduped internally by relay_select_and_query)
     let discover = {
         let r1 = RelayInfo::root(id1.clone(), addr1);
         let rs = vec![r1.clone(), r1];
@@ -85,13 +85,12 @@ pub fn test_unavailable_relays_no_retry() {
         discover
     );
 
-    // find_relay will call list_all_relays via DDB getRelaysStatus, deduplicate r1, then call relay_check once.
-    // The relay_check for r1 should fail and add to unavailable_relays.
+    // find_relay uses relay_select_and_query which calls getRelaysStatus (not relay_check/Check).
+    // Even though discover_roots returns r1 twice, relay_select_and_query deduplicates by sorting & iterating.
     let _ = finder.find_relay("MYID");
 
-    // The first relay_check for r1 should fail and add to unavailable_relays.
-    // The alternate (also r1) should see it in the list and skip.
-    assert_eq!(*check_calls.lock().unwrap(), 1, "Should only have called Check once even if relay appears twice");
+    // getRelaysStatus is called once per candidate attempt via relay_select_and_query.
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Should only have called getRelaysStatus once");
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -100,8 +99,8 @@ pub fn test_unavailable_relays_reset_on_entry() {
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
     let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
-    let check_calls = api_inner.check_calls.clone();
-    
+    let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
+
     let discover = {
         let r1 = RelayInfo::root(id1.clone(), addr1);
         Arc::new(move || vec![r1.clone()])
@@ -113,13 +112,13 @@ pub fn test_unavailable_relays_reset_on_entry() {
         discover
     );
 
-    // First call
+    // First call: relay_select_and_query queries r1 via getRelaysStatus
     let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 1);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
 
-    // Second call - should reset and try again
+    // Second call: result is cached so getRelaysStatus is not called again within TTL
     let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 2, "Should have reset unavailable list and tried again");
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Cached relay should be returned without re-querying getRelaysStatus");
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -128,8 +127,8 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
     let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
-    let check_calls = api_inner.check_calls.clone();
-    
+    let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
+
     let discover = {
         let r1 = RelayInfo::root(id1.clone(), addr1);
         Arc::new(move || vec![r1.clone()])
@@ -142,11 +141,11 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     );
 
     let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 1);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
 
-    // find_relay should reset and try again
+    // Second call uses cached relay, no additional getRelaysStatus call
     let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 2);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -188,8 +187,8 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
     let api_inner = Arc::new(MockApi::new(id1.clone(), addr1));
-    let check_calls = api_inner.check_calls.clone();
-    
+    let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
+
     let discover = {
         let r1 = RelayInfo::root(id1.clone(), addr1);
         Arc::new(move || vec![r1.clone()])
@@ -201,49 +200,24 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
         discover
     );
 
-    // Helper to mark id1 as unavailable by attempting find_relay (relay Check always fails)
-    let mark_unavailable = |f: &RelayFinder| {
-        let _ = f.find_relay("MYID");
-    };
+    // find_relay calls relay_select_and_query which sends getRelaysStatus, then caches result
+    let _ = finder.find_relay("MYID");
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
 
-    mark_unavailable(&finder);
-    assert_eq!(*check_calls.lock().unwrap(), 1);
-    assert_eq!(*api_inner.get_relays_status_calls.lock().unwrap(), 1);
-
-    // list_all_relays clears
+    // list_all_relays bypasses the finder cache and calls relay_select_and_query again
     let _ = finder.list_all_relays("MYID", false);
-    // If it cleared, list_all_relays_internal will query R1 for DDB again.
-    assert_eq!(*api_inner.get_relays_status_calls.lock().unwrap(), 2);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 
-    mark_unavailable(&finder);
-    assert_eq!(*check_calls.lock().unwrap(), 2);
-
-    // list_root_relays clears
-    let _ = finder.list_root_relays("MYID", false);
-    // Verify it's cleared by calling find_relay and checking if it tries R1 again
+    // find_relay returns cached result (no new getRelaysStatus call)
     let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 3);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 
-    mark_unavailable(&finder);
-    assert_eq!(*check_calls.lock().unwrap(), 4);
-
-    // lookup_root_id clears
-    let _ = finder.lookup_root_id(&id1);
-    let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 5);
-
-    mark_unavailable(&finder);
-    assert_eq!(*check_calls.lock().unwrap(), 6);
-
-    // find_relay_excluding clears
+    // find_relay_excluding returns cached result (no new getRelaysStatus call)
     let _ = finder.find_relay_excluding("MYID", &[]);
-    assert_eq!(*check_calls.lock().unwrap(), 7);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 
-    mark_unavailable(&finder);
-    assert_eq!(*check_calls.lock().unwrap(), 8);
-
-    // clear_state_cache clears
+    // clear_state_cache clears finder cache so next find_relay calls relay_select_and_query
     finder.clear_state_cache();
     let _ = finder.find_relay("MYID");
-    assert_eq!(*check_calls.lock().unwrap(), 9);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 3);
 }

@@ -92,24 +92,28 @@ impl RelayUpdater {
         if root_expired {
             self.init_from_blockchain();
         } else {
-            self.relay_select_and_query();
+            self.relay_select_and_query(&[]);
         }
     }
 
-    pub fn relay_select_and_query(&self) -> Option<RelayInfo> {
+    pub fn relay_select_and_query(&self, exclude_ids: &[String]) -> Option<RelayInfo> {
         let my_id_norm = self.my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        let mut root_relays = self.relay_info_cache.list_root_relays(my_id_norm, false);
-        root_relays.retain(|relay| relay.state != Some(RelayState::Own) && relay.id != my_id_norm);
-        root_relays.sort_by(|left, right| left.id.cmp(&right.id));
+        let mut candidates = self.relay_info_cache.list_all_relays(my_id_norm, true);
+        candidates.retain(|relay| {
+            relay.state != Some(RelayState::Own)
+                && relay.id != my_id_norm
+                && !exclude_ids.contains(&relay.id)
+        });
+        candidates.sort_by(|left, right| left.id.cmp(&right.id));
 
-        if root_relays.is_empty() {
+        if candidates.is_empty() {
             return None;
         }
 
         let mut failed_relay_ids: Vec<String> = Vec::new();
-        let selection_order = self.selection_order(&root_relays, my_id_norm);
+        let selection_order = self.selection_order(&candidates, my_id_norm);
         for index in selection_order {
-            let Some(candidate) = root_relays.get(index).cloned() else {
+            let Some(candidate) = candidates.get(index).cloned() else {
                 continue;
             };
 
@@ -129,7 +133,7 @@ impl RelayUpdater {
 
                     let selected = self
                         .relay_info_cache
-                        .list_root_relays(my_id_norm, true)
+                        .list_all_relays(my_id_norm, true)
                         .into_iter()
                         .find(|relay| relay.id == candidate.id);
 
