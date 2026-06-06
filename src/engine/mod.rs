@@ -1356,13 +1356,6 @@ impl Engine {
         };
         tracing::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
 
-        // Clear any stale state so that we always reload fresh on startup
-        // finder.clear_state_cache();
-        // tracing::info!("[Engine::initialize_relay] cleared finder state cache");
-        //
-        // // Load current states across the network via RelayCheck for all known relays
-        // finder.load_relay_states(&my_id);
-        // tracing::info!("[Engine::initialize_relay] loaded peer relay states");
         let mut all_relays = finder.list_all_relays(&my_id, true);
         if !all_relays.iter().any(|r| r.id == my_id) {
             let addr = self
@@ -1472,8 +1465,6 @@ impl Engine {
                 // Re-count peer states under the mutex to decide initialization strategy
                 finder_arc_for_mtx.clear_state_cache();
                 tracing::info!("[Engine::initialize_relay] cleared finder state cache");
-                // finder_arc_for_mtx.load_relay_states(&my_id_for_mtx);
-                tracing::info!("[Engine::initialize_relay] loaded peer relay states");
                 let (avail_cnt, starting_cnt) = count_peer_states(&*finder_arc_for_mtx, &my_id_for_mtx);
                 tracing::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
                 if avail_cnt == 0 {

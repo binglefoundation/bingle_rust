@@ -85,7 +85,6 @@ pub trait RelayFinderTrait: Send + Sync {
     fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String>;
     fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String>;
     fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo>;
-    fn load_relay_states(&self, my_id: &str);
     fn clear_state_cache(&self);
     fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint>;
     /// Remove a relay entry from the cache by id. No-op if not present.
@@ -138,11 +137,6 @@ impl RelayFinderTrait for RelayFinder {
     fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
         self.clear_unavailable_relays_internal();
         self.list_root_relays_internal(my_id, include_self)
-    }
-
-    fn load_relay_states(&self, my_id: &str) {
-        self.clear_unavailable_relays_internal();
-        self.load_relay_states_internal(my_id)
     }
 
     fn clear_state_cache(&self) {
@@ -375,14 +369,6 @@ impl RelayFinder {
                 };
                 cache.update_relay(updated);
             }
-        }
-    }
-
-    pub fn load_relay_states_internal(&self, my_id: &str) {
-        // Ensure we have a list of all relays cached (includes self)
-        let relays = self.list_all_relays_internal(my_id, true);
-        for r in relays {
-            let _ = self.relay_check(my_id, &r.id, r.address);
         }
     }
 

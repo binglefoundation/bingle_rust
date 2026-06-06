@@ -96,8 +96,8 @@ pub fn load_and_summarize_states() {
 
     let finder = RelayFinder::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
 
-    // Load states (will internally call list_all_relays which uses DDB getRelaysStatus from preferred root)
-    finder.load_relay_states("MYID");
+    // Trigger relay state population via find_relay (internally calls list_all_relays via DDB getRelaysStatus)
+    let _ = finder.find_relay("MYID");
 
     // Summarize and assert counts
     let map = finder.relays_available();

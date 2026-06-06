@@ -89,7 +89,6 @@ pub fn relay_info_cache_trait_behaviour() {
         .expect("lookup_root_id should return direct endpoint");
     assert_eq!(endpoint_addr, relay_2_addr);
 
-    cache.load_relay_states("RID1");
     cache.clear_state_cache();
     let cleared = cache.list_all_relays("RID1", true);
     assert_eq!(cleared.len(), 2);

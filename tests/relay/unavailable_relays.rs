@@ -85,12 +85,12 @@ pub fn test_unavailable_relays_no_retry() {
         discover
     );
 
-    // load_relay_states will call list_all_relays, which will get [r1, r1] from discover fallback
-    // then it will iterate and call relay_check for each.
-    finder.load_relay_states("MYID");
+    // find_relay will call list_all_relays via DDB getRelaysStatus, deduplicate r1, then call relay_check once.
+    // The relay_check for r1 should fail and add to unavailable_relays.
+    let _ = finder.find_relay("MYID");
 
     // The first relay_check for r1 should fail and add to unavailable_relays.
-    // The second relay_check for r1 should see it in the list and skip.
+    // The alternate (also r1) should see it in the list and skip.
     assert_eq!(*check_calls.lock().unwrap(), 1, "Should only have called Check once even if relay appears twice");
 }
 
@@ -114,11 +114,11 @@ pub fn test_unavailable_relays_reset_on_entry() {
     );
 
     // First call
-    finder.load_relay_states("MYID");
+    let _ = finder.find_relay("MYID");
     assert_eq!(*check_calls.lock().unwrap(), 1);
 
     // Second call - should reset and try again
-    finder.load_relay_states("MYID");
+    let _ = finder.find_relay("MYID");
     assert_eq!(*check_calls.lock().unwrap(), 2, "Should have reset unavailable list and tried again");
 }
 
@@ -141,7 +141,7 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
         discover
     );
 
-    finder.load_relay_states("MYID");
+    let _ = finder.find_relay("MYID");
     assert_eq!(*check_calls.lock().unwrap(), 1);
 
     // find_relay should reset and try again
@@ -201,9 +201,9 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
         discover
     );
 
-    // Helper to mark id1 as unavailable
+    // Helper to mark id1 as unavailable by attempting find_relay (relay Check always fails)
     let mark_unavailable = |f: &RelayFinder| {
-        f.load_relay_states("MYID");
+        let _ = f.find_relay("MYID");
     };
 
     mark_unavailable(&finder);
