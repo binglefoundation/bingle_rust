@@ -1636,7 +1636,6 @@ impl Engine {
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
                 let finder = crate::relay::relay_finder::RelayFinder::new(
                     self.bingle_api.clone(),
-                    Duration::from_secs(60),
                     discover,
                 );
                 tracing::info!("[Engine::start_with_addr] RelayFinder constructed");
@@ -1712,7 +1711,6 @@ impl Engine {
 
             let finder = crate::relay::relay_finder::RelayFinder::new(
                 api.clone(),
-                Duration::from_secs(60),
                 discover,
             );
             // Use our id (Algorand address) for relay selection, not the user-visible handle.

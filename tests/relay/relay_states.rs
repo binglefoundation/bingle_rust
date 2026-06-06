@@ -1,6 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait, RelayFinderTestTrait};
@@ -94,7 +93,7 @@ pub fn load_and_summarize_states() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     // Trigger relay state population via find_relay (internally calls list_all_relays via DDB getRelaysStatus)
     let _ = finder.find_relay("MYID");

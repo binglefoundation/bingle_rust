@@ -1,6 +1,5 @@
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 
@@ -51,7 +50,7 @@ impl DdbClientImpl {
 
     fn find_relay(&self) -> Result<RelayInfo, BingleError> {
         tracing::debug!("[DdbClientImpl::find_relay] create RelayFinder");
-        let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
+        let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), self.discover.clone());
         tracing::trace!("[DdbClientImpl::find_relay] get_my_id");
         let my_id = self.api.access(|a| a.get_my_id()).ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
         tracing::trace!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
@@ -157,7 +156,7 @@ impl DdbClient for DdbClientImpl {
     fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, BingleError> {
         tracing::debug!("[DdbClientImpl::start_load_from_peer][enter] peer_id={}", peer_id);
         // Resolve the peer relay's direct endpoint using RelayFinder first, then fall back to DDB lookup
-        let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), Duration::from_secs(60), self.discover.clone());
+        let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), self.discover.clone());
         let mut nsk_opt = finder.lookup_root_id(peer_id);
         if nsk_opt.is_none() {
             // Fallback to DDB lookup which may return a direct endpoint

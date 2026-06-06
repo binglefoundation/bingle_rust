@@ -1,6 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
@@ -80,7 +79,7 @@ pub fn list_all_relays_excludes_self_from_ddb() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     // When include_self = false, our own id must not be present even if DDB provided it
     let list = finder.list_all_relays(&my_id, false);
@@ -109,7 +108,7 @@ pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     let picked = finder.find_relay(&my_id).expect("should pick a relay");
     assert_ne!(picked.id, my_id, "must not select self");

@@ -1,9 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId, BingleError};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+use crate::ddb::ddb_client_lookup::test_util::init_test_logging;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -81,7 +81,6 @@ pub fn test_unavailable_relays_no_retry() {
 
     let finder = RelayFinder::new(
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        Duration::from_secs(30),
         discover
     );
 
@@ -108,7 +107,6 @@ pub fn test_unavailable_relays_reset_on_entry() {
 
     let finder = RelayFinder::new(
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        Duration::from_secs(30),
         discover
     );
 
@@ -116,9 +114,9 @@ pub fn test_unavailable_relays_reset_on_entry() {
     let _ = finder.find_relay("MYID");
     assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
 
-    // Second call: result is cached so getRelaysStatus is not called again within TTL
+    // Second call: result is cached but we still do a status check
     let _ = finder.find_relay("MYID");
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Cached relay should be returned without re-querying getRelaysStatus");
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -136,16 +134,15 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
 
     let finder = RelayFinder::new(
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        Duration::from_secs(30),
         discover
     );
 
     let _ = finder.find_relay("MYID");
     assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
 
-    // Second call uses cached relay, no additional getRelaysStatus call
+    // Second call will now check status
     let _ = finder.find_relay("MYID");
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -166,7 +163,6 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
 
     let finder = RelayFinder::new(
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        Duration::from_secs(30),
         discover
     );
 
@@ -183,6 +179,8 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn test_unavailable_relays_cleared_on_all_external_methods() {
+    init_test_logging();
+
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
 
@@ -196,7 +194,6 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
 
     let finder = RelayFinder::new(
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner.clone())),
-        Duration::from_secs(30),
         discover
     );
 
@@ -208,16 +205,16 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     let _ = finder.list_all_relays("MYID", false);
     assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 
-    // find_relay returns cached result (no new getRelaysStatus call)
+    // find_relay returns cresult after a status check
     let _ = finder.find_relay("MYID");
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 3);
 
-    // find_relay_excluding returns cached result (no new getRelaysStatus call)
+    // find_relay_excluding returns cached result after a status check
     let _ = finder.find_relay_excluding("MYID", &[]);
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 4);
 
     // clear_state_cache clears finder cache so next find_relay calls relay_select_and_query
     finder.clear_state_cache();
     let _ = finder.find_relay("MYID");
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 3);
+    assert_eq!(*get_relays_status_calls.lock().unwrap(), 5);
 }

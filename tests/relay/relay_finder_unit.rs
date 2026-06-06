@@ -61,7 +61,7 @@ pub fn find_root_relay_rejects_self() {
         ]
     });
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
     // my_id is ADDRESS_SPEND, ensure we do not select ourselves and get ADDRESS_RECEIVE instead
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_ok(), "should find other relay");
@@ -76,7 +76,6 @@ pub fn select_indices_partitions_for_multiple_ids() {
     let discover = Arc::new(|| -> Vec<RelayInfo> { Vec::new() });
     let finder = RelayFinder::new(
         to_weak_api_both(MockApiBoth::new_with_api_override(api)),
-        std::time::Duration::from_secs(30),
         discover,
     );
 

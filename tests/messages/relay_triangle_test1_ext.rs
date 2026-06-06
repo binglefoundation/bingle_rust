@@ -178,7 +178,6 @@ pub fn test_relay_ping_handler_honors_exclusions() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn test_relay_finder_honors_exclusions() {
     use std::sync::Arc;
-    use std::time::Duration;
     use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
     use crate::util::reusable_mock_api::{MockApiBoth, InnerBingleApi};
     use rust_comms::api::bingle_api::{NetworkEndpoint, UserId, ProgressCallback};
@@ -219,7 +218,7 @@ pub fn test_relay_finder_honors_exclusions() {
     let all_relays = vec![r1.clone(), r2.clone(), r3.clone()];
     
     let discover = Arc::new(move || all_relays.clone());
-    let finder = RelayFinder::new(Arc::downgrade(&api), Duration::from_secs(60), discover);
+    let finder = RelayFinder::new(Arc::downgrade(&api), discover);
     
     // Test 1: Exclude R1 and R2 -> relay_select_and_query returns R3 (only Available relay in response)
     let exclude = vec![r1.address, r2.address];

@@ -53,7 +53,7 @@ pub fn list_all_relays_queries_root_even_if_only_one() {
         )]
     });
 
-    let finder = RelayFinder::new(api, std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(api, discover);
 
     // include_self = false, my_id = some other ID
     let relays = finder.list_all_relays("ME-ID", false);

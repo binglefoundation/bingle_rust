@@ -664,7 +664,6 @@ impl MessageHandler for DefaultPrintingHandler {
         let msg2 = msg.clone();
         std::thread::spawn(move || {
             // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
-            use std::time::Duration;
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
             tracing::info!("[handlers::on_triangle_test1] in thread for triangle test1: {:?}", msg2);
             let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
@@ -678,7 +677,7 @@ impl MessageHandler for DefaultPrintingHandler {
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
             let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
-            let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
+            let finder = RelayFinder::new(Arc::downgrade(&api_plain), discover);
 
             // Obtain our id from API (derived from engine issuer)
             let my_id = match api_for_thread.get_my_id() {
@@ -958,7 +957,6 @@ impl DefaultPrintingHandler {
             api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
 
             // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
-            use std::time::Duration;
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 
             // Build discovery closure similar to on_triangle_test1
@@ -976,7 +974,7 @@ impl DefaultPrintingHandler {
 
             // Wrap combined API as plain BingleApiBoth for RelayFinder
             let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
-            let finder = RelayFinder::new(Arc::downgrade(&api_plain), Duration::from_secs(60), discover);
+            let finder = RelayFinder::new(Arc::downgrade(&api_plain), discover);
             let my_id = match api_for_thread.get_my_id() {
                 Some(id) => id,
                 None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }

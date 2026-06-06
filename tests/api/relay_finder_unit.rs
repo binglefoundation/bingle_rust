@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
 use rust_comms::ddb::InetSocketAddress;
@@ -99,7 +98,7 @@ pub fn relay_finder_picks_available_relay_via_get_relays_status() {
         RootRelayInfo::root(id2.clone(), a2),
     ]);
 
-    let finder = RelayFinder::new(api_weak, Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(api_weak, discover);
 
     let picked = finder.find_root_relay("SOME-ID").expect("should pick an available relay");
     assert!(picked.address == a1 || picked.address == a2, "picked relay should be one of the candidates");
