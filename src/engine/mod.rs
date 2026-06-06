@@ -1750,7 +1750,10 @@ impl Engine {
                 relay_target = Some(r.clone());
                 tracing::info!("[Engine] chosen relay {} (id={})", r.address, r.id);
             } else {
-                panic!("[Engine] no relay found");
+                tracing::warn!("[Engine] no relay found; setting NoConnection");
+                self.set_nat_type(NatType::NoConnection);
+                self.notify_listening(false);
+                return;
             }
             self.relay_finder = Some(Arc::new(finder));
         }
@@ -1789,12 +1792,11 @@ impl Engine {
                 {}
             }
         } else {
-            tracing::info!(
-                "[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1"
+            tracing::warn!(
+                "[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1; setting NoConnection"
             );
-            panic!(
-                "[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1"
-            );
+            self.set_nat_type(NatType::NoConnection);
+            self.notify_listening(false);
         }
     }
 
@@ -1806,6 +1808,7 @@ impl Engine {
 
     pub(crate) fn on_stun_blocked(&mut self) {
         self.set_nat_type(NatType::NoConnection);
+        self.notify_listening(false);
     }
 
     /// Configure STUN send/state handlers and start the finder after DTLS and mux are running.
@@ -1967,6 +1970,10 @@ impl Engine {
 
     pub fn test_force_stun_blocked(&mut self) {
         self.on_stun_blocked();
+    }
+
+    pub fn test_stun_consistent_process_no_addr(&mut self) {
+        self.stun_consistent_process(None);
     }
 
     pub fn set_nat_type(&self, nat: NatType) {

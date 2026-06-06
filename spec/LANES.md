@@ -8,6 +8,8 @@ UX:
 - ~~tidy up bugs~~
 - ~~info option to show cipher suite (now in API, needs UX)~~
 - fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close
+- message delivery indication and retry
+- lookup handle match
 
 security:
 - ensure protocol is built as documented, changes as follows:
@@ -49,7 +51,6 @@ security:
 - ~~Test for extended master secret support~~
 
 robustness:
-- fix error 40 on live device (?)
 - fail sensibly with message when Bingle network down (< 2 relays))
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
@@ -59,8 +60,8 @@ robustness:
 - ~~implement relay cache properly with expiry~~
 - ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
 - ~~implement relay cache properly with expiry~~
-- use relay cache efficently during relay init
-- lookup matches handles with downcase and some punctuation normalized (as Gmail?)
+- ~~use relay cache efficently during relay init~~
+- ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
 - ensure ipv6 is unsupported consistently
 - indicate when we get no STUN responses (UDP blocked)
 - ensure handle uniqueness
@@ -68,13 +69,15 @@ robustness:
   + ~~node~~
   + ~~relay on node~~
   + relay on relay
-- use relay cache efficently during relay init
+- ~~use relay cache efficently during relay init~~
+- move indexer lookups to use Algonaut
 - fix fragile tests
  + retry on indexer lookups
  + cache indexer lookups
 - upgrade Algonaut
-- move indexer lookuops to use Algonaut
 - integration tests on bingle_jsi
+ + Layer 1
+ + ~~Layer 2~~
 
 network:
 - handle network change and clear caches / rediscover nat type
