@@ -71,11 +71,11 @@ robustness:
   + ~~relay on node~~
   + relay on relay
 - ~~use relay cache efficently during relay init~~
+- *upgrade Algonaut*
 - move indexer lookups to use Algonaut
 - fix fragile tests
  + retry on indexer lookups
  + cache indexer lookups
-- upgrade Algonaut
 - integration tests on bingle_jsi
  + Layer 1
  + ~~Layer 2~~
