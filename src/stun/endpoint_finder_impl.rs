@@ -72,7 +72,9 @@ impl Inner {
         if new_state != self.state {
             self.state = new_state;
             tracing::info!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
-            if let Some(cb) = &self.state_change { cb(self.state, self.endpoint); }
+            if let Some(cb) = &self.state_change {
+                cb(self.state, self.endpoint);
+            }
         }
     }
 }
@@ -294,6 +296,13 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
     fn set_send_packet_handler(&mut self, handler: Option<SendPacketHandler>) {
         let mut inner = self.inner.lock().unwrap();
         inner.send_packet = handler;
+    }
+
+    fn reset_state(&mut self) {
+        let mut inner = self.inner.lock().unwrap();
+        tracing::info!("[STUN] reset_state: reverting state {:?} -> None", inner.state);
+        inner.state = StunState::None;
+        inner.endpoint = None;
     }
 }
 

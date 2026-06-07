@@ -9,7 +9,7 @@ UX:
 - ~~info option to show cipher suite (now in API, needs UX)~~
 - ~~fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close~~
 - message delivery indication and retry
-- handle register failure on/post start
+- **handle register failure on/post start**
 - lookup handle match
 
 security:
@@ -52,7 +52,8 @@ security:
 - ~~Test for extended master secret support~~
 
 robustness:
-- fail sensibly with message when Bingle network down (< 2 relays))
+- **fail sensibly with message when Bingle network down (< 2 relays))**
+- indicate when we get no STUN responses (UDP blocked)
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
@@ -64,7 +65,6 @@ robustness:
 - ~~use relay cache efficently during relay init~~
 - ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
 - ensure ipv6 is unsupported consistently
-- indicate when we get no STUN responses (UDP blocked)
 - ensure handle uniqueness
 - handle fails correctly
   + ~~node~~
@@ -86,8 +86,8 @@ network:
 - handle clean relay shutdown
 - cache DDB locally with timeout / cancel
 - cache blockchain locally
-- detect relay unresponsive from peers and remove
-- reregister after a network restart
+- ~~detect relay unresponsive from peers and remove~~
+- ~~reregister after a network restart~~
 
 tokenomics:
 - develop tokenomics model

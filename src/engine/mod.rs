@@ -1742,6 +1742,13 @@ impl Engine {
                 self.set_nat_type(NatType::NoConnection);
                 self.state = EngineState::StunIdentify;
                 self.notify_listening(false);
+                // Reset the STUN finder state to None so that future STUN responses can
+                // re-trigger the state change handler and retry relay discovery.
+                if let Some(stun_arc) = &self.stun {
+                    if let Ok(mut finder) = stun_arc.lock() {
+                        finder.reset_state();
+                    }
+                }
                 return;
             }
             self.relay_finder = Some(Arc::new(finder));
@@ -1787,6 +1794,13 @@ impl Engine {
             self.set_nat_type(NatType::NoConnection);
             self.state = EngineState::StunIdentify;
             self.notify_listening(false);
+            // Reset the STUN finder state to None so that future STUN responses can
+            // re-trigger the state change handler and retry relay discovery.
+            if let Some(stun_arc) = &self.stun {
+                if let Ok(mut finder) = stun_arc.lock() {
+                    finder.reset_state();
+                }
+            }
         }
     }
 
@@ -1969,7 +1983,7 @@ impl Engine {
 
     /// Test helper: drive stun_consistent_process with a given address and a fixed relay list,
     /// bypassing the indexer/app_id requirement and relay_check network calls.
-    /// Relays are available iff `relays` is non-empty; the first relay is used directly.
+    /// Relays are available if `relays` is non-empty; the first relay is used directly.
     pub fn test_stun_consistent_process_with_relays(
         &mut self,
         addr: std::net::SocketAddr,

@@ -39,4 +39,8 @@ pub trait StunEndpointFinder: Send + Sync {
 
     /// Set the send packet handler callback used to transmit STUN requests.
     fn set_send_packet_handler(&mut self, handler: Option<SendPacketHandler>);
+
+    /// Reset the internal state to None so that a future STUN response can trigger the state
+    /// change handler again (e.g. after a transient "no relay" condition).
+    fn reset_state(&mut self);
 }
