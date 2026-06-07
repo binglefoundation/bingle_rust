@@ -1740,6 +1740,7 @@ impl Engine {
             } else {
                 tracing::warn!("[Engine] no relay found; setting NoConnection");
                 self.set_nat_type(NatType::NoConnection);
+                self.state = EngineState::StunIdentify;
                 self.notify_listening(false);
                 return;
             }
@@ -1784,6 +1785,7 @@ impl Engine {
                 "[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1; setting NoConnection"
             );
             self.set_nat_type(NatType::NoConnection);
+            self.state = EngineState::StunIdentify;
             self.notify_listening(false);
         }
     }
@@ -1796,6 +1798,7 @@ impl Engine {
 
     pub(crate) fn on_stun_blocked(&mut self) {
         self.set_nat_type(NatType::NoConnection);
+        self.state = EngineState::StunIdentify;
         self.notify_listening(false);
     }
 
@@ -1962,6 +1965,37 @@ impl Engine {
 
     pub fn test_stun_consistent_process_no_addr(&mut self) {
         self.stun_consistent_process(None);
+    }
+
+    /// Test helper: drive stun_consistent_process with a given address and a fixed relay list,
+    /// bypassing the indexer/app_id requirement and relay_check network calls.
+    /// Relays are available iff `relays` is non-empty; the first relay is used directly.
+    pub fn test_stun_consistent_process_with_relays(
+        &mut self,
+        addr: std::net::SocketAddr,
+        relays: Vec<crate::relay::relay_finder::RelayInfo>,
+    ) {
+        if let Some(r) = relays.first() {
+            tracing::info!("[Engine::test_stun_consistent_process_with_relays] relay found: {}", r.address);
+            let discover: std::sync::Arc<dyn Fn() -> Vec<crate::relay::relay_finder::RelayInfo> + Send + Sync> =
+                std::sync::Arc::new(move || relays.clone());
+            let api = self.bingle_api.clone();
+            let finder = crate::relay::relay_finder::RelayFinder::new(
+                api,
+                discover,
+            );
+            self.relay_finder = Some(std::sync::Arc::new(finder));
+            self.set_last_public_addr(Some(addr));
+            let prev = self.state;
+            self.state = EngineState::TrianglePing;
+            tracing::info!("[Engine] test state change: {:?} -> TrianglePing", prev);
+            self.notify_listening(true);
+        } else {
+            tracing::warn!("[Engine::test_stun_consistent_process_with_relays] no relay found; setting NoConnection");
+            self.set_nat_type(NatType::NoConnection);
+            self.state = EngineState::StunIdentify;
+            self.notify_listening(false);
+        }
     }
 
     pub fn set_nat_type(&self, nat: NatType) {

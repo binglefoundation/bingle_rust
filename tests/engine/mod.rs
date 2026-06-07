@@ -57,3 +57,5 @@ pub mod send_status;
 #[path = "no_connection.rs"]
 pub mod no_connection;
 
+#[path = "no_connection_retry.rs"]
+pub mod no_connection_retry;

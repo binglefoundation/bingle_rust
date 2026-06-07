@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use rust_comms::api::bingle_api::StartOptions;
-use rust_comms::engine::{BingleAccessUnsafeForTests, Engine, NatType};
+use rust_comms::engine::{BingleAccessUnsafeForTests, Engine, EngineState, NatType};
 
 #[test]
 fn test_stun_blocked_sets_no_connection_nat_type() {
@@ -105,5 +105,39 @@ fn test_no_relay_target_calls_on_listening_false() {
     assert!(
         !called_with_true.load(Ordering::SeqCst),
         "on_listening should not be called with true when no relay target"
+    );
+}
+
+#[test]
+fn test_stun_blocked_sets_stun_identify_state() {
+    let options = StartOptions {
+        handle: "test_blocked_state".to_string(),
+        ..Default::default()
+    };
+    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+
+    eng.test_force_stun_blocked();
+
+    assert_eq!(
+        eng.state(),
+        EngineState::StunIdentify,
+        "state should be StunIdentify after stun blocked (to allow retry)"
+    );
+}
+
+#[test]
+fn test_no_relay_target_sets_stun_identify_state() {
+    let options = StartOptions {
+        handle: "test_no_relay_state".to_string(),
+        ..Default::default()
+    };
+    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+
+    eng.test_stun_consistent_process_no_addr();
+
+    assert_eq!(
+        eng.state(),
+        EngineState::StunIdentify,
+        "state should be StunIdentify when no relay target (to allow retry)"
     );
 }
