@@ -31,7 +31,7 @@ pub fn lookup_known_root_returns_endpoint() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     // Known id should resolve to Some(NetworkEndpoint::Direct(addr))
     let nsk_opt = finder.lookup_root_id(&id1);
@@ -54,7 +54,7 @@ pub fn lookup_unknown_root_returns_none() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_millis(200), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     let nsk_opt = finder.lookup_root_id(&unknown);
     assert!(nsk_opt.is_none(), "expected None for unknown root id");

@@ -2,29 +2,38 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
+use rust_comms::ddb::InetSocketAddress;
+use rust_comms::engine::RelayState;
+use rust_comms::messages::marshal::to_json_value;
+use rust_comms::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message};
 
-// Minimal mock API that returns a positive CheckResponse for send_message_to_network_with_response
+// Minimal mock API that responds to GetRelaysStatus with both test relays
 struct MockApi;
-impl InnerBingleApi for MockApi { 
+impl InnerBingleApi for MockApi {
     fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
         let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let app = message.get("app");
-        if ty == "Check" && app.map(|v| v.is_null()).unwrap_or(false) {
-            // Respond to RelayCheck
-            let mut obj = serde_json::Map::new();
-            obj.insert("app".to_string(), serde_json::Value::Null);
-            obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".into()));
-            obj.insert("state".to_string(), serde_json::Value::String("available".into()));
-            Ok(serde_json::Value::Object(obj))
-        } else if ty == "getRelaysStatus" && app.and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
-            // Respond to DdbGetRelaysStatus with minimal DdbRelaysStatusResponse; keep relayIds empty so client falls back to discovery
-            Ok(serde_json::json!({
-                "app": "ddb",
-                "type": "relaysStatusResponse",
-                "epochId": -1,
-                "treeOrder": 2,
-                "relayIds": []
-            }))
+        if ty == "getRelaysStatus" && app.and_then(|v: &serde_json::Value| v.as_str()) == Some("ddb") {
+            // Respond to DdbGetRelaysStatus with both test relays; ADDRESS_RECEIVE is Available
+            let response = DdbRelaysStatusResponse {
+                app: "ddb".to_string(),
+                responder_state: RelayState::Available,
+                epoch_id: 1,
+                tree_order: 2,
+                relay_ids: vec![
+                    test_util::ADDRESS_SPEND.to_string(),
+                    test_util::ADDRESS_RECEIVE.to_string(),
+                ],
+                relay_endpoints: Some(vec![
+                    InetSocketAddress::from(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)),
+                    InetSocketAddress::from(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346)),
+                ]),
+                relay_states: vec![RelayState::Own, RelayState::Available],
+                response_tag: None,
+                text: None,
+                data: None,
+            };
+            Ok(to_json_value(&Message::Ddb(DdbMessage::RelaysStatusResponse(response))))
         } else {
             Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
         }
@@ -52,7 +61,7 @@ pub fn find_root_relay_rejects_self() {
         ]
     });
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), std::time::Duration::from_secs(30), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
     // my_id is ADDRESS_SPEND, ensure we do not select ourselves and get ADDRESS_RECEIVE instead
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_ok(), "should find other relay");
@@ -67,7 +76,6 @@ pub fn select_indices_partitions_for_multiple_ids() {
     let discover = Arc::new(|| -> Vec<RelayInfo> { Vec::new() });
     let finder = RelayFinder::new(
         to_weak_api_both(MockApiBoth::new_with_api_override(api)),
-        std::time::Duration::from_secs(30),
         discover,
     );
 

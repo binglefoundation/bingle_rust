@@ -158,7 +158,7 @@ pub fn relay_updater_init_from_blockchain_sets_unknown_when_own_not_found() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn relay_select_and_query_returns_none_when_no_root_relays() {
     let updater = RelayUpdater::new("MYID.".to_string(), Arc::new(Vec::new));
-    assert!(updater.relay_select_and_query().is_none());
+    assert!(updater.relay_select_and_query(&[]).is_none());
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
@@ -189,7 +189,7 @@ pub fn relay_select_and_query_single_root_updates_cache_and_returns_root() {
     updater.init_from_blockchain();
 
     let selected = updater
-        .relay_select_and_query()
+        .relay_select_and_query(&[])
         .expect("single-root query should succeed");
     assert_eq!(selected.id, "ROOT1");
     assert_eq!(selected.state, Some(RelayState::Available));
@@ -259,7 +259,7 @@ pub fn relay_select_and_query_falls_back_to_alternate_when_preferred_fails() {
     updater.init_from_blockchain();
 
     let selected = updater
-        .relay_select_and_query()
+        .relay_select_and_query(&[])
         .expect("alternate root should be selected");
 
     let ids = queried_ids
@@ -314,7 +314,7 @@ pub fn relay_select_and_query_returns_none_after_all_candidates_fail() {
     );
     updater.init_from_blockchain();
 
-    assert!(updater.relay_select_and_query().is_none());
+    assert!(updater.relay_select_and_query(&[]).is_none());
 
     let ids = queried_ids
         .lock()
@@ -509,7 +509,7 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
     updater.init_from_blockchain();
 
     let selected = updater
-        .relay_select_and_query()
+        .relay_select_and_query(&[])
         .expect("alternate should be selected after preferred fails");
 
     let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
@@ -578,7 +578,7 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
     updater.init_from_blockchain();
 
     let selected = updater
-        .relay_select_and_query()
+        .relay_select_and_query(&[])
         .expect("alternate should be selected after preferred is not available");
 
     let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
@@ -631,7 +631,7 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
     updater.init_from_blockchain();
 
     let selected = updater
-        .relay_select_and_query()
+        .relay_select_and_query(&[])
         .expect("preferred relay should be selected");
     assert_eq!(selected.id, "ROOT1");
 
@@ -646,4 +646,143 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
         .expect("reported_to_relay_id lock should succeed")
         .clone();
     assert!(reported_to.is_none(), "no report should be sent when preferred succeeds");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_select_and_query_excludes_id_from_candidates() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(59001), RelayState::Own),
+            ("ROOTA", addr(59002), RelayState::Available),
+            ("ROOTB", addr(59003), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(QueryMockApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            RelayInfo::root("MYID", addr(59001)),
+            RelayInfo::root("ROOTA", addr(59002)),
+            RelayInfo::root("ROOTB", addr(59003)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let exclude = vec!["ROOTA".to_string()];
+    let selected = updater
+        .relay_select_and_query(&exclude)
+        .expect("should select ROOTB when ROOTA is excluded");
+
+    assert_eq!(selected.id, "ROOTB", "excluded relay should not be selected");
+
+    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    assert!(!ids.contains(&"ROOTA".to_string()), "excluded relay should never be queried");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_select_and_query_returns_none_when_all_candidates_excluded() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(QueryMockApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(|_user_id: &str, _query_index: usize| {
+            panic!("should not query any relay when all are excluded")
+        }),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            RelayInfo::root("MYID", addr(59101)),
+            RelayInfo::root("ROOTA", addr(59102)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let exclude = vec!["ROOTA".to_string()];
+    assert!(
+        updater.relay_select_and_query(&exclude).is_none(),
+        "should return None when all non-self candidates are excluded"
+    );
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_select_and_query_considers_non_root_relays() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(59201), RelayState::Own),
+            ("NONROOT1", addr(59202), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(QueryMockApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![],
+        api,
+    );
+
+    // Manually populate the cache with a non-root relay so the updater sees it
+    updater.relay_info_cache().replace_relays(vec![
+        RelayInfo::non_root("NONROOT1", addr(59202)),
+    ]);
+
+    let selected = updater
+        .relay_select_and_query(&[])
+        .expect("non-root relay should be a valid candidate");
+
+    assert_eq!(selected.id, "NONROOT1", "non-root relay should be selectable");
+    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    assert_eq!(ids, vec!["NONROOT1".to_string()], "non-root relay should have been queried");
+}
+
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn relay_select_and_query_excludes_my_id_always() {
+    let queried_ids = Arc::new(Mutex::new(Vec::new()));
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(59301), RelayState::Own),
+            ("ROOT1", addr(59302), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(QueryMockApi {
+        queried_ids: queried_ids.clone(),
+        responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            RelayInfo::root("MYID", addr(59301)),
+            RelayInfo::root("ROOT1", addr(59302)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let selected = updater
+        .relay_select_and_query(&[])
+        .expect("should select ROOT1, not MYID");
+
+    assert_eq!(selected.id, "ROOT1", "own id should never be selected");
+
+    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    assert!(!ids.contains(&"MYID".to_string()), "own id should never be queried");
 }

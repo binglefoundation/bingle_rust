@@ -271,7 +271,7 @@ fn run_scenario(
 
     // The following should return a consistent result immediately
     // Assumes test nodes are stable by here
-    let selected = updater.relay_select_and_query();
+    let selected = updater.relay_select_and_query(&[]);
     if !expect_selected {
         assert!(selected.is_none(), "{scenario_name}: expected no relay selected");
         return;

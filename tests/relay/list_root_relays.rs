@@ -1,5 +1,4 @@
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-use std::time::Duration;
 
 use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo, RelayFinderTrait};
 use crate::util::reusable_mock_api::{to_weak, InnerBingleApi, MockApiBoth};
@@ -23,7 +22,7 @@ pub fn list_root_relays_excludes_self_and_caches() {
         ]
     });
 
-    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), Duration::from_millis(2000), discover);
+    let finder = RelayFinder::new(to_weak(MockApiBoth::new_with_api_override(api)), discover);
     let list1 = finder.list_root_relays("AAA", false);
     assert_eq!(list1.len(), 1, "should exclude self");
     assert_eq!(list1[0].id, "BBB");

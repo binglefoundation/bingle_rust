@@ -21,9 +21,6 @@ pub mod relay_client_unit;
 #[path = "relay_states.rs"]
 pub mod relay_states;
 
-#[path = "relay_states_own.rs"]
-pub mod relay_states_own;
-
 #[path = "clear_state_cache.rs"]
 pub mod clear_state_cache;
 

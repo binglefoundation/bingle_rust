@@ -106,8 +106,6 @@ impl RelayFinderTrait for RelayInfoCache {
         relays
     }
 
-    fn load_relay_states(&self, _my_id: &str) {}
-
     fn clear_state_cache(&self) {
         if let Ok(mut relays) = self.relays.lock() {
             for relay in &mut *relays {

@@ -1,6 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
@@ -96,10 +95,10 @@ pub fn clear_state_cache_resets_and_reloads() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), Duration::from_millis(500), discover);
+    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     // Initial load populates states
-    finder.load_relay_states("MYID");
+    let _ = finder.find_relay("MYID");
     let m1 = finder.relays_available();
     assert_eq!(m1.get(&RelayState::Available).cloned().unwrap_or(0), 1);
     assert_eq!(m1.get(&RelayState::Starting).cloned().unwrap_or(0), 1);
@@ -114,7 +113,7 @@ pub fn clear_state_cache_resets_and_reloads() {
     assert_eq!(m2.len(), 0);
 
     // Reload: states should be repopulated from API
-    finder.load_relay_states("MYID");
+    let _ = finder.find_relay("MYID");
     let m3 = finder.relays_available();
     assert_eq!(m3.get(&RelayState::Available).cloned().unwrap_or(0), 1);
     assert_eq!(m3.get(&RelayState::Starting).cloned().unwrap_or(0), 1);

@@ -569,7 +569,7 @@ impl BingleApi for BingleApiImpl {
                 let cfg = self.get_algo_provider_config();
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
                 // Use self.this for RelayFinder
-                let finder = crate::relay::relay_finder::RelayFinder::new(self.this.clone(), Duration::from_secs(60), discover);
+                let finder = crate::relay::relay_finder::RelayFinder::new(self.this.clone(), discover);
                 if let Some(nsk) = finder.lookup_root_id(user_id) {
                     if let Some(cb) = progress.as_ref() { cb(30, format!("Resolved via root: {}", nsk)); }
                     let ok = self.send_message_to_network(&nsk, user_id, message, progress.clone())?;

@@ -178,41 +178,49 @@ pub fn test_relay_ping_handler_honors_exclusions() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn test_relay_finder_honors_exclusions() {
     use std::sync::Arc;
-    use std::time::Duration;
     use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
     use crate::util::reusable_mock_api::{MockApiBoth, InnerBingleApi};
     use rust_comms::api::bingle_api::{NetworkEndpoint, UserId, ProgressCallback};
 
-    struct CheckMockApi;
-    impl InnerBingleApi for CheckMockApi {
-        fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _msg: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
-            Ok(serde_json::json!({
-                "type": "CheckResponse",
-                "state": "available"
-            }))
-        }
-    }
-
-    let api_inner = Arc::new(MockApiBoth::new_with_api_override(Arc::new(CheckMockApi)));
-    let api: Arc<dyn rust_comms::api::bingle_api::BingleApiBoth> = api_inner;
-
-    // Use 58-char base32 strings to pass the 36-byte decode check in relay_check
-    // The last character must have its trailing 2 bits zeroed for 288-bit (36-byte) data.
-    // 'A' (0, 00000) works.
     let id1 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     let id2 = "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     let id3 = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let id3_str = id3.to_string();
+
+    struct GetRelaysMockApi { id3: String, addr3: std::net::SocketAddr }
+    impl InnerBingleApi for GetRelaysMockApi {
+        fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, msg: serde_json::Value, _p: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+            let ty = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if ty == "getRelaysStatus" {
+                return Ok(serde_json::json!({
+                    "app": "ddb",
+                    "type": "relaysStatusResponse",
+                    "epochId": -1,
+                    "treeOrder": 2,
+                    "responderState": "available",
+                    "relayIds": [self.id3],
+                    "relayEndpoints": [{"host": self.addr3.ip().to_string(), "port": self.addr3.port()}],
+                    "relayStates": ["available"],
+                }));
+            }
+            Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
+        }
+    }
+
+    let addr3: std::net::SocketAddr = "3.3.3.3:3333".parse().unwrap();
+    let api_inner = Arc::new(MockApiBoth::new_with_api_override(Arc::new(GetRelaysMockApi { id3: id3_str, addr3 })));
+    let api: Arc<dyn rust_comms::api::bingle_api::BingleApiBoth> = api_inner;
 
     // Create 3 relays
     let r1 = RelayInfo::root(id1, "1.1.1.1:1111".parse().unwrap());
     let r2 = RelayInfo::root(id2, "2.2.2.2:2222".parse().unwrap());
-    let r3 = RelayInfo::root(id3, "3.3.3.3:3333".parse().unwrap());
+    let r3 = RelayInfo::root(id3, addr3);
     let all_relays = vec![r1.clone(), r2.clone(), r3.clone()];
     
     let discover = Arc::new(move || all_relays.clone());
-    let finder = RelayFinder::new(Arc::downgrade(&api), Duration::from_secs(60), discover);
+    let finder = RelayFinder::new(Arc::downgrade(&api), discover);
     
-    // Test 1: Exclude R1 and R2 -> must pick R3
+    // Test 1: Exclude R1 and R2 -> relay_select_and_query returns R3 (only Available relay in response)
     let exclude = vec![r1.address, r2.address];
     let chosen = finder.find_relay_excluding("ME", &exclude).expect("find relay");
     assert_eq!(chosen.id, id3);
