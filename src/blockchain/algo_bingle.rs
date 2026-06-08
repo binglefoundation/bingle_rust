@@ -232,59 +232,48 @@ impl AlgoBingle {
         }
     }
 
-    /// Helper to query all accounts opted into the given app_id via the indexer.
+    /// Helper to query all accounts opted into the given app_id via the algonaut Indexer.
     fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mut f: F) -> Result<()>
     where
         F: FnMut(&serde_json::Value) -> Result<()>,
     {
         algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={}", app_id);
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let base = format!("{}:{}/v2/accounts", self.ops.config.indexer_api_url, self.ops.config.indexer_api_port);
-        let client = reqwest::blocking::Client::new();
+        let indexer = self.ops.indexer_client()?;
         let mut next: Option<String> = None;
         loop {
-            let mut req = client.get(&base)
-                .query(&[("application-id", app_id.to_string()), ("limit", "1000".to_string())]);
-            if let Some(n) = &next { req = req.query(&[("next", n)]); }
-            // Add both indexer and algod token headers for compatibility
-            if let Some(tok) = &self.ops.config.token {
-                req = req.header("X-Indexer-API-Token", tok.clone())
-                         .header(self.ops.config.token_key.clone().unwrap_or_else(|| "X-Algo-API-Token".to_string()), tok.clone());
-            }
-            algo_log!("[indexer_query_opted_in_accounts_sync] Sending indexer request {:?}", req);
-            let resp = match req.send() {
-                Ok(r) => r,
-                Err(e) => {
-                    let ae = anyhow!(e.to_string());
-                    if crate::blockchain::error::AlgoError::is_host_unreachable(&ae) {
-                        return Err(crate::blockchain::error::AlgoError::unreachable("indexer request", &ae.to_string()).into());
-                    }
+            let next_ref = next.as_deref();
+            algo_log!("[indexer_query_opted_in_accounts_sync] querying indexer next={:?}", next_ref);
+            let response = self.algod_call(indexer.search_for_accounts(
+                None,
+                Some(1000),
+                next_ref,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(algonaut::core::AppId(app_id)),
+            )).map_err(|e| {
+                let msg = e.to_string();
+                let ae = anyhow!("{msg}");
+                if crate::blockchain::error::AlgoError::is_host_unreachable(&ae) {
+                    crate::blockchain::error::AlgoError::unreachable("indexer request", &msg).into()
+                } else {
                     tracing::error!(
                         "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer request failed: {}",
-                        ae
+                        msg
                     );
-                    return Err(anyhow!("indexer request failed: {ae}"));
+                    anyhow!("indexer request failed: {msg}")
                 }
-            };
-            algo_log!("[indexer_query_opted_in_accounts_sync] Got indexer response {:?}", resp);
-            if !resp.status().is_success() { bail!("indexer returned {}", resp.status()); }
-            let v: serde_json::Value = match resp.json() {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer json parse failed: {}",
-                        e
-                    );
-                    return Err(anyhow!("indexer json parse failed: {e}"));
-                }
-            };
-            // Debug: dump the full JSON returned from /v2/accounts for visibility
-            algo_log!("[AlgoBingle][indexer /v2/accounts] page: {}", v);
-            let accounts = v.get("accounts").and_then(|x| x.as_array()).cloned().unwrap_or_default();
-            for acct in accounts {
-                algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", acct);
-                if let Err(e) = f(&acct) {
-                    // Log explicit error rather than propagating implicitly with '?'
+            })?;
+            algo_log!("[AlgoBingle][indexer /v2/accounts] page accounts count: {}", response.accounts.len());
+            for acct in &response.accounts {
+                let v = serde_json::to_value(acct)
+                    .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
+                algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
+                if let Err(e) = f(&v) {
                     tracing::error!(
                         "[AlgoBingle][indexer_query_opted_in_accounts_sync] failed to process account: {}",
                         e
@@ -292,7 +281,7 @@ impl AlgoBingle {
                     return Err(e);
                 }
             }
-            next = v.get("next-token").and_then(|x| x.as_str()).map(|s| s.to_string());
+            next = response.next_token;
             if next.is_none() { break; }
         }
 

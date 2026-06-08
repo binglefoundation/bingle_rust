@@ -149,6 +149,13 @@ impl AlgoOps {
             .map_err(|e| anyhow!("failed to construct Algod client: {e}"))
     }
 
+    pub fn indexer_client(&self) -> Result<algonaut::Indexer> {
+        let url = format!("{}:{}", self.config.indexer_api_url, self.config.indexer_api_port);
+        let token = self.config.token.clone().unwrap_or_default();
+        algonaut::Indexer::new(&url, &token)
+            .map_err(|e| anyhow!("failed to construct Indexer client: {e}"))
+    }
+
     // Helper: run an algonaut async call and flatten the double-Result.
     // algonaut methods return Result<T, algonaut::Error>; rt_block_on wraps that
     // in another Result<_, anyhow::Error> for thread/runtime errors. This helper

@@ -16,12 +16,17 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     let cfg: AlgoChainConfig = localnet_config();
 
     // Extra guard: ensure Indexer is reachable; otherwise skip to avoid false negatives when only algod is up.
-    let health_url = format!("{}:{}/health", cfg.indexer_api_url, cfg.indexer_api_port);
-    match reqwest::blocking::get(&health_url) {
-        Ok(resp) if resp.status().is_success() => { /* ok */ }
-        _ => {
-            eprintln!("SKIP: indexer not reachable at {}", health_url);
-            return;
+    {
+        use rust_comms::blockchain::algo_ops::AlgoOps;
+        let tmp_ops = AlgoOps::new(None, Some(test_util::ADDRESS_SPEND.to_string()), Some(cfg.clone()));
+        let indexer = tmp_ops.indexer_client().expect("failed to build indexer client");
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio rt");
+        match rt.block_on(indexer.health()) {
+            Ok(_) => { /* ok */ }
+            Err(e) => {
+                eprintln!("SKIP: indexer not reachable: {}", e);
+                return;
+            }
         }
     }
 
