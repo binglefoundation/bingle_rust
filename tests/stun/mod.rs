@@ -17,3 +17,6 @@ pub mod simple_server_inconsistent;
 
 #[path = "blocked_detection.rs"]
 pub mod blocked_detection;
+
+#[path = "reset_state_resumes_polling.rs"]
+pub mod reset_state_resumes_polling;

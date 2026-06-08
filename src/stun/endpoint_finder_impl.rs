@@ -303,6 +303,12 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         tracing::info!("[STUN] reset_state: reverting state {:?} -> None", inner.state);
         inner.state = StunState::None;
         inner.endpoint = None;
+        // Reset per-server state so the polling loop will re-poll all servers
+        for s in inner.servers.iter_mut() {
+            s.responded = false;
+            s.endpoint = None;
+            s.failures = 0;
+        }
     }
 }
 
