@@ -49,3 +49,6 @@ pub mod account_balance_test;
 #[path = "test_node_errors.rs"]
 pub mod test_node_errors;
 
+#[path = "test_retry_logic.rs"]
+pub mod test_retry_logic;
+
