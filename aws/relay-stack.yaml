@@ -300,6 +300,14 @@ Resources:
               ValueFrom: !Ref RelayNatModeParam
             - Name: NODE_FILE
               ValueFrom: !Ref RelayNodeFileParam
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "pgrep bingle_cli > /dev/null || exit 1"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -307,6 +315,7 @@ Resources:
               awslogs-region: !Ref 'AWS::Region'
               awslogs-stream-prefix: relay
               awslogs-create-group: "true"
+              awslogs-datetime-format: "%Y-%m-%dT%H:%M:%S"
 
   RelayLogGroup:
     Type: AWS::Logs::LogGroup

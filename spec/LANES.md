@@ -71,8 +71,8 @@ robustness:
   + ~~relay on node~~
   + relay on relay
 - ~~use relay cache efficently during relay init~~
-- *upgrade Algonaut*
-- move indexer lookups to use Algonaut
+- ~~upgrade Algonaut~~
+- *move indexer lookups to use Algonaut*
 - fix fragile tests
  + retry on indexer lookups
  + cache indexer lookups
@@ -99,6 +99,8 @@ android:
 - build APK
 
 deploy:
+- quick deploy steps for UX/backend change
+- deploy update to relay stack without total replace
 - run unit tests on CD
 - stabilise integration tests and run on CD with localnet
 - run staging tests on CD / AWS

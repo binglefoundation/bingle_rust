@@ -169,4 +169,10 @@ else
 fi
 
 echo "[deploy] Success! Relay server deployed."
-echo "[deploy] You can check the logs in CloudWatch Logs under group: /bingle/relay"
+echo "[deploy] You can check the logs in CloudWatch Logs under group: /bingle/relay/${STACK_NAME}"
+echo ""
+echo "[deploy] To tail live task logs (run in another terminal after deploy):"
+echo "  aws logs tail /bingle/relay/${STACK_NAME} --follow --region ${REGION}"
+echo ""
+echo "[deploy] To fetch logs from stopped/crashed tasks (useful when circuit breaker fires):"
+echo "  aws logs filter-log-events --log-group-name /bingle/relay/${STACK_NAME} --region ${REGION} --start-time \$(date -d '1 hour ago' +%s000 2>/dev/null || date -v-1H +%s000) --output text | tail -100"
