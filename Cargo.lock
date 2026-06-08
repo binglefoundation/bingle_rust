@@ -499,25 +499,11 @@ dependencies = [
 name = "bingle_test"
 version = "0.1.0"
 dependencies = [
- "algonaut",
- "anyhow",
  "base64 0.21.7",
  "data-encoding",
  "ed25519-dalek",
- "libc",
- "ntest",
- "openssl",
- "reqwest 0.11.27",
  "rust_comms",
- "serde",
- "serde_json",
- "serial_test",
  "sha2 0.10.9",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
