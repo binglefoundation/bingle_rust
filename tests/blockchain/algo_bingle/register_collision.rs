@@ -1,10 +1,10 @@
 // tests/blockchain/algo_bingle/register_collision.rs
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::blockchain::algo_ops::{AlgoOps};
-use algonaut::core::{Address, ToMsgPack};
+use algonaut::core::{Address, AppId, AssetId, ToMsgPack};
 use algonaut::transaction::{
     builder::CallApplication,
-    TransferAsset, TxnBuilder,
+    TransferAsset,
 };
 use std::str::FromStr;
 
@@ -48,7 +48,7 @@ pub fn test_register_collision_same_block() {
     // Use tokio runtime to get params
     let params = {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        rt.block_on(client.suggested_transaction_params()).expect("params")
+        rt.block_on(client.suggested_params()).expect("suggested_params")
     };
     
     let addr_a = Address::from_str(test_util::ADDRESS_SPEND).unwrap();
@@ -56,8 +56,8 @@ pub fn test_register_collision_same_block() {
     let app_addr = Address::from_str(&ops_a.contract_address(app_id).unwrap()).unwrap();
 
     // A: AssetTransfer
-    let ax_a = TransferAsset::new(addr_a, asset_id, 1, app_addr).build();
-    let tx_ax_a = TxnBuilder::with(&params, ax_a).note(AlgoOps::unique_note()).build().unwrap();
+    let tx_ax_a = TransferAsset::new(addr_a, AssetId(asset_id), 1, app_addr)
+        .note(AlgoOps::unique_note()).build(&params).unwrap();
 
     // A: AppCall register("foo")
     let mut args_a: Vec<Vec<u8>> = Vec::new();
@@ -69,12 +69,13 @@ pub fn test_register_collision_same_block() {
     arg_a.extend_from_slice(&(h_len as u16).to_be_bytes());
     arg_a.extend_from_slice(handle_bytes);
     args_a.push(arg_a);
-    let call_a = CallApplication::new(addr_a, app_id).app_arguments(args_a).foreign_assets(vec![asset_id]).build();
-    let tx_app_a = TxnBuilder::with(&params, call_a).note(AlgoOps::unique_note()).build().unwrap();
+    let tx_app_a = CallApplication::new(addr_a, AppId(app_id))
+        .app_arguments(args_a).foreign_assets(vec![AssetId(asset_id)])
+        .note(AlgoOps::unique_note()).build(&params).unwrap();
 
     // B: AssetTransfer
-    let ax_b = TransferAsset::new(addr_b, asset_id, 1, app_addr).build();
-    let tx_ax_b = TxnBuilder::with(&params, ax_b).note(AlgoOps::unique_note()).build().unwrap();
+    let tx_ax_b = TransferAsset::new(addr_b, AssetId(asset_id), 1, app_addr)
+        .note(AlgoOps::unique_note()).build(&params).unwrap();
 
     // B: AppCall register("foo")
     let mut args_b: Vec<Vec<u8>> = Vec::new();
@@ -83,8 +84,9 @@ pub fn test_register_collision_same_block() {
     arg_b.extend_from_slice(&(h_len as u16).to_be_bytes());
     arg_b.extend_from_slice(handle_bytes);
     args_b.push(arg_b);
-    let call_b = CallApplication::new(addr_b, app_id).app_arguments(args_b).foreign_assets(vec![asset_id]).build();
-    let tx_app_b = TxnBuilder::with(&params, call_b).note(AlgoOps::unique_note()).build().unwrap();
+    let tx_app_b = CallApplication::new(addr_b, AppId(app_id))
+        .app_arguments(args_b).foreign_assets(vec![AssetId(asset_id)])
+        .note(AlgoOps::unique_note()).build(&params).unwrap();
 
     let mut txs = vec![tx_ax_a, tx_app_a, tx_ax_b, tx_app_b];
     AlgoBingle::assign_group_id(&mut txs).expect("assign group id");
@@ -96,10 +98,10 @@ pub fn test_register_collision_same_block() {
     let sk_b = ops_b.private_key_bytes().unwrap();
     let acc_b = algonaut::transaction::account::Account::from_seed(sk_b.as_slice().try_into().unwrap());
 
-    let s1 = acc_a.sign_transaction(txs[0].clone()).unwrap().to_msg_pack().unwrap();
-    let s2 = acc_a.sign_transaction(txs[1].clone()).unwrap().to_msg_pack().unwrap();
-    let s3 = acc_b.sign_transaction(txs[2].clone()).unwrap().to_msg_pack().unwrap();
-    let s4 = acc_b.sign_transaction(txs[3].clone()).unwrap().to_msg_pack().unwrap();
+    let s1 = acc_a.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+    let s2 = acc_a.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+    let s3 = acc_b.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+    let s4 = acc_b.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
 
     // 6. Broadcast
     let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);

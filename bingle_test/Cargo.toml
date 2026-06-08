@@ -25,7 +25,7 @@ ntest = "0.9"
 serial_test = "3"
 tempfile = "3"
 # env_logger removed
-algonaut = "0.4.2"
+algonaut = "0.8.0"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
