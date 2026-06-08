@@ -30,12 +30,12 @@ pub fn asset_creation_sets_clawback_to_creator() {
     let algod = {
         let url = format!("{}:{}", cfg.client_api_url, cfg.client_api_port);
         let token = cfg.token.clone().unwrap_or_default();
-        algonaut::algod::v2::Algod::new(&url, &token).expect("algod client")
+        algonaut::Algod::new(&url, &token).expect("algod client")
     };
 
     let info = {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("rt");
-        rt.block_on(async { algod.asset_information(asset_id).await }).expect("asset_information ok")
+        rt.block_on(async { algod.asset(algonaut::core::AssetId(asset_id)).await }).expect("asset info ok")
     };
 
     let v = serde_json::to_value(&info).expect("json");
