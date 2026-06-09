@@ -4,13 +4,36 @@ use crate::engine::{BingleAccessUnsafeForTests, RelayState};
 use crate::ddb::DdbBackend;
 use crate::messages::types::*;
 use tracing::{error, warn};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct FromStruct {
     pub id: String,
     pub network_source_key: crate::api::bingle_api::NetworkEndpoint,
-    pub router: std::sync::Arc<crate::messages::router::Router>,
+    pub router: Arc<crate::messages::router::Router>,
+    /// Per-call accumulator for outbound responses. Private to this dispatch.
+    pub(crate) responses: Arc<Mutex<Vec<serde_json::Value>>>,
+}
+
+impl FromStruct {
+    pub fn new(id: String, network_source_key: crate::api::bingle_api::NetworkEndpoint, router: Arc<crate::messages::router::Router>) -> Self {
+        Self {
+            id,
+            network_source_key,
+            router,
+            responses: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn push_response(&self, json: serde_json::Value) {
+        if let Ok(mut g) = self.responses.lock() {
+            g.push(json);
+        }
+    }
+
+    pub fn take_responses(&self) -> Vec<serde_json::Value> {
+        self.responses.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default()
+    }
 }
 
 impl std::fmt::Debug for FromStruct {
@@ -202,7 +225,7 @@ pub trait MessageHandler {
         obj.insert("type".to_string(), serde_json::Value::String("RelayResponse".to_string()));
         obj.insert("channel".to_string(), serde_json::Value::Number(serde_json::Number::from(ch as u64)));
         if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-        router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+        from.push_response(serde_json::Value::Object(obj));
     }
     fn on_relay_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
     fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone()))); }
@@ -233,7 +256,7 @@ pub trait MessageHandler {
         if let Some(tag) = router.get_last_response_tag() {
             obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }
-        router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+        from.push_response(serde_json::Value::Object(obj));
     }
     fn on_relay_check(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayCheck) {
         // Send CheckResponse with current relay state back to the last sender address using the real Bingle API sender
@@ -245,7 +268,7 @@ pub trait MessageHandler {
                 // Use typed Fail message per OpenAPI instead of building a raw map
                 let fail = crate::messages::types::Fail { app: None, typ: "fail".to_string(), response_tag: router.get_last_response_tag(), reason: "no sender available".to_string() };
                 let json = serde_json::to_value(fail).unwrap_or(serde_json::Value::Null);
-                router.set_outbound_response(Some(json));
+                from.push_response(json);
             }
             return;
         }
@@ -342,7 +365,7 @@ impl MessageHandler for DefaultPrintingHandler {
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
             if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
             obj.insert("text".to_string(), serde_json::Value::String("not a relay".into()));
-            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+            from.push_response(serde_json::Value::Object(obj));
             return;
         }
         // Consult API for relay state
@@ -361,7 +384,7 @@ impl MessageHandler for DefaultPrintingHandler {
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
             if let Some(tag) = msg_tag { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
             obj.insert("text".to_string(), serde_json::Value::String("relay not available".into()));
-            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+            from.push_response(serde_json::Value::Object(obj));
             return;
         }
         // Build DdbEpochInfo from backend snapshot
@@ -385,14 +408,14 @@ impl MessageHandler for DefaultPrintingHandler {
                     crate::messages::types::DdbMessage::RelaysStatusResponse(info)
                 );
                 let json = crate::messages::marshal::to_json_value(&resp);
-                router.set_outbound_response(Some(json));
+                from.push_response(json);
             } else {
                 let mut obj = serde_json::Map::new();
                 obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
                 obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
                 if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
                 obj.insert("text".to_string(), serde_json::Value::String("ddb backend unavailable".into()));
-                router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+                from.push_response(serde_json::Value::Object(obj));
             }
         } else {
             let mut obj = serde_json::Map::new();
@@ -400,7 +423,7 @@ impl MessageHandler for DefaultPrintingHandler {
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
             if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
             obj.insert("text".to_string(), serde_json::Value::String("no ddb backend".into()));
-            router.set_outbound_response(Some(serde_json::Value::Object(obj)));
+            from.push_response(serde_json::Value::Object(obj));
         }
     }
 
@@ -473,7 +496,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 )
             );
             let json = crate::messages::marshal::to_json_value(&resp);
-            router.set_outbound_response(Some(json));
+            from.push_response(json);
         }
     }
 
@@ -497,7 +520,7 @@ impl MessageHandler for DefaultPrintingHandler {
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
-        router.set_outbound_response(Some(json));
+        from.push_response(json);
 
         if !msg.rippled {
             let mut rippled_msg = msg.clone();
@@ -526,7 +549,7 @@ impl MessageHandler for DefaultPrintingHandler {
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
-        router.set_outbound_response(Some(json));
+        from.push_response(json);
     }
 
     fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDumpResolve) {
@@ -619,7 +642,7 @@ impl MessageHandler for DefaultPrintingHandler {
             data: None,
         }));
         let json = crate::messages::marshal::to_json_value(&resp);
-        router.set_outbound_response(Some(json));
+        from.push_response(json);
 
         // Ripple asynchronously with a delay so the new relay has time to
         // process SignonResponse and transition to Available state before

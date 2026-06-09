@@ -1218,13 +1218,6 @@ impl Engine {
                                 } else {
                                     router_arc.route_with_network(DefaultPrintingHandler, &msg, issuer, &from);
                                 }
-                                if let Some(out) = router_arc.take_outbound_response() {
-                                    tracing::info!("[Engine::install_dtls_handler][cb] sending response {:?}", out);
-                                    let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                                    if let Some(api) = bingle_api.upgrade() {
-                                        if let Err(e) = api.send_message_to_network(&from, &sender_id, out, None) { tracing::warn!("[Engine::install_dtls_handler][send outbound_response] failed: {}", e); }
-                                    }
-                                }
                             }
                             Err(e) => {
                                 // Not valid JSON per our schema; treat as plaintext with raw bytes

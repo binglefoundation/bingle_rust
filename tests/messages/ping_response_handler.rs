@@ -29,11 +29,11 @@ pub fn test_on_ping_response_no_tag_calls_on_message() {
     router.set_on_message(Some(on_message));
 
     let handler = rust_comms::messages::DefaultPrintingHandler;
-    let from = rust_comms::messages::handlers::FromStruct {
-        id: "SENDER.ISSUER".to_string(),
-        network_source_key: NetworkEndpoint::new_direct("1.2.3.4:5678".parse().unwrap()),
-        router: router.clone(),
-    };
+    let from = rust_comms::messages::handlers::FromStruct::new(
+        "SENDER.ISSUER".to_string(),
+        NetworkEndpoint::new_direct("1.2.3.4:5678".parse().unwrap()),
+        router.clone(),
+    );
     let resp = PingResponse {
         app: "ping".into(),
         verified_id: "VERIFIED".into(),
@@ -70,11 +70,11 @@ pub fn test_on_ping_response_with_tag_does_not_call_on_message() {
     router.set_on_message(Some(on_message));
 
     let handler = rust_comms::messages::DefaultPrintingHandler;
-    let from = rust_comms::messages::handlers::FromStruct {
-        id: "SENDER.ISSUER".to_string(),
-        network_source_key: NetworkEndpoint::new_direct("1.2.3.4:5678".parse().unwrap()),
-        router: router.clone(),
-    };
+    let from = rust_comms::messages::handlers::FromStruct::new(
+        "SENDER.ISSUER".to_string(),
+        NetworkEndpoint::new_direct("1.2.3.4:5678".parse().unwrap()),
+        router.clone(),
+    );
     let resp = PingResponse {
         app: "ping".into(),
         verified_id: "VERIFIED".into(),

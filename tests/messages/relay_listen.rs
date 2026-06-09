@@ -29,15 +29,13 @@ pub fn relay_listen_registers_and_responds() {
     // Act: route a Relay::Listen message via DefaultPrintingHandler
     let handler = DefaultPrintingHandler;
     let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+    let responses = rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         // from_id not used in this path
-        router.route(&handler, &msg, "ALGOADDR123");
+        router.route(&handler, &msg, "ALGOADDR123")
     });
 
     // Assert response was produced and source IP registered
-    let out = router.take_outbound_response();
-    assert!(out.is_some(), "expected an outbound response");
-    let obj = out.unwrap();
+    let obj = responses.into_iter().next().expect("expected an outbound response");
     let t = obj.get("type").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(t, Some("ListenResponse"));
 

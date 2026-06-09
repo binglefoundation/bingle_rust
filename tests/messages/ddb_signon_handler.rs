@@ -25,11 +25,11 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
     let router = Arc::new(rust_comms::messages::router::Router::new(api_weak.clone()));
     
     let sender_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 1234);
-    let from = FromStruct {
-        id: "NEWNODE".to_string() + rust_comms::protocol::ISSUER_SUFFIX,
-        network_source_key: NetworkEndpoint::new_direct(sender_addr),
-        router: router.clone(),
-    };
+    let from = FromStruct::new(
+        "NEWNODE".to_string() + rust_comms::protocol::ISSUER_SUFFIX,
+        NetworkEndpoint::new_direct(sender_addr),
+        router.clone(),
+    );
     
     let signon = DdbSignon {
         app: "ddb".to_string(),
@@ -60,7 +60,7 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
         assert_eq!(rec.endpoint, Some(InetSocketAddress { host: "1.2.3.4".to_string(), port: 1234 }));
     }
 
-    let resp_json = router.take_outbound_response().expect("should have outbound response");
+    let resp_json = from.take_responses().into_iter().next().expect("should have outbound response");
     let resp_msg = rust_comms::messages::marshal::from_json_value(resp_json).expect("valid message");
     
     if let Message::Ddb(DdbMessage::SignonResponse(resp)) = resp_msg {

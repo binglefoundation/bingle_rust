@@ -185,12 +185,12 @@ pub fn bingle_api_send_via_relay() {
     tracing::info!("B sending RelayListen");
     router.set_last_from(Some(b_addr));
     let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        router.route(&handler, &listen_msg, b_id);
+    let listen_responses = rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &listen_msg, b_id)
     });
     assert_eq!(turn.lookup_addr_by_id(b_id), Some(b_addr));
-    let listen_out = router
-        .take_outbound_response()
+    let listen_out = listen_responses
+        .into_iter().next()
         .expect("ListenResponse present");
     assert_eq!(
         listen_out
@@ -231,10 +231,10 @@ pub fn bingle_api_send_via_relay() {
     router.set_last_from(Some(a_addr));
     api.engine_for_tests().access_unsafe_for_tests(|e| e.set_last_public_addr(Some(a_addr)));
     let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: b_id.to_string(), tag: None }));
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        router.route(&handler, &call_msg, "AID");
+    let call_responses = rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &call_msg, "AID")
     });
-    let out = router.take_outbound_response().expect("RelayResponse present");
+    let out = call_responses.into_iter().next().expect("RelayResponse present");
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
     let relay_called = captured_relay_called
         .lock()
