@@ -37,9 +37,6 @@ pub mod algo_ops_address_derivation_test;
 #[path = "algo_ops_reserve_helpers.rs"]
 pub mod algo_ops_reserve_helpers;
 
-#[path = "discover_roots_unit.rs"]
-pub mod discover_roots_unit;
-
 // New unit covering keypair generation helper
 #[path = "generate_keypair.rs"]
 pub mod generate_keypair;
@@ -48,4 +45,7 @@ pub mod account_balance_test;
 
 #[path = "test_node_errors.rs"]
 pub mod test_node_errors;
+
+#[path = "test_retry_logic.rs"]
+pub mod test_retry_logic;
 

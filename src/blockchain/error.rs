@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlgoErrorKind {
     HostUnreachable,
+    /// Transient HTTP error (e.g. 408, 429, 503) that exhausted all retries
+    TransientFailure,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +23,14 @@ impl std::fmt::Display for AlgoError {
 impl std::error::Error for AlgoError {}
 
 impl AlgoError {
+    pub fn transient(operation: &str, message: &str) -> Self {
+        Self {
+            kind: AlgoErrorKind::TransientFailure,
+            operation: operation.to_string(),
+            message: message.to_string(),
+        }
+    }
+
     pub fn unreachable(operation: &str, message: &str) -> Self {
         Self {
             kind: AlgoErrorKind::HostUnreachable,

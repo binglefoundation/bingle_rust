@@ -61,7 +61,7 @@ impl AlgoBingle {
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let client = self.algod_client()?;
-        let app_info = self.algod_call(client.app(algonaut::core::AppId(app_id)))
+        let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
             .map_err(|e| anyhow!("application_information failed: {e}"))?;
         let v = serde_json::to_value(&app_info)
             .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
@@ -199,18 +199,21 @@ impl AlgoBingle {
         sync_result
     }
 
-    pub(crate) fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+    pub fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
         algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
         let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?}", addr);
             if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
                 for st in als {
                     let id = st.get("id").and_then(|x| x.as_u64());
+                    // tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing app-local-state: id: {:?}", id);
                     if id == Some(app_id) {
                         let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                         let kvs = Self::decode_state_entries(&keyvals);
+                        tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing decoded: kvs: {:?}", kvs);
                         if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
                             if !val.is_empty() {
                                 results.push((addr.clone(), val));
@@ -244,7 +247,7 @@ impl AlgoBingle {
         loop {
             let next_ref = next.as_deref();
             algo_log!("[indexer_query_opted_in_accounts_sync] querying indexer next={:?}", next_ref);
-            let response = self.algod_call(indexer.search_for_accounts(
+            let response = self.algod_call(|| indexer.search_for_accounts(
                 None,
                 Some(1000),
                 next_ref,
@@ -272,7 +275,7 @@ impl AlgoBingle {
             for acct in &response.accounts {
                 let v = serde_json::to_value(acct)
                     .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
-                algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
+                // algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
                 if let Err(e) = f(&v) {
                     tracing::error!(
                         "[AlgoBingle][indexer_query_opted_in_accounts_sync] failed to process account: {}",
@@ -368,39 +371,39 @@ impl AlgoBingle {
 
     /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "static_endpoint".
     /// This variant uses an injected local-state getter for testability.
-    pub fn discover_root_relays_with<F>(
-        app_id: u64,
-        accounts: &[String],
-        get_local: F,
-    ) -> Vec<(String, std::net::SocketAddr)>
-    where
-        F: Fn(u64, &str) -> Option<Vec<(String, String)>>,
-    {
-        let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
-        for acct in accounts {
-            if let Some(entries) = get_local(app_id, acct) {
-                // find static_endpoint
-                if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
-                    if let Some(addr) = Self::parse_relay_ip(&v) {
-                        out.push((acct.clone(), addr));
-                    }
-                }
-            }
-        }
-        out
-    }
+    // pub fn discover_root_relays_with<F>(
+    //     app_id: u64,
+    //     accounts: &[String],
+    //     get_local: F,
+    // ) -> Vec<(String, std::net::SocketAddr)>
+    // where
+    //     F: Fn(u64, &str) -> Option<Vec<(String, String)>>,
+    // {
+    //     let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
+    //     for acct in accounts {
+    //         if let Some(entries) = get_local(app_id, acct) {
+    //             // find static_endpoint
+    //             if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
+    //                 if let Some(addr) = Self::parse_relay_ip(&v) {
+    //                     out.push((acct.clone(), addr));
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     out
+    // }
 
     /// Discover root relay ids and socket addresses using AlgoOps for local state fetching.
     /// Requires a list of candidate accounts to check.
-    pub fn discover_root_relays(&self, app_id: u64, accounts: &[String]) -> anyhow::Result<Vec<(String, std::net::SocketAddr)>> {
-        let res = Self::discover_root_relays_with(app_id, accounts, |aid, acct| {
-            match self.ops.local_state_for_account(aid, acct) {
-                Ok(v) => v,
-                Err(_) => None,
-            }
-        });
-        Ok(res)
-    }
+    // pub fn discover_root_relays(&self, app_id: u64, accounts: &[String]) -> anyhow::Result<Vec<(String, std::net::SocketAddr)>> {
+    //     let res = Self::discover_root_relays_with(app_id, accounts, |aid, acct| {
+    //         match self.ops.local_state_for_account(aid, acct) {
+    //             Ok(v) => v,
+    //             Err(_) => None,
+    //         }
+    //     });
+    //     Ok(res)
+    // }
 
 
     fn algod_client(&self) -> Result<Algod> {
@@ -447,13 +450,69 @@ impl AlgoBingle {
     }
 
     fn params(&self, client: &Algod) -> Result<SuggestedParams> {
-        self.algod_call(client.suggested_params())
+        self.algod_call(|| client.suggested_params())
     }
 
-    fn algod_call<T: Send>(&self, fut: impl std::future::Future<Output = Result<T, algonaut::Error>> + Send) -> Result<T> {
-        self.rt_block_on(fut)
-            .map_err(|e| anyhow!("runtime error: {e}"))?
-            .map_err(|e| anyhow!("{e}"))
+    // HTTP status codes that warrant a retry (transient/overload errors).
+    const RETRYABLE_STATUS_CODES: &'static [u16] = &[408, 425, 429, 502, 503, 504];
+
+    // Returns true if the algonaut error is a retryable transient HTTP error.
+    fn is_retryable(e: &algonaut::Error) -> bool {
+        if let algonaut::Error::Request(req) = e {
+            if let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
+                return Self::RETRYABLE_STATUS_CODES.contains(status);
+            }
+        }
+        false
+    }
+
+    // Helper: run an algonaut async call and flatten the double-Result, with
+    // up to 3 retries (with exponential backoff: 1 s, 2 s, 4 s) on transient
+    // HTTP errors (408, 425, 429, 502, 503, 504).
+    //
+    // Accepts a closure rather than a bare future so the future can be
+    // reconstructed on each retry attempt (futures are consumed on first poll).
+    fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
+    where
+        T: Send,
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T, algonaut::Error>> + Send,
+    {
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_BASE_MS: u64 = 1_000;
+
+        let mut attempt = 0u32;
+        loop {
+            let result = self
+                .rt_block_on(make_fut())
+                .map_err(|e| anyhow!("runtime error: {e}"))?;
+
+            match result {
+                Ok(val) => return Ok(val),
+                Err(ref e) if attempt < MAX_RETRIES && Self::is_retryable(e) => {
+                    let delay = std::time::Duration::from_millis(RETRY_BASE_MS * (1u64 << attempt));
+                    tracing::warn!(
+                        "algod transient error (attempt {}/{}), retrying in {:?}: {}",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        delay,
+                        e
+                    );
+                    std::thread::sleep(delay);
+                    attempt += 1;
+                }
+                Err(e) => {
+                    if attempt >= MAX_RETRIES && Self::is_retryable(&e) {
+                        return Err(crate::blockchain::error::AlgoError::transient(
+                            "algod call",
+                            &e.to_string(),
+                        )
+                        .into());
+                    }
+                    return Err(anyhow!("{e}"));
+                }
+            }
+        }
     }
 
     fn app_address(&self, app_id: u64) -> Result<Address> {
@@ -466,7 +525,7 @@ impl AlgoBingle {
         let mut bytes: Vec<u8> = Vec::new();
         for s in signed_group { bytes.extend_from_slice(&s); }
 
-        let txid = self.algod_call(client.send_raw(&bytes))
+        let txid = self.algod_call(|| client.send_raw(&bytes))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
         // Wait for confirmation of the first tx id in the group.
         self.ops.wait_for_confirmation(&txid, 10)?;
@@ -751,7 +810,7 @@ impl AlgoBingle {
             .map_err(|e| anyhow!("sign asset opt-in: {e}"))?
             .to_msg_pack()
             .map_err(|e| anyhow!("encode signed asset opt-in: {e}"))?;
-        let tx_id = self.algod_call(client.send_raw(&signed))
+        let tx_id = self.algod_call(|| client.send_raw(&signed))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
         Ok(tx_id)
