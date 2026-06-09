@@ -3,11 +3,13 @@ use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use rust_comms::algo_ops::AlgoChainConfig;
 use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use crate::api::bingle_api_handle_tests::test_util::register_client_on_blockchain;
 use crate::util::test_util::init_test_logging;
 use crate::util::relay_test_util::wait_for_relays_visible;
 
@@ -29,14 +31,22 @@ pub fn bingle_api_register_via_forced_stun() {
     init_test_logging();
 
     fn register_relay_static_endpoint(
+        handle: &str,
         ops_relay: &rust_comms::blockchain::algo_ops::AlgoOps,
         ab_creator: &AlgoBingle,
         relay_address: &str,
         relay_account: &str,
+        relay_passphrase: &str,
         app_id: u64,
+        asset_id: u64,
+        cfg: &AlgoChainConfig,
     ) {
         let ab_relay = AlgoBingle::new(ops_relay.clone(), app_id, 0);
         ops_relay.opt_in_app(app_id).expect("relay opt-in app");
+        register_client_on_blockchain(
+            relay_account, relay_passphrase, handle,
+            app_id, asset_id, &ab_creator.ops, cfg.clone(),
+        );
         ab_creator
             .set_allow_static(app_id, relay_account, true)
             .expect("set_allow_static");
@@ -107,17 +117,21 @@ pub fn bingle_api_register_via_forced_stun() {
     let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
 
     // Deploy the BingleDapp from artifacts using common helper
-    let app_id = test_util::deploy_bingle_app(&ops_creator);
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
 
     // Create helpers bound to this app
     let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
 
     register_relay_static_endpoint(
+        "relay1",
         &ops_relay1,
         &ab_creator,
         &relay1_addr.to_string(),
         test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
         app_id,
+        asset_id,
+        &cfg
     );
     let relay1_expected = vec![(test_util::ADDRESS_SPEND.to_string(), relay1_addr)];
     if !wait_for_relays_visible(&ab_creator, app_id, &relay1_expected, Duration::from_secs(60)) {
@@ -134,11 +148,15 @@ pub fn bingle_api_register_via_forced_stun() {
     let relay1 = start_relay_and_wait_available(&r1_opts, "relay1");
 
     register_relay_static_endpoint(
+        "relay2",
         &ops_relay2,
         &ab_creator,
         &relay2_addr.to_string(),
         test_util::ADDRESS_RECEIVE,
+        test_util::PASSPHRASE_RECEIVE,
         app_id,
+        asset_id,
+        &cfg,
     );
     let relay12_expected = vec![
         (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
@@ -164,15 +182,21 @@ pub fn bingle_api_register_via_forced_stun() {
 
     // A client instance without staticEndpoint; provide the STUN server list to Engine.start
     let client1 = BingleApiImpl::new(&c1_opts);
+    let ops_client = test_util::ops_from_mnemonic(test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, cfg.clone());
+    ops_client.opt_in_app(app_id).expect("client opt-in app");
+    register_client_on_blockchain(
+        test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client1",
+        app_id, asset_id, &ops_creator, cfg.clone(),
+    );
 
     client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&c1_opts)).expect("client1 start() failed");
 
-    // Wait up to 60 seconds for client engine to enter an operational state
+    // Wait up to 60 seconds for client engine to enter an operational state (Registered)
     // (allow indexer/DTLS timing variability).
     let wait_start = Instant::now();
     while wait_start.elapsed() < Duration::from_secs(60) {
         match client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests()) {
-            Some(EngineState::Registered) | Some(EngineState::TrianglePing) => break,
+            Some(EngineState::Registered)  => break,
             _ => {}
         }
         std::thread::sleep(Duration::from_millis(25));
@@ -181,7 +205,7 @@ pub fn bingle_api_register_via_forced_stun() {
     // State is expected to be operational by this point.
     let s1_state = client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_state_for_tests());
     assert!(
-        matches!(s1_state, Some(EngineState::Registered) | Some(EngineState::TrianglePing)),
+        matches!(s1_state, Some(EngineState::Registered) ),
         "unexpected client1 state: {:?}",
         s1_state
     );

@@ -1001,11 +1001,13 @@ impl Engine {
         };
         let (relay_ids, relay_endpoints_opt) = ddb.make_epoch_info();
 
+        tracing::debug!("[Engine::ripple_message] relay_ids={:?}", relay_ids);
+
         // Use endpoints from make_epoch_info if available, otherwise try to look them up individually
         if let Some(endpoints) = relay_endpoints_opt {
             for (id, endpoint) in relay_ids.into_iter().zip(endpoints.into_iter()) {
                 if id == my_id || id == originator_id {
-                    tracing::debug!("[Engine::ripple_message] skipping relay {}", id);
+                    tracing::debug!("[Engine::ripple_message][endpoints known] skipping relay {} my_id={}, originator_id={}", id, my_id, originator_id);
                     continue;
                 }
                 if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
@@ -1019,7 +1021,7 @@ impl Engine {
         } else {
             for id in relay_ids {
                 if id == my_id || id == originator_id {
-                    tracing::debug!("[Engine::ripple_message] skipping relay {}", id);
+                    tracing::debug!("[Engine::ripple_message][no endpoints known] skipping relay {} my_id={}, originator_id={}", id, my_id, originator_id);
                     continue;
                 }
                 if let Some(rec) = ddb.lookup(&id) {
@@ -1464,6 +1466,7 @@ impl Engine {
 
                 // Re-count peer states under the mutex to decide initialization strategy
                 finder_arc_for_mtx.clear_state_cache();
+                finder.list_all_relays(&my_id, true);
                 tracing::info!("[Engine::initialize_relay] cleared finder state cache");
                 let (avail_cnt, starting_cnt) = count_peer_states(&*finder_arc_for_mtx, &my_id_for_mtx);
                 tracing::info!("[Engine::initialize_relay] Peer state count: available={}, starting={}", avail_cnt, starting_cnt);
