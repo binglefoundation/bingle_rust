@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
 
 // Bring in the public trait and types from the crate under test
 use rust_comms::stun::{StunEndpointFinder, StunState, StunEndpointFinderImpl};
+use crate::util::test_util::init_test_logging;
 
 fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
     // Build a minimal STUN success with XOR-MAPPED-ADDRESS for IPv4
@@ -272,6 +273,122 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
     let s2_key = (s2.ip().to_string(), s2.port());
     assert!(any_after.iter().any(|(h, p, _)| *h == s1_key.0 && *p == s1_key.1), "expected repeat poll for s1");
     assert!(any_after.iter().any(|(h, p, _)| *h == s2_key.0 && *p == s2_key.1), "expected repeat poll for s2");
+    finder.stop();
+}
+
+// Regression test for Bug 1 + Bug 2: when the NAT port changes between polling rounds,
+// the state-change callback must fire with the new endpoint even though the StunState
+// stays Consistent.
+//
+// Bug 1: recompute_state_and_notify only fired the callback when the StunState enum
+//   variant changed.  A NAT port change with both servers still agreeing (Consistent)
+//   was silently dropped.  Fix: also fire when self.endpoint changes while staying
+//   Consistent.
+//
+// Bug 2: per-server `endpoint` and `responded` were not cleared when new binding
+//   requests were sent.  Stale endpoints from the previous round lingered, which caused
+//   a transient Inconsistent state when one server responded first.  Fix: clear both
+//   fields in the send loop.
+//
+// This test uses a short repeat interval so the background thread fires a second round
+// of binding requests (which with the Bug 2 fix clears both servers' stale endpoints).
+// The test then injects both new responses.  Without the fixes the final Consistent
+// callback with port 64715 is either not emitted (Bug 1 only) or arrives as a
+// Consistent→Inconsistent→Consistent bounce (Bug 2 without Bug 1 fix).
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn consistent_endpoint_change_fires_callback() {
+    init_test_logging();
+
+    let mut finder = StunEndpointFinderImpl::new();
+    let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+    let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+
+    // Track send calls so we know when the background thread starts a new round
+    let send_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+    let send_count_clone = Arc::clone(&send_count);
+    finder.set_send_packet_handler(Some(Arc::new(move |_host: &str, _port: u16, _data: &[u8]| {
+        *send_count_clone.lock().unwrap() += 1;
+    })));
+
+    // Short repeat so the background thread fires a second round within the test
+    finder.start(vec![s1, s2], 100, 20);
+
+    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let changes_clone = Arc::clone(&changes);
+    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        changes_clone.lock().unwrap().push((st, ep));
+    })));
+
+    // Round 1: both servers agree on port 2447 -> state becomes Consistent(2447)
+    let r1a = make_xor_mapped_response([150, 228, 229, 199], 2447);
+    finder.process_packet(s1, &r1a);
+    let r1b = make_xor_mapped_response([150, 228, 229, 199], 2447);
+    finder.process_packet(s2, &r1b);
+
+    // Verify Consistent(2447) was reported
+    let first_consistent = {
+        let list = changes.lock().unwrap();
+        list.iter()
+            .rfind(|(st, _)| *st == StunState::Consistent)
+            .cloned()
+    };
+    assert!(first_consistent.is_some(), "expected Consistent callback after round 1");
+    assert_eq!(
+        first_consistent.unwrap().1.unwrap().port(),
+        2447,
+        "expected endpoint port 2447 in round 1"
+    );
+
+    // Wait for the background thread to start a new polling round (it will send at
+    // least 2 new binding requests -- one per server -- and clear stale endpoints).
+    let sends_after_round1 = *send_count.lock().unwrap();
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < deadline {
+        let sends = *send_count.lock().unwrap();
+        if sends >= sends_after_round1 + 2 { break; }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        *send_count.lock().unwrap() >= sends_after_round1 + 2,
+        "background thread did not send a second round of binding requests in time"
+    );
+
+    let callbacks_before_round2 = changes.lock().unwrap().len();
+
+    // Round 2: NAT port has changed to 64715.  Both servers respond with the new port.
+    // With the Bug 2 fix the stale endpoints are already cleared, so the first response
+    // yields Single (state change Consistent->Single -> callback fires) and the second
+    // yields Consistent(64715) (state change Single->Consistent -> callback fires).
+    // Without the Bug 1 fix but with Bug 2 fix: first response goes Single (fires),
+    // second goes Consistent(64715) (fires) -- still works via state-variant changes.
+    // Without either fix: first response goes Inconsistent(stale+new), second goes
+    // Consistent(64715) -- also fires via state-variant changes.
+    // Without Bug 1 fix but also without Bug 2 fix, AND if somehow both servers already
+    // have 64715 simultaneously: stays Consistent, no callback (the silent bug case).
+    // The endpoint_changed guard (Bug 1 fix) makes this robust regardless of path.
+    let r2a = make_xor_mapped_response([150, 228, 229, 199], 64715);
+    finder.process_packet(s1, &r2a);
+    let r2b = make_xor_mapped_response([150, 228, 229, 199], 64715);
+    finder.process_packet(s2, &r2b);
+
+    // A Consistent(64715) callback must have fired after round 2
+    let list = changes.lock().unwrap();
+    let consistent_64715 = list
+        .iter()
+        .skip(callbacks_before_round2)
+        .find(|(st, ep)| {
+            *st == StunState::Consistent
+                && ep.map(|e| e.port()) == Some(64715)
+        })
+        .cloned();
+    assert!(
+        consistent_64715.is_some(),
+        "expected a Consistent(64715) callback after round 2 endpoint change, \
+         but callbacks after round 1 were: {:?}",
+        &list[callbacks_before_round2..]
+    );
+
     finder.stop();
 }
 
