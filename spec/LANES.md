@@ -53,6 +53,7 @@ security:
 
 robustness:
 - **fail sensibly with message when Bingle network down (< 2 relays))**
+- **relay channel doesnt pass echo message after some reloads**
 - indicate when we get no STUN responses (UDP blocked)
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
@@ -72,7 +73,7 @@ robustness:
   + relay on relay
 - ~~use relay cache efficently during relay init~~
 - ~~upgrade Algonaut~~
-- *move indexer lookups to use Algonaut*
+- ~~move indexer lookups to use Algonaut~~
 - fix fragile tests
  + retry on indexer lookups
  + cache indexer lookups
