@@ -12,6 +12,7 @@ use rust_comms::relay::discovery::indexer_discover_closure;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use rust_comms::relay::relay_updater::RelayUpdater;
 use crate::relay::relay_states::test_util::init_test_logging;
+use crate::util::relay_test_util::wait_for_relays_visible;
 
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
@@ -56,12 +57,10 @@ fn relay_updater_localnet_e2e_matrix() {
         test_util::ADDRESS_SPEND,
         app_id,
     );
-    wait_for_relays_visible(
-        &creator_ab,
-        app_id,
-        &[test_util::ADDRESS_SPEND.to_string()],
-        Duration::from_secs(60),
-    );
+    let relay1_expected = vec![(test_util::ADDRESS_SPEND.to_string(), relay1_addr)];
+    if !wait_for_relays_visible(&creator_ab, app_id, &relay1_expected, Duration::from_secs(60)) {
+        panic!("Relay 1 did not become visible via indexer within 60s");
+    }
 
     let relay1_opts = relay_start_options(
         "relay-updater-localnet-relay-1",
@@ -171,12 +170,13 @@ fn relay_updater_localnet_e2e_matrix() {
         test_util::ADDRESS_RECEIVE,
         app_id,
     );
-    wait_for_relays_visible(
-        &creator_ab,
-        app_id,
-        &[test_util::ADDRESS_SPEND.to_string(), test_util::ADDRESS_RECEIVE.to_string()],
-        Duration::from_secs(60),
-    );
+    let relay12_expected = vec![
+        (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
+        (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
+    ];
+    if !wait_for_relays_visible(&creator_ab, app_id, &relay12_expected, Duration::from_secs(60)) {
+        panic!("Relays did not become visible via indexer within 60s");
+    }
 
     let relay2 = BingleApiImpl::new(&relay2_opts);
     start_relay_and_wait_available(&relay2, &relay2_opts, "relay2");
@@ -355,19 +355,6 @@ fn register_relay_static_endpoint(
         .expect("register_endpoint should succeed");
 }
 
-fn wait_for_relays_visible(ab: &AlgoBingle, app_id: u64, accounts: &[String], timeout: Duration) {
-    let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
-        if let Ok(found) = ab.discover_root_relays(app_id, accounts) {
-            if found.len() == accounts.len() {
-                return;
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1000));
-    }
-
-    panic!("Relays did not become visible via discover_root_relays within {timeout:?}");
-}
 
 fn start_relay_and_wait_available(relay: &Arc<BingleApiImpl>, opts: &StartOptions, relay_name: &str) {
     relay

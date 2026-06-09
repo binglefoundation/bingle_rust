@@ -444,7 +444,8 @@ impl AlgoOps {
                 return Err(e);
             }
         };
-        algo_log!("[account_balance] Retrieved account info for address: {} => {:?}", address, info);
+        // Next log is huge!
+        // algo_log!("[account_balance] Retrieved account info for address: {} => {:?}", address, info);
         // amount is in microalgos
         let micro: u64 = info.amount;
         algo_log!("[account_balance] Balance for address {} is {} microalgos", address, micro);
@@ -495,7 +496,8 @@ impl AlgoOps {
         };
 
         algo_log!("Retrieved account info for address: {}", account_address);
-        algo_log!("Account info: {:#?}", info);
+        // Next log is huge
+        // algo_log!("Account info: {:#?}", info);
 
         let v = serde_json::to_value(&info)
             .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;

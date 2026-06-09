@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use crate::setup_localnet;
 use crate::util::test_util;
 use crate::util::test_util::register_client_on_blockchain;
+use crate::util::relay_test_util::wait_for_relays_visible;
 use serial_test::serial;
 
 const ADDRESS_B: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
@@ -126,31 +127,6 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
 }
 
 
-// Helper: wait for given duration and return true if both relays are visible via discovery with expected addresses
-fn wait_for_relays_visible(ab: &AlgoBingle, app_id: u64, expected: &[(String, SocketAddr)], timeout: Duration) -> bool {
-    let start = Instant::now();
-    let account_ids: Vec<String> = expected.iter().map(|(id, _)| id.clone()).collect();
-    while start.elapsed() < timeout {
-        if let Ok(found) = ab.discover_root_relays(app_id, &account_ids) {
-            if found.len() == expected.len() {
-                let mut all_match = true;
-                for (exp_id, exp_addr) in expected {
-                    if !found.iter().any(|(fid, faddr)| fid == exp_id && faddr == exp_addr) {
-                        all_match = false;
-                        tracing::info!("[Test] Relay {} not yet visible with address {} (found: {:?})", exp_id, exp_addr, found);
-                        break;
-                    }
-                }
-                if all_match {
-                    tracing::info!("[Test] All {} relays visible with correct addresses via discover_root_relays after {:?}", expected.len(), start.elapsed());
-                    return true;
-                }
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1000));
-    }
-    false
-}
 
 fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
     let cfg = test_util::localnet_config();
@@ -184,14 +160,14 @@ fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, relay2_a
     ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
     ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
 
-    // Wait for discovery to see them (using discover_root_relays as requested)
-    tracing::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
+    // Wait for indexer to see the registered endpoints
+    tracing::info!("[Test] Waiting for relays to be visible via list_static_endpoints_via_indexer_sync...");
     let expected = vec![
         (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
         (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
     ];
     if !wait_for_relays_visible(&ab_creator, app_id, &expected, Duration::from_secs(60)) {
-        panic!("Relays did not become visible via discover_root_relays within 60s");
+        panic!("Relays did not become visible via list_static_endpoints_via_indexer_sync within 60s");
     }
 }
 
@@ -227,7 +203,7 @@ fn setup_on_message(
 }
 
 fn run_send_message_to_id_test(broken_nat: bool) {
-    test_util::init_test_logging_with_filter("info,rust_comms::dtls=debug");
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
     // This test requires a running local Algorand localnet + indexer.
     if !test_util::should_run_localnet() {
@@ -714,7 +690,7 @@ fn reset_message_state(
 #[ignore]
 #[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
-    test_util::init_test_logging_with_filter("info,rust_comms::dtls=debug");
+    test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
     if !test_util::should_run_localnet() {
         eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
@@ -735,6 +711,14 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
     register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+    let roots = vec![
+        (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
+        (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
+    ];
+    let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
+    if !wait_for_relays_visible(&ab_creator, app_id, &roots, Duration::from_secs(60)) {
+        panic!("Root relays did not become visible");
+    }
 
     let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
     let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());

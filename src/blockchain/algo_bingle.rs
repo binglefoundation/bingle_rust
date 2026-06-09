@@ -199,18 +199,21 @@ impl AlgoBingle {
         sync_result
     }
 
-    pub(crate) fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+    pub fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
         algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
         let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?}", addr);
             if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
                 for st in als {
                     let id = st.get("id").and_then(|x| x.as_u64());
+                    // tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing app-local-state: id: {:?}", id);
                     if id == Some(app_id) {
                         let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                         let kvs = Self::decode_state_entries(&keyvals);
+                        tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing decoded: kvs: {:?}", kvs);
                         if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
                             if !val.is_empty() {
                                 results.push((addr.clone(), val));
@@ -272,7 +275,7 @@ impl AlgoBingle {
             for acct in &response.accounts {
                 let v = serde_json::to_value(acct)
                     .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
-                algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
+                // algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
                 if let Err(e) = f(&v) {
                     tracing::error!(
                         "[AlgoBingle][indexer_query_opted_in_accounts_sync] failed to process account: {}",
@@ -368,39 +371,39 @@ impl AlgoBingle {
 
     /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "static_endpoint".
     /// This variant uses an injected local-state getter for testability.
-    pub fn discover_root_relays_with<F>(
-        app_id: u64,
-        accounts: &[String],
-        get_local: F,
-    ) -> Vec<(String, std::net::SocketAddr)>
-    where
-        F: Fn(u64, &str) -> Option<Vec<(String, String)>>,
-    {
-        let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
-        for acct in accounts {
-            if let Some(entries) = get_local(app_id, acct) {
-                // find static_endpoint
-                if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
-                    if let Some(addr) = Self::parse_relay_ip(&v) {
-                        out.push((acct.clone(), addr));
-                    }
-                }
-            }
-        }
-        out
-    }
+    // pub fn discover_root_relays_with<F>(
+    //     app_id: u64,
+    //     accounts: &[String],
+    //     get_local: F,
+    // ) -> Vec<(String, std::net::SocketAddr)>
+    // where
+    //     F: Fn(u64, &str) -> Option<Vec<(String, String)>>,
+    // {
+    //     let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
+    //     for acct in accounts {
+    //         if let Some(entries) = get_local(app_id, acct) {
+    //             // find static_endpoint
+    //             if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
+    //                 if let Some(addr) = Self::parse_relay_ip(&v) {
+    //                     out.push((acct.clone(), addr));
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     out
+    // }
 
     /// Discover root relay ids and socket addresses using AlgoOps for local state fetching.
     /// Requires a list of candidate accounts to check.
-    pub fn discover_root_relays(&self, app_id: u64, accounts: &[String]) -> anyhow::Result<Vec<(String, std::net::SocketAddr)>> {
-        let res = Self::discover_root_relays_with(app_id, accounts, |aid, acct| {
-            match self.ops.local_state_for_account(aid, acct) {
-                Ok(v) => v,
-                Err(_) => None,
-            }
-        });
-        Ok(res)
-    }
+    // pub fn discover_root_relays(&self, app_id: u64, accounts: &[String]) -> anyhow::Result<Vec<(String, std::net::SocketAddr)>> {
+    //     let res = Self::discover_root_relays_with(app_id, accounts, |aid, acct| {
+    //         match self.ops.local_state_for_account(aid, acct) {
+    //             Ok(v) => v,
+    //             Err(_) => None,
+    //         }
+    //     });
+    //     Ok(res)
+    // }
 
 
     fn algod_client(&self) -> Result<Algod> {

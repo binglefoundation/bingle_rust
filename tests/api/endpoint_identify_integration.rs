@@ -9,6 +9,7 @@ use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use crate::util::test_util::init_test_logging;
+use crate::util::relay_test_util::wait_for_relays_visible;
 
 #[path = "../setup_localnet.rs"]
 pub mod setup_localnet;
@@ -26,33 +27,6 @@ pub mod test_util;
 #[serial]
 pub fn bingle_api_register_via_forced_stun() {
     init_test_logging();
-
-    fn wait_for_relays_visible(
-        ab: &AlgoBingle,
-        app_id: u64,
-        accounts: &[String],
-        timeout: Duration,
-    ) {
-        tracing::info!("[Test] Waiting for relays to be visible via discover_root_relays...");
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if let Ok(found) = ab.discover_root_relays(app_id, accounts) {
-                if found.len() == accounts.len() {
-                    tracing::info!(
-                        "[Test] All {} relays visible via discover_root_relays after {:?}",
-                        accounts.len(),
-                        start.elapsed()
-                    );
-                    return;
-                }
-            }
-            std::thread::sleep(Duration::from_millis(1000));
-        }
-        panic!(
-            "Relays did not become visible via discover_root_relays within {:?}",
-            timeout
-        );
-    }
 
     fn register_relay_static_endpoint(
         ops_relay: &rust_comms::blockchain::algo_ops::AlgoOps,
@@ -138,7 +112,6 @@ pub fn bingle_api_register_via_forced_stun() {
     // Create helpers bound to this app
     let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
 
-    let relay1_accounts = vec![test_util::ADDRESS_SPEND.to_string()];
     register_relay_static_endpoint(
         &ops_relay1,
         &ab_creator,
@@ -146,14 +119,12 @@ pub fn bingle_api_register_via_forced_stun() {
         test_util::ADDRESS_SPEND,
         app_id,
     );
-    wait_for_relays_visible(
-        &ab_creator,
-        app_id,
-        &relay1_accounts,
-        Duration::from_secs(60),
-    );
+    let relay1_expected = vec![(test_util::ADDRESS_SPEND.to_string(), relay1_addr)];
+    if !wait_for_relays_visible(&ab_creator, app_id, &relay1_expected, Duration::from_secs(60)) {
+        panic!("Relay 1 did not become visible via indexer within 60s");
+    }
 
-    tracing::info!("[Test] Relay 1 is visible via discover_root_relays");
+    tracing::info!("[Test] Relay 1 is visible via indexer");
 
     let cfg = test_util::localnet_config();
 
@@ -162,10 +133,6 @@ pub fn bingle_api_register_via_forced_stun() {
 
     let relay1 = start_relay_and_wait_available(&r1_opts, "relay1");
 
-    let relay12_accounts = vec![
-        test_util::ADDRESS_SPEND.to_string(),
-        test_util::ADDRESS_RECEIVE.to_string(),
-    ];
     register_relay_static_endpoint(
         &ops_relay2,
         &ab_creator,
@@ -173,13 +140,14 @@ pub fn bingle_api_register_via_forced_stun() {
         test_util::ADDRESS_RECEIVE,
         app_id,
     );
-    wait_for_relays_visible(
-        &ab_creator,
-        app_id,
-        &relay12_accounts,
-        Duration::from_secs(60),
-    );
-    tracing::info!("[Test] Relay 2 is visible via discover_root_relays");
+    let relay12_expected = vec![
+        (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
+        (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
+    ];
+    if !wait_for_relays_visible(&ab_creator, app_id, &relay12_expected, Duration::from_secs(60)) {
+        panic!("Relays did not become visible via indexer within 60s");
+    }
+    tracing::info!("[Test] Relay 2 is visible via indexer");
     let relay2 = start_relay_and_wait_available(&r2_opts, "relay2");
 
     // Start two local STUN servers we will use for consistency resolution
