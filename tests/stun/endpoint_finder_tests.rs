@@ -392,6 +392,82 @@ pub fn consistent_endpoint_change_fires_callback() {
     finder.stop();
 }
 
+// Integration test: when no STUN server responds within the timeout period,
+// the state should transition to Blocked.
+//
+// The finder sends binding requests every `search_interval_ms` milliseconds.
+// After 3 consecutive intervals where a server has not responded, the server's
+// failure count reaches 3, it is removed from the list, and once all servers are
+// removed and no responses are seen for 3 intervals, the state is set to Blocked.
+//
+// This test installs a send handler that deliberately does NOT deliver any
+// response (simulating a firewall blocking all STUN traffic), then waits for
+// the background thread to fire at least 3 intervals and asserts that the
+// state-change callback was called with Blocked.
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn blocked_when_no_servers_respond_within_timeout() {
+    init_test_logging();
+
+    let mut finder = StunEndpointFinderImpl::new();
+    let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+    let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+
+    // Install a send handler that discards packets (simulates a blocked network).
+    // The handler must exist so that the background thread attempts to send but
+    // no process_packet call ever arrives.
+    let send_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+    let send_count_clone = Arc::clone(&send_count);
+    finder.set_send_packet_handler(Some(Arc::new(move |_host: &str, _port: u16, _data: &[u8]| {
+        *send_count_clone.lock().unwrap() += 1;
+        // Deliberately do nothing: no response is injected.
+    })));
+
+    // Use a very short search interval so the 3-interval timeout fires quickly.
+    // With search_interval_ms = 20 ms, 3 intervals = ~60 ms, well within 1 s.
+    let search_interval_ms: u64 = 20;
+    finder.start(vec![s1, s2], search_interval_ms, 60_000);
+
+    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let changes_clone = Arc::clone(&changes);
+    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        changes_clone.lock().unwrap().push((st, ep));
+    })));
+
+    // Wait until we see a Blocked state or until 1 second has elapsed.
+    let deadline = Instant::now() + Duration::from_millis(1_000);
+    loop {
+        {
+            let list = changes.lock().unwrap();
+            if list.iter().any(|(st, _)| *st == StunState::Blocked) {
+                break;
+            }
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    finder.stop();
+
+    let sends = *send_count.lock().unwrap();
+    assert!(
+        sends >= 6,
+        "expected at least 6 send attempts (3 intervals × 2 servers) but got {}",
+        sends
+    );
+
+    let list = changes.lock().unwrap();
+    let blocked = list.iter().any(|(st, _)| *st == StunState::Blocked);
+    assert!(
+        blocked,
+        "expected state to become Blocked after all servers failed to respond, \
+         but state changes were: {:?}",
+        *list
+    );
+}
+
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn stop_stops_promptly() {
     let mut finder = StunEndpointFinderImpl::new();
