@@ -1,7 +1,6 @@
 use crate::messages::handlers::{MessageHandler, FromStruct};
 use crate::messages::types::*;
 
-use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -18,8 +17,6 @@ pub struct Router {
     // DDB/relay context
     am_relay: std::sync::atomic::AtomicBool,
     ddb_backend: Mutex<Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>>,
-    // Outbound responses produced by handlers during routing.
-    outbound_responses: Mutex<VecDeque<serde_json::Value>>,
 }
 
 struct LockingApiWrapper {
@@ -93,7 +90,7 @@ impl Router {
         None
     }
 
-    fn dispatch_message<H: MessageHandler + ?Sized>(handler: &H, api: Arc<dyn BingleApiBoth>, msg: &Message, from: &FromStruct) {
+    fn dispatch_message<H: MessageHandler + ?Sized>(handler: &H, api: Arc<dyn BingleApiBoth>, msg: &Message, from: &FromStruct) -> Vec<serde_json::Value> {
         tracing::info!("Router::dispatch_message: {:?}", msg);
         match msg {
             Message::PlainText(pt) => handler.on_plain_text(api.clone(), from, pt),
@@ -138,6 +135,7 @@ impl Router {
             Message::Unknown(v) => handler.on_unknown(api.clone(), from, v),
         }
         tracing::info!("Router::dispatch_message done: {:?}", msg);
+        from.responses.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default()
     }
 
     pub fn new(api: crate::api::bingle_api::BingleApiBothType) -> Self {
@@ -149,7 +147,6 @@ impl Router {
             on_message: Mutex::new(None),
             am_relay: std::sync::atomic::AtomicBool::new(false),
             ddb_backend: Mutex::new(None),
-            outbound_responses: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -183,21 +180,6 @@ impl Router {
     pub fn set_ddb_backend(&self, backend: Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
     pub fn get_ddb_backend(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
-    pub fn set_outbound_response(&self, resp: Option<serde_json::Value>) {
-        if let Ok(mut g) = self.outbound_responses.lock() {
-            if let Some(resp_json) = resp {
-                g.push_back(resp_json);
-            } //else {
-             //   g.clear();
-            //}
-        }
-    }
-    pub fn take_outbound_response(&self) -> Option<serde_json::Value> {
-        match self.outbound_responses.lock() {
-            Ok(mut g) => g.pop_front(),
-            Err(_) => None,
-        }
-    }
 
     fn send_outbound_response(&self, from: &FromStruct, outbound: serde_json::Value) {
         if let Some(sender) = self.get_sender() {
@@ -247,6 +229,7 @@ impl Router {
             id: from_id.to_string(),
             network_source_key: from_ep.clone(),
             router: self.clone(),
+            responses: Arc::new(Mutex::new(Vec::new())),
         };
         let msg = msg.clone();
         let msg2 = msg.clone();
@@ -254,9 +237,8 @@ impl Router {
         if std::thread::Builder::new()
             .name("router-handler-thread".to_string())
             .spawn(move || {
-                from.router.set_outbound_response(None);
-                Self::dispatch_message(&handler, api, &msg, &from);
-                while let Some(outbound) = from.router.take_outbound_response() {
+                let outbound_responses = Self::dispatch_message(&handler, api, &msg, &from);
+                for outbound in outbound_responses {
                     tracing::info!("[router::route_with_network] sending outbound response: {:?}", outbound);
                     let outbound2 = outbound.clone();
                     from.router.send_outbound_response(&from, outbound);
@@ -270,8 +252,7 @@ impl Router {
         tracing::info!("[router::route_with_network] handler thread spawned for message: {:?}", msg2);
     }
 
-    pub fn route<H: MessageHandler + ?Sized>(self: &Arc<Self>, handler: &H, msg: &Message, from_id: &str) {
-        self.set_outbound_response(None);
+    pub fn route<H: MessageHandler + ?Sized>(self: &Arc<Self>, handler: &H, msg: &Message, from_id: &str) -> Vec<serde_json::Value> {
         let nsk = if let Some(addr) = self.get_last_from() {
             NetworkEndpoint::new_direct(addr)
         } else {
@@ -279,7 +260,7 @@ impl Router {
         };
         let Some(api_base) = self.get_bingle_api() else {
             tracing::warn!("[router::route] No BingleApi available to pass to handler");
-            return;
+            return Vec::new();
         };
         let api: Arc<dyn BingleApiBoth> = Arc::new(LockingApiWrapper {
             api: Arc::downgrade(&api_base),
@@ -288,8 +269,9 @@ impl Router {
             id: from_id.to_string(),
             network_source_key: nsk,
             router: self.clone(),
+            responses: Arc::new(Mutex::new(Vec::new())),
         };
-        Self::dispatch_message(handler, api, msg, &from);
+        Self::dispatch_message(handler, api, msg, &from)
     }
 
     pub fn clear_for_tests(&self) {
@@ -300,7 +282,6 @@ impl Router {
         self.set_on_message(None);
         self.set_am_relay(false);
         self.set_ddb_backend(None);
-        self.set_outbound_response(None);
     }
 }
 

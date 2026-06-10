@@ -96,13 +96,13 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     // 1) Simulate B sending RelayListen to the relay
     router.set_last_from(Some(b_addr));
     let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        router.route(&handler, &listen_msg, "BID");
+    let listen_responses = rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &listen_msg, "BID")
     });
     // Validate id->addr registration
     assert_eq!(turn.lookup_addr_by_id("BID"), Some(b_addr));
-    let listen_out = router
-        .take_outbound_response()
+    let listen_out = listen_responses
+        .into_iter().next()
         .expect("ListenResponse present");
     assert_eq!(
         listen_out
@@ -115,11 +115,11 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     let a_addr = addr(test_util::find_unused_loopback_port());
     router.set_last_from(Some(a_addr));
     let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "BID".to_string(), tag: None }));
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        router.route(&handler, &call_msg, "AID");
+    let call_responses = rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &call_msg, "AID")
     });
     // Extract channel from outbound response
-    let out = router.take_outbound_response().expect("RelayResponse present");
+    let out = call_responses.into_iter().next().expect("RelayResponse present");
     let ch = out.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel") as u16;
     let relay_called = captured_relay_called
         .lock()

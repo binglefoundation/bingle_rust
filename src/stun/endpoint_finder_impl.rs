@@ -44,6 +44,9 @@ struct Inner {
 
 impl Inner {
     fn recompute_state_and_notify(&mut self) {
+        // Save the old endpoint before the match so we can detect address changes
+        // while the state stays Consistent (Bug 1 fix).
+        let old_endpoint = self.endpoint;
         // Collect endpoints for all servers that have responded
         let mut endpoints = Vec::new();
         for s in &self.servers {
@@ -69,7 +72,12 @@ impl Inner {
         if matches!(new_state, StunState::None | StunState::Single) {
             self.endpoint = None;
         }
-        if new_state != self.state {
+        // Fire callback when the state variant changes OR when the endpoint address
+        // changes while the state stays Consistent.  Without the endpoint check, a NAT
+        // port change that both servers agree on in the same round would be silently
+        // dropped because new_state == self.state == Consistent.
+        let endpoint_changed = new_state == StunState::Consistent && self.endpoint != old_endpoint;
+        if new_state != self.state || endpoint_changed {
             self.state = new_state;
             tracing::info!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
             if let Some(cb) = &self.state_change {
@@ -206,6 +214,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             if let Some(s) = inner.servers.iter_mut().find(|x| x.addr == addr) {
                                 s.last_polled = Some(Instant::now());
                                 s.failures = s.failures.saturating_add(1);
+                                // Clear stale response data so the previous round's endpoint
+                                // does not interfere with the new round's consistency check.
+                                s.responded = false;
+                                s.endpoint = None;
                                 Some(s.addr)
                             } else { None }
                         };

@@ -44,14 +44,12 @@ pub fn relay_call_allocates_channel_and_maps_pair() {
     // Act: send Relay::Call(calledId = CALLEEID)
     let handler = DefaultPrintingHandler;
     let call = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "CALLEEID".to_string(), tag: None }));
-    rust_comms::messages::router::Router::with_current_router(router.clone(), || {
-        router.route(&handler, &call, "CALLERID");
+    let responses = rust_comms::messages::router::Router::with_current_router(router.clone(), || {
+        router.route(&handler, &call, "CALLERID")
     });
 
     // Assert: RelayResponse with channel
-    let out = router.take_outbound_response();
-    assert!(out.is_some(), "expected a RelayResponse");
-    let obj = out.unwrap();
+    let obj = responses.into_iter().next().expect("expected a RelayResponse");
     let t = obj.get("type").and_then(|v: &serde_json::Value| v.as_str());
     assert_eq!(t, Some("RelayResponse"));
     let ch = obj.get("channel").and_then(|v: &serde_json::Value| v.as_u64()).expect("channel");

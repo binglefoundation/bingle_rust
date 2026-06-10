@@ -75,12 +75,12 @@ pub fn ddb_get_relays_status_returns_response_when_relay_available() {
     let msg = Message::Ddb(DdbMessage::GetRelaysStatus(get));
 
     let handler = DefaultPrintingHandler;
-    Router::with_current_router(router.clone(), || {
-        router.route(&handler, &msg, "SENDER.");
+    let responses = Router::with_current_router(router.clone(), || {
+        router.route(&handler, &msg, "SENDER.")
     });
 
     // Assert: outbound response exists and is relays status response
-    let out = router.take_outbound_response().expect("expected response");
+    let out = responses.into_iter().next().expect("expected response");
     assert_eq!(out.get("app").and_then(|v: &serde_json::Value| v.as_str()), Some("ddb"));
     assert_eq!(out.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("relaysStatusResponse"));
     assert_eq!(out.get("responseTag").and_then(|v: &serde_json::Value| v.as_str()), Some("get_relays_status_tag"));
@@ -108,15 +108,15 @@ pub fn ddb_get_relays_status_returns_fail_when_not_allowed() {
     let handler = DefaultPrintingHandler;
     let get = DdbGetRelaysStatus { app: "ddb".into(), epoch_id: 0, tag: None, text: None, data: None };
     let msg = Message::Ddb(DdbMessage::GetRelaysStatus(get));
-    Router::with_current_router(router.clone(), || { router.route(&handler, &msg, "SENDER."); });
-    let out1 = router.take_outbound_response().expect("response");
+    let responses1 = Router::with_current_router(router.clone(), || { router.route(&handler, &msg, "SENDER.") });
+    let out1 = responses1.into_iter().next().expect("response");
     assert_eq!(out1.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("fail"));
 
     // Case 2: relay but not available
     let router2 = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
     router2.set_am_relay(true);
     router2.set_bingle_api(Some(crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(Arc::new(InternalStarting)))));
-    Router::with_current_router(router2.clone(), || { router2.route(&handler, &msg, "SENDER."); });
-    let out2 = router2.take_outbound_response().expect("response");
+    let responses2 = Router::with_current_router(router2.clone(), || { router2.route(&handler, &msg, "SENDER.") });
+    let out2 = responses2.into_iter().next().expect("response");
     assert_eq!(out2.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("fail"));
 }

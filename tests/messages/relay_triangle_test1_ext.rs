@@ -146,11 +146,11 @@ pub fn test_relay_ping_handler_honors_exclusions() {
     let handler = RelayPingHandler::new(Arc::new(mock_dtls), Some(peer_addr));
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(std::sync::Arc::downgrade(&api)));
-    let from = rust_comms::messages::handlers::FromStruct {
-        id: "OTHER".into(),
-        network_source_key: NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()),
+    let from = rust_comms::messages::handlers::FromStruct::new(
+        "OTHER".into(),
+        NetworkEndpoint::new_direct("127.0.0.1:1".parse().unwrap()),
         router,
-    };
+    );
 
     // Case 1: peer is NOT excluded
     let t1_ok = RelayTriangleTest1 {
