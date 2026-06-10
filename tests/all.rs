@@ -21,7 +21,6 @@ pub mod util;
 pub mod ddb;
 pub mod turn;
 pub mod distributed_mutex;
-pub mod integration;
 pub mod setup_localnet;
 pub mod module_version;
 pub mod security;

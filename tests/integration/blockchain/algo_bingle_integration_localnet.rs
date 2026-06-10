@@ -14,7 +14,6 @@ fn fund_test_accounts_or_panic() {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
 #[serial]
 pub fn bingle_end_to_end_calls() {
     skip_if_no_localnet!();

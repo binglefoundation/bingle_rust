@@ -10,7 +10,6 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 // It uses localnet and will be skipped when localnet is unavailable.
 #[cfg_attr(not(target_os = "ios"), test)]
 #[serial]
-#[ignore]
 pub fn register_ensures_sender_opted_in_to_app() {
     skip_if_no_localnet!();
 

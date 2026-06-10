@@ -8,7 +8,6 @@ use crate::util::test_util;
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
 pub fn asset_creation_sets_clawback_to_creator() {
     skip_if_no_localnet!();
 

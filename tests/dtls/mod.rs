@@ -49,8 +49,6 @@ pub mod test_handlers;
 #[path = "dtls_client_reconnect.rs"]
 pub mod dtls_client_reconnect;
 
-#[path = "dtls_app_layer_verification.rs"]
-pub mod dtls_app_layer_verification;
 
 #[path = "dtls_debug_handshake.rs"]
 pub mod dtls_debug_handshake;

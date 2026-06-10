@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 use std::thread;
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
 pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     skip_if_no_localnet!();
     // Ensure test accounts are funded

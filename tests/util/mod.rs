@@ -34,3 +34,5 @@ pub mod printing_enable;
 pub mod stun_comments;
 
 pub mod relay_test_util;
+#[path = "parse_algos_test.rs"]
+pub mod parse_algos_test;

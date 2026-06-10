@@ -9,8 +9,11 @@ use crate::util::test_util::init_test_logging;
 
 #[ntest::timeout(30000)]
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore] // until we resolve this for failing nodes
 pub fn modified_lamport_dynamic_add_node_after_start() {
+    if std::env::var("RUST_COMMS_RUN_FLAKY").unwrap_or_default() != "true" {
+        eprintln!("SKIP: flaky test disabled (set RUST_COMMS_RUN_FLAKY=true to run)");
+        return;
+    }
     init_test_logging();
     
     // Start with three nodes where only A and B are of interest; C exists but is idle.

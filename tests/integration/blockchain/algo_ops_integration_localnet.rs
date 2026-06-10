@@ -21,7 +21,6 @@ fn fund_test_accounts_or_panic() {
 // The tests will auto-skip if localnet isn’t available and the env var isn’t set.
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
 pub fn account_balance_for_address10mil_returns_some() {
     skip_if_no_localnet!();
     fund_test_accounts_or_panic();
@@ -33,7 +32,6 @@ pub fn account_balance_for_address10mil_returns_some() {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
 pub fn global_state_for_address10mil_returns_some_vec() {
     skip_if_no_localnet!();
     fund_test_accounts_or_panic();
@@ -48,7 +46,6 @@ pub fn global_state_for_address10mil_returns_some_vec() {
 // test target exists and can be executed. It will skip unless localnet is available.
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore]
 pub fn algo_ops_integration_localnet_placeholder() {
     skip_if_no_localnet!();
     // Localnet is available; keep placeholder light to avoid duplicating other tests.

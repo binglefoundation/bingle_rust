@@ -72,3 +72,18 @@ path = "tests/e2e/testnet/endpoint_available.rs"
 [[test]]
 name = "ping_registered_node"
 path = "tests/e2e/testnet/ping_registered_node.rs"
+
+# Tests requiring a running Algorand localnet (algokit localnet start)
+[[test]]
+name = "localnet"
+path = "tests/localnet_all.rs"
+
+# Tests requiring live internet access (external STUN servers)
+[[test]]
+name = "internet"
+path = "tests/internet_all.rs"
+
+# Flaky or currently broken tests — known to be unreliable or needing investigation
+[[test]]
+name = "flaky"
+path = "tests/flaky_all.rs"

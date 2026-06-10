@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
 use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
-use crate::engine::ddb_upsert::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 
 // Global holder of the endpoint finder so a plain function pointer handler can access it.
 static FINDER: OnceLock<Arc<Mutex<StunEndpointFinderImpl>>> = OnceLock::new();
@@ -22,7 +22,6 @@ fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
-#[ignore] // Live network test; run explicitly with `cargo test -- --ignored`
 fn live_stun_endpoint_finder_with_udp_mux() {
     init_test_logging();
     

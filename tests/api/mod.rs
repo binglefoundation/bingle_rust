@@ -9,8 +9,6 @@ pub mod bingle_api_impl_unit;
 #[path = "pki_generate_pki_from_ops.rs"]
 pub mod pki_generate_pki_from_ops;
 
-#[path = "endpoint_identify_integration.rs"]
-pub mod endpoint_identify_integration;
 
 #[path = "bingle_api_start_fail.rs"]
 pub mod bingle_api_start_fail;

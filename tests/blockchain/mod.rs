@@ -9,8 +9,6 @@ pub mod asset_ops_test;
 #[path = "algo_change_reserve_unit.rs"]
 pub mod algo_change_reserve_unit;
 
-#[path = "dapp_app_integration.rs"]
-pub mod dapp_app_integration;
 
 #[path = "algo_ops_more_test.rs"]
 pub mod algo_ops_more_test;
@@ -22,11 +20,6 @@ pub mod get_bingle_price;
 #[path = "algo_bingle/handle_lookup.rs"]
 pub mod handle_lookup;
 
-#[path = "algo_bingle/register_collision.rs"]
-pub mod register_collision;
-
-#[path = "algo_bingle/register_uniqueness.rs"]
-pub mod register_uniqueness;
 
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
