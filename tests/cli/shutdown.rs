@@ -44,14 +44,14 @@ fn resolve_shutdown_action(
 }
 
 fn make_opts_with_static_ip(addr: &str) -> StartOptions {
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.static_ip = Some(addr.parse::<SocketAddr>().expect("valid socket addr"));
     opts
 }
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn no_static_ip_returns_no_static_ip() {
-    let opts = StartOptions::default();
+    let opts = StartOptions::new("".into());
     let action = resolve_shutdown_action(&opts, None);
     assert_eq!(action, ShutdownAction::NoStaticIp);
 }

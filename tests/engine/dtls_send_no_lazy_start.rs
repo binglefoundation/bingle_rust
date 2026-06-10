@@ -9,7 +9,7 @@ use rust_comms::dtls::DtlsOpenSsl;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_dtls_send_without_start_fails() {
-    let engine = Engine::new_with_dtls(&StartOptions::default(), 
+    let engine = Engine::new_with_dtls(&StartOptions::new("".into()), 
                                  crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()), Box::new(DtlsOpenSsl::new("test".to_string())));
     // Provide a DTLS instance but DO NOT call engine.start(); ensure direct send fails.
     let to: SocketAddr = "127.0.0.1:9".parse().unwrap(); // discard port

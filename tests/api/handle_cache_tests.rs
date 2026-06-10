@@ -68,7 +68,7 @@ fn test_handle_lookup_cache_hit() {
 
 #[test]
 fn test_handle_lookup_cache_expiry() {
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.handle_cache_expiry = Some(Duration::from_millis(100));
     let api = BingleApiImpl::new(&opts);
     api.with_engine_mut(|_| {}); // Ensure engine has a dtls instance if needed, but new() does that now

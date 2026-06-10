@@ -42,7 +42,7 @@ impl Dtls for MockDtls {
 
 #[test]
 fn reverse_lookup_blockchain_fallback_success_via_mock_and_cache() {
-    let _opts = StartOptions::default();
+    let _opts = StartOptions::new("".into());
     let api = BingleApiImpl::new_with_dtls(Box::new(MockDtls));
 
     let user_id = "USER_X_123".to_string();

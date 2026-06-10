@@ -12,7 +12,7 @@ pub fn engine_turn_handler_fails_when_no_public_addr() {
     let api = MockApiBoth::new();
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(api);
     
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.am_relay = true;
     
     let mut engine = Engine::new(&opts, api_weak);

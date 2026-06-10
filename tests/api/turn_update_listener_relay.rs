@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn turn_client_handle_listen_response_registers_client_mapping() {
     // Build API instance (no need to start engine/mux for this mapping update)
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
 
     // Prepare a relay id and address
     let relay_id = "TESTRELAYID".to_string();

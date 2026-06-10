@@ -6,7 +6,7 @@ use rust_comms::engine::{Engine, EngineState, NatType};
 fn test_engine_handles_stun_inconsistent() {
     let options = StartOptions {
         handle: "test".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     
     let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
@@ -25,7 +25,7 @@ fn test_engine_handles_stun_inconsistent() {
 fn test_engine_handles_stun_blocked() {
     let options = StartOptions {
         handle: "test".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     
     let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));

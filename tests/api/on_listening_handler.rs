@@ -13,7 +13,7 @@ pub fn on_listening_handler_creates_and_deletes_sentinel() {
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Set up API and install an OnListeningHandler that mirrors CLI behavior
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let path_clone = sentinel_str.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool, _nat_type: rust_comms::engine::NatType| {
         if listening {

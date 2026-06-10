@@ -96,7 +96,7 @@ pub fn dtls_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let relay_api = BingleApiImpl::new(&relay_opts);
     relay_api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {

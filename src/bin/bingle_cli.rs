@@ -515,6 +515,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         handle_cache_expiry: None,
         dangerous_debug,
         log_mode: LogMode::Plain,
+        wait_response_timeout: None,
     };
 
     // Create API and start engine minimal

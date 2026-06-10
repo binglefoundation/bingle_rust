@@ -14,7 +14,7 @@ use rust_comms::relay::relay_finder::RelayInfo;
 fn make_options(handle: &str) -> StartOptions {
     StartOptions {
         handle: handle.to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     }
 }
 

@@ -54,7 +54,7 @@ impl Dtls for MockDtls {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_tracks_seen_endpoints() {
-    let options = StartOptions::default();
+    let options = StartOptions::new("".into());
     // Use MockApiBoth for engine creation (requires Arc/Weak)
     let api = Arc::new(crate::util::reusable_mock_api::MockApiBoth::new());
     let engine = Engine::new_with_dtls(&options, Arc::downgrade(&api) as _, Box::new(MockDtls::default()));

@@ -142,7 +142,7 @@ fn build_engine_and_get_handler(
     let api = crate::util::reusable_mock_api::to_weak_api_both(
         MockApiBoth::new_with_api_override(Arc::new(AlwaysAuthApi))
     );
-    let mut engine = Engine::new_with_dtls(&StartOptions::default(), api, Box::new(fake_dtls));
+    let mut engine = Engine::new_with_dtls(&StartOptions::new("".into()), api, Box::new(fake_dtls));
 
     let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     engine.set_router(router.clone());

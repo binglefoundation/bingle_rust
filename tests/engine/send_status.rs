@@ -22,7 +22,7 @@ fn build_engine_with_auth() -> (Engine, HandleMessage, Arc<Router>) {
     let api = crate::util::reusable_mock_api::to_weak_api_both(
         MockApiBoth::new_with_api_override(Arc::new(AlwaysAuthenticatedApi))
     );
-    let mut engine = Engine::new_with_dtls(&StartOptions::default(), api.clone(), Box::new(SucceedingDtls::new()));
+    let mut engine = Engine::new_with_dtls(&StartOptions::new("".into()), api.clone(), Box::new(SucceedingDtls::new()));
     let router = Arc::new(Router::new(api));
     engine.set_router(router.clone());
     engine.install_dtls_handler_for_tests().expect("install_dtls_handler_for_tests failed");
@@ -146,7 +146,7 @@ impl Dtls for FailingDtls {
 
 fn make_engine_with_succeeding_dtls() -> Engine {
     Engine::new_with_dtls(
-        &StartOptions::default(),
+        &StartOptions::new("".into()),
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
         Box::new(SucceedingDtls::new()),
     )
@@ -154,7 +154,7 @@ fn make_engine_with_succeeding_dtls() -> Engine {
 
 fn make_engine_with_failing_dtls() -> Engine {
     let mut engine = Engine::new_with_dtls(
-        &StartOptions::default(),
+        &StartOptions::new("".into()),
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
         Box::new(FailingDtls::new()),
     );
@@ -343,7 +343,7 @@ pub fn no_packet_means_no_endpoint_status_entry() {
 pub fn unauthenticated_packet_does_not_set_endpoint_status() {
     // Use a plain MockApiBoth (handle_lookup_by_id returns None) — auth will fail.
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());
-    let mut engine = Engine::new_with_dtls(&StartOptions::default(), api.clone(), Box::new(SucceedingDtls::new()));
+    let mut engine = Engine::new_with_dtls(&StartOptions::new("".into()), api.clone(), Box::new(SucceedingDtls::new()));
     let router = Arc::new(Router::new(api));
     engine.set_router(router.clone());
     engine.install_dtls_handler_for_tests().expect("install failed");

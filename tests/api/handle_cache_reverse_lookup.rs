@@ -45,7 +45,7 @@ impl Dtls for MockDtls {
 #[test]
 fn reverse_lookup_after_handle_lookup_populates_cache() {
     // Short expiry to keep tests deterministic
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.handle_cache_expiry = Some(Duration::from_secs(60));
     let api = BingleApiImpl::new_with_dtls(Box::new(MockDtls));
 
@@ -83,7 +83,7 @@ fn reverse_lookup_via_inbound_message_is_cached() {
 
 #[test]
 fn reverse_lookup_respects_expiry() {
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.handle_cache_expiry = Some(Duration::from_millis(50));
     let api = BingleApiImpl::new(&opts);
 

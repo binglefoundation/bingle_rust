@@ -34,7 +34,7 @@ fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64,
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
@@ -66,7 +66,7 @@ fn start_relay(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id:
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
@@ -95,7 +95,7 @@ fn start_client_at_addr(name: &str, passphrase: &str, addr: SocketAddr, stun_lis
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start at addr");
@@ -118,7 +118,7 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");

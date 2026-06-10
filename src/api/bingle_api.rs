@@ -232,12 +232,17 @@ pub struct StartOptions {
     /// Optional log mode (Plain|ANSI|AWS|JS).
     #[serde(default)]
     pub log_mode: LogMode,
+    /// Override the timeout used when waiting for a response from a remote node.
+    /// If None, the production default (90 s) is used. Tests can set a short value (e.g. 100 ms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait_response_timeout: Option<Duration>,
 }
 
-impl Default for StartOptions {
-    fn default() -> Self {
+impl StartOptions {
+    /// Create a new `StartOptions` with the given handle and all other fields set to safe defaults.
+    pub fn new(handle: Handle) -> Self {
         Self {
-            handle: String::new(),
+            handle,
             algo_passphrase: None,
             static_ip: None,
             am_relay: false,
@@ -250,6 +255,7 @@ impl Default for StartOptions {
             handle_cache_expiry: None,
             dangerous_debug: false,
             log_mode: LogMode::Plain,
+            wait_response_timeout: None,
         }
     }
 }

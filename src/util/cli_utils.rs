@@ -248,6 +248,7 @@ where
         handle_cache_expiry,
         dangerous_debug,
         log_mode,
+        wait_response_timeout: None,
     })
 }
 

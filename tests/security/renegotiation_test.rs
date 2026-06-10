@@ -57,7 +57,7 @@ fn dtls_handshake_succeeds_with_renegotiation_disabled() {
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
         dangerous_debug: false, 
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
     server_api.access_unsafe_for_tests(|a| a.start(&server_opts)).expect("start server api");

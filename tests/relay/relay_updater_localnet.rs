@@ -108,6 +108,7 @@ fn relay_updater_localnet_e2e_matrix() {
         handle_cache_expiry: None,
         dangerous_debug: true,
         log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
     let client1 = BingleApiImpl::new(&client1_opts);
     test_util::register_client_on_blockchain(
@@ -335,9 +336,9 @@ fn relay_start_options(
         handle_cache_expiry: None,
         dangerous_debug: true,
         log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     }
 }
-
 fn register_relay_static_endpoint(
     relay_ops: &AlgoOps,
     creator_ab: &AlgoBingle,

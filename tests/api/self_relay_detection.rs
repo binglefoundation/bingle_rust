@@ -2,7 +2,8 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{NetworkEndpoint, BingleApi};
+use std::time::Duration;
+use rust_comms::api::bingle_api::{NetworkEndpoint, BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 #[path = "../test_util.rs"]
@@ -101,7 +102,7 @@ pub fn self_relay_converts_to_direct_send() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn self_relay_no_relay_address_returns_false() {
     let (mock, sent_vec) = MockDtls::new();
-    let mut options = rust_comms::api::bingle_api::StartOptions::default();
+    let mut options = rust_comms::api::bingle_api::StartOptions::new("".into());
     options.am_relay = true;
     let api = BingleApiImpl::new_with_dtls_and_options(Box::new(mock), options);
 
@@ -132,7 +133,9 @@ pub fn self_relay_no_relay_address_returns_false() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn non_self_relay_is_not_converted() {
     let (mock, _sent_vec) = MockDtls::new();
-    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let mut options = StartOptions::new("".into());
+    options.wait_response_timeout = Some(Duration::from_millis(100));
+    let api = BingleApiImpl::new_with_dtls_and_options(Box::new(mock), options);
 
     let my_id = test_util::ADDRESS_SPEND;
     let issuer = format!("{}.", my_id);
@@ -163,7 +166,9 @@ pub fn non_self_relay_is_not_converted() {
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn self_relay_no_issuer_does_not_match() {
     let (mock, _sent_vec) = MockDtls::new();
-    let api = BingleApiImpl::new_with_dtls(Box::new(mock));
+    let mut options = StartOptions::new("".into());
+    options.wait_response_timeout = Some(Duration::from_millis(100));
+    let api = BingleApiImpl::new_with_dtls_and_options(Box::new(mock), options);
 
     // Do NOT set issuer — get_my_id() will return None
 

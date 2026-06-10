@@ -146,8 +146,8 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         handle_cache_expiry: None,
         dangerous_debug: false,
         log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
-
     let null_api = NullApi;
     let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::to_weak(null_api.clone()));
     eng.set_dtls(Box::new(NullDtls));

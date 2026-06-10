@@ -36,7 +36,7 @@ impl rust_comms::api::bingle_api::BingleApiInternal for DummyApi {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn engine_start_with_static_ip_localhost_ok() {
-    let mut engine = Engine::new(&StartOptions::default(), crate::util::mock_bingle_api::to_weak(DummyApi));
+    let mut engine = Engine::new(&StartOptions::new("".into()), crate::util::mock_bingle_api::to_weak(DummyApi));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
     let opts = StartOptions {
         handle: "tester".into(),
@@ -48,7 +48,7 @@ pub fn engine_start_with_static_ip_localhost_ok() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let res = engine.start(&opts);
     // Engine may fail to start DTLS due to lack of certificates; however, our DTLS implementation only

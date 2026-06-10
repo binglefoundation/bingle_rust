@@ -8,7 +8,7 @@ pub fn engine_set_last_public_addr_updates_both_fields() {
     let api = MockApiBoth::new();
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(api);
     
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.am_relay = false;
     
     let mut engine = Engine::new(&opts, api_weak);

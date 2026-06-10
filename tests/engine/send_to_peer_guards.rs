@@ -74,7 +74,7 @@ impl Dtls for FakeDtls {
 }
 
 fn make_engine_with_public_addr(addr: SocketAddr) -> Engine {
-    let mut opts = StartOptions::default();
+    let mut opts = StartOptions::new("".into());
     opts.static_ip = Some(addr);
     Engine::new_with_dtls(
         &opts,
@@ -85,7 +85,7 @@ fn make_engine_with_public_addr(addr: SocketAddr) -> Engine {
 
 fn make_engine_no_public_addr() -> Engine {
     Engine::new_with_dtls(
-        &StartOptions::default(),
+        &StartOptions::new("".into()),
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
         Box::new(FakeDtls::new()),
     )

@@ -6,7 +6,7 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 // and propagates them to the caller.
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn bingle_api_start_propagates_engine_error() {
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
     // No static_ip and empty STUN server list will cause Engine::start to error
     let opts = StartOptions {
         handle: "tester".into(),
@@ -18,7 +18,7 @@ pub fn bingle_api_start_propagates_engine_error() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
 
     let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));

@@ -139,7 +139,7 @@ impl BingleApiImpl {
 
     /// Test-oriented constructor to inject a custom DTLS implementation.
     pub fn new_with_dtls(dtls: Box<dyn Dtls + Send + Sync>) -> Arc<Self> {
-        Self::new_with_dtls_and_options(dtls, StartOptions::default())
+        Self::new_with_dtls_and_options(dtls, StartOptions::new("".into()))
     }
 
     /// Test-oriented constructor to inject custom DTLS and options.
@@ -315,7 +315,7 @@ impl Drop for BingleApiImpl {
     }
 }
 
-const TIMEOUT_SECONDS_WAIT_RESPONSE: u64 = 90;
+const DEFAULT_WAIT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(90);
 
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
@@ -765,7 +765,7 @@ impl BingleApi for BingleApiImpl {
         }
 
         // Now wait for a response tagged with our UUID using the Engine's pending map
-        let timeout = Duration::from_secs(TIMEOUT_SECONDS_WAIT_RESPONSE);
+        let timeout = self.started_options.wait_response_timeout.unwrap_or(DEFAULT_WAIT_RESPONSE_TIMEOUT);
         if let Some(resp) = Engine::wait_for_response_static(pending, &tag, timeout) {
             if let Some(cb) = progress.as_ref() { cb(100, "Received response".to_string()); }
             tracing::info!("[BingleApiImpl::send_message_to_network_with_response][exit] Ok(response)");

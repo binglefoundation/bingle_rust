@@ -13,7 +13,7 @@ pub fn start_returns_err_on_invalid_passphrase() {
     // Provide a static endpoint so Engine would choose static path if we got that far; we expect early Err instead.
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
 
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let opts = StartOptions {
         handle: "tester".into(),
         algo_passphrase: Some(bad_pass),
@@ -24,7 +24,7 @@ pub fn start_returns_err_on_invalid_passphrase() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
 
     let err = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect_err("start should fail for invalid passphrase");

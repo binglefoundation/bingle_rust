@@ -10,7 +10,7 @@ use rust_comms::engine::{BingleAccessUnsafeForTests, Engine, EngineState, NatTyp
 fn test_stun_blocked_sets_no_connection_nat_type() {
     let options = StartOptions {
         handle: "test_blocked".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
 
@@ -25,7 +25,7 @@ fn test_stun_blocked_sets_no_connection_nat_type() {
 fn test_stun_blocked_calls_on_listening_false() {
     let options = StartOptions {
         handle: "test_blocked_cb".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
 
     let called_with_false = Arc::new(AtomicBool::new(false));
@@ -59,7 +59,7 @@ fn test_stun_blocked_calls_on_listening_false() {
 fn test_no_relay_target_sets_no_connection_nat_type() {
     let options = StartOptions {
         handle: "test_no_relay_target".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
 
@@ -78,7 +78,7 @@ fn test_no_relay_target_sets_no_connection_nat_type() {
 fn test_no_relay_target_calls_on_listening_false() {
     let options = StartOptions {
         handle: "test_no_relay_cb".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
 
     let called_with_false = Arc::new(AtomicBool::new(false));
@@ -112,7 +112,7 @@ fn test_no_relay_target_calls_on_listening_false() {
 fn test_stun_blocked_sets_stun_identify_state() {
     let options = StartOptions {
         handle: "test_blocked_state".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
 
@@ -129,7 +129,7 @@ fn test_stun_blocked_sets_stun_identify_state() {
 fn test_no_relay_target_sets_stun_identify_state() {
     let options = StartOptions {
         handle: "test_no_relay_state".to_string(),
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
 

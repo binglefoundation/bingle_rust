@@ -10,7 +10,7 @@ pub mod test_util;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn start_succeeds() {
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let opts = StartOptions { 
         handle: Handle::from("alice"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -21,7 +21,7 @@ pub fn start_succeeds() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     // Engine may fail to start depending on DTLS/PKI availability; we only require DTLS instance creation here.
@@ -33,7 +33,7 @@ pub fn start_succeeds() {
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn send_message_to_network_without_addr_fails_gracefully() {
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let nsk = NetworkEndpoint::new_relay(ADDRESS_SPEND.parse().unwrap(), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)), Some(2));
     let uid = test_util::ADDRESS_SPEND.to_string();
     let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.send_message_to_network(&nsk, &uid, serde_json::json!({"hi": 1}), None)).unwrap();
@@ -116,7 +116,7 @@ pub mod pki;
     thread::sleep(Duration::from_millis(200));
 
     // Build BingleApiImpl client
-    let api = BingleApiImpl::new(&StartOptions::default());
+    let api = BingleApiImpl::new(&StartOptions::new("".into()));
     api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
         if user_id.is_empty() {
             Ok(None)
@@ -124,7 +124,7 @@ pub mod pki;
             Ok(Some(Handle::from("mock-server-handle")))
         }
     }));
-    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain };
+    let opts = StartOptions { handle: Handle::from("client"), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()), static_ip: None, am_relay: false, stun_servers: Some(vec![SocketAddr::from(([127, 0, 0, 1], 3478))]), algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None };
     let start_result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts));
     assert!(start_result.is_ok(), "client start failed: {}", start_result.unwrap_err());
 

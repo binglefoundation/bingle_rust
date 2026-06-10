@@ -39,7 +39,7 @@ fn weak_cipher_3des_rejected() {
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
         dangerous_debug: false, 
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
     server_api.access_unsafe_for_tests(|a| a.start(&server_opts)).expect("start server api");
@@ -101,7 +101,7 @@ fn null_cipher_rejected_by_default() {
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
         dangerous_debug: false,
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
     server_api.access_unsafe_for_tests(|a| a.start(&server_opts)).expect("start server api");
@@ -146,7 +146,7 @@ fn null_cipher_accepted_when_dangerous_debug_is_on() {
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
         dangerous_debug: true, 
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
     server_api.access_unsafe_for_tests(|a| {

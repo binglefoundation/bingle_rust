@@ -27,7 +27,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let relay = BingleApiImpl::new(&relay_opts);
     relay.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
@@ -68,7 +68,7 @@ pub fn bingle_api_relay_check_two_nodes() {
     });
 
     // 2) Start client node on the pre-selected port with PASSPHRASE_SPEND and id ADDRESS_SPEND
-    let client = BingleApiImpl::new(&StartOptions::default());
+    let client = BingleApiImpl::new(&StartOptions::new("".into()));
     let client_opts = StartOptions {
         handle: Handle::from("client"),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
@@ -79,7 +79,7 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     client.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
         if user_id.is_empty() {

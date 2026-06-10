@@ -25,8 +25,8 @@ pub fn engine_basic_bingle_dtls_layer() {
     let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
 
     // Create server and client nodes
-    let server = BingleApiImpl::new(&StartOptions::default());
-    let client = BingleApiImpl::new(&StartOptions::default());
+    let server = BingleApiImpl::new(&StartOptions::new("".into()));
+    let client = BingleApiImpl::new(&StartOptions::new("".into()));
 
     // Reverse-lookup seam: ensure on_plain_text can resolve sender handle by id in this test environment
     server.set_id_to_handle_lookup_mock_for_tests(Box::new(|_uid| Ok(Some("client".to_string()))));
@@ -53,7 +53,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -65,7 +65,7 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain,
+        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
     };
 
     // Start both nodes

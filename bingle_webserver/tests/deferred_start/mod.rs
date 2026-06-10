@@ -101,7 +101,7 @@ fn test_try_start_api_does_not_start_when_keypair_not_active() {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
         local_file: None,
-        start_opts: Some(StartOptions::default()),
+        start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
         nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
@@ -123,7 +123,7 @@ fn test_try_start_api_does_not_start_when_keypair_unfunded() {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
         local_file: None,
-        start_opts: Some(StartOptions::default()),
+        start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
         nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
@@ -144,7 +144,7 @@ fn test_try_start_api_does_not_start_when_keypair_funded() {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
         local_file: None,
-        start_opts: Some(StartOptions::default()),
+        start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
         nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
@@ -165,7 +165,7 @@ fn test_try_start_api_starts_when_keypair_active() {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
         local_file: None,
-        start_opts: Some(StartOptions::default()),
+        start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
         nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
@@ -187,7 +187,7 @@ fn test_try_start_api_does_not_start_twice() {
         messages: Arc::new(Mutex::new(Vec::new())),
         local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
         local_file: None,
-        start_opts: Some(StartOptions::default()),
+        start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(true)),
         nat_type: Arc::new(Mutex::new("Unknown".to_string())), // already started
     };
@@ -211,7 +211,7 @@ fn test_try_start_api_sets_handle_and_passphrase_from_local_api() {
     });
 
     // start_opts has empty handle and no passphrase (as parsed from CLI with --local)
-    let base_opts = StartOptions::default(); // handle is "", algo_passphrase is None
+    let base_opts = StartOptions::new("".into()); // handle is "", algo_passphrase is None
 
     let state = AppState {
         api: Arc::new(api),

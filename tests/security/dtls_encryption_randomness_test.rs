@@ -49,7 +49,7 @@ fn setup_node(name: &str, port: u16, passphrase: &str, null_encryption: bool) ->
         algo_passphrase: Some(passphrase.to_string()),
         static_ip: Some(node_addr),
         dangerous_debug: null_encryption,
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let api = BingleApiImpl::new(&opts);
     

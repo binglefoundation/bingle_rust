@@ -87,7 +87,7 @@ fn rsa_1024_client_cert_rejected() {
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
         dangerous_debug: false,
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
     server_api.access_unsafe_for_tests(|a| a.start(&server_opts)).expect("start server api");
@@ -174,7 +174,7 @@ fn dh_1024_rejected() {
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
         static_ip: Some("127.0.0.1:0".parse().unwrap()),
         dangerous_debug: false, 
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let client_api = BingleApiImpl::new(&client_opts);
     client_api.access_unsafe_for_tests(|a| a.start(&client_opts)).expect("start client api");
@@ -230,7 +230,7 @@ fn rsa_1024_server_cert_rejected() {
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
         static_ip: Some("127.0.0.1:0".parse().unwrap()),
         dangerous_debug: false,
-        ..Default::default()
+        ..StartOptions::new("".into())
     };
     let client_api = BingleApiImpl::new(&client_opts);
     client_api.access_unsafe_for_tests(|a| a.start(&client_opts)).expect("start client api");
