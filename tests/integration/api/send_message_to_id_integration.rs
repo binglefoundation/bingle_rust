@@ -205,11 +205,7 @@ fn setup_on_message(
 fn run_send_message_to_id_test(broken_nat: bool) {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
-    // This test requires a running local Algorand localnet + indexer.
-    if !test_util::should_run_localnet() {
-        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
-        return;
-    }
+    test_util::assert_localnet_available();
 
     let cfg = test_util::localnet_config();
     let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, test_util::ADDRESS_10MIL, ADDRESS_B]);
@@ -406,7 +402,7 @@ pub fn bingle_api_send_message_to_id_relay_only_localnet() {
 #[ntest::timeout(1_800_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
-    if !test_util::should_run_localnet() { return; }
+    test_util::assert_localnet_available();
 
     let relay3_id = "3RLYTSRX54G5WOPPPV4FYWRV2QXKIC5WRPM54YKXGVLTAFGUEIG2QN4DMQ";
     let relay3_pass = "horror stuff huge crunch green marriage parent soon hamster tonight miracle company fee cup hard media shiver emotion hybrid shiver main cube lemon about obvious";
@@ -536,10 +532,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
-    if !test_util::should_run_localnet() {
-        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
-        return;
-    }
+    test_util::assert_localnet_available();
 
     let cfg = test_util::localnet_config();
     let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, ADDRESS_B]);
@@ -687,10 +680,7 @@ fn reset_message_state(
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
-    if !test_util::should_run_localnet() {
-        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
-        return;
-    }
+    test_util::assert_localnet_available();
 
     // ── Infrastructure: relays, STUN, blockchain ───────────────────────
     let r1_port = test_util::find_unused_loopback_port();
@@ -832,10 +822,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     test_util::init_test_logging_with_filter("info,rust_comms::dtls=info");
 
-    if !test_util::should_run_localnet() {
-        eprintln!("[skipped] Localnet required: set RUST_COMMS_RUN_LOCALNET=true and ensure local Algorand localnet and indexer are running");
-        return;
-    }
+    test_util::assert_localnet_available();
 
     let cfg = test_util::localnet_config();
     let _ = setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, ADDRESS_B]);

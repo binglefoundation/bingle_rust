@@ -11,7 +11,7 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 #[cfg_attr(not(target_os = "ios"), test)]
 #[serial]
 pub fn register_ensures_sender_opted_in_to_app() {
-    skip_if_no_localnet!();
+    test_util::assert_localnet_available();
 
     let cfg: AlgoChainConfig = localnet_config();
     // Ensure our test account is funded

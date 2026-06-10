@@ -10,7 +10,7 @@ use std::thread;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn set_allow_and_register_endpoint_then_list_and_clear() {
-    skip_if_no_localnet!();
+    test_util::assert_localnet_available();
     // Ensure test accounts are funded
     let cfg: AlgoChainConfig = localnet_config();
 

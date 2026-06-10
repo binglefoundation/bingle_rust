@@ -10,14 +10,13 @@ use std::str::FromStr;
 
 #[path = "../../setup_localnet.rs"]
 pub mod setup_localnet;
-#[macro_use]
 #[path = "../../test_util.rs"]
 pub mod test_util;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn test_register_collision_same_block() {
     test_util::init_test_logging();
-    skip_if_no_localnet!();
+    test_util::assert_localnet_available();
     let cfg = test_util::localnet_config();
     
     // 1. Setup accounts

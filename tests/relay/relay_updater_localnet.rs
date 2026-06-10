@@ -22,17 +22,7 @@ mod test_util;
 #[cfg_attr(not(target_os = "ios"), test)]
 #[ntest::timeout(1_800_000)]
 fn relay_updater_localnet_e2e_matrix() {
-    if std::env::var("RUST_COMMS_RUN_RELAY_UPDATER_LOCALNET_E2E").ok().as_deref() != Some("true") {
-        eprintln!(
-            "SKIP: set RUST_COMMS_RUN_RELAY_UPDATER_LOCALNET_E2E=true to run this localnet e2e matrix"
-        );
-        return;
-    }
-
-    if !test_util::should_run_localnet() {
-        eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-        return;
-    }
+    test_util::assert_localnet_available();
 
     init_test_logging();
 

@@ -4,6 +4,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::env;
+use std::net::TcpStream;
 use std::sync::{Arc, Once};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -11,17 +12,6 @@ use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use std::fs;
 use std::time::{Duration, Instant};
 
-// Macro to skip localnet-dependent tests with a standard message.
-// Usage: skip_if_no_localnet!();
-#[allow(unused_macros)]
-macro_rules! skip_if_no_localnet {
-    () => {
-        if !test_util::should_run_localnet() {
-            eprintln!("SKIP: localnet not available (set RUST_COMMS_RUN_LOCALNET=true to force)");
-            return;
-        }
-    };
-}
 
 // Localnet token from Algorand docs / Algokit localnet
 #[allow(dead_code)]
@@ -57,15 +47,11 @@ pub fn localnet_config() -> AlgoChainConfig {
 }
 
 #[allow(dead_code)]
-pub fn should_run_localnet() -> bool {
-    // Localnet tests require explicit opt-in via env var for CI / IDE Run Configuration.
-    // Set RUST_COMMS_RUN_LOCALNET=true (or 1/yes) to run localnet tests.
-    // This prevents accidental network access during default test runs.
-    if let Ok(val) = env::var("RUST_COMMS_RUN_LOCALNET") {
-        let v = val.to_ascii_lowercase();
-        if v == "1" || v == "true" || v == "yes" { return true; }
-    }
-    false
+pub fn assert_localnet_available() {
+    let cfg = localnet_config();
+    let addr = format!("{}:{}", cfg.client_api_url.trim_start_matches("http://").trim_start_matches("https://"), cfg.client_api_port);
+    TcpStream::connect(&addr)
+        .unwrap_or_else(|e| panic!("Localnet is not available at {} - ensure algokit localnet is running: {}", addr, e));
 }
 
 #[allow(dead_code)]

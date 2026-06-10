@@ -9,7 +9,7 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn asset_creation_sets_manager_to_creator() {
-    skip_if_no_localnet!();
+    test_util::assert_localnet_available();
 
     // Ensure funding for the creator test account
     let cfg: AlgoChainConfig = localnet_config();

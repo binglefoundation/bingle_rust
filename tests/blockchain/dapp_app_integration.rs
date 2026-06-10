@@ -3,13 +3,12 @@ use std::fs;
 
 #[path = "../setup_localnet.rs"]
 pub mod setup_localnet;
-#[macro_use]
 #[path = "../test_util.rs"]
 pub mod test_util;
 
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn deploy_call_validate_and_delete_teal_app() {
-    skip_if_no_localnet!();
+    test_util::assert_localnet_available();
     let cfg = test_util::localnet_config();
     // Ensure creator account funded
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND])

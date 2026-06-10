@@ -16,7 +16,7 @@ fn fund_test_accounts_or_panic() {
 #[cfg_attr(not(target_os = "ios"), test)]
 #[serial]
 pub fn bingle_end_to_end_calls() {
-    skip_if_no_localnet!();
+    test_util::assert_localnet_available();
     fund_test_accounts_or_panic();
     let cfg: AlgoChainConfig = localnet_config();
 

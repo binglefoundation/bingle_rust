@@ -25,10 +25,6 @@ fn accept_all_client_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<Str
 #[ntest::timeout(30_000)]
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds() {
-    if std::env::var("RUST_COMMS_RUN_FLAKY").unwrap_or_default() != "true" {
-        eprintln!("SKIP: flaky test disabled (set RUST_COMMS_RUN_FLAKY=true to run)");
-        return;
-    }
     // Generate test certificates (CA + server/client certs and keys)
     let certs = pki::generate_ed25519_test_certs();
 
@@ -83,10 +79,6 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
 #[ntest::timeout(45_000)]
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn dtls_app_layer_verification_accept_all_delivers_application_data() {
-    if std::env::var("RUST_COMMS_RUN_FLAKY").unwrap_or_default() != "true" {
-        eprintln!("SKIP: flaky test disabled (set RUST_COMMS_RUN_FLAKY=true to run)");
-        return;
-    }
     init_test_logging();
     let certs = pki::generate_ed25519_test_certs();
 

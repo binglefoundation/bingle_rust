@@ -4,8 +4,8 @@
 // (number of all) = (number of unit) + (number of integration) + (number of flaky)
 // No test appears in more than one of unit, integration, flaky.
 //
-// Requires RUST_COMMS_RUN_LOCALNET=true for localnet tests to execute.
-// Requires RUST_COMMS_RUN_FLAKY=true for flaky tests to execute.
+// Localnet tests fail if algokit localnet is not running.
+// Flaky tests always run; they are target-driven.
 // Internet tests require live network access.
 
 // Unit tests (local, no external resources) — uses full util with test files
