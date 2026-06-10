@@ -54,7 +54,7 @@ security:
 robustness:
 - **fail sensibly with message when Bingle network down (< 2 relays))**
 - **relay channel doesnt pass echo message after some reloads**
-- indicate when we get no STUN responses (UDP blocked)
+- ?indicate when we get no STUN responses (UDP blocked)?
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
