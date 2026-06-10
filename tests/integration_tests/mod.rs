@@ -1,5 +1,5 @@
-// Localnet-specific test modules (require algokit localnet running).
-// Referenced from localnet_all.rs.
+// All integration tests requiring external resources (localnet blockchain or internet).
+// Referenced from integration_all.rs.
 
 // Blockchain integration tests that hit localnet
 #[path = "../integration/blockchain/algo_bingle_integration_localnet.rs"]
@@ -16,15 +16,12 @@ pub mod algo_bingle_static_endpoint_integration;
 pub mod asset_manager_creator_localnet;
 #[path = "../integration/blockchain/asset_clawback_creator_localnet.rs"]
 pub mod asset_clawback_creator_localnet;
-
 // API integration tests that need localnet
 #[path = "../integration/api/send_message_to_id_integration.rs"]
 pub mod send_message_to_id_integration;
-
 // API tests needing localnet
 #[path = "../api/endpoint_identify_integration.rs"]
 pub mod endpoint_identify_integration;
-
 // Blockchain unit-ish tests gated by localnet
 #[path = "../blockchain/algo_bingle/register_collision.rs"]
 pub mod register_collision;
@@ -32,7 +29,9 @@ pub mod register_collision;
 pub mod register_uniqueness;
 #[path = "../blockchain/dapp_app_integration.rs"]
 pub mod dapp_app_integration;
-
 // Relay localnet test
 #[path = "../relay/relay_updater_localnet.rs"]
 pub mod relay_updater_localnet;
+// Internet tests: live STUN over real internet UDP
+#[path = "../stun/stun_live_udp_mux.rs"]
+pub mod stun_live_udp_mux;

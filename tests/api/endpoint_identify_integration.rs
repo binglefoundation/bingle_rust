@@ -9,7 +9,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use crate::api::bingle_api_handle_tests::test_util::register_client_on_blockchain;
+use crate::util::test_util::register_client_on_blockchain;
 use crate::util::test_util::init_test_logging;
 use crate::util::relay_test_util::wait_for_relays_visible;
 

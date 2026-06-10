@@ -11,7 +11,7 @@ use rust_comms::engine::{BingleAccessUnsafeForTests, RelayState};
 use rust_comms::relay::discovery::indexer_discover_closure;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use rust_comms::relay::relay_updater::RelayUpdater;
-use crate::relay::relay_states::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use crate::util::relay_test_util::wait_for_relays_visible;
 
 #[path = "../setup_localnet.rs"]

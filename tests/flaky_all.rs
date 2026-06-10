@@ -3,16 +3,8 @@
 //
 // These tests are NOT run by default (cargo test).
 // They may fail intermittently or require investigation before they can be promoted.
-// #[ignore] annotations have been removed; separation is via this target.
-
+// Uses util_support (helpers only, no util test files) so util tests don't appear here.
 #[macro_use]
+#[path = "util_support/mod.rs"]
 pub mod util;
-
-// ddb module needed by dtls_app_layer_verification
-#[path = "ddb.rs"]
-pub mod ddb;
-
-// relay module needed by ddb/client/register_relay (referenced from ddb module)
-pub mod relay;
-
 pub mod flaky;

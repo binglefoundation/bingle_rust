@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
-use crate::ddb::ddb_client_lookup::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 
 pub mod pki;
 
