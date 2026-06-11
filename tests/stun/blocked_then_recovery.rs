@@ -3,6 +3,8 @@
 //
 // This verifies the fix for the bug where servers were removed after 3 failures,
 // causing polling to cease permanently once Blocked state was reached.
+//
+// Also verifies that while in Blocked state, STUN Binding Requests are sent every 2s.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
@@ -10,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState};
+use crate::api::ripple_message_unit::test_util::init_test_logging;
 
 fn find_unused_loopback_port() -> u16 {
     let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
@@ -19,10 +22,13 @@ fn find_unused_loopback_port() -> u16 {
 }
 
 /// Start the finder pointing at two silent addresses (nothing bound), wait for
-/// Blocked, then start two real STUN servers on those addresses and verify the
+/// Blocked, then verify STUN Binding Requests are sent every ~2s while blocked,
+/// then start two real STUN servers on those addresses and verify the
 /// finder recovers to Consistent.
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn blocked_then_recovery_to_consistent() {
+    init_test_logging();
+    
     // Reserve two ports — nothing is bound yet so STUN requests will be silently dropped.
     let p1 = find_unused_loopback_port();
     let p2 = find_unused_loopback_port();
@@ -50,37 +56,87 @@ pub fn blocked_then_recovery_to_consistent() {
     let seen: Arc<Mutex<Vec<StunState>>> = Arc::new(Mutex::new(Vec::new()));
     let seen2 = seen.clone();
 
+    // Track timestamps of STUN sends that occur while in Blocked state.
+    // Each send round dispatches to both servers; we record one timestamp per round
+    // (the first send of each round) to measure inter-round intervals.
+    let blocked_send_times: Arc<Mutex<Vec<Instant>>> = Arc::new(Mutex::new(Vec::new()));
+    let blocked_send_times2 = blocked_send_times.clone();
+    let seen_for_send = seen.clone();
+
     {
         let mut f = finder.lock().unwrap();
         let m = mux.clone();
+        // Use a counter to record one timestamp per send round (two servers => two sends per round).
+        let send_count: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
         f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
             if let Ok(ip) = host.parse::<std::net::IpAddr>() {
                 let addr = std::net::SocketAddr::new(ip, port);
                 let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
                 let _ = m.write(&nsk, payload);
             }
+            // Record one timestamp per round (every 2nd send = one full round for 2 servers).
+            let is_blocked = seen_for_send.lock().unwrap().contains(&StunState::Blocked);
+            if is_blocked {
+                let mut count = send_count.lock().unwrap();
+                *count += 1;
+                // First send of each round (odd-numbered send)
+                if *count % 2 == 1 {
+                    blocked_send_times2.lock().unwrap().push(Instant::now());
+                }
+            }
         })));
         f.set_state_change_handler(Some(Arc::new(move |st, _ep| {
             seen2.lock().unwrap().push(st);
         })));
-        // Short search interval: 3 × 100 ms = 300 ms to reach Blocked
-        f.start(vec![a1, a2], 100, 1000);
+        // search_time_ms=2000: in Blocked state requests are sent every 2s.
+        // repeat_time_ms=10000: used in Consistent/Inconsistent states.
+        // 3 intervals of 2s = 6s to reach Blocked from None.
+        f.start(vec![a1, a2], 2000, 10000);
     }
 
-    // Wait for Blocked state (up to 3 s)
+    // Wait for Blocked state (up to 10 s: 3 × 2s intervals + margin)
     let blocked = {
         let start = Instant::now();
         loop {
-            if start.elapsed() > Duration::from_secs(3) {
+            if start.elapsed() > Duration::from_secs(10) {
                 break false;
             }
             if seen.lock().unwrap().contains(&StunState::Blocked) {
                 break true;
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(100));
         }
     };
-    assert!(blocked, "finder did not reach Blocked state within 3 s");
+    assert!(blocked, "finder did not reach Blocked state within 10 s");
+
+    // Wait to collect at least 3 send-round timestamps while in Blocked state
+    // (i.e. observe at least 2 inter-round gaps to measure the interval).
+    let collected = {
+        let start = Instant::now();
+        loop {
+            if start.elapsed() > Duration::from_secs(10) {
+                break false;
+            }
+            if blocked_send_times.lock().unwrap().len() >= 3 {
+                break true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
+    assert!(collected, "did not observe 3 Blocked-state send rounds within 10 s");
+
+    // Verify that consecutive send rounds are spaced ~2s apart (within ±50% tolerance).
+    {
+        let times = blocked_send_times.lock().unwrap();
+        for i in 1..times.len() {
+            let gap = times[i].duration_since(times[i - 1]);
+            assert!(
+                gap >= Duration::from_millis(1000) && gap <= Duration::from_millis(3000),
+                "Blocked-state send interval was {:?}, expected ~2s (1s–3s)",
+                gap
+            );
+        }
+    }
 
     // Now start real STUN servers on the same addresses — finder should recover.
     let mut s1 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a1, attach_to: None, broken_nat: false })
@@ -88,17 +144,17 @@ pub fn blocked_then_recovery_to_consistent() {
     let mut s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false })
         .expect("start s2");
 
-    // Wait for Consistent state (up to 5 s)
+    // Wait for Consistent state (up to 10 s: next 2s poll + response processing)
     let recovered = {
         let start = Instant::now();
         loop {
-            if start.elapsed() > Duration::from_secs(5) {
+            if start.elapsed() > Duration::from_secs(10) {
                 break false;
             }
             if seen.lock().unwrap().contains(&StunState::Consistent) {
                 break true;
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(100));
         }
     };
 

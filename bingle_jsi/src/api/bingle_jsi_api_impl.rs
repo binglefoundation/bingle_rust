@@ -231,6 +231,7 @@ impl BingleJsiApiImpl {
             handle_cache_expiry,
             dangerous_debug: false,
             log_mode: rust_comms::util::logging::LogMode::JS,
+            wait_response_timeout: None,    // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
         };
 
         // Install the callback log bridge (no-op if already installed by a prior init call)

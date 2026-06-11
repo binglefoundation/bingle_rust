@@ -206,6 +206,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                 };
                 // Send binding requests
                 {
+                    tracing::info!("[STUN] polling servers: {:?}, interval {}ms", to_poll, interval.as_millis());
                     let mut inner = state.lock().unwrap();
                     for addr in to_poll {
                         // Prepare packet and handler outside the mutable borrow
