@@ -30,11 +30,6 @@ Do Not use Trump Case in Comments, etc.
 
 Before finishing a task:
 
-- Ensure the tests tree compiles
-- Ensure all tests are referenced in Cargo.toml
-- run `cargo test` to make sure all tests pass.
-Before finishing a task:
-- Ensure there are no warnings in src or tests
+- run the "unit" test target and verify all tests pass, no warnings were reported
 - Ensure the tests, bingle_jsi, bingle-local and bingle_webserver trees compile
 - Ensure all tests are referenced in Cargo.toml
-- run `cargo test` to make sure all tests pass.

@@ -197,8 +197,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                     let interval = StunEndpointFinderImpl::choose_interval(inner.state, inner.search, inner.repeat);
                     // Determine servers to poll
                     let to_poll: Vec<SocketAddr> = match inner.state {
-                        StunState::None | StunState::Single | StunState::Blocked => inner.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
-                        StunState::Consistent | StunState::Inconsistent => inner.servers.iter().map(|s| s.addr).collect(),
+                        // In Blocked state poll all servers every interval so we detect recovery.
+                        // In None/Single only poll servers that have not yet responded this round.
+                        StunState::None | StunState::Single => inner.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
+                        StunState::Blocked | StunState::Consistent | StunState::Inconsistent => inner.servers.iter().map(|s| s.addr).collect(),
                     };
                     (to_poll, interval)
                 };
@@ -230,9 +232,8 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             }
                         }
                     }
-                    // Remove servers that have failed 3 times
-                    inner.servers.retain(|s| s.failures < 3);
-                    // Error and Blocked handling
+                    // Check for Blocked/error condition BEFORE pruning servers, so that
+                    // when we transition into Blocked state the servers list is still intact.
                     if matches!(inner.state, StunState::None | StunState::Single | StunState::Blocked) {
                         inner.intervals_without_two = inner.intervals_without_two.saturating_add(1);
                         if inner.intervals_without_two >= 3 {
@@ -240,10 +241,12 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             if responders == 0 {
                                 if inner.state != StunState::Blocked {
                                     inner.state = StunState::Blocked;
-                                    tracing::info!("[STUN] state change: Blocked (no responders after 3 intervals)");
+                                    tracing::info!("[STUN] state change: Blocked (no responders after 3 intervals) - UDP may be blocked");
                                     if let Some(cb) = &inner.state_change {
                                         cb(inner.state, None);
                                     }
+                                } else {
+                                    tracing::info!("[STUN] still blocked (UDP appears blocked) - continuing to poll for recovery");
                                 }
                             } else if responders < 2 && !inner.error_reported {
                                 if let Some(eh) = &inner.error {
@@ -252,6 +255,16 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                                 inner.error_reported = true;
                             }
                         }
+                    }
+                    // In Blocked state, reset failure counters so servers are kept alive and
+                    // polling continues — UDP may become unblocked and we want to recover.
+                    // Otherwise remove servers that have failed 3 times without responding.
+                    if matches!(inner.state, StunState::Blocked) {
+                        for s in inner.servers.iter_mut() {
+                            s.failures = 0;
+                        }
+                    } else {
+                        inner.servers.retain(|s| s.failures < 3);
                     }
                 }
                 // Wait for the next interval or stop signal

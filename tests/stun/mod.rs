@@ -18,3 +18,6 @@ pub mod blocked_detection;
 
 #[path = "reset_state_resumes_polling.rs"]
 pub mod reset_state_resumes_polling;
+
+#[path = "blocked_then_recovery.rs"]
+pub mod blocked_then_recovery;
