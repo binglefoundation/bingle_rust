@@ -9,8 +9,8 @@ UX:
 - ~~info option to show cipher suite (now in API, needs UX)~~
 - ~~fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close~~
 - message delivery indication and retry
-- **handle register failure on/post start**
-- lookup handle match
+- ~~handle register failure on/post start~~
+- ~~lookup handle match~~
 
 security:
 - ensure protocol is built as documented, changes as follows:
@@ -82,11 +82,10 @@ robustness:
  + ~~Layer 2~~
 
 network:
-- handle network change and clear caches / rediscover nat type
+- **handle network change and clear caches / rediscover nat type**
 - remove DDB entries on node stop
 - handle clean relay shutdown
 - cache DDB locally with timeout / cancel
-- cache blockchain locally
 - ~~detect relay unresponsive from peers and remove~~
 - ~~reregister after a network restart~~
 

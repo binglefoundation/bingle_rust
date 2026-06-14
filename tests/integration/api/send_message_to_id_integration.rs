@@ -20,7 +20,7 @@ const ADDRESS_B: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIY
 const PASSPHRASE_B: &str = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
 
 // Helper: start a relay node at a fixed address
-fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
+pub fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
     tracing::info!("[Test] start_root_relay name={} addr={} app_id={}", name, addr, app_id);
     let opts = StartOptions {
         handle: name.into(),
@@ -128,7 +128,7 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
 
 
 
-fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
+pub fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
     let cfg = test_util::localnet_config();
     let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
     let ops_relay1 = ops_creator.clone();

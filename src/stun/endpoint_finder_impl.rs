@@ -41,6 +41,10 @@ struct Inner {
     // Error reporting bookkeeping
     intervals_without_two: u8,
     error_reported: bool,
+    // Timestamp of the last received STUN response (used to detect server silence)
+    last_response_time: Option<Instant>,
+    // How long without any response before reverting from Consistent/Inconsistent to None
+    no_response_timeout: Duration,
 }
 
 impl Inner {
@@ -94,6 +98,8 @@ pub struct StunEndpointFinderImpl {
     running: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     stop_cond: Arc<Condvar>,
+    /// Override the no-response timeout (used in tests to avoid 30s waits).
+    no_response_timeout_override: Option<Duration>,
 }
 
 impl StunEndpointFinderImpl {
@@ -109,8 +115,16 @@ impl StunEndpointFinderImpl {
             send_packet: None,
             intervals_without_two: 0,
             error_reported: false,
+            last_response_time: None,
+            no_response_timeout: Duration::from_secs(30),
         };
-        Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None, stop_cond: Arc::new(Condvar::new()) }
+        Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None, stop_cond: Arc::new(Condvar::new()), no_response_timeout_override: None }
+    }
+
+    /// Override the no-response timeout. Used in tests to avoid waiting 30s.
+    pub fn set_no_response_timeout_for_tests(&mut self, timeout: Duration) {
+        self.no_response_timeout_override = Some(timeout);
+        self.inner.lock().unwrap().no_response_timeout = timeout;
     }
 
     fn choose_interval(state: StunState, search: Duration, repeat: Duration) -> Duration {
@@ -184,6 +198,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
             inner.endpoint = None;
             inner.intervals_without_two = 0;
             inner.error_reported = false;
+            inner.last_response_time = None;
+            if let Some(t) = self.no_response_timeout_override {
+                inner.no_response_timeout = t;
+            }
         }
         // Start background thread if not already running
         if self.running.swap(true, Ordering::SeqCst) { return; }
@@ -231,6 +249,37 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                                 let port = target.port();
                                 tracing::info!("[STUN] sending Binding Request to {}:{}", host, port);
                                 h(&host, port, &pkt);
+                            }
+                        }
+                    }
+                    // When in Consistent or Inconsistent state, check whether we have heard
+                    // from any server within the no_response_timeout window.  If the timeout
+                    // has elapsed (servers stopped responding — network outage or IP change),
+                    // revert to None so the engine can re-identify the NAT type.
+                    if matches!(inner.state, StunState::Consistent | StunState::Inconsistent) {
+                        let silence_too_long = match inner.last_response_time {
+                            Some(t) => t.elapsed() > inner.no_response_timeout,
+                            // If we somehow never recorded a response but ended up in
+                            // Consistent/Inconsistent, treat as timed out.
+                            None => true,
+                        };
+                        if silence_too_long {
+                            tracing::info!(
+                                "[STUN] no response for {:?}; reverting {:?} → None",
+                                inner.no_response_timeout, inner.state
+                            );
+                            inner.state = StunState::None;
+                            inner.endpoint = None;
+                            inner.last_response_time = None;
+                            inner.intervals_without_two = 0;
+                            // Reset per-server state so the next round re-polls everyone.
+                            for s in inner.servers.iter_mut() {
+                                s.responded = false;
+                                s.endpoint = None;
+                                s.failures = 0;
+                            }
+                            if let Some(cb) = &inner.state_change {
+                                cb(StunState::None, None);
                             }
                         }
                     }
@@ -323,6 +372,8 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
             s.failures = 0; // reset on any response
             if let Some(ep) = endpoint { s.endpoint = Some(ep); }
         }
+        // Track when the last response arrived so the poll loop can detect silence.
+        inner.last_response_time = Some(Instant::now());
         // Recompute state and notify
         inner.recompute_state_and_notify();
     }
@@ -351,6 +402,9 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         // re-enter Blocked state (which would happen if intervals_without_two was still >= 3).
         inner.intervals_without_two = 0;
         inner.error_reported = false;
+        // Clear the last-response timestamp so the no-response timeout does not fire
+        // immediately after a reset (the clock starts fresh from now).
+        inner.last_response_time = None;
         // Reset per-server state so the polling loop will re-poll all servers.
         // ever_responded is intentionally preserved: a server that was reachable before
         // the reset is still a known-good server and should continue to be kept alive.

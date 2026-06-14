@@ -1823,13 +1823,135 @@ impl Engine {
     }
 
     pub(crate) fn on_stun_inconsistent(&mut self) {
-        self.set_nat_type(NatType::Symmetric);
-        self.set_state_internal(EngineState::NATRestricted);
-        self.notify_listening(true);
+        // Spawn a worker thread so we don't block the STUN callback path.
+        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        let span = self.span.clone();
+        std::thread::spawn(move || unsafe {
+            let _guard = span.enter();
+            let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+            eng.stun_inconsistent_process();
+        });
+    }
+
+    fn stun_inconsistent_process(&mut self) {
+        tracing::info!("[Engine] on_stun_inconsistent: attempting relay registration");
+        self.register_with_relay(None);
+    }
+
+    /// Find the best relay (using the cached relay_finder if available, or relay_info_override
+    /// if provided) and register with it: send Relay::Listen, handle ListenResponse, call
+    /// ddb_register_relay, set state Registered.
+    /// Extracted from post_triangle_relay_register in handlers.rs so it can be reused here.
+    ///
+    /// `relay_info_override`: when Some, skips relay discovery and uses the provided relay directly
+    /// (used by test helpers to avoid real network relay checks).
+    fn register_with_relay(&mut self, relay_info_override: Option<crate::relay::relay_finder::RelayInfo>) {
+        use crate::relay::relay_finder::RelayInfo;
+
+        // Resolve my_id from issuer (strip suffix) or options handle.
+        let my_id: String = if let Some(iss) = self.issuer.as_deref() {
+            iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
+        } else {
+            self.options.handle.clone()
+        };
+
+        // Use override if provided; otherwise use the cached relay_finder or build a fresh one.
+        let relay_info: RelayInfo = if let Some(info) = relay_info_override {
+            info
+        } else if let Some(finder) = &self.relay_finder {
+            match finder.find_relay(&my_id) {
+                Ok(info) => info,
+                Err(e) => {
+                    tracing::warn!("[Engine::register_with_relay] find_relay (cached finder) failed: {}", e);
+                    return;
+                }
+            }
+        } else {
+            // Build a fresh finder using the indexer — requires app_id.
+            let app_id = match self.options.app_id
+                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
+            {
+                Some(id) => id,
+                None => {
+                    tracing::warn!("[Engine::register_with_relay] app_id missing; cannot discover relay");
+                    return;
+                }
+            };
+            let discover = crate::relay::discovery::indexer_discover_closure(
+                app_id,
+                self.options.algo_provider_config.clone(),
+            );
+            let finder = crate::relay::relay_finder::RelayFinder::new(self.bingle_api.clone(), discover);
+            match finder.find_relay(&my_id) {
+                Ok(info) => info,
+                Err(e) => {
+                    tracing::warn!("[Engine::register_with_relay] find_relay failed: {}", e);
+                    return;
+                }
+            }
+        };
+
+        tracing::info!("[Engine::register_with_relay] chosen relay {} (id={})", relay_info.address, relay_info.id);
+
+        // Upgrade the API weak reference.
+        let api = match self.bingle_api.upgrade() {
+            Some(a) => a,
+            None => {
+                tracing::warn!("[Engine::register_with_relay] bingle_api weak reference is gone");
+                return;
+            }
+        };
+
+        // Send Relay::Listen and expect a ListenResponse.
+        let listen = crate::messages::types::RelayListen { app: None, tag: None };
+        let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
+        let json = crate::messages::marshal::to_json_value(&msg);
+        let nsk = NetworkEndpoint::new_direct(relay_info.address);
+        let uid = relay_info.id.clone();
+        match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
+            Ok(resp) => {
+                let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                if !ty_ok {
+                    tracing::warn!("[Engine::register_with_relay] unexpected response to Listen: {}", resp);
+                    return;
+                }
+                tracing::info!("[Engine::register_with_relay] Relay ListenResponse received; registering relay listener");
+                api.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
+            }
+            Err(e) => {
+                tracing::warn!("[Engine::register_with_relay] Listen request failed: {}", e);
+                return;
+            }
+        }
+
+        // Register relay association in DDB and mark registered.
+        if let Err(e) = api.ddb_register_relay(relay_info.id.clone(), None) {
+            tracing::warn!("[Engine::register_with_relay] ddb_register_relay failed: {}", e);
+        } else {
+            tracing::info!("[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+            api.set_state(EngineState::Registered);
+            api.notify_listening(true, NatType::Restricted);
+        }
     }
 
     pub(crate) fn on_stun_blocked(&mut self) {
         self.set_nat_type(NatType::NoConnection);
+        self.state = EngineState::StunIdentify;
+        self.notify_listening(false);
+    }
+
+    /// Called when the STUN finder reverts to None state after servers stop responding for
+    /// the no-response timeout period (default 30s).  This signals a network outage or IP
+    /// change: we reset the engine to StunIdentify so it will re-identify NAT type once
+    /// servers become reachable again.
+    pub(crate) fn on_stun_none(&mut self) {
+        use std::sync::atomic::Ordering;
+        tracing::info!("[Engine] on_stun_none: STUN servers silent for timeout period; resetting to StunIdentify");
+        self.set_nat_type(NatType::Unknown);
+        // Clear registered/endpoint_ready/nat_restricted flags so state() returns StunIdentify.
+        self.registered.store(false, Ordering::SeqCst);
+        self.endpoint_ready.store(false, Ordering::SeqCst);
+        self.nat_restricted.store(false, Ordering::SeqCst);
         self.state = EngineState::StunIdentify;
         self.notify_listening(false);
     }
@@ -1879,6 +2001,8 @@ impl Engine {
                         (&mut *p).on_stun_inconsistent();
                     } else if st == crate::stun::endpoint_finder::StunState::Blocked {
                         (&mut *p).on_stun_blocked();
+                    } else if st == crate::stun::endpoint_finder::StunState::None {
+                        (&mut *p).on_stun_none();
                     }
                 }
             })));
@@ -1991,8 +2115,34 @@ impl Engine {
         self.on_stun_inconsistent();
     }
 
+    /// Synchronous variant for unit tests: calls stun_inconsistent_process directly
+    /// without spawning a thread, so assertions run after the work completes.
+    pub fn test_force_stun_inconsistent_sync(&mut self) {
+        self.stun_inconsistent_process();
+    }
+
+    /// Synchronous variant for unit tests: registers with the given relay directly,
+    /// bypassing relay discovery so no real network relay check is needed.
+    pub fn test_register_with_relay_direct(&mut self, relay_info: crate::relay::relay_finder::RelayInfo) {
+        self.register_with_relay(Some(relay_info));
+    }
+
+    /// Test helper: pre-load a relay finder with a fixed relay list so that
+    /// on_stun_inconsistent can register without hitting the real indexer.
+    pub fn test_set_relay_finder_for_inconsistent(&mut self, relays: Vec<crate::relay::relay_finder::RelayInfo>) {
+        let api = self.bingle_api.clone();
+        let discover: std::sync::Arc<dyn Fn() -> Vec<crate::relay::relay_finder::RelayInfo> + Send + Sync> =
+            std::sync::Arc::new(move || relays.clone());
+        let finder = crate::relay::relay_finder::RelayFinder::new(api, discover);
+        self.relay_finder = Some(std::sync::Arc::new(finder));
+    }
+
     pub fn test_force_stun_blocked(&mut self) {
         self.on_stun_blocked();
+    }
+
+    pub fn test_force_stun_none(&mut self) {
+        self.on_stun_none();
     }
 
     pub fn test_stun_consistent_process_no_addr(&mut self) {

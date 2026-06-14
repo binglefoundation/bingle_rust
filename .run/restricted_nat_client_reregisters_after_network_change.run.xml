@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="restricted_nat_client_reregisters_after_network_change" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+    <option name="command" value="test --test all -- integration_tests::connection_tests::restricted_nat_client_reregisters_after_network_change --ignored" />
+    <option name="workingDirectory" value="$PROJECT_DIR$" />
+    <envs />
+    <option name="emulateTerminal" value="false" />
+    <option name="backtrace" value="SHORT" />
+    <method v="2" />
+  </configuration>
+</component>

@@ -333,6 +333,82 @@ pub fn server_responds_once_then_stops_keeps_polling() {
          after 3 failures (via Blocked state), but was only polled {} time(s)", s1_count);
 }
 
+// Test that when the finder is in Consistent state and then servers stop responding
+// for the no-response timeout period, it transitions back to None and fires the
+// state-change callback with StunState::None.
+//
+// Uses set_no_response_timeout_for_tests to set a short 200ms timeout so the test
+// runs quickly without waiting the default 30s.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn consistent_reverts_to_none_after_no_response_timeout() {
+    init_test_logging();
+
+    let mut finder = StunEndpointFinderImpl::new();
+    // Use a short no-response timeout so the test is fast.
+    finder.set_no_response_timeout_for_tests(Duration::from_millis(200));
+
+    let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+    let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+
+    // Use a long repeat interval (1s) so the poll loop does not re-poll too fast.
+    // The no-response timeout (200ms) is shorter than the repeat interval (1s),
+    // so the check triggers on the first repeat poll after the 200ms window.
+    finder.start(vec![s1, s2], 50, 500);
+
+    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let changes_clone = Arc::clone(&changes);
+    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        changes_clone.lock().unwrap().push((st, ep));
+    })));
+
+    // Inject two consistent responses so the finder reaches Consistent state.
+    let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    let r2 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.process_packet(s1, &r1);
+    finder.process_packet(s2, &r2);
+
+    // Confirm Consistent was reached.
+    let reached_consistent = {
+        let list = changes.lock().unwrap();
+        list.iter().any(|(st, _)| *st == StunState::Consistent)
+    };
+    assert!(reached_consistent, "finder should have reached Consistent after two matching responses");
+
+    // Wait past the no-response timeout (200ms) plus the repeat poll interval (500ms)
+    // so the poll loop triggers the timeout check.  Allow generous headroom for CI load.
+    let deadline = Instant::now() + Duration::from_millis(5_000);
+    loop {
+        {
+            let list = changes.lock().unwrap();
+            // Look for a None transition AFTER the Consistent one.
+            let consistent_idx = list.iter().position(|(st, _)| *st == StunState::Consistent);
+            if let Some(ci) = consistent_idx {
+                if list[ci..].iter().any(|(st, _)| *st == StunState::None) {
+                    break;
+                }
+            }
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    finder.stop();
+
+    let list = changes.lock().unwrap();
+    let consistent_idx = list.iter().position(|(st, _)| *st == StunState::Consistent)
+        .expect("expected Consistent state before None");
+    let none_after = list[consistent_idx..].iter().any(|(st, _)| *st == StunState::None);
+    assert!(
+        none_after,
+        "expected StunState::None after no-response timeout, but state changes were: {:?}",
+        *list
+    );
+}
+
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stop_stops_promptly() {

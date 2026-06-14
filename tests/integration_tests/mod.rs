@@ -19,6 +19,8 @@ pub mod asset_clawback_creator_localnet;
 // API integration tests that need localnet
 #[path = "../integration/api/send_message_to_id_integration.rs"]
 pub mod send_message_to_id_integration;
+#[path = "../integration/api/connection_tests.rs"]
+pub mod connection_tests;
 // API tests needing localnet
 #[path = "../api/endpoint_identify_integration.rs"]
 pub mod endpoint_identify_integration;
