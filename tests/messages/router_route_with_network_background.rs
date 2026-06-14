@@ -23,7 +23,8 @@ impl MessageHandler for SlowPingHandler {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn route_with_network_runs_handler_on_background_thread() {
     let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     let (started_tx, started_rx) = mpsc::channel::<()>();

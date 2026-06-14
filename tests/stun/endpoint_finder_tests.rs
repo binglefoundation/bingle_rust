@@ -32,7 +32,8 @@ fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
     pkt
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn state_transitions_consistent_and_inconsistent() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -66,7 +67,8 @@ pub fn state_transitions_consistent_and_inconsistent() {
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn error_after_three_intervals_with_less_than_two_responders() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -90,7 +92,8 @@ pub fn error_after_three_intervals_with_less_than_two_responders() {
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn single_response_triggers_single_and_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -116,7 +119,8 @@ pub fn single_response_triggers_single_and_callback_without_ip() {
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -142,7 +146,8 @@ pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -167,7 +172,8 @@ pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -199,7 +205,8 @@ pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callbac
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn nonresponsive_server_removed_after_three_search_polls() {
     use std::collections::HashMap;
 
@@ -239,7 +246,8 @@ pub fn nonresponsive_server_removed_after_three_search_polls() {
     finder.stop();
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn after_two_responses_polls_resume_on_repeat_interval() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
@@ -295,7 +303,8 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
 // The test then injects both new responses.  Without the fixes the final Consistent
 // callback with port 64715 is either not emitted (Bug 1 only) or arrives as a
 // Consistent→Inconsistent→Consistent bounce (Bug 2 without Bug 1 fix).
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn consistent_endpoint_change_fires_callback() {
     init_test_logging();
 
@@ -404,7 +413,8 @@ pub fn consistent_endpoint_change_fires_callback() {
 // response (simulating a firewall blocking all STUN traffic), then waits for
 // the background thread to fire at least 3 intervals and asserts that the
 // state-change callback was called with Blocked.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn blocked_when_no_servers_respond_within_timeout() {
     init_test_logging();
 
@@ -477,7 +487,8 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
 // After 3 failures s2 is removed. s1 is kept alive by ever_responded.
 // Eventually intervals_without_two reaches 3, state goes Blocked, and in Blocked
 // state ALL servers are polled — so s1 must receive further binding requests.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn server_responds_once_then_stops_keeps_polling() {
     use std::collections::HashMap;
 
@@ -529,7 +540,8 @@ pub fn server_responds_once_then_stops_keeps_polling() {
 // respond in subsequent polling rounds (e.g. in Consistent state repeat-polling).
 // This protects against transient network issues at our end dropping all servers
 // and resetting state to None after a healthy Consistent phase.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn consistent_servers_not_removed_when_no_repeat_response() {
     use std::collections::HashMap;
 
@@ -587,7 +599,8 @@ pub fn consistent_servers_not_removed_when_no_repeat_response() {
          after repeated failures, but poll count stalled at {}", s2_before);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn stop_stops_promptly() {
     let mut finder = StunEndpointFinderImpl::new();
     // Start with a long search/repeat time

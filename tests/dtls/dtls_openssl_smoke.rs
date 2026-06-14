@@ -30,7 +30,8 @@ fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpo
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_udp_listener_invokes_handler() {
     reset_test_state();
     #[allow(unused)]

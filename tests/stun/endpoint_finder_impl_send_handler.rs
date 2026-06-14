@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn impl_uses_send_packet_handler_instead_of_udp() {
     // Prepare two fake STUN servers (no actual network I/O will occur)
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();

@@ -19,7 +19,8 @@ pub mod client_handler_impl;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     let handler = TurnHandlerImpl::new();
     let peer = addr(5000);
@@ -33,7 +34,8 @@ pub fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     assert_eq!(ch1, ch2, "channel must be reused for same (source,dest)");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     let handler = TurnHandlerImpl::new();
     let src = addr(6001);
@@ -67,7 +69,8 @@ pub fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
     assert_eq!(incoming.message, payload);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_incoming_invalid_packets_return_none() {
     let handler = TurnHandlerImpl::new();
     // Too short

@@ -1,7 +1,8 @@
 use rust_comms::messages::marshal::from_json_str;
 use rust_comms::messages::types::{Message, RelayMessage};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_plain_text_from_json() {
     let json = r#"{"text":"Hello"}"#;
     let msg = from_json_str(json).expect("decode");
@@ -11,7 +12,8 @@ pub fn unit_plain_text_from_json() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_triangle_test1_from_json() {
     let json = r#"{"app":null,"type":"TriangleTest1","checkingEndpoint":{"host":"127.0.0.1","port":12345}}"#;
     let msg = from_json_str(json).expect("decode");

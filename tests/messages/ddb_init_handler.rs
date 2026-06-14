@@ -36,7 +36,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn get_relay_state(&self) -> String { "off".to_string() }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
     // Prepare router and context
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));

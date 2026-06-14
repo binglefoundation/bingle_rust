@@ -52,7 +52,8 @@ fn client_capture(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
     let _ = CLIENT_SEEN_DATA.set(data.to_vec());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn issuer_mapping_basic_send_and_reply() {
     init_test_logging();
     
@@ -133,7 +134,8 @@ fn server_collect_issuers(_server: &dyn Dtls, _from: &rust_comms::api::bingle_ap
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn multiple_clients_to_server_have_correct_issuers() {
     init_test_logging();
 

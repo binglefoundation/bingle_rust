@@ -7,7 +7,8 @@ use crate::util::reusable_mock_api::MockApiBoth;
 use rust_comms::dtls::DtlsOpenSsl;
 
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_dtls_send_without_start_fails() {
     let engine = Engine::new_with_dtls(&StartOptions::new("".into()), 
                                  crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()), Box::new(DtlsOpenSsl::new("test".to_string())));

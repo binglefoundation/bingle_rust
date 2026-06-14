@@ -7,7 +7,8 @@ use crate::util::reusable_mock_api::MockApiBoth;
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_turn_handler_fails_when_no_public_addr() {
     let api = MockApiBoth::new();
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(api);

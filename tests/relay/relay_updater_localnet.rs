@@ -19,7 +19,8 @@ mod setup_localnet;
 #[path = "../test_util.rs"]
 mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 #[ntest::timeout(1_800_000)]
 fn relay_updater_localnet_e2e_matrix() {
     test_util::assert_localnet_available();

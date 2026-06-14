@@ -20,7 +20,8 @@ impl reusable_mock_api::InnerBingleApi for LookupNone {
     fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> { None }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 fn on_plain_text_uses_reverse_lookup_success() {
     static CALLED: AtomicBool = AtomicBool::new(false);
     let payload: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
@@ -50,7 +51,8 @@ fn on_plain_text_uses_reverse_lookup_success() {
     assert_eq!(got.get("text").and_then(|v| v.as_str()), Some("hi"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 fn on_plain_text_reverse_lookup_not_found_logs_and_skips_callback() {
     static CALLED: AtomicBool = AtomicBool::new(false);
     CALLED.store(false, Ordering::SeqCst);

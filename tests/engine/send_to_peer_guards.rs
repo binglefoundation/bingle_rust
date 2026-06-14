@@ -91,7 +91,8 @@ fn make_engine_no_public_addr() -> Engine {
     )
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_rejects_incomplete_relay_endpoint() {
     let engine = make_engine_no_public_addr();
     // Relay endpoint without a channel (incomplete) should be rejected
@@ -106,7 +107,8 @@ pub fn send_to_peer_rejects_incomplete_relay_endpoint() {
     assert!(err.contains("rejecting incomplete relay endpoint"), "unexpected error: {}", err);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_allows_complete_relay_endpoint() {
     init_test_logging();
 
@@ -121,7 +123,8 @@ pub fn send_to_peer_allows_complete_relay_endpoint() {
     assert!(result.is_ok());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_rejects_send_to_self() {
     let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
     let engine = make_engine_with_public_addr(my_addr);
@@ -132,7 +135,8 @@ pub fn send_to_peer_rejects_send_to_self() {
     assert!(err.contains("rejecting send to self"), "unexpected error: {}", err);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_allows_direct_to_different_addr() {
     let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
     let engine = make_engine_with_public_addr(my_addr);
@@ -142,7 +146,8 @@ pub fn send_to_peer_allows_direct_to_different_addr() {
     assert!(result.is_ok());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_allows_direct_when_no_public_addr() {
     let engine = make_engine_no_public_addr();
     let addr: SocketAddr = "10.0.0.1:5000".parse().expect("valid addr");

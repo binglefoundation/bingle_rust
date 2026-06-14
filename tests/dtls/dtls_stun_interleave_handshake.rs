@@ -27,7 +27,8 @@ fn server_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Ne
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn stun_response_does_not_interfere_with_dtls_flow() {
     // Reset global state
     CLIENT_ECHO_COUNT.store(0, Ordering::Relaxed);

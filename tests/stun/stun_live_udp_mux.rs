@@ -21,7 +21,8 @@ fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
     (host, port).to_socket_addrs().ok()?.next()
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 fn live_stun_endpoint_finder_with_udp_mux() {
     init_test_logging();
     

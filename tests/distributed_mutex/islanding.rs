@@ -8,7 +8,8 @@ use common::TestNetwork;
 use crate::util::test_util::init_test_logging;
 
 #[ntest::timeout(60000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
     init_test_logging();
 

@@ -67,7 +67,8 @@ impl Dtls for MockDtls {
 
 /// send_message_to_network returns false when given an incomplete relay endpoint
 /// (missing channel) because send_over_dtls rejects such endpoints.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
     let (mock, sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
@@ -86,7 +87,8 @@ pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
 
 /// send_message_to_network returns false when the target address matches our own public address
 /// because send_over_dtls rejects sending to self.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_over_dtls_rejects_send_to_self() {
     let (mock, sent_vec) = MockDtls::new();
     let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");
@@ -105,7 +107,8 @@ pub fn send_over_dtls_rejects_send_to_self() {
 }
 
 /// send_message_to_network succeeds for a direct endpoint to a different address.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_over_dtls_allows_direct_to_different_addr() {
     let (mock, sent_vec) = MockDtls::new();
     let my_addr: SocketAddr = "44.223.62.108:12121".parse().expect("valid addr");

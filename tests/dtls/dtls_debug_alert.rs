@@ -21,7 +21,8 @@ fn build_dtls_record(ct: u8, epoch: u16, seq: u64, version: [u8; 2], payload: &[
     out
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_debug_includes_alert_level_and_description() {
     // DTLS alert: level=2 (fatal), description=40 (handshake_failure)
     let alert_payload = [2u8, 40u8];

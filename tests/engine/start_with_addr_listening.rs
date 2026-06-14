@@ -78,7 +78,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
 }
 
 // Verifies that when starting with a static address, the engine invokes the listening handler with true.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn start_with_addr_notifies_listening_true() {
     init_test_logging();
 

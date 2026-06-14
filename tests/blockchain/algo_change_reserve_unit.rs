@@ -3,7 +3,8 @@ use rust_comms::algo_ops::AlgoOps;
 // These are unit-style tests that validate parameter checking without hitting the network.
 // They live under tests/blockchain per project guidelines and do not require a running node.
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn change_reserve_errors_on_zero_asset_id() {
     let ops = AlgoOps::new(None, Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()), None);
     let err = ops.change_asset_reserve_address(0, "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE").unwrap_err();
@@ -11,7 +12,8 @@ pub fn change_reserve_errors_on_zero_asset_id() {
     assert!(msg.contains("asset_id must be > 0"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn change_reserve_errors_on_invalid_reserve_address() {
     // No passphrase/address required for this error path; invalid reserve address is validated first
     let ops = AlgoOps::new(None, Some("P577PSTDICQ6PQFBR5YMDMJ2YVK7LT5V4GOPNVDLCEDJIL7XGRWC5BRFWA".to_string()), None);

@@ -2,7 +2,8 @@ use rust_comms::api::bingle_api::{BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn turn_client_handle_listen_response_registers_client_mapping() {
     // Build API instance (no need to start engine/mux for this mapping update)
     let api = BingleApiImpl::new(&StartOptions::new("".into()));

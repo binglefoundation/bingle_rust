@@ -39,7 +39,8 @@ impl InnerBingleApiInternal for MockInternal {
 }
 
 /// Serialization: no_corner_node=false serializes as false.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_false_serializes_as_false() {
     let resp = RelayTriangleTest1Response { app: None, no_corner_node: false, response_tag: None };
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(resp));
@@ -49,7 +50,8 @@ pub fn no_corner_node_false_serializes_as_false() {
 }
 
 /// Serialization: no_corner_node=true appears in JSON.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_true_serializes_with_field() {
     let resp = RelayTriangleTest1Response { app: None, no_corner_node: true, response_tag: None };
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(resp));
@@ -59,7 +61,8 @@ pub fn no_corner_node_true_serializes_with_field() {
 }
 
 /// Deserialization: missing noCornerNode defaults to false.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_defaults_to_false_on_deserialize() {
     let json = r#"{"app":null,"type":"TriangleTest1Response"}"#;
     let msg = from_json_str(json).expect("decode");
@@ -72,7 +75,8 @@ pub fn no_corner_node_defaults_to_false_on_deserialize() {
 }
 
 /// Deserialization: noCornerNode=true round-trips correctly.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_true_round_trips() {
     let json = r#"{"app":null,"type":"TriangleTest1Response","noCornerNode":true}"#;
     let msg = from_json_str(json).expect("decode");
@@ -85,7 +89,8 @@ pub fn no_corner_node_true_round_trips() {
 }
 
 /// When no_corner_node=true, state is set to NATRestricted immediately (no 10s delay).
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_sets_nat_restricted_immediately() {
     let mock_internal = Arc::new(MockInternal::new());
     let mock = MockApiBoth::new_with_internal_override(mock_internal.clone());
@@ -121,7 +126,8 @@ pub fn no_corner_node_sets_nat_restricted_immediately() {
 }
 
 /// When no_corner_node=true but state is already EndpointAvailable, do not override.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_does_not_override_endpoint_available() {
     let mock_internal = Arc::new(MockInternal::new());
     let mock = MockApiBoth::new_with_internal_override(mock_internal.clone());

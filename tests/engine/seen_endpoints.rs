@@ -52,7 +52,8 @@ impl Dtls for MockDtls {
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_tracks_seen_endpoints() {
     let options = StartOptions::new("".into());
     // Use MockApiBoth for engine creation (requires Arc/Weak)

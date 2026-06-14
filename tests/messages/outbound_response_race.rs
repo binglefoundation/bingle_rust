@@ -46,7 +46,8 @@ impl MessageHandler for DelayedMultipleOutboundResponsesHandler {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn outbound_response_should_be_sent_from_router_processing_thread() {
     let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     let (sent_tx, sent_rx) = mpsc::channel::<(NetworkEndpoint, String, serde_json::Value)>();
@@ -82,7 +83,8 @@ pub fn outbound_response_should_be_sent_from_router_processing_thread() {
     assert_eq!(sent_json, serde_json::json!({"type": "response", "app": "ping"}));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn outbound_response_queue_should_send_all_responses_from_router_processing_thread() {
     let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     let (sent_tx, sent_rx) = mpsc::channel::<(NetworkEndpoint, String, serde_json::Value)>();
@@ -139,7 +141,8 @@ pub fn outbound_response_queue_should_send_all_responses_from_router_processing_
 ///
 /// After the fix (per-call `FromStruct.responses`), each response must arrive at
 /// exactly the sender that produced it.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn concurrent_dispatch_responses_should_not_cross_contaminate() {
     let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
     let (sent_tx, sent_rx) = mpsc::channel::<(NetworkEndpoint, String, serde_json::Value)>();

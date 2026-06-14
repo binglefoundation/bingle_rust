@@ -1,7 +1,8 @@
 use rust_comms::messages::marshal::from_json_str;
 use rust_comms::messages::types::{Message, RelayMessage};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_triangle_test1_response_from_json() {
     let json = r#"{"app":null,"type":"TriangleTest1Response"}"#;
     let msg = from_json_str(json).expect("decode");

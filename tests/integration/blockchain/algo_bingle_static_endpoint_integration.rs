@@ -8,7 +8,8 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 use std::time::{Duration, Instant};
 use std::thread;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     test_util::assert_localnet_available();
     // Ensure test accounts are funded

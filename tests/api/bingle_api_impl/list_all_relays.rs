@@ -2,7 +2,8 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 
 // Basic sanity: without engine issuer/app_id configured, list_all_relays should return an empty list.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn list_all_relays_returns_empty_when_unconfigured() {
     let opts = StartOptions { handle: "tester".into(), ..StartOptions::new("".into()) };
     let api = BingleApiImpl::new(&opts);
@@ -11,7 +12,8 @@ pub fn list_all_relays_returns_empty_when_unconfigured() {
 }
 
 // Ensure the method exists and can be called without panic with include_self toggled.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn list_all_relays_include_self_toggle_no_panic() {
     let opts = StartOptions { handle: "tester".into(), ..StartOptions::new("".into()) };
     let api = BingleApiImpl::new(&opts);

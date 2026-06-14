@@ -27,7 +27,8 @@ fn server_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_client_keeps_stream_open_across_sends() {
     init_test_logging();
 

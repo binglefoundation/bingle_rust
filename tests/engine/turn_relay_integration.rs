@@ -28,7 +28,8 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
     out
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn end_to_end_turn_relay_forwards_payload() {
     // Allocate three ports: relay, client A, client B
     let relay_port = test_util::find_unused_loopback_port();

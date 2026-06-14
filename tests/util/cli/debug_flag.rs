@@ -1,6 +1,7 @@
 use rust_comms::util::cli_utils::parse_start_options_from_args;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn parse_accepts_debug_flag_without_error() {
     let args = vec![
         "alice".to_string(),

@@ -41,7 +41,8 @@ impl Dtls for DummyDtls {
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_send_takes_no_issuer() {
     let d = DummyDtls::default();
     let to: SocketAddr = "127.0.0.1:9000".parse().unwrap();

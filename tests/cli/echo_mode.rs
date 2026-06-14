@@ -14,7 +14,8 @@ fn build_echo_response(message: &serde_json::Value) -> Option<serde_json::Value>
     None
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_plain_text_message() {
     let msg = json!({ "text": "Hello" });
     let result = build_echo_response(&msg);
@@ -22,7 +23,8 @@ pub fn echo_plain_text_message() {
     assert_eq!(echo["text"], "Echo: Hello");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_plain_text_with_null_app_and_type() {
     let msg = json!({ "text": "Hi there", "app": null, "type": null });
     let result = build_echo_response(&msg);
@@ -30,28 +32,32 @@ pub fn echo_plain_text_with_null_app_and_type() {
     assert_eq!(echo["text"], "Echo: Hi there");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_skips_typed_message() {
     let msg = json!({ "text": "Hello", "app": "chat", "type": "markdown" });
     let result = build_echo_response(&msg);
     assert!(result.is_none(), "should not echo a typed message");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_skips_message_with_app_only() {
     let msg = json!({ "text": "Hello", "app": "ping" });
     let result = build_echo_response(&msg);
     assert!(result.is_none(), "should not echo when app is non-null");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_skips_message_without_text() {
     let msg = json!({ "app": "chat", "type": "markdown", "data": {} });
     let result = build_echo_response(&msg);
     assert!(result.is_none(), "should not echo when no text field");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_preserves_original_text() {
     let msg = json!({ "text": "Echo: already echoed" });
     let result = build_echo_response(&msg);
@@ -59,7 +65,8 @@ pub fn echo_preserves_original_text() {
     assert_eq!(echo["text"], "Echo: Echo: already echoed");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn echo_empty_text() {
     let msg = json!({ "text": "" });
     let result = build_echo_response(&msg);

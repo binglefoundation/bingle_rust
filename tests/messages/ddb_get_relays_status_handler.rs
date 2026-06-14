@@ -54,7 +54,8 @@ impl BingleApiInternal for InternalStarting {
     fn get_relay_state(&self) -> String { "starting".into() }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_get_relays_status_returns_response_when_relay_available() {
     // Arrange router as relay with internal state available and ddb backend
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));
@@ -99,7 +100,8 @@ pub fn ddb_get_relays_status_returns_response_when_relay_available() {
     assert!(eps.len() >= 2);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_get_relays_status_returns_fail_when_not_allowed() {
     // Case 1: not a relay
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(MockApi)));

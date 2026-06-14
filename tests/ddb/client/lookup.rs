@@ -13,7 +13,8 @@ use rust_comms::relay::relay_finder::RelayInfo;
 #[path = "../../test_util.rs"]
 pub mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_client_lookup_returns_endpoint() {
     // Start relay and client
     let relay_port = test_util::find_unused_loopback_port();

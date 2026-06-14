@@ -13,7 +13,8 @@ use test_handlers::*;
 
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_client_echo_roundtrip() {
     init_test_logging();
     use std::time::Instant;

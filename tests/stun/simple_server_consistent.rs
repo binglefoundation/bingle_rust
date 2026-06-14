@@ -12,7 +12,8 @@ fn find_unused_loopback_port() -> u16 {
     port
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn simple_stun_two_servers_consistent() {
     // Start two simple STUN servers on random local ports
     let p1 = find_unused_loopback_port();

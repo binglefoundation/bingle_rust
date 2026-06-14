@@ -17,7 +17,8 @@ fn find_unused_loopback_port() -> u16 {
 }
 
 #[ntest::timeout(15_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
     // Choose a random available port by probing loopback; we use that port for static_ip.
     let port = find_unused_loopback_port();

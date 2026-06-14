@@ -3,7 +3,8 @@ use rust_comms::turn::turn_handler::{TurnHandler, TurnClientImpl, TurnClientHand
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_client_handle_called_and_send() {
     let client = TurnClientImpl::new();
     let src = addr(8001);
@@ -37,7 +38,8 @@ pub fn unit_turn_client_handle_called_and_send() {
     assert_eq!(incoming.message, payload);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_client_handle_call_response_and_send() {
     let client = TurnClientImpl::new();
     let src = addr(8101);

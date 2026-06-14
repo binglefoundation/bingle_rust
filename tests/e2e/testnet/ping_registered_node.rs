@@ -34,7 +34,8 @@ fn pingable_handle() -> Option<String> {
     Some("pinguser21".to_string())
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn testnet_send_ping_to_registered_node() {
     // Only run when explicitly enabled.
     if common::env_var("BINGLE_RUN_TESTNET").as_deref() != Some("1") {

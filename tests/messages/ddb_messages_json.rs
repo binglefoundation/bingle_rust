@@ -2,7 +2,8 @@ use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
 use rust_comms::engine::RelayState;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_upsert_serde_roundtrip() {
     let rec = AdvertRecord { id: "ID".into(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None };
     let msg = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
@@ -22,7 +23,8 @@ pub fn ddb_upsert_serde_roundtrip() {
     assert_eq!(msg, back);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_query_and_response_roundtrip() {
     let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {
         app: "ddb".into(),
@@ -49,7 +51,8 @@ pub fn ddb_query_and_response_roundtrip() {
     assert_eq!(resp, r2);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_update_and_delete_roundtrip() {
     let upd = Message::Ddb(DdbMessage::UpdateResponse(DdbUpdateResponse { app: "ddb".into(), response_tag: None, text: None, data: None }));
     let ju = marshal::to_json_string(&upd);
@@ -73,7 +76,8 @@ pub fn ddb_update_and_delete_roundtrip() {
 }
 
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_signon_and_response_roundtrip() {
     let signon = Message::Ddb(DdbMessage::Signon(DdbSignon {
         app: "ddb".into(),
@@ -101,7 +105,8 @@ pub fn ddb_signon_and_response_roundtrip() {
     assert_eq!(signon_resp, r2);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_get_relays_status_and_response_roundtrip() {
     let get = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus {
         app: "ddb".into(),
@@ -131,7 +136,8 @@ pub fn ddb_get_relays_status_and_response_roundtrip() {
     assert_eq!(info, i2);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_init_and_dump_roundtrip() {
     let init = Message::Ddb(DdbMessage::InitResolve(DdbInitResolve {
         app: "ddb".into(),

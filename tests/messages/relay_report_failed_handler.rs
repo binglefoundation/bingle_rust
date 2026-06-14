@@ -109,7 +109,8 @@ fn router_with_api(api: Arc<TrackingApi>) -> Arc<Router> {
 }
 
 // Test: not a relay - message is silently ignored (no ripple)
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_ignored_when_not_relay() {
     // PanicRipple verifies ripple_message is never called.
     struct PanicRipple;
@@ -140,7 +141,8 @@ pub fn relay_report_failed_ignored_when_not_relay() {
 }
 
 // Test: relay address found but send fails -> marks failed and ripples
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_ripples_on_send_failure() {
     let ripple_called = Arc::new(Mutex::new(false));
     let ripple_originator: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -175,7 +177,8 @@ pub fn relay_report_failed_ripples_on_send_failure() {
 }
 
 // Test: relay found, responds with non-Available state -> marks failed and ripples
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_ripples_on_non_available_response() {
     let ripple_called = Arc::new(Mutex::new(false));
     let ripple_originator: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -210,7 +213,8 @@ pub fn relay_report_failed_ripples_on_non_available_response() {
 }
 
 // Test: relay found, responds Available -> no ripple (just WARN)
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_no_ripple_when_available() {
     // PanicOnRipple verifies ripple_message is never called.
     struct PanicOnRipple;

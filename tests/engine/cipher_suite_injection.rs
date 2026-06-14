@@ -177,7 +177,8 @@ fn send_unknown_message(
 }
 
 /// Verify that the Engine injects `cipher_suite` from the DTLS session into the JSON before routing.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn cipher_suite_injected_into_routed_message() {
     let cipher = "TLS_AES_256_GCM_SHA384";
     let (handler, captured, router) = build_engine_and_get_handler(Some(cipher.to_string()));
@@ -200,7 +201,8 @@ pub fn cipher_suite_injected_into_routed_message() {
 }
 
 /// Verify that when DTLS returns None for `get_cipher_suite`, the field is NOT injected.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn cipher_suite_absent_when_dtls_returns_none() {
     let (handler, captured, router) = build_engine_and_get_handler(None);
 
@@ -219,7 +221,8 @@ pub fn cipher_suite_absent_when_dtls_returns_none() {
 
 /// Verify that when two different messages arrive with different cipher suites, each gets
 /// the correct cipher_suite injected.  This guards against any accidental sharing of state.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn different_cipher_suites_injected_correctly() {
     let cipher_a = "TLS_AES_256_GCM_SHA384";
     let cipher_b = "TLS_AES_128_GCM_SHA256";

@@ -1,6 +1,7 @@
 use rust_comms::util::cli_utils::parse_start_options_from_args;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn parse_run_args_with_positional_handle() {
     let args = vec!["alice".to_string(), "--relay".to_string()];
     let opts = parse_start_options_from_args(args).expect("should parse");

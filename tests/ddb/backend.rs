@@ -12,7 +12,8 @@ fn sample_record(id: &str) -> AdvertRecord {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn upsert_then_lookup_returns_same_record() {
     let mut db = InMemoryDdbBackend::new();
     let rec = sample_record("ID1");
@@ -22,7 +23,8 @@ pub fn upsert_then_lookup_returns_same_record() {
     assert_eq!(rec, roundtrip.unwrap());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn upsert_updates_existing() {
     let mut db = InMemoryDdbBackend::new();
     let mut rec = sample_record("ID2");
@@ -38,7 +40,8 @@ pub fn upsert_updates_existing() {
     assert_eq!(rec, got.unwrap());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn delete_then_lookup_none() {
     let mut db = InMemoryDdbBackend::new();
     db.upsert(sample_record("ID3"));
@@ -64,7 +67,8 @@ fn relay_record(id: &str, host: &str, port: u16) -> AdvertRecord {
 /// When there is already a live relay in the DDB and a second relay is added
 /// (simulating the self-upsert after ddb_load_from_peer), both relays must
 /// appear in the getRelaysStatus response (make_epoch_info).
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn both_relays_listed_in_epoch_after_second_relay_added() {
     let mut db = InMemoryDdbBackend::new();
 

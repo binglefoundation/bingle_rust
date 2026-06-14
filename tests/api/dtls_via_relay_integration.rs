@@ -22,7 +22,8 @@ pub mod pki;
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 
 pub fn dtls_send_via_relay_end_to_end() {
     init_test_logging();

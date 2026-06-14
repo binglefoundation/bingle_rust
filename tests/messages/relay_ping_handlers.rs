@@ -52,7 +52,8 @@ impl Dtls for MockDtls {
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
     let mock = Arc::new(MockDtls::default());
     let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
@@ -116,7 +117,8 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
     let mock = Arc::new(MockDtls::default());
     let handler = RelayPingHandler::new(mock.clone(), None);

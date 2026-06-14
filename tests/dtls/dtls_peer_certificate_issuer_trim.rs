@@ -8,7 +8,8 @@ use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 use crate::util::test_util::init_test_logging;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     // Build a minimal CA (Ed25519) with CN = VIRTUAL_CA and a server cert + client cert.
     use openssl::asn1::Asn1Time;

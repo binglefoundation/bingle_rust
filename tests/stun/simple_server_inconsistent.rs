@@ -12,7 +12,8 @@ fn find_unused_loopback_port() -> u16 {
     port
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn simple_stun_mixed_servers_inconsistent() {
     // Start two simple STUN servers: one normal, one broken_nat
     let p1 = find_unused_loopback_port();

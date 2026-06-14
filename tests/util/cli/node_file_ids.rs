@@ -16,7 +16,8 @@ fn write_temp_nodefile(content: &str) -> PathBuf {
     p
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn parse_node_file_with_app_and_asset_ids() {
     let file = write_temp_nodefile(r#"{
         "network": "testnet",
@@ -38,7 +39,8 @@ pub fn parse_node_file_with_app_and_asset_ids() {
     assert_eq!(asset_id, Some(67890));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn resolve_ids_errors_when_node_and_cli_conflict() {
     // node provides app_id, CLI also provides -> error
     let err = resolve_app_asset_ids(Some(1), None, Some(2), Some(3)).unwrap_err();
@@ -47,7 +49,8 @@ pub fn resolve_ids_errors_when_node_and_cli_conflict() {
     assert!(err2.contains("--asset-id"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn node_ids_override_env_vars() {
     // set env vars, but node file should override
     unsafe {
@@ -60,7 +63,8 @@ pub fn node_ids_override_env_vars() {
     assert_eq!(asset, 6);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn env_ids_used_when_no_node_or_cli() {
     // clear first
@@ -81,7 +85,8 @@ pub fn env_ids_used_when_no_node_or_cli() {
     assert_eq!(asset, 202);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn run_parse_accepts_node_file_flag() {
     let file = write_temp_nodefile(r#"{
         "network": "localnet",

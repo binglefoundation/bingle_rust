@@ -23,6 +23,8 @@ Always validate that a call which returns Option succeeds
 
 When a parameter is in use, do not start the name with'_' as this is the unused parameter marker.
 
+Mark all tests with `#[test]` and use a separate `#[cfg` parameter where needed, so that Intellij can see the tests
+
 When running grep, exclude binaries (for performance)
 Create any temp files (logging, etc) in tmp so that they are gitignored
 

@@ -4,7 +4,8 @@
 use rust_comms::algo_ops::AlgoOps;
 use serde_json::json;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_parse_creator_reserve_from_asset_info_value_variants() {
     // Variant A: fields under params with standard keys
     let v1 = json!({
@@ -41,7 +42,8 @@ pub fn test_parse_creator_reserve_from_asset_info_value_variants() {
     assert_eq!(r3, "R3");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_parse_holding_amount_from_account_value() {
     let v = json!({
         "assets": [

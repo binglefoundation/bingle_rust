@@ -13,7 +13,8 @@ fn fund_test_accounts_or_panic() {
         .expect("Failed to ensure localnet test accounts funded; install algokit and start localnet");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn bingle_end_to_end_calls() {
     test_util::assert_localnet_available();

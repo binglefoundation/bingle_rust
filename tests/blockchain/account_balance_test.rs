@@ -4,7 +4,8 @@ fn default_cfg() -> AlgoChainConfig {
     AlgoChainConfig::default()
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn account_balance_returns_error_with_invalid_address() {
     // AlgoOps with an explicit but invalid address should fail with a clear error
     let ops = AlgoOps::new(None, Some("INVALID_ADDRESS".to_string()), Some(default_cfg()));
@@ -18,7 +19,8 @@ pub fn account_balance_returns_error_with_invalid_address() {
     );
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn account_balance_returns_none_with_unreachable_provider() {
     // Generate a real keypair so we have a valid address, but point at an unreachable provider.
     // The HTTP call fails at the algod response level so the error is logged and Ok(None) returned.

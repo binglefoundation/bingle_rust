@@ -19,7 +19,8 @@ fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 fn second_send_should_queue_without_waiting_for_stream_lock() {
     init_test_logging();
 

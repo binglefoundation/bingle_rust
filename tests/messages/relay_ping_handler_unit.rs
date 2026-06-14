@@ -78,7 +78,8 @@ impl BingleApi for MockApi {
     fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_ping_handler_uses_api_get_my_id_for_checking_id() {
     // Arrange
     let (mock_dtls, sends) = MockDtls::new();

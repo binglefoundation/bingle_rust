@@ -6,7 +6,8 @@ pub mod setup_localnet;
 #[path = "../../test_util.rs"]
 pub mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_register_handle_uniqueness() {
     test_util::init_test_logging();
     test_util::assert_localnet_available();
@@ -40,7 +41,8 @@ pub fn test_register_handle_uniqueness() {
     assert!(err_msg.contains("already in use"), "Error message should mention 'already in use', got: {}", err_msg);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_register_handle_race_condition() {
     test_util::init_test_logging();
     test_util::assert_localnet_available();

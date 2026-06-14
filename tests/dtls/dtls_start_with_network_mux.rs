@@ -21,7 +21,8 @@ fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpo
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_start_accepts_external_network_mux_udp() {
     // Generate test certs
     let certs = pki::generate_ed25519_test_certs();

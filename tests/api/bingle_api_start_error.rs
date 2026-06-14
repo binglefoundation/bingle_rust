@@ -4,7 +4,8 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 
 // Ensure that BingleApiImpl::start does not ignore Engine start errors
 // and propagates them to the caller.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn bingle_api_start_propagates_engine_error() {
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     // No static_ip and empty STUN server list will cause Engine::start to error

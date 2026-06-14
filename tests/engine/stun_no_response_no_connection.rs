@@ -124,7 +124,8 @@ fn allocate_silent_stun_addr() -> SocketAddr {
 //
 // We wait up to 15 s to accommodate CI variance.
 // ---------------------------------------------------------------------------
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
     init_test_logging();
 

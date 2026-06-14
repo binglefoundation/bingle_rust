@@ -163,7 +163,8 @@ fn make_engine_with_failing_dtls() -> Engine {
     engine
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_status_is_success_after_successful_send() {
     let engine = make_engine_with_succeeding_dtls();
 
@@ -179,7 +180,8 @@ pub fn send_status_is_success_after_successful_send() {
     assert!(status.is_working, "send_status.success should be true after a successful send");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_status_is_failure_after_failed_send() {
     let engine = make_engine_with_failing_dtls();
 
@@ -195,7 +197,8 @@ pub fn send_status_is_failure_after_failed_send() {
     assert!(!status.is_working, "send_status.success should be false after a failed send");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_status_tracks_multiple_endpoints_independently() {
     let engine = make_engine_with_succeeding_dtls();
 
@@ -217,7 +220,8 @@ pub fn send_status_tracks_multiple_endpoints_independently() {
     assert!(status_map.get(&key2).expect("key2 should be present").is_working);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_status_updates_from_success_to_failure_on_repeated_sends() {
     // Start with a succeeding DTLS, then swap to a failing one via set_dtls.
     let mut engine = make_engine_with_succeeding_dtls();
@@ -244,7 +248,8 @@ pub fn send_status_updates_from_success_to_failure_on_repeated_sends() {
     assert!(!engine.endpoint_status_for_tests().get(&key).expect("entry after second send").is_working);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_returns_err_immediately_when_recent_failure_recorded() {
     // Arrange: build engine with succeeding DTLS and pre-seed the send_status map
     // with a recent failure for the target endpoint.
@@ -262,7 +267,8 @@ pub fn send_to_peer_returns_err_immediately_when_recent_failure_recorded() {
     assert_eq!(result.unwrap_err(), "Sending is failing");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_sends_normally_when_failure_is_older_than_backoff() {
     // Arrange: build engine with succeeding DTLS and pre-seed the send_status map
     // with a failure whose timestamp is older than SEND_FAIL_BACKOFF.
@@ -286,7 +292,8 @@ pub fn send_to_peer_sends_normally_when_failure_is_older_than_backoff() {
     assert!(status.is_working, "send_status.success should be true after the successful send");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_to_peer_sends_normally_when_previous_send_succeeded() {
     // Arrange: a pre-seeded success entry should NOT trigger the backoff guard.
     let engine = make_engine_with_succeeding_dtls();
@@ -304,7 +311,8 @@ pub fn send_to_peer_sends_normally_when_previous_send_succeeded() {
 
 // --- Packet arrival tests ---
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn packet_arrival_sets_endpoint_status_is_working_true() {
     let (engine, handler, router) = build_engine_with_auth();
 
@@ -324,7 +332,8 @@ pub fn packet_arrival_sets_endpoint_status_is_working_true() {
     );
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_packet_means_no_endpoint_status_entry() {
     let (engine, _handler, _router) = build_engine_with_auth();
 
@@ -339,7 +348,8 @@ pub fn no_packet_means_no_endpoint_status_entry() {
     );
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unauthenticated_packet_does_not_set_endpoint_status() {
     // Use a plain MockApiBoth (handle_lookup_by_id returns None) — auth will fail.
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());

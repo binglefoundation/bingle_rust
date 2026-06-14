@@ -76,7 +76,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn get_relay_state(&self) -> String { "off".to_string() }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_finder_picks_available_relay_via_get_relays_status() {
     let a1: SocketAddr = "127.0.0.1:40001".parse().unwrap();
     let a2: SocketAddr = "127.0.0.1:40002".parse().unwrap();

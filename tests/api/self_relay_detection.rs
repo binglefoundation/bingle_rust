@@ -68,7 +68,8 @@ impl Dtls for MockDtls {
 
 /// When a relay endpoint's relay_id matches our own id, send_message_to_network
 /// should bypass the relay Call and convert to a direct endpoint using the relay_address.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn self_relay_converts_to_direct_send() {
     let (mock, sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
@@ -99,7 +100,8 @@ pub fn self_relay_converts_to_direct_send() {
 
 /// When a relay endpoint's relay_id matches our own id but relay_address is missing,
 /// send_message_to_network should return false.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn self_relay_no_relay_address_returns_false() {
     let (mock, sent_vec) = MockDtls::new();
     let mut options = rust_comms::api::bingle_api::StartOptions::new("".into());
@@ -130,7 +132,8 @@ pub fn self_relay_no_relay_address_returns_false() {
 /// When a relay endpoint's relay_id does NOT match our own id, the self-relay
 /// detection should not trigger (the normal relay Call path would be attempted).
 /// Since there is no real relay to call in this test, the call will fail and return false.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn non_self_relay_is_not_converted() {
     let (mock, _sent_vec) = MockDtls::new();
     let mut options = StartOptions::new("".into());
@@ -163,7 +166,8 @@ pub fn non_self_relay_is_not_converted() {
 
 /// When no issuer is set (get_my_id returns None), the self-relay detection
 /// should not trigger even if relay_id is present (the normal relay Call path is attempted).
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn self_relay_no_issuer_does_not_match() {
     let (mock, _sent_vec) = MockDtls::new();
     let mut options = StartOptions::new("".into());

@@ -52,7 +52,8 @@ impl Dtls for MockDtls {
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_send_message_to_network_calls_dtls_send() {
     let (mock, sent_vec) = MockDtls::new();
     let api = BingleApiImpl::new_with_dtls(Box::new(mock));
@@ -80,7 +81,8 @@ pub fn unit_send_message_to_network_calls_dtls_send() {
 }
 
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn start_sets_issuer_and_passes_to_dtls_send() {
     // Mock DTLS that captures the issuer parameter
     #[derive(Clone)]

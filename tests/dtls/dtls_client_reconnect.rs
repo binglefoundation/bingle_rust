@@ -44,7 +44,8 @@ fn client_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Netwo
 }
 
 #[ntest::timeout(60_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_client_reconnect() {
     init_test_logging();
 

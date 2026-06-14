@@ -27,7 +27,8 @@ fn find_unused_loopback_port() -> u16 {
 ///   1. Start finder with no servers listening → reaches Blocked.
 ///   2. Call reset_state() → state goes to None, intervals_without_two reset to 0.
 ///   3. Start real STUN servers → finder must reach Consistent (not re-Blocked first).
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn reset_state_after_blocked_recovers_to_consistent() {
     let p1 = find_unused_loopback_port();
     let p2 = find_unused_loopback_port();

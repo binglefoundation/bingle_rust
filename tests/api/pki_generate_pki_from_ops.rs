@@ -10,7 +10,8 @@ use crate::util::test_util::init_test_logging;
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn generate_pki_from_ops_produces_valid_chain_and_expected_cns() {
     init_test_logging();
     

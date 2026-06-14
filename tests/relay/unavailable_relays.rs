@@ -64,7 +64,8 @@ impl InnerBingleApi for MockApi {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_unavailable_relays_no_retry() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
@@ -92,7 +93,8 @@ pub fn test_unavailable_relays_no_retry() {
     assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Should only have called getRelaysStatus once");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_unavailable_relays_reset_on_entry() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
@@ -119,7 +121,8 @@ pub fn test_unavailable_relays_reset_on_entry() {
     assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_unavailable_relays_reset_on_find_relay() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
@@ -145,7 +148,8 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     assert_eq!(*get_relays_status_calls.lock().unwrap(), 2);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_find_relay_respects_ddb_failure_internal() {
     let id1 = test_util::ADDRESS_SPEND.to_string();
     let addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 41001);
@@ -177,7 +181,8 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     assert_eq!(*check_calls.lock().unwrap(), 0, "Should have skipped Check for the relay that failed DDB query");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     init_test_logging();
 

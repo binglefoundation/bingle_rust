@@ -8,7 +8,8 @@ use crate::relay::relay_states::test_util::init_test_logging;
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn start_succeeds() {
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let opts = StartOptions { 
@@ -31,7 +32,8 @@ pub fn start_succeeds() {
     // DTLS instance is now created only on Engine
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_message_to_network_without_addr_fails_gracefully() {
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let nsk = NetworkEndpoint::new_relay(ADDRESS_SPEND.parse().unwrap(), Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)), Some(2));
@@ -41,7 +43,8 @@ pub fn send_message_to_network_without_addr_fails_gracefully() {
 }
 
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_check_end_to_end_on_message_receives_response() {
     use std::net::SocketAddr;
     use std::sync::{OnceLock, Arc};

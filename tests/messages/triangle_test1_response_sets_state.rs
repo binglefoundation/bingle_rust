@@ -28,7 +28,8 @@ impl InnerBingleApiInternal for MockInternal {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn triangle_test1_response_sets_nat_restricted_when_not_available() {
     // Arrange: install a mock internal API and per-test Router
     let mock_internal = Arc::new(MockInternal::new());
@@ -57,7 +58,8 @@ pub fn triangle_test1_response_sets_nat_restricted_when_not_available() {
     assert_eq!(st, EngineState::NATRestricted, "state did not become NATRestricted within 20s");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn triangle_test1_response_does_not_override_endpoint_available() {
     // Arrange: install a mock internal API and set EndpointAvailable via TriangleTest3
     let mock_internal = Arc::new(MockInternal::new());

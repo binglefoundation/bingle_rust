@@ -8,7 +8,8 @@ use common::TestNetwork;
 use crate::util::test_util::init_test_logging;
 
 #[ntest::timeout(30000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn modified_lamport_dynamic_add_node_after_start() {
     init_test_logging();
     

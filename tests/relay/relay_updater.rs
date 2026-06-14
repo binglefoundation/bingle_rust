@@ -84,7 +84,8 @@ fn updater_with_api(
     )
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
     let updater = RelayUpdater::new(
         "MYID.".to_string(),
@@ -131,7 +132,8 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
     assert_eq!(second_other.ttl, Some(30));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_updater_init_from_blockchain_sets_unknown_when_own_not_found() {
     let updater = RelayUpdater::new(
         "MISSING.".to_string(),
@@ -155,13 +157,15 @@ pub fn relay_updater_init_from_blockchain_sets_unknown_when_own_not_found() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_returns_none_when_no_root_relays() {
     let updater = RelayUpdater::new("MYID.".to_string(), Arc::new(Vec::new));
     assert!(updater.relay_select_and_query(&[]).is_none());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_single_root_updates_cache_and_returns_root() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let response = relays_status_response_json(
@@ -224,7 +228,8 @@ pub fn relay_select_and_query_single_root_updates_cache_and_returns_root() {
     assert_eq!(root2.ttl, Some(30));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_falls_back_to_alternate_when_preferred_fails() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
 
@@ -285,7 +290,8 @@ pub fn relay_select_and_query_falls_back_to_alternate_when_preferred_fails() {
     assert_eq!(second.ttl, Some(300));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_returns_none_after_all_candidates_fail() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
 
@@ -333,7 +339,8 @@ pub fn relay_select_and_query_returns_none_after_all_candidates_fail() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn update_when_expired_is_noop_when_nothing_expired() {
     // All entries have a long TTL (30_000 s) so nothing is expired immediately after construction.
     let discover_call_count = Arc::new(Mutex::new(0u32));
@@ -356,7 +363,8 @@ pub fn update_when_expired_is_noop_when_nothing_expired() {
     assert_eq!(calls, 0, "discover_roots should not be called when no entries are expired");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn update_when_expired_calls_init_from_blockchain_when_root_expired() {
     let discover_call_count = Arc::new(Mutex::new(0u32));
     let counter_clone = discover_call_count.clone();
@@ -383,7 +391,8 @@ pub fn update_when_expired_calls_init_from_blockchain_when_root_expired() {
     assert!(calls > 0, "discover_roots should be called when a root entry is expired");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn update_when_expired_calls_relay_select_when_only_non_root_expired() {
     let queried_ids = Arc::new(Mutex::new(Vec::<String>::new()));
     let queried_clone = queried_ids.clone();
@@ -470,7 +479,8 @@ impl InnerBingleApi for ReportTrackingApi {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_sent_when_preferred_relay_errors() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
@@ -530,7 +540,8 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
     assert_eq!(reported_to, selected.id, "should have reported to the selected relay");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
@@ -599,7 +610,8 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
     assert_eq!(reported_to, selected.id, "should have reported to the selected relay");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let reported_failed_ids = Arc::new(Mutex::new(Vec::new()));
@@ -648,7 +660,8 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
     assert!(reported_to.is_none(), "no report should be sent when preferred succeeds");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_excludes_id_from_candidates() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let response = relays_status_response_json(
@@ -687,7 +700,8 @@ pub fn relay_select_and_query_excludes_id_from_candidates() {
     assert!(!ids.contains(&"ROOTA".to_string()), "excluded relay should never be queried");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_returns_none_when_all_candidates_excluded() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
 
@@ -715,7 +729,8 @@ pub fn relay_select_and_query_returns_none_when_all_candidates_excluded() {
     );
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_considers_non_root_relays() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let response = relays_status_response_json(
@@ -751,7 +766,8 @@ pub fn relay_select_and_query_considers_non_root_relays() {
     assert_eq!(ids, vec!["NONROOT1".to_string()], "non-root relay should have been queried");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_select_and_query_excludes_my_id_always() {
     let queried_ids = Arc::new(Mutex::new(Vec::new()));
     let response = relays_status_response_json(

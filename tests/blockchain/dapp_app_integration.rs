@@ -6,7 +6,8 @@ pub mod setup_localnet;
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn deploy_call_validate_and_delete_teal_app() {
     test_util::assert_localnet_available();
     let cfg = test_util::localnet_config();

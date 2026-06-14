@@ -16,7 +16,8 @@ fn find_unused_loopback_port() -> u16 {
 /// loop re-polls all servers and can reach Consistent again. This is the regression test for the
 /// bug where reset_state() did not clear server.responded flags, causing the polling loop to
 /// skip all servers and never send new binding requests.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn reset_state_resumes_stun_polling() {
     let p1 = find_unused_loopback_port();
     let p2 = find_unused_loopback_port();

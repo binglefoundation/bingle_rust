@@ -8,7 +8,8 @@ use std::sync::Arc;
 pub mod test_util;
 
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn bingle_api_relay_check_two_nodes() {
 
 

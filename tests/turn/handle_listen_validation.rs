@@ -3,7 +3,8 @@ use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl, TurnRelayHand
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_incoming_rejected_without_listen_and_call() {
     let handler = TurnHandlerImpl::new();
     let src = addr(7001);
@@ -21,7 +22,8 @@ pub fn unit_turn_incoming_rejected_without_listen_and_call() {
     assert!(incoming.is_none(), "expected rejection before listen registration");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_turn_incoming_accepted_after_listen() {
     let handler = TurnHandlerImpl::new();
     let src = addr(7101);

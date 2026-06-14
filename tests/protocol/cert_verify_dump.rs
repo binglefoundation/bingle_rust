@@ -2,7 +2,8 @@
 
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn peer_certificate_handler_generates_dump_and_verifies() {
     use openssl::asn1::Asn1Time;
     use openssl::bn::BigNum;

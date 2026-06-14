@@ -1,7 +1,8 @@
 use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use crate::engine::ddb_upsert::test_util::init_test_logging;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_node_unreachable() {
     init_test_logging();
 

@@ -28,7 +28,8 @@ fn clear() {
     if let Some(m) = TURN_REC.get() { m.lock().unwrap().clear(); }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn reprocess_dispatches_and_enqueues_dtls() {
     clear();
     // Create a mux and install handlers

@@ -49,21 +49,24 @@ fn make_opts_with_static_ip(addr: &str) -> StartOptions {
     opts
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn no_static_ip_returns_no_static_ip() {
     let opts = StartOptions::new("".into());
     let action = resolve_shutdown_action(&opts, None);
     assert_eq!(action, ShutdownAction::NoStaticIp);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn static_ip_without_app_id_or_env_returns_no_app_id() {
     let opts = make_opts_with_static_ip("1.2.3.4:5000");
     let action = resolve_shutdown_action(&opts, None);
     assert_eq!(action, ShutdownAction::NoAppId);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn static_ip_with_app_id_but_no_passphrase_returns_no_passphrase() {
     let mut opts = make_opts_with_static_ip("1.2.3.4:5000");
     opts.app_id = Some(12345);
@@ -71,14 +74,16 @@ pub fn static_ip_with_app_id_but_no_passphrase_returns_no_passphrase() {
     assert_eq!(action, ShutdownAction::NoPassphrase);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn static_ip_with_env_app_id_but_no_passphrase_returns_no_passphrase() {
     let opts = make_opts_with_static_ip("1.2.3.4:5000");
     let action = resolve_shutdown_action(&opts, Some(99999));
     assert_eq!(action, ShutdownAction::NoPassphrase);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn static_ip_with_app_id_and_passphrase_returns_unregister() {
     let mut opts = make_opts_with_static_ip("44.223.62.108:12121");
     opts.app_id = Some(757297220);
@@ -92,7 +97,8 @@ pub fn static_ip_with_app_id_and_passphrase_returns_unregister() {
     });
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn env_app_id_used_when_opts_app_id_is_none() {
     let mut opts = make_opts_with_static_ip("10.0.0.1:8080");
     opts.algo_passphrase = Some("my secret".to_string());
@@ -106,7 +112,8 @@ pub fn env_app_id_used_when_opts_app_id_is_none() {
     });
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn opts_app_id_takes_precedence_over_env() {
     let mut opts = make_opts_with_static_ip("10.0.0.1:8080");
     opts.app_id = Some(100);
@@ -120,7 +127,8 @@ pub fn opts_app_id_takes_precedence_over_env() {
     });
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unregister_includes_provider_config_and_asset_id() {
     let mut opts = make_opts_with_static_ip("10.0.0.1:8080");
     opts.app_id = Some(100);

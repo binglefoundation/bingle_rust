@@ -37,7 +37,8 @@ impl InnerBingleApi for GetRelaysMockApi {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn list_all_relays_queries_root_even_if_only_one() {
     let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let api_inner = Arc::new(GetRelaysMockApi { call_count: call_count.clone() });

@@ -16,7 +16,8 @@ impl InnerBingleApi for MockApi {
 
 fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn lookup_known_root_returns_endpoint() {
     let a1 = addr(45001);
     let a2 = addr(45002);
@@ -42,7 +43,8 @@ pub fn lookup_known_root_returns_endpoint() {
     assert_eq!(direct.unwrap(), a1);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn lookup_unknown_root_returns_none() {
     let a1 = addr(45011);
     let id1 = test_util::ADDRESS_SPEND.to_string();

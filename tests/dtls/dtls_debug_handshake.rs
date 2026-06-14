@@ -2,7 +2,8 @@
 
 use serde_json::Value;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_debug_parses_handshake_type_and_extensions() {
     use rust_comms::dtls::dtls_debug::{dtls_udp_to_json_with_level, json_to_dtls_udp};
 

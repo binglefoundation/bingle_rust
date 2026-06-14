@@ -2,7 +2,8 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn getters_default_none() {
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     // Before start(), no issuer is set so id is None
@@ -11,7 +12,8 @@ pub fn getters_default_none() {
     assert!(api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.get_handle()).is_none());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn getters_after_start() {
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     // Start with handle only (no passphrase) so id remains None; handle should be available

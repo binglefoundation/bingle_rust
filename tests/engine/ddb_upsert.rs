@@ -67,7 +67,8 @@ fn start_pair(server_am_relay: bool) -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>,
     (server, client, server_addr, client_addr)
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_upsert_success_when_server_is_relay() {
     let (server, client, server_addr, _client_addr) = start_pair(true);
 
@@ -117,7 +118,8 @@ pub fn ddb_upsert_success_when_server_is_relay() {
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_upsert_ignored_when_not_relay() {
     let (server, client, server_addr, _client_addr) = start_pair(false);
 
@@ -146,7 +148,8 @@ pub fn ddb_upsert_ignored_when_not_relay() {
     drop(client);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_upsert_rejected_on_id_mismatch() {
     let (server, client, server_addr, _client_addr) = start_pair(true);
 

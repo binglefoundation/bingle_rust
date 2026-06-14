@@ -73,7 +73,8 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
     fn get_relay_state(&self) -> String { "off".to_string() }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_upserts_root_relays_into_backend() {
     // Engine with am_relay true
     let opts = StartOptions { handle: "eng".into(), algo_passphrase: None, static_ip: Some("127.0.0.1:0".parse().unwrap()), am_relay: true, stun_servers: None, algo_provider_config: None, algo_network: None, app_id: None, asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None };

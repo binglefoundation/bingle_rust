@@ -1,7 +1,8 @@
 use rust_comms::messages::marshal::{from_json_str, to_json_value};
 use rust_comms::messages::types::{Message, MutexMessage, MutexResponse, MutexRelease};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_mutex_request_from_json() {
     let json = r#"{"app":"mutex","type":"request","lamport_timestamp":42}"#;
     let msg = from_json_str(json).expect("decode");
@@ -14,7 +15,8 @@ pub fn unit_mutex_request_from_json() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_mutex_response_to_json() {
     let mut known_ids = std::collections::HashSet::new();
     known_ids.insert("ID1".to_string());
@@ -48,7 +50,8 @@ pub fn unit_mutex_response_to_json() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_mutex_release_roundtrip() {
     let rel = MutexRelease { app: "mutex".into(), tag: None, known_ids: None };
     let msg = Message::Mutex(MutexMessage::Release(rel));

@@ -6,7 +6,8 @@ fn default_cfg() -> AlgoChainConfig {
     AlgoChainConfig::default()
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn derives_address_from_mnemonic_when_constructed() {
     // Known test mnemonic/address pair from tests/test_util.rs
     let mnemonic = "theme term glow reflect essence artefact tired bicycle february demand vacuum tent faculty arch elevator rent already anchor rough cry sketch nurse mom able inquiry";
@@ -19,7 +20,8 @@ pub fn derives_address_from_mnemonic_when_constructed() {
     assert_eq!(addr, expected_address);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn derives_address_from_legacy_b64_seed_when_constructed() {
     // Fixed 32-byte seed so the expected address is deterministic
     let seed: [u8; 32] = [

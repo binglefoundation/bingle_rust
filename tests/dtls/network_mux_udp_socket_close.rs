@@ -5,7 +5,8 @@ use rust_comms::dtls::UdpNetworkMux;
 
 /// After stop(), the socket should be closed (taken out of the Mutex).
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn socket_is_closed_after_stop() {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
     assert!(!mux.is_closed(), "socket should be open before start");
@@ -19,7 +20,8 @@ pub fn socket_is_closed_after_stop() {
 
 /// After stop(), the port should be freed and re-bindable.
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn port_is_freed_after_stop() {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
     let addr = mux.local_addr().expect("local_addr should succeed");
@@ -34,7 +36,8 @@ pub fn port_is_freed_after_stop() {
 
 /// After the socket is closed, write() should return an error.
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn write_fails_after_socket_closed() {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
     mux.start().expect("start mux");
@@ -52,7 +55,8 @@ pub fn write_fails_after_socket_closed() {
 
 /// local_addr() should return an error after the socket is closed.
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn local_addr_fails_after_socket_closed() {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
     let _ = mux.local_addr().expect("local_addr should succeed before start");
@@ -65,7 +69,8 @@ pub fn local_addr_fails_after_socket_closed() {
 }
 
 /// is_closed() should return false for a freshly bound mux that was never started.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn is_closed_false_before_start() {
     let mux = UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
     assert!(!mux.is_closed(), "freshly bound mux should not be closed");

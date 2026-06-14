@@ -4,7 +4,8 @@ use rust_comms::messages::types::{
     ReportFailedRipple, ReportFailedRippleResponse,
 };
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_report_failed_roundtrip() {
     let msg = Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
         app: "reportFail".into(),
@@ -26,7 +27,8 @@ pub fn relay_report_failed_roundtrip() {
     assert_eq!(v.get("timestamp").and_then(|x| x.as_str()), Some("2026-01-01T00:00:00Z"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_roundtrip() {
     let votes = vec![
         FailVote { confirming_id: "NODE_A".into(), signature: "SIG_A".into() },
@@ -54,7 +56,8 @@ pub fn report_failed_ripple_roundtrip() {
     assert_eq!(disputes.len(), 0);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_response_roundtrip() {
     let msg = Message::ReportFail(ReportFailMessage::ReportFailedRippleResponse(
         ReportFailedRippleResponse {
@@ -83,7 +86,8 @@ pub fn report_failed_ripple_response_roundtrip() {
     assert_eq!(v.get("app").and_then(|x| x.as_str()), Some("reportFail"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn report_failed_complete_roundtrip() {
     let msg = Message::ReportFail(ReportFailMessage::ReportFailedComplete(ReportFailedComplete {
         app: "reportFail".into(),
@@ -105,7 +109,8 @@ pub fn report_failed_complete_roundtrip() {
     assert_eq!(v.get("failed_relay_id").and_then(|x| x.as_str()), Some("RELAY999"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn fail_vote_fields_serialize_correctly() {
     let vote = FailVote {
         confirming_id: "NODE_X".into(),

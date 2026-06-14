@@ -24,7 +24,8 @@ pub mod test_util;
 // (static endpoints) and two client instances, then validate that the clients reach
 // Registered with the expected public address.
 // Note this has morphed as we register with the relays now after EndpointAvailable
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn bingle_api_register_via_forced_stun() {
     init_test_logging();

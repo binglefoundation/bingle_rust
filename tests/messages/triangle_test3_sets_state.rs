@@ -49,7 +49,8 @@ impl Dtls for MockDtls {
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn triangle_test3_sets_engine_state_via_internal_api() {
     // Build API with injected DTLS so Engine exists and router is configured during start
     let mock = MockDtls::new();

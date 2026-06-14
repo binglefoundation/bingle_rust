@@ -2,7 +2,8 @@
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use serde_json::json;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_extract_handle_match_found() {
     let app_id = 123;
     let handle = "alice";
@@ -27,7 +28,8 @@ pub fn test_extract_handle_match_found() {
     assert_eq!(matches[0].1, 1000);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_extract_handle_match_wrong_handle() {
     let app_id = 123;
     let handle = "bob";
@@ -50,7 +52,8 @@ pub fn test_extract_handle_match_wrong_handle() {
     assert!(matches.is_empty());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_pick_oldest_match() {
     let matches = vec![
         ("ADDR2".to_string(), 2000),
@@ -62,7 +65,8 @@ pub fn test_pick_oldest_match() {
     assert_eq!(result, Some("ADDR1".to_string()));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_extract_handle_match_multiple_apps() {
     let app_id = 123;
     let handle = "alice";
@@ -92,27 +96,32 @@ pub fn test_extract_handle_match_multiple_apps() {
     assert_eq!(matches[0].0, "ADDR1");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_normalize_handle_lowercase() {
     assert_eq!(AlgoBingle::normalize_handle("Fred123"), "fred123");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_normalize_handle_dots() {
     assert_eq!(AlgoBingle::normalize_handle("James.Jones"), "jamesjones");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_normalize_handle_dashes() {
     assert_eq!(AlgoBingle::normalize_handle("james-jones"), "jamesjones");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_normalize_handle_special_chars() {
     assert_eq!(AlgoBingle::normalize_handle("#user$100"), "user100");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_extract_handle_match_case_insensitive() {
     // Stored as "Alice" (registered form), looked up as "alice" (normalised)
     let app_id = 123;
@@ -133,7 +142,8 @@ pub fn test_extract_handle_match_case_insensitive() {
     assert_eq!(matches[0].0, "ADDR1");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_extract_handle_match_with_dots_in_stored() {
     // Stored as "james.jones", looked up as "jamesjones"
     let app_id = 123;
@@ -155,7 +165,8 @@ pub fn test_extract_handle_match_with_dots_in_stored() {
     assert_eq!(matches[0].0, "ADDR1");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_pick_oldest_match_collision() {
     // Two accounts register the same handle in the same block (same timestamp)
     let matches = vec![

@@ -4,14 +4,16 @@ use std::thread;
 
 use rust_comms::distributed_mutex::{DistributedMutex, LocalDistributedMutex};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_acquire_returns_value() {
     let m = LocalDistributedMutex::new();
     let res = m.acquire(|| 2 + 3);
     assert_eq!(res, 5);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_exclusive_execution_across_threads() {
     let m = Arc::new(LocalDistributedMutex::new());
     let inside = Arc::new(AtomicUsize::new(0));

@@ -3,7 +3,8 @@ use serde_json::Value;
 
 fn as_json_value(msg: &Message) -> Value { to_json_value(msg) }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_serialize_relay_call_and_roundtrip() {
     let msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: "abc".to_string(), tag: None }));
     let val = as_json_value(&msg);
@@ -25,7 +26,8 @@ pub fn unit_serialize_relay_call_and_roundtrip() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_serialize_relay_listen() {
     let msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
     let val = as_json_value(&msg);
@@ -34,7 +36,8 @@ pub fn unit_serialize_relay_listen() {
     assert!(obj.get("app").expect("app").is_null());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_serialize_relay_listen_response() {
     let msg = Message::Relay(RelayMessage::ListenResponse(RelayListenResponse { app: None, response_tag: None }));
     let val = as_json_value(&msg);
@@ -43,7 +46,8 @@ pub fn unit_serialize_relay_listen_response() {
     assert!(obj.get("app").expect("app").is_null());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn unit_serialize_relay_call_response_and_roundtrip() {
     let msg = Message::Relay(RelayMessage::CallResponse(RelayCallResponse { app: None, called_id: "callee".to_string(), channel: 42, response_tag: None }));
     let val = as_json_value(&msg);

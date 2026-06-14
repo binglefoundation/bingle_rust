@@ -63,7 +63,8 @@ fn router_with_api(api: Arc<TrackingApi>) -> Arc<Router> {
 }
 
 // Test: we are not a relay - message is silently ignored, mark_relay_as_failed not called
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_ignored_when_not_relay() {
     struct PanicOnDelete;
     impl InnerBingleApiInternal for PanicOnDelete {
@@ -91,7 +92,8 @@ pub fn report_failed_ripple_ignored_when_not_relay() {
 }
 
 // Test: sender is not a known relay - message is silently ignored, mark_relay_as_failed not called
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_ignored_when_sender_not_relay() {
     let ddb_deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let relay_cache_removed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -118,7 +120,8 @@ pub fn report_failed_ripple_ignored_when_sender_not_relay() {
 }
 
 // Test: valid ripple from a known relay -> mark_relay_as_failed called for failed_relay_id
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn report_failed_ripple_marks_failed_when_sender_is_relay() {
     let ddb_deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let relay_cache_removed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));

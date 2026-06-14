@@ -6,7 +6,8 @@ fn set_eq(a: &HashSet<usize>, b: &HashSet<usize>) -> bool {
     a.len() == b.len() && a.iter().all(|x| b.contains(x))
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn depth_small_examples() {
     // For small N and b, just verify non-decreasing and reasonable values
     let cases = vec![
@@ -24,7 +25,8 @@ pub fn depth_small_examples() {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn fill_edge_case_n1() {
     let mut g = NetDetGraph::new(1, 3);
     g.fill();
@@ -34,7 +36,8 @@ pub fn fill_edge_case_n1() {
     assert!(g.variance_edges() >= 0.0);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn fill_and_flood_small_graph() {
     let mut g = NetDetGraph::new(10, 3);
     g.fill();

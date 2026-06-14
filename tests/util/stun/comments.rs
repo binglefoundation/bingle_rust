@@ -16,7 +16,8 @@ fn write_temp_file(content: &str) -> PathBuf {
     p
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn parse_stun_file_ignores_hash_comments_and_blank_lines() {
     // Using TEST-NET IP ranges to avoid DNS: direct SocketAddr parse only
     let file = write_temp_file(

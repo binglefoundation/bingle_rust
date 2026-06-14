@@ -8,7 +8,8 @@ fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_info_cache_add_update_delete() {
     let cache = RelayInfoCache::new(vec![RelayInfo::root_with(
         "RID1",
@@ -59,7 +60,8 @@ pub fn relay_info_cache_add_update_delete() {
     assert_eq!(remaining[0].ttl, Some(15));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_info_cache_trait_behaviour() {
     let relay_2_addr = addr(51002);
     let cache = RelayInfoCache::new(vec![
@@ -98,7 +100,8 @@ pub fn relay_info_cache_trait_behaviour() {
     assert_eq!(cleared[1].ttl, Some(35));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_info_last_updated_set_on_construction() {
     let before = Instant::now();
     let relay = RelayInfo::root("RID1", addr(52001));
@@ -107,7 +110,8 @@ pub fn relay_info_last_updated_set_on_construction() {
     assert!(relay.last_updated <= after, "last_updated should be <= after construction");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_info_last_updated_set_on_root_with_construction() {
     let before = Instant::now();
     let relay = RelayInfo::root_with("RID1", addr(52002), Some(RelayState::Available), Some(30));
@@ -116,7 +120,8 @@ pub fn relay_info_last_updated_set_on_root_with_construction() {
     assert!(relay.last_updated <= after);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_info_last_updated_set_on_non_root_construction() {
     let before = Instant::now();
     let relay = RelayInfo::non_root("RID1", addr(52003));
@@ -125,7 +130,8 @@ pub fn relay_info_last_updated_set_on_non_root_construction() {
     assert!(relay.last_updated <= after);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_info_cache_update_relay_refreshes_last_updated() {
     let cache = RelayInfoCache::new(vec![RelayInfo::root_with(
         "RID1",

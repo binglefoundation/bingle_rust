@@ -5,7 +5,8 @@ use std::sync::Arc;
 use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions, BingleApiInternal};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn on_listening_handler_creates_and_deletes_sentinel() {
     // Create a temporary directory for the sentinel file
     let dir = tempfile::tempdir().expect("tempdir");

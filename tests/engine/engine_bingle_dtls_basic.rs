@@ -13,7 +13,8 @@ pub mod test_util;
 
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_basic_bingle_dtls_layer() {
     // Allocate two free loopback ports for server and client static endpoints.
     let server_port = test_util::find_unused_loopback_port();

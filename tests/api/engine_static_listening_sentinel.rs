@@ -47,7 +47,8 @@ impl Dtls for MockDtls {
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_static_ip_triggers_on_listening_handler() {
     // Prepare a temp sentinel path
     let dir = tempfile::tempdir().expect("tempdir");

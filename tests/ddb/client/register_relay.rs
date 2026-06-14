@@ -71,7 +71,8 @@ fn start_pair() -> (Arc<BingleApiImpl>, Arc<BingleApiImpl>, SocketAddr, SocketAd
     (relay, client, relay_addr, client_addr)
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ddb_client_register_relay_ok_and_persisted() {
     init_test_logging();
     

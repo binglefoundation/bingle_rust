@@ -28,7 +28,8 @@ fn client_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
 
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_end_to_end_loopback_echo() {
     reset_test_state();
     use std::time::Instant;

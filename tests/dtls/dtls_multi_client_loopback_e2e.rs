@@ -26,7 +26,8 @@ fn client2_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netw
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_multi_client_loopback_echo() {
     use std::time::Instant;
 

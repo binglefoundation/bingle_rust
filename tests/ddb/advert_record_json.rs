@@ -1,7 +1,8 @@
 use rust_comms::ddb::AdvertRecord;
 use rust_comms::ddb::InetSocketAddress;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn advert_record_serde_roundtrip() {
     let rec = AdvertRecord {
         id: "SOMEALGOWALLETADDR".to_string(),

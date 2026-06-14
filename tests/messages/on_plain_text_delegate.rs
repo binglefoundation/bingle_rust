@@ -21,7 +21,8 @@ impl MessageHandler for CapturingHandler {
     }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn on_plain_text_calls_handler_implementation() {
     static CALLED: AtomicBool = AtomicBool::new(false);
     let received = Arc::new(Mutex::new(None::<serde_json::Value>));

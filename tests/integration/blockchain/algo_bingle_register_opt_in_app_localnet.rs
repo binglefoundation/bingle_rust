@@ -8,7 +8,8 @@ use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SP
 
 // This test validates that register ensures the caller is opted-in to the app local state.
 // It uses localnet and will be skipped when localnet is unavailable.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn register_ensures_sender_opted_in_to_app() {
     test_util::assert_localnet_available();

@@ -3,7 +3,8 @@ use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::engine::Engine;
 use crate::util::reusable_mock_api::MockApiBoth;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn engine_set_last_public_addr_updates_both_fields() {
     let api = MockApiBoth::new();
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(api);

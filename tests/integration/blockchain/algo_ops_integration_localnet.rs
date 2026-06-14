@@ -19,7 +19,8 @@ fn fund_test_accounts_or_panic() {
 //   with token aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.
 // The tests will fail if localnet is not available.
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn account_balance_for_address10mil_returns_some() {
     test_util::assert_localnet_available();
     fund_test_accounts_or_panic();
@@ -30,7 +31,8 @@ pub fn account_balance_for_address10mil_returns_some() {
     assert!(bal.unwrap() >= 0.0);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn global_state_for_address10mil_returns_some_vec() {
     test_util::assert_localnet_available();
     fund_test_accounts_or_panic();
@@ -44,7 +46,8 @@ pub fn global_state_for_address10mil_returns_some_vec() {
 // This intentionally performs no heavy integration work here; it only ensures the
 // test target exists and can be executed.
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn algo_ops_integration_localnet_placeholder() {
     test_util::assert_localnet_available();
     // Keep placeholder light to avoid duplicating other tests.

@@ -14,7 +14,8 @@ fn write_temp_nodefile(content: &str, suffix: &str) -> PathBuf {
     p
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn parses_node_file_with_null_token_fields() {
     let file = write_temp_nodefile(r#"{
         "client_api_url": "https://api.example",
@@ -39,7 +40,8 @@ pub fn parses_node_file_with_null_token_fields() {
     assert_eq!(cfg.token_key, None);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn parses_node_file_with_missing_token_fields() {
     // token and token_key completely omitted
     let file = write_temp_nodefile(r#"{

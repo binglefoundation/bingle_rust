@@ -16,7 +16,8 @@ fn build_channel_data(channel: u16, data: &[u8]) -> Vec<u8> {
 }
 
 // 1) handle_listen should fail on the client (unexpected relay command listen on client)
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_handle_listen_fails_with_error() {
     let client = TurnClientHandlerImpl::new();
     let src = addr(8001);
@@ -25,7 +26,8 @@ pub fn client_handle_listen_fails_with_error() {
 }
 
 // 2) handle_turn_incoming from the listener relay on an open channel should return a WrappedMessageWithNetworkEndpoint
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_incoming_from_listener_relay_on_open_channel() {
     let client = TurnClientHandlerImpl::new();
     let source = addr(8010);
@@ -57,7 +59,8 @@ pub fn client_incoming_from_listener_relay_on_open_channel() {
 }
 
 // 3) handle_turn_incoming with a message from a called relay returns the WrappedMessageWithNetworkEndpoint
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_incoming_from_called_relay_returns_wrapped() {
     let client = TurnClientHandlerImpl::new();
     let source = addr(8020);
@@ -92,7 +95,8 @@ pub fn client_incoming_from_called_relay_returns_wrapped() {
 }
 
 // 4) send_turn_outgoing wraps the message with the appropriate channel and fails if no channel
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_send_outgoing_wraps_and_fails_without_channel() {
     let client = TurnClientHandlerImpl::new();
     let source = addr(8030);
@@ -120,7 +124,8 @@ pub fn client_send_outgoing_wraps_and_fails_without_channel() {
 }
 
 // 5) handle_listen_response registers the allowed relay id and address mapping (but not the channel map)
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_listen_response_registers_allowed_but_not_channel() {
     let client = TurnClientHandlerImpl::new();
     let relay = addr(48040);
@@ -145,7 +150,8 @@ pub fn client_listen_response_registers_allowed_but_not_channel() {
 }
 
 // 6) handle_call_response registers the allowed relay id/address mapping and also the channel mapping
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_call_response_registers_allowed_and_channel() {
     let client = TurnClientHandlerImpl::new();
     let source = addr(8050);
@@ -169,7 +175,8 @@ pub fn client_call_response_registers_allowed_and_channel() {
 
 // 7) handle_called validates that we have an open listen to the relay and registers the channel mapping
 // Positive path: when listen to relay is open, handle_called registers mapping
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn client_called_after_listen_response_registers_channel() {
     let client = TurnClientHandlerImpl::new();
     let source = addr(8060);

@@ -7,7 +7,8 @@ use rust_comms::api::bingle_api::{NetworkEndpoint};
 
 use crate::util::reusable_mock_api::MockApiBoth;
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_on_ping_response_no_tag_calls_on_message() {
     let received_json = Arc::new(Mutex::new(None));
     let received_json_clone = received_json.clone();
@@ -52,7 +53,8 @@ pub fn test_on_ping_response_no_tag_calls_on_message() {
     assert_eq!(json["text"], "hello");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_on_ping_response_with_tag_does_not_call_on_message() {
     let received_json = Arc::new(Mutex::new(None));
     let received_json_clone = received_json.clone();

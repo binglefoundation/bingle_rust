@@ -77,7 +77,8 @@ fn client_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::Netwo
 }
 
 #[ntest::timeout(30_000)]
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     reset_test_state();
     // Generate test certificates

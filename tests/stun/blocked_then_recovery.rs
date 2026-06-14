@@ -25,10 +25,11 @@ fn find_unused_loopback_port() -> u16 {
 /// Blocked, then verify STUN Binding Requests are sent every ~2s while blocked,
 /// then start two real STUN servers on those addresses and verify the
 /// finder recovers to Consistent.
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn blocked_then_recovery_to_consistent() {
     init_test_logging();
-    
+
     // Reserve two ports — nothing is bound yet so STUN requests will be silently dropped.
     let p1 = find_unused_loopback_port();
     let p2 = find_unused_loopback_port();

@@ -47,7 +47,8 @@ impl DdbClient for DdbMock {
 
 // ---------------- Tests ----------------
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn call_with_address_present_returns_endpoint_with_channel() {
     let relay_id = "RELAYID123".to_string();
     let relay_addr = addr(9100);
@@ -68,7 +69,8 @@ pub fn call_with_address_present_returns_endpoint_with_channel() {
     // Note: In unit test, we can check engine's tracked connections if needed
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn call_resolves_relay_address_via_ddb_when_missing() {
     let relay_id = "RELAYID123".to_string();
     let relay_addr = addr(9200);

@@ -11,7 +11,8 @@ fn reject_handler(_cert_pem: &[u8], _ca_pem: &[u8]) -> DtlsResult<String> {
     Err("rejected".to_string())
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     // Generate test certificates
     let certs = pki::generate_ed25519_test_certs();
@@ -63,7 +64,8 @@ pub fn dtls_openssl_server_rejects_client_when_peer_cert_handler_fails() {
     assert!(!any_ok, "handshake unexpectedly succeeded when server rejected peer certificate");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_client_rejects_server_when_peer_cert_handler_fails() {
     // Generate test certificates
     let certs = pki::generate_ed25519_test_certs();

@@ -208,7 +208,8 @@ impl Dtls for MockDtls {
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn new_installs_dtls_handler_that_uses_transport_handler() {
     let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
 
@@ -240,7 +241,8 @@ pub fn new_installs_dtls_handler_that_uses_transport_handler() {
     assert_eq!(locked_calls[0].1, b"hello".to_vec());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn with_handle_message_and_dispatch_handle_message_are_transport_instance_scoped() {
     let captured: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let captured_clone = captured.clone();
@@ -269,7 +271,8 @@ pub fn with_handle_message_and_dispatch_handle_message_are_transport_instance_sc
     assert_eq!(captured_packets.as_slice(), &[b"payload".to_vec()]);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn mtu_is_set_in_constructor_and_can_be_updated() {
     let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
     assert_eq!(transport.mtu(), 1492);
@@ -278,7 +281,8 @@ pub fn mtu_is_set_in_constructor_and_can_be_updated() {
     assert_eq!(transport.mtu(), 1200);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_wraps_payload_as_data_single_and_increments_tx_id() {
     let (transport, sent_packets) = new_transport_with_sent_packets(1492);
     let to_addr: SocketAddr = "127.0.0.1:7001".parse().expect("valid socket address");
@@ -302,7 +306,8 @@ pub fn send_wraps_payload_as_data_single_and_increments_tx_id() {
     assert_eq!(packets[1].1, vec![0x11, 0x00, 0x00, 0x01, b'w', b'o', b'r', b'l', b'd']);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_rejects_payload_that_requires_fragmentation() {
     let (transport, _sent_packets) = new_transport_with_sent_packets(8);
     let to_addr: SocketAddr = "127.0.0.1:7002".parse().expect("valid socket address");
@@ -314,7 +319,8 @@ pub fn send_rejects_payload_that_requires_fragmentation() {
     assert!(err.contains("exceeds DATA_SINGLE capacity"));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_waits_for_ack_complete_before_returning() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_retry_delays(vec![Duration::from_millis(300), Duration::from_millis(600), Duration::from_millis(1200)]);
@@ -357,7 +363,8 @@ pub fn send_waits_for_ack_complete_before_returning() {
     assert_eq!(packets[0].1, vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_succeeds_when_ack_arrives_after_first_retry() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_retry_delays(vec![
@@ -410,7 +417,8 @@ pub fn send_succeeds_when_ack_arrives_after_first_retry() {
     assert!(packets.iter().all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_retry_delays(vec![
@@ -449,7 +457,8 @@ pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
     assert!(packets.iter().all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets(1492);
 
@@ -492,7 +501,8 @@ pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
     assert_eq!(sent[1].1, vec![0x14, 0x00, 0x12, 0x34]);
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn ack_complete_is_consumed_and_not_forwarded_to_handler() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets(1492);
 

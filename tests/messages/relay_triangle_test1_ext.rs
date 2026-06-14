@@ -2,7 +2,8 @@ use std::net::SocketAddr;
 use rust_comms::messages::types::{RelayTriangleTest1, Message, RelayMessage};
 use rust_comms::messages::marshal::{from_json_str, to_json_string};
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_relay_triangle_test1_json_with_exclusions() {
     let json = r#"{
         "app": null,
@@ -48,7 +49,8 @@ pub fn test_relay_triangle_test1_json_with_exclusions() {
     assert_eq!(ex[0].get("port").and_then(|vv| vv.as_u64()), Some(5678));
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_relay_triangle_test1_json_no_exclusions() {
     let t1 = RelayTriangleTest1 {
         app: None,
@@ -63,7 +65,8 @@ pub fn test_relay_triangle_test1_json_no_exclusions() {
     assert!(v.get("doNotUseEndpoints").is_none());
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_relay_ping_handler_honors_exclusions() {
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -175,7 +178,8 @@ pub fn test_relay_ping_handler_honors_exclusions() {
     assert_eq!(sends.lock().unwrap().len(), 0, "should have skipped send because peer is excluded");
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn test_relay_finder_honors_exclusions() {
     use std::sync::Arc;
     use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};

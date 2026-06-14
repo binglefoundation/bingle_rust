@@ -27,7 +27,8 @@ impl InnerBingleApiInternal for MockInternal {
     fn notify_listening(&self, listening: bool, _nat_type: rust_comms::engine::NatType) { if listening { self.listening_notified.store(true, Ordering::SeqCst); } }
 }
 
-#[cfg_attr(not(target_os = "ios"), test)]
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn triangle_test3_notifies_listening_true() {
     // Arrange: router with MockApi and MockInternal
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 45001);
