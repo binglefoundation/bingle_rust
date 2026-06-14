@@ -18,13 +18,14 @@ struct ServerStatus {
     addr: SocketAddr,
     failures: u8,
     responded: bool,
+    ever_responded: bool,
     endpoint: Option<SocketAddr>,
     last_polled: Option<Instant>,
 }
 
 impl ServerStatus {
     fn new(addr: SocketAddr) -> Self {
-        Self { addr, failures: 0, responded: false, endpoint: None, last_polled: None }
+        Self { addr, failures: 0, responded: false, ever_responded: false, endpoint: None, last_polled: None }
     }
 }
 
@@ -255,6 +256,19 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                                 }
                                 inner.error_reported = true;
                             }
+                            // After the 3-interval check, reset `responded` on ever_responded
+                            // servers so they are eligible for the next poll round. Without this
+                            // a server that responded once (responded=true) would be skipped by
+                            // the None/Single to_poll filter forever once all non-responded
+                            // servers have been removed.
+                            if inner.state != StunState::Blocked {
+                                for s in inner.servers.iter_mut() {
+                                    if s.ever_responded {
+                                        s.responded = false;
+                                    }
+                                }
+                                inner.intervals_without_two = 0;
+                            }
                         }
                     }
                     // In Blocked state, reset failure counters so servers are kept alive and
@@ -265,7 +279,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             s.failures = 0;
                         }
                     } else {
-                        inner.servers.retain(|s| s.failures < 3);
+                        // Keep a server if it has fewer than 3 consecutive failures OR
+                        // if it has ever responded in this session (it may be temporarily
+                        // unreachable due to network issues at our end, not a dead server).
+                        inner.servers.retain(|s| s.failures < 3 || s.ever_responded);
                     }
                 }
                 // Wait for the next interval or stop signal
@@ -302,6 +319,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         // Find server by source address
         if let Some(s) = inner.servers.iter_mut().find(|s| s.addr == from) {
             s.responded = true;
+            s.ever_responded = true;
             s.failures = 0; // reset on any response
             if let Some(ep) = endpoint { s.endpoint = Some(ep); }
         }
@@ -329,7 +347,13 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         tracing::info!("[STUN] reset_state: reverting state {:?} -> None", inner.state);
         inner.state = StunState::None;
         inner.endpoint = None;
-        // Reset per-server state so the polling loop will re-poll all servers
+        // Reset interval counter and error flag so the polling loop does not immediately
+        // re-enter Blocked state (which would happen if intervals_without_two was still >= 3).
+        inner.intervals_without_two = 0;
+        inner.error_reported = false;
+        // Reset per-server state so the polling loop will re-poll all servers.
+        // ever_responded is intentionally preserved: a server that was reachable before
+        // the reset is still a known-good server and should continue to be kept alive.
         for s in inner.servers.iter_mut() {
             s.responded = false;
             s.endpoint = None;

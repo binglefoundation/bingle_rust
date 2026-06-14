@@ -21,3 +21,6 @@ pub mod reset_state_resumes_polling;
 
 #[path = "blocked_then_recovery.rs"]
 pub mod blocked_then_recovery;
+
+#[path = "reset_state_after_blocked.rs"]
+pub mod reset_state_after_blocked;

@@ -468,6 +468,125 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
     );
 }
 
+// Test that a server which has ever responded is not removed even after 3+ consecutive
+// poll failures. This verifies the fix: retain a server if ever_responded=true, so that
+// transient network issues at our end do not cause a previously-reachable server to be
+// permanently dropped.
+//
+// Scenario: s1 responds once (ever_responded=true), s2 never responds.
+// After 3 failures s2 is removed. s1 is kept alive by ever_responded.
+// Eventually intervals_without_two reaches 3, state goes Blocked, and in Blocked
+// state ALL servers are polled — so s1 must receive further binding requests.
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn server_responds_once_then_stops_keeps_polling() {
+    use std::collections::HashMap;
+
+    let mut finder = StunEndpointFinderImpl::new();
+    let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+    let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+
+    let counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+    let counts_clone = Arc::clone(&counts);
+
+    finder.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, _data: &[u8]| {
+        let key = format!("{}:{}", host, port);
+        let mut m = counts_clone.lock().unwrap();
+        *m.entry(key).or_insert(0) += 1;
+    })));
+
+    // search=20ms: reach Blocked quickly (3 × 20ms = ~60ms after s1 stops responding).
+    finder.start(vec![s1, s2], 20, 10_000);
+
+    // s1 responds once then goes silent; s2 never responds.
+    let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.process_packet(s1, &r1);
+
+    let s1_key = format!("{}:{}", s1.ip(), s1.port());
+    let s2_key = format!("{}:{}", s2.ip(), s2.port());
+
+    // Wait long enough for s2 to accumulate 3 failures and be removed,
+    // and for the finder to enter Blocked state and poll s1 again.
+    // 3 intervals × 20ms = 60ms; add margin for thread scheduling.
+    std::thread::sleep(Duration::from_millis(300));
+
+    let s1_count = counts.lock().unwrap().get(&s1_key).cloned().unwrap_or(0);
+    let s2_count = counts.lock().unwrap().get(&s2_key).cloned().unwrap_or(0);
+
+    finder.stop();
+
+    // s2 should have been polled then removed after 3 failures (no ever_responded).
+    assert!(s2_count >= 3,
+        "expected s2 polled >=3 times before removal, got {}", s2_count);
+
+    // s1 must have been polled more than once: initial poll + at least one Blocked-state poll.
+    // (In Blocked state ALL servers are polled every interval regardless of responded flag.)
+    assert!(s1_count >= 2,
+        "s1 (responded once, ever_responded=true) should keep being polled \
+         after 3 failures (via Blocked state), but was only polled {} time(s)", s1_count);
+}
+
+// Test that servers which have ever responded are not removed when they fail to
+// respond in subsequent polling rounds (e.g. in Consistent state repeat-polling).
+// This protects against transient network issues at our end dropping all servers
+// and resetting state to None after a healthy Consistent phase.
+#[cfg_attr(not(target_os = "ios"), test)]
+pub fn consistent_servers_not_removed_when_no_repeat_response() {
+    use std::collections::HashMap;
+
+    let mut finder = StunEndpointFinderImpl::new();
+    let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+    let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+
+    let counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+    let counts_clone = Arc::clone(&counts);
+
+    // search=100ms, repeat=20ms: once Consistent the repeat interval fires quickly.
+    finder.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, _data: &[u8]| {
+        let key = format!("{}:{}", host, port);
+        let mut m = counts_clone.lock().unwrap();
+        *m.entry(key).or_insert(0) += 1;
+    })));
+
+    finder.start(vec![s1, s2], 100, 20);
+
+    // Both servers respond once → state goes Consistent; neither responds again.
+    let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.process_packet(s1, &r1);
+    let r2 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.process_packet(s2, &r2);
+
+    let s1_key = format!("{}:{}", s1.ip(), s1.port());
+    let s2_key = format!("{}:{}", s2.ip(), s2.port());
+
+    // Wait for Consistent state + several repeat-interval polls (>= 5 × 20ms = 100ms).
+    // Use 400ms to give plenty of margin.
+    std::thread::sleep(Duration::from_millis(400));
+
+    let s1_before = counts.lock().unwrap().get(&s1_key).cloned().unwrap_or(0);
+    let s2_before = counts.lock().unwrap().get(&s2_key).cloned().unwrap_or(0);
+
+    // Both must have been polled at least 3 times to have accumulated 3+ failures.
+    assert!(s1_before >= 3,
+        "expected s1 polled >=3 times in repeat phase, got {}", s1_before);
+    assert!(s2_before >= 3,
+        "expected s2 polled >=3 times in repeat phase, got {}", s2_before);
+
+    // Wait a further 100ms; both servers must still be polled (ever_responded keeps them).
+    std::thread::sleep(Duration::from_millis(100));
+
+    let s1_after = counts.lock().unwrap().get(&s1_key).cloned().unwrap_or(0);
+    let s2_after = counts.lock().unwrap().get(&s2_key).cloned().unwrap_or(0);
+
+    finder.stop();
+
+    assert!(s1_after > s1_before,
+        "s1 (reached Consistent, ever_responded=true) should keep being polled \
+         after repeated failures, but poll count stalled at {}", s1_before);
+    assert!(s2_after > s2_before,
+        "s2 (reached Consistent, ever_responded=true) should keep being polled \
+         after repeated failures, but poll count stalled at {}", s2_before);
+}
+
 #[cfg_attr(not(target_os = "ios"), test)]
 pub fn stop_stops_promptly() {
     let mut finder = StunEndpointFinderImpl::new();
