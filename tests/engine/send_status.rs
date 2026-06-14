@@ -94,6 +94,7 @@ impl Dtls for SucceedingDtls {
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn forget_peers(&self) {}
 }
 
 /// A mock DTLS implementation that always fails on send.
@@ -142,6 +143,7 @@ impl Dtls for FailingDtls {
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn forget_peers(&self) {}
 }
 
 fn make_engine_with_succeeding_dtls() -> Engine {

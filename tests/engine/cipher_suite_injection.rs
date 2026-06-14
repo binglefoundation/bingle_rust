@@ -66,6 +66,7 @@ impl Dtls for CipherFakeDtls {
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
+    fn forget_peers(&self) {}
 }
 
 /// A minimal fake DTLS passed as `&dyn Dtls` (the `server` argument) to the installed handler closure.
@@ -109,6 +110,7 @@ impl Dtls for FakeServer {
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
+    fn forget_peers(&self) {}
 }
 
 /// A capturing MessageHandler that records all raw JSON values passed to `on_unknown`.

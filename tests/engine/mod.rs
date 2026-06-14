@@ -62,3 +62,6 @@ pub mod no_connection_retry;
 
 #[path = "stun_no_response_no_connection.rs"]
 pub mod stun_no_response_no_connection;
+
+#[path = "stun_address_change.rs"]
+pub mod stun_address_change;

@@ -113,6 +113,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
         fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn forget_peers(&self) {}
     }
 
     struct MockApi;

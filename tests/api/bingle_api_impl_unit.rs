@@ -48,6 +48,7 @@ impl Dtls for MockDtls {
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn forget_peers(&self) {}
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
 }
@@ -131,6 +132,7 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
         fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
         fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn forget_peers(&self) {}
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     }

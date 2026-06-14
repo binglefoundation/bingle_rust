@@ -165,4 +165,10 @@ pub trait Dtls {
      * This value is derived from the connection and is not transmitted on the wire.
      */
     fn get_cipher_suite(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> Option<String>;
+
+    /**
+     * Forget all peer connections, closing their workers.
+     * Used when the public address changes so that fresh DTLS handshakes are performed.
+     */
+    fn forget_peers(&self);
 }

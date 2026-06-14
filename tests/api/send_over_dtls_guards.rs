@@ -63,6 +63,7 @@ impl Dtls for MockDtls {
     fn set_null_encryption(&mut self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
     fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn forget_peers(&self) {}
 }
 
 /// send_message_to_network returns false when given an incomplete relay endpoint

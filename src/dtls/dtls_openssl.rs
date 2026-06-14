@@ -1023,6 +1023,7 @@ pub mod openssl_impl {
                 Err(_) => None,
             }
         }
+        fn forget_peers(&self) {}
     }
 
     /// OpenSSL-backed DTLS implementation (non-iOS).
@@ -2037,6 +2038,16 @@ pub mod openssl_impl {
             match self.peer_states.lock() {
                 Ok(m) => m.get(&key).and_then(|ps| ps.cipher_suite.clone()),
                 Err(_) => None,
+            }
+        }
+
+        fn forget_peers(&self) {
+            let _guard = self.span.enter();
+            tracing::info!("[DtlsOpenSsl:::forget_peers] clearing all peer states");
+            if let Ok(mut map) = self.peer_states.lock() {
+                for (_, ps) in map.drain() {
+                    close_peer_state(ps);
+                }
             }
         }
     }

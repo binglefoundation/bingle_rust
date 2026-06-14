@@ -1665,6 +1665,28 @@ impl Engine {
 
     fn stun_consistent_process(&mut self, public_addr: Option<SocketAddr>) {
         tracing::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
+
+        // Detect public address change: if we already have a known address and it differs,
+        // reset state so peers re-handshake with the new address.
+        let prev_addr = self.last_public_addr();
+        let addr_changed = prev_addr.is_some() && prev_addr != public_addr;
+        if addr_changed {
+            tracing::warn!(
+                "[Engine] public address changed: {:?} -> {:?}; resetting peers",
+                prev_addr,
+                public_addr
+            );
+            self.state = EngineState::TrianglePing;
+            self.set_nat_type(NatType::Unknown);
+            self.notify_listening(false);
+            // Forget all DTLS peer connections so fresh handshakes are performed.
+            self.packet_transport.dtls().forget_peers();
+            // Clear engine-level connection tracking.
+            if let Ok(mut conns) = self.connections.lock() {
+                conns.clear();
+            }
+        }
+
         // Save last known public address (for validation/tests)
         self.set_last_public_addr(public_addr);
 
@@ -1975,6 +1997,10 @@ impl Engine {
 
     pub fn test_stun_consistent_process_no_addr(&mut self) {
         self.stun_consistent_process(None);
+    }
+
+    pub fn test_stun_consistent_process_with_addr(&mut self, addr: SocketAddr) {
+        self.stun_consistent_process(Some(addr));
     }
 
     /// Test helper: drive stun_consistent_process with a given address and a fixed relay list,
