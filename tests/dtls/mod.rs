@@ -74,3 +74,6 @@ pub mod dtls_peer_worker_stage1;
 
 #[path = "peer_cmd_display.rs"]
 pub mod peer_cmd_display;
+
+#[path = "dtls_reconnect_after_worker_close.rs"]
+pub mod dtls_reconnect_after_worker_close;

@@ -114,7 +114,7 @@ pub mod openssl_impl {
             .spawn(move || {
                 while let Ok(payload) = rx.recv() {
                     if let Err(e) = runtime.block_on(async { write_half.write_all(&payload).await }) {
-                        tracing::warn!("[DtlsOpenSsl:::writer] {} write failed: {}", peer_label, e);
+                        tracing::warn!("[DtlsOpenSsl:::writer] {} write failed: {}; stopping writer thread", peer_label, e);
                         break;
                     }
                 }
@@ -155,9 +155,16 @@ pub mod openssl_impl {
     #[derive(Clone)]
     pub struct PeerHandle {
         tx: mpsc::Sender<PeerCmd>,
+        /// Set to `false` by the peer worker when it exits due to a write failure.
+        /// Checked in `send()` to detect a dead connection before enqueuing.
+        healthy: Arc<std::sync::atomic::AtomicBool>,
     }
 
     impl PeerHandle {
+        pub fn is_healthy(&self) -> bool {
+            self.healthy.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
         pub fn send(&self, cmd: PeerCmd) -> Result<()> {
             self.tx.send(cmd).map_err(|e| format!("peer command send failed: {}", e))
         }
@@ -168,23 +175,30 @@ pub mod openssl_impl {
         F: FnMut(PeerCmd) -> bool + Send + 'static,
     {
         let (tx, rx) = mpsc::channel::<PeerCmd>();
+        let healthy = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let healthy_worker = Arc::clone(&healthy);
         let worker_name = format!("dtls-peer-{}", peer_label);
         let handle_tag = handle.to_string();
         std::thread::Builder::new()
             .name(worker_name)
             .spawn(move || {
+                let mut failed = false;
                 while let Ok(cmd) = rx.recv() {
                     let cmd2 = cmd.clone();
                     tracing::debug!("[DtlsOpenSsl:{}] received peer command: {}", handle_tag, cmd2);
                     if !on_command(cmd) {
                         tracing::warn!("[DtlsOpenSsl:{}] peer command handler returned false; terminating worker", handle_tag);
+                        failed = true;
                         break;
                     }
                     tracing::debug!("[DtlsOpenSsl:{}] peer command handler {} returned true; continuing", handle_tag, cmd2);
                 }
+                if failed {
+                    healthy_worker.store(false, std::sync::atomic::Ordering::SeqCst);
+                }
             })
             .map_err(|e| format!("failed to spawn peer worker: {}", e))?;
-        Ok(PeerHandle { tx })
+        Ok(PeerHandle { tx, healthy })
     }
 
     // Combined per-endpoint state: writer + verified issuer string + per-peer async queue
@@ -1580,8 +1594,23 @@ pub mod openssl_impl {
             };
 
             if let Some(peer_handle) = peer_handle_to_use {
-                tracing::info!("[DtlsOpenSsl:::send] enqueueing send via existing peer worker for {} ({} bytes)", to, data.len());
-                return peer_handle.send(PeerCmd::Send(data.to_vec()));
+                if peer_handle.is_healthy() {
+                    tracing::info!("[DtlsOpenSsl:::send] enqueueing send via existing peer worker for {} ({} bytes)", to, data.len());
+                    if peer_handle.send(PeerCmd::Send(data.to_vec())).is_ok() {
+                        return Ok(());
+                    }
+                }
+                // Worker exited after a write failure (network outage) — healthy flag is false.
+                // Clear the stale peer state and fall through to create a fresh DTLS connection.
+                tracing::warn!(
+                    "[DtlsOpenSsl:::send] peer worker unhealthy for {}; dropping stale peer state and reconnecting",
+                    to
+                );
+                if let Ok(mut map) = self.peer_states.lock() {
+                    if let Some(ps) = map.remove(&key_to) {
+                        close_peer_state(ps);
+                    }
+                }
             }
 
             // 3) Otherwise, create a new outbound DTLS connection and persist it for reuse.
@@ -1619,8 +1648,8 @@ pub mod openssl_impl {
                         PeerCmd::Send(payload) => {
                             tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: {} bytes, locking writer", key_to2, payload.len());
                             if let Err(err) = worker_writer.send(&payload) {
-                                tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}", err);
-                                return true;
+                                tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}; stopping worker to trigger reconnect", err);
+                                return false;
                             }
                             tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: done", key_to2);
                             true
