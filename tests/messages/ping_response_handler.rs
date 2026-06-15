@@ -3,9 +3,19 @@ use std::sync::{Arc, Mutex};
 
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::types::{PingResponse};
-use rust_comms::api::bingle_api::{NetworkEndpoint};
+use rust_comms::api::bingle_api::{Handle, NetworkEndpoint, UserId};
 
-use crate::util::reusable_mock_api::MockApiBoth;
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
+
+// A mock that returns a valid handle for the expected sender id, simulating an opted-in sender.
+// The handler trims trailing "." (ISSUER_SUFFIX) — "SENDER.ISSUER" does not end with "." so
+// the sender_id passed to handle_lookup_by_id is "SENDER.ISSUER".
+struct LookupSender;
+impl InnerBingleApi for LookupSender {
+    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
+        if user_id == "SENDER.ISSUER" { Some("sender_handle".to_string()) } else { None }
+    }
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -43,7 +53,8 @@ pub fn test_on_ping_response_no_tag_calls_on_message() {
         data: None,
     };
 
-    handler.on_ping_response(Arc::new(crate::util::reusable_mock_api::MockApiBoth::new()), &from, &resp);
+    // Use an API that returns a valid handle for "SENDER" (sender id after stripping the issuer suffix)
+    handler.on_ping_response(Arc::new(MockApiBoth::new_with_api_override(Arc::new(LookupSender))), &from, &resp);
 
     let got = received_json.lock().unwrap().clone();
     assert!(got.is_some(), "on_message was not called");

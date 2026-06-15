@@ -166,7 +166,7 @@ pub trait MessageHandler {
                 tracing::warn!("[handlers::on_ping_ping] sender returned false");
             }
     }
-    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingResponse) {
+    fn on_ping_response(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingResponse) {
         if msg.response_tag.is_none() {
             // Build JSON for callback
             let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"verifiedId": msg.verified_id}));
@@ -174,13 +174,16 @@ pub trait MessageHandler {
             if let Some(cb) = from.router.get_on_message() {
                 // Normalize sender id: issuer without suffix
                 let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                // Use direct socket address as sender_handle when available
-                let sender_handle = from
-                    .network_source_key
-                    .inet_socket_address()
-                    .map(|a: std::net::SocketAddr| a.to_string())
-                    .unwrap_or_else(|| "".to_string());
-                cb(sender_id, sender_handle, json);
+                // Look up the sender's handle by id via the API. If not found, log and abort.
+                match api.handle_lookup_by_id(&sender_id) {
+                    Some(sender_handle) => cb(sender_id, sender_handle, json),
+                    None => {
+                        tracing::error!(
+                            "[MessageHandler::on_ping_response] failed to resolve handle for sender id {}",
+                            sender_id
+                        );
+                    }
+                }
                 return;
             }
         }
