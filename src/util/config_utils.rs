@@ -69,12 +69,30 @@ pub fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
     for part in cleaned.split(|c: char| c == ',' || c.is_whitespace()) {
         let p = part.trim();
         if p.is_empty() { continue; }
-        // Try direct SocketAddr parse first
-        let parsed = p.parse::<SocketAddr>().ok()
+        // Try direct SocketAddr parse first, filtering for IPv4
+        let direct_parsed = p.parse::<SocketAddr>().ok();
+        
+        // If it parsed as IPv6 directly, we skip it (as requested: "only take the first IPV4 address")
+        // NOTE: The requirement says "only take the first IPV4 address" for each entry.
+        // If an entry is explicitly IPv6, we should ignore it rather than erroring
+        // if we want to be robust, OR error if it's invalid.
+        // Given the requirement "only take the first IPV4 address", if we find an IPv6 we should look for IPv4.
+        
+        let parsed = direct_parsed
+            .filter(|addr| addr.is_ipv4())
             // Fallback to DNS resolution via ToSocketAddrs for host:port strings
-            .or_else(|| p.to_socket_addrs().ok().and_then(|mut it| it.next()));
+            .or_else(|| {
+                p.to_socket_addrs().ok().and_then(|it| {
+                    it.filter(|addr| addr.is_ipv4()).next()
+                })
+            });
+            
         if let Some(addr) = parsed {
             addrs.push(addr);
+        } else if direct_parsed.is_some() {
+            // It was a valid SocketAddr but IPv6, skip it as per requirement to only take IPv4
+            tracing::warn!("Ignoring unsupported IPv6 STUN server entry '{}'", p);
+            continue;
         } else {
             return Err(format!("Invalid STUN server entry '{}': must be <host:port> or <ip:port>", p));
         }
