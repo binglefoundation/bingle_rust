@@ -47,17 +47,18 @@ security:
   ~~9. ROBOT (Return of Bleichenbacher's Oracle Threat)~~
 - ~~Ensure and test we have PFS via ECDHE~~  
 - ~~Test for extended master secret support~~
-- ensure id is checked (must be opted in etc) and fails on impersonation
+- ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
 - implement permissioned relay only mode
-- sign and check AdvertRecords
+- ~~sign and check AdvertRecords~~
 - document all crates
 
 robustness:
-- **fail sensibly with message when Bingle network down (< 2 relays))**
-- **relay channel doesnt pass echo message after some reloads**
-- ?indicate when we get no STUN responses (UDP blocked)?
+- ~~fail sensibly with message when Bingle network down (< 2 relays))~~
+- ~~relay channel doesnt pass echo message after some reloads~~
+- NOTE: this will be further fixed when we retry sends and hold messages in pending
+- ~~indicate when we get no STUN responses (UDP blocked)~~
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
 - ensure fails result in a fail message which gets handled
@@ -68,8 +69,8 @@ robustness:
 - ~~implement relay cache properly with expiry~~
 - ~~use relay cache efficently during relay init~~
 - ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
-- ensure ipv6 is unsupported consistently
-- ensure handle uniqueness
+- ~~ensure ipv6 is unsupported consistently~~
+- ~~ensure handle uniqueness~~
 - handle fails correctly
   + ~~node~~
   + ~~relay on node~~
@@ -102,7 +103,8 @@ android:
 - build APK
 
 deploy:
-- quick deploy steps for UX/backend change
+- ~~quick deploy steps for UX/backend change~~
+  This is in README.md --redeploy
 - deploy update to relay stack without total replace
 - run unit tests on CD
 - stabilise integration tests and run on CD with localnet
