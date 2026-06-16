@@ -52,6 +52,7 @@ security:
 - delegate admin tasks to not be creator
 - implement permissioned relay only mode
 - sign and check AdvertRecords
+- document all crates
 
 robustness:
 - **fail sensibly with message when Bingle network down (< 2 relays))**
