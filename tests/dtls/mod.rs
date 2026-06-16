@@ -18,8 +18,8 @@ pub mod dtls_openssl_smoke;
 #[path = "dtls_peer_certificate_handlers.rs"]
 pub mod dtls_peer_certificate_handlers;
 
-#[path = "dtls_peer_certificate_rejection.rs"]
-pub mod dtls_peer_certificate_rejection;
+#[path = "dtls_server_peer_cert_rejection.rs"]
+pub mod dtls_server_peer_cert_rejection;
 
 #[path = "dtls_start_with_network_mux.rs"]
 pub mod dtls_start_with_network_mux;

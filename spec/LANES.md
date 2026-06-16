@@ -51,8 +51,8 @@ security:
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
 - implement permissioned relay only mode
-- sign and check AdvertRecords
-- validate rippled messages are from relays
+- ~~sign and check AdvertRecords~~
+- **validate rippled messages are from relays**
 - document all crates
 
 robustness:

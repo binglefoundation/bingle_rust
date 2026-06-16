@@ -598,24 +598,13 @@ pub fn run_named_test(name: &str) -> bool {
                 }
             }
         },
-        "dtls::dtls_peer_certificate_rejection::dtls_openssl_client_rejects_server_when_peer_cert_handler_fails" => {
-            match panic::catch_unwind(|| crate::dtls::dtls_peer_certificate_rejection::dtls_openssl_client_rejects_server_when_peer_cert_handler_fails()) {
+        "dtls::dtls_server_peer_cert_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails" => {
+            match panic::catch_unwind(|| crate::dtls::dtls_server_peer_cert_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails()) {
                 Ok(_) => true,
                 Err(e) => {
-                    if let Some(s) = e.downcast_ref::<&str>() { tracing::error!("Test dtls::dtls_peer_certificate_rejection::dtls_openssl_client_rejects_server_when_peer_cert_handler_fails panicked: {}", s); }
-                    else if let Some(s) = e.downcast_ref::<String>() { tracing::error!("Test dtls::dtls_peer_certificate_rejection::dtls_openssl_client_rejects_server_when_peer_cert_handler_fails panicked: {}", s); }
-                    else { tracing::error!("Test dtls::dtls_peer_certificate_rejection::dtls_openssl_client_rejects_server_when_peer_cert_handler_fails panicked with unknown error"); }
-                    false
-                }
-            }
-        },
-        "dtls::dtls_peer_certificate_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails" => {
-            match panic::catch_unwind(|| crate::dtls::dtls_peer_certificate_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails()) {
-                Ok(_) => true,
-                Err(e) => {
-                    if let Some(s) = e.downcast_ref::<&str>() { tracing::error!("Test dtls::dtls_peer_certificate_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails panicked: {}", s); }
-                    else if let Some(s) = e.downcast_ref::<String>() { tracing::error!("Test dtls::dtls_peer_certificate_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails panicked: {}", s); }
-                    else { tracing::error!("Test dtls::dtls_peer_certificate_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails panicked with unknown error"); }
+                    if let Some(s) = e.downcast_ref::<&str>() { tracing::error!("Test dtls::dtls_server_peer_cert_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails panicked: {}", s); }
+                    else if let Some(s) = e.downcast_ref::<String>() { tracing::error!("Test dtls::dtls_server_peer_cert_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails panicked: {}", s); }
+                    else { tracing::error!("Test dtls::dtls_server_peer_cert_rejection::dtls_openssl_server_rejects_client_when_peer_cert_handler_fails panicked with unknown error"); }
                     false
                 }
             }
