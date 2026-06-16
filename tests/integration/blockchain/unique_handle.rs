@@ -62,3 +62,52 @@ pub fn test_unique_handle_registration() {
     assert_eq!(owner, ADDRESS_SPEND, "Handle lookup should return Account A's address");
     tracing::info!("Handle lookup verified owner: {}", owner);
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+#[serial]
+pub fn test_duplicate_handle_hacked_registration() {
+    test_util::init_test_logging();
+    test_util::assert_localnet_available();
+    fund_test_accounts_or_panic();
+    let cfg: AlgoChainConfig = localnet_config();
+
+    // Account A (First user)
+    let ops_a = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
+    // Account B (Second user)
+    let ops_b = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
+
+    // 1. Deploy app and asset using Account A
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1_000_000);
+    tracing::info!("Deployed app_id={}, asset_id={}", app_id, asset_id);
+
+    // Give some assets to Account B so it can attempt registration
+    ops_b.opt_in_to_asset(asset_id).expect("Account B opt-in ASA");
+    ops_a.send_asset(asset_id, 10, ADDRESS_RECEIVE).expect("fund Account B with ASA");
+
+    let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
+    let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
+
+    let handle = "hacked_handle_test";
+
+    // 2. Register handle with Account A
+    tracing::info!("Registering handle '{}' with Account A ({})", handle, ADDRESS_SPEND);
+    ab_a.register(app_id, asset_id, handle, 1).expect("Account A should be able to register handle");
+
+    // Wait a moment for indexer to catch up
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // 3. Attempt to register same handle with Account B using "hacked" (unchecked) register
+    tracing::info!("Attempting to register handle '{}' with Account B ({}) via UNCHECKED register", handle, ADDRESS_RECEIVE);
+    let tx_id_b = ab_b.register_unchecked(app_id, asset_id, handle, 1).expect("Hacked registration should succeed on-chain");
+    tracing::info!("Hacked registration succeeded with tx_id: {}", tx_id_b);
+
+    // Wait for indexer to catch up
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // 4. Verify handle lookup STILL finds Account A (first registrant wins)
+    tracing::info!("Looking up handle '{}' after duplicate registration", handle);
+    let owner = ab_a.handle_lookup(handle).expect("lookup should succeed").expect("handle should be found");
+    assert_eq!(owner, ADDRESS_SPEND, "Handle lookup should still return Account A's address even after duplicate registration");
+    tracing::info!("Handle lookup verified owner remains: {}", owner);
+}

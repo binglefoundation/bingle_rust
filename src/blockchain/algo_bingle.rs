@@ -690,10 +690,7 @@ impl AlgoBingle {
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if handle.is_empty() { bail!("handle must not be empty"); }
 
-        let client = self.algod_client()?;
-        let params = self.params(&client)?;
-        let (account, sender) = self.sender_account()?;
-        let sender_str = sender.to_string();
+        let sender_str = self.ops.address.as_ref().ok_or_else(|| anyhow!("No sender address"))?.to_string();
 
         // 1. Pre-check: Handle uniqueness via indexer
         if let Some(existing_owner) = self.handle_lookup(handle)? {
@@ -701,6 +698,21 @@ impl AlgoBingle {
                 bail!("Handle already in use by {}", existing_owner);
             }
         }
+
+        let tx_id = self.register_unchecked(app_id, asset_id, handle, price_units)?;
+
+        // 4. Post-check: Validate that we are the deterministic winner for this handle
+        self.verify_registration_winner(handle, &sender_str)?;
+
+        Ok(tx_id)
+    }
+
+    /// Internal method to perform the registration on-chain without uniqueness pre-checks.
+    /// Used by `register` after pre-checks, or by tests to simulate "hacked" registrations.
+    pub fn register_unchecked(&self, app_id: u64, asset_id: u64, handle: &str, price_units: u64) -> Result<String> {
+        let client = self.algod_client()?;
+        let params = self.params(&client)?;
+        let (account, sender) = self.sender_account()?;
 
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
         self.opt_in_app_to_asset(app_id, asset_id)?;
@@ -743,28 +755,28 @@ impl AlgoBingle {
         let s1 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign axfer: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed axfer: {e}"))?;
         let s2 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
 
-        let tx_id = self.broadcast_group(&client, vec![s1, s2])?;
+        self.broadcast_group(&client, vec![s1, s2])
+    }
 
-        // 4. Post-check: Validate that we are the deterministic winner for this handle
-        // Wait up to 15 seconds for indexer to catch up and verify
+    /// Wait up to 15 seconds for indexer to catch up and verify that `expected_winner` is the owner of `handle`.
+    pub fn verify_registration_winner(&self, handle: &str, expected_winner: &str) -> Result<()> {
         let mut winner_verified = false;
         for i in 0..15 {
             if i > 0 { std::thread::sleep(std::time::Duration::from_secs(1)); }
             if let Some(winner) = self.handle_lookup(handle)? {
-                if winner == sender_str {
+                if winner == expected_winner {
                     winner_verified = true;
                     break;
                 } else {
-                    bail!("Handle registration post-check failed: handle '{}' was taken by {} (race condition)", handle, winner);
+                    bail!("Handle registration verification failed: handle '{}' was taken by {} (expected {})", handle, winner, expected_winner);
                 }
             }
         }
 
         if !winner_verified {
-            algo_log!("Warning: handle registration post-check timed out for handle '{}'. It may still be pending in indexer.", handle);
+            algo_log!("Warning: handle registration verification timed out for handle '{}'. It may still be pending in indexer.", handle);
         }
-
-        Ok(tx_id)
+        Ok(())
     }
 
     /// Admin method: Opt the application account into the given ASA by calling the
