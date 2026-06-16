@@ -43,6 +43,8 @@ For example: `algokit project run build -- hello_world` will only build the `hel
 2. **Deploy**: Use `algokit project deploy localnet` to deploy contracts to the local network. You can also specify a specific contract by passing the name of the contract folder as an extra argument.
 For example: `algokit project deploy localnet -- hello_world` will only deploy the `hello_world` contract.
 
+NOTE: if after a python upgrade and/or in a new checkout, you may need to `poetry add <package>` any reported missing dependencies.
+
 #### VS Code 
 For a seamless experience with breakpoint debugging and other features:
 
