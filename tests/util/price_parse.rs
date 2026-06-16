@@ -1,4 +1,4 @@
-use rust_comms::util::cli_utils::parse_algos_decimal_to_microalgos;
+use rust_comms::util::config_utils::parse_algos_decimal_to_microalgos;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

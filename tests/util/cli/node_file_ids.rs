@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_node_file_with_ids, resolve_app_asset_ids};
+use rust_comms::util::config_utils::{parse_start_options_from_args, parse_node_file_with_ids, resolve_app_asset_ids};
 use serial_test::serial;
 
 fn write_temp_nodefile(content: &str) -> PathBuf {

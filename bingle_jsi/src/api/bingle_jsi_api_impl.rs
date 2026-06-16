@@ -9,7 +9,7 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::network_endpoint::NetworkEndpoint;
 use rust_comms::blockchain::error::AlgoErrorKind;
 use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::util::cli_utils::{parse_stun_list, parse_stun_file, parse_node_file_with_ids, resolve_app_asset_ids};
+use rust_comms::util::config_utils::{parse_stun_list, parse_stun_file, parse_node_file_with_ids, resolve_app_asset_ids};
 
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};

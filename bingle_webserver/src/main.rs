@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use bingle_webserver::{start_server, AppState};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::util::cli_utils::parse_start_options_from_args;
+use rust_comms::util::config_utils::parse_start_options_from_args;
 use rust_comms::util::logging::{BingleFormatter, LogMode, HandleLayer};
 use tracing_subscriber::prelude::*;
 use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler};
