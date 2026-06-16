@@ -257,14 +257,26 @@ impl DdbClient for DdbClientImpl {
                 return Err(BingleError::Other(err));
             }
         };
-        let record = AdvertRecord {
-            id: my_id.clone(),
-            endpoint: Some(InetSocketAddress::from(endpoint)),
-            am_relay: Some(am_relay),
-            relay_id: None,
-            relay_sig: None,
-            date: "1970-01-01T00:00:00Z".to_string(),
-            sig: None,
+        let date = "1970-01-01T00:00:00Z".to_string();
+        let record = if let Some(sk) = self.api.access(|a| a.get_signing_key()) {
+            AdvertRecord::new(
+                my_id.clone(),
+                Some(InetSocketAddress::from(endpoint)),
+                Some(am_relay),
+                None,
+                None,
+                date,
+                &sk,
+            )
+        } else {
+            AdvertRecord::new_unsigned(
+                my_id.clone(),
+                Some(InetSocketAddress::from(endpoint)),
+                Some(am_relay),
+                None,
+                None,
+                date,
+            )
         };
         let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
             app: "ddb".to_string(),
@@ -328,14 +340,26 @@ impl DdbClient for DdbClientImpl {
                 return Err(BingleError::Other(err));
             }
         };
-        let record = AdvertRecord {
-            id: my_id.clone(),
-            endpoint: None,
-            am_relay: Some(false),
-            relay_id: Some(relay_id),
-            relay_sig,
-            date: "1970-01-01T00:00:00Z".to_string(),
-            sig: None,
+        let date = "1970-01-01T00:00:00Z".to_string();
+        let record = if let Some(sk) = self.api.access(|a| a.get_signing_key()) {
+            AdvertRecord::new(
+                my_id.clone(),
+                None,
+                Some(false),
+                Some(relay_id),
+                relay_sig,
+                date,
+                &sk,
+            )
+        } else {
+            AdvertRecord::new_unsigned(
+                my_id.clone(),
+                None,
+                Some(false),
+                Some(relay_id),
+                relay_sig,
+                date,
+            )
         };
         let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
             app: "ddb".to_string(),

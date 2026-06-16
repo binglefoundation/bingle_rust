@@ -1,15 +1,14 @@
 use rust_comms::ddb::{AdvertRecord, DdbBackend, InMemoryDdbBackend, InetSocketAddress};
 
 fn sample_record(id: &str) -> AdvertRecord {
-    AdvertRecord {
-        id: id.to_string(),
-        endpoint: Some(InetSocketAddress { host: "127.0.0.1".to_string(), port: 4433 }),
-        am_relay: Some(false),
-        relay_id: None,
-        relay_sig: None,
-        date: "2025-01-01T00:00:00Z".to_string(),
-        sig: None,
-    }
+    AdvertRecord::new_unsigned(
+        id.to_string(),
+        Some(InetSocketAddress { host: "127.0.0.1".to_string(), port: 4433 }),
+        Some(false),
+        None,
+        None,
+        "2025-01-01T00:00:00Z".to_string(),
+    )
 }
 
 #[test]
@@ -53,15 +52,14 @@ pub fn delete_then_lookup_none() {
 
 /// Helper: create a relay AdvertRecord with a given id and address.
 fn relay_record(id: &str, host: &str, port: u16) -> AdvertRecord {
-    AdvertRecord {
-        id: id.to_string(),
-        endpoint: Some(InetSocketAddress { host: host.to_string(), port }),
-        am_relay: Some(true),
-        relay_id: None,
-        relay_sig: None,
-        date: "1970-01-01T00:00:00Z".to_string(),
-        sig: None,
-    }
+    AdvertRecord::new_unsigned(
+        id.to_string(),
+        Some(InetSocketAddress { host: host.to_string(), port }),
+        Some(true),
+        None,
+        None,
+        "1970-01-01T00:00:00Z".to_string(),
+    )
 }
 
 /// When there is already a live relay in the DDB and a second relay is added

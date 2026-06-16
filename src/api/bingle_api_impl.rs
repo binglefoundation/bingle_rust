@@ -9,6 +9,7 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use uuid::Uuid;
 
 use crate::api::bingle_api::{BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler, ProgressCallback, StartOptions, UserId};
+use ed25519_dalek::SigningKey;
 use crate::relay::relay_finder::RelayFinderTrait;
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
@@ -1010,6 +1011,10 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) {
         tracing::info!("[BingleApiImpl::ripple_message] originator={}", originator_id);
         self.engine.access(|e| e.ripple_message(message, originator_id, ddb_backend));
+    }
+
+    fn get_signing_key(&self) -> Option<SigningKey> {
+        self.engine.access(|e| e.get_signing_key())
     }
 }
 

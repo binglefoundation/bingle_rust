@@ -14,3 +14,6 @@ pub mod ddb_client_lookup;
 
 #[path = "ddb/client/register_relay.rs"]
 pub mod ddb_client_register_relay;
+
+#[path = "ddb/advert_record_signing.rs"]
+pub mod advert_record_signing;

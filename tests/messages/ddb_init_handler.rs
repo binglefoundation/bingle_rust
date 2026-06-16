@@ -55,8 +55,8 @@ pub fn ddb_init_resolve_triggers_snapshot_and_dump() {
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
     {
         let mut b = backend.lock().unwrap();
-        b.upsert(AdvertRecord { id: "A".into(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "2025-01-01T00:00:00Z".into(), sig: None });
-        b.upsert(AdvertRecord { id: "B".into(), endpoint: None, am_relay: None, relay_id: None, relay_sig: None, date: "2025-01-02T00:00:00Z".into(), sig: None });
+        b.upsert(AdvertRecord::new_unsigned("A".into(), None, Some(false), None, None, "2025-01-01T00:00:00Z".into()));
+        b.upsert(AdvertRecord::new_unsigned("B".into(), None, None, None, None, "2025-01-02T00:00:00Z".into()));
     }
     router.set_ddb_backend(Some(backend.clone()));
 

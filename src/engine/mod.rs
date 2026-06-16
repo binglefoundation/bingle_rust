@@ -6,8 +6,9 @@ use std::time::{Duration, Instant};
 use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
 
-use crate::blockchain::algo_ops::AlgoChainConfig;
+use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
+use ed25519_dalek::SigningKey;
 use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
@@ -315,18 +316,17 @@ impl Engine {
                     host,
                     r.address.port()
                 );
-                let rec = AdvertRecord {
-                    id: r.id.clone(),
-                    endpoint: Some(InetSocketAddress {
+                let rec = AdvertRecord::new_unsigned(
+                    r.id.clone(),
+                    Some(InetSocketAddress {
                         host,
                         port: r.address.port(),
                     }),
-                    am_relay: Some(true),
-                    relay_id: None,
-                    relay_sig: None,
-                    date: "1970-01-01T00:00:00Z".to_string(),
-                    sig: None,
-                };
+                    Some(true),
+                    None,
+                    None,
+                    "1970-01-01T00:00:00Z".to_string(),
+                );
                 b.upsert(rec);
             }
             tracing::info!("[Engine::upsert_roots_into_backend] upsert complete");
@@ -346,6 +346,18 @@ impl Engine {
     }
     pub fn ddb_client(&self) -> std::sync::Arc<dyn crate::ddb::DdbClient> {
         self.ddb_client.clone()
+    }
+
+    pub(crate) fn get_signing_key(&self) -> Option<SigningKey> {
+        let pass = self.options.algo_passphrase.as_ref()?;
+        let ops = AlgoOps::new(
+            Some(pass.clone()),
+            None,
+            self.options.algo_provider_config.clone(),
+        );
+        let sk_bytes = ops.private_key_bytes().ok()?;
+        let sk_arr: [u8; 32] = sk_bytes.try_into().ok()?;
+        Some(SigningKey::from_bytes(&sk_arr))
     }
     pub fn app_id(&self) -> Option<u64> {
         self.options.app_id
@@ -1485,15 +1497,14 @@ impl Engine {
                     if let Ok(mut b) = ddb_backend_arc.lock() {
                         for r in &roots_copy {
                             let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
-                            let rec = AdvertRecord {
-                                id: r.id.clone(),
-                                endpoint: Some(InetSocketAddress { host, port: r.address.port() }),
-                                am_relay: Some(true),
-                                relay_id: None,
-                                relay_sig: None,
-                                date: "1970-01-01T00:00:00Z".to_string(),
-                                sig: None,
-                            };
+                            let rec = AdvertRecord::new_unsigned(
+                                r.id.clone(),
+                                Some(InetSocketAddress { host, port: r.address.port() }),
+                                Some(true),
+                                None,
+                                None,
+                                "1970-01-01T00:00:00Z".to_string(),
+                            );
                             b.upsert(rec);
                         }
                         tracing::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
@@ -1530,14 +1541,27 @@ impl Engine {
                                     IpAddr::V4(v4) => v4.to_string(),
                                     IpAddr::V6(v6) => v6.to_string(),
                                 };
-                                let self_rec = AdvertRecord {
-                                    id: my_id_for_mtx.clone(),
-                                    endpoint: Some(InetSocketAddress { host: self_host, port: self_addr.port() }),
-                                    am_relay: Some(true),
-                                    relay_id: None,
-                                    relay_sig: None,
-                                    date: "1970-01-01T00:00:00Z".to_string(),
-                                    sig: None,
+                                let date = "1970-01-01T00:00:00Z".to_string();
+                                let endpoint = Some(InetSocketAddress { host: self_host, port: self_addr.port() });
+                                let self_rec = if let Some(sk) = self.get_signing_key() {
+                                    AdvertRecord::new(
+                                        my_id_for_mtx.clone(),
+                                        endpoint,
+                                        Some(true),
+                                        None,
+                                        None,
+                                        date,
+                                        &sk,
+                                    )
+                                } else {
+                                    AdvertRecord::new_unsigned(
+                                        my_id_for_mtx.clone(),
+                                        endpoint,
+                                        Some(true),
+                                        None,
+                                        None,
+                                        date,
+                                    )
                                 };
                                 if let Ok(mut b) = ddb_backend_arc.lock() {
                                     b.upsert(self_rec);
@@ -2096,6 +2120,9 @@ impl Engine {
     }
 
     pub fn ddb_upsert_record(&self, record: AdvertRecord) {
+        if !record.verify() {
+            tracing::warn!("[Engine::ddb_upsert_record] signature verification failed for record id={}", record.id);
+        }
         if let Ok(mut b) = self.ddb_backend.lock() {
             b.upsert(record);
         }

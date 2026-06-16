@@ -480,6 +480,10 @@ impl MessageHandler for DefaultPrintingHandler {
         if let Some(backend) = router.get_ddb_backend() {
             if let Ok(mut b) = backend.lock()
             {
+                if !up.record.verify() {
+                    tracing::warn!("[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}", up.record.id);
+                    // For now, we log a warning. In a production environment, we would return here to reject the invalid record.
+                }
                 tracing::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
                 b.upsert(up.record.clone()); }
             else {
@@ -633,15 +637,15 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         });
 
-        let record = AdvertRecord {
-            id: msg.start_id.clone(),
+        let mut record = AdvertRecord::new_unsigned(
+            msg.start_id.clone(),
             endpoint,
-            am_relay: Some(true),
-            relay_id: None,
-            relay_sig: None,
-            date: "1970-01-01T00:00:00Z".to_string(),
-            sig: msg.original_signature.clone(),
-        };
+            Some(true),
+            None,
+            None,
+            "1970-01-01T00:00:00Z".to_string(),
+        );
+        record.sig = msg.original_signature.clone();
         api.ddb_upsert_record(record);
         tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
 
