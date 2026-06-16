@@ -457,8 +457,13 @@ impl DdbClient for DdbClientImpl {
                     return Err(BingleError::Other(err));
                 }
             };
-            let ip: IpAddr = match host.parse() {
-                Ok(ip) => ip,
+            let ip: IpAddr = match host.parse::<IpAddr>() {
+                Ok(ip) if ip.is_ipv4() => ip,
+                Ok(_) => {
+                    let err = format!("invalid host '{}': IPv6 addresses are not supported", host);
+                    tracing::error!("[DdbClientImpl::lookup] {}", err);
+                    return Err(BingleError::Other(err));
+                }
                 Err(_) => {
                     let err = format!("invalid host '{}': not an IP address", host);
                     tracing::error!("[DdbClientImpl::lookup] {}", err);

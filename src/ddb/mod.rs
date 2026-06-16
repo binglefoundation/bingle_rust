@@ -23,9 +23,15 @@ impl From<std::net::SocketAddr> for InetSocketAddress {
 }
 
 impl std::convert::TryFrom<InetSocketAddress> for std::net::SocketAddr {
-    type Error = std::net::AddrParseError;
+    type Error = String;
     fn try_from(val: InetSocketAddress) -> Result<Self, Self::Error> {
-        format!("{}:{}", val.host, val.port).parse()
+        let addr: std::net::SocketAddr = format!("{}:{}", val.host, val.port)
+            .parse()
+            .map_err(|e| format!("{}", e))?;
+        if addr.is_ipv6() {
+            return Err("IPv6 addresses are not supported".to_string());
+        }
+        Ok(addr)
     }
 }
 
@@ -39,6 +45,9 @@ impl std::str::FromStr for InetSocketAddress {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let addr: std::net::SocketAddr = s.parse().map_err(|e| format!("{}", e))?;
+        if addr.is_ipv6() {
+            return Err("IPv6 addresses are not supported".to_string());
+        }
         Ok(Self::from(addr))
     }
 }

@@ -14,3 +14,9 @@ pub mod ddb_client_lookup;
 
 #[path = "ddb/client/register_relay.rs"]
 pub mod ddb_client_register_relay;
+
+#[path = "ddb/inet_socket_address_ipv6_tests.rs"]
+pub mod inet_socket_address_ipv6_tests;
+
+#[path = "ddb/client/lookup_ipv6_tests.rs"]
+pub mod ddb_client_lookup_ipv6_tests;
