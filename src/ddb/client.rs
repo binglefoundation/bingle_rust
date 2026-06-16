@@ -447,6 +447,8 @@ impl DdbClient for DdbClientImpl {
             }
         };
 
+        // TODO: deserialize advert record and validate signature here
+
         // Check if this is a relay-based record
         if let Some(relay_id_value) = advert.get("relayId") {
             let relay_id = match relay_id_value.as_str() {

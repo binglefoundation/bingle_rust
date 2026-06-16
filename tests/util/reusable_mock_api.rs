@@ -109,6 +109,10 @@ pub trait InnerBingleApi {
     fn set_on_message(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
 
     fn set_on_connect(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
+
+    fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -392,6 +396,10 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
     fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn rust_comms::ddb::DdbBackend) {
         self.inner_bingle_api_internal.ripple_message(message, originator_id, ddb_backend);
     }
+
+    fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
+        self.inner_bingle_api_internal.get_signing_key().or_else(|| self.inner_bingle_api.get_signing_key())
+    }
 }
 
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApiInternal` but provides defaults,
@@ -470,6 +478,10 @@ pub trait InnerBingleApiInternal {
     fn reset_signon_complete(&self) {}
 
     fn ripple_message(&self, _message: serde_json::Value, _originator_id: String, _ddb_backend: &dyn rust_comms::ddb::DdbBackend) {}
+
+    fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
+        None
+    }
 }
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.

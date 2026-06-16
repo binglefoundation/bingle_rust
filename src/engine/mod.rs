@@ -2122,6 +2122,7 @@ impl Engine {
     pub fn ddb_upsert_record(&self, record: AdvertRecord) {
         if !record.verify() {
             tracing::warn!("[Engine::ddb_upsert_record] signature verification failed for record id={}", record.id);
+            return;
         }
         if let Ok(mut b) = self.ddb_backend.lock() {
             b.upsert(record);

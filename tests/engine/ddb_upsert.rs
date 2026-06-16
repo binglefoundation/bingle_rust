@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration};
 
-use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
@@ -75,8 +75,9 @@ pub fn ddb_upsert_success_when_server_is_relay() {
     // Build a valid UpsertResolve from client where startId == record.id == client id
     let _server_id = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id()).expect("server get_my_id Some"); // Use API to ensure functions are wired
     let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("client id Some");
+    let signing_key = client.access_unsafe_for_tests(|c| c.get_signing_key()).expect("signing key ok");
 
-    let record = AdvertRecord::new_unsigned(client_id.clone(), Some(InetSocketAddress{ host: "127.0.0.1".into(), port: 9999 }), Some(false), None, None, "2025-01-01T00:00:00Z".into());
+    let record = AdvertRecord::new(client_id.clone(), Some(InetSocketAddress{ host: "127.0.0.1".into(), port: 9999 }), Some(false), None, None, "2025-01-01T00:00:00Z".into(), &signing_key);
     let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
         app: "ddb".into(),
         start_id: client_id.clone(),
