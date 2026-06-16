@@ -472,8 +472,6 @@ impl MessageHandler for DefaultPrintingHandler {
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if up.record.id != up.start_id { return; }
         if !up.rippled && up.record.id != sender_id { return; }
-        // TODO: validate the sender_id is the record id, unless the message is rippled
-        // TODO: validate up.record is signed by up.id
         if up.tag.is_none() {
             tracing::error!("[handlers::on_ddb_upsert_resolve] No responseTag in DdbUpsertResolve {:?}", up);
             return;
@@ -523,16 +521,26 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_ddb_delete_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDeleteResolve) {
         let router = &from.router;
         if !router.get_am_relay() { return; }
-        // Validate sender id
+        // Validate sender id from transport against message startId
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        if !msg.rippled && msg.start_id != sender_id { return; }
-        // TODO: need to validate the sender_id is the same as the advert record id unless the
-        // message is rippled
-        // FUTURE: delete messages will also be signed by id
+        if !msg.rippled && msg.start_id != sender_id {
+            tracing::warn!("[handlers::on_ddb_delete_resolve] Unauthorized delete attempt: sender={} target={}", sender_id, msg.start_id);
+            return;
+        }
 
         // Delete from backend
         if let Some(backend) = router.get_ddb_backend() {
-            if let Ok(mut b) = backend.lock() { b.delete(&msg.start_id); }
+            if let Ok(mut b) = backend.lock() {
+                // Validate that the existing record matches the sender if not rippled
+                // FUTURE: delete messages will also be signed by id
+                if let Some(record) = b.lookup(&msg.start_id) {
+                    if !msg.rippled && record.id != sender_id {
+                        tracing::warn!("[handlers::on_ddb_delete_resolve] Record ID mismatch for delete: record.id={} sender_id={}", record.id, sender_id);
+                        return;
+                    }
+                }
+                b.delete(&msg.start_id);
+            }
         }
 
         // Prepare response JSON and stash on router for Engine/DTLS layer to send.
