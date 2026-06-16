@@ -16,15 +16,14 @@ use rust_comms::messages::types::{
 };
 
 fn sample_advert_record() -> AdvertRecord {
-    AdvertRecord {
-        id: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ".to_string(),
-        endpoint: None,
-        am_relay: None,
-        relay_id: None,
-        relay_sig: None,
-        date: "2024-01-01T00:00:00Z".to_string(),
-        sig: None,
-    }
+    AdvertRecord::new_unsigned(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ".to_string(),
+        None,
+        None,
+        None,
+        None,
+        "2024-01-01T00:00:00Z".to_string(),
+    )
 }
 
 fn sample_inet_addr() -> InetSocketAddress {

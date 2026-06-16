@@ -31,6 +31,11 @@ pub mod register_collision;
 pub mod register_uniqueness;
 #[path = "../blockchain/dapp_app_integration.rs"]
 pub mod dapp_app_integration;
+// Engine integration tests needing localnet
+#[path = "../integration/engine/handle_lookup_localnet.rs"]
+pub mod handle_lookup_localnet;
+#[path = "../integration/engine/route_incoming_sender_auth_localnet.rs"]
+pub mod route_incoming_sender_auth_localnet;
 // Relay localnet test
 #[path = "../relay/relay_updater_localnet.rs"]
 pub mod relay_updater_localnet;
