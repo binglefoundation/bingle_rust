@@ -43,6 +43,10 @@ struct Inner {
     error_reported: bool,
     // Timestamp of the last received STUN response (used to detect server silence)
     last_response_time: Option<Instant>,
+    // Timestamp of the last sent STUN binding request while in Consistent/Inconsistent state.
+    // The no-response timeout is measured from this point: we revert only when
+    // no response has arrived since this request and the timeout has elapsed.
+    last_request_time: Option<Instant>,
     // How long without any response before reverting from Consistent/Inconsistent to None
     no_response_timeout: Duration,
 }
@@ -116,6 +120,7 @@ impl StunEndpointFinderImpl {
             intervals_without_two: 0,
             error_reported: false,
             last_response_time: None,
+            last_request_time: None,
             no_response_timeout: Duration::from_secs(30),
         };
         Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None, stop_cond: Arc::new(Condvar::new()), no_response_timeout_override: None }
@@ -199,6 +204,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
             inner.intervals_without_two = 0;
             inner.error_reported = false;
             inner.last_response_time = None;
+            inner.last_request_time = None;
             if let Some(t) = self.no_response_timeout_override {
                 inner.no_response_timeout = t;
             }
@@ -244,6 +250,19 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             } else { None }
                         };
                         if let Some(target) = target_addr_opt {
+                            // Record when we FIRST sent a request without a subsequent response,
+                            // so the no-response timeout is measured from that moment.
+                            // We only set last_request_time if it is not already set: this
+                            // anchors the timer to the first unanswered request in the current
+                            // silent window rather than resetting it on every successive poll,
+                            // which would push the revert out indefinitely.
+                            // last_request_time is cleared by process_packet (via the revert
+                            // reset) whenever a fresh response arrives.
+                            if matches!(inner.state, StunState::Consistent | StunState::Inconsistent)
+                                && inner.last_request_time.is_none()
+                            {
+                                inner.last_request_time = Some(Instant::now());
+                            }
                             if let Some(h) = handler.as_ref() {
                                 let host = target.ip().to_string();
                                 let port = target.port();
@@ -253,15 +272,25 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                         }
                     }
                     // When in Consistent or Inconsistent state, check whether we have heard
-                    // from any server within the no_response_timeout window.  If the timeout
-                    // has elapsed (servers stopped responding — network outage or IP change),
-                    // revert to None so the engine can re-identify the NAT type.
+                    // from any server since the last binding request we sent.  If
+                    // no_response_timeout has elapsed since that request and no response has
+                    // arrived in that window, revert to None so the engine can re-identify
+                    // the NAT type.  We deliberately check AFTER sending so the request is
+                    // always dispatched, but the timeout is anchored to last_request_time —
+                    // not to the moment of the check — which prevents the revert from firing
+                    // in the same iteration that sends the request.
                     if matches!(inner.state, StunState::Consistent | StunState::Inconsistent) {
-                        let silence_too_long = match inner.last_response_time {
-                            Some(t) => t.elapsed() > inner.no_response_timeout,
-                            // If we somehow never recorded a response but ended up in
-                            // Consistent/Inconsistent, treat as timed out.
-                            None => true,
+                        let silence_too_long = match (inner.last_request_time, inner.last_response_time) {
+                            // We have sent at least one request: revert only when the timeout
+                            // has elapsed since that request AND no response arrived after it.
+                            (Some(req_t), Some(resp_t)) => {
+                                req_t.elapsed() > inner.no_response_timeout
+                                    && resp_t < req_t
+                            }
+                            // Sent a request but never received any response.
+                            (Some(req_t), None) => req_t.elapsed() > inner.no_response_timeout,
+                            // No request recorded yet — do not revert; wait until we've sent one.
+                            (None, _) => false,
                         };
                         if silence_too_long {
                             tracing::info!(
@@ -271,6 +300,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                             inner.state = StunState::None;
                             inner.endpoint = None;
                             inner.last_response_time = None;
+                            inner.last_request_time = None;
                             inner.intervals_without_two = 0;
                             // Reset per-server state so the next round re-polls everyone.
                             for s in inner.servers.iter_mut() {
@@ -374,6 +404,9 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         }
         // Track when the last response arrived so the poll loop can detect silence.
         inner.last_response_time = Some(Instant::now());
+        // Clear the first-unanswered-request anchor: this response means the current
+        // silent window is over, so the next poll will start a fresh window.
+        inner.last_request_time = None;
         // Recompute state and notify
         inner.recompute_state_and_notify();
     }
@@ -402,9 +435,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         // re-enter Blocked state (which would happen if intervals_without_two was still >= 3).
         inner.intervals_without_two = 0;
         inner.error_reported = false;
-        // Clear the last-response timestamp so the no-response timeout does not fire
-        // immediately after a reset (the clock starts fresh from now).
+        // Clear the last-response and last-request timestamps so the no-response timeout
+        // does not fire immediately after a reset (the clock starts fresh from now).
         inner.last_response_time = None;
+        inner.last_request_time = None;
         // Reset per-server state so the polling loop will re-poll all servers.
         // ever_responded is intentionally preserved: a server that was reachable before
         // the reset is still a known-good server and should continue to be kept alive.
