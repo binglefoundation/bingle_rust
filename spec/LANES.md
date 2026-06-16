@@ -68,7 +68,7 @@ robustness:
 - ~~implement relay cache properly with expiry~~
 - ~~use relay cache efficently during relay init~~
 - ~~lookup matches handles with downcase and some punctuation normalized (as Gmail?)~~
-- ensure ipv6 is unsupported consistently
+- ~~ensure ipv6 is unsupported consistently~~
 - ensure handle uniqueness
 - handle fails correctly
   + ~~node~~
