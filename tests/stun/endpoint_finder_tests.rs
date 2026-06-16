@@ -409,6 +409,101 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
     );
 }
 
+// Regression test for the bug where the no-response revert fired in the same loop
+// iteration that sent the binding request.
+//
+// The sequence that triggered the bug:
+//   1. Finder reaches Consistent state; last_response_time is set.
+//   2. no_response_timeout elapses with no further response (e.g., network hiccup).
+//   3. Loop wakes, sends binding requests, then IMMEDIATELY checks the timeout and
+//      reverts — before the server has any chance to reply.
+//
+// Expected behaviour: after sending the request the timer is anchored to the moment
+// of sending (last_request_time), so the revert must not fire until
+// no_response_timeout elapses AFTER that request with still no answer.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn consistent_revert_does_not_fire_immediately_after_request_is_sent() {
+    init_test_logging();
+
+    let mut finder = StunEndpointFinderImpl::new();
+    // Short no-response timeout and a repeat interval longer than the timeout so
+    // the poll loop will send a request then immediately see the (now-stale)
+    // last_response_time exceed the timeout — which was the bug.
+    let no_response_ms = 200u64;
+    let repeat_ms      = 600u64;
+    finder.set_no_response_timeout_for_tests(Duration::from_millis(no_response_ms));
+
+    let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
+    let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
+
+    let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let changes_clone = Arc::clone(&changes);
+    finder.set_state_change_handler(Some(Arc::new(move |st, ep| {
+        changes_clone.lock().unwrap().push((st, ep));
+    })));
+
+    // Use a search interval long enough that both process_packet calls complete
+    // before the background thread wakes and clears server state.  The repeat
+    // interval (repeat_ms) is what we actually want to test.
+    let search_ms = 500u64;
+    finder.start(vec![s1, s2], search_ms, repeat_ms);
+
+    // Inject two consistent responses → Consistent state; last_response_time is set.
+    // Both happen synchronously here so the background thread has not yet run.
+    let r = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.process_packet(s1, &r);
+    finder.process_packet(s2, &r);
+
+    // Wait until Consistent is confirmed.
+    let deadline = Instant::now() + Duration::from_millis(4_000);
+    loop {
+        if changes.lock().unwrap().iter().any(|(st, _)| *st == StunState::Consistent) { break; }
+        assert!(Instant::now() < deadline, "timed out waiting for Consistent state");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Record the time we reached Consistent.  From this point we withhold further
+    // responses; the finder must not revert until at least no_response_ms after it
+    // first sends a Consistent-state binding request (i.e., after repeat_ms + no_response_ms).
+    let consistent_reached_at = Instant::now();
+
+    // Wait until a None transition is recorded after Consistent.
+    let overall_deadline = Instant::now() + Duration::from_millis(10_000);
+    loop {
+        let list = changes.lock().unwrap();
+        let consistent_idx = list.iter().position(|(st, _)| *st == StunState::Consistent);
+        if let Some(ci) = consistent_idx {
+            if list[ci..].iter().any(|(st, _)| *st == StunState::None) { break; }
+        }
+        assert!(Instant::now() < overall_deadline, "timed out waiting for revert to None");
+        drop(list);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let revert_elapsed = consistent_reached_at.elapsed();
+
+    finder.stop();
+
+    // Core assertion: the revert must not have fired immediately after the first
+    // Consistent-state binding request.  The first such request is sent after
+    // repeat_ms (600ms); the revert may only fire after another no_response_ms (200ms)
+    // elapses with no reply.  So total time from Consistent to revert >= repeat_ms + no_response_ms.
+    //
+    // We allow a generous lower bound of repeat_ms alone (conservatively lower than
+    // repeat_ms + no_response_ms) to avoid flakiness on slow CI machines, while still
+    // catching the bug (which fires the revert within a few milliseconds of Consistent).
+    let min_expected = Duration::from_millis(repeat_ms);
+    assert!(
+        revert_elapsed >= min_expected,
+        "revert fired only {:?} after Consistent was reached \
+         (expected >= {}ms = repeat_ms); the revert must not fire immediately after \
+         the first Consistent-state binding request",
+        revert_elapsed, repeat_ms
+    );
+}
+
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stop_stops_promptly() {
