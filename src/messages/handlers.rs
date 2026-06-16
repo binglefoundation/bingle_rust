@@ -312,6 +312,17 @@ pub trait MessageHandler {
         api.turn_handle_called(relay_addr, my_pub, msg.channel);
     }
 
+    // Mutex messages
+    fn on_mutex_request(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexRequest) {
+        api.mutex_handle_request(from.id.clone(), msg.clone());
+    }
+    fn on_mutex_response(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexResponse) {
+        api.mutex_handle_response(from.id.clone(), msg.clone());
+    }
+    fn on_mutex_release(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexRelease) {
+        api.mutex_handle_release(from.id.clone(), msg.clone());
+    }
+
     // DDB messages (default to unimplemented unless overridden)
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
     fn on_ddb_delete_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDeleteResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DeleteResolve(msg.clone()))); }
