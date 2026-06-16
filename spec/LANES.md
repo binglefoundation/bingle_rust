@@ -104,9 +104,9 @@ android:
 - build APK
 
 deploy:
-- ~~quick deploy steps for UX/backend change~~
+- quick deploy steps for UX/backend change
+- ~~deploy update to relay stack without total replace~~
   This is in README.md --redeploy
-- deploy update to relay stack without total replace
 - run unit tests on CD
 - stabilise integration tests and run on CD with localnet
 - run staging tests on CD / AWS
