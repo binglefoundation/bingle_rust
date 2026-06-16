@@ -1066,12 +1066,59 @@ impl Engine {
         }
     }
 
+    /// Inject cipher_suite into raw JSON bytes, parse the message schema, and route to the router.
+    ///
+    /// This is the inner routing step that runs after the engine has validated the sender.
+    /// Extracted to a standalone function so that it can be unit-tested independently of the full
+    /// DTLS handler closure.
+    pub(crate) fn route_incoming(
+        data: &[u8],
+        cipher_suite_opt: Option<&str>,
+        router: &Arc<crate::messages::router::Router>,
+        issuer: &str,
+        from: &NetworkEndpoint,
+        custom_handler: Option<&Arc<dyn crate::messages::handlers::MessageHandler + Send + Sync>>,
+    ) {
+        match std::str::from_utf8(data) {
+            Ok(s) => {
+                // Inject cipher_suite into the raw JSON before parsing/routing
+                let s_with_cipher = if let Some(cs) = cipher_suite_opt {
+                    if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(s) {
+                        if let Some(obj) = v.as_object_mut() {
+                            obj.insert("cipher_suite".to_string(), serde_json::Value::String(cs.to_string()));
+                        }
+                        serde_json::to_string(&v).unwrap_or_else(|_| s.to_string())
+                    } else {
+                        s.to_string()
+                    }
+                } else {
+                    s.to_string()
+                };
+                match from_json_str(&s_with_cipher) {
+                    Ok(msg) => {
+                        tracing::info!("[Engine::route_incoming] routing message {:?}", msg);
+                        if let Some(h) = custom_handler {
+                            router.route(h.as_ref(), &msg, issuer);
+                        } else {
+                            router.route_with_network(DefaultPrintingHandler, &msg, issuer, from);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("[Engine::route_incoming] not valid json {} {:?}", s_with_cipher, e);
+                        DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s_with_cipher)));
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[Engine::route_incoming] not UTF-8 {:?}", e);
+                DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
+            }
+        }
+    }
+
     /// Install or wrap the DTLS handle_message callback to delegate into the Engine routing logic.
     /// This avoids duplicating the same closure in different Engine start paths.
     fn install_dtls_handler(&mut self) -> Result<(), BingleError> {
-        // Capture any existing packet transport handler before installing Engine routing.
-        let existing = self.packet_transport.get_handle_message();
-
         // Capture safe, shareable state for the handler closure (avoid raw self pointers)
         let connections = self.connections.clone();
         let endpoint_status = self.endpoint_status.clone();
@@ -1089,7 +1136,7 @@ impl Engine {
             .set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
-                let work = || -> Result<Option<Vec<u8>>, String> {
+                let dtls_handler_worker = || -> Result<Option<Vec<u8>>, String> {
                     // Validate identity (opted in and has handle)
                     let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
                     let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
@@ -1195,52 +1242,21 @@ impl Engine {
 
                     // Route through the message framework for internal handlers (triangle tests etc.)
                     // Use a custom handler when injected (e.g. for tests), otherwise DefaultPrintingHandler.
-                    match std::str::from_utf8(data) {
-                        Ok(s) => {
-                            // Inject cipher_suite into the raw JSON before parsing/routing
-                            let s_with_cipher = if let Some(ref cs) = cipher_suite_opt {
-                                if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(s) {
-                                    if let Some(obj) = v.as_object_mut() {
-                                        obj.insert("cipher_suite".to_string(), serde_json::Value::String(cs.clone()));
-                                    }
-                                    serde_json::to_string(&v).unwrap_or_else(|_| s.to_string())
-                                } else {
-                                    s.to_string()
-                                }
-                            } else {
-                                s.to_string()
-                            };
-                            match from_json_str(&s_with_cipher) {
-                            Ok(msg) => {
-                                tracing::info!("[Engine::install_dtls_handler][cb] routing message {:?}", msg);
-                                if let Some(h) = &custom_handler {
-                                    router_arc.route(h.as_ref(), &msg, issuer);
-                                } else {
-                                    router_arc.route_with_network(DefaultPrintingHandler, &msg, issuer, &from);
-                                }
-                            }
-                            Err(e) => {
-                                // Not valid JSON per our schema; treat as plaintext with raw bytes
-                                tracing::warn!("[Engine::install_dtls_handler][cb] not valid json {} {:?}", s_with_cipher, e);
-                                DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s_with_cipher.clone())));
-                            }
-                        }
-                        },
-                        Err(e) => {
-                            tracing::warn!("[Engine::install_dtls_handler][cb] not UTF-8 {:?}", e);
-                            DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
-                        }
-                    }
+                    Engine::route_incoming(
+                        data,
+                        cipher_suite_opt.as_deref(),
+                        &router_arc,
+                        issuer,
+                        &from,
+                        custom_handler.as_ref(),
+                    );
 
-                    // Then delegate to any previously-registered handler from API
-                    if let Some(h) = &existing {
-                        h(server, from, issuer, data)
-                    } else {
-                        Ok(Some(data.to_vec()))
-                    }
+                    // Do not delegate to any previously-registered handler from API
+                    // this replaces the handler
+                    Ok(Some(data.to_vec()))
                 };
 
-                work()
+                dtls_handler_worker()
             })));
         Ok(())
     }

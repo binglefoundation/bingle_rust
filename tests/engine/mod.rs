@@ -68,3 +68,6 @@ pub mod stun_address_change;
 
 #[path = "stun_inconsistent_relay.rs"]
 pub mod stun_inconsistent_relay;
+
+#[path = "sender_auth.rs"]
+pub mod sender_auth;

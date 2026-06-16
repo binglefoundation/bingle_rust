@@ -102,5 +102,4 @@ pub mod relay_report_failed_handler;
 
 #[path = "messages/report_failed_ripple_handler.rs"]
 pub mod report_failed_ripple_handler;
-#[path = "messages/non_opted_in_sender_ignored.rs"]
-pub mod non_opted_in_sender_ignored;
+
