@@ -1,13 +1,13 @@
 use tracing_subscriber::filter::LevelFilter;
-use rust_comms::api::bingle_api::{StartOptions, BingleApi};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
-use rust_comms::util::config_utils::{parse_node_file_with_ids, parse_stun_file};
 use rust_comms::{AlgoBingle, AlgoOps};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use rust_comms::util::config_utils::{parse_node_file_with_ids, parse_stun_file};
 
 pub fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())

@@ -3,10 +3,11 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender};
 
-use rust_comms::api::bingle_api::{BingleApi, BingleError, OnConnectHandler, OnMessageHandler, OnListeningHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleError, OnConnectHandler, OnListeningHandler, OnMessageHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::util::config_utils::{parse_start_options_from_args, parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
-use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
+use rust_comms::util::config_utils::{parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
+use rust_comms::util::cli_utils::parse_start_options_from_args;
+use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::error::{AlgoError, AlgoErrorKind};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::BingleAccessUnsafeForTests;

@@ -1,4 +1,4 @@
-use rust_comms::util::config_utils::parse_start_options_from_args;
+use rust_comms::util::cli_utils::parse_start_options_from_args;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

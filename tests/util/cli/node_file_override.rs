@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rust_comms::util::config_utils::parse_start_options_from_args;
+use rust_comms::util::cli_utils::parse_start_options_from_args;
 
 fn write_temp_nodefile(content: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
