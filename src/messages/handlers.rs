@@ -472,8 +472,8 @@ impl MessageHandler for DefaultPrintingHandler {
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if up.record.id != up.start_id { return; }
         if !up.rippled && up.record.id != sender_id { return; }
-        // validate the sender_id is the record id, unless the message is rippled
-
+        // TODO: validate the sender_id is the record id, unless the message is rippled
+        // TODO: validate up.record is signed by up.id
         if up.tag.is_none() {
             tracing::error!("[handlers::on_ddb_upsert_resolve] No responseTag in DdbUpsertResolve {:?}", up);
             return;
@@ -526,7 +526,7 @@ impl MessageHandler for DefaultPrintingHandler {
         // Validate sender id
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if !msg.rippled && msg.start_id != sender_id { return; }
-        // need to validate the sender_id is the same as the advert record id unless the
+        // TODO: need to validate the sender_id is the same as the advert record id unless the
         // message is rippled
         // FUTURE: delete messages will also be signed by id
 

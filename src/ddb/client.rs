@@ -447,7 +447,13 @@ impl DdbClient for DdbClientImpl {
             }
         };
 
-        // TODO: deserialize advert record and validate signature here
+        // Deserialize advert record and validate signature
+        let record: super::AdvertRecord = serde_json::from_value(advert.clone())
+            .map_err(|e| BingleError::Other(format!("Failed to deserialize AdvertRecord: {}", e)))?;
+
+        if !record.verify() {
+            return Err(BingleError::Other(format!("AdvertRecord signature verification failed for {}", id)));
+        }
 
         // Check if this is a relay-based record
         if let Some(relay_id_value) = advert.get("relayId") {

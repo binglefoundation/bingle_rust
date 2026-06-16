@@ -20,3 +20,6 @@ pub mod advert_record_signing;
 
 #[path = "ddb/mandatory_verification.rs"]
 pub mod mandatory_verification;
+
+#[path = "ddb/client/lookup_validation.rs"]
+pub mod ddb_client_lookup_validation;
