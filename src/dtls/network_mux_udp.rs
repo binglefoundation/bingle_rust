@@ -120,6 +120,10 @@ impl UdpNetworkMux {
                 match socket.recv_from(&mut buf) {
                     Ok((n, from)) => {
                         if n == 0 { continue; }
+                        if from.is_ipv6() {
+                            warn!("[UdpNetworkMux][receive][loop on {:?}] rejecting IPv6 packet from {}", to, from);
+                            continue;
+                        }
                         let data = &buf[..n];
                         tracing::trace!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
                         this.process_packet(&NetworkEndpoint::new_direct(from), data);
