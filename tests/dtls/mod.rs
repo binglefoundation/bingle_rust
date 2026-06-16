@@ -18,8 +18,8 @@ pub mod dtls_openssl_smoke;
 #[path = "dtls_peer_certificate_handlers.rs"]
 pub mod dtls_peer_certificate_handlers;
 
-#[path = "dtls_peer_certificate_rejection.rs"]
-pub mod dtls_peer_certificate_rejection;
+#[path = "dtls_server_peer_cert_rejection.rs"]
+pub mod dtls_server_peer_cert_rejection;
 
 #[path = "dtls_start_with_network_mux.rs"]
 pub mod dtls_start_with_network_mux;
@@ -32,6 +32,9 @@ pub mod dtls_stun_interleave_handshake;
 
 #[path = "network_mux_udp_tests.rs"]
 pub mod network_mux_udp_tests;
+
+#[path = "network_mux_udp_ipv6_rejection_tests.rs"]
+pub mod network_mux_udp_ipv6_rejection_tests;
 
 #[path = "network_mux_udp_reprocess.rs"]
 pub mod network_mux_udp_reprocess;

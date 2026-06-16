@@ -312,6 +312,17 @@ pub trait MessageHandler {
         api.turn_handle_called(relay_addr, my_pub, msg.channel);
     }
 
+    // Mutex messages
+    fn on_mutex_request(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexRequest) {
+        api.mutex_handle_request(from.id.clone(), msg.clone());
+    }
+    fn on_mutex_response(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexResponse) {
+        api.mutex_handle_response(from.id.clone(), msg.clone());
+    }
+    fn on_mutex_release(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexRelease) {
+        api.mutex_handle_release(from.id.clone(), msg.clone());
+    }
+
     // DDB messages (default to unimplemented unless overridden)
     fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
     fn on_ddb_delete_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDeleteResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DeleteResolve(msg.clone()))); }
@@ -469,6 +480,10 @@ impl MessageHandler for DefaultPrintingHandler {
         if let Some(backend) = router.get_ddb_backend() {
             if let Ok(mut b) = backend.lock()
             {
+                if !up.record.verify() {
+                    tracing::warn!("[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}", up.record.id);
+                    return;
+                }
                 tracing::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
                 b.upsert(up.record.clone()); }
             else {
@@ -506,13 +521,26 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_ddb_delete_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDeleteResolve) {
         let router = &from.router;
         if !router.get_am_relay() { return; }
-        // Validate sender id
+        // Validate sender id from transport against message startId
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        if !msg.rippled && msg.start_id != sender_id { return; }
+        if !msg.rippled && msg.start_id != sender_id {
+            tracing::warn!("[handlers::on_ddb_delete_resolve] Unauthorized delete attempt: sender={} target={}", sender_id, msg.start_id);
+            return;
+        }
 
         // Delete from backend
         if let Some(backend) = router.get_ddb_backend() {
-            if let Ok(mut b) = backend.lock() { b.delete(&msg.start_id); }
+            if let Ok(mut b) = backend.lock() {
+                // Validate that the existing record matches the sender if not rippled
+                // FUTURE: delete messages will also be signed by id
+                if let Some(record) = b.lookup(&msg.start_id) {
+                    if !msg.rippled && record.id != sender_id {
+                        tracing::warn!("[handlers::on_ddb_delete_resolve] Record ID mismatch for delete: record.id={} sender_id={}", record.id, sender_id);
+                        return;
+                    }
+                }
+                b.delete(&msg.start_id);
+            }
         }
 
         // Prepare response JSON and stash on router for Engine/DTLS layer to send.
@@ -622,15 +650,15 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         });
 
-        let record = AdvertRecord {
-            id: msg.start_id.clone(),
+        let mut record = AdvertRecord::new_unsigned(
+            msg.start_id.clone(),
             endpoint,
-            am_relay: Some(true),
-            relay_id: None,
-            relay_sig: None,
-            date: "1970-01-01T00:00:00Z".to_string(),
-            sig: msg.original_signature.clone(),
-        };
+            Some(true),
+            None,
+            None,
+            "1970-01-01T00:00:00Z".to_string(),
+        );
+        record.sig = msg.original_signature.clone();
         api.ddb_upsert_record(record);
         tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
 

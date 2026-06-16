@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::util::logging::LogMode;
 use serde_json::Value as JsonValue;
 use crate::blockchain::error::AlgoError;
+use ed25519_dalek::SigningKey;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BingleError {
@@ -115,6 +116,10 @@ pub trait BingleApiInternal: Send + Sync {
 
     /// Send a message to all known relays (except ourselves and the message originator).
     fn ripple_message(&self, _message: JsonValue, _originator_id: String, _ddb_backend: &dyn crate::ddb::DdbBackend) {}
+
+    fn get_signing_key(&self) -> Option<SigningKey> {
+        None
+    }
 }
 
 #[macro_export]
@@ -150,6 +155,7 @@ macro_rules! impl_bingle_api_internal_noop {
             fn signal_signon_complete(&self) {}
             fn reset_signon_complete(&self) {}
             fn ripple_message(&self, _message: serde_json::Value, _originator_id: String, _ddb_backend: &dyn $crate::ddb::DdbBackend) {}
+            fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> { None }
         }
     }
 }

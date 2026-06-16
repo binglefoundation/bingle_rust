@@ -87,27 +87,25 @@ pub fn ripple_message_reaches_relays_in_backend() {
     
     let relay1_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay1_addr: SocketAddr = "127.0.0.1:1111".parse().unwrap();
-    backend.upsert(AdvertRecord {
-        id: relay1_id.clone(),
-        endpoint: Some(InetSocketAddress::from(relay1_addr)),
-        am_relay: Some(true),
-        relay_id: None,
-        relay_sig: None,
-        date: "2023-01-01T00:00:00Z".to_string(),
-        sig: None,
-    });
+    backend.upsert(AdvertRecord::new_unsigned(
+        relay1_id.clone(),
+        Some(InetSocketAddress::from(relay1_addr)),
+        Some(true),
+        None,
+        None,
+        "2023-01-01T00:00:00Z".to_string(),
+    ));
 
     let relay2_id = test_util::ADDRESS_10MIL.to_string();
     let relay2_addr: SocketAddr = "127.0.0.1:2222".parse().unwrap();
-    backend.upsert(AdvertRecord {
-        id: relay2_id.clone(),
-        endpoint: Some(InetSocketAddress::from(relay2_addr)),
-        am_relay: Some(true),
-        relay_id: None,
-        relay_sig: None,
-        date: "2023-01-01T00:00:00Z".to_string(),
-        sig: None,
-    });
+    backend.upsert(AdvertRecord::new_unsigned(
+        relay2_id.clone(),
+        Some(InetSocketAddress::from(relay2_addr)),
+        Some(true),
+        None,
+        None,
+        "2023-01-01T00:00:00Z".to_string(),
+    ));
 
     let originator_id = "V332YQYPFY5D3U7P36YV3Z6W3L7S6U2T5Q6X4Z5S6U7T8Y9Z0A1B2C3D4E".to_string(); // Just another valid-ish looking address
     // Wait, better use another constant from test_util if available.
@@ -150,41 +148,38 @@ pub fn ripple_message_skips_originator_and_self() {
     // Relay 1 (Normal)
     let relay1_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay1_addr: SocketAddr = "127.0.0.1:1111".parse().unwrap();
-    backend.upsert(AdvertRecord {
-        id: relay1_id.clone(),
-        endpoint: Some(InetSocketAddress::from(relay1_addr)),
-        am_relay: Some(true),
-        relay_id: None,
-        relay_sig: None,
-        date: "2023-01-01T00:00:00Z".to_string(),
-        sig: None,
-    });
+    backend.upsert(AdvertRecord::new_unsigned(
+        relay1_id.clone(),
+        Some(InetSocketAddress::from(relay1_addr)),
+        Some(true),
+        None,
+        None,
+        "2023-01-01T00:00:00Z".to_string(),
+    ));
 
     // Relay 2 (Originator)
     let relay2_id = test_util::ADDRESS_10MIL.to_string();
     let relay2_addr: SocketAddr = "127.0.0.1:2222".parse().unwrap();
-    backend.upsert(AdvertRecord {
-        id: relay2_id.clone(),
-        endpoint: Some(InetSocketAddress::from(relay2_addr)),
-        am_relay: Some(true),
-        relay_id: None,
-        relay_sig: None,
-        date: "2023-01-01T00:00:00Z".to_string(),
-        sig: None,
-    });
+    backend.upsert(AdvertRecord::new_unsigned(
+        relay2_id.clone(),
+        Some(InetSocketAddress::from(relay2_addr)),
+        Some(true),
+        None,
+        None,
+        "2023-01-01T00:00:00Z".to_string(),
+    ));
 
     // Relay 3 (Self)
     let relay3_id = test_util::ADDRESS_SPEND.to_string();
     let relay3_addr: SocketAddr = "127.0.0.1:3333".parse().unwrap();
-    backend.upsert(AdvertRecord {
-        id: relay3_id.clone(),
-        endpoint: Some(InetSocketAddress::from(relay3_addr)),
-        am_relay: Some(true),
-        relay_id: None,
-        relay_sig: None,
-        date: "2023-01-01T00:00:00Z".to_string(),
-        sig: None,
-    });
+    backend.upsert(AdvertRecord::new_unsigned(
+        relay3_id.clone(),
+        Some(InetSocketAddress::from(relay3_addr)),
+        Some(true),
+        None,
+        None,
+        "2023-01-01T00:00:00Z".to_string(),
+    ));
 
     let ripple_msg = serde_json::json!({"ripple": "data"});
 

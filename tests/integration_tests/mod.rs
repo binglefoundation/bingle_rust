@@ -16,6 +16,8 @@ pub mod algo_bingle_static_endpoint_integration;
 pub mod asset_manager_creator_localnet;
 #[path = "../integration/blockchain/asset_clawback_creator_localnet.rs"]
 pub mod asset_clawback_creator_localnet;
+#[path = "../integration/blockchain/unique_handle.rs"]
+pub mod unique_handle;
 // API integration tests that need localnet
 #[path = "../integration/api/send_message_to_id_integration.rs"]
 pub mod send_message_to_id_integration;
@@ -31,6 +33,11 @@ pub mod register_collision;
 pub mod register_uniqueness;
 #[path = "../blockchain/dapp_app_integration.rs"]
 pub mod dapp_app_integration;
+// Engine integration tests needing localnet
+#[path = "../integration/engine/handle_lookup_localnet.rs"]
+pub mod handle_lookup_localnet;
+#[path = "../integration/engine/route_incoming_sender_auth_localnet.rs"]
+pub mod route_incoming_sender_auth_localnet;
 // Relay localnet test
 #[path = "../relay/relay_updater_localnet.rs"]
 pub mod relay_updater_localnet;

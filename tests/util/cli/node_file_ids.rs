@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rust_comms::util::cli_utils::{parse_start_options_from_args, parse_node_file_with_ids, resolve_app_asset_ids};
+use rust_comms::util::cli_utils::parse_start_options_from_args;
 use serial_test::serial;
+use rust_comms::util::config_utils::{parse_node_file_with_ids, resolve_app_asset_ids};
 
 fn write_temp_nodefile(content: &str) -> PathBuf {
     let mut p = std::env::temp_dir();

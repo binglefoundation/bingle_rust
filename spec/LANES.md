@@ -52,6 +52,7 @@ security:
 - delegate admin tasks to not be creator
 - implement permissioned relay only mode
 - ~~sign and check AdvertRecords~~
+- **validate rippled messages are from relays**
 - document all crates
 
 robustness:

@@ -5,3 +5,4 @@ pub mod algo_bingle_register_opt_in_app_localnet;
 pub mod algo_bingle_static_endpoint_integration;
 pub mod asset_manager_creator_localnet;
 pub mod asset_clawback_creator_localnet;
+pub mod unique_handle;

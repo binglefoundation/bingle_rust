@@ -257,14 +257,26 @@ impl DdbClient for DdbClientImpl {
                 return Err(BingleError::Other(err));
             }
         };
-        let record = AdvertRecord {
-            id: my_id.clone(),
-            endpoint: Some(InetSocketAddress::from(endpoint)),
-            am_relay: Some(am_relay),
-            relay_id: None,
-            relay_sig: None,
-            date: "1970-01-01T00:00:00Z".to_string(),
-            sig: None,
+        let date = "1970-01-01T00:00:00Z".to_string();
+        let record = if let Some(sk) = self.api.access(|a| a.get_signing_key()) {
+            AdvertRecord::new(
+                my_id.clone(),
+                Some(InetSocketAddress::from(endpoint)),
+                Some(am_relay),
+                None,
+                None,
+                date,
+                &sk,
+            )
+        } else {
+            AdvertRecord::new_unsigned(
+                my_id.clone(),
+                Some(InetSocketAddress::from(endpoint)),
+                Some(am_relay),
+                None,
+                None,
+                date,
+            )
         };
         let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
             app: "ddb".to_string(),
@@ -328,14 +340,26 @@ impl DdbClient for DdbClientImpl {
                 return Err(BingleError::Other(err));
             }
         };
-        let record = AdvertRecord {
-            id: my_id.clone(),
-            endpoint: None,
-            am_relay: Some(false),
-            relay_id: Some(relay_id),
-            relay_sig,
-            date: "1970-01-01T00:00:00Z".to_string(),
-            sig: None,
+        let date = "1970-01-01T00:00:00Z".to_string();
+        let record = if let Some(sk) = self.api.access(|a| a.get_signing_key()) {
+            AdvertRecord::new(
+                my_id.clone(),
+                None,
+                Some(false),
+                Some(relay_id),
+                relay_sig,
+                date,
+                &sk,
+            )
+        } else {
+            AdvertRecord::new_unsigned(
+                my_id.clone(),
+                None,
+                Some(false),
+                Some(relay_id),
+                relay_sig,
+                date,
+            )
         };
         let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
             app: "ddb".to_string(),
@@ -423,6 +447,14 @@ impl DdbClient for DdbClientImpl {
             }
         };
 
+        // Deserialize advert record and validate signature
+        let record: super::AdvertRecord = serde_json::from_value(advert.clone())
+            .map_err(|e| BingleError::Other(format!("Failed to deserialize AdvertRecord: {}", e)))?;
+
+        if !record.verify() {
+            return Err(BingleError::Other(format!("AdvertRecord signature verification failed for {}", id)));
+        }
+
         // Check if this is a relay-based record
         if let Some(relay_id_value) = advert.get("relayId") {
             let relay_id = match relay_id_value.as_str() {
@@ -457,8 +489,13 @@ impl DdbClient for DdbClientImpl {
                     return Err(BingleError::Other(err));
                 }
             };
-            let ip: IpAddr = match host.parse() {
-                Ok(ip) => ip,
+            let ip: IpAddr = match host.parse::<IpAddr>() {
+                Ok(ip) if ip.is_ipv4() => ip,
+                Ok(_) => {
+                    let err = format!("invalid host '{}': IPv6 addresses are not supported", host);
+                    tracing::error!("[DdbClientImpl::lookup] {}", err);
+                    return Err(BingleError::Other(err));
+                }
                 Err(_) => {
                     let err = format!("invalid host '{}': not an IP address", host);
                     tracing::error!("[DdbClientImpl::lookup] {}", err);

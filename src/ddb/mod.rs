@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey, Signature};
+use base64::{engine::general_purpose, Engine as _};
 
 pub mod client;
 
@@ -23,9 +25,15 @@ impl From<std::net::SocketAddr> for InetSocketAddress {
 }
 
 impl std::convert::TryFrom<InetSocketAddress> for std::net::SocketAddr {
-    type Error = std::net::AddrParseError;
+    type Error = String;
     fn try_from(val: InetSocketAddress) -> Result<Self, Self::Error> {
-        format!("{}:{}", val.host, val.port).parse()
+        let addr: std::net::SocketAddr = format!("{}:{}", val.host, val.port)
+            .parse()
+            .map_err(|e| format!("{}", e))?;
+        if addr.is_ipv6() {
+            return Err("IPv6 addresses are not supported".to_string());
+        }
+        Ok(addr)
     }
 }
 
@@ -39,6 +47,9 @@ impl std::str::FromStr for InetSocketAddress {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let addr: std::net::SocketAddr = s.parse().map_err(|e| format!("{}", e))?;
+        if addr.is_ipv6() {
+            return Err("IPv6 addresses are not supported".to_string());
+        }
         Ok(Self::from(addr))
     }
 }
@@ -69,6 +80,101 @@ pub struct AdvertRecord {
     /// Optional signature of this record by the node
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sig: Option<String>,
+}
+
+impl AdvertRecord {
+    /// Create a new signed AdvertRecord.
+    /// Signs over all fields except sig using ed25519/sha-512.
+    pub fn new(
+        id: String,
+        endpoint: Option<InetSocketAddress>,
+        am_relay: Option<bool>,
+        relay_id: Option<String>,
+        relay_sig: Option<String>,
+        date: String,
+        signing_key: &SigningKey,
+    ) -> Self {
+        let mut rec = Self {
+            id,
+            endpoint,
+            am_relay,
+            relay_id,
+            relay_sig,
+            date,
+            sig: None,
+        };
+        rec.sig = Some(rec.calculate_signature(signing_key));
+        rec
+    }
+
+    /// Create a new unsigned AdvertRecord.
+    pub fn new_unsigned(
+        id: String,
+        endpoint: Option<InetSocketAddress>,
+        am_relay: Option<bool>,
+        relay_id: Option<String>,
+        relay_sig: Option<String>,
+        date: String,
+    ) -> Self {
+        Self {
+            id,
+            endpoint,
+            am_relay,
+            relay_id,
+            relay_sig,
+            date,
+            sig: None,
+        }
+    }
+
+    /// Calculate the signature over all fields except sig.
+    pub fn calculate_signature(&self, signing_key: &SigningKey) -> String {
+        let mut copy = self.clone();
+        copy.sig = None;
+        // Use serde_json::to_vec for deterministic serialization of the struct
+        let data = serde_json::to_vec(&copy).expect("Failed to serialize AdvertRecord for signing");
+        let signature = signing_key.sign(&data);
+        general_purpose::STANDARD.encode(signature.to_bytes())
+    }
+
+    /// Verify the signature of this record.
+    /// The public key is derived from the id (Algorand address).
+    pub fn verify(&self) -> bool {
+        let sig_str = match &self.sig {
+            Some(s) => s,
+            None => return false,
+        };
+
+        let pk_bytes = match crate::blockchain::algo_ops::address_to_byte_key(&self.id) {
+            Ok(pk) => pk,
+            Err(_) => return false,
+        };
+
+        let vk = match VerifyingKey::from_bytes(&pk_bytes) {
+            Ok(vk) => vk,
+            Err(_) => return false,
+        };
+
+        let sig_bytes = match general_purpose::STANDARD.decode(sig_str) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+
+        let sig_arr: [u8; 64] = match sig_bytes.try_into() {
+            Ok(a) => a,
+            Err(_) => return false,
+        };
+        let sig = Signature::from_bytes(&sig_arr);
+
+        let mut copy = self.clone();
+        copy.sig = None;
+        let data = match serde_json::to_vec(&copy) {
+            Ok(d) => d,
+            Err(_) => return false,
+        };
+
+        vk.verify(&data, &sig).is_ok()
+    }
 }
 
 /// DDB backend trait: minimal CRUD required by issue

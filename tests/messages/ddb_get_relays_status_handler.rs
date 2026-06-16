@@ -64,9 +64,9 @@ pub fn ddb_get_relays_status_returns_response_when_relay_available() {
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
     {
         let mut b = backend.lock().unwrap();
-        b.upsert(AdvertRecord { id: "RID1".into(), endpoint: Some(InetSocketAddress { host: "127.0.0.1".into(), port: 4001 }), am_relay: Some(true), relay_id: None, relay_sig: None, date: "1970-01-01T00:00:00Z".into(), sig: None });
-        b.upsert(AdvertRecord { id: "RID2".into(), endpoint: Some(InetSocketAddress { host: "127.0.0.1".into(), port: 4002 }), am_relay: Some(true), relay_id: None, relay_sig: None, date: "1970-01-01T00:00:00Z".into(), sig: None });
-        b.upsert(AdvertRecord { id: "NODE".into(), endpoint: None, am_relay: Some(false), relay_id: None, relay_sig: None, date: "1970-01-01T00:00:00Z".into(), sig: None });
+        b.upsert(AdvertRecord::new_unsigned("RID1".into(), Some(InetSocketAddress { host: "127.0.0.1".into(), port: 4001 }), Some(true), None, None, "1970-01-01T00:00:00Z".into()));
+        b.upsert(AdvertRecord::new_unsigned("RID2".into(), Some(InetSocketAddress { host: "127.0.0.1".into(), port: 4002 }), Some(true), None, None, "1970-01-01T00:00:00Z".into()));
+        b.upsert(AdvertRecord::new_unsigned("NODE".into(), None, Some(false), None, None, "1970-01-01T00:00:00Z".into()));
     }
     router.set_ddb_backend(Some(backend.clone()));
 

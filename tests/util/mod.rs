@@ -33,6 +33,9 @@ pub mod printing_enable;
 #[path = "stun/comments.rs"]
 pub mod stun_comments;
 
+#[path = "stun/ipv4_only.rs"]
+pub mod stun_ipv4_only;
+
 pub mod relay_test_util;
 pub mod message_mocks;
 #[path = "parse_algos_test.rs"]

@@ -124,13 +124,11 @@ impl Router {
                 PingMessage::Ping(m) => handler.on_ping_ping(api.clone(), from, m),
                 PingMessage::Response(m) => handler.on_ping_response(api.clone(), from, m),
             },
-            Message::Mutex(m) => {
-                match m {
-                    MutexMessage::Request(req) => api.mutex_handle_request(from.id.clone(), req.clone()),
-                    MutexMessage::Response(resp) => api.mutex_handle_response(from.id.clone(), resp.clone()),
-                    MutexMessage::Release(rel) => api.mutex_handle_release(from.id.clone(), rel.clone()),
-                }
-            }
+            Message::Mutex(m) => match m {
+                MutexMessage::Request(req) => handler.on_mutex_request(api.clone(), from, req),
+                MutexMessage::Response(resp) => handler.on_mutex_response(api.clone(), from, resp),
+                MutexMessage::Release(rel) => handler.on_mutex_release(api.clone(), from, rel),
+            },
             Message::ReportFail(rf) => handler.on_report_fail(api.clone(), from, rf),
             Message::Unknown(v) => handler.on_unknown(api.clone(), from, v),
         }

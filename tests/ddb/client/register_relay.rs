@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
-use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
@@ -83,6 +83,9 @@ pub fn ddb_client_register_relay_ok_and_persisted() {
     struct ApiProxy(Arc<BingleApiImpl>);
     impl InnerBingleApi for ApiProxy { 
         fn get_my_id(&self) -> Option<String> { self.0.get_my_id() }
+        fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
+            self.0.access_unsafe_for_tests(|a| a.get_signing_key())
+        }
         fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, uid: &UserId, msg: serde_json::Value, progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
             self.0.send_message_to_network_with_response(nsk, uid, msg, progress)
         }
