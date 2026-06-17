@@ -225,7 +225,7 @@ impl AlgoBingle {
         // Debug: print the current ops.config for visibility in discovery
         algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
-        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
             tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?}", addr);
             if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
@@ -258,17 +258,72 @@ impl AlgoBingle {
     }
 
     /// Helper to query all accounts opted into the given app_id via the algonaut Indexer.
-    fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mut f: F) -> Result<()>
+    pub fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mode: QueryMode, mut f: F) -> Result<()>
     where
         F: FnMut(&serde_json::Value) -> Result<()>,
     {
-        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={}", app_id);
+        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={} mode={:?}", app_id, mode);
         if app_id == 0 { bail!("app_id must be > 0"); }
+
+        if let Some(cache_lock) = &self.cache {
+            let mut cache = cache_lock.lock().unwrap();
+
+            match mode {
+                QueryMode::CacheOnly => {
+                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: iterating over {} accounts", cache.accounts.len());
+                    for acct in cache.accounts.values() {
+                        let v = serde_json::to_value(acct)
+                            .map_err(|e| anyhow!("failed to serialize account from cache: {e}"))?;
+                        f(&v)?;
+                    }
+                    return Ok(());
+                }
+                QueryMode::ForceFull | QueryMode::Refresh => {
+                    // For now, Refresh also does ForceFull
+                    let mut current_round = cache.last_round;
+                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan, last_round was {}", mode, current_round);
+                    cache.accounts.clear();
+                    let indexer = self.ops.indexer_client()?;
+                    let mut next: Option<String> = None;
+                    loop {
+                        let next_ref = next.as_deref();
+                        let response = self.ops.algod_call(|| indexer.search_for_accounts(
+                            None,
+                            Some(1000),
+                            next_ref,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(algonaut::core::AppId(app_id)),
+                        )).map_err(|e| anyhow!("indexer request failed: {e}"))?;
+                        
+                        current_round = response.current_round;
+                        for acct in response.accounts {
+                            let addr = acct.address.clone();
+                            let v = serde_json::to_value(&acct)
+                                .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
+                            cache.accounts.insert(addr, acct);
+                            f(&v)?;
+                        }
+                        next = response.next_token;
+                        if next.is_none() { break; }
+                    }
+                    cache.last_round = current_round;
+                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done. cache size={} last_round={}", cache.accounts.len(), cache.last_round);
+                    return Ok(());
+                }
+            }
+        }
+
+        // Legacy behavior without cache
+        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] no cache available, performing full scan");
         let indexer = self.ops.indexer_client()?;
         let mut next: Option<String> = None;
         loop {
             let next_ref = next.as_deref();
-            algo_log!("[indexer_query_opted_in_accounts_sync] querying indexer next={:?}", next_ref);
             let response = self.ops.algod_call(|| indexer.search_for_accounts(
                 None,
                 Some(1000),
@@ -280,31 +335,12 @@ impl AlgoBingle {
                 None,
                 None,
                 Some(algonaut::core::AppId(app_id)),
-            )).map_err(|e| {
-                let msg = e.to_string();
-                let ae = anyhow!("{msg}");
-                if crate::blockchain::error::AlgoError::is_host_unreachable(&ae) {
-                    crate::blockchain::error::AlgoError::unreachable("indexer request", &msg).into()
-                } else {
-                    tracing::error!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer request failed: {}",
-                        msg
-                    );
-                    anyhow!("indexer request failed: {msg}")
-                }
-            })?;
-            algo_log!("[AlgoBingle][indexer /v2/accounts] page accounts count: {}", response.accounts.len());
-            for acct in &response.accounts {
-                let v = serde_json::to_value(acct)
+            )).map_err(|e| anyhow!("indexer request failed: {e}"))?;
+            
+            for acct in response.accounts {
+                let v = serde_json::to_value(&acct)
                     .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
-                // algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
-                if let Err(e) = f(&v) {
-                    tracing::error!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] failed to process account: {}",
-                        e
-                    );
-                    return Err(e);
-                }
+                f(&v)?;
             }
             next = response.next_token;
             if next.is_none() { break; }
@@ -332,7 +368,7 @@ impl AlgoBingle {
 
     fn handle_lookup_sync(&self, app_id: u64, handle: &str) -> Result<Option<String>> {
         let mut matches: Vec<(String, u64)> = Vec::new();
-        self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+        self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, |acct| {
             Self::extract_handle_match(acct, app_id, handle, &mut matches);
             Ok(())
         })?;

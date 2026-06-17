@@ -20,6 +20,9 @@ pub mod get_bingle_price;
 #[path = "algo_bingle/handle_lookup.rs"]
 pub mod handle_lookup;
 
+#[path = "algo_bingle/cache_test.rs"]
+pub mod cache_test;
+
 
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
