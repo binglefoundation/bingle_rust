@@ -1,6 +1,5 @@
 use anyhow::{anyhow, bail, Result};
 use sha2::{Digest, Sha512_256};
-use std::future::Future;
 use std::str::FromStr;
 
 use crate::blockchain::algo_ops::{AlgoOps, AppArg};
@@ -60,8 +59,8 @@ impl AlgoBingle {
     /// Errors if the key is not set or the application cannot be queried.
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let client = self.algod_client()?;
-        let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
+        let client = self.ops.algod_client()?;
+        let app_info = self.ops.algod_call(|| client.app(algonaut::core::AppId(app_id)))
             .map_err(|e| anyhow!("application_information failed: {e}"))?;
         let v = serde_json::to_value(&app_info)
             .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
@@ -147,7 +146,7 @@ impl AlgoBingle {
     pub fn register_endpoint(&self, app_id: u64, endpoint: &str) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Build ARC-4 arguments manually to ensure correct string encoding (2-byte length prefix)
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let mut app_args: Vec<Vec<u8>> = Vec::new();
@@ -247,7 +246,7 @@ impl AlgoBingle {
         loop {
             let next_ref = next.as_deref();
             algo_log!("[indexer_query_opted_in_accounts_sync] querying indexer next={:?}", next_ref);
-            let response = self.algod_call(|| indexer.search_for_accounts(
+            let response = self.ops.algod_call(|| indexer.search_for_accounts(
                 None,
                 Some(1000),
                 next_ref,
@@ -406,12 +405,6 @@ impl AlgoBingle {
     // }
 
 
-    fn algod_client(&self) -> Result<Algod> {
-        // Build base URL including port, e.g., http://localhost:4001
-        let url = format!("{}:{}", self.ops.config.client_api_url, self.ops.config.client_api_port);
-        let token = self.ops.config.token.clone().unwrap_or_default();
-        Algod::new(&url, &token).map_err(|e| anyhow!("failed to construct Algod client: {e}"))
-    }
 
     fn sender_account(&self) -> Result<(Account, Address)> {
         let sk = self.ops.private_key_bytes()?;
@@ -426,94 +419,11 @@ impl AlgoBingle {
         Ok((account, addr))
     }
 
-    fn rt_block_on<T: Send>(&self, fut: impl Future<Output = T> + Send) -> Result<T> {
-        // If we are already in a tokio runtime, we must avoid nested block_on and 
-        // the "cannot drop runtime" panic during unwinding/drop.
-        if tokio::runtime::Handle::try_current().is_ok() {
-            return std::thread::scope(|s| {
-                let handle = s.spawn(|| {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("failed to build temporary tokio runtime");
-                    rt.block_on(fut)
-                });
-                handle.join().map_err(|_| anyhow!("rt_block_on thread panicked"))
-            });
-        }
-
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| anyhow!("failed to build tokio runtime: {e}"))?;
-        Ok(rt.block_on(fut))
-    }
 
     fn params(&self, client: &Algod) -> Result<SuggestedParams> {
-        self.algod_call(|| client.suggested_params())
+        self.ops.algod_call(|| client.suggested_params())
     }
 
-    // HTTP status codes that warrant a retry (transient/overload errors).
-    const RETRYABLE_STATUS_CODES: &'static [u16] = &[408, 425, 429, 502, 503, 504];
-
-    // Returns true if the algonaut error is a retryable transient HTTP error.
-    fn is_retryable(e: &algonaut::Error) -> bool {
-        if let algonaut::Error::Request(req) = e {
-            if let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
-                return Self::RETRYABLE_STATUS_CODES.contains(status);
-            }
-        }
-        false
-    }
-
-    // Helper: run an algonaut async call and flatten the double-Result, with
-    // up to 3 retries (with exponential backoff: 1 s, 2 s, 4 s) on transient
-    // HTTP errors (408, 425, 429, 502, 503, 504).
-    //
-    // Accepts a closure rather than a bare future so the future can be
-    // reconstructed on each retry attempt (futures are consumed on first poll).
-    fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
-    where
-        T: Send,
-        F: Fn() -> Fut,
-        Fut: std::future::Future<Output = Result<T, algonaut::Error>> + Send,
-    {
-        const MAX_RETRIES: u32 = 3;
-        const RETRY_BASE_MS: u64 = 1_000;
-
-        let mut attempt = 0u32;
-        loop {
-            let result = self
-                .rt_block_on(make_fut())
-                .map_err(|e| anyhow!("runtime error: {e}"))?;
-
-            match result {
-                Ok(val) => return Ok(val),
-                Err(ref e) if attempt < MAX_RETRIES && Self::is_retryable(e) => {
-                    let delay = std::time::Duration::from_millis(RETRY_BASE_MS * (1u64 << attempt));
-                    tracing::warn!(
-                        "algod transient error (attempt {}/{}), retrying in {:?}: {}",
-                        attempt + 1,
-                        MAX_RETRIES,
-                        delay,
-                        e
-                    );
-                    std::thread::sleep(delay);
-                    attempt += 1;
-                }
-                Err(e) => {
-                    if attempt >= MAX_RETRIES && Self::is_retryable(&e) {
-                        return Err(crate::blockchain::error::AlgoError::transient(
-                            "algod call",
-                            &e.to_string(),
-                        )
-                        .into());
-                    }
-                    return Err(anyhow!("{e}"));
-                }
-            }
-        }
-    }
 
     fn app_address(&self, app_id: u64) -> Result<Address> {
         let addr_str = self.ops.contract_address(app_id)?;
@@ -525,7 +435,7 @@ impl AlgoBingle {
         let mut bytes: Vec<u8> = Vec::new();
         for s in signed_group { bytes.extend_from_slice(&s); }
 
-        let txid = self.algod_call(|| client.send_raw(&bytes))
+        let txid = self.ops.algod_call(|| client.send_raw(&bytes))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
         // Wait for confirmation of the first tx id in the group.
         self.ops.wait_for_confirmation(&txid, 10)?;
@@ -601,7 +511,7 @@ impl AlgoBingle {
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         // Ensure the caller (sender) is opted in to receive the asset from the app's inner tx
         let _ = self.opt_in_sender_to_asset(asset_id)?;
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
@@ -641,7 +551,7 @@ impl AlgoBingle {
         if amount == 0 { bail!("amount must be > 0"); }
         // Ensure the app account is opted-in to the ASA so it can receive transfers
         self.opt_in_app_to_asset(app_id, asset_id)?;
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
@@ -710,7 +620,7 @@ impl AlgoBingle {
     /// Internal method to perform the registration on-chain without uniqueness pre-checks.
     /// Used by `register` after pre-checks, or by tests to simulate "hacked" registrations.
     pub fn register_unchecked(&self, app_id: u64, asset_id: u64, handle: &str, price_units: u64) -> Result<String> {
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
 
@@ -809,7 +719,7 @@ impl AlgoBingle {
         if self.ops.is_account_opted_in_to_asset(sender_str, asset_id)? {
             return Ok(String::new());
         }
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         // Opt-in by sending 0 units to self
@@ -822,7 +732,7 @@ impl AlgoBingle {
             .map_err(|e| anyhow!("sign asset opt-in: {e}"))?
             .to_msg_pack()
             .map_err(|e| anyhow!("encode signed asset opt-in: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
+        let tx_id = self.ops.algod_call(|| client.send_raw(&signed))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
         Ok(tx_id)

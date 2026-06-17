@@ -175,7 +175,7 @@ impl AlgoOps {
     //
     // Accepts a closure rather than a bare future so the future can be
     // reconstructed on each retry attempt (futures are consumed on first poll).
-    fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
+    pub fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
     where
         T: Send,
         F: Fn() -> Fut,
