@@ -14,6 +14,15 @@ The repository already includes:
 - A build script at `scripts/build_ios_xcframework.sh`
 - A Swift Package scaffold in `ios/` with a test target.
 
+## Post-Checkout Setup
+
+To automate the resolution of merge conflicts in `.build_number` files, you must configure a custom merge driver locally. This only needs to be done once after cloning the repository:
+
+```bash
+git config merge.build-number-merge.name "Maximize build number merge driver"
+git config merge.build-number-merge.driver "./scripts/merge-build-number-driver.sh %O %A %B"
+```
+
 ## Repository layout
 - Active library root: `src/lib.rs` re-exports modules from `src/blockchain/` (e.g., `rust_comms::algo_ops`).
 - Rust tests live under `tests/`, organised by module (e.g. `tests/api/`, `tests/dtls/`, `tests/blockchain/`).
@@ -390,6 +399,9 @@ NativeModules.BingleJsi.initialize(config)
 | Rust implementation | `bingle_jsi/src/api/bingle_jsi_api_impl.rs` (`BingleJsiApiImpl::init`) | `bingle_jsi/src/api/bingle_jsi_api_impl.rs` (`BingleJsiApiImpl::init`) |
 
 ## Changelog
+
+2026-06-18
+- Added Post-Checkout Setup instructions for the build number merge driver.
 
 2026-06-11
 - Removed `RUST_COMMS_RUN_LOCALNET` and `RUST_COMMS_RUN_RELAY_UPDATER_LOCALNET_E2E` environment variable gates; localnet tests now fail immediately if localnet is unavailable.
