@@ -1669,7 +1669,7 @@ impl Engine {
             });
             if let Some(app_id) = app_id_opt {
                 let cfg = self.options.algo_provider_config.clone();
-                let cache = self.bingle_api.access(|a| a.get_accounts_cache());
+                let cache = self.bingle_api.upgrade().and_then(|a| a.get_accounts_cache());
                 let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
                 let finder = crate::relay::relay_finder::RelayFinder::new(
                     self.bingle_api.clone(),
@@ -1761,7 +1761,7 @@ impl Engine {
                         .and_then(|s| s.parse::<u64>().ok())
                 });
                 if let Some(app_id) = app_id_opt {
-                    let cache = self.bingle_api.access(|a| a.get_accounts_cache());
+                    let cache = self.bingle_api.upgrade().and_then(|a| a.get_accounts_cache());
                     crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
                 } else {
                     // No app id set
@@ -1919,7 +1919,7 @@ impl Engine {
                     return;
                 }
             };
-            let cache = self.bingle_api.access(|a| a.get_accounts_cache());
+            let cache = self.bingle_api.upgrade().and_then(|a| a.get_accounts_cache());
             let discover = crate::relay::discovery::indexer_discover_closure(
                 app_id,
                 self.options.algo_provider_config.clone(),

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleApiBothType, NetworkEndpoint};
-use crate::engine::{BingleAccess, RelayState};
+use crate::engine::RelayState;
 use crate::messages::marshal::{from_json_value, to_json_value};
 use crate::messages::types::{DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed, ReportFailMessage};
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
@@ -179,9 +179,9 @@ impl RelayUpdater {
                 fail_type: "send_rejected".to_string(),
                 timestamp: timestamp.clone(),
             }));
-            let _ = api.access(|api_ref| {
-                api_ref.send_message_to_network(&nsk, &selected_relay.id, to_json_value(&report), None)
-            });
+            if let Some(api_ref) = api.upgrade() {
+                let _ = api_ref.send_message_to_network(&nsk, &selected_relay.id, to_json_value(&report), None);
+            }
         }
     }
 
@@ -242,10 +242,9 @@ impl RelayUpdater {
         }));
 
         let nsk = NetworkEndpoint::new_direct(relay.address);
-        let response = api
-            .access(|api_ref| {
-                api_ref.send_message_to_network_with_response(&nsk, &relay.id, to_json_value(&request), None)
-            })
+        let api_ref = api.upgrade().ok_or_else(|| "api dropped".to_string())?;
+        let response = api_ref
+            .send_message_to_network_with_response(&nsk, &relay.id, to_json_value(&request), None)
             .map_err(|err| err.to_string())?;
 
         let parsed = from_json_value(response).map_err(|err| format!("{err:?}"))?;
