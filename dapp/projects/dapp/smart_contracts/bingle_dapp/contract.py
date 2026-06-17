@@ -15,6 +15,8 @@ class BingleDapp(ARC4Contract):
         self.allow_static = LocalState(UInt64, key="allow_static")
         # Local state value: caller's registered static endpoint (if any)
         self.static_endpoint = LocalState(String, key="static_endpoint")
+        # Local state flag: whether caller is allowed to relay (1 == true)
+        self.allow_relay = LocalState(UInt64, key="allow_relay")
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
@@ -207,6 +209,21 @@ class BingleDapp(ARC4Contract):
             _cur, exists = self.static_endpoint.maybe(target_address)
             if exists:
                 del self.static_endpoint[target_address]
+
+    @abimethod()
+    def set_allow_relay(self, target_address: Account, allow: UInt64) -> None:
+        """Enable or disable permission for a target address to relay.
+
+        The target address must be supplied as an argument.
+        Only the application creator may call this method. The target account must be opted-in
+        to the application.
+        """
+        # Only app creator may grant/revoke
+        assert Txn.sender == Global.creator_address
+        # Normalize to 0/1
+        val = UInt64(1) if allow != UInt64(0) else UInt64(0)
+        # Target from foreign accounts
+        self.allow_relay[target_address] = val
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
