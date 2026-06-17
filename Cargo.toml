@@ -63,6 +63,11 @@ path = "tests/unit_all.rs"
 name = "integration"
 path = "tests/integration_all.rs"
 
+# Blockchain integration tests: require algokit localnet
+[[test]]
+name = "integration_blockchain"
+path = "tests/integration_blockchain.rs"
+
 # All tests combined: unit + integration + flaky
 [[test]]
 name = "all"
