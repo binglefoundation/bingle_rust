@@ -1,6 +1,8 @@
 use anyhow::{anyhow, bail, Result};
 use sha2::{Digest, Sha512_256};
+use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
 use crate::blockchain::algo_ops::{AlgoOps, AppArg};
 
@@ -36,13 +38,34 @@ pub struct AlgoBingle {
     pub ops: AlgoOps,
     pub app_id: u64,
     pub asset_id: u64,
+    pub cache: Option<Arc<Mutex<AccountsCache>>>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct AccountsCache {
+    /// The last round number that was fully processed.
+    pub last_round: u64,
+    /// Map of account address to the full account object.
+    pub accounts: HashMap<String, algonaut::model::indexer::Account>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryMode {
+    Refresh,     // Incremental if cache exists, else Full
+    CacheOnly,   // Use cache without network
+    ForceFull,   // Force a full scan
 }
 
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
         algo_log!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
-        Self { ops, app_id, asset_id }
+        Self { ops, app_id, asset_id, cache: None }
+    }
+
+    pub fn new_with_cache(ops: AlgoOps, app_id: u64, asset_id: u64, cache: Arc<Mutex<AccountsCache>>) -> Self {
+        algo_log!("[AlgoBingle::new_with_cache] app_id={} asset_id={}", app_id, asset_id);
+        Self { ops, app_id, asset_id, cache: Some(cache) }
     }
 
     /// Extract the BinglePrice value from already-decoded global state entries.

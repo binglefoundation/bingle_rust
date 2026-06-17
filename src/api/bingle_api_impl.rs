@@ -13,6 +13,7 @@ use ed25519_dalek::SigningKey;
 use crate::relay::relay_finder::RelayFinderTrait;
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_ops::AlgoOps;
+use crate::blockchain::algo_bingle::AccountsCache;
 use crate::blockchain::error::{AlgoError, AlgoErrorKind};
 use crate::dtls::Dtls;
 use crate::engine::{BingleAccess, BingleAccessUnsafeForTests, Engine, EngineState, EngineType};
@@ -101,6 +102,7 @@ pub struct BingleApiImpl {
     // Test seam for reverse lookup (id -> handle) without network
     id_to_handle_lookup_mock: Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
     handle_cache: Mutex<HandleCacheBi>,
+    accounts_cache: Arc<Mutex<AccountsCache>>,
     span: tracing::Span,
 }
 
@@ -123,6 +125,7 @@ impl BingleApiImpl {
                 handle_lookup_mock: Mutex::new(None),
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
+                accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
                 span: tracing::Span::none(),
             }
         })
@@ -161,6 +164,7 @@ impl BingleApiImpl {
                 handle_lookup_mock: Mutex::new(None),
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
+                accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
                 span: tracing::Span::none(),
             }
         })
@@ -539,7 +543,7 @@ impl BingleApi for BingleApiImpl {
         // Indexer queries are public; use self id or a dummy if not available yet to satisfy AlgoOps::new requirements
         let addr = self.get_my_id().or_else(|| Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ".to_string()));
         let ops = AlgoOps::new(self.started_options.algo_passphrase.clone(), addr, Some(config));
-        let ab = crate::blockchain::algo_bingle::AlgoBingle::new(ops, app_id, 0);
+        let ab = crate::blockchain::algo_bingle::AlgoBingle::new_with_cache(ops, app_id, 0, self.accounts_cache.clone());
         let res = ab.handle_lookup(handle).map_err(BingleError::from_anyhow);
         
         // Update cache on success
