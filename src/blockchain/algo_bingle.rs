@@ -163,6 +163,27 @@ impl AlgoBingle {
         Ok(txid)
     }
 
+    /// Grant or revoke permission for a specific address to relay.
+    ///
+    /// Calls set_allow_relay on-chain for the provided target address. The caller must be the
+    /// app creator (enforced by the contract). The target address must be opted-in to the app.
+    /// Returns the submitted transaction id on success.
+    pub fn set_allow_relay(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
+        let pk = crate::blockchain::algo_ops::address_to_byte_key(target_address)
+            .map_err(|e| anyhow!("invalid target address: {e}"))?;
+        let (txid, _logs) = self
+            .ops
+            .call_app(
+                app_id,
+                None,
+                Some("set_allow_relay(address,uint64)void"),
+                &[crate::blockchain::algo_ops::AppArg::Bytes(pk.to_vec()), crate::blockchain::algo_ops::AppArg::Uint(if allow { 1 } else { 0 })],
+            )?;
+        Ok(txid)
+    }
+
     /// Call register_endpoint(string)void for the caller.
     /// Passing an empty string clears the local state key.
     /// Returns the submitted transaction id on success.

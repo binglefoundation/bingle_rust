@@ -85,6 +85,7 @@ robustness:
 - integration tests on bingle_jsi
  + Layer 1
  + ~~Layer 2~~
+- genericise AlgoOps 
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~

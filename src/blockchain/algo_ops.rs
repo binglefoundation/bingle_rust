@@ -956,7 +956,7 @@ impl AlgoOps {
         let sized = per_byte * est_size;
         if sized > min_fee { sized } else { min_fee }
     }
-    
+
     pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
@@ -969,6 +969,7 @@ impl AlgoOps {
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
         // Schema: Global needs at least 2 integers (BinglePrice, LastHandleTime).
         // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime).
+        // plus allow_static (int), static_endpoint (bytes), and allow_relay (int).
         // TODO: this is app specific, we shoould have this info from the artifacts
         let gs = algonaut::transaction::transaction::StateSchema { number_ints: 2, number_byteslices: 0 };
         let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
@@ -1159,10 +1160,11 @@ impl AlgoOps {
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Build application call (NoOp)
-        // Always include creator in accounts for compatibility; for set_allow_static we also include the target address as Accounts[0]
+        // Always include creator in accounts for compatibility; for set_allow_static/set_allow_relay we also include the target address as Accounts[0]
+        // TODO: make this generic
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
         if let Some(sig) = method {
-            if sig == "set_allow_static(address,uint64)void" {
+            if sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void" {
                 if let Some(first) = args.get(0) {
                     if let AppArg::Bytes(b) = first {
                         if b.len() == 32 {
