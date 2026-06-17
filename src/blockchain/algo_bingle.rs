@@ -716,6 +716,7 @@ impl AlgoBingle {
     /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app creator.
     /// Returns the transaction id of the app call when an opt-in was required; if the
     /// app was already opted in, returns Ok("") without making a call.
+    /// TODO: make this generic as called from deploy
     pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }

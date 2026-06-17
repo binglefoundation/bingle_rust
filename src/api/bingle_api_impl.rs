@@ -362,6 +362,9 @@ impl BingleApi for BingleApiImpl {
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
         self.started_options.algo_provider_config.clone()
     }
+    fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> {
+        Some(self.accounts_cache.clone())
+    }
     fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
         // Delegate to inherent reverse-lookup with caching/blockchain fallback
         BingleApiImpl::handle_lookup_by_id(self, user_id)
@@ -572,7 +575,7 @@ impl BingleApi for BingleApiImpl {
                 .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
             if let Some(app_id) = app_id_opt {
                 let cfg = self.get_algo_provider_config();
-                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, Some(self.accounts_cache.clone()));
                 // Use self.this for RelayFinder
                 let finder = crate::relay::relay_finder::RelayFinder::new(self.this.clone(), discover);
                 if let Some(nsk) = finder.lookup_root_id(user_id) {

@@ -727,7 +727,8 @@ impl MessageHandler for DefaultPrintingHandler {
                     .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
                 let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
                 let cfg = api_for_thread.get_algo_provider_config();
-                crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+                let cache = api_for_thread.get_accounts_cache();
+                crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache)
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
             let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
@@ -1023,7 +1024,8 @@ impl DefaultPrintingHandler {
                     None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
                 };
                 let cfg = api_for_thread.get_algo_provider_config();
-                crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+                let cache = api_for_thread.get_accounts_cache();
+                crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache)
             };
 
             // Wrap combined API as plain BingleApiBoth for RelayFinder

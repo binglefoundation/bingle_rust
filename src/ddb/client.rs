@@ -39,7 +39,8 @@ pub struct DdbClientImpl {
 impl DdbClientImpl {
     /// Create a DdbClientImpl using indexer-based discovery (requires app_id configured on API or via env BINGLE_APP_ID).
     pub fn new(api: crate::api::bingle_api::BingleApiBothType, app_id: u64, cfg: Option<crate::blockchain::algo_ops::AlgoChainConfig>) -> Self {
-        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+        let cache = api.access(|a| a.get_accounts_cache());
+        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
         Self { api, discover }
     }
 
