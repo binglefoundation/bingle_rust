@@ -302,7 +302,7 @@ fn make_updater(my_id: String, api: Arc<BingleApiImpl>, app_id: u64, cfg: rust_c
     RelayUpdater::new_with_api(
         my_id,
         Arc::downgrade(&api_both),
-        indexer_discover_closure(app_id, Some(cfg)),
+        indexer_discover_closure(app_id, Some(cfg), None),
     )
 }
 

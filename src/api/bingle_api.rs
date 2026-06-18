@@ -10,8 +10,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use crate::util::logging::LogMode;
 use serde_json::Value as JsonValue;
+use crate::blockchain::algo_bingle::AccountsCache;
 use crate::blockchain::error::AlgoError;
 use ed25519_dalek::SigningKey;
+use std::sync::Mutex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BingleError {
@@ -282,6 +284,8 @@ pub trait BingleApi: Send + Sync {
     fn get_app_id(&self) -> Option<u64>;
     /// Returns the configured Algorand provider config from StartOptions, if any.
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig>;
+    /// Returns the persistent accounts cache for the Algorand Indexer, if available.
+    fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> { None }
     /// Start the node using the provided options. Implementations may spawn background tasks.
     fn start(&mut self, options: &StartOptions) -> Result<(), BingleError>;
 
