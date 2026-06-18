@@ -177,7 +177,7 @@ impl RelayUpdater {
                 timestamp: timestamp.clone(),
             }));
             if let Some(api_ref) = api.upgrade() {
-                api_ref.send_message_to_network(&nsk, &selected_relay.id().to_string(), to_json_value(&report), None)
+                let _ = api_ref.send_message_to_network(&nsk, &selected_relay.id().to_string(), to_json_value(&report), None);
             }
             else {
                 tracing::error!("[report_failed_relays] could not upgrade api to send message");
