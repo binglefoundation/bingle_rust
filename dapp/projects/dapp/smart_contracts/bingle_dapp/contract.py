@@ -1,5 +1,5 @@
 # pyright: reportMissingModuleSource=false
-from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account
+from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes
 from algopy.arc4 import abimethod, baremethod
 
 
@@ -15,6 +15,7 @@ class BingleDapp(ARC4Contract):
         self.allow_static = LocalState(UInt64, key="allow_static")
         # Local state value: caller's registered static endpoint (if any)
         self.static_endpoint = LocalState(String, key="static_endpoint")
+        self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
         # Local state flag: whether caller is allowed to relay (1 == true)
         self.allow_relay = LocalState(UInt64, key="allow_relay")
 
@@ -209,6 +210,9 @@ class BingleDapp(ARC4Contract):
             _cur, exists = self.static_endpoint.maybe(target_address)
             if exists:
                 del self.static_endpoint[target_address]
+            _cur_x, exists_x = self.static_endpoint_x.maybe(target_address)
+            if exists_x:
+                del self.static_endpoint_x[target_address]
 
     @abimethod()
     def set_allow_relay(self, target_address: Account, allow: UInt64) -> None:
@@ -231,8 +235,9 @@ class BingleDapp(ARC4Contract):
 
         Requirements:
         - Caller must have local state key "allow_static" set to true (1).
-        - If `endpoint` is non-empty, store it under "static_endpoint" in local state.
-        - If `endpoint` is empty (""), delete the local state key "static_endpoint".
+        - If `endpoint` is non-empty, store it under "static_endpoint" and
+          "static_endpoint_x" (if needed) in local state.
+        - If `endpoint` is empty (""), delete both local state keys.
         """
         # Ensure the caller is allowed to set a static endpoint
         allow_val, allow_exists = self.allow_static.maybe(Txn.sender)
@@ -240,6 +245,19 @@ class BingleDapp(ARC4Contract):
 
         # Non-empty endpoint => set; empty => delete
         if endpoint != String():
-            self.static_endpoint[Txn.sender] = endpoint
+            bytes_val = endpoint.bytes
+            if bytes_val.length > 64:
+                self.static_endpoint[Txn.sender] = String.from_bytes(bytes_val[0:64])
+                self.static_endpoint_x[Txn.sender] = String.from_bytes(bytes_val[64:])
+            else:
+                self.static_endpoint[Txn.sender] = endpoint
+                _cur_x, exists_x = self.static_endpoint_x.maybe(Txn.sender)
+                if exists_x:
+                    del self.static_endpoint_x[Txn.sender]
         else:
-            del self.static_endpoint[Txn.sender]
+            _cur, exists = self.static_endpoint.maybe(Txn.sender)
+            if exists:
+                del self.static_endpoint[Txn.sender]
+            _cur_x, exists_x = self.static_endpoint_x.maybe(Txn.sender)
+            if exists_x:
+                del self.static_endpoint_x[Txn.sender]
