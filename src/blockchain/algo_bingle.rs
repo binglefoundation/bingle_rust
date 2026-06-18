@@ -162,6 +162,16 @@ impl AlgoBingle {
         Ok(txid)
     }
 
+    /// Check if a specific address is allowed to relay on-chain.
+    ///
+    /// This queries the local state of the account for the provided app_id.
+    /// Returns Ok(Some(true)) if allowed, Ok(Some(false)) if not allowed, Ok(None) if not opted-in, or Err if other error.
+    pub fn check_allow_relay(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let kvs = self.ops.local_state_for_account(app_id, address)?;
+        Ok(kvs.map(|entries| entries.iter().any(|(k, v)| k == "allow_relay" && v == "1")))
+    }
+
     /// Call register_endpoint(string)void for the caller.
     /// Passing an empty string clears the local state key.
     /// Returns the submitted transaction id on success.
