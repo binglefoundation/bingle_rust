@@ -9,7 +9,6 @@ use std::sync::{
 
 use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::engine::{Engine, EngineState, NatType};
-use rust_comms::relay::relay_finder::RelayInfo;
 
 fn make_options(handle: &str) -> StartOptions {
     StartOptions {
@@ -43,7 +42,7 @@ fn test_no_relay_then_relay_becomes_available() {
 
     // Phase 2: a relay becomes available; simulate next stun-consistent response
     let relay_addr: SocketAddr = "10.0.0.1:7000".parse().expect("parse relay addr");
-    let relay = RelayInfo::root("RELAYONE", relay_addr);
+    let relay = crate::util::test_util::signed_root_relay("RELAYONE", relay_addr);
     eng.test_stun_consistent_process_with_relays(client_public_addr, vec![relay]);
 
     assert_eq!(
@@ -91,7 +90,7 @@ fn test_no_relay_then_relay_on_listening_callback() {
 
     // Phase 2: relay available → on_listening(true) should be called
     let relay_addr: SocketAddr = "10.0.0.2:7001".parse().expect("parse relay addr");
-    let relay = RelayInfo::root("RELAYTWO", relay_addr);
+    let relay = crate::util::test_util::signed_root_relay("RELAYTWO", relay_addr);
     eng.test_stun_consistent_process_with_relays(client_public_addr, vec![relay]);
 
     assert_eq!(

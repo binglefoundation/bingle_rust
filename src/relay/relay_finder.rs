@@ -10,11 +10,11 @@ use std::collections::{HashMap, HashSet};
 
 pub use crate::relay::relay_info_cache::RelayInfoCache;
 use crate::relay::relay_updater::RelayUpdater;
+use crate::ddb::AdvertRecord;
 
 #[derive(Debug, Clone)]
 pub struct RelayInfo {
-    pub id: String,           // Algorand address of the relay
-    pub address: SocketAddr,  // Relay IP:port
+    pub advert_record: AdvertRecord,
     pub is_root: bool,
     pub state: Option<RelayState>, // Optional known state from RelayCheck
     pub ttl: Option<u64>,
@@ -22,19 +22,29 @@ pub struct RelayInfo {
 }
 
 impl RelayInfo {
-    pub fn root(id: impl Into<String>, address: SocketAddr) -> Self {
-        Self::root_with(id, address, None, None)
+    pub fn id(&self) -> &str {
+        &self.advert_record.id
+    }
+
+    pub fn address(&self) -> SocketAddr {
+        self.advert_record
+            .endpoint
+            .as_ref()
+            .and_then(|ep| SocketAddr::try_from(ep.clone()).ok())
+            .expect("RelayInfo must have a valid address")
+    }
+
+    pub fn root(advert_record: AdvertRecord) -> Self {
+        Self::root_with(advert_record, None, None)
     }
 
     pub fn root_with(
-        id: impl Into<String>,
-        address: SocketAddr,
+        advert_record: AdvertRecord,
         state: Option<RelayState>,
         ttl: Option<u64>,
     ) -> Self {
         Self {
-            id: id.into(),
-            address,
+            advert_record,
             is_root: true,
             state,
             ttl,
@@ -42,19 +52,17 @@ impl RelayInfo {
         }
     }
 
-    pub fn non_root(id: impl Into<String>, address: SocketAddr) -> Self {
-        Self::non_root_with(id, address, None, None)
+    pub fn non_root(advert_record: AdvertRecord) -> Self {
+        Self::non_root_with(advert_record, None, None)
     }
 
     pub fn non_root_with(
-        id: impl Into<String>,
-        address: SocketAddr,
+        advert_record: AdvertRecord,
         state: Option<RelayState>,
         ttl: Option<u64>,
     ) -> Self {
         Self {
-            id: id.into(),
-            address,
+            advert_record,
             is_root: false,
             state,
             ttl,
@@ -125,9 +133,9 @@ impl RelayFinderTrait for RelayFinder {
         let mut relays: Vec<RelayInfo> = updater.relay_info_cache().list_all_relays(my_id_norm, true);
         debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from cache: {:?}", relays);
 
-        relays.sort_by(|a, b| a.id.cmp(&b.id));
+        relays.sort_by(|a, b| a.id().cmp(b.id()));
 
-        if !include_self { relays.retain(|r| r.id != my_id_norm); }
+        if !include_self { relays.retain(|r| r.id() != my_id_norm); }
         tracing::info!("[RelayFinder] list_all_relays: returning relay list: {:?}", relays);
         relays
     }
@@ -241,8 +249,8 @@ impl RelayFinder {
                 .relay_info_cache()
                 .list_all_relays(my_id_norm, true)
                 .into_iter()
-                .filter(|r| exclude.contains(&r.address))
-                .map(|r| r.id.clone())
+                .filter(|r| exclude.contains(&r.address()))
+                .map(|r| r.id().to_string())
                 .collect()
         };
 
@@ -251,7 +259,7 @@ impl RelayFinder {
             .relay_select_and_query(&exclude_ids)
             .ok_or_else(|| "no available relay (all candidates failed or were excluded)".to_string())?;
 
-        tracing::info!("[RelayFinder] find_relay_excluding: selected relay: {} {}", relay.id, relay.address);
+        tracing::info!("[RelayFinder] find_relay_excluding: selected relay: {} {}", relay.id(), relay.address());
 
         Ok(relay)
     }
@@ -267,10 +275,10 @@ impl RelayFinder {
 
         // 2) Obtain relays from the updater's RelayInfoCache
         let mut relays = updater.relay_info_cache().list_root_relays(my_id_norm, true);
-        relays.sort_by(|a, b| a.id.cmp(&b.id));
+        relays.sort_by(|a, b| a.id().cmp(b.id()));
 
         if !include_self {
-            relays.retain(|r| r.id != my_id_norm);
+            relays.retain(|r| r.id() != my_id_norm);
         }
         tracing::info!("[RelayFinder] list_root_relays: returning root relays: {:?}", relays);
         relays

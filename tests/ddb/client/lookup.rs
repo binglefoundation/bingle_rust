@@ -8,7 +8,6 @@ use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::ddb::{DdbClient, DdbClientImpl};
-use rust_comms::relay::relay_finder::RelayInfo;
 
 #[path = "../../test_util.rs"]
 pub mod test_util;
@@ -63,7 +62,7 @@ pub fn ddb_client_lookup_returns_endpoint() {
     let client_shared = client.clone();
     let api_arc: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(ApiProxy(client_shared.clone()));
     let relay_id = relay.get_my_id().expect("relay id");
-    let discover = Arc::new(move || vec![RelayInfo::root(relay_id.clone(), relay_addr)]);
+    let discover = Arc::new(move || vec![test_util::signed_root_relay(&relay_id, relay_addr)]);
     let cli = DdbClientImpl::with_discovery(to_weak_api_both(MockApiBoth::new_with_api_override(api_arc.clone())), discover);
 
     // First register our IP so the relay has an advert

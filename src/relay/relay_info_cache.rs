@@ -19,11 +19,11 @@ impl RelayInfoCache {
 
     pub fn add_relay(&self, relay: RelayInfo) -> bool {
         if let Ok(mut relays) = self.relays.lock() {
-            if relays.iter().any(|entry| entry.id == relay.id) {
+            if relays.iter().any(|entry| entry.id() == relay.id()) {
                 return false;
             }
             relays.push(relay);
-            relays.sort_by(|left, right| left.id.cmp(&right.id));
+            relays.sort_by(|left, right| left.id().cmp(right.id()));
             return true;
         }
         false
@@ -31,9 +31,9 @@ impl RelayInfoCache {
 
     pub fn update_relay(&self, relay: RelayInfo) -> bool {
         if let Ok(mut relays) = self.relays.lock() {
-            if let Some(index) = relays.iter().position(|entry| entry.id == relay.id) {
+            if let Some(index) = relays.iter().position(|entry| entry.id() == relay.id()) {
                 relays[index] = relay.with_updated();
-                relays.sort_by(|left, right| left.id.cmp(&right.id));
+                relays.sort_by(|left, right| left.id().cmp(right.id()));
                 return true;
             }
         }
@@ -43,7 +43,7 @@ impl RelayInfoCache {
     pub fn delete_relay(&self, relay_id: &str) -> bool {
         if let Ok(mut relays) = self.relays.lock() {
             let original_len = relays.len();
-            relays.retain(|entry| entry.id != relay_id);
+            relays.retain(|entry| entry.id() != relay_id);
             return relays.len() != original_len;
         }
         false
@@ -56,7 +56,7 @@ impl RelayInfoCache {
     pub fn replace_relays(&self, relays: Vec<RelayInfo>) {
         if let Ok(mut guard) = self.relays.lock() {
             *guard = relays;
-            guard.sort_by(|left, right| left.id.cmp(&right.id));
+            guard.sort_by(|left, right| left.id().cmp(right.id()));
         }
     }
 
@@ -70,9 +70,9 @@ impl RelayFinderTrait for RelayInfoCache {
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut relays = self.snapshot_relays();
         if !include_self {
-            relays.retain(|relay| relay.id != my_id_norm);
+            relays.retain(|relay| relay.id() != my_id_norm);
         }
-        relays.sort_by(|left, right| left.id.cmp(&right.id));
+        relays.sort_by(|left, right| left.id().cmp(right.id()));
         relays
     }
 
@@ -87,8 +87,8 @@ impl RelayFinderTrait for RelayInfoCache {
     ) -> Result<RelayInfo, String> {
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut relays = self.snapshot_relays();
-        relays.retain(|relay| relay.id != my_id_norm && !exclude.contains(&relay.address));
-        relays.sort_by(|left, right| left.id.cmp(&right.id));
+        relays.retain(|relay| relay.id() != my_id_norm && !exclude.contains(&relay.address()));
+        relays.sort_by(|left, right| left.id().cmp(right.id()));
         if let Some(relay) = relays.into_iter().next() {
             return Ok(relay);
         }
@@ -100,9 +100,9 @@ impl RelayFinderTrait for RelayInfoCache {
         let mut relays = self.snapshot_relays();
         relays.retain(|relay| relay.is_root);
         if !include_self {
-            relays.retain(|relay| relay.id != my_id_norm);
+            relays.retain(|relay| relay.id() != my_id_norm);
         }
-        relays.sort_by(|left, right| left.id.cmp(&right.id));
+        relays.sort_by(|left, right| left.id().cmp(right.id()));
         relays
     }
 
@@ -118,8 +118,8 @@ impl RelayFinderTrait for RelayInfoCache {
         let id_norm = id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         self.snapshot_relays()
             .into_iter()
-            .find(|relay| relay.id == id_norm && relay.is_root)
-            .map(|relay| NetworkEndpoint::new_direct(relay.address))
+            .find(|relay| relay.id() == id_norm && relay.is_root)
+            .map(|relay| NetworkEndpoint::new_direct(relay.address()))
     }
 
     fn remove_relay(&self, relay_id: &str) {

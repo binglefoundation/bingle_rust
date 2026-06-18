@@ -7,7 +7,6 @@ use rand_core::OsRng;
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint};
 use rust_comms::ddb::{DdbClient, DdbClientImpl, AdvertRecord, InetSocketAddress};
-use rust_comms::relay::relay_finder::RelayInfo;
 
 const RELAY_ID: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A";
 
@@ -76,7 +75,7 @@ fn ddb_client_lookup_rejects_ipv6() {
 
     let mock_api = Arc::new(MockApi { advert_json, address: address.clone() });
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234);
-    let discover = Arc::new(move || vec![RelayInfo::root(RELAY_ID.to_string(), relay_addr)]);
+    let discover = Arc::new(move || vec![crate::util::test_util::signed_root_relay(RELAY_ID, relay_addr)]);
     
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),
@@ -113,7 +112,7 @@ fn ddb_client_lookup_accepts_ipv4() {
 
     let mock_api = Arc::new(MockApi { advert_json, address: address.clone() });
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234);
-    let discover = Arc::new(move || vec![RelayInfo::root(RELAY_ID.to_string(), relay_addr)]);
+    let discover = Arc::new(move || vec![crate::util::test_util::signed_root_relay(RELAY_ID, relay_addr)]);
     
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),

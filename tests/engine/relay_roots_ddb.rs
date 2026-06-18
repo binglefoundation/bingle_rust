@@ -3,7 +3,6 @@ use std::sync::Arc;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use rust_comms::engine::Engine;
-use rust_comms::relay::relay_finder::RootRelayInfo;
 
 // Minimal DTLS mock
 #[derive(Clone)]
@@ -87,8 +86,8 @@ pub fn engine_upserts_root_relays_into_backend() {
 
     // Use test helper to upsert roots (avoid network/indexer dependencies)
     let roots = vec![
-        RootRelayInfo::root("RID1", "127.0.0.1:6001".parse().unwrap()),
-        RootRelayInfo::root("RID2", "127.0.0.1:6002".parse().unwrap()),
+        crate::util::test_util::signed_root_relay("RID1", "127.0.0.1:6001".parse().unwrap()),
+        crate::util::test_util::signed_root_relay("RID2", "127.0.0.1:6002".parse().unwrap()),
     ];
     eng.upsert_root_relays_for_tests(roots);
 

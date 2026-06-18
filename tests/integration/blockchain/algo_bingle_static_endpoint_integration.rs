@@ -7,6 +7,7 @@ use crate::util::test_util;
 use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
 use std::time::{Duration, Instant};
 use std::thread;
+use std::net::SocketAddr;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -48,8 +49,9 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
     let _ = ab_creator.set_allow_static(app_id, ADDRESS_RECEIVE, true).expect("set_allow_static call");
     let ab_user = AlgoBingle::new(user.clone(), app_id, 0);
-    let endpoint = "127.0.0.1:54321";
-    let _ = ab_user.register_endpoint(app_id, endpoint).expect("register_endpoint call");
+    let addr: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+    let endpoint = test_util::get_compact_advert_record(&user, addr, false);
+    let _ = ab_user.register_endpoint(app_id, &endpoint).expect("register_endpoint call");
 
     // Query via Indexer and validate our account appears with the endpoint.
     // Indexer is eventually consistent; poll for up to ~10 seconds.
@@ -58,14 +60,14 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     let ab = AlgoBingle::new(user.clone(), app_id, 0);
     loop {
         list = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list");
-        if list.iter().any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == endpoint) { break; }
+        if list.iter().any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == &endpoint) { break; }
         if start.elapsed() > Duration::from_secs(45) { break; }
         thread::sleep(Duration::from_millis(250));
     }
     let mut found = false;
     for (addr, ep) in &list {
         if addr == ADDRESS_RECEIVE {
-            assert_eq!(ep, endpoint, "endpoint mismatch for user");
+            assert_eq!(ep, &endpoint, "endpoint mismatch for user");
             found = true;
         }
     }
