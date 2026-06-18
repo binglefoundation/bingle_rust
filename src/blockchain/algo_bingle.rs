@@ -3,6 +3,7 @@ use sha2::{Digest, Sha512_256};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::blockchain::algo_ops::{AlgoOps, AppArg};
 
@@ -45,6 +46,8 @@ pub struct AlgoBingle {
 pub struct AccountsCache {
     /// The last round number that was fully processed.
     pub last_round: u64,
+    /// The time when the cache was last updated (Unix timestamp in seconds).
+    pub last_updated: u64,
     /// Map of account address to the full account object.
     pub accounts: HashMap<String, algonaut::model::indexer::Account>,
 }
@@ -246,7 +249,7 @@ impl AlgoBingle {
         // Debug: print the current ops.config for visibility in discovery
         algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
-        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, |acct| {
+        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
             tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?}", addr);
             if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
@@ -311,24 +314,63 @@ impl AlgoBingle {
     }
 
     /// Helper to query all accounts opted into the given app_id via the algonaut Indexer.
-    pub fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mode: QueryMode, mut f: F) -> Result<()>
+    pub fn indexer_query_opted_in_accounts_sync<F>(
+        &self,
+        app_id: u64,
+        mode: QueryMode,
+        cache_lifetime_secs: Option<u64>,
+        mut f: F,
+    ) -> Result<()>
     where
         F: FnMut(&serde_json::Value) -> Result<()>,
     {
-        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={} mode={:?}", app_id, mode);
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        algo_log!(
+            "[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={} mode={:?} cache_lifetime={:?}",
+            app_id,
+            mode,
+            cache_lifetime_secs
+        );
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
 
         if let Some(cache_lock) = &self.cache {
             let mut cache = cache_lock.lock().unwrap();
 
-            match mode {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            let mut effective_mode = mode;
+            if mode == QueryMode::Refresh {
+                if let Some(lifetime) = cache_lifetime_secs {
+                    if now < cache.last_updated + lifetime {
+                        algo_log!(
+                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: cache is fresh ({} < {} + {}), falling back to CacheOnly",
+                            now,
+                            cache.last_updated,
+                            lifetime
+                        );
+                        effective_mode = QueryMode::CacheOnly;
+                    }
+                }
+            }
+
+            match effective_mode {
                 QueryMode::CacheOnly => {
-                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: using {} cached accounts", cache.accounts.len());
+                    algo_log!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: using {} cached accounts",
+                        cache.accounts.len()
+                    );
                 }
                 QueryMode::ForceFull | QueryMode::Refresh => {
                     let indexer = self.ops.indexer_client()?;
-                    if mode == QueryMode::ForceFull || cache.last_round == 0 {
-                        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan", mode);
+                    if effective_mode == QueryMode::ForceFull || cache.last_round == 0 {
+                        algo_log!(
+                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan",
+                            effective_mode
+                        );
                         cache.accounts.clear();
                         let mut next: Option<String> = None;
                         let mut current_round;
@@ -429,14 +471,15 @@ impl AlgoBingle {
                         }
                         cache.last_round = current_round;
                     }
+                    cache.last_updated = now;
+                    algo_log!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] done updating cache. size={} last_round={}. Iterating over accounts.",
+                        cache.accounts.len(),
+                        cache.last_round
+                    );
                 }
             }
 
-            algo_log!(
-                "[AlgoBingle][indexer_query_opted_in_accounts_sync] done updating cache. size={} last_round={}. Iterating over accounts.",
-                cache.accounts.len(),
-                cache.last_round
-            );
             for acct in cache.accounts.values() {
                 let v = serde_json::to_value(acct)
                     .map_err(|e| anyhow!("failed to serialize account from cache: {e}"))?;
@@ -495,7 +538,7 @@ impl AlgoBingle {
 
     fn handle_lookup_sync(&self, app_id: u64, handle: &str) -> Result<Option<String>> {
         let mut matches: Vec<(String, u64)> = Vec::new();
-        self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, |acct| {
+        self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
             Self::extract_handle_match(acct, app_id, handle, &mut matches);
             Ok(())
         })?;
