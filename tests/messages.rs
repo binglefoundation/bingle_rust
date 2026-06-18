@@ -106,3 +106,6 @@ pub mod relay_report_failed_handler;
 #[path = "messages/report_failed_ripple_handler.rs"]
 pub mod report_failed_ripple_handler;
 
+#[path = "messages/only_from_relay_test.rs"]
+pub mod only_from_relay_test;
+

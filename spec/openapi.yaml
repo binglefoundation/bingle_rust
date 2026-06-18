@@ -414,6 +414,8 @@ components:
       description: |
         Sent from an existing, active relay node to a new, initializing relay node.
         Contains a single record from the database.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string

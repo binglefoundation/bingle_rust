@@ -7,6 +7,38 @@ use std::sync::{Arc, Mutex};
 use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError, NetworkEndpoint, UserId, Handle};
 use crate::engine::BingleAccess;
 
+/// Check if a message type may only originate from a relay.
+pub fn only_from_relay(msg: &Message) -> bool {
+    match msg {
+        Message::Relay(rm) => {
+            match rm {
+                RelayMessage::TriangleTest2(_) | RelayMessage::TriangleTest3(_) | RelayMessage::RelayCalled(_) => true,
+                _ => false,
+            }
+        }
+        Message::Ddb(dm) => {
+            match dm {
+                DdbMessage::Signon(_) => true,
+                DdbMessage::UpsertResolve(m) => m.rippled,
+                DdbMessage::DeleteResolve(m) => m.rippled,
+                DdbMessage::InitResolve(_) => true,
+                DdbMessage::UpdateResponse(_) | DdbMessage::QueryResponse(_) | DdbMessage::SignonResponse(_) |
+                DdbMessage::RelaysStatusResponse(_) | DdbMessage::InitResponse(_) | DdbMessage::DumpResolveResponse(_) |
+                DdbMessage::DumpResolve(_) => true,
+                _ => false,
+            }
+        }
+        Message::Mutex(_) => true,
+        Message::ReportFail(rf) => {
+            match rf {
+                ReportFailMessage::ReportFailedRipple(_) | ReportFailMessage::ReportFailedRippleResponse(_) | ReportFailMessage::ReportFailedComplete(_) => true,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 #[derive(Default)]
 pub struct Router {
     sender: Mutex<Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync + 'static>>>,
