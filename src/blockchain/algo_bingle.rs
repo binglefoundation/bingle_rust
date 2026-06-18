@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use sha2::{Digest, Sha512_256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -278,6 +278,38 @@ impl AlgoBingle {
         }
     }
 
+    fn is_opted_in(acct: &algonaut::model::indexer::Account, app_id: u64) -> bool {
+        if acct.deleted.unwrap_or(false) {
+            return false;
+        }
+        if let Some(states) = &acct.apps_local_state {
+            states
+                .iter()
+                .any(|s| s.id == app_id && !s.deleted.unwrap_or(false))
+        } else {
+            false
+        }
+    }
+
+    fn collect_addresses(
+        txn: &algonaut::model::indexer::Transaction,
+        addresses: &mut HashSet<String>,
+    ) {
+        addresses.insert(txn.sender.clone());
+        if let Some(app_txn) = &txn.application_transaction {
+            if let Some(accounts) = &app_txn.accounts {
+                for addr in accounts {
+                    addresses.insert(addr.clone());
+                }
+            }
+        }
+        if let Some(inner_txns) = &txn.inner_txns {
+            for inner in inner_txns {
+                Self::collect_addresses(inner, addresses);
+            }
+        }
+    }
+
     /// Helper to query all accounts opted into the given app_id via the algonaut Indexer.
     pub fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mode: QueryMode, mut f: F) -> Result<()>
     where
@@ -291,52 +323,126 @@ impl AlgoBingle {
 
             match mode {
                 QueryMode::CacheOnly => {
-                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: iterating over {} accounts", cache.accounts.len());
-                    for acct in cache.accounts.values() {
-                        let v = serde_json::to_value(acct)
-                            .map_err(|e| anyhow!("failed to serialize account from cache: {e}"))?;
-                        f(&v)?;
-                    }
-                    return Ok(());
+                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: using {} cached accounts", cache.accounts.len());
                 }
                 QueryMode::ForceFull | QueryMode::Refresh => {
-                    // For now, Refresh also does ForceFull
-                    let mut current_round = cache.last_round;
-                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan, last_round was {}", mode, current_round);
-                    cache.accounts.clear();
                     let indexer = self.ops.indexer_client()?;
-                    let mut next: Option<String> = None;
-                    loop {
-                        let next_ref = next.as_deref();
-                        let response = self.ops.algod_call(|| indexer.search_for_accounts(
-                            None,
-                            Some(1000),
-                            next_ref,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(algonaut::core::AppId(app_id)),
-                        )).map_err(|e| anyhow!("indexer request failed: {e}"))?;
-                        
-                        current_round = response.current_round;
-                        for acct in response.accounts {
-                            let addr = acct.address.clone();
-                            let v = serde_json::to_value(&acct)
-                                .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
-                            cache.accounts.insert(addr, acct);
-                            f(&v)?;
+                    if mode == QueryMode::ForceFull || cache.last_round == 0 {
+                        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan", mode);
+                        cache.accounts.clear();
+                        let mut next: Option<String> = None;
+                        let mut current_round;
+                        loop {
+                            let next_ref = next.as_deref();
+                            let response = self.ops.algod_call(|| {
+                                indexer.search_for_accounts(
+                                    None,
+                                    Some(1000),
+                                    next_ref,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(algonaut::core::AppId(app_id)),
+                                )
+                            })
+                            .map_err(|e| anyhow!("indexer request failed: {e}"))?;
+
+                            current_round = response.current_round;
+                            for acct in response.accounts {
+                                cache.accounts.insert(acct.address.clone(), acct);
+                            }
+                            next = response.next_token;
+                            if next.is_none() {
+                                break;
+                            }
                         }
-                        next = response.next_token;
-                        if next.is_none() { break; }
+                        cache.last_round = current_round;
+                    } else {
+                        algo_log!(
+                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: incremental since round {}",
+                            cache.last_round
+                        );
+                        let mut next: Option<String> = None;
+                        let mut addresses_to_refresh = HashSet::new();
+                        let min_round = cache.last_round + 1;
+                        let mut current_round;
+
+                        loop {
+                            let next_ref = next.as_deref();
+                            let response = self.ops.algod_call(|| {
+                                indexer.search_for_transactions(
+                                    None,
+                                    next_ref,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(min_round),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(AppId(app_id)),
+                                )
+                            })
+                            .map_err(|e| anyhow!("indexer search_for_transactions failed: {e}"))?;
+
+                            current_round = response.current_round;
+                            for txn in response.transactions {
+                                Self::collect_addresses(&txn, &mut addresses_to_refresh);
+                            }
+                            next = response.next_token;
+                            if next.is_none() {
+                                break;
+                            }
+                        }
+
+                        algo_log!(
+                            "[AlgoBingle] Refresh: found {} unique addresses to check",
+                            addresses_to_refresh.len()
+                        );
+                        for addr in addresses_to_refresh {
+                            let address = Address::from_str(&addr)
+                                .map_err(|e| anyhow!("invalid address {addr}: {e}"))?;
+                            let acct_response = self
+                                .ops
+                                .algod_call(|| indexer.lookup_account_by_id(&address, None, None, None))
+                                .map_err(|e| {
+                                    anyhow!("indexer lookup_account_by_id failed for {addr}: {e}")
+                                })?;
+                            let acct = *acct_response.account;
+                            if Self::is_opted_in(&acct, app_id) {
+                                cache.accounts.insert(addr, acct);
+                            } else {
+                                cache.accounts.remove(&addr);
+                            }
+                        }
+                        cache.last_round = current_round;
                     }
-                    cache.last_round = current_round;
-                    algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done. cache size={} last_round={}", cache.accounts.len(), cache.last_round);
-                    return Ok(());
                 }
             }
+
+            algo_log!(
+                "[AlgoBingle][indexer_query_opted_in_accounts_sync] done updating cache. size={} last_round={}. Iterating over accounts.",
+                cache.accounts.len(),
+                cache.last_round
+            );
+            for acct in cache.accounts.values() {
+                let v = serde_json::to_value(acct)
+                    .map_err(|e| anyhow!("failed to serialize account from cache: {e}"))?;
+                f(&v)?;
+            }
+            return Ok(());
         }
 
         // Legacy behavior without cache
