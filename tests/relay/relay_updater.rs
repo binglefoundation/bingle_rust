@@ -9,6 +9,7 @@ use rust_comms::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message, 
 use rust_comms::ddb::InetSocketAddress;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use rust_comms::relay::relay_updater::RelayUpdater;
+use crate::util::test_util::{signed_root_relay, signed_root_relay_with, signed_non_root_relay, signed_non_root_relay_with};
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 
@@ -91,9 +92,9 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
         "MYID.".to_string(),
         Arc::new(|| {
             vec![
-                RelayInfo::root("ZZZ", addr(56003)),
-                RelayInfo::root("MYID", addr(56001)),
-                RelayInfo::root("AAA", addr(56002)),
+                signed_root_relay("ZZZ", addr(56003)),
+                signed_root_relay("MYID", addr(56001)),
+                signed_root_relay("AAA", addr(56002)),
             ]
         }),
     );
@@ -103,13 +104,13 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
     let cache = updater.relay_info_cache();
     let relays = cache.list_all_relays("MYID", true);
     assert_eq!(relays.len(), 3);
-    assert_eq!(relays[0].id, "AAA");
-    assert_eq!(relays[1].id, "MYID");
-    assert_eq!(relays[2].id, "ZZZ");
+    assert_eq!(relays[0].id(), "AAA");
+    assert_eq!(relays[1].id(), "MYID");
+    assert_eq!(relays[2].id(), "ZZZ");
 
     let own = relays
         .iter()
-        .find(|relay| relay.id == "MYID")
+        .find(|relay| relay.id() == "MYID")
         .expect("MYID should be present in relay cache");
     assert!(own.is_root);
     assert_eq!(own.state, Some(RelayState::Own));
@@ -117,7 +118,7 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
 
     let first_other = relays
         .iter()
-        .find(|relay| relay.id == "AAA")
+        .find(|relay| relay.id() == "AAA")
         .expect("AAA should be present in relay cache");
     assert!(first_other.is_root);
     assert_eq!(first_other.state, Some(RelayState::Unknown));
@@ -125,7 +126,7 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
 
     let second_other = relays
         .iter()
-        .find(|relay| relay.id == "ZZZ")
+        .find(|relay| relay.id() == "ZZZ")
         .expect("ZZZ should be present in relay cache");
     assert!(second_other.is_root);
     assert_eq!(second_other.state, Some(RelayState::Unknown));
@@ -139,8 +140,8 @@ pub fn relay_updater_init_from_blockchain_sets_unknown_when_own_not_found() {
         "MISSING.".to_string(),
         Arc::new(|| {
             vec![
-                RelayInfo::root("ROOT1", addr(56101)),
-                RelayInfo::root("ROOT2", addr(56102)),
+                signed_root_relay("ROOT1", addr(56101)),
+                signed_root_relay("ROOT2", addr(56102)),
             ]
         }),
     );
@@ -185,8 +186,8 @@ pub fn relay_select_and_query_single_root_updates_cache_and_returns_root() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(56200)),
-            RelayInfo::root("ROOT1", addr(56201)),
+            signed_root_relay("MYID", addr(56200)),
+            signed_root_relay("ROOT1", addr(56201)),
         ],
         api,
     );
@@ -195,7 +196,7 @@ pub fn relay_select_and_query_single_root_updates_cache_and_returns_root() {
     let selected = updater
         .relay_select_and_query(&[])
         .expect("single-root query should succeed");
-    assert_eq!(selected.id, "ROOT1");
+    assert_eq!(selected.id(), "ROOT1");
     assert_eq!(selected.state, Some(RelayState::Available));
     assert_eq!(selected.ttl, Some(300));
 
@@ -208,21 +209,21 @@ pub fn relay_select_and_query_single_root_updates_cache_and_returns_root() {
     let relays = updater.relay_info_cache().list_all_relays("MYID", true);
     let own = relays
         .iter()
-        .find(|relay| relay.id == "MYID")
+        .find(|relay| relay.id() == "MYID")
         .expect("MYID should exist in cache");
     assert_eq!(own.state, Some(RelayState::Own));
     assert_eq!(own.ttl, Some(30_000));
 
     let root1 = relays
         .iter()
-        .find(|relay| relay.id == "ROOT1")
+        .find(|relay| relay.id() == "ROOT1")
         .expect("ROOT1 should exist in cache");
     assert_eq!(root1.state, Some(RelayState::Available));
     assert_eq!(root1.ttl, Some(300));
 
     let root2 = relays
         .iter()
-        .find(|relay| relay.id == "ROOT2")
+        .find(|relay| relay.id() == "ROOT2")
         .expect("ROOT2 should exist in cache");
     assert_eq!(root2.state, Some(RelayState::Off));
     assert_eq!(root2.ttl, Some(30));
@@ -255,9 +256,9 @@ pub fn relay_select_and_query_falls_back_to_alternate_when_preferred_fails() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(56300)),
-            RelayInfo::root("ROOTA", addr(56301)),
-            RelayInfo::root("ROOTB", addr(56302)),
+            signed_root_relay("MYID", addr(56300)),
+            signed_root_relay("ROOTA", addr(56301)),
+            signed_root_relay("ROOTB", addr(56302)),
         ],
         api,
     );
@@ -272,19 +273,19 @@ pub fn relay_select_and_query_falls_back_to_alternate_when_preferred_fails() {
         .expect("queried_ids lock should succeed")
         .clone();
     assert_eq!(ids.len(), 2);
-    assert_eq!(selected.id, ids[1]);
+    assert_eq!(selected.id(), ids[1]);
 
     let relays = updater.relay_info_cache().list_all_relays("MYID", true);
     let first = relays
         .iter()
-        .find(|relay| relay.id == ids[0])
+        .find(|relay| relay.id() == ids[0])
         .expect("first queried relay should exist in cache");
     assert_eq!(first.state, Some(RelayState::Off));
     assert_eq!(first.ttl, Some(30));
 
     let second = relays
         .iter()
-        .find(|relay| relay.id == ids[1])
+        .find(|relay| relay.id() == ids[1])
         .expect("second queried relay should exist in cache");
     assert_eq!(second.state, Some(RelayState::Available));
     assert_eq!(second.ttl, Some(300));
@@ -312,9 +313,9 @@ pub fn relay_select_and_query_returns_none_after_all_candidates_fail() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(56400)),
-            RelayInfo::root("ROOTA", addr(56401)),
-            RelayInfo::root("ROOTB", addr(56402)),
+            signed_root_relay("MYID", addr(56400)),
+            signed_root_relay("ROOTA", addr(56401)),
+            signed_root_relay("ROOTB", addr(56402)),
         ],
         api,
     );
@@ -332,7 +333,7 @@ pub fn relay_select_and_query_returns_none_after_all_candidates_fail() {
     for queried_id in ids {
         let relay = relays
             .iter()
-            .find(|candidate| candidate.id == queried_id)
+            .find(|candidate| candidate.id() == queried_id)
             .expect("queried relay should exist in cache");
         assert_eq!(relay.state, Some(RelayState::Off));
         assert_eq!(relay.ttl, Some(30));
@@ -349,7 +350,7 @@ pub fn update_when_expired_is_noop_when_nothing_expired() {
         "MYID.".to_string(),
         Arc::new(move || {
             *counter_clone.lock().expect("lock should succeed") += 1;
-            vec![RelayInfo::root_with("ROOT1", addr(57001), Some(RelayState::Unknown), Some(30_000))]
+            vec![signed_root_relay_with("ROOT1", addr(57001), Some(RelayState::Unknown), Some(30_000))]
         }),
     );
     updater.init_from_blockchain();
@@ -372,14 +373,14 @@ pub fn update_when_expired_calls_init_from_blockchain_when_root_expired() {
         "MYID.".to_string(),
         Arc::new(move || {
             *counter_clone.lock().expect("lock should succeed") += 1;
-            vec![RelayInfo::root_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(30_000))]
+            vec![signed_root_relay_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(30_000))]
         }),
     );
 
     // Directly populate the cache with a ttl=0 root entry so we can trigger expiry without
     // waiting 30 seconds (init_from_blockchain always sets SHORT_TTL_SECS=30 for non-own relays)
     updater.relay_info_cache().replace_relays(vec![
-        RelayInfo::root_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(0)),
+        signed_root_relay_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(0)),
     ]);
 
     // Sleep so the ttl=0 entry is now expired (last_updated + 0s < now)
@@ -412,9 +413,9 @@ pub fn update_when_expired_calls_relay_select_when_only_non_root_expired() {
 
     // Root relay has a long TTL (not expired); non-root has ttl=0 (will expire immediately)
     let relays = vec![
-        RelayInfo::root_with("MYID", addr(57201), Some(RelayState::Own), Some(30_000)),
-        RelayInfo::root_with("ROOT1", addr(57202), Some(RelayState::Unknown), Some(30_000)),
-        RelayInfo::non_root_with("NR1", addr(57203), Some(RelayState::Unknown), Some(0)),
+        signed_root_relay_with("MYID", addr(57201), Some(RelayState::Own), Some(30_000)),
+        signed_root_relay_with("ROOT1", addr(57202), Some(RelayState::Unknown), Some(30_000)),
+        signed_non_root_relay_with("NR1", addr(57203), Some(RelayState::Unknown), Some(0)),
     ];
     let updater = updater_with_api("MYID.", relays.clone(), api);
     updater.relay_info_cache().replace_relays(relays);
@@ -510,9 +511,9 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(58001)),
-            RelayInfo::root("ROOTA", addr(58002)),
-            RelayInfo::root("ROOTB", addr(58003)),
+            signed_root_relay("MYID", addr(58001)),
+            signed_root_relay("ROOTA", addr(58002)),
+            signed_root_relay("ROOTB", addr(58003)),
         ],
         api,
     );
@@ -537,7 +538,7 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
         .expect("reported_to_relay_id lock should succeed")
         .clone()
         .expect("should have a relay to report to");
-    assert_eq!(reported_to, selected.id, "should have reported to the selected relay");
+    assert_eq!(reported_to, selected.id(), "should have reported to the selected relay");
 }
 
 #[test]
@@ -580,9 +581,9 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(58101)),
-            RelayInfo::root("ROOTA", addr(58102)),
-            RelayInfo::root("ROOTB", addr(58103)),
+            signed_root_relay("MYID", addr(58101)),
+            signed_root_relay("ROOTA", addr(58102)),
+            signed_root_relay("ROOTB", addr(58103)),
         ],
         api,
     );
@@ -607,7 +608,7 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
         .expect("reported_to_relay_id lock should succeed")
         .clone()
         .expect("should have a relay to report to");
-    assert_eq!(reported_to, selected.id, "should have reported to the selected relay");
+    assert_eq!(reported_to, selected.id(), "should have reported to the selected relay");
 }
 
 #[test]
@@ -635,8 +636,8 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(58201)),
-            RelayInfo::root("ROOT1", addr(58202)),
+            signed_root_relay("MYID", addr(58201)),
+            signed_root_relay("ROOT1", addr(58202)),
         ],
         api,
     );
@@ -645,7 +646,7 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
     let selected = updater
         .relay_select_and_query(&[])
         .expect("preferred relay should be selected");
-    assert_eq!(selected.id, "ROOT1");
+    assert_eq!(selected.id(), "ROOT1");
 
     let failed = reported_failed_ids
         .lock()
@@ -681,9 +682,9 @@ pub fn relay_select_and_query_excludes_id_from_candidates() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(59001)),
-            RelayInfo::root("ROOTA", addr(59002)),
-            RelayInfo::root("ROOTB", addr(59003)),
+            signed_root_relay("MYID", addr(59001)),
+            signed_root_relay("ROOTA", addr(59002)),
+            signed_root_relay("ROOTB", addr(59003)),
         ],
         api,
     );
@@ -694,7 +695,7 @@ pub fn relay_select_and_query_excludes_id_from_candidates() {
         .relay_select_and_query(&exclude)
         .expect("should select ROOTB when ROOTA is excluded");
 
-    assert_eq!(selected.id, "ROOTB", "excluded relay should not be selected");
+    assert_eq!(selected.id(), "ROOTB", "excluded relay should not be selected");
 
     let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
     assert!(!ids.contains(&"ROOTA".to_string()), "excluded relay should never be queried");
@@ -715,8 +716,8 @@ pub fn relay_select_and_query_returns_none_when_all_candidates_excluded() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(59101)),
-            RelayInfo::root("ROOTA", addr(59102)),
+            signed_root_relay("MYID", addr(59101)),
+            signed_root_relay("ROOTA", addr(59102)),
         ],
         api,
     );
@@ -754,14 +755,14 @@ pub fn relay_select_and_query_considers_non_root_relays() {
 
     // Manually populate the cache with a non-root relay so the updater sees it
     updater.relay_info_cache().replace_relays(vec![
-        RelayInfo::non_root("NONROOT1", addr(59202)),
+        signed_non_root_relay("NONROOT1", addr(59202)),
     ]);
 
     let selected = updater
         .relay_select_and_query(&[])
         .expect("non-root relay should be a valid candidate");
 
-    assert_eq!(selected.id, "NONROOT1", "non-root relay should be selectable");
+    assert_eq!(selected.id(), "NONROOT1", "non-root relay should be selectable");
     let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
     assert_eq!(ids, vec!["NONROOT1".to_string()], "non-root relay should have been queried");
 }
@@ -786,8 +787,8 @@ pub fn relay_select_and_query_excludes_my_id_always() {
     let updater = updater_with_api(
         "MYID.",
         vec![
-            RelayInfo::root("MYID", addr(59301)),
-            RelayInfo::root("ROOT1", addr(59302)),
+            signed_root_relay("MYID", addr(59301)),
+            signed_root_relay("ROOT1", addr(59302)),
         ],
         api,
     );
@@ -797,7 +798,7 @@ pub fn relay_select_and_query_excludes_my_id_always() {
         .relay_select_and_query(&[])
         .expect("should select ROOT1, not MYID");
 
-    assert_eq!(selected.id, "ROOT1", "own id should never be selected");
+    assert_eq!(selected.id(), "ROOT1", "own id should never be selected");
 
     let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
     assert!(!ids.contains(&"MYID".to_string()), "own id should never be queried");

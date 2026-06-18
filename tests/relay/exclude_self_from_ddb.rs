@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -74,8 +74,8 @@ pub fn list_all_relays_excludes_self_from_ddb() {
     // Root discovery can return any roots; ensure deterministic order
     let discover = {
         let roots = vec![
-            RelayInfo::root(other.clone(), a2),
-            RelayInfo::root(my_id.clone(), a1),
+            test_util::signed_root_relay(&other, a2),
+            test_util::signed_root_relay(&my_id, a1),
         ];
         Arc::new(move || roots.clone())
     };
@@ -84,7 +84,7 @@ pub fn list_all_relays_excludes_self_from_ddb() {
 
     // When include_self = false, our own id must not be present even if DDB provided it
     let list = finder.list_all_relays(&my_id, false);
-    let ids: Vec<String> = list.iter().map(|r| r.id.clone()).collect();
+    let ids: Vec<String> = list.iter().map(|r| r.id().to_string()).collect();
     assert!(ids.contains(&other), "should contain other relay from DDB");
     assert!(!ids.contains(&my_id), "should NOT contain our own relay id in choices");
 }
@@ -104,8 +104,8 @@ pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
 
     let discover = {
         let roots = vec![
-            RelayInfo::root(other.clone(), a2),
-            RelayInfo::root(my_id.clone(), a1),
+            test_util::signed_root_relay(&other, a2),
+            test_util::signed_root_relay(&my_id, a1),
         ];
         Arc::new(move || roots.clone())
     };
@@ -113,5 +113,5 @@ pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
     let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
 
     let picked = finder.find_relay(&my_id).expect("should pick a relay");
-    assert_ne!(picked.id, my_id, "must not select self");
+    assert_ne!(picked.id(), my_id, "must not select self");
 }

@@ -29,8 +29,8 @@ pub fn indexer_discover_closure(
                 tracing::info!("[discovery] indexer_discover_closure - indexer discovery returned list: {:?}", list);
                 let mut out: Vec<RelayInfo> = Vec::new();
                 for (id, ep) in list {
-                    if let Some(addr) = AlgoBingle::parse_relay_ip(&ep) {
-                        out.push(RelayInfo::root(id, addr));
+                    if let Some(record) = crate::ddb::AdvertRecord::deserialize_csv(id.clone(), &ep) {
+                        out.push(RelayInfo::root(record));
                     }
                 }
                 if out.is_empty() {

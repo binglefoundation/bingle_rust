@@ -51,12 +51,12 @@ pub mod test_util;
 pub fn find_root_relay_rejects_self() {
     let discover = Arc::new(|| -> Vec<RelayInfo> {
         vec![
-            RelayInfo::root(
-                test_util::ADDRESS_SPEND.to_string(),
+            test_util::signed_root_relay(
+                &test_util::ADDRESS_SPEND.to_string(),
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345),
             ),
-            RelayInfo::root(
-                test_util::ADDRESS_RECEIVE.to_string(),
+            test_util::signed_root_relay(
+                &test_util::ADDRESS_RECEIVE.to_string(),
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346),
             ),
         ]
@@ -67,8 +67,8 @@ pub fn find_root_relay_rejects_self() {
     let res = finder.find_root_relay(test_util::ADDRESS_SPEND);
     assert!(res.is_ok(), "should find other relay");
     let info = res.unwrap();
-    assert_eq!(info.id, test_util::ADDRESS_RECEIVE);
-    assert_eq!(info.address, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346));
+    assert_eq!(info.id(), test_util::ADDRESS_RECEIVE);
+    assert_eq!(info.address(), SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12346));
 }
 
 #[test]
@@ -82,10 +82,10 @@ pub fn select_indices_partitions_for_multiple_ids() {
     );
 
     let relays = vec![
-        RelayInfo::root("R1", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10001)),
-        RelayInfo::root("R2", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10002)),
-        RelayInfo::root("R3", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10003)),
-        RelayInfo::root("R4", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10004)),
+        test_util::signed_root_relay("R1", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10001)),
+        test_util::signed_root_relay("R2", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10002)),
+        test_util::signed_root_relay("R3", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10003)),
+        test_util::signed_root_relay("R4", SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10004)),
     ];
 
     let ids = [

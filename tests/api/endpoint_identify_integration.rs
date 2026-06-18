@@ -34,7 +34,7 @@ pub fn bingle_api_register_via_forced_stun() {
         handle: &str,
         ops_relay: &rust_comms::blockchain::algo_ops::AlgoOps,
         ab_creator: &AlgoBingle,
-        relay_address: &str,
+        relay_addr: SocketAddr,
         relay_account: &str,
         relay_passphrase: &str,
         app_id: u64,
@@ -53,8 +53,9 @@ pub fn bingle_api_register_via_forced_stun() {
         ab_creator
             .set_allow_relay(app_id, relay_account, true)
             .expect("set_allow_relay");
+        let compact = test_util::get_compact_advert_record(ops_relay, relay_addr, true);
         ab_relay
-            .register_endpoint(app_id, relay_address)
+            .register_endpoint(app_id, &compact)
             .expect("register_endpoint");
     }
 
@@ -124,7 +125,7 @@ pub fn bingle_api_register_via_forced_stun() {
         "relay1",
         &ops_relay1,
         &ab_creator,
-        &relay1_addr.to_string(),
+        relay1_addr,
         test_util::ADDRESS_SPEND,
         test_util::PASSPHRASE_SPEND,
         app_id,
@@ -149,7 +150,7 @@ pub fn bingle_api_register_via_forced_stun() {
         "relay2",
         &ops_relay2,
         &ab_creator,
-        &relay2_addr.to_string(),
+        relay2_addr,
         test_util::ADDRESS_RECEIVE,
         test_util::PASSPHRASE_RECEIVE,
         app_id,

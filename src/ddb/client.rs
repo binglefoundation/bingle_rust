@@ -70,8 +70,8 @@ impl DdbClientImpl {
     /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
     pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, BingleError> {
         tracing::debug!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
-        let nsk = NetworkEndpoint::new_direct(relay.address);
-        let relay_user = match Self::relay_user_id(&relay.id) {
+        let nsk = NetworkEndpoint::new_direct(relay.address());
+        let relay_user = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::get_relays_from] relay_user_id failed: {}", e);
@@ -239,14 +239,14 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(&relay.id) {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::register_ip] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
 
         // 2) Build UpsertResolve using our id as startId and record.id
         let my_id = match self.api.access(|a| a.get_my_id()) {
@@ -317,7 +317,7 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(&relay.id) {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::register_relay] relay_user_id (root) failed: {}", e);
@@ -329,7 +329,7 @@ impl DdbClient for DdbClientImpl {
             tracing::error!("[DdbClientImpl::register_relay] relay_user_id (param) failed: {}", e);
             return Err(e);
         }
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
 
         // 2) Build UpsertResolve using our id as startId and record.id
         let my_id = match self.api.access(|a| a.get_my_id()) {
@@ -400,14 +400,14 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(&relay.id) {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::lookup] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
 
         // 2) Build QueryResolve
         let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {

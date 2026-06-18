@@ -160,8 +160,10 @@ pub fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, rela
     );
 
     // Register endpoints for both relays
-    ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
-    ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+    let r1_compact = test_util::get_compact_advert_record(&ops_relay1, relay1_addr, true);
+    ab_r1.register_endpoint(app_id, &r1_compact).expect("register_endpoint r1");
+    let r2_compact = test_util::get_compact_advert_record(&ops_relay2, relay2_addr, true);
+    ab_r2.register_endpoint(app_id, &r2_compact).expect("register_endpoint r2");
 
     // Wait for indexer to see the registered endpoints
     tracing::info!("[Test] Waiting for relays to be visible via list_static_endpoints_via_indexer_sync...");
@@ -860,7 +862,8 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
 
     let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
     let ab_r2 = AlgoBingle::new(ops_relay2.clone(), app_id, 0);
-    ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+    let compact = test_util::get_compact_advert_record(&ops_relay2, relay2_addr, true);
+    ab_r2.register_endpoint(app_id, &compact).expect("register_endpoint r2");
 
     // Start relay2
     let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());

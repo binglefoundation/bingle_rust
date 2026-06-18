@@ -214,6 +214,8 @@ fn cmd_run(mut args: Vec<String>) {
                     let ops = AlgoOps::new(opts.algo_passphrase.clone(), None, opts.algo_provider_config.clone());
                     let asset_id_for_ctor = opts.asset_id.or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id)).unwrap_or(0);
                                         let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
+                    // TODO: register_endpoint now takes a compact AdvertRecord
+                    // create this here (use constructor to sign with id, needs a SigningKey)
                     match bingle.register_endpoint(app_id, &static_addr.to_string()) {
                         Ok(txid) => {
                             tracing::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
@@ -584,7 +586,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
                 let mut fail: u32 = 0;
                 let mut times: Vec<u128> = Vec::new();
                 for _ in 0..5 {
-                    match do_check(&r.id, r.address) {
+                    match do_check(r.id(), r.address()) {
                         Ok(ms) => { ok += 1; times.push(ms); }
                         Err(()) => { fail += 1; }
                     }
@@ -596,7 +598,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
                 let rate = if ok + fail > 0 { fail as f64 / (ok + fail) as f64 } else { 1.0 };
                 println!(
                     "relay {} @ {} -> ok={} fail={} fail_rate={:.0}% avg={:.1}ms p50={}ms p95={}ms",
-                    r.id, r.address, ok, fail, rate*100.0, avg, p50, p95
+                    r.id(), r.address(), ok, fail, rate*100.0, avg, p50, p95
                 );
             }
         }

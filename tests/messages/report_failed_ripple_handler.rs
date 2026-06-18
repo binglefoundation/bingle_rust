@@ -37,7 +37,7 @@ impl InnerBingleApi for TrackingApi {
             return Vec::new();
         }
         let addr: std::net::SocketAddr = "127.0.0.1:5000".parse().expect("valid addr");
-        vec![rust_comms::relay::relay_finder::RelayInfo::root(self.known_relay_id.clone(), addr)]
+        vec![crate::util::test_util::signed_root_relay(&self.known_relay_id, addr)]
     }
 }
 

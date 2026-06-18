@@ -7,6 +7,7 @@ use crate::messages::marshal::{from_json_value, to_json_value};
 use crate::messages::types::{DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed, ReportFailMessage};
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use crate::relay::relay_info_cache::RelayInfoCache;
+use crate::ddb::AdvertRecord;
 
 const LONG_TTL_SECS: u64 = 30_000;
 const MEDIUM_TTL_SECS: u64 = 300;
@@ -49,18 +50,16 @@ impl RelayUpdater {
     pub fn init_from_blockchain(&self) {
         let my_id_norm = self.my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut relays = (self.discover_roots)();
-        relays.sort_by(|left, right| left.id.cmp(&right.id));
+        relays.sort_by(|left, right| left.id().cmp(right.id()));
 
         let updated_relays: Vec<RelayInfo> = relays
             .into_iter()
-            .map(|relay| {
-                let is_own = relay.id == my_id_norm;
-                RelayInfo::root_with(
-                    relay.id,
-                    relay.address,
-                    Some(if is_own { RelayState::Own } else { RelayState::Unknown }),
-                    Some(if is_own { LONG_TTL_SECS } else { SHORT_TTL_SECS }),
-                )
+            .map(|mut relay| {
+                let is_own = relay.id() == my_id_norm;
+                relay.state = Some(if is_own { RelayState::Own } else { RelayState::Unknown });
+                relay.ttl = Some(if is_own { LONG_TTL_SECS } else { SHORT_TTL_SECS });
+                relay.is_root = true;
+                relay
             })
             .collect();
 
@@ -101,10 +100,10 @@ impl RelayUpdater {
         let mut candidates = self.relay_info_cache.list_all_relays(my_id_norm, true);
         candidates.retain(|relay| {
             relay.state != Some(RelayState::Own)
-                && relay.id != my_id_norm
-                && !exclude_ids.contains(&relay.id)
+                && relay.id() != my_id_norm
+                && !exclude_ids.contains(&relay.id().to_string())
         });
-        candidates.sort_by(|left, right| left.id.cmp(&right.id));
+        candidates.sort_by(|left, right| left.id().cmp(right.id()));
 
         if candidates.is_empty() {
             return None;
@@ -119,15 +118,15 @@ impl RelayUpdater {
 
             match self.query_relay_status(&candidate) {
                 Ok(status_response) => {
-                    self.update_cached_relay_state(&candidate.id, status_response.responder_state);
+                    self.update_cached_relay_state(candidate.id(), status_response.responder_state);
                     if status_response.responder_state != RelayState::Available {
-                        failed_relay_ids.push(candidate.id.clone());
+                        failed_relay_ids.push(candidate.id().to_string());
                         continue;
                     }
 
                     if !self.update_cache_from_status(&status_response, my_id_norm) {
-                        self.update_cached_relay_state(&candidate.id, RelayState::Off);
-                        failed_relay_ids.push(candidate.id.clone());
+                        self.update_cached_relay_state(candidate.id(), RelayState::Off);
+                        failed_relay_ids.push(candidate.id().to_string());
                         continue;
                     }
 
@@ -135,25 +134,23 @@ impl RelayUpdater {
                         .relay_info_cache
                         .list_all_relays(my_id_norm, true)
                         .into_iter()
-                        .find(|relay| relay.id == candidate.id);
+                        .find(|relay| relay.id() == candidate.id());
 
                     if let Some(relay) = selected {
                         self.report_failed_relays(&relay, &failed_relay_ids);
                         return Some(relay);
                     }
 
-                    let relay = RelayInfo::root_with(
-                        candidate.id,
-                        candidate.address,
-                        Some(RelayState::Available),
-                        Some(MEDIUM_TTL_SECS),
-                    );
+                    let mut relay = candidate.clone();
+                    relay.is_root = true;
+                    relay.state = Some(RelayState::Available);
+                    relay.ttl = Some(MEDIUM_TTL_SECS);
                     self.report_failed_relays(&relay, &failed_relay_ids);
                     return Some(relay);
                 }
                 Err(_) => {
-                    self.update_cached_relay_state(&candidate.id, RelayState::Off);
-                    failed_relay_ids.push(candidate.id.clone());
+                    self.update_cached_relay_state(candidate.id(), RelayState::Off);
+                    failed_relay_ids.push(candidate.id().to_string());
                 }
             }
         }
@@ -169,7 +166,7 @@ impl RelayUpdater {
             return;
         };
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-        let nsk = NetworkEndpoint::new_direct(selected_relay.address);
+        let nsk = NetworkEndpoint::new_direct(selected_relay.address());
         for failed_id in failed_relay_ids {
             let report = Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
                 app: "reportFail".to_string(),
@@ -180,7 +177,7 @@ impl RelayUpdater {
                 timestamp: timestamp.clone(),
             }));
             let _ = api.access(|api_ref| {
-                api_ref.send_message_to_network(&nsk, &selected_relay.id, to_json_value(&report), None)
+                api_ref.send_message_to_network(&nsk, &selected_relay.id().to_string(), to_json_value(&report), None)
             });
         }
     }
@@ -241,10 +238,10 @@ impl RelayUpdater {
             data: None,
         }));
 
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
         let response = api
             .access(|api_ref| {
-                api_ref.send_message_to_network_with_response(&nsk, &relay.id, to_json_value(&request), None)
+                api_ref.send_message_to_network_with_response(&nsk, &relay.id().to_string(), to_json_value(&request), None)
             })
             .map_err(|err| err.to_string())?;
 
@@ -267,7 +264,7 @@ impl RelayUpdater {
         let mut updated = Vec::with_capacity(status.relay_ids.len());
         for index in 0..status.relay_ids.len() {
             let id = status.relay_ids[index].clone();
-            let Ok(address) = std::net::SocketAddr::try_from(endpoints[index].clone()) else {
+            let Ok(_address) = std::net::SocketAddr::try_from(endpoints[index].clone()) else {
                 return false;
             };
 
@@ -277,9 +274,16 @@ impl RelayUpdater {
                 status.relay_states[index]
             };
 
-            updated.push(RelayInfo::root_with(
+            let record = AdvertRecord::new_unsigned(
                 id,
-                address,
+                Some(endpoints[index].clone()),
+                Some(true),
+                None,
+                None,
+                chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            );
+            updated.push(RelayInfo::root_with(
+                record,
                 Some(state),
                 Some(Self::ttl_for_state(state)),
             ));
@@ -292,7 +296,7 @@ impl RelayUpdater {
     fn update_cached_relay_state(&self, relay_id: &str, state: RelayState) {
         let my_id_norm = self.my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut relays = self.relay_info_cache.list_all_relays(my_id_norm, true);
-        if let Some(relay) = relays.iter_mut().find(|relay| relay.id == relay_id) {
+        if let Some(relay) = relays.iter_mut().find(|relay| relay.id() == relay_id) {
             relay.state = Some(state);
             relay.ttl = Some(Self::ttl_for_state(state));
             self.relay_info_cache.replace_relays(relays);
