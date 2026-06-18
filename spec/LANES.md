@@ -83,6 +83,7 @@ robustness:
 - fix fragile tests
 + retry on indexer lookups
 + cache indexer lookups
++ remove need for placeholder to get an indexer
 - integration tests on bingle_jsi
 + Layer 1
 + ~~Layer 2~~

@@ -10,6 +10,9 @@ use rust_comms::util::cli_utils::parse_start_options_from_args;
 use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::error::{AlgoError, AlgoErrorKind};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
+use ed25519_dalek::SigningKey;
+use chrono::Utc;
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
@@ -213,16 +216,39 @@ fn cmd_run(mut args: Vec<String>) {
                 } else {
                     let ops = AlgoOps::new(opts.algo_passphrase.clone(), None, opts.algo_provider_config.clone());
                     let asset_id_for_ctor = opts.asset_id.or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id)).unwrap_or(0);
-                                        let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
-                    // TODO: register_endpoint now takes a compact AdvertRecord
-                    // create this here (use constructor to sign with id, needs a SigningKey)
-                    match bingle.register_endpoint(app_id, &static_addr.to_string()) {
-                        Ok(txid) => {
-                            tracing::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
+                    let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id_for_ctor);
+
+                    // Create a compact, signed AdvertRecord for on-chain registration
+                    let addr_opt = ops.address.clone();
+                    let sk_res = ops.private_key_bytes();
+
+                    if let (Some(addr), Ok(sk_bytes)) = (addr_opt, sk_res) {
+                        let id = addr;
+                        let sk_arr: [u8; 32] = sk_bytes.try_into().expect("Secret key must be 32 bytes");
+                        let signing_key = SigningKey::from_bytes(&sk_arr);
+                        let date = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+                        let record = AdvertRecord::new(
+                            id,
+                            Some(InetSocketAddress::from(static_addr)),
+                            Some(opts.am_relay),
+                            None,
+                            None,
+                            date,
+                            &signing_key,
+                        );
+                        let compact = record.serialize_csv();
+
+                        match bingle.register_endpoint(app_id, &compact) {
+                            Ok(txid) => {
+                                tracing::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
+                            }
+                            Err(e) => {
+                                warn!("Failed to register static endpoint '{}': {}", static_addr, e);
+                            }
                         }
-                        Err(e) => {
-                            warn!("Failed to register static endpoint '{}': {}", static_addr, e);
-                        }
+                    } else {
+                        warn!("--static-ip was provided but could not derive account from passphrase; skipping on-chain register_endpoint");
                     }
                 }
             }
