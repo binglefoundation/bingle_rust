@@ -174,4 +174,57 @@ impl AdvertRecord {
 
         vk.verify(&data, &sig).is_ok()
     }
+
+    /// Serialize to a compact CSV format for blockchain storage.
+    /// Order: endpoint, am_relay, relay_id, relay_sig, date, sig
+    /// id is omitted as it is implied by the storage context.
+    pub fn serialize_csv(&self) -> String {
+        let endpoint_str = self.endpoint.as_ref().map(|e| e.to_string()).unwrap_or_default();
+        let am_relay_str = match self.am_relay {
+            Some(true) => "T",
+            _ => "F",
+        };
+        let relay_id_str = self.relay_id.as_deref().unwrap_or_default();
+        let relay_sig_str = self.relay_sig.as_deref().unwrap_or_default();
+        let date_str = &self.date;
+        let sig_str = self.sig.as_deref().unwrap_or_default();
+
+        format!("{},{},{},{},{},{}", endpoint_str, am_relay_str, relay_id_str, relay_sig_str, date_str, sig_str)
+    }
+
+    /// Deserialize from the compact CSV format.
+    /// Requires the id to be provided externally.
+    pub fn deserialize_csv(id: String, csv: &str) -> Option<Self> {
+        let parts: Vec<&str> = csv.split(',').collect();
+        if parts.len() != 6 {
+            return None;
+        }
+
+        let endpoint = if parts[0].is_empty() {
+            None
+        } else {
+            InetSocketAddress::from_str(parts[0]).ok()
+        };
+
+        let am_relay = match parts[1] {
+            "T" => Some(true),
+            "F" => Some(false),
+            _ => return None,
+        };
+
+        let relay_id = if parts[2].is_empty() { None } else { Some(parts[2].to_string()) };
+        let relay_sig = if parts[3].is_empty() { None } else { Some(parts[3].to_string()) };
+        let date = parts[4].to_string();
+        let sig = if parts[5].is_empty() { None } else { Some(parts[5].to_string()) };
+
+        Some(Self {
+            id,
+            endpoint,
+            am_relay,
+            relay_id,
+            relay_sig,
+            date,
+            sig,
+        })
+    }
 }
