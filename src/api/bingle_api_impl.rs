@@ -381,6 +381,31 @@ impl BingleApi for BingleApiImpl {
             }
         }
 
+        // allow_relay check for relays (soft check)
+        if options.am_relay {
+            if let (Some(config), Some(app_id), Some(pass)) = (&options.algo_provider_config, options.app_id, &options.algo_passphrase) {
+                let ops = AlgoOps::new(Some(pass.clone()), None, Some(config.clone()));
+                if let Some(addr) = &ops.address {
+                    match ops.local_state_for_account(app_id, addr) {
+                        Ok(Some(kvs)) => {
+                            let allowed = kvs.iter().any(|(k, v)| k == "allow_relay" && v == "1");
+                            if !allowed {
+                                tracing::error!("[BingleApiImpl::start] Account {} is not allowed to relay in dApp {}", addr, app_id);
+                                return Err(BingleError::Other(format!("Account {} is not allowed to relay", addr)));
+                            }
+                        }
+                        Ok(None) => {
+                            tracing::error!("[BingleApiImpl::start] Account {} is not opted-in to dApp {}", addr, app_id);
+                            return Err(BingleError::Other(format!("Account {} is not opted-in to dApp", addr)));
+                        }
+                        Err(e) => {
+                            tracing::warn!("[BingleApiImpl::start] Could not verify allow_relay on-chain: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
             (*engine_ptr).span = self.span.clone();

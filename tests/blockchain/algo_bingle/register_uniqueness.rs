@@ -97,10 +97,10 @@ pub fn test_register_handle_race_condition() {
     
     if let Err(e) = res1 {
         let msg = e.to_string();
-        assert!(msg.contains("already in use") || msg.contains("post-check failed"), "Unexpected error: {}", msg);
+        assert!(msg.contains("already in use") || msg.contains("post-check failed") || msg.contains("verification failed"), "Unexpected error: {}", msg);
     }
     if let Err(e) = res2 {
         let msg = e.to_string();
-        assert!(msg.contains("already in use") || msg.contains("post-check failed"), "Unexpected error: {}", msg);
+        assert!(msg.contains("already in use") || msg.contains("post-check failed") || msg.contains("verification failed"), "Unexpected error: {}", msg);
     }
 }

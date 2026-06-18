@@ -342,6 +342,9 @@ fn register_relay_static_endpoint(
     creator_ab
         .set_allow_static(app_id, relay_account, true)
         .expect("set_allow_static should succeed");
+    creator_ab
+        .set_allow_relay(app_id, relay_account, true)
+        .expect("set_allow_relay should succeed");
     relay_ab
         .register_endpoint(app_id, relay_address)
         .expect("register_endpoint should succeed");

@@ -26,7 +26,7 @@ When a parameter is in use, do not start the name with'_' as this is the unused 
 Mark all tests with `#[test]` and use a separate `#[cfg` parameter where needed, so that Intellij can see the tests
 
 When running grep, exclude binaries (for performance)
-Create any temp files (logging, etc) in tmp so that they are gitignored
+Create any temp and output files (logging, etc) in tmp so that they are gitignored
 
 Do Not use Trump Case in Comments, etc.
 

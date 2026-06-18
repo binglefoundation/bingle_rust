@@ -30,6 +30,8 @@ pub mod unique_handle;
 pub mod send_message_to_id_integration;
 #[path = "integration/api/connection_tests.rs"]
 pub mod connection_tests;
+#[path = "integration/api/relay_permission_test.rs"]
+pub mod relay_permission_test;
 
 // API tests needing localnet
 #[path = "api/endpoint_identify_integration.rs"]

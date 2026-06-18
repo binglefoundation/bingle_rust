@@ -145,6 +145,9 @@ pub fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, rela
     // Grant allow_static for relay accounts via creator
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
+    // Grant allow_relay for relay accounts via creator
+    ab_creator.set_allow_relay(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_relay r1");
+    ab_creator.set_allow_relay(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_relay r2");
 
     // handle must be registered
     register_client_on_blockchain(

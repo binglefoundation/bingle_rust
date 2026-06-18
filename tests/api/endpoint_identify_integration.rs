@@ -50,6 +50,9 @@ pub fn bingle_api_register_via_forced_stun() {
         ab_creator
             .set_allow_static(app_id, relay_account, true)
             .expect("set_allow_static");
+        ab_creator
+            .set_allow_relay(app_id, relay_account, true)
+            .expect("set_allow_relay");
         ab_relay
             .register_endpoint(app_id, relay_address)
             .expect("register_endpoint");
