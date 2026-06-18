@@ -236,10 +236,11 @@ impl AlgoBingle {
                         let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                         let kvs = Self::decode_state_entries(&keyvals);
                         tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing decoded: kvs: {:?}", kvs);
-                        if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
-                            if !val.is_empty() {
-                                results.push((addr.clone(), val));
-                            }
+                        let ep = kvs.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+                        let ep_x = kvs.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+                        let full_val = format!("{}{}", ep, ep_x);
+                        if !full_val.is_empty() {
+                            results.push((addr.clone(), full_val));
                         }
                     }
                 }
@@ -404,8 +405,10 @@ impl AlgoBingle {
     //     let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
     //     for acct in accounts {
     //         if let Some(entries) = get_local(app_id, acct) {
-    //             // find static_endpoint
-    //             if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
+    //             let ep = entries.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+    //             let ep_x = entries.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+    //             let v = format!("{}{}", ep, ep_x);
+    //             if !v.is_empty() {
     //                 if let Some(addr) = Self::parse_relay_ip(&v) {
     //                     out.push((acct.clone(), addr));
     //                 }

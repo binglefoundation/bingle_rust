@@ -969,9 +969,9 @@ impl AlgoOps {
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
         // Schema: Global needs at least 2 integers (BinglePrice, LastHandleTime).
         // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime),
-        // plus allow_static (int), static_endpoint (bytes), and allow_relay (int).
+        // plus allow_static (int), static_endpoint (bytes), static_endpoint_x (bytes), and allow_relay (int).
         let gs = algonaut::transaction::transaction::StateSchema { number_ints: 2, number_byteslices: 0 };
-        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
+        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 3 };
 
         let client = self.algod_client()?;
         let params = self.algod_call(|| client.suggested_params())
