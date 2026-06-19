@@ -489,6 +489,7 @@ impl BingleApi for BingleApiImpl {
                 if let Some(api) = this_weak.upgrade() {
                     api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)).unwrap_or(false))
                 } else {
+                    tracing::error!("[BingleApiImpl::start][sender_cb] this_weak upgrade failed");
                     false
                 }
             });
@@ -511,6 +512,7 @@ impl BingleApi for BingleApiImpl {
                 if let Some(api) = this_weak_for_engine.upgrade() {
                     api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)).unwrap_or(false))
                 } else {
+                    tracing::error!("[BingleApiImpl::start][engine sender] this_weak_for_engine upgrade failed");
                     false
                 }
             })));
@@ -1034,7 +1036,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         tracing::info!("[BingleApiImpl::initialize_relay]");
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).initialize_relay_async();
+            (*engine_ptr).initialize_relay();
         }
     }
     fn is_relay(&self) -> bool {

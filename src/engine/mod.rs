@@ -111,9 +111,10 @@ impl<T: ?Sized> BingleAccess<T> for std::sync::Weak<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        let arc = self
-            .upgrade()
-            .expect("Bingle item dropped (Weak upgrade failed)");
+        let arc = self.upgrade().unwrap_or_else(|| {
+            tracing::error!("Bingle item dropped (Weak upgrade failed)");
+            panic!("Bingle item dropped (Weak upgrade failed)");
+        });
         f(arc.as_ref())
     }
 }
@@ -149,9 +150,10 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        let arc = self
-            .upgrade()
-            .expect("Bingle item dropped (Weak upgrade failed)");
+        let arc = self.upgrade().unwrap_or_else(|| {
+            tracing::error!("Bingle item dropped (Weak upgrade failed)");
+            panic!("Bingle item dropped (Weak upgrade failed)");
+        });
 
         unsafe {
             let ptr = std::sync::Arc::as_ptr(&arc) as *mut T;
@@ -982,6 +984,13 @@ impl Engine {
     /// Send a message to all known relays (except ourselves and the message originator).
     pub fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb: &dyn DdbBackend) {
         tracing::info!("[Engine::ripple_message] originator={}", originator_id);
+        let api = match self.bingle_api.upgrade() {
+            Some(a) => a,
+            None => {
+                tracing::error!("[Engine::ripple_message] bingle_api upgrade failed");
+                return;
+            }
+        };
         let my_id = match self.issuer() {
             Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
             Err(_) => {
@@ -1003,9 +1012,7 @@ impl Engine {
                 if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
                     tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
                     let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
-                    if let Some(api) = self.bingle_api.upgrade() {
-                        let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
-                    }
+                    let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                 }
             }
         } else {
@@ -1019,9 +1026,7 @@ impl Engine {
                         if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
                             tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
                             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
-                            if let Some(api) = self.bingle_api.upgrade() {
-                                let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
-                            }
+                            let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                         }
                     }
                 }
@@ -1129,7 +1134,14 @@ impl Engine {
                 let dtls_handler_worker = || -> Result<Option<Vec<u8>>, String> {
                     // Validate identity (opted in and has handle)
                     let sender_id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                    let handle_opt = bingle_api.upgrade().and_then(|api| api.handle_lookup_by_id(&sender_id));
+                    let api = match bingle_api.upgrade() {
+                        Some(a) => a,
+                        None => {
+                            tracing::error!("[Engine::install_dtls_handler][cb] bingle_api upgrade failed");
+                            return Ok(None);
+                        }
+                    };
+                    let handle_opt = api.handle_lookup_by_id(&sender_id);
                     if handle_opt.is_none() {
                         let claimed_handle = std::str::from_utf8(data)
                             .ok()
@@ -1575,16 +1587,6 @@ impl Engine {
         tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
 
-    pub(crate) fn initialize_relay_async(&mut self) {
-        tracing::info!("[Engine] spawning initialize_relay thread");
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
-        let span = self.span.clone();
-        std::thread::spawn(move || unsafe {
-            let _guard = span.enter();
-            let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-            eng.initialize_relay();
-        });
-    }
 
     fn start_with_addr(
         &mut self,
@@ -1640,35 +1642,85 @@ impl Engine {
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
         // Initialize the relay finder now that we have a known static address.
+        let app_id_opt = self.options.app_id.or_else(|| {
+            std::env::var("BINGLE_APP_ID")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+        });
+        if let Some(app_id) = app_id_opt {
+            let cfg = self.options.algo_provider_config.clone();
+            let api = match self.bingle_api.upgrade() {
+                Some(a) => a,
+                None => {
+                    let err = "bingle_api upgrade failed for accounts cache".to_string();
+                    tracing::error!("[Engine::start_with_addr] {}", err);
+                    return Err(BingleError::Other(err));
+                }
+            };
+            let cache = api.get_accounts_cache();
+            let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
+            let finder = crate::relay::relay_finder::RelayFinder::new(
+                self.bingle_api.clone(),
+                discover,
+            );
+            tracing::info!("[Engine::start_with_addr] RelayFinder constructed");
+            self.relay_finder = Some(Arc::new(finder));
+        }
+
+        self.set_nat_type(NatType::FullCone);
+        let static_addr = self.options.static_ip.expect("start_with_address when no static address");
+
+        match self.bingle_api.upgrade() {
+            Some(api) => {
+                if let Err(e) = api.ddb_register_ip(static_addr, false) {
+                    tracing::warn!("[Engine::start_with_addr] initial ddb_register_ip(false) failed: {}", e);
+                }
+            }
+            None => {
+                tracing::error!("[Engine::start_with_addr] bingle_api upgrade failed for initial ddb_register_ip");
+            }
+        }
+
         if self.options.am_relay {
-            let app_id_opt = self.options.app_id.or_else(|| {
-                std::env::var("BINGLE_APP_ID")
-                    .ok()
-                    .and_then(|s| s.parse::<u64>().ok())
-            });
-            if let Some(app_id) = app_id_opt {
-                let cfg = self.options.algo_provider_config.clone();
-                let cache = self.bingle_api.upgrade().and_then(|a| a.get_accounts_cache());
-                let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
-                let finder = crate::relay::relay_finder::RelayFinder::new(
-                    self.bingle_api.clone(),
-                    discover,
-                );
-                tracing::info!("[Engine::start_with_addr] RelayFinder constructed");
-                self.relay_finder = Some(Arc::new(finder));
-                self.initialize_relay_async();
+            if self.relay_finder.is_some() {
+                let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+                let span = self.span.clone();
+                let api_weak = self.bingle_api.clone();
+                std::thread::spawn(move || unsafe {
+                    let _guard = span.enter();
+                    let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+
+                    eng.initialize_relay();
+
+                    match api_weak.upgrade() {
+                        Some(api) => {
+                            tracing::info!("[Engine::start_with_addr] second ddb_register_ip {}, true", static_addr);
+                            if let Err(e) = api.ddb_register_ip(static_addr, true) {
+                                tracing::warn!("[Engine::start_with_addr] second ddb_register_ip({}, true) failed: {}", static_addr, e);
+                            } else {
+                                tracing::info!("[Engine::start_with_addr] relay DDB registration successful: {}", static_addr);
+                            }
+                            api.set_state(EngineState::Registered);
+                            api.notify_listening(true, NatType::FullCone);
+                        }
+                        None => {
+                            tracing::error!("[Engine::start_with_addr] bingle_api upgrade failed in background thread");
+                        }
+                    }
+                });
             } else {
                 tracing::warn!("[Engine::start_with_addr] app_id not configured; skipping relay discovery and marking Available directly");
                 self.set_relay_state(RelayState::Available, "start_with_addr: no app_id; skipping discovery");
+                self.notify_listening(true);
+                self.set_state_internal(EngineState::Registered);
             }
+        } else {
+            self.notify_listening(true);
+            self.set_state_internal(EngineState::Registered);
         }
-        // Static address path: once DTLS accept loop is running and any relay is available, notify that we are listening.
-        self.notify_listening(true);
 
         self.mux = Some(mux);
         tracing::info!("[Engine] start_with_addr: done");
-        self.set_state_internal(EngineState::Registered);
-
         Ok(())
     }
 
@@ -1740,7 +1792,14 @@ impl Engine {
                         .and_then(|s| s.parse::<u64>().ok())
                 });
                 if let Some(app_id) = app_id_opt {
-                    let cache = self.bingle_api.upgrade().and_then(|a| a.get_accounts_cache());
+                    let api = match self.bingle_api.upgrade() {
+                        Some(a) => a,
+                        None => {
+                            tracing::error!("[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache");
+                            return;
+                        }
+                    };
+                    let cache = api.get_accounts_cache();
                     crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
                 } else {
                     // No app id set
@@ -1898,7 +1957,14 @@ impl Engine {
                     return;
                 }
             };
-            let cache = self.bingle_api.upgrade().and_then(|a| a.get_accounts_cache());
+            let api = match self.bingle_api.upgrade() {
+                Some(a) => a,
+                None => {
+                    tracing::error!("[Engine::register_with_relay] bingle_api upgrade failed for accounts cache");
+                    return;
+                }
+            };
+            let cache = api.get_accounts_cache();
             let discover = crate::relay::discovery::indexer_discover_closure(
                 app_id,
                 self.options.algo_provider_config.clone(),
@@ -1920,7 +1986,7 @@ impl Engine {
         let api = match self.bingle_api.upgrade() {
             Some(a) => a,
             None => {
-                tracing::warn!("[Engine::register_with_relay] bingle_api weak reference is gone");
+                tracing::error!("[Engine::register_with_relay] bingle_api weak reference is gone");
                 return;
             }
         };

@@ -1,10 +1,9 @@
 use rust_comms::engine::BingleAccessUnsafeForTests;
 use serial_test::serial;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use rust_comms::algo_ops::AlgoChainConfig;
-use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::EngineState;
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
@@ -57,40 +56,6 @@ pub fn bingle_api_register_via_forced_stun() {
         ab_relay
             .register_endpoint(app_id, &compact)
             .expect("register_endpoint");
-    }
-
-    fn start_relay_and_wait_available(
-        opts: &StartOptions,
-        name: &str,
-    ) -> Arc<BingleApiImpl> {
-        let relay = BingleApiImpl::new(opts);
-        relay
-            .access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(opts))
-            .unwrap_or_else(|e| panic!("{} start() failed: {}", name, e));
-
-        let relay_wait_start = Instant::now();
-        let mut registered = false;
-        while relay_wait_start.elapsed() < Duration::from_secs(60) {
-            if !registered {
-                let state =
-                    relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
-                if matches!(state, Some(EngineState::Registered)) {
-                    registered = true;
-                    let relay_state = relay.get_relay_state();
-                    tracing::info!("[Test] {} registered (relay_state={})", name, relay_state);
-                }
-            }
-
-            if registered {
-                return relay;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-
-        let state =
-            relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.engine_state_for_tests());
-        let relay_state = relay.get_relay_state();
-        panic!("unexpected {} state: engine={:?} relay={}", name, state, relay_state);
     }
 
     test_util::assert_localnet_available();

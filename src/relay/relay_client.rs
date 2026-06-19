@@ -29,7 +29,11 @@ impl RelayClient {
     }
 
     fn api(&self) -> Result<Arc<dyn crate::api::bingle_api::BingleApiBoth>, BingleError> {
-        self.api.upgrade().ok_or_else(|| BingleError::Other("BingleApi dropped".to_string()))
+        self.api.upgrade().ok_or_else(|| {
+            let err = "BingleApi dropped".to_string();
+            tracing::error!("[RelayClient::api] {}", err);
+            BingleError::Other(err)
+        })
     }
 
     /// Open a channel via the relay identified in `relay_nsk` to the provided `target_id`.
