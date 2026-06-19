@@ -4,7 +4,6 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::api::bingle_api::{BingleError, NetworkEndpoint};
-use crate::engine::{BingleAccess, BingleAccessUnsafeForTests};
 use crate::ddb::client::DdbClient;
 use crate::messages::{Message, RelayMessage};
 use crate::messages::marshal::to_json_value;
@@ -29,11 +28,15 @@ impl RelayClient {
         Self { api, ddb }
     }
 
+    fn api(&self) -> Result<Arc<dyn crate::api::bingle_api::BingleApiBoth>, BingleError> {
+        self.api.upgrade().ok_or_else(|| BingleError::Other("BingleApi dropped".to_string()))
+    }
+
     /// Open a channel via the relay identified in `relay_nsk` to the provided `target_id`.
     /// Returns a NetworkEndpoint suitable for sending data via the relay (with channel and address set).
     pub fn call(&self, relay_nsk: &NetworkEndpoint, target_id: &str) -> Result<NetworkEndpoint, BingleError> {
         tracing::info!("[RelayClient::call] my_id={:?}, relay_nsk: {:?}, target_id: {}", 
-            self.api.access_unsafe_for_tests(|a| a.get_my_id()), relay_nsk, target_id);
+            self.api.upgrade().and_then(|a| a.get_my_id()), relay_nsk, target_id);
         
         // Validate the relay id is present
         let relay_id = relay_nsk
@@ -59,7 +62,7 @@ impl RelayClient {
 
         // Send to the relay and await response
         let relay_endpoint = NetworkEndpoint::new_direct(relay_addr);
-        let resp = self.api.access(|a| a.send_message_to_network_with_response(&relay_endpoint, &relay_id, json, None))?;
+        let resp = self.api()?.send_message_to_network_with_response(&relay_endpoint, &relay_id, json, None)?;
 
         // Parse channel from either RelayResponse or RelayCallResponse
         let ty = resp.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");

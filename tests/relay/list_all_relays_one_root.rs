@@ -48,8 +48,8 @@ pub fn list_all_relays_queries_root_even_if_only_one() {
     let root_id = "IAOSUGCPN6WTPI3LCXLHXMJU3UT3VIGP3CKZ6H3P6XYZND4JYKZJSFYZ3I";
 
     let discover = Arc::new(move || -> Vec<RelayInfo> {
-        vec![RelayInfo::root(
-            root_id.to_string(),
+        vec![test_util::signed_root_relay(
+            root_id,
             "127.0.0.1:10000".parse().unwrap(),
         )]
     });
@@ -64,6 +64,6 @@ pub fn list_all_relays_queries_root_even_if_only_one() {
 
     assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1, "Should have queried the single root relay");
     assert_eq!(relays.len(), 2);
-    assert!(relays.iter().any(|r| r.id == "R-SUB-1"));
-    assert!(relays.iter().any(|r| r.id == "R-SUB-2"));
+    assert!(relays.iter().any(|r| r.id() == "R-SUB-1"));
+    assert!(relays.iter().any(|r| r.id() == "R-SUB-2"));
 }

@@ -1,7 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use sha2::{Digest, Sha512_256};
-use std::future::Future;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::blockchain::algo_ops::{AlgoOps, AppArg};
 
@@ -37,13 +39,46 @@ pub struct AlgoBingle {
     pub ops: AlgoOps,
     pub app_id: u64,
     pub asset_id: u64,
+    pub cache: Option<Arc<Mutex<AccountsCache>>>,
+}
+
+const INDEXER_PAGE_SIZE: u64 = 100;
+
+fn indexer_excludes() -> Option<Vec<String>> {
+    Some(vec![
+        "assets".to_string(),
+        "created-apps".to_string(),
+        "created-assets".to_string(),
+    ])
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct AccountsCache {
+    /// The last round number that was fully processed.
+    pub last_round: u64,
+    /// The time when the cache was last updated (Unix timestamp in seconds).
+    pub last_updated: u64,
+    /// Map of account address to the full account object.
+    pub accounts: HashMap<String, algonaut::model::indexer::Account>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryMode {
+    Refresh,     // Incremental if cache exists, else Full
+    CacheOnly,   // Use cache without network
+    ForceFull,   // Force a full scan
 }
 
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
         algo_log!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
-        Self { ops, app_id, asset_id }
+        Self { ops, app_id, asset_id, cache: None }
+    }
+
+    pub fn new_with_cache(ops: AlgoOps, app_id: u64, asset_id: u64, cache: Arc<Mutex<AccountsCache>>) -> Self {
+        algo_log!("[AlgoBingle::new_with_cache] app_id={} asset_id={}", app_id, asset_id);
+        Self { ops, app_id, asset_id, cache: Some(cache) }
     }
 
     /// Extract the BinglePrice value from already-decoded global state entries.
@@ -60,8 +95,8 @@ impl AlgoBingle {
     /// Errors if the key is not set or the application cannot be queried.
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let client = self.algod_client()?;
-        let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
+        let client = self.ops.algod_client()?;
+        let app_info = self.ops.algod_call(|| client.app(algonaut::core::AppId(app_id)))
             .map_err(|e| anyhow!("application_information failed: {e}"))?;
         let v = serde_json::to_value(&app_info)
             .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
@@ -175,15 +210,16 @@ impl AlgoBingle {
     /// Call register_endpoint(string)void for the caller.
     /// Passing an empty string clears the local state key.
     /// Returns the submitted transaction id on success.
-    pub fn register_endpoint(&self, app_id: u64, endpoint: &str) -> Result<String> {
+    // endpoint_advert_record_compact is now a compact AdvertRecord
+    pub fn register_endpoint(&self, app_id: u64, endpoint_advert_record_compact: &str) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Build ARC-4 arguments manually to ensure correct string encoding (2-byte length prefix)
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(AlgoOps::arc4_selector("register_endpoint(string)void").to_vec());
-        let ep_bytes = endpoint.as_bytes();
+        let ep_bytes = endpoint_advert_record_compact.as_bytes();
         if ep_bytes.len() > u16::MAX as usize { bail!("endpoint too long"); }
         let mut arg = Vec::with_capacity(2 + ep_bytes.len());
         arg.extend_from_slice(&(ep_bytes.len() as u16).to_be_bytes());
@@ -234,7 +270,7 @@ impl AlgoBingle {
         // Debug: print the current ops.config for visibility in discovery
         algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
         let mut results: Vec<(String, String)> = Vec::new();
-        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+        let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
             tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing account: address: {:?}", addr);
             if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
@@ -245,10 +281,11 @@ impl AlgoBingle {
                         let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                         let kvs = Self::decode_state_entries(&keyvals);
                         tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing decoded: kvs: {:?}", kvs);
-                        if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
-                            if !val.is_empty() {
-                                results.push((addr.clone(), val));
-                            }
+                        let ep = kvs.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+                        let ep_x = kvs.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+                        let full_val = format!("{}{}", ep, ep_x);
+                        if !full_val.is_empty() {
+                            results.push((addr.clone(), full_val));
                         }
                     }
                 }
@@ -266,54 +303,243 @@ impl AlgoBingle {
         }
     }
 
+    fn is_opted_in(acct: &algonaut::model::indexer::Account, app_id: u64) -> bool {
+        if acct.deleted.unwrap_or(false) {
+            return false;
+        }
+        if let Some(states) = &acct.apps_local_state {
+            states
+                .iter()
+                .any(|s| s.id == app_id && !s.deleted.unwrap_or(false))
+        } else {
+            false
+        }
+    }
+
+    fn collect_addresses(
+        txn: &algonaut::model::indexer::Transaction,
+        addresses: &mut HashSet<String>,
+    ) {
+        addresses.insert(txn.sender.clone());
+        if let Some(app_txn) = &txn.application_transaction {
+            if let Some(accounts) = &app_txn.accounts {
+                for addr in accounts {
+                    addresses.insert(addr.clone());
+                }
+            }
+        }
+        if let Some(inner_txns) = &txn.inner_txns {
+            for inner in inner_txns {
+                Self::collect_addresses(inner, addresses);
+            }
+        }
+    }
+
     /// Helper to query all accounts opted into the given app_id via the algonaut Indexer.
-    fn indexer_query_opted_in_accounts_sync<F>(&self, app_id: u64, mut f: F) -> Result<()>
+    pub fn indexer_query_opted_in_accounts_sync<F>(
+        &self,
+        app_id: u64,
+        mode: QueryMode,
+        cache_lifetime_secs: Option<u64>,
+        mut f: F,
+    ) -> Result<()>
     where
         F: FnMut(&serde_json::Value) -> Result<()>,
     {
-        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={}", app_id);
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        algo_log!(
+            "[AlgoBingle][indexer_query_opted_in_accounts_sync] app_id={} mode={:?} cache_lifetime={:?}",
+            app_id,
+            mode,
+            cache_lifetime_secs
+        );
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+
+        if let Some(cache_lock) = &self.cache {
+            let mut cache = cache_lock.lock().unwrap();
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            let mut effective_mode = mode;
+            if mode == QueryMode::Refresh {
+                if let Some(lifetime) = cache_lifetime_secs {
+                    if now < cache.last_updated + lifetime {
+                        algo_log!(
+                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: cache is fresh ({} < {} + {}), falling back to CacheOnly",
+                            now,
+                            cache.last_updated,
+                            lifetime
+                        );
+                        effective_mode = QueryMode::CacheOnly;
+                    }
+                }
+            }
+
+            match effective_mode {
+                QueryMode::CacheOnly => {
+                    algo_log!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] CacheOnly: using {} cached accounts",
+                        cache.accounts.len()
+                    );
+                }
+                QueryMode::ForceFull | QueryMode::Refresh => {
+                    let indexer = self.ops.indexer_client()?;
+                    if effective_mode == QueryMode::ForceFull || cache.last_round == 0 {
+                        algo_log!(
+                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] {:?}: performing full scan",
+                            effective_mode
+                        );
+                        cache.accounts.clear();
+                        let mut next: Option<String> = None;
+                        let mut current_round;
+                        loop {
+                            let next_ref = next.as_deref();
+                            let response = self.ops.algod_call(|| {
+                                indexer.search_for_accounts(
+                                    None,
+                                    Some(INDEXER_PAGE_SIZE),
+                                    next_ref,
+                                    None,
+                                    None,
+                                    indexer_excludes(),
+                                    None,
+                                    None,
+                                    None,
+                                    Some(algonaut::core::AppId(app_id)),
+                                )
+                            })
+                            .map_err(|e| anyhow!("incremental indexer request failed: {e}"))?;
+
+                            current_round = response.current_round;
+                            for acct in response.accounts {
+                                cache.accounts.insert(acct.address.clone(), acct);
+                            }
+                            next = response.next_token;
+                            if next.is_none() {
+                                break;
+                            }
+                        }
+                        cache.last_round = current_round;
+                    } else {
+                        algo_log!(
+                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: incremental since round {}",
+                            cache.last_round
+                        );
+                        let mut next: Option<String> = None;
+                        let mut addresses_to_refresh = HashSet::new();
+                        let min_round = cache.last_round + 1;
+                        let mut current_round;
+
+                        loop {
+                            let next_ref = next.as_deref();
+                            let response = self.ops.algod_call(|| {
+                                indexer.search_for_transactions(
+                                    Some(INDEXER_PAGE_SIZE),
+                                    next_ref,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(min_round),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(AppId(app_id)),
+                                )
+                            })
+                            .map_err(|e| anyhow!("indexer search_for_transactions failed: {e}"))?;
+
+                            current_round = response.current_round;
+                            for txn in response.transactions {
+                                Self::collect_addresses(&txn, &mut addresses_to_refresh);
+                            }
+                            next = response.next_token;
+                            if next.is_none() {
+                                break;
+                            }
+                        }
+
+                        algo_log!(
+                            "[AlgoBingle] Refresh: found {} unique addresses to check",
+                            addresses_to_refresh.len()
+                        );
+                        for addr in addresses_to_refresh {
+                            let address = Address::from_str(&addr)
+                                .map_err(|e| anyhow!("invalid address {addr}: {e}"))?;
+                            let acct_response = self
+                                .ops
+                                .algod_call(|| {
+                                    indexer.lookup_account_by_id(
+                                        &address,
+                                        None,
+                                        None,
+                                        indexer_excludes(),
+                                    )
+                                })
+                                .map_err(|e| {
+                                    anyhow!("indexer lookup_account_by_id failed for {addr}: {e}")
+                                })?;
+                            let acct = *acct_response.account;
+                            if Self::is_opted_in(&acct, app_id) {
+                                cache.accounts.insert(addr, acct);
+                            } else {
+                                cache.accounts.remove(&addr);
+                            }
+                        }
+                        cache.last_round = current_round;
+                    }
+                    cache.last_updated = now;
+                    algo_log!(
+                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] done updating cache. size={} last_round={}. Iterating over accounts.",
+                        cache.accounts.len(),
+                        cache.last_round
+                    );
+                }
+            }
+
+            for acct in cache.accounts.values() {
+                let v = serde_json::to_value(acct)
+                    .map_err(|e| anyhow!("failed to serialize account from cache: {e}"))?;
+                f(&v)?;
+            }
+            return Ok(());
+        }
+
+        // Legacy behavior without cache
+        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] no cache available, performing full scan");
         let indexer = self.ops.indexer_client()?;
         let mut next: Option<String> = None;
         loop {
             let next_ref = next.as_deref();
-            algo_log!("[indexer_query_opted_in_accounts_sync] querying indexer next={:?}", next_ref);
-            let response = self.algod_call(|| indexer.search_for_accounts(
+            let response = self.ops.algod_call(|| indexer.search_for_accounts(
                 None,
-                Some(1000),
+                Some(INDEXER_PAGE_SIZE),
                 next_ref,
                 None,
                 None,
-                None,
+                indexer_excludes(),
                 None,
                 None,
                 None,
                 Some(algonaut::core::AppId(app_id)),
-            )).map_err(|e| {
-                let msg = e.to_string();
-                let ae = anyhow!("{msg}");
-                if crate::blockchain::error::AlgoError::is_host_unreachable(&ae) {
-                    crate::blockchain::error::AlgoError::unreachable("indexer request", &msg).into()
-                } else {
-                    tracing::error!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] indexer request failed: {}",
-                        msg
-                    );
-                    anyhow!("indexer request failed: {msg}")
-                }
-            })?;
-            algo_log!("[AlgoBingle][indexer /v2/accounts] page accounts count: {}", response.accounts.len());
-            for acct in &response.accounts {
-                let v = serde_json::to_value(acct)
+            )).map_err(|e| anyhow!("full indexer request failed: {e}"))?;
+            
+            for acct in response.accounts {
+                let v = serde_json::to_value(&acct)
                     .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
-                // algo_log!("[indexer_query_opted_in_accounts_sync] calling f on account: {:?}", v);
-                if let Err(e) = f(&v) {
-                    tracing::error!(
-                        "[AlgoBingle][indexer_query_opted_in_accounts_sync] failed to process account: {}",
-                        e
-                    );
-                    return Err(e);
-                }
+                f(&v)?;
             }
             next = response.next_token;
             if next.is_none() { break; }
@@ -341,7 +567,7 @@ impl AlgoBingle {
 
     fn handle_lookup_sync(&self, app_id: u64, handle: &str) -> Result<Option<String>> {
         let mut matches: Vec<(String, u64)> = Vec::new();
-        self.indexer_query_opted_in_accounts_sync(app_id, |acct| {
+        self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
             Self::extract_handle_match(acct, app_id, handle, &mut matches);
             Ok(())
         })?;
@@ -413,8 +639,10 @@ impl AlgoBingle {
     //     let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
     //     for acct in accounts {
     //         if let Some(entries) = get_local(app_id, acct) {
-    //             // find static_endpoint
-    //             if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
+    //             let ep = entries.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+    //             let ep_x = entries.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+    //             let v = format!("{}{}", ep, ep_x);
+    //             if !v.is_empty() {
     //                 if let Some(addr) = Self::parse_relay_ip(&v) {
     //                     out.push((acct.clone(), addr));
     //                 }
@@ -437,12 +665,6 @@ impl AlgoBingle {
     // }
 
 
-    fn algod_client(&self) -> Result<Algod> {
-        // Build base URL including port, e.g., http://localhost:4001
-        let url = format!("{}:{}", self.ops.config.client_api_url, self.ops.config.client_api_port);
-        let token = self.ops.config.token.clone().unwrap_or_default();
-        Algod::new(&url, &token).map_err(|e| anyhow!("failed to construct Algod client: {e}"))
-    }
 
     fn sender_account(&self) -> Result<(Account, Address)> {
         let sk = self.ops.private_key_bytes()?;
@@ -457,94 +679,11 @@ impl AlgoBingle {
         Ok((account, addr))
     }
 
-    fn rt_block_on<T: Send>(&self, fut: impl Future<Output = T> + Send) -> Result<T> {
-        // If we are already in a tokio runtime, we must avoid nested block_on and 
-        // the "cannot drop runtime" panic during unwinding/drop.
-        if tokio::runtime::Handle::try_current().is_ok() {
-            return std::thread::scope(|s| {
-                let handle = s.spawn(|| {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("failed to build temporary tokio runtime");
-                    rt.block_on(fut)
-                });
-                handle.join().map_err(|_| anyhow!("rt_block_on thread panicked"))
-            });
-        }
-
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| anyhow!("failed to build tokio runtime: {e}"))?;
-        Ok(rt.block_on(fut))
-    }
 
     fn params(&self, client: &Algod) -> Result<SuggestedParams> {
-        self.algod_call(|| client.suggested_params())
+        self.ops.algod_call(|| client.suggested_params())
     }
 
-    // HTTP status codes that warrant a retry (transient/overload errors).
-    const RETRYABLE_STATUS_CODES: &'static [u16] = &[408, 425, 429, 502, 503, 504];
-
-    // Returns true if the algonaut error is a retryable transient HTTP error.
-    fn is_retryable(e: &algonaut::Error) -> bool {
-        if let algonaut::Error::Request(req) = e {
-            if let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
-                return Self::RETRYABLE_STATUS_CODES.contains(status);
-            }
-        }
-        false
-    }
-
-    // Helper: run an algonaut async call and flatten the double-Result, with
-    // up to 3 retries (with exponential backoff: 1 s, 2 s, 4 s) on transient
-    // HTTP errors (408, 425, 429, 502, 503, 504).
-    //
-    // Accepts a closure rather than a bare future so the future can be
-    // reconstructed on each retry attempt (futures are consumed on first poll).
-    fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
-    where
-        T: Send,
-        F: Fn() -> Fut,
-        Fut: std::future::Future<Output = Result<T, algonaut::Error>> + Send,
-    {
-        const MAX_RETRIES: u32 = 3;
-        const RETRY_BASE_MS: u64 = 1_000;
-
-        let mut attempt = 0u32;
-        loop {
-            let result = self
-                .rt_block_on(make_fut())
-                .map_err(|e| anyhow!("runtime error: {e}"))?;
-
-            match result {
-                Ok(val) => return Ok(val),
-                Err(ref e) if attempt < MAX_RETRIES && Self::is_retryable(e) => {
-                    let delay = std::time::Duration::from_millis(RETRY_BASE_MS * (1u64 << attempt));
-                    tracing::warn!(
-                        "algod transient error (attempt {}/{}), retrying in {:?}: {}",
-                        attempt + 1,
-                        MAX_RETRIES,
-                        delay,
-                        e
-                    );
-                    std::thread::sleep(delay);
-                    attempt += 1;
-                }
-                Err(e) => {
-                    if attempt >= MAX_RETRIES && Self::is_retryable(&e) {
-                        return Err(crate::blockchain::error::AlgoError::transient(
-                            "algod call",
-                            &e.to_string(),
-                        )
-                        .into());
-                    }
-                    return Err(anyhow!("{e}"));
-                }
-            }
-        }
-    }
 
     fn app_address(&self, app_id: u64) -> Result<Address> {
         let addr_str = self.ops.contract_address(app_id)?;
@@ -556,7 +695,7 @@ impl AlgoBingle {
         let mut bytes: Vec<u8> = Vec::new();
         for s in signed_group { bytes.extend_from_slice(&s); }
 
-        let txid = self.algod_call(|| client.send_raw(&bytes))
+        let txid = self.ops.algod_call(|| client.send_raw(&bytes))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
         // Wait for confirmation of the first tx id in the group.
         self.ops.wait_for_confirmation(&txid, 10)?;
@@ -632,7 +771,7 @@ impl AlgoBingle {
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         // Ensure the caller (sender) is opted in to receive the asset from the app's inner tx
         let _ = self.opt_in_sender_to_asset(asset_id)?;
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
@@ -672,7 +811,7 @@ impl AlgoBingle {
         if amount == 0 { bail!("amount must be > 0"); }
         // Ensure the app account is opted-in to the ASA so it can receive transfers
         self.opt_in_app_to_asset(app_id, asset_id)?;
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
@@ -741,7 +880,7 @@ impl AlgoBingle {
     /// Internal method to perform the registration on-chain without uniqueness pre-checks.
     /// Used by `register` after pre-checks, or by tests to simulate "hacked" registrations.
     pub fn register_unchecked(&self, app_id: u64, asset_id: u64, handle: &str, price_units: u64) -> Result<String> {
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
 
@@ -814,6 +953,7 @@ impl AlgoBingle {
     /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app creator.
     /// Returns the transaction id of the app call when an opt-in was required; if the
     /// app was already opted in, returns Ok("") without making a call.
+    /// TODO: make this generic as called from deploy
     pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
@@ -840,7 +980,7 @@ impl AlgoBingle {
         if self.ops.is_account_opted_in_to_asset(sender_str, asset_id)? {
             return Ok(String::new());
         }
-        let client = self.algod_client()?;
+        let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         // Opt-in by sending 0 units to self
@@ -853,7 +993,7 @@ impl AlgoBingle {
             .map_err(|e| anyhow!("sign asset opt-in: {e}"))?
             .to_msg_pack()
             .map_err(|e| anyhow!("encode signed asset opt-in: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
+        let tx_id = self.ops.algod_call(|| client.send_raw(&signed))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
         Ok(tx_id)

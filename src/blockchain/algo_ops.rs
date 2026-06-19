@@ -175,7 +175,7 @@ impl AlgoOps {
     //
     // Accepts a closure rather than a bare future so the future can be
     // reconstructed on each retry attempt (futures are consumed on first poll).
-    fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
+    pub fn algod_call<T, F, Fut>(&self, make_fut: F) -> Result<T>
     where
         T: Send,
         F: Fn() -> Fut,
@@ -969,9 +969,10 @@ impl AlgoOps {
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
         // Schema: Global needs at least 2 integers (BinglePrice, LastHandleTime).
         // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime),
-        // plus allow_static (int), static_endpoint (bytes), and allow_relay (int).
+        // plus allow_static (int), static_endpoint (bytes), static_endpoint_x (bytes), and allow_relay (int).
+        // TODO: this is app specific, we shoould have this info from the artifacts
         let gs = algonaut::transaction::transaction::StateSchema { number_ints: 2, number_byteslices: 0 };
-        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
+        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 3 };
 
         let client = self.algod_client()?;
         let params = self.algod_call(|| client.suggested_params())

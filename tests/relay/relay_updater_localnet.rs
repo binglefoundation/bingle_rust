@@ -44,7 +44,7 @@ fn relay_updater_localnet_e2e_matrix() {
     register_relay_static_endpoint(
         &relay1_ops,
         &creator_ab,
-        &relay1_addr.to_string(),
+        relay1_addr,
         test_util::ADDRESS_SPEND,
         app_id,
     );
@@ -80,7 +80,7 @@ fn relay_updater_localnet_e2e_matrix() {
     );
     start_relay_and_wait_available(&relay1, &relay1_opts, "relay1");
     let relay1_id = relay1.get_my_id().expect("relay1 id should be available");
-    let relay1_root = RelayInfo::root(relay1_id.clone(), relay1_addr);
+    let relay1_root = RelayInfo::root(test_util::get_signed_advert_record(&relay1_id, test_util::PASSPHRASE_SPEND, relay1_addr, true));
 
     let client1_opts = StartOptions {
         handle: "relay-updater-localnet-client-1".into(),
@@ -158,7 +158,7 @@ fn relay_updater_localnet_e2e_matrix() {
     register_relay_static_endpoint(
         &relay2_ops,
         &creator_ab,
-        &relay2_addr.to_string(),
+        relay2_addr,
         test_util::ADDRESS_RECEIVE,
         app_id,
     );
@@ -173,7 +173,7 @@ fn relay_updater_localnet_e2e_matrix() {
     let relay2 = BingleApiImpl::new(&relay2_opts);
     start_relay_and_wait_available(&relay2, &relay2_opts, "relay2");
     let relay2_id = relay2.get_my_id().expect("relay2 id should be available");
-    let relay2_root = RelayInfo::root(relay2_id.clone(), relay2_addr);
+    let relay2_root = RelayInfo::root(test_util::get_signed_advert_record(&relay2_id, test_util::PASSPHRASE_RECEIVE, relay2_addr, true));
     let two_roots = vec![relay1_root.clone(), relay2_root.clone()];
 
     run_scenario(
@@ -245,8 +245,8 @@ fn run_scenario(
         "{scenario_name}: init cache size should match registered roots"
     );
 
-    let expected_root_ids: BTreeSet<String> = registered_roots.iter().map(|relay| relay.id.clone()).collect();
-    let init_root_ids: BTreeSet<String> = init_cache.iter().map(|relay| relay.id.clone()).collect();
+    let expected_root_ids: BTreeSet<String> = registered_roots.iter().map(|relay| relay.id().to_string()).collect();
+    let init_root_ids: BTreeSet<String> = init_cache.iter().map(|relay| relay.id().to_string()).collect();
     tracing::info!("[Test] init_root_ids: {:?}", init_root_ids);
     assert_eq!(
         init_root_ids, expected_root_ids,
@@ -257,7 +257,7 @@ fn run_scenario(
             relay.state,
             Some(RelayState::Unknown),
             "{scenario_name}: expected Unknown after init for {}",
-            relay.id
+            relay.id()
         );
     }
 
@@ -272,7 +272,7 @@ fn run_scenario(
     assert!(selected.is_some(), "{scenario_name}: expected selected relay");
     let selected_relay = selected.expect("selected relay should exist after is_some check");
     assert!(
-        expected_root_ids.contains(&selected_relay.id),
+        expected_root_ids.contains(selected_relay.id()),
         "{scenario_name}: selected relay should be one of registered roots"
     );
     assert_eq!(
@@ -285,12 +285,12 @@ fn run_scenario(
     tracing::info!("[Test] {} all_relays: {:?}", scenario_name, all_relays);
     let non_root_count = all_relays
         .iter()
-        .filter(|relay| !expected_root_ids.contains(&relay.id))
+        .filter(|relay| !expected_root_ids.contains(relay.id()))
         .count();
 
     assert!(non_root_count >= min_expected_non_root_count, "{scenario_name}: expected at least {min_expected_non_root_count} non-root relays");
 
-    let selected_in_cache = all_relays.iter().find(|relay| relay.id == selected_relay.id);
+    let selected_in_cache = all_relays.iter().find(|relay| relay.id() == selected_relay.id());
     assert!(
         selected_in_cache.is_some(),
         "{scenario_name}: selected relay should be present in cache"
@@ -302,7 +302,7 @@ fn make_updater(my_id: String, api: Arc<BingleApiImpl>, app_id: u64, cfg: rust_c
     RelayUpdater::new_with_api(
         my_id,
         Arc::downgrade(&api_both),
-        indexer_discover_closure(app_id, Some(cfg)),
+        indexer_discover_closure(app_id, Some(cfg), None),
     )
 }
 
@@ -333,7 +333,7 @@ fn relay_start_options(
 fn register_relay_static_endpoint(
     relay_ops: &AlgoOps,
     creator_ab: &AlgoBingle,
-    relay_address: &str,
+    relay_addr: SocketAddr,
     relay_account: &str,
     app_id: u64,
 ) {
@@ -345,8 +345,9 @@ fn register_relay_static_endpoint(
     creator_ab
         .set_allow_relay(app_id, relay_account, true)
         .expect("set_allow_relay should succeed");
+    let compact = crate::util::test_util::get_compact_advert_record(relay_ops, relay_addr, true);
     relay_ab
-        .register_endpoint(app_id, relay_address)
+        .register_endpoint(app_id, &compact)
         .expect("register_endpoint should succeed");
 }
 

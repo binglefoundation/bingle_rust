@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::engine::RelayState;
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait, RelayFinderTestTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayFinderTestTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -89,9 +89,9 @@ pub fn clear_state_cache_resets_and_reloads() {
     // Root discovery closure returns the same three as roots
     let discover = {
         let ids = vec![
-            RelayInfo::root(id1.clone(), a1),
-            RelayInfo::root(id2.clone(), a2),
-            RelayInfo::root(id3.clone(), a3),
+            test_util::signed_root_relay(&id1, a1),
+            test_util::signed_root_relay(&id2, a2),
+            test_util::signed_root_relay(&id3, a3),
         ];
         Arc::new(move || ids.clone())
     };

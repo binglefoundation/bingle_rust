@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait, RelayFinderTestTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayFinderTestTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -87,9 +87,9 @@ pub fn load_and_summarize_states() {
     // Root discovery closure returns the same three as roots
     let discover = {
         let ids = vec![
-            RelayInfo::root(id1.clone(), a1),
-            RelayInfo::root(id2.clone(), a2),
-            RelayInfo::root(id3.clone(), a3),
+            test_util::signed_root_relay(&id1, a1),
+            test_util::signed_root_relay(&id2, a2),
+            test_util::signed_root_relay(&id3, a3),
         ];
         Arc::new(move || ids.clone())
     };

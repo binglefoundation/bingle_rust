@@ -4,6 +4,8 @@
 // Blockchain integration tests that hit localnet
 #[path = "../integration/blockchain/algo_bingle_integration_localnet.rs"]
 pub mod algo_bingle_integration_localnet;
+#[path = "../integration/blockchain/algo_bingle_cache_localnet.rs"]
+pub mod algo_bingle_cache_localnet;
 #[path = "../integration/blockchain/algo_ops_integration_localnet.rs"]
 pub mod algo_ops_integration_localnet;
 #[path = "../integration/blockchain/algo_bingle_buy_flow_localnet.rs"]

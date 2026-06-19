@@ -6,7 +6,6 @@ use serde_json::Value as JsonValue;
 use crate::api::bingle_api::{BingleError, NetworkEndpoint};
 use crate::messages::types::*;
 use crate::messages::{to_json_value, Message};
-use crate::engine::BingleAccess;
 use crate::relay::relay_finder::{RelayInfo, RelayFinderTrait};
 
 /// Public DDB client interface used by higher layers.
@@ -39,8 +38,13 @@ pub struct DdbClientImpl {
 impl DdbClientImpl {
     /// Create a DdbClientImpl using indexer-based discovery (requires app_id configured on API or via env BINGLE_APP_ID).
     pub fn new(api: crate::api::bingle_api::BingleApiBothType, app_id: u64, cfg: Option<crate::blockchain::algo_ops::AlgoChainConfig>) -> Self {
-        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg);
+        let cache = api.upgrade().and_then(|a| a.get_accounts_cache());
+        let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
         Self { api, discover }
+    }
+
+    fn api(&self) -> Result<Arc<dyn crate::api::bingle_api::BingleApiBoth>, BingleError> {
+        self.api.upgrade().ok_or_else(|| BingleError::Other("BingleApi dropped".to_string()))
     }
 
     /// Constructor that accepts a custom discovery closure (used by tests to avoid external dependencies).
@@ -52,7 +56,7 @@ impl DdbClientImpl {
         tracing::debug!("[DdbClientImpl::find_relay] create RelayFinder");
         let finder = crate::relay::relay_finder::RelayFinder::new(self.api.clone(), self.discover.clone());
         tracing::trace!("[DdbClientImpl::find_relay] get_my_id");
-        let my_id = self.api.access(|a| a.get_my_id()).ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
+        let my_id = self.api()?.get_my_id().ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
         tracing::trace!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
         finder.find_relay(&my_id).map_err(BingleError::Other)
     }
@@ -70,8 +74,8 @@ impl DdbClientImpl {
     /// This avoids probing multiple roots and is used by RelayFinder::list_all_relays.
     pub fn get_relays_from(&self, relay: &RelayInfo) -> Result<Vec<(String, SocketAddr)>, BingleError> {
         tracing::debug!("[DddClientImpl::get_relays_from] relay: {:?}", relay);
-        let nsk = NetworkEndpoint::new_direct(relay.address);
-        let relay_user = match Self::relay_user_id(&relay.id) {
+        let nsk = NetworkEndpoint::new_direct(relay.address());
+        let relay_user = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::get_relays_from] relay_user_id failed: {}", e);
@@ -80,7 +84,7 @@ impl DdbClientImpl {
         };
         let req = Message::Ddb(DdbMessage::GetRelaysStatus(DdbGetRelaysStatus { app: "ddb".into(), epoch_id: -1, tag: None, text: None, data: None }));
         let json: JsonValue = to_json_value(&req);
-        let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user, json, None)) {
+        let resp = match self.api()?.send_message_to_network_with_response(&nsk, &relay_user, json, None) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::get_relays_from] send_message_to_network_with_response failed: {}", e);
@@ -194,7 +198,7 @@ impl DdbClient for DdbClientImpl {
 
         // Send and await InitResponse
         let nsk_direct = NetworkEndpoint::new_direct(addr);
-        let resp: serde_json::Value = match self.api.access(|a| a.send_message_to_network_with_response(&nsk_direct, &relay_user, json, None)) {
+        let resp: serde_json::Value = match self.api()?.send_message_to_network_with_response(&nsk_direct, &relay_user, json, None) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::start_load_from_peer] send_message_to_network_with_response failed: {}", e);
@@ -239,17 +243,17 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(&relay.id) {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::register_ip] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
 
         // 2) Build UpsertResolve using our id as startId and record.id
-        let my_id = match self.api.access(|a| a.get_my_id()) {
+        let my_id = match self.api()?.get_my_id() {
             Some(id) => id,
             None => {
                 let err = "get_my_id returned None".to_string();
@@ -258,7 +262,7 @@ impl DdbClient for DdbClientImpl {
             }
         };
         let date = "1970-01-01T00:00:00Z".to_string();
-        let record = if let Some(sk) = self.api.access(|a| a.get_signing_key()) {
+        let record = if let Some(sk) = self.api()?.get_signing_key() {
             AdvertRecord::new(
                 my_id.clone(),
                 Some(InetSocketAddress::from(endpoint)),
@@ -294,7 +298,7 @@ impl DdbClient for DdbClientImpl {
 
         // 3) Send and wait for response; validate UpdateResponse
         tracing::debug!("[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}", json);
-        let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
+        let resp = match self.api()?.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::register_ip] send_message_to_network_with_response failed: {}", e);
@@ -317,7 +321,7 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(&relay.id) {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::register_relay] relay_user_id (root) failed: {}", e);
@@ -329,10 +333,10 @@ impl DdbClient for DdbClientImpl {
             tracing::error!("[DdbClientImpl::register_relay] relay_user_id (param) failed: {}", e);
             return Err(e);
         }
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
 
         // 2) Build UpsertResolve using our id as startId and record.id
-        let my_id = match self.api.access(|a| a.get_my_id()) {
+        let my_id = match self.api()?.get_my_id() {
             Some(id) => id,
             None => {
                 let err = "get_my_id returned None".to_string();
@@ -341,7 +345,7 @@ impl DdbClient for DdbClientImpl {
             }
         };
         let date = "1970-01-01T00:00:00Z".to_string();
-        let record = if let Some(sk) = self.api.access(|a| a.get_signing_key()) {
+        let record = if let Some(sk) = self.api()?.get_signing_key() {
             AdvertRecord::new(
                 my_id.clone(),
                 None,
@@ -377,7 +381,7 @@ impl DdbClient for DdbClientImpl {
 
         // 3) Send and wait for response; validate UpdateResponse
         tracing::debug!("[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}", json);
-        let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
+        let resp = match self.api()?.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::register_relay] send_message_to_network_with_response failed: {}", e);
@@ -400,14 +404,14 @@ impl DdbClient for DdbClientImpl {
                 return Err(e);
             }
         };
-        let relay_user_b64 = match Self::relay_user_id(&relay.id) {
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
             Ok(u) => u,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::lookup] relay_user_id failed: {}", e);
                 return Err(e);
             }
         };
-        let nsk = NetworkEndpoint::new_direct(relay.address);
+        let nsk = NetworkEndpoint::new_direct(relay.address());
 
         // 2) Build QueryResolve
         let q = Message::Ddb(DdbMessage::QueryResolve(DdbQueryResolve {
@@ -420,7 +424,7 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&q);
 
         // 3) Send and await response
-        let resp = match self.api.access(|a| a.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None)) {
+        let resp = match self.api()?.send_message_to_network_with_response(&nsk, &relay_user_b64, json, None) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}", e);

@@ -183,9 +183,10 @@ pub fn test_relay_ping_handler_honors_exclusions() {
 #[cfg(not(target_os = "ios"))]
 pub fn test_relay_finder_honors_exclusions() {
     use std::sync::Arc;
-    use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+    use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
     use crate::util::reusable_mock_api::{MockApiBoth, InnerBingleApi};
     use rust_comms::api::bingle_api::{NetworkEndpoint, UserId, ProgressCallback};
+    use crate::util::test_util::signed_root_relay;
 
     let id1 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     let id2 = "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -217,21 +218,21 @@ pub fn test_relay_finder_honors_exclusions() {
     let api: Arc<dyn rust_comms::api::bingle_api::BingleApiBoth> = api_inner;
 
     // Create 3 relays
-    let r1 = RelayInfo::root(id1, "1.1.1.1:1111".parse().unwrap());
-    let r2 = RelayInfo::root(id2, "2.2.2.2:2222".parse().unwrap());
-    let r3 = RelayInfo::root(id3, addr3);
+    let r1 = signed_root_relay(id1, "1.1.1.1:1111".parse().unwrap());
+    let r2 = signed_root_relay(id2, "2.2.2.2:2222".parse().unwrap());
+    let r3 = signed_root_relay(id3, addr3);
     let all_relays = vec![r1.clone(), r2.clone(), r3.clone()];
     
     let discover = Arc::new(move || all_relays.clone());
     let finder = RelayFinder::new(Arc::downgrade(&api), discover);
     
     // Test 1: Exclude R1 and R2 -> relay_select_and_query returns R3 (only Available relay in response)
-    let exclude = vec![r1.address, r2.address];
+    let exclude = vec![r1.address(), r2.address()];
     let chosen = finder.find_relay_excluding("ME", &exclude).expect("find relay");
-    assert_eq!(chosen.id, id3);
+    assert_eq!(chosen.id(), id3);
     
     // Test 2: Exclude all -> must return error
-    let exclude_all = vec![r1.address, r2.address, r3.address];
+    let exclude_all = vec![r1.address(), r2.address(), r3.address()];
     let err = finder.find_relay_excluding("ME", &exclude_all);
     assert!(err.is_err());
 }

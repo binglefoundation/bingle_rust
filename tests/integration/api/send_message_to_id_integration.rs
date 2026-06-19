@@ -160,8 +160,10 @@ pub fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, rela
     );
 
     // Register endpoints for both relays
-    ab_r1.register_endpoint(app_id, &relay1_addr.to_string()).expect("register_endpoint r1");
-    ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+    let r1_compact = test_util::get_compact_advert_record(&ops_relay1, relay1_addr, true);
+    ab_r1.register_endpoint(app_id, &r1_compact).expect("register_endpoint r1");
+    let r2_compact = test_util::get_compact_advert_record(&ops_relay2, relay2_addr, true);
+    ab_r2.register_endpoint(app_id, &r2_compact).expect("register_endpoint r2");
 
     // Wait for indexer to see the registered endpoints
     tracing::info!("[Test] Waiting for relays to be visible via list_static_endpoints_via_indexer_sync...");
@@ -354,33 +356,6 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     s2.stop();
 }
 
-// Helper: wait for indexer to see the relays
-fn wait_for_indexer_visible(app_id: u64, expected: &[(String, SocketAddr)], timeout: Duration) -> bool {
-    let cfg = test_util::localnet_config();
-    // Provide a placeholder address for read-only indexer ops
-    let ops = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let ab = AlgoBingle::new(ops, app_id, 0);
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if let Ok(list) = ab.list_static_endpoints_via_indexer(app_id) {
-            let mut all_match = true;
-            for (exp_id, exp_addr) in expected {
-                let exp_addr_str = exp_addr.to_string();
-                if !list.iter().any(|(fid, faddr_str)| fid == exp_id && faddr_str == &exp_addr_str) {
-                    all_match = false;
-                    tracing::info!("[Test] Relay {} not yet visible via indexer with address {} (found: {:?})", exp_id, exp_addr_str, list);
-                    break;
-                }
-            }
-            if all_match && list.len() >= expected.len() {
-                tracing::info!("[Test] All {} relays visible via indexer with correct addresses after {:?}", expected.len(), start.elapsed());
-                return true;
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1000));
-    }
-    false
-}
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
@@ -454,8 +429,9 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
         (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
         (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
     ];
-    if !wait_for_indexer_visible(app_id, &roots, Duration::from_secs(60)) {
-        panic!("Root relayids  did not become visible via indexer");
+    let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
+    if !wait_for_relays_visible(&ab_creator, app_id, &roots, Duration::from_secs(60)) {
+        panic!("Root relayids did not become visible via indexer");
     }
 
     tracing::info!("[Test] Starting root relays");
@@ -468,10 +444,12 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     // Wait for root relays to be fully ready (registered in blockchain)??
     tracing::info!("[Test] Waiting for root relays to register themselves in blockchain");
-    let ab_creator = AlgoBingle::new(test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone()), app_id, 0);
     if !wait_for_relays_visible(&ab_creator, app_id, &roots, Duration::from_secs(60)) {
         panic!("Root relays did not become visible");
     }
+
+    ab_creator.set_allow_relay(app_id, relay3_id, true).expect("set_allow_relay r3");
+    ab_creator.set_allow_relay(app_id, relay4_id, true).expect("set_allow_relay r4");
 
     // Start non-root relays
     tracing::info!("[Test] Starting non-root relays");
@@ -857,10 +835,12 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     );
     let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
+    ab_creator.set_allow_relay(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_relay r2");
 
     let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
     let ab_r2 = AlgoBingle::new(ops_relay2.clone(), app_id, 0);
-    ab_r2.register_endpoint(app_id, &relay2_addr.to_string()).expect("register_endpoint r2");
+    let compact = test_util::get_compact_advert_record(&ops_relay2, relay2_addr, true);
+    ab_r2.register_endpoint(app_id, &compact).expect("register_endpoint r2");
 
     // Start relay2
     let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
@@ -893,6 +873,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
         app_id, asset_id, &creator, cfg.clone(),
     );
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
+    ab_creator.set_allow_relay(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_relay r1");
 
     let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
 

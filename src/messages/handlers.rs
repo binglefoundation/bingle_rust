@@ -728,7 +728,8 @@ impl MessageHandler for DefaultPrintingHandler {
                     .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
                 let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
                 let cfg = api_for_thread.get_algo_provider_config();
-                crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+                let cache = api_for_thread.get_accounts_cache();
+                crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache)
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
             let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
@@ -763,11 +764,11 @@ impl MessageHandler for DefaultPrintingHandler {
 
             // Build NetworkSourceKey and user id base64(36) as required by API
             use crate::api::bingle_api::NetworkEndpoint;
-            let nsk = NetworkEndpoint::new_direct(associated_relay.address);
-            let user_id = associated_relay.id.clone();
+            let nsk = NetworkEndpoint::new_direct(associated_relay.address());
+            let user_id = associated_relay.id().to_string();
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
-            tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={:?}", associated_relay.address, ok);
+            tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={:?}", associated_relay.address(), ok);
 
             // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
 
@@ -896,8 +897,8 @@ impl DefaultPrintingHandler {
         // Find the failed relay's address via list_all_relays
         let relay_addr_opt = api.list_all_relays(true)
             .into_iter()
-            .find(|r| &r.id == failed_relay_id)
-            .map(|r| r.address);
+            .find(|r| r.id() == failed_relay_id)
+            .map(|r| r.address());
 
         let mark_failed = match relay_addr_opt {
             None => {
@@ -978,7 +979,7 @@ impl DefaultPrintingHandler {
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
         let sender_is_relay = api.list_all_relays(true)
             .into_iter()
-            .any(|r| r.id == sender_id);
+            .any(|r| r.id() == sender_id);
         if !sender_is_relay {
             warn!("[handlers::on_report_failed_ripple] received ReportFailedRipple from non-relay {}, ignoring", sender_id);
             return;
@@ -1024,7 +1025,8 @@ impl DefaultPrintingHandler {
                     None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
                 };
                 let cfg = api_for_thread.get_algo_provider_config();
-                crate::relay::discovery::indexer_discover_closure(app_id, cfg)
+                let cache = api_for_thread.get_accounts_cache();
+                crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache)
             };
 
             // Wrap combined API as plain BingleApiBoth for RelayFinder
@@ -1043,8 +1045,8 @@ impl DefaultPrintingHandler {
             let listen = crate::messages::types::RelayListen { app: None, tag: None };
             let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
             let json = crate::messages::marshal::to_json_value(&msg);
-            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address);
-            let uid = relay_info.id.clone();
+            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address());
+            let uid = relay_info.id().to_string();
             match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
                 Ok(resp) => {
                     let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
@@ -1052,16 +1054,16 @@ impl DefaultPrintingHandler {
 
                     // Register the relay listener mapping via the internal API (engine turn_handler)
                     tracing::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
-                    api_for_thread.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
+                    api_for_thread.turn_client_handle_listen_response(relay_info.address(), relay_info.id().to_string());
                 }
                 Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
             }
 
             // Register relay association in DDB and mark registered
-            if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id.clone(), None) {
+            if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id().to_string(), None) {
                 warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
             } else {
-                tracing::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+                tracing::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id());
                 api_for_thread.set_state(crate::engine::EngineState::Registered);
                 // Notify that we are listening now
                 api_for_thread.notify_listening(true, crate::engine::NatType::Restricted)

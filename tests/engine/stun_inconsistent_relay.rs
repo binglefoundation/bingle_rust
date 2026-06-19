@@ -84,7 +84,7 @@ impl InnerBingleApi for TrackingApi {
     }
 
     fn list_all_relays(&self, _include_self: bool) -> Vec<RelayInfo> {
-        vec![RelayInfo::non_root(self.relay_id.clone(), self.relay_addr)]
+        vec![crate::util::test_util::signed_non_root_relay(&self.relay_id, self.relay_addr)]
     }
 
     fn send_message_to_network_with_response(
@@ -177,7 +177,7 @@ fn build_engine_with_relay(
     eng.set_router(router);
 
     // Store a copy of relay_info for later use (no relay finder needed — test uses direct override)
-    let relay_info = RelayInfo::non_root(relay_id, relay_addr);
+    let relay_info = crate::util::test_util::signed_non_root_relay(relay_id, relay_addr);
     // (relay_info stored for caller's use)
 
     (eng, relay_info, register_relay_count, listen_response_count, notify_listening_true_count, registered_state_set)

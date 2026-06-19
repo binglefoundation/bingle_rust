@@ -511,3 +511,26 @@ Requires opt in to the asset and the app. Requires a one time payment of the cur
 Takes an argument of the handle to register and creates a new account with that handle.
 The handle is stored in local storage under the key `Handle` and with `HandleTime` set to Global.latest_timestamp()
 (Only the *oldest* handle is used. Further entries will be ignored in lookup. The caller needs to ensure the handle is unique).
+
+# AdvertRecord compressed format
+
+To minimize storage overhead in the Algorand blockchain local state, 
+AdvertRecord data stored in the static_endpoint key is serialized using a compressed CSV format. 
+This format omits the id field (as it is implied by the account address holding the local state) and uses a fixed-order, comma-separated representation for the remaining fields.
+
+#### CSV Field Order
+
+The fields are serialized in the following order:
+1.  `endpoint`: The network endpoint in `host:port` format.
+2.  `am_relay`: Boolean indicating relay capability (`T` for true, `F` for false).
+3.  `relay_id`: Optional identifier (Algorand address) of the relay used by the node.
+4.  `relay_sig`: Optional Base64-encoded signature from the relay.
+5.  `date`: The record timestamp in RFC 3339 format.
+6.  `sig`: The Base64-encoded signature of the record by the node.
+
+#### Serialization Rules
+-   Fields are delimited by a single comma (`,`).
+-   Boolean values are represented as `T` for `true` and `F` for `false`.
+-   Optional fields (`endpoint`, `relay_id`, `relay_sig`, `sig`) that are `None` are represented as empty strings.
+-   The `id` field is never included in the CSV string.
+

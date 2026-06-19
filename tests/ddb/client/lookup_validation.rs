@@ -17,7 +17,7 @@ struct MockLookupApi {
 
 impl InnerBingleApi for MockLookupApi {
     fn list_all_relays(&self, _include_self: bool) -> Vec<RelayInfo> {
-        vec![RelayInfo::root(test_util::ADDRESS_RECEIVE.to_string(), SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999))]
+        vec![test_util::signed_root_relay(test_util::ADDRESS_RECEIVE, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999))]
     }
 
     fn send_message_to_network_with_response(
@@ -71,7 +71,7 @@ fn ddb_client_lookup_fails_on_invalid_signature() {
     let mock_api = Arc::new(MockLookupApi { response });
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999);
-    let discover = Arc::new(move || vec![RelayInfo::root(relay_id.clone(), relay_addr)]);
+    let discover = Arc::new(move || vec![test_util::signed_root_relay(&relay_id, relay_addr)]);
     
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),
@@ -112,7 +112,7 @@ fn ddb_client_lookup_fails_on_missing_signature() {
     let mock_api = Arc::new(MockLookupApi { response });
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999);
-    let discover = Arc::new(move || vec![RelayInfo::root(relay_id.clone(), relay_addr)]);
+    let discover = Arc::new(move || vec![test_util::signed_root_relay(&relay_id, relay_addr)]);
     
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),

@@ -5,6 +5,7 @@ use rust_comms::engine::RelayState;
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::router::Router;
 use rust_comms::messages::types::*;
+use crate::util::test_util::signed_root_relay;
 
 fn make_relay_report_failed(failed_relay_id: &str) -> Message {
     Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
@@ -58,7 +59,7 @@ impl InnerBingleApi for TrackingApi {
             return Vec::new();
         }
         let addr: std::net::SocketAddr = "127.0.0.1:5000".parse().expect("valid addr");
-        vec![rust_comms::relay::relay_finder::RelayInfo::root(self.relay_id.clone(), addr)]
+        vec![signed_root_relay(&self.relay_id, addr)]
     }
 
     fn send_message_to_network_with_response(
@@ -221,7 +222,7 @@ pub fn relay_report_failed_no_ripple_when_available() {
     impl InnerBingleApi for PanicOnRipple {
         fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
             let addr: std::net::SocketAddr = "127.0.0.1:5003".parse().expect("valid addr");
-            vec![rust_comms::relay::relay_finder::RelayInfo::root("RELAY_D".to_string(), addr)]
+            vec![signed_root_relay("RELAY_D", addr)]
         }
         fn send_message_to_network_with_response(
             &self,
