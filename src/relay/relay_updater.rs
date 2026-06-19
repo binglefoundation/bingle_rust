@@ -242,7 +242,11 @@ impl RelayUpdater {
         }));
 
         let nsk = NetworkEndpoint::new_direct(relay.address());
-        let api_ref = api.upgrade().ok_or_else(|| "api dropped".to_string())?;
+        let api_ref = api.upgrade().ok_or_else(|| {
+            let err = "api dropped".to_string();
+            tracing::error!("[RelayUpdater::query_relay_status] {}", err);
+            err
+        })?;
         let response = api_ref
             .send_message_to_network_with_response(&nsk, &relay.id().to_string(), to_json_value(&request), None)
             .map_err(|err| err.to_string())?;

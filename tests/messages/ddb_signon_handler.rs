@@ -1,27 +1,16 @@
-use std::sync::{Arc, Mutex};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use crate::util::reusable_mock_api::{to_weak_api_both, MockApiBoth};
+use rust_comms::api::bingle_api::NetworkEndpoint;
 use rust_comms::messages::handlers::{DefaultPrintingHandler, FromStruct, MessageHandler};
-use rust_comms::messages::types::{DdbMessage, DdbSignon, Message, AdvertRecord, InetSocketAddress};
-use rust_comms::api::bingle_api::{NetworkEndpoint};
-use crate::util::reusable_mock_api::{MockApiBoth, to_weak_api_both, InnerBingleApiInternal};
+use rust_comms::messages::types::{DdbMessage, DdbSignon, Message};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
+pub fn test_on_ddb_signon_sends_response() {
     let handler = DefaultPrintingHandler;
     
-    let upserts = Arc::new(Mutex::new(Vec::new()));
-    struct TrackUpsertInternal {
-        upserts: Arc<Mutex<Vec<AdvertRecord>>>,
-    }
-    impl InnerBingleApiInternal for TrackUpsertInternal {
-        fn ddb_upsert_record(&self, record: AdvertRecord) {
-            self.upserts.lock().unwrap().push(record);
-        }
-    }
-    
-    let internal = Arc::new(TrackUpsertInternal { upserts: upserts.clone() });
-    let api_weak = to_weak_api_both(MockApiBoth::new_with_internal_override(internal));
+    let api_weak = to_weak_api_both(MockApiBoth::new());
     let api = api_weak.upgrade().expect("upgrade");
     let router = Arc::new(rust_comms::messages::router::Router::new(api_weak.clone()));
     
@@ -49,17 +38,6 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
     router.set_last_response_tag(Some("my-tag".to_string()));
     
     handler.on_ddb_signon(api.clone(), &from, &signon);
-    
-    // Check upsert
-    {
-        let upserted = upserts.lock().unwrap();
-        assert_eq!(upserted.len(), 1, "Should have exactly one upserted record");
-        let rec = &upserted[0];
-        assert_eq!(rec.id, "NEWNODE");
-        assert_eq!(rec.am_relay, Some(true));
-        assert_eq!(rec.sig, Some("sig-123".to_string()));
-        assert_eq!(rec.endpoint, Some(InetSocketAddress { host: "1.2.3.4".to_string(), port: 1234 }));
-    }
 
     let resp_json = from.take_responses().into_iter().next().expect("should have outbound response");
     let resp_msg = rust_comms::messages::marshal::from_json_value(resp_json).expect("valid message");
@@ -71,3 +49,7 @@ pub fn test_on_ddb_signon_updates_backend_and_sends_response() {
         panic!("Expected SignonResponse, got {:?}", resp_msg);
     }
 }
+
+// TODO: test that ripple happens
+
+// TODO: test that ripple recipient does not ripple

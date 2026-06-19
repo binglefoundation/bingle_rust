@@ -44,7 +44,11 @@ impl DdbClientImpl {
     }
 
     fn api(&self) -> Result<Arc<dyn crate::api::bingle_api::BingleApiBoth>, BingleError> {
-        self.api.upgrade().ok_or_else(|| BingleError::Other("BingleApi dropped".to_string()))
+        self.api.upgrade().ok_or_else(|| {
+            let err = "BingleApi dropped".to_string();
+            tracing::error!("[DdbClientImpl::api] {}", err);
+            BingleError::Other(err)
+        })
     }
 
     /// Constructor that accepts a custom discovery closure (used by tests to avoid external dependencies).
@@ -282,12 +286,13 @@ impl DdbClient for DdbClientImpl {
                 date,
             )
         };
+        let original_signature = record.sig.clone().unwrap_or_else(|| "SIG".to_string());
         let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
             app: "ddb".to_string(),
             start_id: my_id,
             epoch: 1,
             record,
-            original_signature: "SIG".to_string(),
+            original_signature,
             rippled: false,
             tag: None,
             response_tag: None,
@@ -345,11 +350,12 @@ impl DdbClient for DdbClientImpl {
             }
         };
         let date = "1970-01-01T00:00:00Z".to_string();
+        let am_relay = self.api()?.is_relay();
         let record = if let Some(sk) = self.api()?.get_signing_key() {
             AdvertRecord::new(
                 my_id.clone(),
                 None,
-                Some(false),
+                Some(am_relay),
                 Some(relay_id),
                 relay_sig,
                 date,
@@ -359,18 +365,19 @@ impl DdbClient for DdbClientImpl {
             AdvertRecord::new_unsigned(
                 my_id.clone(),
                 None,
-                Some(false),
+                Some(am_relay),
                 Some(relay_id),
                 relay_sig,
                 date,
             )
         };
+        let original_signature = record.sig.clone().unwrap_or_else(|| "SIG".to_string());
         let up = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
             app: "ddb".to_string(),
             start_id: my_id,
             epoch: 1,
             record,
-            original_signature: "SIG".to_string(),
+            original_signature,
             rippled: false,
             tag: None,
             response_tag: None,

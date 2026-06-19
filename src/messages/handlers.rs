@@ -640,7 +640,7 @@ impl MessageHandler for DefaultPrintingHandler {
         }
 
         // Create and insert relay record for the new peer
-        let endpoint = from.network_source_key.inet_socket_address().map(|addr| {
+        let _endpoint = from.network_source_key.inet_socket_address().map(|addr| {
             InetSocketAddress {
                 host: match addr.ip() {
                     std::net::IpAddr::V4(v4) => v4.to_string(),
@@ -650,18 +650,9 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         });
 
-        let mut record = AdvertRecord::new_unsigned(
-            msg.start_id.clone(),
-            endpoint,
-            Some(true),
-            None,
-            None,
-            "1970-01-01T00:00:00Z".to_string(),
-        );
-        record.sig = msg.original_signature.clone();
-        api.ddb_upsert_record(record);
-        tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
-
+        // We have the relay entry in the local DDB already from its initial register
+        // It will shortly send us another upsert which sets the am_relay state
+        
         // Queue SignonResponse FIRST — the new relay needs to receive this and
         // transition to Available before other relays learn about it and try
         // getRelaysStatus on it.
