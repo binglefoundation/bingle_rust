@@ -42,6 +42,16 @@ pub struct AlgoBingle {
     pub cache: Option<Arc<Mutex<AccountsCache>>>,
 }
 
+const INDEXER_PAGE_SIZE: u64 = 100;
+
+fn indexer_excludes() -> Option<Vec<String>> {
+    Some(vec![
+        "assets".to_string(),
+        "created-apps".to_string(),
+        "created-assets".to_string(),
+    ])
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct AccountsCache {
     /// The last round number that was fully processed.
@@ -381,18 +391,18 @@ impl AlgoBingle {
                             let response = self.ops.algod_call(|| {
                                 indexer.search_for_accounts(
                                     None,
-                                    Some(1000),
+                                    Some(INDEXER_PAGE_SIZE),
                                     next_ref,
                                     None,
                                     None,
-                                    None,
+                                    indexer_excludes(),
                                     None,
                                     None,
                                     None,
                                     Some(algonaut::core::AppId(app_id)),
                                 )
                             })
-                            .map_err(|e| anyhow!("indexer request failed: {e}"))?;
+                            .map_err(|e| anyhow!("incremental indexer request failed: {e}"))?;
 
                             current_round = response.current_round;
                             for acct in response.accounts {
@@ -418,7 +428,7 @@ impl AlgoBingle {
                             let next_ref = next.as_deref();
                             let response = self.ops.algod_call(|| {
                                 indexer.search_for_transactions(
-                                    None,
+                                    Some(INDEXER_PAGE_SIZE),
                                     next_ref,
                                     None,
                                     None,
@@ -460,7 +470,14 @@ impl AlgoBingle {
                                 .map_err(|e| anyhow!("invalid address {addr}: {e}"))?;
                             let acct_response = self
                                 .ops
-                                .algod_call(|| indexer.lookup_account_by_id(&address, None, None, None))
+                                .algod_call(|| {
+                                    indexer.lookup_account_by_id(
+                                        &address,
+                                        None,
+                                        None,
+                                        indexer_excludes(),
+                                    )
+                                })
                                 .map_err(|e| {
                                     anyhow!("indexer lookup_account_by_id failed for {addr}: {e}")
                                 })?;
@@ -498,16 +515,16 @@ impl AlgoBingle {
             let next_ref = next.as_deref();
             let response = self.ops.algod_call(|| indexer.search_for_accounts(
                 None,
-                Some(1000),
+                Some(INDEXER_PAGE_SIZE),
                 next_ref,
                 None,
                 None,
-                None,
+                indexer_excludes(),
                 None,
                 None,
                 None,
                 Some(algonaut::core::AppId(app_id)),
-            )).map_err(|e| anyhow!("indexer request failed: {e}"))?;
+            )).map_err(|e| anyhow!("full indexer request failed: {e}"))?;
             
             for acct in response.accounts {
                 let v = serde_json::to_value(&acct)
