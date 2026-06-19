@@ -6,8 +6,11 @@ use rust_comms::ddb::InetSocketAddress;
 use rust_comms::engine::RelayState;
 use rust_comms::messages::marshal::to_json_value;
 use rust_comms::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message};
-use rust_comms::relay::relay_finder::{RelayFinder, RootRelayInfo, RelayFinderTestTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTestTrait};
 use serde_json::Value as JsonValue;
+
+#[path = "../test_util.rs"]
+pub mod test_util;
 
 #[derive(Clone)]
 struct MockApi {
@@ -95,14 +98,14 @@ pub fn relay_finder_picks_available_relay_via_get_relays_status() {
     let api_weak = Arc::downgrade(&api_arc);
 
     let discover = Arc::new(move || vec![
-        RootRelayInfo::root(id1.clone(), a1),
-        RootRelayInfo::root(id2.clone(), a2),
+        test_util::signed_root_relay(&id1, a1),
+        test_util::signed_root_relay(&id2, a2),
     ]);
 
     let finder = RelayFinder::new(api_weak, discover);
 
     let picked = finder.find_root_relay("SOME-ID").expect("should pick an available relay");
-    assert!(picked.address == a1 || picked.address == a2, "picked relay should be one of the candidates");
+    assert!(picked.address() == a1 || picked.address() == a2, "picked relay should be one of the candidates");
     assert_eq!(picked.state, Some(RelayState::Available), "picked relay should be available");
 
     let calls = *calls_counter.lock().expect("calls lock should succeed");

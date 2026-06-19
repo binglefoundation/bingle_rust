@@ -21,6 +21,16 @@ pub fn wait_for_relays_visible(
             let parsed: Vec<(String, SocketAddr)> = found
                 .into_iter()
                 .filter_map(|(id, addr_str)| {
+                    // Try parsing as compact AdvertRecord first
+                    if let Some(rec) = rust_comms::ddb::AdvertRecord::deserialize_csv(id.clone(), &addr_str) {
+                        if let Some(ep) = rec.endpoint {
+                            use std::convert::TryFrom;
+                            if let Ok(addr) = std::net::SocketAddr::try_from(ep) {
+                                return Some((id, addr));
+                            }
+                        }
+                    }
+                    // Fallback to legacy plain IP:Port
                     AlgoBingle::parse_relay_ip(&addr_str).map(|addr| (id, addr))
                 })
                 .collect();

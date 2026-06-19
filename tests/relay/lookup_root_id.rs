@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -28,7 +28,7 @@ pub fn lookup_known_root_returns_endpoint() {
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
 
     let discover = {
-        let roots = vec![RelayInfo::root(id1.clone(), a1), RelayInfo::root(id2.clone(), a2)];
+        let roots = vec![test_util::signed_root_relay(&id1, a1), test_util::signed_root_relay(&id2, a2)];
         Arc::new(move || roots.clone())
     };
 
@@ -52,7 +52,7 @@ pub fn lookup_unknown_root_returns_none() {
 
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
     let discover = {
-        let roots = vec![RelayInfo::root(id1.clone(), a1)];
+        let roots = vec![test_util::signed_root_relay(&id1, a1)];
         Arc::new(move || roots.clone())
     };
 

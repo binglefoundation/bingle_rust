@@ -296,7 +296,6 @@ impl Engine {
     /// Upsert a list of root relays into the in-memory DDB backend (as am_relay=true records).
     fn upsert_roots_into_backend(&self, roots: &[RelayInfo]) {
         if roots.is_empty() {
-            debug_theme!(themes::ENGINE, "[Engine::upsert_roots_into_backend] no roots to upsert");
             return;
         }
         info_theme!(
@@ -306,28 +305,7 @@ impl Engine {
         );
         if let Ok(mut b) = self.ddb_backend.lock() {
             for r in roots {
-                let host = match r.address.ip() {
-                    IpAddr::V4(v4) => v4.to_string(),
-                    IpAddr::V6(v6) => v6.to_string(),
-                };
-                tracing::debug!(
-                    "[Engine::upsert_roots_into_backend] upsert id={} addr={}:{}",
-                    r.id,
-                    host,
-                    r.address.port()
-                );
-                let rec = AdvertRecord::new_unsigned(
-                    r.id.clone(),
-                    Some(InetSocketAddress {
-                        host,
-                        port: r.address.port(),
-                    }),
-                    Some(true),
-                    None,
-                    None,
-                    "1970-01-01T00:00:00Z".to_string(),
-                );
-                b.upsert(rec);
+                b.upsert(r.advert_record.clone());
             }
             tracing::info!("[Engine::upsert_roots_into_backend] upsert complete");
         } else {
@@ -1380,16 +1358,26 @@ impl Engine {
         tracing::info!("[Engine::initialize_relay] resolved my_id={}", my_id);
 
         let mut all_relays = finder.list_all_relays(&my_id, true);
-        if !all_relays.iter().any(|r| r.id == my_id) {
+        if !all_relays.iter().any(|r| r.id() == my_id) {
             let addr = self
                 .last_public_addr()
                 .unwrap_or_else(|| "0.0.0.0:0".parse().expect("valid fallback addr"));
-            all_relays.push(RelayInfo::root_with(
-                my_id.clone(),
-                addr,
-                Some(RelayState::Starting),
-                None,
-            ));
+            if let Some(signing_key) = self.get_signing_key() {
+                let record = AdvertRecord::new(
+                    my_id.clone(),
+                    Some(InetSocketAddress::from(addr)),
+                    Some(true),
+                    None,
+                    None,
+                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    &signing_key,
+                );
+                all_relays.push(RelayInfo::root_with(
+                    record,
+                    Some(RelayState::Starting),
+                    None,
+                ));
+            }
         }
 
         // Count peer states (excluding self)
@@ -1405,7 +1393,7 @@ impl Engine {
             "[Engine::initialize_relay] discovered {:?} relays (including self)",
             all_relays
         );
-        let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id.clone()).collect();
+        let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id().to_string()).collect();
         ids.sort();
         ids.dedup();
         tracing::info!(
@@ -1496,16 +1484,7 @@ impl Engine {
                     // No available peers: upsert roots into backend as bootstrap
                     if let Ok(mut b) = ddb_backend_arc.lock() {
                         for r in &roots_copy {
-                            let host = match r.address.ip() { IpAddr::V4(v4) => v4.to_string(), IpAddr::V6(v6) => v6.to_string() };
-                            let rec = AdvertRecord::new_unsigned(
-                                r.id.clone(),
-                                Some(InetSocketAddress { host, port: r.address.port() }),
-                                Some(true),
-                                None,
-                                None,
-                                "1970-01-01T00:00:00Z".to_string(),
-                            );
-                            b.upsert(rec);
+                            b.upsert(r.advert_record.clone());
                         }
                         tracing::info!("[Engine::initialize_relay] upserted {} root relay record(s) into backend", roots_copy.len());
                     } else {
@@ -1516,7 +1495,7 @@ impl Engine {
                     // Choose a preferred root peer (not self)
                     let relays = finder_arc_for_mtx.list_root_relays(&my_id_for_mtx, false);
                     if let Some(first) = relays.first() {
-                        let peer_id: String = first.id.clone();
+                        let peer_id: String = first.id().to_string();
                         // Reset signon signal before starting load
                         self.reset_signon_complete();
                         let count_res = self.ddb_client().start_load_from_peer(&peer_id);
@@ -1796,7 +1775,7 @@ impl Engine {
             let relay = finder.find_relay(&my_id);
             if let Ok(r) = relay {
                 relay_target = Some(r.clone());
-                tracing::info!("[Engine] chosen relay {} (id={})", r.address, r.id);
+                tracing::info!("[Engine] chosen relay {} (id={})", r.address(), r.id());
             } else {
                 tracing::warn!("[Engine] no relay found; setting NoConnection");
                 self.set_nat_type(NatType::NoConnection);
@@ -1816,7 +1795,7 @@ impl Engine {
 
         // Send TriangleTest1 to the discovered relay using the Bingle API callback if installed
         if let Some(target) = relay_target {
-            let to_addr = target.address;
+            let to_addr = target.address();
             let checking_ep = public_addr.unwrap_or(to_addr);
             let seen = self.seen_endpoints.lock().unwrap().iter().cloned().collect();
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 {
@@ -1830,7 +1809,7 @@ impl Engine {
             let json_val = crate::messages::marshal::to_json_value(&msg);
             if let Some(cb) = &self.send_via_bingle {
                 // Use the relay's actual Algorand address (base32) as the user id.
-                let uid = target.id.clone();
+                let uid = target.id().to_string();
                 let ok = cb(&nsk, &uid, json_val);
                 tracing::info!(
                     "[Engine] TriangleTest1 send_via_bingle to {} (uid=base32 relay id) -> {}",
@@ -1935,7 +1914,7 @@ impl Engine {
             }
         };
 
-        tracing::info!("[Engine::register_with_relay] chosen relay {} (id={})", relay_info.address, relay_info.id);
+        tracing::info!("[Engine::register_with_relay] chosen relay {} (id={})", relay_info.address(), relay_info.id());
 
         // Upgrade the API weak reference.
         let api = match self.bingle_api.upgrade() {
@@ -1950,8 +1929,8 @@ impl Engine {
         let listen = crate::messages::types::RelayListen { app: None, tag: None };
         let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
         let json = crate::messages::marshal::to_json_value(&msg);
-        let nsk = NetworkEndpoint::new_direct(relay_info.address);
-        let uid = relay_info.id.clone();
+        let nsk = NetworkEndpoint::new_direct(relay_info.address());
+        let uid = relay_info.id().to_string();
         match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
             Ok(resp) => {
                 let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
@@ -1960,7 +1939,7 @@ impl Engine {
                     return;
                 }
                 tracing::info!("[Engine::register_with_relay] Relay ListenResponse received; registering relay listener");
-                api.turn_client_handle_listen_response(relay_info.address, relay_info.id.clone());
+                api.turn_client_handle_listen_response(relay_info.address(), relay_info.id().to_string());
             }
             Err(e) => {
                 tracing::warn!("[Engine::register_with_relay] Listen request failed: {}", e);
@@ -1969,10 +1948,10 @@ impl Engine {
         }
 
         // Register relay association in DDB and mark registered.
-        if let Err(e) = api.ddb_register_relay(relay_info.id.clone(), None) {
+        if let Err(e) = api.ddb_register_relay(relay_info.id().to_string(), None) {
             tracing::warn!("[Engine::register_with_relay] ddb_register_relay failed: {}", e);
         } else {
-            tracing::info!("[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}", relay_info.id);
+            tracing::info!("[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}", relay_info.id());
             api.set_state(EngineState::Registered);
             api.notify_listening(true, NatType::Restricted);
         }
@@ -2210,7 +2189,7 @@ impl Engine {
         relays: Vec<crate::relay::relay_finder::RelayInfo>,
     ) {
         if let Some(r) = relays.first() {
-            tracing::info!("[Engine::test_stun_consistent_process_with_relays] relay found: {}", r.address);
+            tracing::info!("[Engine::test_stun_consistent_process_with_relays] relay found: {}", r.address());
             let discover: std::sync::Arc<dyn Fn() -> Vec<crate::relay::relay_finder::RelayInfo> + Send + Sync> =
                 std::sync::Arc::new(move || relays.clone());
             let api = self.bingle_api.clone();

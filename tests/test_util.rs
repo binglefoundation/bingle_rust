@@ -260,3 +260,77 @@ pub fn wait_for_relay_available(api: &Arc<BingleApiImpl>, timeout: Duration) -> 
     }
     false
 }
+
+#[allow(dead_code)]
+pub fn get_compact_advert_record(ops: &AlgoOps, addr: std::net::SocketAddr, am_relay: bool) -> String {
+    use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
+    use ed25519_dalek::SigningKey;
+    use chrono::Utc;
+
+    let sk_bytes = ops.private_key_bytes().expect("private key bytes");
+    let sk_arr: [u8; 32] = sk_bytes.try_into().expect("32 bytes sk");
+    let signing_key = SigningKey::from_bytes(&sk_arr);
+
+    let record = AdvertRecord::new(
+        ops.address.as_ref().expect("ops has address").clone(),
+        Some(InetSocketAddress::from(addr)),
+        Some(am_relay),
+        None,
+        None,
+        Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        &signing_key,
+    );
+    record.serialize_csv()
+}
+
+#[allow(dead_code)]
+pub fn get_signed_advert_record(id: &str, passphrase: &str, addr: std::net::SocketAddr, am_relay: bool) -> rust_comms::ddb::AdvertRecord {
+    use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
+    use ed25519_dalek::SigningKey;
+    use chrono::Utc;
+
+    // Use a simple seed derivation if passphrase is not 32 bytes
+    let mut seed = [0u8; 32];
+    let bytes = passphrase.as_bytes();
+    let len = bytes.len().min(32);
+    seed[..len].copy_from_slice(&bytes[..len]);
+    let signing_key = SigningKey::from_bytes(&seed);
+
+    AdvertRecord::new(
+        id.to_string(),
+        Some(InetSocketAddress::from(addr)),
+        Some(am_relay),
+        None,
+        None,
+        Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        &signing_key,
+    )
+}
+
+#[allow(dead_code)]
+pub fn signed_root_relay(id: &str, addr: std::net::SocketAddr) -> rust_comms::relay::relay_finder::RelayInfo {
+    use rust_comms::relay::relay_finder::RelayInfo;
+    RelayInfo::root(get_signed_advert_record(id, "test_passphrase", addr, true))
+}
+
+#[allow(dead_code)]
+pub fn signed_non_root_relay(id: &str, addr: std::net::SocketAddr) -> rust_comms::relay::relay_finder::RelayInfo {
+    use rust_comms::relay::relay_finder::RelayInfo;
+    RelayInfo::non_root(get_signed_advert_record(id, "test_passphrase", addr, false))
+}
+
+#[allow(dead_code)]
+pub fn signed_root_relay_with(id: &str, addr: std::net::SocketAddr, state: Option<rust_comms::engine::RelayState>, ttl: Option<u64>) -> rust_comms::relay::relay_finder::RelayInfo {
+    let mut r = signed_root_relay(id, addr);
+    r.state = state;
+    r.ttl = ttl;
+    r
+}
+
+#[allow(dead_code)]
+pub fn signed_non_root_relay_with(id: &str, addr: std::net::SocketAddr, state: Option<rust_comms::engine::RelayState>, ttl: Option<u64>) -> rust_comms::relay::relay_finder::RelayInfo {
+    let mut r = signed_non_root_relay(id, addr);
+    r.state = state;
+    r.ttl = ttl;
+    r
+}

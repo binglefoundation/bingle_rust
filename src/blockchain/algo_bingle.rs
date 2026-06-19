@@ -187,7 +187,8 @@ impl AlgoBingle {
     /// Call register_endpoint(string)void for the caller.
     /// Passing an empty string clears the local state key.
     /// Returns the submitted transaction id on success.
-    pub fn register_endpoint(&self, app_id: u64, endpoint: &str) -> Result<String> {
+    // endpoint_advert_record_compact is now a compact AdvertRecord
+    pub fn register_endpoint(&self, app_id: u64, endpoint_advert_record_compact: &str) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Build ARC-4 arguments manually to ensure correct string encoding (2-byte length prefix)
         let client = self.ops.algod_client()?;
@@ -195,7 +196,7 @@ impl AlgoBingle {
         let (account, sender) = self.sender_account()?;
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(AlgoOps::arc4_selector("register_endpoint(string)void").to_vec());
-        let ep_bytes = endpoint.as_bytes();
+        let ep_bytes = endpoint_advert_record_compact.as_bytes();
         if ep_bytes.len() > u16::MAX as usize { bail!("endpoint too long"); }
         let mut arg = Vec::with_capacity(2 + ep_bytes.len());
         arg.extend_from_slice(&(ep_bytes.len() as u16).to_be_bytes());
@@ -257,10 +258,11 @@ impl AlgoBingle {
                         let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                         let kvs = Self::decode_state_entries(&keyvals);
                         tracing::debug!("[AlgoBingle::list_static_endpoints_via_indexer_sync] processing decoded: kvs: {:?}", kvs);
-                        if let Some((_, val)) = kvs.into_iter().find(|(k, _)| k == "static_endpoint") {
-                            if !val.is_empty() {
-                                results.push((addr.clone(), val));
-                            }
+                        let ep = kvs.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+                        let ep_x = kvs.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+                        let full_val = format!("{}{}", ep, ep_x);
+                        if !full_val.is_empty() {
+                            results.push((addr.clone(), full_val));
                         }
                     }
                 }
@@ -567,8 +569,10 @@ impl AlgoBingle {
     //     let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
     //     for acct in accounts {
     //         if let Some(entries) = get_local(app_id, acct) {
-    //             // find static_endpoint
-    //             if let Some((_k, v)) = entries.into_iter().find(|(k, _)|  k == "static_endpoint") {
+    //             let ep = entries.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+    //             let ep_x = entries.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+    //             let v = format!("{}{}", ep, ep_x);
+    //             if !v.is_empty() {
     //                 if let Some(addr) = Self::parse_relay_ip(&v) {
     //                     out.push((acct.clone(), addr));
     //                 }

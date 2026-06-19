@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId, BingleError};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 use crate::ddb::ddb_client_lookup::test_util::init_test_logging;
 
 #[path = "../test_util.rs"]
@@ -75,7 +75,7 @@ pub fn test_unavailable_relays_no_retry() {
 
     // discover_roots returns the same relay twice (deduped internally by relay_select_and_query)
     let discover = {
-        let r1 = RelayInfo::root(id1.clone(), addr1);
+        let r1 = test_util::signed_root_relay(&id1, addr1);
         let rs = vec![r1.clone(), r1];
         Arc::new(move || rs.clone())
     };
@@ -103,7 +103,7 @@ pub fn test_unavailable_relays_reset_on_entry() {
     let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
 
     let discover = {
-        let r1 = RelayInfo::root(id1.clone(), addr1);
+        let r1 = test_util::signed_root_relay(&id1, addr1);
         Arc::new(move || vec![r1.clone()])
     };
 
@@ -131,7 +131,7 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
 
     let discover = {
-        let r1 = RelayInfo::root(id1.clone(), addr1);
+        let r1 = test_util::signed_root_relay(&id1, addr1);
         Arc::new(move || vec![r1.clone()])
     };
 
@@ -161,7 +161,7 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     
     // R1 is the only root
     let discover = {
-        let r1 = RelayInfo::root(id1.clone(), addr1);
+        let r1 = test_util::signed_root_relay(&id1, addr1);
         Arc::new(move || vec![r1.clone()])
     };
 
@@ -193,7 +193,7 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
 
     let discover = {
-        let r1 = RelayInfo::root(id1.clone(), addr1);
+        let r1 = test_util::signed_root_relay(&id1, addr1);
         Arc::new(move || vec![r1.clone()])
     };
 

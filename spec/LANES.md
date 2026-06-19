@@ -4,7 +4,7 @@ UX:
 - ~~build react native UX based on messenger / signal / apple messages~~
 - ~~user onboarding with held algorand~~
 - ~~contact UX~~
-- ~~build iOS~~ 
+- ~~build iOS~~
 - ~~tidy up bugs~~
 - ~~info option to show cipher suite (now in API, needs UX)~~
 - ~~fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close~~
@@ -23,7 +23,7 @@ security:
 *   ~~**Certificate Algorithms**: Ed25519 on CA key, EC (P-256) for signing and ECDHE for protocol on server/client keys.~~
     *   ~~**Spec**: Updated to reflect EC (NIST P-256).~~
     *   ~~**Code**: Updated to use EC (P-256).~~
--*   **`DdbDumpResolve` vs. `DdbDumpResolveResponse`**: Resolve the following
+        -*   **`DdbDumpResolve` vs. `DdbDumpResolveResponse`**: Resolve the following
     *   **Spec**: The description for `DdbInitResolve` says it is followed by `DdbDumpResolveResponse` messages.
     *   **Code**: The implementation in `src/ddb/mod.rs` sends `DdbDumpResolve` messages.
     *   **Note**: The spec contains conflicting info, describing `DdbDumpResolve` as the message carrying the record, while naming it `DdbDumpResolveResponse` in the process flow.
@@ -45,13 +45,14 @@ security:
   ~~7. Insecure Randomness~~
   ~~8. Insecure Renegotiation~~
   ~~9. ROBOT (Return of Bleichenbacher's Oracle Threat)~~
-- ~~Ensure and test we have PFS via ECDHE~~  
+- ~~Ensure and test we have PFS via ECDHE~~
 - ~~Test for extended master secret support~~
 - ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
 - implement permissioned relay only mode
 - ~~sign and check AdvertRecords~~
+- **root records in DDB need to be signed**
 - **validate rippled messages are from relays**
 - document all crates
 
@@ -73,19 +74,20 @@ robustness:
 - ~~ensure ipv6 is unsupported consistently~~
 - ~~ensure handle uniqueness~~
 - handle fails correctly
-  + ~~node~~
-  + ~~relay on node~~
-  + relay on relay
+    + ~~node~~
+    + ~~relay on node~~
+    + relay on relay
 - ~~use relay cache efficently during relay init~~
 - ~~upgrade Algonaut~~
 - ~~move indexer lookups to use Algonaut~~
 - fix fragile tests
- + retry on indexer lookups
- + cache indexer lookups
++ retry on indexer lookups
++ cache indexer lookups
++ remove need for placeholder to get an indexer
 - integration tests on bingle_jsi
- + Layer 1
- + ~~Layer 2~~
-- genericise AlgoOps 
++ Layer 1
++ ~~Layer 2~~
+- genericise AlgoOps
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
