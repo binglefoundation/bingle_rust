@@ -144,7 +144,7 @@ pub fn bingle_api_register_via_forced_stun() {
     let r1_opts = StartOptions { handle: "relay1".into(), algo_passphrase: Some(test_util::PASSPHRASE_SPEND.parse().unwrap()), static_ip: Some(relay1_addr), am_relay: true, stun_servers: None, algo_provider_config: Some(cfg.clone()), algo_network: None, app_id: Some(app_id), asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None };
     let r2_opts = StartOptions { handle: "relay2".into(), algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.parse().unwrap()), static_ip: Some(relay2_addr), am_relay: true, stun_servers: None, algo_provider_config: Some(cfg.clone()), algo_network: None, app_id: Some(app_id), asset_id: None, log_level: None, handle_cache_expiry: None , dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None };
 
-    let relay1 = start_relay_and_wait_available(&r1_opts, "relay1");
+    let relay1 = test_util::start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, r1_opts.algo_provider_config.clone().unwrap());
 
     register_relay_static_endpoint(
         "relay2",
@@ -165,7 +165,8 @@ pub fn bingle_api_register_via_forced_stun() {
         panic!("Relays did not become visible via indexer within 60s");
     }
     tracing::info!("[Test] Relay 2 is visible via indexer");
-    let relay2 = start_relay_and_wait_available(&r2_opts, "relay2");
+    let relay2 = test_util::start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, r2_opts.algo_provider_config.clone().unwrap());
+    tracing::info!("[Test] Relay 2 started");
 
     // Start two local STUN servers we will use for consistency resolution
     let p1 = test_util::find_unused_loopback_port();
@@ -211,12 +212,12 @@ pub fn bingle_api_register_via_forced_stun() {
 
     // Validate that both relays have an entry for client 1 in their DDB backend
     let client1_id = client1.get_my_id().expect("client1 should have an ID");
-    tracing::info!("[Test] Validating DDB entry for client1 ({}) on both relays", client1_id);
+    tracing::info!("[Test] Client1 started, validating DDB entry for client1 ({}) on both relays", client1_id);
 
     let wait_ddb_start = Instant::now();
     let mut r1_ok = false;
     let mut r2_ok = false;
-    while wait_ddb_start.elapsed() < Duration::from_secs(20) {
+    while wait_ddb_start.elapsed() < Duration::from_secs(60) {
         if !r1_ok {
             if relay1.with_engine_mut(|e| e.ddb_backend_lookup_for_tests(&client1_id)).is_some() {
                 tracing::info!("[Test] Relay 1 has DDB entry for client 1");

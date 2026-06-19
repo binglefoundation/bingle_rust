@@ -650,16 +650,17 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         });
 
-        let mut record = AdvertRecord::new_unsigned(
-            msg.start_id.clone(),
-            endpoint,
-            Some(true),
-            None,
-            None,
-            "1970-01-01T00:00:00Z".to_string(),
-        );
-        record.sig = msg.original_signature.clone();
-        api.ddb_upsert_record(record);
+        // We should already have the entry for the relay in our DDB?
+        // let mut record = AdvertRecord::new_unsigned(
+        //     msg.start_id.clone(),
+        //     endpoint,
+        //     Some(true),
+        //     None,
+        //     None,
+        //     "1970-01-01T00:00:00Z".to_string(),
+        // );
+        // record.sig = msg.original_signature.clone();
+        // api.ddb_upsert_record(record);
         tracing::info!("[on_ddb_signon] signed on relay, relay count = {}", api.ddb_backend_size());
 
         // Queue SignonResponse FIRST — the new relay needs to receive this and

@@ -12,17 +12,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
 use serial_test::serial;
-
+// Re-use helpers from send_message_to_id_integration
+use crate::integration_tests::relay_updater_localnet::test_util::start_root_relay;
 use crate::setup_localnet;
 use crate::util::test_util;
 use crate::util::test_util::register_client_on_blockchain;
 use crate::util::relay_test_util::wait_for_relays_visible;
 
 // Re-use helpers from send_message_to_id_integration
-use super::send_message_to_id_integration::{
-    start_root_relay,
-    register_relays,
-};
+use super::send_message_to_id_integration::register_relays;
 
 // Passphrase for the restricted-NAT client
 const CLIENT_RESTRICTED_PASS: &str = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";

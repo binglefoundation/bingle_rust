@@ -19,38 +19,6 @@ use serial_test::serial;
 const ADDRESS_B: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
 const PASSPHRASE_B: &str = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
 
-// Helper: start a relay node at a fixed address
-pub fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
-    tracing::info!("[Test] start_root_relay name={} addr={} app_id={}", name, addr, app_id);
-    let opts = StartOptions {
-        handle: name.into(),
-        algo_passphrase: Some(passphrase.parse().unwrap()),
-        static_ip: Some(addr),
-        am_relay: true,
-        stun_servers: None,
-        algo_provider_config: Some(cfg),
-        algo_network: None,
-        app_id: Some(app_id),
-        asset_id: None,
-        log_level: None,
-        handle_cache_expiry: None,
-        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
-    };
-    let api = BingleApiImpl::new(&opts);
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
-    tracing::info!("[Test] root relay {} started, wait for registered", name);
-
-    test_util::wait_for_registered(&api, Duration::from_secs(30));
-    tracing::info!("[Test] root relay {} registered", name);
-
-    if !test_util::wait_for_relay_available(&api, Duration::from_secs(360)) {
-        panic!("root relay {} did not become Available within 360s", name);
-    }
-    tracing::info!("[Test] root relay {} Available", name);
-
-    api
-}
-
 // Helper: start a relay node using STUN discovery (non-root)
 fn start_relay(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
     tracing::info!("[Test] start_relay name={} stun_list={:?} app_id={}", name, stun_list, app_id);
@@ -234,8 +202,8 @@ fn run_send_message_to_id_test(broken_nat: bool) {
     register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
     // Start two relays
-    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
-    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+    let relay1 = test_util::start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = test_util::start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
 
     // Start two local STUN servers
     let (mut s1, mut s2, stun_list) = setup_stun_servers(broken_nat);
@@ -435,8 +403,8 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     }
 
     tracing::info!("[Test] Starting root relays");
-    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
-    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+    let relay1 = test_util::start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = test_util::start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
 
     tracing::info!("[Test] Starting stun servers");
     let (mut s1_full, mut s2_full, stun_list_full) = setup_stun_servers(false);
@@ -550,8 +518,8 @@ pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     register_relays(app_id, asset_id, relay1_addr, relay2_addr);
 
     // Start two root relays
-    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
-    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+    let relay1 = test_util::start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = test_util::start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
 
     // Start STUN servers with broken NAT so clients must use relays
     let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
@@ -691,8 +659,8 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
         panic!("Root relays did not become visible");
     }
 
-    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
-    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+    let relay1 = test_util::start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay2 = test_util::start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
 
     let (mut s1, mut s2, stun_list) = setup_stun_servers(false);
 
@@ -843,7 +811,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     ab_r2.register_endpoint(app_id, &compact).expect("register_endpoint r2");
 
     // Start relay2
-    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+    let relay2 = test_util::start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
 
     // Start STUN servers with broken NAT so client_a must use relay
     let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
@@ -875,7 +843,7 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
     ab_creator.set_allow_relay(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_relay r1");
 
-    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
+    let relay1 = test_util::start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
 
     // Verify client_a is using relay2
     let id_a = client_a.access_unsafe_for_tests(|c| c.get_my_id()).expect("client_a id");
