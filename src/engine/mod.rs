@@ -224,6 +224,7 @@ pub struct Engine {
     pub(crate) span: tracing::Span,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
+    weak_self: std::sync::Weak<Engine>,
 }
 
 impl Engine {
@@ -569,9 +570,14 @@ impl Engine {
             endpoint_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
             span: tracing::Span::none(),
             custom_message_handler: None,
+            weak_self: std::sync::Weak::new(),
         };
         eng.set_last_public_addr(options.static_ip.clone());
         eng
+    }
+
+    pub(crate) fn set_weak_self(&mut self, weak: std::sync::Weak<Engine>) {
+        self.weak_self = weak;
     }
 
     /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
@@ -1683,12 +1689,16 @@ impl Engine {
 
         if self.options.am_relay {
             if self.relay_finder.is_some() {
-                let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+                let weak_self = self.weak_self.clone();
                 let span = self.span.clone();
                 let api_weak = self.bingle_api.clone();
-                std::thread::spawn(move || unsafe {
+                std::thread::spawn(move || {
                     let _guard = span.enter();
-                    let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
+                    let Some(arc_self) = weak_self.upgrade() else {
+                        tracing::warn!("[Engine::start_with_addr] self dropped, skipping background process");
+                        return;
+                    };
+                    let eng = unsafe { &mut *(Arc::as_ptr(&arc_self) as *mut Engine) };
 
                     eng.initialize_relay();
 
@@ -1726,12 +1736,18 @@ impl Engine {
 
     fn on_stun_consistent(&mut self, public_addr: Option<SocketAddr>) {
         // Spawn a worker thread to process STUN-consistent follow-up to avoid blocking inbound packet path
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        let weak_self = self.weak_self.clone();
         let span = self.span.clone();
-        std::thread::spawn(move || unsafe {
+        std::thread::spawn(move || {
             let _guard = span.enter();
-            let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-            eng.stun_consistent_process(public_addr);
+            let Some(arc_self) = weak_self.upgrade() else {
+                tracing::warn!("[Engine] on_stun_consistent: self dropped, skipping process");
+                return;
+            };
+            unsafe {
+                let eng = &mut *(Arc::as_ptr(&arc_self) as *mut Engine);
+                eng.stun_consistent_process(public_addr);
+            }
         });
     }
 
@@ -1904,12 +1920,18 @@ impl Engine {
 
     pub(crate) fn on_stun_inconsistent(&mut self) {
         // Spawn a worker thread so we don't block the STUN callback path.
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        let weak_self = self.weak_self.clone();
         let span = self.span.clone();
-        std::thread::spawn(move || unsafe {
+        std::thread::spawn(move || {
             let _guard = span.enter();
-            let eng = &mut *self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-            eng.stun_inconsistent_process();
+            let Some(arc_self) = weak_self.upgrade() else {
+                tracing::warn!("[Engine] on_stun_inconsistent: self dropped, skipping process");
+                return;
+            };
+            unsafe {
+                let eng = &mut *(Arc::as_ptr(&arc_self) as *mut Engine);
+                eng.stun_inconsistent_process();
+            }
         });
     }
 
@@ -2052,8 +2074,8 @@ impl Engine {
         finder: &Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>,
         mux: &Arc<UdpNetworkMux>,
     ) -> Result<(), BingleError> {
-        // Create a self pointer for callbacks invoked from STUN worker thread
-        let self_ptr = std::sync::atomic::AtomicPtr::new(self as *mut Engine);
+        // Create a weak self reference for callbacks invoked from STUN worker thread
+        let weak_self = self.weak_self.clone();
         if let Ok(mut f) = finder.lock() {
             // Route STUN outbound packets through the UDP mux
             let mux_clone = mux.clone();
@@ -2079,19 +2101,19 @@ impl Engine {
 
             // Wire STUN state changes into Engine handlers.
             f.set_state_change_handler(Some(Arc::new(move |st, ep| {
-                let p = self_ptr.load(std::sync::atomic::Ordering::SeqCst);
-                if p.is_null() {
+                let Some(arc_self) = weak_self.upgrade() else {
                     return;
-                }
+                };
                 unsafe {
+                    let eng = &mut *(Arc::as_ptr(&arc_self) as *mut Engine);
                     if st == crate::stun::endpoint_finder::StunState::Consistent {
-                        (&mut *p).on_stun_consistent(ep);
+                        eng.on_stun_consistent(ep);
                     } else if st == crate::stun::endpoint_finder::StunState::Inconsistent {
-                        (&mut *p).on_stun_inconsistent();
+                        eng.on_stun_inconsistent();
                     } else if st == crate::stun::endpoint_finder::StunState::Blocked {
-                        (&mut *p).on_stun_blocked();
+                        eng.on_stun_blocked();
                     } else if st == crate::stun::endpoint_finder::StunState::None {
-                        (&mut *p).on_stun_none();
+                        eng.on_stun_none();
                     }
                 }
             })));

@@ -113,6 +113,10 @@ impl BingleApiImpl {
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new(&initial_options, me_both.clone()));
+            unsafe {
+                let engine_ptr = Arc::as_ptr(&engine) as *mut Engine;
+                (*engine_ptr).set_weak_self(Arc::downgrade(&engine));
+            }
             Self {
                 on_message: None,
                 on_connect: None,
@@ -152,6 +156,10 @@ impl BingleApiImpl {
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
+            unsafe {
+                let engine_ptr = Arc::as_ptr(&engine) as *mut Engine;
+                (*engine_ptr).set_weak_self(Arc::downgrade(&engine));
+            }
             Self {
                 on_message: None,
                 on_connect: None,
