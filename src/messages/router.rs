@@ -32,6 +32,7 @@ impl BingleApi for LockingApiWrapper {
     fn get_app_id(&self) -> Option<u64> { self.api.upgrade().and_then(|a| a.get_app_id()) }
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.upgrade().and_then(|a| a.get_algo_provider_config()) }
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<crate::blockchain::algo_bingle::AccountsCache>>> { self.api.upgrade().and_then(|a| a.get_accounts_cache()) }
+    fn clear_accounts_cache(&self) { if let Some(a) = self.api.upgrade() { a.clear_accounts_cache() } }
     fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> { Err(BingleError::Other("not supported in handler context".to_string())) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }

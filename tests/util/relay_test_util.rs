@@ -20,18 +20,20 @@ pub fn wait_for_relays_visible(
         if let Ok(found) = ab.list_static_endpoints_via_indexer_sync(app_id) {
             let parsed: Vec<(String, SocketAddr)> = found
                 .into_iter()
-                .filter_map(|(id, addr_str)| {
+                .filter_map(|(id, advert_record_csv)| {
                     // Try parsing as compact AdvertRecord first
-                    if let Some(rec) = rust_comms::ddb::AdvertRecord::deserialize_csv(id.clone(), &addr_str) {
-                        if let Some(ep) = rec.endpoint {
+                    if let Some(advert_record) = rust_comms::ddb::AdvertRecord::deserialize_csv(id.clone(), &advert_record_csv) {
+                        if let Some(ep) = advert_record.endpoint {
                             use std::convert::TryFrom;
                             if let Ok(addr) = std::net::SocketAddr::try_from(ep) {
                                 return Some((id, addr));
                             }
                         }
                     }
-                    // Fallback to legacy plain IP:Port
-                    AlgoBingle::parse_relay_ip(&addr_str).map(|addr| (id, addr))
+                    else {
+                        tracing::error!("Failed to parse AdvertRecord for id: {}, addr_str: {}", id, advert_record_csv);
+                    }
+                    return None;
                 })
                 .collect();
             if parsed.len() == expected.len() {
