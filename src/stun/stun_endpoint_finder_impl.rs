@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 // Bring the public trait/types from our module
-use super::endpoint_finder::{ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState};
+use super::stun_endpoint_finder::{ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState};
 
 // Explicitly reference the stun-rs crate (module path stun_rs). We keep usage minimal here
 // to avoid depending on specific message builder APIs while still ensuring the crate is
