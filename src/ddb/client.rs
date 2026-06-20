@@ -62,7 +62,7 @@ impl DdbClientImpl {
         tracing::trace!("[DdbClientImpl::find_relay] get_my_id");
         let my_id = self.api()?.get_my_id().ok_or_else(|| BingleError::Other("get_my_id returned None".to_string()))?;
         tracing::trace!("[DdbClientImpl::find_relay] RelayFinder::find_relay");
-        finder.find_relay(&my_id).map_err(BingleError::Other)
+        finder.find_relay(&my_id).map_err(BingleError::Retryable)
     }
 
     fn relay_user_id(relay_id: &str) -> Result<String, BingleError> {
@@ -446,7 +446,7 @@ impl DdbClient for DdbClientImpl {
         }
         let found = resp.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
         if !found {
-            return Err(BingleError::Other("not found".to_string()));
+            return Err(BingleError::Retryable("not found in DDB".to_string()));
         }
         // Build NetworkEndpoint from advert (supporting both direct endpoint and relay_id)
         let advert = match resp.get("advert") {

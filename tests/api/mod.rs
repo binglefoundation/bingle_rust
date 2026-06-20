@@ -62,3 +62,5 @@ pub mod self_relay_detection;
 
 #[path = "ripple_message_unit.rs"]
 pub mod ripple_message_unit;
+
+pub mod bingle_error_tests;

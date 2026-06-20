@@ -54,6 +54,7 @@ security:
 - ~~sign and check AdvertRecords~~
 - ~~root records in DDB need to be signed~~
 - ~~validate rippled messages are from relays~~
+- validate a DDB entry with am_relay=true references a permissioned relay
 - document all crates
 
 robustness:

@@ -19,6 +19,8 @@ use std::sync::Mutex;
 pub enum BingleError {
     #[error("Blockchain error: {0}")]
     Algo(#[from] AlgoError),
+    #[error("Retryable error: {0}")]
+    Retryable(String),
     #[error("{0}")]
     Other(String),
 }

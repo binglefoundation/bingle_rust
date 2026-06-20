@@ -186,7 +186,11 @@ fn dh_1024_rejected() {
     let ok = client_api.send_message_to_network(&nsk, &test_util::ADDRESS_RECEIVE.to_string(), serde_json::json!({"test": 1}), None);
     
     // 4) Assert failure
-    assert!(!ok.expect("send_message_to_network should succeed"), "Handshake should have failed for 1024-bit DH parameters");
+    let ok_val = match ok {
+        Ok(v) => v,
+        Err(_) => false,
+    };
+    assert!(!ok_val, "Handshake should have failed for 1024-bit DH parameters");
     println!("Handshake failed as expected for DH 1024");
     
     let _ = server_thread.join();
@@ -242,7 +246,11 @@ fn rsa_1024_server_cert_rejected() {
     let ok = client_api.send_message_to_network(&nsk, &test_util::ADDRESS_RECEIVE.to_string(), serde_json::json!({"test": 1}), None);
     
     // 4) Assert failure
-    assert!(!ok.expect("send_message_to_network should succeed"), "Handshake should have failed for 1024-bit RSA server certificate");
+    let ok_val = match ok {
+        Ok(v) => v,
+        Err(_) => false,
+    };
+    assert!(!ok_val, "Handshake should have failed for 1024-bit RSA server certificate");
     println!("Handshake failed as expected for RSA 1024 server cert");
     
     let _ = server_thread.join();

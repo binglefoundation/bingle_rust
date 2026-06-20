@@ -15,4 +15,7 @@ pub enum BingleJsiError {
 
     #[error("No blockchain: {reason}")]
     NoBlockchain { reason: String },
+
+    #[error("Retryable error: {reason}")]
+    Retryable { reason: String },
 }

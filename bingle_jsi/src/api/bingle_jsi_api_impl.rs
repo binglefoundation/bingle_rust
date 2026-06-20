@@ -133,6 +133,7 @@ fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
             BingleJsiError::NoBlockchain { reason: ae.to_string() }
         }
+        BingleError::Retryable(reason) => BingleJsiError::Retryable { reason },
         _ => BingleJsiError::InternalError { reason: e.to_string() },
     }
 }

@@ -314,7 +314,11 @@ impl BingleApiImpl {
             Ok(_) => Ok(true),
             Err(err) => {
                 warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
-                Ok(false)
+                if err.contains("rejecting") {
+                    Ok(false)
+                } else {
+                    Err(BingleError::Retryable(err))
+                }
             }
         }
     }
@@ -645,8 +649,8 @@ impl BingleApi for BingleApiImpl {
             Err(err) => {
                 warn!("[BingleApiImpl::send_message_to_id] DDB lookup failed: {}", err);
                 if let Some(cb) = progress.as_ref() { cb(100, format!("DDB lookup failed: {}", err)); }
-                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
-                Ok(false)
+                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return=error");
+                Err(err)
             }
         }
     }
@@ -827,7 +831,11 @@ impl BingleApi for BingleApiImpl {
             let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
             tracing::warn!("[BingleApiImpl::send_message_to_network_with_response][exit] nsk={} user_id={} msg={} Err({})", network_source_key, user_id, msg_with_tag.clone(), err);
             #[allow(unused)] {  }
-            Err(BingleError::Other(err))
+            if sent_ok {
+                Err(BingleError::Retryable(err))
+            } else {
+                Err(BingleError::Other(err))
+            }
         }
     }
 
