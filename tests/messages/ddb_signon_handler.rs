@@ -10,7 +10,7 @@ use std::time::Duration;
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_on_ddb_signon_sends_response() {
-    let handler = DefaultPrintingHandler;
+    let handler = DefaultPrintingHandler; crate::util::test_util::init_test_logging();
     
     let api_weak = to_weak_api_both(MockApiBoth::new());
     let api = api_weak.upgrade().expect("upgrade");
@@ -70,7 +70,7 @@ impl InnerBingleApiInternal for RippleCaptureMock {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_on_ddb_signon_ripples_to_peers() {
-    let handler = DefaultPrintingHandler;
+    let handler = DefaultPrintingHandler; crate::util::test_util::init_test_logging();
     
     let rippled_messages = Arc::new(Mutex::new(Vec::new()));
     let mock = RippleCaptureMock {
@@ -128,7 +128,7 @@ pub fn test_on_ddb_signon_ripples_to_peers() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_on_ddb_signon_does_not_ripple_if_already_rippled() {
-    let handler = DefaultPrintingHandler;
+    let handler = DefaultPrintingHandler; crate::util::test_util::init_test_logging();
     
     let rippled_messages = Arc::new(Mutex::new(Vec::new()));
     let mock = RippleCaptureMock {

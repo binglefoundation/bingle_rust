@@ -124,7 +124,7 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
         };
 
         let fmt_layer = tracing_subscriber::fmt::layer()
-            .with_writer(std::io::stderr)
+            .with_test_writer()
             .event_format(BingleFormatter { mode: log_mode });
 
         let subscriber = tracing_subscriber::registry()
@@ -137,7 +137,6 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
         // Panic hook that logs at error! and then defers to default behavior
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |pi| {
-            eprintln!("PANIC: {}", pi);
             tracing::error!("PANIC: {}", pi);
             default_hook(pi);
         }));
