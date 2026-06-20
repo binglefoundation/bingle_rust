@@ -92,7 +92,7 @@ pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callbac
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
     let s3: SocketAddr = "9.9.9.9:3478".parse().unwrap();
-    finder.start(vec![s1, s2, s3], 50, 50);
+    finder.start(vec![s1, s2, s3], 500, 1000);
 
     let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);

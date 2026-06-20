@@ -120,7 +120,7 @@ pub fn dtls_openssl_external_s_server_client_send() {
     }
 
     // Give the server time to start and bind.
-    thread::sleep(Duration::from_millis(400));
+    thread::sleep(Duration::from_millis(2000));
 
     // Keep stdin handle to send data to the DTLS peer via s_server
     let mut child_stdin = child.stdin.take();
