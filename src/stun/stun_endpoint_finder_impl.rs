@@ -298,6 +298,11 @@ impl StunEndpointFinderImpl {
         }
     }
 
+    /// Get the current tick count. Used in tests.
+    pub fn current_tick_for_test(&self) -> u64 {
+        self.inner.lock().unwrap().current_tick
+    }
+
     fn parse_xor_mapped_address(data: &[u8]) -> Option<SocketAddr> {
         if data.len() < 20 { return None; }
         // Verify magic cookie

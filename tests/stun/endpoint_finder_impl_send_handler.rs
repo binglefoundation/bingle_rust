@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl};
 
@@ -22,16 +21,14 @@ pub fn impl_uses_send_packet_handler_instead_of_udp() {
         calls_clone.lock().unwrap().push((host.to_string(), port, data.len()));
     })));
 
-    // Start the finder with short intervals so we don't wait long
-    finder.start(vec![s1, s2], 10, 50);
+    // Start the finder
+    finder.start(vec![s1, s2], 100, 500);
+    finder.stop(); // Stop background thread for manual ticking
 
-    // Allow some time for the background thread to send at least once
-    std::thread::sleep(Duration::from_millis(30));
+    // Tick manually to trigger a poll
+    finder.tick_for_test();
 
-    // Stop the finder to end background activity
-    finder.stop();
-
-    // Verify that the handler was invoked for both servers at least once
+    // Verify that the handler was invoked for both servers
     let recorded = calls.lock().unwrap().clone();
     assert!(recorded.iter().any(|(h, p, _)| *h == s1.ip().to_string() && *p == s1.port()),
         "send_packet_handler was not called for server {}", s1);

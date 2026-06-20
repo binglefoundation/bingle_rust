@@ -125,16 +125,24 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
 
-    let calls: Arc<Mutex<Vec<(String, u16, Instant)>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls: Arc<Mutex<Vec<(String, u16)>>> = Arc::new(Mutex::new(Vec::new()));
     let calls_clone = Arc::clone(&calls);
 
     let search_ms = 500u64;
     let repeat_ms = 1500u64;
     finder.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, _data: &[u8]| {
-        calls_clone.lock().unwrap().push((host.to_string(), port, Instant::now()));
+        calls_clone.lock().unwrap().push((host.to_string(), port));
     })));
 
     finder.start(vec![s1, s2], search_ms, repeat_ms);
+    finder.stop(); // Stop background thread for manual ticking
+
+    // Tick 1: Initial search poll happens because last_poll_tick is None
+    finder.tick_for_test();
+    {
+        let rec = calls.lock().unwrap();
+        assert_eq!(rec.len(), 2, "initial poll should send 2 packets");
+    }
 
     // Provide two responses quickly to move to CONSISTENT
     let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
@@ -142,18 +150,29 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
     let r2 = make_xor_mapped_response([203, 0, 113, 9], 55000);
     finder.process_packet(s2, &r2);
 
-    let t0 = Instant::now();
-    // Wait up to ~3*repeat for a re-poll cycle
-    std::thread::sleep(Duration::from_millis(repeat_ms as u64 * 3));
+    // Now in CONSISTENT state. Repeat interval is 1500ms = 15 ticks.
+    // Next poll should happen at tick 1 + 15 = 16.
 
-    let rec = calls.lock().unwrap();
-    let any_after: Vec<_> = rec.iter().filter(|(_, _, t)| *t >= t0).collect();
-    // Expect at least one call for each server after t0 (repeat cycle polls all servers)
-    let s1_key = (s1.ip().to_string(), s1.port());
-    let s2_key = (s2.ip().to_string(), s2.port());
-    assert!(any_after.iter().any(|(h, p, _)| *h == s1_key.0 && *p == s1_key.1), "expected repeat poll for s1");
-    assert!(any_after.iter().any(|(h, p, _)| *h == s2_key.0 && *p == s2_key.1), "expected repeat poll for s2");
-    finder.stop();
+    // Clear calls to measure only the next poll cycle
+    calls.lock().unwrap().clear();
+
+    // Tick 14 times (total ticks = 15). Should not have polled yet.
+    finder.test_ticks(14);
+    {
+        let rec = calls.lock().unwrap();
+        assert_eq!(rec.len(), 0, "should not poll before repeat interval");
+    }
+
+    // Tick once more (total ticks = 16). Should poll.
+    finder.tick_for_test();
+    {
+        let rec = calls.lock().unwrap();
+        assert_eq!(rec.len(), 2, "should poll all servers after repeat interval");
+        let s1_key = (s1.ip().to_string(), s1.port());
+        let s2_key = (s2.ip().to_string(), s2.port());
+        assert!(rec.iter().any(|(h, p)| *h == s1_key.0 && *p == s1_key.1), "expected repeat poll for s1");
+        assert!(rec.iter().any(|(h, p)| *h == s2_key.0 && *p == s2_key.1), "expected repeat poll for s2");
+    }
 }
 
 
