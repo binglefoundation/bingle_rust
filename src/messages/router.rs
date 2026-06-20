@@ -55,62 +55,71 @@ struct LockingApiWrapper {
     api: crate::api::bingle_api::BingleApiBothType,
 }
 
+impl LockingApiWrapper {
+    fn api(&self, method: &str) -> Option<Arc<dyn BingleApiBoth>> {
+        self.api.upgrade().or_else(|| {
+            tracing::error!("[LockingApiWrapper::{}] BingleApi dropped", method);
+            None
+        })
+    }
+}
+
 impl BingleApi for LockingApiWrapper {
-    fn debug_print_options(&self) { if let Some(a) = self.api.upgrade() { a.debug_print_options() } }
-    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> { self.api.upgrade().map(|a| a.list_all_relays(include_self)).unwrap_or_default() }
-    fn get_my_id(&self) -> Option<String> { self.api.upgrade().and_then(|a| a.get_my_id()) }
-    fn get_user_id(&self) -> Option<String> { self.api.upgrade().and_then(|a| a.get_user_id()) }
-    fn get_handle(&self) -> Option<String> { self.api.upgrade().and_then(|a| a.get_handle()) }
-    fn get_app_id(&self) -> Option<u64> { self.api.upgrade().and_then(|a| a.get_app_id()) }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api.upgrade().and_then(|a| a.get_algo_provider_config()) }
-    fn get_accounts_cache(&self) -> Option<Arc<Mutex<crate::blockchain::algo_bingle::AccountsCache>>> { self.api.upgrade().and_then(|a| a.get_accounts_cache()) }
-    fn clear_accounts_cache(&self) { if let Some(a) = self.api.upgrade() { a.clear_accounts_cache() } }
+    fn debug_print_options(&self) { if let Some(a) = self.api("debug_print_options") { a.debug_print_options() } }
+    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> { self.api("list_all_relays").map(|a| a.list_all_relays(include_self)).unwrap_or_default() }
+    fn get_my_id(&self) -> Option<String> { self.api("get_my_id").and_then(|a| a.get_my_id()) }
+    fn get_user_id(&self) -> Option<String> { self.api("get_user_id").and_then(|a| a.get_user_id()) }
+    fn get_handle(&self) -> Option<String> { self.api("get_handle").and_then(|a| a.get_handle()) }
+    fn get_app_id(&self) -> Option<u64> { self.api("get_app_id").and_then(|a| a.get_app_id()) }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.api("get_algo_provider_config").and_then(|a| a.get_algo_provider_config()) }
+    fn get_accounts_cache(&self) -> Option<Arc<Mutex<crate::blockchain::algo_bingle::AccountsCache>>> { self.api("get_accounts_cache").and_then(|a| a.get_accounts_cache()) }
+    fn clear_accounts_cache(&self) { if let Some(a) = self.api("clear_accounts_cache") { a.clear_accounts_cache() } }
     fn start(&mut self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> { Err(BingleError::Other("not supported in handler context".to_string())) }
     fn stop(&mut self) { }
     fn network_change(&mut self) { }
-    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.handle_lookup(handle)) }
-    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> { self.api.upgrade().and_then(|a| a.handle_lookup_by_id(user_id)) }
-    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_id(user_id, message, progress)) }
-    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle(handle, message, progress)) }
-    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_network(nsk, user_id, message, progress)) }
-    fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_id_with_response(user_id, message, progress)) }
-    fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle_with_response(handle, message, progress)) }
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_network_with_response(nsk, user_id, message, progress)) }
+    fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> { self.api("handle_lookup").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.handle_lookup(handle)) }
+    fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> { self.api("handle_lookup_by_id").and_then(|a| a.handle_lookup_by_id(user_id)) }
+    fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_id").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_id(user_id, message, progress)) }
+    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_handle").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle(handle, message, progress)) }
+    fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_network").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_network(nsk, user_id, message, progress)) }
+    fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api("send_message_to_id_with_response").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_id_with_response(user_id, message, progress)) }
+    fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api("send_message_to_handle_with_response").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle_with_response(handle, message, progress)) }
+    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api("send_message_to_network_with_response").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_network_with_response(nsk, user_id, message, progress)) }
     fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
     fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
     fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
 }
 
 impl BingleApiInternal for LockingApiWrapper {
-    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { if let Some(a) = self.api.upgrade() { a.mutex_handle_request(from_id, req) } }
-    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { if let Some(a) = self.api.upgrade() { a.mutex_handle_response(from_id, resp) } }
-    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { if let Some(a) = self.api.upgrade() { a.mutex_handle_release(from_id, rel) } }
-    fn get_relay_state(&self) -> String { self.api.upgrade().map(|a| a.get_relay_state()).unwrap_or_else(|| "off".to_string()) }
-    fn set_state(&self, state: crate::engine::EngineState) { if let Some(a) = self.api.upgrade() { a.set_state(state) } }
-    fn get_state(&self) -> crate::engine::EngineState { self.api.upgrade().map(|a| a.get_state()).unwrap_or(crate::engine::EngineState::StunIdentify) }
-    fn set_nat_type(&self, nat: crate::engine::NatType) { if let Some(a) = self.api.upgrade() { a.set_nat_type(nat) } }
-    fn get_last_public_addr(&self) -> Option<SocketAddr> { self.api.upgrade().and_then(|a| a.get_last_public_addr()) }
-    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_ip(endpoint, am_relay)) }
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_relay(relay_id, relay_sig)) }
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), BingleError> { self.api.upgrade().ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
-    fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { if let Some(a) = self.api.upgrade() { a.turn_client_handle_listen_response(relay_addr, relay_id) } }
-    fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr> { self.api.upgrade().and_then(|a| a.turn_lookup_addr_by_id(id)) }
-    fn turn_handle_call(&self, source_id: String, dest_id: String, source: SocketAddr, dest: SocketAddr) -> i32 { self.api.upgrade().map(|a| a.turn_handle_call(source_id, dest_id, source, dest)).unwrap_or(-1) }
-    fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { self.api.upgrade().map(|a| a.turn_handle_listen(id, source)).unwrap_or(false) }
-    fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { if let Some(a) = self.api.upgrade() { a.turn_handle_called(source, dest, channel) } }
-    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { if let Some(a) = self.api.upgrade() { a.notify_listening(listening, nat_type) } }
-    fn set_relay_state(&self, state: crate::engine::RelayState) { if let Some(a) = self.api.upgrade() { a.set_relay_state(state) } }
-    fn get_peer_ddb_target(&self) -> Option<usize> { self.api.upgrade().and_then(|a| a.get_peer_ddb_target()) }
-    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { if let Some(a) = self.api.upgrade() { a.ddb_upsert_record(record) } }
-    fn ddb_delete_record(&self, id: &str) { if let Some(a) = self.api.upgrade() { a.ddb_delete_record(id) } }
-    fn relay_finder_remove_relay(&self, relay_id: &str) { if let Some(a) = self.api.upgrade() { a.relay_finder_remove_relay(relay_id) } }
-    fn ddb_backend_size(&self) -> usize { self.api.upgrade().map(|a| a.ddb_backend_size()).unwrap_or(0) }
-    fn initialize_relay(&self) { if let Some(a) = self.api.upgrade() { a.initialize_relay() } }
-    fn is_relay(&self) -> bool { self.api.upgrade().map(|a| a.is_relay()).unwrap_or(false) }
-    fn signal_signon_complete(&self) { if let Some(a) = self.api.upgrade() { a.signal_signon_complete() } }
-    fn reset_signon_complete(&self) { if let Some(a) = self.api.upgrade() { a.reset_signon_complete() } }
-    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) { if let Some(a) = self.api.upgrade() { a.ripple_message(message, originator_id, ddb_backend) } }
-    fn get_signing_key(&self) -> Option<SigningKey> { self.api.upgrade().and_then(|a| a.get_signing_key()) }
+    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { if let Some(a) = self.api("mutex_handle_request") { a.mutex_handle_request(from_id, req) } }
+    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { if let Some(a) = self.api("mutex_handle_response") { a.mutex_handle_response(from_id, resp) } }
+    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { if let Some(a) = self.api("mutex_handle_release") { a.mutex_handle_release(from_id, rel) } }
+    fn get_relay_state(&self) -> String { self.api("get_relay_state").map(|a| a.get_relay_state()).unwrap_or_else(|| "off".to_string()) }
+    fn set_state(&self, state: crate::engine::EngineState) { if let Some(a) = self.api("set_state") { a.set_state(state) } }
+    fn get_state(&self) -> crate::engine::EngineState { self.api("get_state").map(|a| a.get_state()).unwrap_or(crate::engine::EngineState::StunIdentify) }
+    fn set_nat_type(&self, nat: crate::engine::NatType) { if let Some(a) = self.api("set_nat_type") { a.set_nat_type(nat) } }
+    fn get_last_public_addr(&self) -> Option<SocketAddr> { self.api("get_last_public_addr").and_then(|a| a.get_last_public_addr()) }
+    fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.api("ddb_register_ip").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_ip(endpoint, am_relay)) }
+    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.api("ddb_register_relay").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_relay(relay_id, relay_sig)) }
+    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), BingleError> { self.api("update_turn_listener_relay").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
+    fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { if let Some(a) = self.api("turn_client_handle_listen_response") { a.turn_client_handle_listen_response(relay_addr, relay_id) } }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr> { self.api("turn_lookup_addr_by_id").and_then(|a| a.turn_lookup_addr_by_id(id)) }
+    fn turn_handle_call(&self, source_id: String, dest_id: String, source: SocketAddr, dest: SocketAddr) -> i32 { self.api("turn_handle_call").map(|a| a.turn_handle_call(source_id, dest_id, source, dest)).unwrap_or(-1) }
+    fn turn_handle_listen(&self, id: String, source: SocketAddr) -> bool { self.api("turn_handle_listen").map(|a| a.turn_handle_listen(id, source)).unwrap_or(false) }
+    fn turn_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) { if let Some(a) = self.api("turn_handle_called") { a.turn_handle_called(source, dest, channel) } }
+    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { if let Some(a) = self.api("notify_listening") { a.notify_listening(listening, nat_type) } }
+    fn set_relay_state(&self, state: crate::engine::RelayState) { if let Some(a) = self.api("set_relay_state") { a.set_relay_state(state) } }
+    fn get_peer_ddb_target(&self) -> Option<usize> { self.api("get_peer_ddb_target").and_then(|a| a.get_peer_ddb_target()) }
+    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { if let Some(a) = self.api("ddb_upsert_record") { a.ddb_upsert_record(record) } }
+    fn ddb_delete_record(&self, id: &str) { if let Some(a) = self.api("ddb_delete_record") { a.ddb_delete_record(id) } }
+    fn relay_finder_remove_relay(&self, relay_id: &str) { if let Some(a) = self.api("relay_finder_remove_relay") { a.relay_finder_remove_relay(relay_id) } }
+    fn ddb_backend_size(&self) -> usize { self.api("ddb_backend_size").map(|a| a.ddb_backend_size()).unwrap_or(0) }
+    fn initialize_relay(&self) { if let Some(a) = self.api("initialize_relay") { a.initialize_relay() } }
+    fn is_relay(&self) -> bool { self.api("is_relay").map(|a| a.is_relay()).unwrap_or(false) }
+    fn signal_signon_complete(&self) { if let Some(a) = self.api("signal_signon_complete") { a.signal_signon_complete() } }
+    fn reset_signon_complete(&self) { if let Some(a) = self.api("reset_signon_complete") { a.reset_signon_complete() } }
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) { if let Some(a) = self.api("ripple_message") { a.ripple_message(message, originator_id, ddb_backend) } }
+    fn get_signing_key(&self) -> Option<SigningKey> { self.api("get_signing_key").and_then(|a| a.get_signing_key()) }
 }
 
 

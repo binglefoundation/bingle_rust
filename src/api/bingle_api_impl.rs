@@ -113,6 +113,10 @@ impl BingleApiImpl {
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new(&initial_options, me_both.clone()));
+            unsafe {
+                let engine_ptr = Arc::as_ptr(&engine) as *mut Engine;
+                (*engine_ptr).set_weak_self(Arc::downgrade(&engine));
+            }
             Self {
                 on_message: None,
                 on_connect: None,
@@ -152,6 +156,10 @@ impl BingleApiImpl {
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
+            unsafe {
+                let engine_ptr = Arc::as_ptr(&engine) as *mut Engine;
+                (*engine_ptr).set_weak_self(Arc::downgrade(&engine));
+            }
             Self {
                 on_message: None,
                 on_connect: None,
@@ -490,6 +498,7 @@ impl BingleApi for BingleApiImpl {
                 if let Some(api) = this_weak.upgrade() {
                     api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)).unwrap_or(false))
                 } else {
+                    tracing::error!("[BingleApiImpl::start][sender_cb] this_weak upgrade failed");
                     false
                 }
             });
@@ -512,6 +521,7 @@ impl BingleApi for BingleApiImpl {
                 if let Some(api) = this_weak_for_engine.upgrade() {
                     api.access(|a| a.send_message_to_network(nsk, uid, msg, Some(progress_cb)).unwrap_or(false))
                 } else {
+                    tracing::error!("[BingleApiImpl::start][engine sender] this_weak_for_engine upgrade failed");
                     false
                 }
             })));
@@ -1035,7 +1045,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         tracing::info!("[BingleApiImpl::initialize_relay]");
         unsafe {
             let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).initialize_relay_async();
+            (*engine_ptr).initialize_relay();
         }
     }
     fn is_relay(&self) -> bool {

@@ -17,7 +17,7 @@ use crate::util::relay_test_util::wait_for_relays_visible;
 #[path = "../setup_localnet.rs"]
 mod setup_localnet;
 #[path = "../test_util.rs"]
-mod test_util;
+pub mod test_util;
 
 #[test]
 #[cfg(not(target_os = "ios"))]

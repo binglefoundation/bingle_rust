@@ -1,10 +1,10 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg};
-use rust_comms::api::bingle_api::BingleApiInternal;
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::env;
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Once};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -333,4 +333,36 @@ pub fn signed_non_root_relay_with(id: &str, addr: std::net::SocketAddr, state: O
     r.state = state;
     r.ttl = ttl;
     r
+}
+
+// Helper: start a relay node at a fixed address
+pub fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
+    tracing::info!("[Test] start_root_relay name={} addr={} app_id={}", name, addr, app_id);
+    let opts = StartOptions {
+        handle: name.into(),
+        algo_passphrase: Some(passphrase.parse().unwrap()),
+        static_ip: Some(addr),
+        am_relay: true,
+        stun_servers: None,
+        algo_provider_config: Some(cfg),
+        algo_network: None,
+        app_id: Some(app_id),
+        asset_id: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+    };
+    let api = BingleApiImpl::new(&opts);
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
+    tracing::info!("[Test] root relay {} started, wait for registered", name);
+
+    wait_for_registered(&api, Duration::from_secs(30));
+    tracing::info!("[Test] root relay {} registered", name);
+
+    if !wait_for_relay_available(&api, Duration::from_secs(360)) {
+        panic!("root relay {} did not become Available within 360s", name);
+    }
+    tracing::info!("[Test] root relay {} Available", name);
+
+    api
 }
