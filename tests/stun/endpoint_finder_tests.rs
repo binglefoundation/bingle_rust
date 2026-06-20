@@ -188,11 +188,6 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
         // Deliberately do nothing: no response is injected.
     })));
 
-    // Use a very short search interval so the 3-interval timeout fires quickly.
-    // With search_interval_ms = 20 ms, 3 intervals = ~60 ms, well within 1 s.
-    let search_interval_ms: u64 = 20;
-    finder.start(vec![s1, s2], search_interval_ms, 60_000);
-
     let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
         Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
@@ -200,22 +195,13 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
         changes_clone.lock().unwrap().push((st, ep));
     })));
 
-    // Wait until we see a Blocked state or until 1 second has elapsed.
-    let deadline = Instant::now() + Duration::from_millis(1_000);
-    loop {
-        {
-            let list = changes.lock().unwrap();
-            if list.iter().any(|(st, _)| *st == StunState::Blocked) {
-                break;
-            }
-        }
-        if Instant::now() >= deadline {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    // Use a tick-based approach for determinism.
+    // search_interval_ms = 100 ms (1 tick)
+    finder.start(vec![s1, s2], 100, 60_000);
+    finder.stop(); // Stop the background thread immediately so we can tick manually.
 
-    finder.stop();
+    // Tick the finder manually. 3 intervals × 1 tick/interval = 3 ticks.
+    finder.test_ticks(10);
 
     let sends = *send_count.lock().unwrap();
     assert!(
@@ -261,25 +247,27 @@ pub fn server_responds_once_then_stops_keeps_polling() {
         *m.entry(key).or_insert(0) += 1;
     })));
 
-    // search=20ms: reach Blocked quickly (3 × 20ms = ~60ms after s1 stops responding).
-    finder.start(vec![s1, s2], 20, 10_000);
+    // search=100ms: reach Blocked quickly (3 × 1 tick = 3 ticks after s1 stops responding).
+    finder.start(vec![s1, s2], 100, 10_000);
+    finder.stop();
 
     // s1 responds once then goes silent; s2 never responds.
     let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.tick_for_test(); // Tick 1: first poll
     finder.process_packet(s1, &r1);
 
     let s1_key = format!("{}:{}", s1.ip(), s1.port());
     let s2_key = format!("{}:{}", s2.ip(), s2.port());
 
-    // Wait long enough for s2 to accumulate 3 failures and be removed,
-    // and for the finder to enter Blocked state and poll s1 again.
-    // 3 intervals × 20ms = 60ms; add margin for thread scheduling.
-    std::thread::sleep(Duration::from_millis(300));
+    // Tick until s2 is removed (after 3 failures) and finder enters Blocked.
+    // Tick 1 was s1=1, s2=1.
+    // Tick 2: s1=1, s2=2 (s1 already responded)
+    // Tick 3: s1=1, s2=3
+    // Tick 4: s1=2, s2=removed (since intervals_without_two reaches 3)
+    finder.test_ticks(5);
 
     let s1_count = counts.lock().unwrap().get(&s1_key).cloned().unwrap_or(0);
     let s2_count = counts.lock().unwrap().get(&s2_key).cloned().unwrap_or(0);
-
-    finder.stop();
 
     // s2 should have been polled then removed after 3 failures (no ever_responded).
     assert!(s2_count >= 3,
@@ -310,11 +298,6 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
 
-    // Use a long repeat interval (1s) so the poll loop does not re-poll too fast.
-    // The no-response timeout (200ms) is shorter than the repeat interval (1s),
-    // so the check triggers on the first repeat poll after the 200ms window.
-    finder.start(vec![s1, s2], 200, 1000);
-
     let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
         Arc::new(Mutex::new(Vec::new()));
     let changes_clone = Arc::clone(&changes);
@@ -322,9 +305,14 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
         changes_clone.lock().unwrap().push((st, ep));
     })));
 
+    // Use a long repeat interval (1s = 10 ticks) so the poll loop does not re-poll too fast.
+    finder.start(vec![s1, s2], 1000, 1000);
+    finder.stop();
+
     // Inject two consistent responses so the finder reaches Consistent state.
     let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
     let r2 = make_xor_mapped_response([203, 0, 113, 9], 55000);
+    finder.tick_for_test(); // Ensure it polls if background thread didn't yet
     finder.process_packet(s1, &r1);
     finder.process_packet(s2, &r2);
 
@@ -335,27 +323,9 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
     };
     assert!(reached_consistent, "finder should have reached Consistent after two matching responses");
 
-    // Wait past the no-response timeout (200ms) plus the repeat poll interval (500ms)
-    // so the poll loop triggers the timeout check.  Allow generous headroom for CI load.
-    let deadline = Instant::now() + Duration::from_millis(5_000);
-    loop {
-        {
-            let list = changes.lock().unwrap();
-            // Look for a None transition AFTER the Consistent one.
-            let consistent_idx = list.iter().position(|(st, _)| *st == StunState::Consistent);
-            if let Some(ci) = consistent_idx {
-                if list[ci..].iter().any(|(st, _)| *st == StunState::None) {
-                    break;
-                }
-            }
-        }
-        if Instant::now() >= deadline {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    finder.stop();
+    // Manually tick past the no-response timeout (300ms = 3 ticks)
+    // plus the repeat poll interval (1000ms = 10 ticks).
+    finder.test_ticks(20);
 
     let list = changes.lock().unwrap();
     let consistent_idx = list.iter().position(|(st, _)| *st == StunState::Consistent)

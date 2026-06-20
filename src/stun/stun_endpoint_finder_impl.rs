@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // Bring the public trait/types from our module
 use super::stun_endpoint_finder::{ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState};
@@ -56,6 +56,133 @@ struct Inner {
 }
 
 impl Inner {
+    fn choose_interval(&self) -> u64 {
+        match self.state {
+            StunState::None | StunState::Single | StunState::Blocked => self.search_ticks,
+            StunState::Consistent | StunState::Inconsistent => self.repeat_ticks,
+        }
+    }
+
+    fn stun_process_tick(&mut self) {
+        self.current_tick += 1;
+        let now = self.current_tick;
+
+        // 1. Check for silence timeout (Revert to None)
+        if matches!(self.state, StunState::Consistent | StunState::Inconsistent) {
+            let silence_too_long = match (self.last_request_tick, self.last_response_tick) {
+                (Some(req_t), Some(resp_t)) => {
+                    now.saturating_sub(req_t) > self.no_response_ticks && resp_t < req_t
+                }
+                (Some(req_t), None) => now.saturating_sub(req_t) > self.no_response_ticks,
+                (None, _) => false,
+            };
+
+            if silence_too_long {
+                tracing::info!(
+                    "[STUN] no response for {} ticks; reverting {:?} → None",
+                    self.no_response_ticks, self.state
+                );
+                self.last_response_tick = None;
+                self.last_request_tick = None;
+                self.intervals_without_two = 0;
+                // Reset per-server state so the next round re-polls everyone.
+                for s in self.servers.iter_mut() {
+                    s.responded = false;
+                    s.failures = 0;
+                    s.endpoint = None;
+                }
+                // Setting state to None BEFORE calling recompute_state_and_notify
+                // was preventing the notification because it thought the state hadn't changed.
+                // We let recompute_state_and_notify handle the transition from the old state.
+                self.recompute_state_and_notify();
+            }
+        }
+
+        // 2. Decide if it is time to poll based on the current state's interval
+        let interval_ticks = self.choose_interval();
+
+        if self.last_poll_tick.map_or(true, |last| now.saturating_sub(last) >= interval_ticks) {
+            self.last_poll_tick = Some(now);
+
+            // Determine servers to poll
+            let to_poll: Vec<SocketAddr> = match self.state {
+                StunState::None | StunState::Single => self.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
+                StunState::Blocked | StunState::Consistent | StunState::Inconsistent => self.servers.iter().map(|s| s.addr).collect(),
+            };
+
+            if !to_poll.is_empty() {
+                tracing::info!("[STUN] polling servers: {:?}, tick {}", to_poll, now);
+                for addr in to_poll {
+                    let pkt = StunEndpointFinderImpl::build_binding_request(now);
+                    let handler = self.send_packet.clone();
+
+                    if let Some(s) = self.servers.iter_mut().find(|x| x.addr == addr) {
+                        s.last_polled_tick = Some(now);
+                        s.failures = s.failures.saturating_add(1);
+                        // Clear stale response data so the previous round's endpoint
+                        // does not interfere with the new round's consistency check.
+                        s.responded = false;
+                        s.endpoint = None;
+                    }
+
+                    if matches!(self.state, StunState::Consistent | StunState::Inconsistent)
+                        && self.last_request_tick.is_none()
+                    {
+                        self.last_request_tick = Some(now);
+                    }
+
+                    if let Some(h) = handler.as_ref() {
+                        let host = addr.ip().to_string();
+                        h(&host, addr.port(), &pkt);
+                    }
+                }
+
+                // 3. Blocked state check (using results of PREVIOUS interval)
+                if matches!(self.state, StunState::None | StunState::Single | StunState::Blocked) {
+                    self.intervals_without_two = self.intervals_without_two.saturating_add(1);
+                    if self.intervals_without_two >= 3 {
+                        let responders = self.servers.iter().filter(|s| s.responded).count();
+                        if responders == 0 {
+                            if self.state != StunState::Blocked {
+                                tracing::warn!("[STUN] UDP appears blocked (no responses from {} servers after 3 intervals)", self.servers.len());
+                                self.state = StunState::Blocked;
+                                self.endpoint = None;
+                                if let Some(cb) = &self.state_change {
+                                    cb(self.state, None);
+                                }
+                            } else {
+                                tracing::info!("[STUN] still blocked (UDP appears blocked) - continuing to poll for recovery");
+                            }
+                        } else if responders < 2 && !self.error_reported {
+                            if let Some(eh) = &self.error {
+                                eh("Fewer than 2 STUN servers responded after 3 tries".to_string());
+                            }
+                            self.error_reported = true;
+                        }
+
+                        if self.state != StunState::Blocked {
+                            for s in self.servers.iter_mut() {
+                                if s.ever_responded {
+                                    s.responded = false;
+                                }
+                            }
+                            self.intervals_without_two = 0;
+                        }
+                    }
+                }
+            }
+
+            // 4. Pruning
+            if matches!(self.state, StunState::Blocked) {
+                for s in self.servers.iter_mut() {
+                    s.failures = 0;
+                }
+            } else {
+                self.servers.retain(|s| s.failures < 3 || s.ever_responded);
+            }
+        }
+    }
+
     fn recompute_state_and_notify(&mut self) {
         // Save the old endpoint before the match so we can detect address changes
         // while the state stays Consistent (Bug 1 fix).
@@ -138,26 +265,37 @@ impl StunEndpointFinderImpl {
         self.inner.lock().unwrap().no_response_ticks = (timeout.as_millis() as u64 / TICK_MS).max(1);
     }
 
-    fn choose_interval(state: StunState, search_ticks: u64, repeat_ticks: u64) -> u64 {
-        match state {
-            StunState::None | StunState::Single | StunState::Blocked => search_ticks,
-            StunState::Consistent | StunState::Inconsistent => repeat_ticks,
-        }
-    }
 
     // Build a minimal STUN Binding Request. Keeping a handcrafted packet for now keeps us
     // decoupled from stun-rs' specific builder API while still having it as a dependency for future use.
-    fn build_binding_request() -> [u8; 20] {
+    fn build_binding_request(tick: u64) -> [u8; 20] {
         // Simple STUN Binding Request with zero-length attributes.
         // Type: 0x0001, Length: 0x0000, Magic Cookie: 0x2112A442, Transaction ID: 12 bytes pseudo-random
         let mut pkt = [0u8; 20];
         pkt[0] = 0x00; pkt[1] = 0x01; // Binding Request
         pkt[2] = 0x00; pkt[3] = 0x00; // length
         pkt[4] = 0x21; pkt[5] = 0x12; pkt[6] = 0xA4; pkt[7] = 0x42; // magic cookie
-        // Fill transaction ID with a very simple changing value (time-based)
-        let t = Instant::now().elapsed().as_nanos();
-        for i in 0..12 { pkt[8 + i] = ((t >> (i * 5)) & 0xFF) as u8; }
+        // Fill transaction ID deterministically from tick
+        let mut seed = tick;
+        for i in 0..3 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let bytes = seed.to_be_bytes();
+            pkt[8 + i * 4 .. 12 + i * 4].copy_from_slice(&bytes[0..4]);
+        }
         pkt
+    }
+
+    /// Manually advance the state machine by one tick. Used in tests.
+    pub fn tick_for_test(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.stun_process_tick();
+    }
+
+    /// Advance the state machine by multiple ticks. Used in tests.
+    pub fn test_ticks(&self, count: u32) {
+        for _ in 0..count {
+            self.tick_for_test();
+        }
     }
 
     fn parse_xor_mapped_address(data: &[u8]) -> Option<SocketAddr> {
@@ -225,164 +363,18 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         let state = self.inner.clone();
         let stop_cond = self.stop_cond.clone();
         self.thread = Some(thread::spawn(move || {
+            let tick_rate = Duration::from_millis(TICK_MS);
             loop {
                 if !running.load(Ordering::SeqCst) { break; }
-                let (to_poll, interval) = {
-                    let inner = state.lock().unwrap();
-                    let ticks = StunEndpointFinderImpl::choose_interval(inner.state, inner.search_ticks, inner.repeat_ticks);
-                    let interval = Duration::from_millis(ticks * TICK_MS);
-                    // Determine servers to poll
-                    let to_poll: Vec<SocketAddr> = match inner.state {
-                        // In Blocked state poll all servers every interval so we detect recovery.
-                        // In None/Single only poll servers that have not yet responded this round.
-                        StunState::None | StunState::Single => inner.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
-                        StunState::Blocked | StunState::Consistent | StunState::Inconsistent => inner.servers.iter().map(|s| s.addr).collect(),
-                    };
-                    (to_poll, interval)
-                };
-                // Send binding requests
+
                 {
-                    tracing::info!("[STUN] polling servers: {:?}, interval {}ms", to_poll, interval.as_millis());
                     let mut inner = state.lock().unwrap();
-                    let current_tick = inner.current_tick;
-                    for addr in to_poll {
-                        // Prepare packet and handler outside the mutable borrow
-                        let pkt = StunEndpointFinderImpl::build_binding_request();
-                        let handler = inner.send_packet.clone();
-                        // Update server status and capture target address
-                        let target_addr_opt = {
-                            if let Some(s) = inner.servers.iter_mut().find(|x| x.addr == addr) {
-                                s.last_polled_tick = Some(current_tick);
-                                s.failures = s.failures.saturating_add(1);
-                                // Clear stale response data so the previous round's endpoint
-                                // does not interfere with the new round's consistency check.
-                                s.responded = false;
-                                s.endpoint = None;
-                                Some(s.addr)
-                            } else { None }
-                        };
-                        if let Some(target) = target_addr_opt {
-                            // Record when we FIRST sent a request without a subsequent response,
-                            // so the no-response timeout is measured from that moment.
-                            // We only set last_request_tick if it is not already set: this
-                            // anchors the timer to the first unanswered request in the current
-                            // silent window rather than resetting it on every successive poll,
-                            // which would push the revert out indefinitely.
-                            // last_request_tick is cleared by process_packet (via the revert
-                            // reset) whenever a fresh response arrives.
-                            if matches!(inner.state, StunState::Consistent | StunState::Inconsistent)
-                                && inner.last_request_tick.is_none()
-                            {
-                                inner.last_request_tick = Some(current_tick);
-                            }
-                            if let Some(h) = handler.as_ref() {
-                                let host = target.ip().to_string();
-                                let port = target.port();
-                                tracing::info!("[STUN] sending Binding Request to {}:{}", host, port);
-                                h(&host, port, &pkt);
-                            }
-                        }
-                    }
-                    // When in Consistent or Inconsistent state, check whether we have heard
-                    // from any server since the last binding request we sent.  If
-                    // no_response_ticks has elapsed since that request and no response has
-                    // arrived in that window, revert to None so the engine can re-identify
-                    // the NAT type.  We deliberately check AFTER sending so the request is
-                    // always dispatched, but the timeout is anchored to last_request_tick —
-                    // not to the moment of the check — which prevents the revert from firing
-                    // in the same iteration that sends the request.
-                    if matches!(inner.state, StunState::Consistent | StunState::Inconsistent) {
-                        let now = inner.current_tick;
-                        let silence_too_long = match (inner.last_request_tick, inner.last_response_tick) {
-                            // We have sent at least one request: revert only when the timeout
-                            // has elapsed since that request AND no response arrived after it.
-                            (Some(req_t), Some(resp_t)) => {
-                                now.saturating_sub(req_t) > inner.no_response_ticks
-                                    && resp_t < req_t
-                            }
-                            // Sent a request but never received any response.
-                            (Some(req_t), None) => now.saturating_sub(req_t) > inner.no_response_ticks,
-                            // No request recorded yet — do not revert; wait until we've sent one.
-                            (None, _) => false,
-                        };
-                        if silence_too_long {
-                            tracing::info!(
-                                "[STUN] no response for {} ticks; reverting {:?} → None",
-                                inner.no_response_ticks, inner.state
-                            );
-                            inner.state = StunState::None;
-                            inner.endpoint = None;
-                            inner.last_response_tick = None;
-                            inner.last_request_tick = None;
-                            inner.intervals_without_two = 0;
-                            // Reset per-server state so the next round re-polls everyone.
-                            for s in inner.servers.iter_mut() {
-                                s.responded = false;
-                                s.endpoint = None;
-                                s.failures = 0;
-                            }
-                            if let Some(cb) = &inner.state_change {
-                                cb(StunState::None, None);
-                            }
-                        }
-                    }
-                    // Check for Blocked/error condition BEFORE pruning servers, so that
-                    // when we transition into Blocked state the servers list is still intact.
-                    if matches!(inner.state, StunState::None | StunState::Single | StunState::Blocked) {
-                        inner.intervals_without_two = inner.intervals_without_two.saturating_add(1);
-                        tracing::info!("[STUN] intervals without two responses: {}", inner.intervals_without_two);
-                        if inner.intervals_without_two >= 3 {
-                            let responders = inner.servers.iter().filter(|s| s.responded).count();
-                            if responders == 0 {
-                                if inner.state != StunState::Blocked {
-                                    inner.state = StunState::Blocked;
-                                    tracing::info!("[STUN] state change: Blocked (no responders after 3 intervals) - UDP may be blocked");
-                                    if let Some(cb) = &inner.state_change {
-                                        cb(inner.state, None);
-                                    }
-                                } else {
-                                    tracing::info!("[STUN] still blocked (UDP appears blocked) - continuing to poll for recovery");
-                                }
-                            } else if responders < 2 && !inner.error_reported {
-                                if let Some(eh) = &inner.error {
-                                    eh("Fewer than 2 STUN servers responded after 3 tries".to_string());
-                                }
-                                inner.error_reported = true;
-                            }
-                            // After the 3-interval check, reset `responded` on ever_responded
-                            // servers so they are eligible for the next poll round. Without this
-                            // a server that responded once (responded=true) would be skipped by
-                            // the None/Single to_poll filter forever once all non-responded
-                            // servers have been removed.
-                            if inner.state != StunState::Blocked {
-                                for s in inner.servers.iter_mut() {
-                                    if s.ever_responded {
-                                        s.responded = false;
-                                    }
-                                }
-                                inner.intervals_without_two = 0;
-                            }
-                        }
-                    }
-                    // In Blocked state, reset failure counters so servers are kept alive and
-                    // polling continues — UDP may become unblocked and we want to recover.
-                    // Otherwise remove servers that have failed 3 times without responding.
-                    if matches!(inner.state, StunState::Blocked) {
-                        for s in inner.servers.iter_mut() {
-                            s.failures = 0;
-                        }
-                    } else {
-                        // Keep a server if it has fewer than 3 consecutive failures OR
-                        // if it has ever responded in this session (it may be temporarily
-                        // unreachable due to network issues at our end, not a dead server).
-                        inner.servers.retain(|s| s.failures < 3 || s.ever_responded);
-                    }
+                    inner.stun_process_tick();
                 }
-                // Wait for the next interval or stop signal
-                {
-                    let inner = state.lock().unwrap();
-                    let _ = stop_cond.wait_timeout(inner, interval).unwrap();
-                }
+
+                // Wait for the next tick or stop signal
+                let inner_lock = state.lock().unwrap();
+                let _ = stop_cond.wait_timeout(inner_lock, tick_rate).unwrap();
             }
         }));
     }
