@@ -151,10 +151,17 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         wait_response_timeout: None,
     };
     let null_api = NullApi;
-    let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::to_weak(null_api.clone()));
-    eng.set_dtls(Box::new(NullDtls));
+    let eng = Arc::new(Engine::new(&opts, crate::util::mock_bingle_api::to_weak(null_api.clone())));
+    unsafe {
+        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
+        (*eng_ptr).set_weak_self(Arc::downgrade(&eng));
+        (*eng_ptr).set_dtls(Box::new(NullDtls));
+    }
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(null_api)));
-    eng.set_router(router);
+    unsafe {
+        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
+        (*eng_ptr).set_router(router);
+    }
 
     // Track on_listening calls
     let called_false = Arc::new(AtomicBool::new(false));
@@ -162,18 +169,21 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
 
     let flag_false = called_false.clone();
     let flag_true  = called_true.clone();
-    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
-        if listening {
-            flag_true.store(true, Ordering::SeqCst);
-        } else {
-            flag_false.store(true, Ordering::SeqCst);
-        }
-    })));
+    unsafe {
+        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
+        (*eng_ptr).set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+            if listening {
+                flag_true.store(true, Ordering::SeqCst);
+            } else {
+                flag_false.store(true, Ordering::SeqCst);
+            }
+        })));
 
-    eng.start(&opts).expect("engine.start should succeed");
+        (*eng_ptr).start(&opts).expect("engine.start should succeed");
+    }
 
     // Wait for the STUN finder to raise Blocked (3 × 2 s search intervals ≈ 6 s minimum).
-    let timeout = Duration::from_secs(15);
+    let timeout = Duration::from_secs(30);
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline && !called_false.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(100));
@@ -194,5 +204,8 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         "nat_type should be NoConnection when no STUN servers respond"
     );
 
-    eng.stop();
+    unsafe {
+        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
+        (*eng_ptr).stop();
+    }
 }

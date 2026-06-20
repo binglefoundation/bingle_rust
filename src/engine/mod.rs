@@ -576,7 +576,7 @@ impl Engine {
         eng
     }
 
-    pub(crate) fn set_weak_self(&mut self, weak: std::sync::Weak<Engine>) {
+    pub fn set_weak_self(&mut self, weak: std::sync::Weak<Engine>) {
         self.weak_self = weak;
     }
 

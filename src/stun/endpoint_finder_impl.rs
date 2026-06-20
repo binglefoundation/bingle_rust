@@ -317,6 +317,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                     // when we transition into Blocked state the servers list is still intact.
                     if matches!(inner.state, StunState::None | StunState::Single | StunState::Blocked) {
                         inner.intervals_without_two = inner.intervals_without_two.saturating_add(1);
+                        tracing::info!("[STUN] intervals without two responses: {}", inner.intervals_without_two);
                         if inner.intervals_without_two >= 3 {
                             let responders = inner.servers.iter().filter(|s| s.responded).count();
                             if responders == 0 {
