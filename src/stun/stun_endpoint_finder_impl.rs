@@ -13,6 +13,8 @@ use super::stun_endpoint_finder::{ErrorHandler, SendPacketHandler, StateChangeHa
 #[allow(unused_imports)]
 use stun_rs as _stun_rs;
 
+const TICK_MS: u64 = 100;
+
 #[derive(Clone)]
 struct ServerStatus {
     addr: SocketAddr,
@@ -20,12 +22,12 @@ struct ServerStatus {
     responded: bool,
     ever_responded: bool,
     endpoint: Option<SocketAddr>,
-    last_polled: Option<Instant>,
+    last_polled_tick: Option<u64>,
 }
 
 impl ServerStatus {
     fn new(addr: SocketAddr) -> Self {
-        Self { addr, failures: 0, responded: false, ever_responded: false, endpoint: None, last_polled: None }
+        Self { addr, failures: 0, responded: false, ever_responded: false, endpoint: None, last_polled_tick: None }
     }
 }
 
@@ -33,22 +35,24 @@ struct Inner {
     servers: Vec<ServerStatus>,
     state: StunState,
     endpoint: Option<SocketAddr>,
-    search: Duration,
-    repeat: Duration,
+    search_ticks: u64,
+    repeat_ticks: u64,
     state_change: Option<StateChangeHandler>,
     error: Option<ErrorHandler>,
     send_packet: Option<SendPacketHandler>,
     // Error reporting bookkeeping
     intervals_without_two: u8,
     error_reported: bool,
-    // Timestamp of the last received STUN response (used to detect server silence)
-    last_response_time: Option<Instant>,
-    // Timestamp of the last sent STUN binding request while in Consistent/Inconsistent state.
+    // Tick of the last received STUN response
+    last_response_tick: Option<u64>,
+    // Tick of the last sent STUN binding request while in Consistent/Inconsistent state.
     // The no-response timeout is measured from this point: we revert only when
     // no response has arrived since this request and the timeout has elapsed.
-    last_request_time: Option<Instant>,
-    // How long without any response before reverting from Consistent/Inconsistent to None
-    no_response_timeout: Duration,
+    last_request_tick: Option<u64>,
+    // How many ticks without any response before reverting from Consistent/Inconsistent to None
+    no_response_ticks: u64,
+    current_tick: u64,
+    last_poll_tick: Option<u64>,
 }
 
 impl Inner {
@@ -112,16 +116,18 @@ impl StunEndpointFinderImpl {
             servers: Vec::new(),
             state: StunState::None,
             endpoint: None,
-            search: Duration::from_millis(1000),
-            repeat: Duration::from_millis(10_000),
+            search_ticks: 1000 / TICK_MS,
+            repeat_ticks: 10000 / TICK_MS,
             state_change: None,
             error: None,
             send_packet: None,
             intervals_without_two: 0,
             error_reported: false,
-            last_response_time: None,
-            last_request_time: None,
-            no_response_timeout: Duration::from_secs(30),
+            last_response_tick: None,
+            last_request_tick: None,
+            no_response_ticks: 30000 / TICK_MS,
+            current_tick: 0,
+            last_poll_tick: None,
         };
         Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None, stop_cond: Arc::new(Condvar::new()), no_response_timeout_override: None }
     }
@@ -129,13 +135,13 @@ impl StunEndpointFinderImpl {
     /// Override the no-response timeout. Used in tests to avoid waiting 30s.
     pub fn set_no_response_timeout_for_tests(&mut self, timeout: Duration) {
         self.no_response_timeout_override = Some(timeout);
-        self.inner.lock().unwrap().no_response_timeout = timeout;
+        self.inner.lock().unwrap().no_response_ticks = (timeout.as_millis() as u64 / TICK_MS).max(1);
     }
 
-    fn choose_interval(state: StunState, search: Duration, repeat: Duration) -> Duration {
+    fn choose_interval(state: StunState, search_ticks: u64, repeat_ticks: u64) -> u64 {
         match state {
-            StunState::None | StunState::Single | StunState::Blocked => search,
-            StunState::Consistent | StunState::Inconsistent => repeat,
+            StunState::None | StunState::Single | StunState::Blocked => search_ticks,
+            StunState::Consistent | StunState::Inconsistent => repeat_ticks,
         }
     }
 
@@ -197,16 +203,20 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         {
             let mut inner = self.inner.lock().unwrap();
             inner.servers = servers.into_iter().map(ServerStatus::new).collect();
-            inner.search = Duration::from_millis(search_time_ms);
-            inner.repeat = Duration::from_millis(repeat_time_ms);
+            inner.search_ticks = (search_time_ms / TICK_MS).max(1);
+            inner.repeat_ticks = (repeat_time_ms / TICK_MS).max(1);
             inner.state = StunState::None;
             inner.endpoint = None;
             inner.intervals_without_two = 0;
             inner.error_reported = false;
-            inner.last_response_time = None;
-            inner.last_request_time = None;
+            inner.last_response_tick = None;
+            inner.last_request_tick = None;
+            inner.current_tick = 0;
+            inner.last_poll_tick = None;
             if let Some(t) = self.no_response_timeout_override {
-                inner.no_response_timeout = t;
+                inner.no_response_ticks = (t.as_millis() as u64 / TICK_MS).max(1);
+            } else {
+                inner.no_response_ticks = 30000 / TICK_MS;
             }
         }
         // Start background thread if not already running
@@ -219,7 +229,8 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                 if !running.load(Ordering::SeqCst) { break; }
                 let (to_poll, interval) = {
                     let inner = state.lock().unwrap();
-                    let interval = StunEndpointFinderImpl::choose_interval(inner.state, inner.search, inner.repeat);
+                    let ticks = StunEndpointFinderImpl::choose_interval(inner.state, inner.search_ticks, inner.repeat_ticks);
+                    let interval = Duration::from_millis(ticks * TICK_MS);
                     // Determine servers to poll
                     let to_poll: Vec<SocketAddr> = match inner.state {
                         // In Blocked state poll all servers every interval so we detect recovery.
@@ -233,6 +244,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                 {
                     tracing::info!("[STUN] polling servers: {:?}, interval {}ms", to_poll, interval.as_millis());
                     let mut inner = state.lock().unwrap();
+                    let current_tick = inner.current_tick;
                     for addr in to_poll {
                         // Prepare packet and handler outside the mutable borrow
                         let pkt = StunEndpointFinderImpl::build_binding_request();
@@ -240,7 +252,7 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                         // Update server status and capture target address
                         let target_addr_opt = {
                             if let Some(s) = inner.servers.iter_mut().find(|x| x.addr == addr) {
-                                s.last_polled = Some(Instant::now());
+                                s.last_polled_tick = Some(current_tick);
                                 s.failures = s.failures.saturating_add(1);
                                 // Clear stale response data so the previous round's endpoint
                                 // does not interfere with the new round's consistency check.
@@ -252,16 +264,16 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                         if let Some(target) = target_addr_opt {
                             // Record when we FIRST sent a request without a subsequent response,
                             // so the no-response timeout is measured from that moment.
-                            // We only set last_request_time if it is not already set: this
+                            // We only set last_request_tick if it is not already set: this
                             // anchors the timer to the first unanswered request in the current
                             // silent window rather than resetting it on every successive poll,
                             // which would push the revert out indefinitely.
-                            // last_request_time is cleared by process_packet (via the revert
+                            // last_request_tick is cleared by process_packet (via the revert
                             // reset) whenever a fresh response arrives.
                             if matches!(inner.state, StunState::Consistent | StunState::Inconsistent)
-                                && inner.last_request_time.is_none()
+                                && inner.last_request_tick.is_none()
                             {
-                                inner.last_request_time = Some(Instant::now());
+                                inner.last_request_tick = Some(current_tick);
                             }
                             if let Some(h) = handler.as_ref() {
                                 let host = target.ip().to_string();
@@ -273,34 +285,35 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
                     }
                     // When in Consistent or Inconsistent state, check whether we have heard
                     // from any server since the last binding request we sent.  If
-                    // no_response_timeout has elapsed since that request and no response has
+                    // no_response_ticks has elapsed since that request and no response has
                     // arrived in that window, revert to None so the engine can re-identify
                     // the NAT type.  We deliberately check AFTER sending so the request is
-                    // always dispatched, but the timeout is anchored to last_request_time —
+                    // always dispatched, but the timeout is anchored to last_request_tick —
                     // not to the moment of the check — which prevents the revert from firing
                     // in the same iteration that sends the request.
                     if matches!(inner.state, StunState::Consistent | StunState::Inconsistent) {
-                        let silence_too_long = match (inner.last_request_time, inner.last_response_time) {
+                        let now = inner.current_tick;
+                        let silence_too_long = match (inner.last_request_tick, inner.last_response_tick) {
                             // We have sent at least one request: revert only when the timeout
                             // has elapsed since that request AND no response arrived after it.
                             (Some(req_t), Some(resp_t)) => {
-                                req_t.elapsed() > inner.no_response_timeout
+                                now.saturating_sub(req_t) > inner.no_response_ticks
                                     && resp_t < req_t
                             }
                             // Sent a request but never received any response.
-                            (Some(req_t), None) => req_t.elapsed() > inner.no_response_timeout,
+                            (Some(req_t), None) => now.saturating_sub(req_t) > inner.no_response_ticks,
                             // No request recorded yet — do not revert; wait until we've sent one.
                             (None, _) => false,
                         };
                         if silence_too_long {
                             tracing::info!(
-                                "[STUN] no response for {:?}; reverting {:?} → None",
-                                inner.no_response_timeout, inner.state
+                                "[STUN] no response for {} ticks; reverting {:?} → None",
+                                inner.no_response_ticks, inner.state
                             );
                             inner.state = StunState::None;
                             inner.endpoint = None;
-                            inner.last_response_time = None;
-                            inner.last_request_time = None;
+                            inner.last_response_tick = None;
+                            inner.last_request_tick = None;
                             inner.intervals_without_two = 0;
                             // Reset per-server state so the next round re-polls everyone.
                             for s in inner.servers.iter_mut() {
@@ -404,10 +417,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
             if let Some(ep) = endpoint { s.endpoint = Some(ep); }
         }
         // Track when the last response arrived so the poll loop can detect silence.
-        inner.last_response_time = Some(Instant::now());
+        inner.last_response_tick = Some(inner.current_tick);
         // Clear the first-unanswered-request anchor: this response means the current
         // silent window is over, so the next poll will start a fresh window.
-        inner.last_request_time = None;
+        inner.last_request_tick = None;
         // Recompute state and notify
         inner.recompute_state_and_notify();
     }
@@ -438,8 +451,9 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         inner.error_reported = false;
         // Clear the last-response and last-request timestamps so the no-response timeout
         // does not fire immediately after a reset (the clock starts fresh from now).
-        inner.last_response_time = None;
-        inner.last_request_time = None;
+        inner.last_response_tick = None;
+        inner.last_request_tick = None;
+        inner.current_tick = 0;
         // Reset per-server state so the polling loop will re-poll all servers.
         // ever_responded is intentionally preserved: a server that was reachable before
         // the reset is still a known-good server and should continue to be kept alive.
