@@ -8,7 +8,7 @@ UX:
 - ~~tidy up bugs~~
 - ~~info option to show cipher suite (now in API, needs UX)~~
 - ~~fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close~~
-- message delivery indication and retry
+- **message delivery indication and retry**
 - ~~handle register failure on/post start~~
 - ~~lookup handle match~~
 
@@ -83,6 +83,7 @@ robustness:
 - fix fragile tests
 + ~~retry on indexer lookups~~
 + ~~cache indexer lookups~~
++ **refactor StunEndpointFinderImpl to be more testable**
 + remove need for placeholder to get an indexer
 - integration tests on bingle_jsi
 + Layer 1
