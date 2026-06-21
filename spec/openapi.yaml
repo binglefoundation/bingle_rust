@@ -289,6 +289,8 @@ components:
         This causes the epoch number to be incremented, indicating a new configuration.
         The message ripples onward to all configured nodes in the graph.
         A `DdbSignonResponse` is sent back to the sender.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string
@@ -373,6 +375,8 @@ components:
         Called to start initializing a new relay node.
         Sent to the DDB node selected by the sender id and current epoch.
         The relay node responds with a `DdbInitResponse` message followed by `DdbDumpResolveResponse` messages for each record in the database.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string
@@ -410,6 +414,8 @@ components:
       description: |
         Sent from an existing, active relay node to a new, initializing relay node.
         Contains a single record from the database.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string
@@ -951,6 +957,8 @@ components:
         Received by the second relay in a triangle test.
         Will attempt to send a `RelayTriangleTest3` message to the originating endpoint (CheckingEndpoint).
         If this message is received, it indicates that the checkingId node has full cone NAT.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           nullable: true
@@ -976,6 +984,8 @@ components:
       description: |
         Response sent by the second relay in a triangle test.
         If received after a test is initiated, indicates that the node receiving this message has full cone NAT.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           nullable: true
@@ -1159,6 +1169,8 @@ components:
       description: |
         Sent by a relay to a node that is being called. Notifies the node that a
         TURN channel has been established for an incoming call.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           nullable: true
@@ -1230,6 +1242,8 @@ components:
       type: object
       description: |
         Request to acquire a distributed mutex using Lamport timestamps.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string
@@ -1264,6 +1278,8 @@ components:
       type: object
       description: |
         Response to a MutexRequest. Presence of this message indicates peers have observed the request.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string
@@ -1294,6 +1310,8 @@ components:
       type: object
       description: |
         Notification that the mutex is being released by the current holder.
+        
+        NOTE: currently, the sender must be permissioned as a relay.
       properties:
         app:
           type: string
