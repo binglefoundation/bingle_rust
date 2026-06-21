@@ -6,7 +6,6 @@
 pub mod dtls_app_layer_verification;
 #[path = "../dtls/dtls_client_peer_cert_rejection.rs"]
 pub mod dtls_client_peer_cert_rejection;
-pub mod stun;
 
 // Distributed mutex tests that need fixes for failing-node scenarios.
 // Note: dynamic_add.rs and islanding.rs each declare `pub mod common`

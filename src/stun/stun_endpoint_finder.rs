@@ -19,6 +19,10 @@ pub type SendPacketHandler = Arc<dyn Fn(&str, u16, &[u8]) + Send + Sync + 'stati
 
 /// Trait describing a STUN endpoint finder that polls servers and evaluates consistency
 pub trait StunEndpointFinder: Send + Sync {
+    /// Initialize the internal state with the provided servers and timing parameters.
+    /// Does not start the background thread.
+    fn init(&mut self, servers: Vec<SocketAddr>, search_time_ms: u64, repeat_time_ms: u64);
+
     /// Start a thread that polls the provided list of STUN servers.
     /// search_time_ms is used when state is NONE or SINGLE.
     /// repeat_time_ms is used when state is CONSISTENT or INCONSISTENT.
@@ -28,7 +32,7 @@ pub trait StunEndpointFinder: Send + Sync {
     fn stop(&mut self);
 
     /// Process an incoming STUN packet. Update the source server status, recompute state
-    /// and invoke the stateChangeHandler if the state has changed.
+    /// and invoke the state_change_handler if the state has changed.
     fn process_packet(&mut self, from: SocketAddr, data: &[u8]);
 
     /// Set the state change handler callback.
