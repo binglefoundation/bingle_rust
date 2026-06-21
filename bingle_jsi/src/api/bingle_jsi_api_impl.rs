@@ -700,8 +700,20 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 timestamp: m.timestamp,
                 text: m.text,
                 cipher_suite: m.cipher_suite,
+                progress: m.progress,
+                failure_reason: m.failure_reason,
             })
             .collect())
+    }
+
+    fn queue_message(&self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .queue_message(recipient_handles, text)
+            .map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
     }
 
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {

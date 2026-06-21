@@ -113,6 +113,9 @@ pub trait BingleJsiApi: Send + Sync {
     /// Get the list of stored messages.
     fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError>;
 
+    /// Queue a message to be sent by the background processor.
+    fn queue_message(&self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleJsiError>;
+
     /// Check the status of the local keypair.
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError>;
 

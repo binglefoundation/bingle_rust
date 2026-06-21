@@ -171,6 +171,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn queue_message(&self, _recipient_handles: Vec<String>, _text: String) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "queue_message".to_string(),
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),

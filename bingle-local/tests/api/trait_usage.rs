@@ -66,7 +66,37 @@ impl BingleLocalApi for DummyLocal {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
-        self.messages.push(Message { sender_handle, recipient_handles, timestamp, text, cipher_suite });
+        self.messages.push(Message {
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite,
+            progress: 1.0,
+            failure_reason: None,
+        });
+        Ok(())
+    }
+
+    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError> {
+        let sender_handle = self.keypair_status()?.handle.unwrap_or_default();
+        self.messages.push(Message {
+            sender_handle,
+            recipient_handles,
+            timestamp: 999,
+            text,
+            cipher_suite: None,
+            progress: 0.0,
+            failure_reason: None,
+        });
+        Ok(())
+    }
+
+    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError> {
+        if let Some(m) = self.messages.iter_mut().find(|m| m.timestamp == timestamp) {
+            m.progress = progress;
+            m.failure_reason = failure_reason;
+        }
         Ok(())
     }
 
