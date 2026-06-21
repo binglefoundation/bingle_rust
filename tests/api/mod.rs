@@ -64,3 +64,6 @@ pub mod self_relay_detection;
 pub mod ripple_message_unit;
 
 pub mod bingle_error_tests;
+
+#[path = "dangerous_debug_check.rs"]
+pub mod dangerous_debug_check;
