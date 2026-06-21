@@ -7,6 +7,7 @@ use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId}
 use crate::themes;
 
 use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use crate::blockchain::algo_bingle::AlgoBingle;
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
 use ed25519_dalek::SigningKey;
 use crate::distributed_mutex::DistributedMutex;
@@ -2195,6 +2196,56 @@ impl Engine {
             tracing::warn!("[Engine::ddb_upsert_record] signature verification failed for record id={}", record.id);
             return;
         }
+
+        if record.am_relay.unwrap_or(false) {
+            let api = match self.bingle_api.upgrade() {
+                Some(a) => a,
+                None => {
+                    tracing::warn!("[Engine::ddb_upsert_record] BingleApi not available; rejecting relay record id={}", record.id);
+                    return;
+                }
+            };
+            let app_id = match api.get_app_id() {
+                Some(id) => id,
+                None => {
+                    tracing::warn!("[Engine::ddb_upsert_record] app_id not available; rejecting relay record id={}", record.id);
+                    return;
+                }
+            };
+            let config = match api.get_algo_provider_config() {
+                Some(cfg) => cfg,
+                None => {
+                    tracing::warn!("[Engine::ddb_upsert_record] algo_provider_config not available; rejecting relay record id={}", record.id);
+                    return;
+                }
+            };
+            let cache = api.get_accounts_cache();
+
+            let ops = AlgoOps::new(None, Some(record.id.clone()), Some(config));
+            let algo_bingle = match cache {
+                Some(c) => AlgoBingle::new_with_cache(ops, app_id, 0, c),
+                None => AlgoBingle::new(ops, app_id, 0),
+            };
+
+            match algo_bingle.check_allow_relay(app_id, &record.id) {
+                Ok(Some(true)) => {
+                    tracing::info!("[Engine::ddb_upsert_record] blockchain verified allow_relay for id={}", record.id);
+                }
+                Ok(Some(false)) => {
+                    tracing::warn!("[Engine::ddb_upsert_record] blockchain check FAILED: allow_relay is false for id={}", record.id);
+                    return;
+                }
+                Ok(None) => {
+                    tracing::warn!("[Engine::ddb_upsert_record] blockchain check FAILED: id={} not opted-in to app {}", record.id, app_id);
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!("[Engine::ddb_upsert_record] blockchain check ERROR for id={}: {}", record.id, e);
+                    return;
+                }
+            }
+        }
+
         if let Ok(mut b) = self.ddb_backend.lock() {
             b.upsert(record);
         }

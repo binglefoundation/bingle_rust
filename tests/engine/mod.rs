@@ -71,3 +71,6 @@ pub mod stun_inconsistent_relay;
 
 #[path = "sender_auth.rs"]
 pub mod sender_auth;
+
+#[path = "ddb_upsert_relay_check.rs"]
+pub mod ddb_upsert_relay_check;
