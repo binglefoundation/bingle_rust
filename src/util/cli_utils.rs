@@ -34,7 +34,7 @@ where
     let mut log_level: Option<String> = None;
     let mut log_mode = LogMode::Plain;
     let mut handle_cache_expiry: Option<std::time::Duration> = None;
-    let mut dangerous_debug = false;
+    let dangerous_debug = false;
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
