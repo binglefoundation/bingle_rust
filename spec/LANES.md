@@ -49,7 +49,7 @@ security:
 - ~~Test for extended master secret support~~
 - ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
-- delegate admin tasks to not be creator
+- **delegate admin tasks to not be creator**
 - ~~implement permissioned relay only mode~~
 - ~~sign and check AdvertRecords~~
 - ~~root records in DDB need to be signed~~
@@ -84,7 +84,7 @@ robustness:
 - fix fragile tests
 + ~~retry on indexer lookups~~
 + ~~cache indexer lookups~~
-+ **refactor StunEndpointFinderImpl to be more testable**
++ ~~refactor StunEndpointFinderImpl to be more testable~~
 + remove need for placeholder to get an indexer
 - integration tests on bingle_jsi
 + Layer 1
