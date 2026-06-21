@@ -20,8 +20,8 @@ use crate::packet_transport::{
     PacketTransport,
 };
 use crate::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
-use crate::stun::endpoint_finder::StunEndpointFinder;
-use crate::stun::endpoint_finder_impl::StunEndpointFinderImpl;
+use crate::stun::stun_endpoint_finder::StunEndpointFinder;
+use crate::stun::stun_endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -2107,13 +2107,13 @@ impl Engine {
                 };
                 unsafe {
                     let eng = &mut *(Arc::as_ptr(&arc_self) as *mut Engine);
-                    if st == crate::stun::endpoint_finder::StunState::Consistent {
+                    if st == crate::stun::stun_endpoint_finder::StunState::Consistent {
                         eng.on_stun_consistent(ep);
-                    } else if st == crate::stun::endpoint_finder::StunState::Inconsistent {
+                    } else if st == crate::stun::stun_endpoint_finder::StunState::Inconsistent {
                         eng.on_stun_inconsistent();
-                    } else if st == crate::stun::endpoint_finder::StunState::Blocked {
+                    } else if st == crate::stun::stun_endpoint_finder::StunState::Blocked {
                         eng.on_stun_blocked();
-                    } else if st == crate::stun::endpoint_finder::StunState::None {
+                    } else if st == crate::stun::stun_endpoint_finder::StunState::None {
                         eng.on_stun_none();
                     }
                 }

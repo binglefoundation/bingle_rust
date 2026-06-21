@@ -34,7 +34,8 @@ pub fn dtls_send_via_relay_end_to_end() {
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    let mut mux_target = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 12000)).expect("bind target mux");
+    let target_port = test_util::find_unused_loopback_port();
+    let mut mux_target = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, target_port)).expect("bind target mux");
 
     // Server will record the first plaintext message it receives
     let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -83,7 +84,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     dtls_server.start(mux_target_arc.clone()).expect("start dtls server");
 
     // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun)
-    let relay_port = 13000; // test_util::find_unused_loopback_port();
+    let relay_port = test_util::find_unused_loopback_port();
     let relay_addr = addr(relay_port);
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
@@ -125,7 +126,8 @@ pub fn dtls_send_via_relay_end_to_end() {
     let server_key_pem2: Vec<u8> = certs2.server_key.clone();
     let ca_pem2: Vec<u8> = certs2.ca_crt.clone();
 
-    let mut mux_client = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 14000)).expect("bind target mux 2");
+    let client_port = test_util::find_unused_loopback_port();
+    let mut mux_client = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, client_port)).expect("bind target mux 2");
 
     // Add TURN handler to dtls_client for client mode (non-relay)
     let turn_client2 = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());

@@ -83,7 +83,7 @@ robustness:
 - fix fragile tests
 + ~~retry on indexer lookups~~
 + ~~cache indexer lookups~~
-+ **refactor StunEndpointFinderImpl to be more testable**
++ ~~refactor StunEndpointFinderImpl to be more testable~~
 + remove need for placeholder to get an indexer
 - integration tests on bingle_jsi
 + Layer 1
