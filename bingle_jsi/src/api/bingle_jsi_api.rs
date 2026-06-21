@@ -116,6 +116,9 @@ pub trait BingleJsiApi: Send + Sync {
     /// Queue a message to be sent by the background processor.
     fn queue_message(&self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleJsiError>;
 
+    /// Update the status of a message.
+    fn update_message_status(&self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleJsiError>;
+
     /// Check the status of the local keypair.
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError>;
 
@@ -146,6 +149,9 @@ pub trait BingleJsiApi: Send + Sync {
     /// Start the bingle engine, enabling messaging.
     /// Requires the keypair to be in state FUNDED (or ACTIVE).
     fn start(&self) -> Result<(), BingleJsiError>;
+
+    /// Stop the bingle engine.
+    fn stop(&self) -> Result<(), BingleJsiError>;
 
     /// Return whether the engine has been started.
     fn is_started(&self) -> bool;

@@ -177,6 +177,12 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn update_message_status(&self, _timestamp: i64, _progress: f32, _failure_reason: Option<String>) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "update_message_status".to_string(),
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),
@@ -210,6 +216,12 @@ impl BingleJsiApi for StubApi {
     fn start(&self) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "start".to_string(),
+        })
+    }
+
+    fn stop(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "stop".to_string(),
         })
     }
 

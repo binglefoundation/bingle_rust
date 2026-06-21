@@ -100,6 +100,10 @@ impl BingleLocalApi for DummyLocal {
         Ok(())
     }
 
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
+        Ok(self.messages.iter().filter(|m| m.progress < 1.0).cloned().collect())
+    }
+
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(self.messages.clone()) }
 
     fn save(&self, _path: &str) -> Result<(), BingleError> { Ok(()) }

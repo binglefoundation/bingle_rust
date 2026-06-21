@@ -1,6 +1,6 @@
 [package]
 name = "bingle_jsi"
-version = "0.0.1"
+version = "0.1.1"
 edition = "2024"
 description = "React Native JSI bridge for Bingle using uniffi proc macros."
 autotests = false
@@ -22,6 +22,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
+tempfile = "3"
 
 [build-dependencies]
 vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }

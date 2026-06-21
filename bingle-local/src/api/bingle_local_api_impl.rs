@@ -333,7 +333,6 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError> {
-        tracing::debug!("[BingleLocalApi] Updating message status for timestamp: {} to progress: {}", timestamp, progress);
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -350,6 +349,18 @@ impl BingleLocalApi for BingleApiLocalImpl {
         } else {
             Err(BingleError::Other(format!("Message with timestamp {} not found", timestamp)))
         }
+    }
+
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
+        let guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[get_pending_messages] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        Ok(guard.iter().filter(|m| m.progress < 1.0).cloned().collect())
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> {

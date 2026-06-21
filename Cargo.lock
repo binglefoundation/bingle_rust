@@ -482,12 +482,13 @@ dependencies = [
 
 [[package]]
 name = "bingle_jsi"
-version = "0.0.1"
+version = "0.1.1"
 dependencies = [
  "bingle-local",
  "chrono",
  "rust_comms",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",

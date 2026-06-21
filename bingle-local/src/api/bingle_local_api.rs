@@ -107,6 +107,9 @@ pub trait BingleLocalApi: Send + Sync {
     /// Update the status of a message.
     fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError>;
 
+    /// Get all messages that are pending (progress < 1.0).
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError>;
+
     /// Get the list of stored messages.
     fn get_messages(&self) -> Result<Vec<Message>, BingleError>;
 
