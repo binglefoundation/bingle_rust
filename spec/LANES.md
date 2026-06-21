@@ -50,7 +50,7 @@ security:
 - ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
 - delegate admin tasks to not be creator
-- **implement permissioned relay only mode**
+- ~~implement permissioned relay only mode~~
 - ~~sign and check AdvertRecords~~
 - ~~root records in DDB need to be signed~~
 - ~~validate rippled messages are from relays~~
