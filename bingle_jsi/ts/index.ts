@@ -120,8 +120,12 @@ export const BingleJsi = BingleJsiNative as {
       timestamp: number;
       text: string;
       cipher_suite: string | null;
+      progress?: number;
+      failure_reason?: string | null;
     }[]
   >;
+  queueMessage(recipientHandles: string[], text: string): Promise<void>;
+  updateMessageStatus(timestamp: number, progress: number, failureReason: string | null): Promise<void>;
   keypairStatus(): Promise<{
     status: string;
     id: string | null;
