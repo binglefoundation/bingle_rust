@@ -278,7 +278,7 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     @objc
-    func addMessage(_ senderHandle: String, recipientHandles: [String], timestamp: Double, text: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+    func addMessage(_ senderHandle: String, recipientHandles: [String], timestamp: Double, text: String, cipherSuite: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
             return
@@ -290,7 +290,7 @@ class BingleJsiBridge: RCTEventEmitter {
                     recipientHandles: recipientHandles,
                     timestamp: Int64(timestamp),
                     text: text,
-                    cipherSuite: nil
+                    cipherSuite: cipherSuite
                 )
                 resolve(nil)
             } catch {
@@ -315,8 +315,42 @@ class BingleJsiBridge: RCTEventEmitter {
                         "timestamp": $0.timestamp,
                         "text": $0.text,
                         "cipher_suite": $0.cipherSuite as Any,
+                        "progress": $0.progress,
+                        "failure_reason": $0.failureReason as Any,
                     ] as [String: Any]
                 })
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func queueMessage(_ recipientHandles: [String], text: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.queueMessage(recipientHandles: recipientHandles, text: text)
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func updateMessageStatus(_ timestamp: Double, progress: Double, failureReason: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.updateMessageStatus(timestamp: Int64(timestamp), progress: Float(progress), failureReason: failureReason)
+                resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
@@ -385,6 +419,22 @@ class BingleJsiBridge: RCTEventEmitter {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try api.start()
+                resolve(nil)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func stop(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            resolve(nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try api.stop()
                 resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)

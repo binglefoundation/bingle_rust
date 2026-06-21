@@ -290,7 +290,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun addMessage(senderHandle: String, recipientHandles: ReadableArray, timestamp: Double, text: String, promise: Promise) {
+    fun addMessage(senderHandle: String, recipientHandles: ReadableArray, timestamp: Double, text: String, cipherSuite: String?, promise: Promise) {
         val api = apiInstance
         if (api == null) {
             promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
@@ -302,7 +302,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 for (i in 0 until recipientHandles.size()) {
                     handles.add(recipientHandles.getString(i))
                 }
-                api.addMessage(senderHandle, handles, timestamp.toLong(), text)
+                api.addMessage(senderHandle, handles, timestamp.toLong(), text, cipherSuite)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
@@ -329,9 +329,50 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     map.putArray("recipient_handles", handles)
                     map.putDouble("timestamp", m.timestamp.toDouble())
                     map.putString("text", m.text)
+                    if (m.cipherSuite != null) map.putString("cipher_suite", m.cipherSuite) else map.putNull("cipher_suite")
+                    map.putDouble("progress", m.progress.toDouble())
+                    if (m.failureReason != null) map.putString("failure_reason", m.failureReason) else map.putNull("failure_reason")
                     arr.pushMap(map)
                 }
                 promise.resolve(arr)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun queueMessage(recipientHandles: ReadableArray, text: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val handles = mutableListOf<String>()
+                for (i in 0 until recipientHandles.size()) {
+                    handles.add(recipientHandles.getString(i))
+                }
+                api.queueMessage(handles, text)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun updateMessageStatus(timestamp: Double, progress: Double, failureReason: String?, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                api.updateMessageStatus(timestamp.toLong(), progress.toFloat(), failureReason)
+                promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
             }
@@ -404,6 +445,23 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 api.start()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun stop(promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.resolve(null)
+            return
+        }
+        Thread {
+            try {
+                api.stop()
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)

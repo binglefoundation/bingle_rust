@@ -59,6 +59,10 @@ export interface Message {
   /** The cipher suite negotiated for the DTLS session on which this message was received.
    * Derived by the receiving client from the connection; not transmitted on the wire. */
   cipher_suite: string | null;
+  /** Delivery progress (0.0 to 1.0) */
+  progress: number;
+  /** Human-readable reason for the last failure, if any. */
+  failure_reason: string | null;
 }
 
 export interface KeypairStatusResponse {
@@ -159,9 +163,16 @@ export interface BingleJsiApi {
     senderHandle: string,
     recipientHandles: string[],
     timestamp: number,
-    text: string
+    text: string,
+    cipher_suite: string | null
   ): void;
   getMessages(): Message[];
+  queueMessage(recipientHandles: string[], text: string): void;
+  updateMessageStatus(
+    timestamp: number,
+    progress: number,
+    failureReason: string | null
+  ): void;
   keypairStatus(): KeypairStatusResponse;
   save(path: string): void;
   load(path: string): void;
@@ -178,5 +189,6 @@ export interface BingleJsiApi {
 
   // Engine lifecycle
   start(): void;
+  stop(): void;
   isStarted(): boolean;
 }
