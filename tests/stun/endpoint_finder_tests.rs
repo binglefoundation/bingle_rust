@@ -39,7 +39,7 @@ pub fn single_response_triggers_single_and_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
-    finder.start(vec![s1, s2], 100, 200);
+    finder.init(vec![s1, s2], 100, 200);
 
     let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
@@ -67,7 +67,7 @@ pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
-    finder.start(vec![s1, s2], 50, 50);
+    finder.init(vec![s1, s2], 50, 50);
 
     let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
@@ -94,7 +94,7 @@ pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callbac
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
     let s3: SocketAddr = "9.9.9.9:3478".parse().unwrap();
-    finder.start(vec![s1, s2, s3], 500, 1000);
+    finder.init(vec![s1, s2, s3], 500, 1000);
 
     let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
@@ -136,8 +136,7 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
         calls_clone.lock().unwrap().push((host.to_string(), port));
     })));
 
-    finder.start(vec![s1, s2], search_ms, repeat_ms);
-    finder.stop(); // Stop background thread for manual ticking
+    finder.init(vec![s1, s2], search_ms, repeat_ms);
 
     // Tick 1: Initial search poll happens because last_poll_tick is None
     finder.tick_for_test();
@@ -218,8 +217,7 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
 
     // Use a tick-based approach for determinism.
     // search_interval_ms = 100 ms (1 tick)
-    finder.start(vec![s1, s2], 100, 60_000);
-    finder.stop(); // Stop the background thread immediately so we can tick manually.
+    finder.init(vec![s1, s2], 100, 60_000);
 
     // Tick the finder manually. 3 intervals × 1 tick/interval = 3 ticks.
     finder.test_ticks(10);
@@ -269,8 +267,7 @@ pub fn server_responds_once_then_stops_keeps_polling() {
     })));
 
     // search=100ms: reach Blocked quickly (3 × 1 tick = 3 ticks after s1 stops responding).
-    finder.start(vec![s1, s2], 100, 10_000);
-    finder.stop();
+    finder.init(vec![s1, s2], 100, 10_000);
 
     // s1 responds once then goes silent; s2 never responds.
     let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
@@ -327,8 +324,7 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
     })));
 
     // Use a long repeat interval (1s = 10 ticks) so the poll loop does not re-poll too fast.
-    finder.start(vec![s1, s2], 1000, 1000);
-    finder.stop();
+    finder.init(vec![s1, s2], 1000, 1000);
 
     // Inject two consistent responses so the finder reaches Consistent state.
     let r1 = make_xor_mapped_response([203, 0, 113, 9], 55000);
@@ -383,8 +379,7 @@ pub fn state_transitions_consistent_and_inconsistent() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
-    finder.start(vec![s1, s2], 50, 50);
-    finder.stop();
+    finder.init(vec![s1, s2], 50, 50);
 
     let changes = Arc::new(Mutex::new(Vec::<(StunState, Option<SocketAddr>)>::new()));
     let changes_clone = changes.clone();
@@ -421,8 +416,7 @@ pub fn error_after_three_intervals_with_less_than_two_responders() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
-    finder.start(vec![s1, s2], 100, 100);
-    finder.stop();
+    finder.init(vec![s1, s2], 100, 100);
     let hits = Arc::new(AtomicUsize::new(0));
     let hits_clone = hits.clone();
     finder.set_error_handler(Some(Arc::new(move |msg| {
@@ -449,8 +443,7 @@ pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     let mut finder = StunEndpointFinderImpl::new();
     let s1: SocketAddr = "1.1.1.1:3478".parse().unwrap();
     let s2: SocketAddr = "8.8.8.8:3478".parse().unwrap();
-    finder.start(vec![s1, s2], 50, 50);
-    finder.stop();
+    finder.init(vec![s1, s2], 50, 50);
 
     let seen: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> = Arc::new(Mutex::new(Vec::new()));
     let seen_clone = Arc::clone(&seen);
@@ -490,8 +483,7 @@ pub fn consistent_endpoint_change_fires_callback() {
     })));
 
     // Short repeat so we can tick to a second round within the test
-    finder.start(vec![s1, s2], 100, 100);
-    finder.stop();
+    finder.init(vec![s1, s2], 100, 100);
 
     let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -577,8 +569,7 @@ pub fn consistent_servers_not_removed_when_no_repeat_response() {
         *m.entry(key).or_insert(0) += 1;
     })));
 
-    finder.start(vec![s1, s2], 100, 100);
-    finder.stop();
+    finder.init(vec![s1, s2], 100, 100);
 
     finder.tick_for_test();
 

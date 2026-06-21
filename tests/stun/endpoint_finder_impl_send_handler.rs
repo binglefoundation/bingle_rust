@@ -22,8 +22,7 @@ pub fn impl_uses_send_packet_handler_instead_of_udp() {
     })));
 
     // Start the finder
-    finder.start(vec![s1, s2], 100, 500);
-    finder.stop(); // Stop background thread for manual ticking
+    finder.init(vec![s1, s2], 100, 500);
 
     // Tick manually to trigger a poll
     finder.tick_for_test();

@@ -18,8 +18,7 @@ pub fn test_stun_blocked_detection() {
     })));
 
     // search_interval_ms = 100 ms (1 tick)
-    finder.start(vec![a1, a2], 100, 1000);
-    finder.stop(); // Stop background thread for manual ticking
+    finder.init(vec![a1, a2], 100, 1000);
 
     // Tick 1: first poll (intervals_without_two becomes 1)
     finder.tick_for_test();

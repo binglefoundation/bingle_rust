@@ -341,27 +341,30 @@ impl StunEndpointFinderImpl {
 }
 
 impl StunEndpointFinder for StunEndpointFinderImpl {
+    fn init(&mut self, servers: Vec<SocketAddr>, search_time_ms: u64, repeat_time_ms: u64) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.servers = servers.into_iter().map(ServerStatus::new).collect();
+        inner.search_ticks = (search_time_ms / TICK_MS).max(1);
+        inner.repeat_ticks = (repeat_time_ms / TICK_MS).max(1);
+        inner.state = StunState::None;
+        inner.endpoint = None;
+        inner.intervals_without_two = 0;
+        inner.error_reported = false;
+        inner.last_response_tick = None;
+        inner.last_request_tick = None;
+        inner.current_tick = 0;
+        inner.last_poll_tick = None;
+        if let Some(t) = self.no_response_timeout_override {
+            inner.no_response_ticks = (t.as_millis() as u64 / TICK_MS).max(1);
+        } else {
+            inner.no_response_ticks = 30000 / TICK_MS;
+        }
+    }
+
     fn start(&mut self, servers: Vec<SocketAddr>, search_time_ms: u64, repeat_time_ms: u64) {
         // Initialize internal state
-        {
-            let mut inner = self.inner.lock().unwrap();
-            inner.servers = servers.into_iter().map(ServerStatus::new).collect();
-            inner.search_ticks = (search_time_ms / TICK_MS).max(1);
-            inner.repeat_ticks = (repeat_time_ms / TICK_MS).max(1);
-            inner.state = StunState::None;
-            inner.endpoint = None;
-            inner.intervals_without_two = 0;
-            inner.error_reported = false;
-            inner.last_response_tick = None;
-            inner.last_request_tick = None;
-            inner.current_tick = 0;
-            inner.last_poll_tick = None;
-            if let Some(t) = self.no_response_timeout_override {
-                inner.no_response_ticks = (t.as_millis() as u64 / TICK_MS).max(1);
-            } else {
-                inner.no_response_ticks = 30000 / TICK_MS;
-            }
-        }
+        self.init(servers, search_time_ms, repeat_time_ms);
+
         // Start background thread if not already running
         if self.running.swap(true, Ordering::SeqCst) { return; }
         let running = self.running.clone();
