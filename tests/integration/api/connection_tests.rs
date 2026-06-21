@@ -13,7 +13,7 @@ use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
 use serial_test::serial;
 // Re-use helpers from send_message_to_id_integration
-use crate::integration_tests::relay_updater_localnet::test_util::start_root_relay;
+use super::relay_updater_localnet::test_util::start_root_relay;
 use crate::setup_localnet;
 use crate::util::test_util;
 use crate::util::test_util::register_client_on_blockchain;

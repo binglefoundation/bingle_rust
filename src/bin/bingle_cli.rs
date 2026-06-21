@@ -493,9 +493,6 @@ fn cmd_checkrelays(mut args: Vec<String>) {
                     Err(e) => { warn!("{}", e); std::process::exit(2); }
                 }
             }
-            "--dangerous-debug" => {
-                dangerous_debug = true;
-            }
             s if s.starts_with('-') => {
                 warn!("Unknown option: {}", s);
                 std::process::exit(2);

@@ -103,9 +103,6 @@ where
                 // Accept a --debug flag. The binary may use this to enable verbose output.
                 // Intentionally no-op here to keep StartOptions stable for existing tests.
             }
-            "--dangerous-debug" => {
-                dangerous_debug = true;
-            }
             s if s.starts_with('-') => {
                 return Err(format!("Unknown option: {}", s));
             }
