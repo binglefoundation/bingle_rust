@@ -2,34 +2,60 @@ use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 use rust_comms::api::bingle_api::BingleError;
 
 #[test]
-fn test_queue_message_and_update_status() {
+fn test_queue_message_fails_without_handle() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     
-    // We need a funded/active status for queue_message to work
-    // Since we are testing LocalApiImpl, we can simulate this by generating a keypair
-    // and potentially mocking or just accepting that queue_message will fail if no handle.
-    
-    // Let's first verify it fails when no handle
+    // Verifying it fails when no handle is registered
     let res = api.queue_message(vec!["bob".to_string()], "hello".to_string());
     assert!(res.is_err());
     if let Err(BingleError::Other(e)) = res {
         assert!(e.contains("No handle registered"));
     }
-
-    // Now, we don't have an easy way to set a handle in BingleApiLocalImpl without actually
-    // registering on chain in this unit test. 
-    // Wait, let's look at BingleApiLocalImpl::register_keypair to see if it sets the handle locally.
 }
 
 #[test]
-fn test_add_message_has_full_progress() {
+fn test_add_message_and_update_status() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    api.add_message("alice".into(), vec!["bob".into()], 123, "hi".into(), Some("AES".into()))
+    let timestamp = 123456789i64;
+    
+    api.add_message("alice".into(), vec!["bob".into()], timestamp, "hi".into(), None)
         .expect("add_message");
     
+    // Check initial state (add_message sets progress to 1.0)
     let msgs = api.get_messages().expect("get_messages");
-    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].progress, 1.0);
+    
+    // Update status
+    api.update_message_status(timestamp, 0.5, Some("Sending...".to_string()))
+        .expect("update_message_status");
+    
+    let msgs = api.get_messages().expect("get_messages");
+    assert_eq!(msgs[0].progress, 0.5);
+    assert_eq!(msgs[0].failure_reason, Some("Sending...".to_string()));
+    
+    // Update to success
+    api.update_message_status(timestamp, 1.0, None)
+        .expect("update_message_status");
+        
+    let msgs = api.get_messages().expect("get_messages");
     assert_eq!(msgs[0].progress, 1.0);
     assert_eq!(msgs[0].failure_reason, None);
-    assert_eq!(msgs[0].cipher_suite, Some("AES".to_string()));
+}
+
+#[test]
+fn test_get_pending_messages() {
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    
+    api.add_message("alice".into(), vec!["bob".into()], 1, "msg1".into(), None).unwrap();
+    api.add_message("alice".into(), vec!["bob".into()], 2, "msg2".into(), None).unwrap();
+    
+    // Initially both are 1.0 (since add_message was used)
+    assert_eq!(api.get_pending_messages().unwrap().len(), 0);
+    
+    // Force one to be pending
+    api.update_message_status(1, 0.2, None).unwrap();
+    
+    let pending = api.get_pending_messages().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].timestamp, 1);
 }

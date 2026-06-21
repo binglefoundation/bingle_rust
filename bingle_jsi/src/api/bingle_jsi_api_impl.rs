@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 
 use serde_json::Value as JsonValue;
 
-use rust_comms::api::bingle_api::{BingleApi, BingleError, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::network_endpoint::NetworkEndpoint;
 use rust_comms::blockchain::error::AlgoErrorKind;
@@ -25,7 +25,7 @@ use crate::api::bingle_jsi_api::BingleJsiApi;
 
 /// Concrete implementation of BingleJsiApi backed by BingleApiImpl and BingleApiLocalImpl.
 pub struct BingleJsiApiImpl {
-    api: Arc<BingleApiImpl>,
+    api: Arc<dyn BingleApiBoth>,
     messages: Arc<Mutex<Vec<JsonValue>>>,
     local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: Option<PathBuf>,
@@ -457,7 +457,7 @@ impl BingleJsiApiImpl {
     }
 
     fn run_processing_loop(
-        api: Arc<BingleApiImpl>,
+        api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
         listening: Arc<AtomicBool>,
         started: Arc<Mutex<bool>>,
@@ -552,8 +552,42 @@ impl BingleJsiApiImpl {
         tracing::info!("[BingleJsiApiImpl] Background processing loop stopped");
     }
 
-    pub fn api_for_tests(&self) -> Arc<BingleApiImpl> {
+    pub fn api_for_tests(&self) -> Arc<dyn BingleApiBoth> {
         self.api.clone()
+    }
+
+    pub fn init_for_tests(
+        api: Arc<dyn BingleApiBoth>,
+        local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+    ) -> Arc<Self> {
+        let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
+        let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let listening = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(Mutex::new(false));
+        let mut opts_obj = StartOptions::new("test".to_string());
+        opts_obj.dangerous_debug = true;
+        let opts = Arc::new(Mutex::new(opts_obj));
+
+        let listening_atomic = listening.clone();
+        api.access_unsafe_for_tests(|api_mut| {
+             api_mut.set_on_listening(Some(Arc::new(move |listening_val, _nat| {
+                 listening_atomic.store(listening_val, Ordering::SeqCst);
+             })));
+        });
+
+        Arc::new(Self {
+            api,
+            messages,
+            local_api,
+            local_file: None,
+            nat_type,
+            message_callback: Arc::new(Mutex::new(None)),
+            listening_callback: Arc::new(Mutex::new(None)),
+            listening,
+            processing_thread: Arc::new(Mutex::new(None)),
+            started,
+            opts,
+        })
     }
 
     pub fn set_local_api_for_tests(&self, _local_api: Arc<Mutex<Box<dyn BingleLocalApi>>>) {

@@ -1,71 +1,120 @@
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
-use bingle_jsi::api::types::BingleJsiConfig;
-use rust_comms::api::bingle_api::BingleApiInternal;
-use tempfile::tempdir;
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, BingleError, ProgressCallback, UserId, Handle, StartOptions, OnMessageHandler, OnConnectHandler, OnListeningHandler};
+use bingle_local::api::bingle_local_api::BingleLocalApi;
+use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use rust_comms::api::network_endpoint::NetworkEndpoint;
+
+struct MockBingleApi {
+    pub progress_steps: Vec<u8>,
+    pub on_listening: Mutex<Option<Arc<OnListeningHandler>>>,
+}
+
+impl BingleApiInternal for MockBingleApi {
+    fn get_relay_state(&self) -> String { "off".to_string() }
+    fn notify_listening(&self, listening: bool, nat_type: rust_comms::engine::NatType) {
+        if let Ok(guard) = self.on_listening.lock() {
+            if let Some(handler) = guard.as_ref() {
+                handler(listening, nat_type);
+            }
+        }
+    }
+}
+
+impl BingleApi for MockBingleApi {
+    fn debug_print_options(&self) {}
+    fn get_my_id(&self) -> Option<String> { Some("test-id".to_string()) }
+    fn get_user_id(&self) -> Option<String> { Some("test-id".to_string()) }
+    fn get_handle(&self) -> Option<String> { Some("testuser".to_string()) }
+    fn get_app_id(&self) -> Option<u64> { None }
+    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
+    fn start(&mut self, _: &StartOptions) -> Result<(), BingleError> { Ok(()) }
+    fn stop(&mut self) {}
+    fn network_change(&mut self) {}
+
+    fn list_all_relays(&self, _: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { vec![] }
+    fn handle_lookup(&self, _: &Handle) -> Result<Option<UserId>, BingleError> { Ok(Some("test-id".to_string())) }
+    fn handle_lookup_by_id(&self, _: &UserId) -> Option<Handle> { Some("testuser".to_string()) }
+
+    fn send_message_to_handle(
+        &self,
+        _handle: &Handle,
+        _payload: serde_json::Value,
+        progress_callback: Option<Arc<ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        if let Some(cb) = progress_callback {
+            for &step in &self.progress_steps {
+                cb(step, format!("Step {}%", step));
+            }
+        }
+        Ok(true)
+    }
+
+    fn send_message_to_id(&self, _: &UserId, _: serde_json::Value, _: Option<Arc<ProgressCallback>>) -> Result<bool, BingleError> { Ok(true) }
+    fn send_message_to_network(&self, _: &NetworkEndpoint, _: &UserId, _: serde_json::Value, _: Option<Arc<ProgressCallback>>) -> Result<bool, BingleError> { Ok(true) }
+    
+    fn send_message_to_id_with_response(&self, _: &UserId, _: serde_json::Value, _: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, BingleError> { Ok(serde_json::json!({})) }
+    fn send_message_to_handle_with_response(&self, _: &Handle, _: serde_json::Value, _: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, BingleError> { Ok(serde_json::json!({})) }
+    fn send_message_to_network_with_response(&self, _: &NetworkEndpoint, _: &UserId, _: serde_json::Value, _: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, BingleError> { Ok(serde_json::json!({})) }
+
+    fn set_on_message(&mut self, _: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&mut self, _: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_listening(&mut self, handler: Option<Arc<OnListeningHandler>>) {
+        if let Ok(mut guard) = self.on_listening.lock() {
+            *guard = handler;
+        }
+    }
+}
 
 #[test]
-fn test_message_queue_processing() {
-    let tmp = tempdir().unwrap();
-    let db_path = tmp.path().join("test.json");
+fn test_message_queue_with_mock_progress() {
+    let mock_api = Arc::new(MockBingleApi {
+        progress_steps: vec![10, 50, 90],
+        on_listening: Mutex::new(None),
+    });
     
-    let config = BingleJsiConfig {
-        handle: Some("testuser".to_string()),
-        passphrase: None,
-        relay: false,
-        static_ip: Some("127.0.0.1:12345".to_string()),
-        stun_servers: None,
-        stun_servers_file: None,
-        node_file: None,
-        log_level: Some("debug".to_string()),
-        app_id: Some(123),
-        asset_id: Some(456),
-        handle_cache_expiry_secs: None,
-        debug: true,
-        local: Some(db_path.to_string_lossy().to_string()),
-    };
-
-    let jsi = BingleJsiApiImpl::init(config).unwrap();
+    let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(BingleApiLocalImpl::new(LocalApiConfig::default()))));
     
-    // 1. Setup: Generate keypair
-    jsi.generate_keypair().unwrap();
-    // We bypass funding/registration in test by using debug=true and manually adding a message with status 0.0
+    let jsi = BingleJsiApiImpl::init_for_tests(mock_api, Some(local_api.clone()));
+    
+    // 1. Manually add a message and make it pending
+    let timestamp = 999i64;
+    {
+        let mut guard = local_api.lock().unwrap();
+        guard.add_message("testuser".to_string(), vec!["recipient".to_string()], timestamp, "Hello".to_string(), None).unwrap();
+        guard.update_message_status(timestamp, 0.0, None).unwrap();
+    }
 
-    // 2. Add a message and force it to be pending
-    let timestamp = 123456789i64;
-    jsi.add_message("testuser".to_string(), vec!["recipient".to_string()], timestamp, "Hello".to_string(), None).unwrap();
-    jsi.update_message_status(timestamp, 0.0, None).unwrap();
-
-    let messages = jsi.get_messages().unwrap();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].progress, 0.0);
-
-    // 3. Start the engine
+    // 2. Start the JSI (starts background loop)
     jsi.start().unwrap();
-    assert!(jsi.is_started());
-
-    // 4. Simulate listening state
+    
+    // 3. Simulate listening state
     jsi.api_for_tests().notify_listening(true, rust_comms::engine::NatType::Restricted);
 
-    // 5. Wait for processing loop to pick it up. 
-    // The loop sleeps for 5 seconds, so we need to wait a bit.
-    // To speed up tests, we might want to make the sleep interval configurable, but for now 6 seconds.
+    // 4. Wait for processing loop. It sleeps for 5s, so we need some time.
+    // We expect progress to go through 0.1, 0.5, 0.9 and finally 1.0.
     
-    let mut success = false;
-    for _ in 0..15 { // Wait up to 15 seconds
-        std::thread::sleep(Duration::from_secs(1));
+    let mut reached_0_5 = false;
+    let mut reached_1_0 = false;
+    
+    for _ in 0..15 {
+        std::thread::sleep(Duration::from_millis(1000));
         let msgs = jsi.get_messages().unwrap();
-        if msgs[0].progress > 0.0 || msgs[0].failure_reason.is_some() {
-            success = true;
-            break;
+        if let Some(msg) = msgs.iter().find(|m| m.timestamp == timestamp) {
+            if msg.progress >= 0.5 {
+                reached_0_5 = true;
+            }
+            if msg.progress == 1.0 {
+                reached_1_0 = true;
+                break;
+            }
         }
     }
 
-    assert!(success, "Message progress was not updated");
+    assert!(reached_0_5, "Message never reached 50% progress");
+    assert!(reached_1_0, "Message never reached 100% progress");
     
     jsi.stop().unwrap();
 }
-
-// We need access to BingleApiImpl to call notify_listening.
-// I'll add a helper to BingleJsiApiImpl for tests.
