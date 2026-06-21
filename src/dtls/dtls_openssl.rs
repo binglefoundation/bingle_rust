@@ -2003,14 +2003,14 @@ pub mod openssl_impl {
 
         fn set_dangerous_debug(&mut self, enabled: bool) {
             if enabled {
-                tracing::error!("[DtlsOpenSsl] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
+                tracing::error!("[DtlsOpenSsl][set_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
             }
             self.dangerous_debug = enabled;
         }
 
         fn with_dangerous_debug(mut self, enabled: bool) -> Self {
             if enabled {
-                tracing::error!("[DtlsOpenSsl] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
+                tracing::error!("[DtlsOpenSsl][with_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
             }
             self.dangerous_debug = enabled;
             self

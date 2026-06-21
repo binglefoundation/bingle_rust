@@ -62,3 +62,6 @@ pub mod self_relay_detection;
 
 #[path = "ripple_message_unit.rs"]
 pub mod ripple_message_unit;
+
+#[path = "dangerous_debug_check.rs"]
+pub mod dangerous_debug_check;

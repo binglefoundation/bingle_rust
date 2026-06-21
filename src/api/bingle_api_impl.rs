@@ -107,8 +107,15 @@ pub struct BingleApiImpl {
 }
 
 impl BingleApiImpl {
+    fn check_dangerous_debug(options: &StartOptions) {
+        if options.dangerous_debug && !cfg!(debug_assertions) {
+            panic!("dangerous_debug is only allowed in debug builds");
+        }
+    }
+
     pub fn new(options: &StartOptions) -> Arc<Self> {
         tracing::info!("[BingleApiImpl::new][enter]");
+        Self::check_dangerous_debug(options);
         let initial_options = options.clone();
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
@@ -153,6 +160,7 @@ impl BingleApiImpl {
     /// Test-oriented constructor to inject custom DTLS and options.
     pub fn new_with_dtls_and_options(dtls: Box<dyn Dtls + Send + Sync>, options: StartOptions) -> Arc<Self> {
         tracing::info!("[BingleApiImpl::new_with_dtls_and_options][enter] dtls_provided=true am_relay={}", options.am_relay);
+        Self::check_dangerous_debug(&options);
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
@@ -389,6 +397,8 @@ impl BingleApi for BingleApiImpl {
         let span = tracing::info_span!("BingleApi", handle = %options.handle);
         self.span = span.clone();
         let _guard = span.enter();
+
+        Self::check_dangerous_debug(options);
 
         // Algorand node connectivity check (fail-fast per requirement)
         if let Some(config) = &options.algo_provider_config {
