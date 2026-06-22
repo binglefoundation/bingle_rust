@@ -12,7 +12,7 @@ use algonaut::{
     core::{Address, AppId, AssetId, MicroAlgos, ToMsgPack},
     transaction::{
         account::Account,
-        builder::CallApplication,
+        builder::{CallApplication, ClawbackAsset, UpdateAsset},
         transaction::Transaction,
         TransferAsset, Pay,
     },
@@ -955,17 +955,186 @@ impl AlgoBingle {
     /// app was already opted in, returns Ok("") without making a call.
     /// TODO: make this generic as called from deploy
     pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64) -> Result<String> {
+        tracing::info!("opt_in_app_to_asset: app_id={}", app_id);
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         // If the app address already holds the asset, nothing to do
         let app_addr_str = self.ops.contract_address(app_id)?;
         if self.ops.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
         // Call the admin method on the contract; this must be signed by the creator
-        let (_tx_id, _logs) = self
+        let (tx_id, _logs) = self
             .ops
             .call_app(app_id, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
         // Return tx id to signal a call occurred; fetch from tuple index 0
-        Ok(_tx_id)
+        Ok(tx_id)
+    }
+
+    /// Deploy or reuse the BingleDapp smart contract and Bingle$ ASA, wiring them together.
+    ///
+    /// `app_path` is a directory containing `*.approval.teal` and `*.clear.teal` files; used
+    /// when a new application must be created.
+    ///
+    /// Resolution order for each resource:
+    /// - `new_app = true`          → always deploy a fresh application from TEAL
+    /// - `app_id = Some(id)`       → use the provided existing app id
+    /// - `self.app_id > 0`         → fall back to the app id baked into this AlgoBingle instance
+    /// - otherwise                 → deploy a fresh application from TEAL
+    ///
+    /// Same logic applies to the asset (`new_asset`, `asset_id`, `self.asset_id`).
+    ///
+    /// When a new app is deployed alongside an existing asset, any ASA balance held by the
+    /// *old* app account (i.e. `self.app_id`) is clawbacked to the new app account.
+    ///
+    /// Returns `(effective_app_id, effective_asset_id)`.
+    pub fn deploy_app_and_asset(
+        &self,
+        app_path: &std::path::Path,
+        new_app: bool,
+        new_asset: bool,
+        app_id: Option<u64>,
+        asset_id: Option<u64>,
+        asset_name: &str,
+        total_units: u64,
+    ) -> Result<(u64, u64)> {
+        // ── 1. Resolve effective app ──────────────────────────────────────────────
+        let need_new_app = new_app || (app_id.is_none() && self.app_id == 0);
+        let effective_app_id = if need_new_app {
+            let (approval_src, clear_src) = Self::read_teal_from_dir(app_path)?;
+            let approval = self.ops.compile_teal(&approval_src)?;
+            let clear    = self.ops.compile_teal(&clear_src)?;
+            let id = self.ops.deploy_app(&approval, &clear, None)?
+                .ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
+            // Default price of 1 so registration/buy flows work immediately.
+            self.ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
+            tracing::info!("[deploy_app_and_asset] deployed new app_id={}", id);
+            id
+        } else {
+            let id = app_id.unwrap_or(self.app_id);
+            tracing::info!("[deploy_app_and_asset] using existing app_id={}", id);
+            id
+        };
+
+        // ── 2. Resolve effective asset ────────────────────────────────────────────
+        let need_new_asset = new_asset || (asset_id.is_none() && self.asset_id == 0);
+        let effective_asset_id = if need_new_asset {
+            let id = self.ops.create_asset_with_reserve_app(asset_name, total_units, effective_app_id)?
+                .ok_or_else(|| anyhow!("create_asset_with_reserve_app returned no asset_id"))?;
+            tracing::info!("[deploy_app_and_asset] created new asset_id={}", id);
+            id
+        } else {
+            let id = asset_id.unwrap_or(self.asset_id);
+            // Reconfigure clawback/reserve to point at the (possibly new) app.
+            self.ops.set_asset_clawback_to_app(effective_app_id, id)?;
+            tracing::info!("[deploy_app_and_asset] using existing asset_id={} reconfigured to app_id={}", id, effective_app_id);
+            id
+        };
+
+        // ── 3. Opt new app into the ASA ───────────────────────────────────────────
+        self.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
+
+        // ── 4. Transfer old-app balance to new app (only when app changed, asset same) ──
+        if need_new_app && !need_new_asset && self.app_id > 0 && self.app_id != effective_app_id {
+            self.transfer_old_app_asset_balance(self.app_id, effective_app_id, effective_asset_id)?;
+        }
+
+        Ok((effective_app_id, effective_asset_id))
+    }
+
+    /// Read `*.approval.teal` and `*.clear.teal` from `dir`, returning their contents.
+    fn read_teal_from_dir(dir: &std::path::Path) -> Result<(String, String)> {
+        let entries: Vec<std::fs::DirEntry> = std::fs::read_dir(dir)
+            .map_err(|e| anyhow!("cannot read app_path {:?}: {e}", dir))?
+            .filter_map(|e| e.ok())
+            .collect();
+
+        let approval_path = entries.iter()
+            .find(|e| e.file_name().to_string_lossy().ends_with(".approval.teal"))
+            .map(|e| e.path())
+            .ok_or_else(|| anyhow!("no *.approval.teal found in {:?}", dir))?;
+
+        let clear_path = entries.iter()
+            .find(|e| e.file_name().to_string_lossy().ends_with(".clear.teal"))
+            .map(|e| e.path())
+            .ok_or_else(|| anyhow!("no *.clear.teal found in {:?}", dir))?;
+
+        let approval_src = std::fs::read_to_string(&approval_path)
+            .map_err(|e| anyhow!("failed to read {:?}: {e}", approval_path))?;
+        let clear_src = std::fs::read_to_string(&clear_path)
+            .map_err(|e| anyhow!("failed to read {:?}: {e}", clear_path))?;
+
+        Ok((approval_src, clear_src))
+    }
+
+    /// Clawback any ASA balance held by `old_app_id` to `new_app_id`.
+    ///
+    /// Steps:
+    /// 1. Temporarily set the ASA clawback to the creator (so it can initiate the transfer).
+    /// 2. Issue a `ClawbackAsset` from old-app address to new-app address.
+    /// 3. Restore clawback + reserve to the new app address via `set_asset_clawback_to_app`.
+    fn transfer_old_app_asset_balance(
+        &self,
+        old_app_id: u64,
+        new_app_id: u64,
+        asset_id: u64,
+    ) -> Result<()> {
+        let old_app_addr_str = self.ops.contract_address(old_app_id)?;
+        let balance = self.ops.asset_holding(&old_app_addr_str, asset_id)?;
+        if balance == 0 {
+            tracing::info!("[deploy_app_and_asset] old app {} has zero balance of asset {}, skipping transfer", old_app_id, asset_id);
+            return Ok(());
+        }
+        tracing::info!("[deploy_app_and_asset] clawbacking {} units of asset {} from old app {} to new app {}", balance, asset_id, old_app_id, new_app_id);
+
+        let (account, caller) = self.sender_account()?;
+        let old_app_addr = self.app_address(old_app_id)?;
+        let new_app_addr = self.app_address(new_app_id)?;
+        let client = self.ops.algod_client()?;
+
+        // Fetch current reserve so we don't accidentally clear it in the AssetConfig step.
+        let asset_info = self.ops.algod_call(|| client.asset(AssetId(asset_id)))
+            .map_err(|e| anyhow!("fetch asset info for balance transfer: {e}"))?;
+        let v = serde_json::to_value(&asset_info)
+            .map_err(|e| anyhow!("serialize asset info: {e}"))?;
+        let reserve_str = v.get("params")
+            .and_then(|p| p.get("reserve").and_then(|x| x.as_str()))
+            .unwrap_or(&old_app_addr_str);
+        let reserve_addr = Address::from_str(reserve_str)
+            .map_err(|e| anyhow!("parse reserve address: {e}"))?;
+
+        // Step 1: set clawback to creator temporarily.
+        let params = self.params(&client)?;
+        let tx_cfg = UpdateAsset::new(caller, AssetId(asset_id))
+            .manager(caller)
+            .reserve(reserve_addr)
+            .clawback(caller)
+            .note(AlgoOps::unique_note())
+            .build(&params)
+            .map_err(|e| anyhow!("build AssetConfig (set clawback to creator): {e}"))?;
+        let signed_cfg = account.sign(tx_cfg)
+            .map_err(|e| anyhow!("sign AssetConfig: {e}"))?.to_msg_pack()
+            .map_err(|e| anyhow!("encode AssetConfig: {e}"))?;
+        let tx_id = self.ops.algod_call(|| client.send_raw(&signed_cfg))
+            .map_err(|e| anyhow!("send AssetConfig: {e}"))?.tx_id;
+        self.ops.wait_for_confirmation(&tx_id, 10)?;
+
+        // Step 2: clawback from old-app to new-app.
+        let params2 = self.params(&client)?;
+        let tx_clawback = ClawbackAsset::new(caller, AssetId(asset_id), balance, old_app_addr, new_app_addr)
+            .note(AlgoOps::unique_note())
+            .build(&params2)
+            .map_err(|e| anyhow!("build ClawbackAsset: {e}"))?;
+        let signed_cb = account.sign(tx_clawback)
+            .map_err(|e| anyhow!("sign ClawbackAsset: {e}"))?.to_msg_pack()
+            .map_err(|e| anyhow!("encode ClawbackAsset: {e}"))?;
+        let tx_id2 = self.ops.algod_call(|| client.send_raw(&signed_cb))
+            .map_err(|e| anyhow!("send ClawbackAsset: {e}"))?.tx_id;
+        self.ops.wait_for_confirmation(&tx_id2, 10)?;
+
+        // Step 3: restore clawback + reserve to new app.
+        self.ops.set_asset_clawback_to_app(new_app_id, asset_id)?;
+
+        tracing::info!("[deploy_app_and_asset] balance transfer complete: {} units moved to new app {}", balance, new_app_id);
+        Ok(())
     }
 
     /// Ensure the sender account is opted-in to the given ASA. If already opted-in, returns Ok("").

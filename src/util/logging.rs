@@ -11,6 +11,8 @@ static ALGO_DEBUG: OnceLock<bool> = OnceLock::new();
 pub fn is_algo_debug_enabled() -> bool {
     *ALGO_DEBUG.get_or_init(|| {
         std::env::var("BINGLE_ALGO_DEBUG")
+            .or_else(|_| std::env::var("RUST_COMMS_DEBUG"))
+            .or_else(|_| std::env::var("BINGLE_DEBUG"))
             .map(|v| v == "1" || v.to_lowercase() == "true")
             .unwrap_or(false)
     })
@@ -112,8 +114,29 @@ pub struct BingleFormatter {
 
 impl Default for BingleFormatter {
     fn default() -> Self {
-        Self { mode: LogMode::Plain }
+        let mode = if std::env::var("TERM").is_ok() && std::env::var("NO_COLOR").is_err() {
+            LogMode::ANSI
+        } else {
+            LogMode::Plain
+        };
+        Self { mode }
     }
+}
+
+pub fn init_logging() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .event_format(BingleFormatter::default());
+
+    let _ = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer)
+        .try_init();
 }
 
 impl<S, N> FormatEvent<S, N> for BingleFormatter

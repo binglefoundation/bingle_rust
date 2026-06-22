@@ -143,9 +143,28 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
     });
 }
 
-/// Helper: Deploy the Bingle application to localnet using the TEAL artifacts in the `dapp/` folder.
-/// Returns the app_id of the deployed contract.
-/// Also sets the BinglePrice to 1 microAlgo as a default convenience.
+/// Deploy the BingleDapp smart contract to localnet from pre-compiled TEAL artifacts.
+///
+/// Caller: the `ops` account acts as the application **creator** for all transactions.
+///
+/// Blockchain steps:
+///
+/// 1. **Compile TEAL** — POSTs `BingleDapp.approval.teal` and `BingleDapp.clear.teal` to the
+///    algod `/v2/teal/compile` endpoint, returning AVM bytecode for each program.
+///
+/// 2. **ApplicationCreate** — submits a `CreateApplication` transaction signed by the creator.
+///    Declares the following state schema:
+///    - Global: 2 ints (`BinglePrice`, `LastHandleTime`)
+///    - Local:  3 ints (`handle_time`, `allow_static`, `allow_relay`),
+///              3 byteslices (`Handle`, `static_endpoint`, `static_endpoint_x`)
+///    Returns the assigned `app_id`.
+///
+/// 3. **`set_bingle_price(uint64)void`** — ApplicationCall (NoOp) by the **creator**.
+///    Dapp: asserts `Txn.sender == Global.creator_address`, writes `price` to global state
+///    key `"BinglePrice"`. Called here with `price = 1` microAlgo so registration and buy
+///    flows work out of the box in tests without a separate price setup step.
+///
+/// Returns the `app_id` of the deployed contract.
 #[allow(dead_code)]
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     let approval_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
@@ -168,9 +187,39 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     app_id
 }
 
-/// Helper: Deploy the Bingle application AND create a corresponding Bingle$ ASA.
-/// Sets the app's price to 1 and configures the ASA reserve/clawback to the app address.
-/// Returns (app_id, asset_id).
+/// Deploy the BingleDapp smart contract and create the corresponding Bingle$ ASA, fully wired
+/// together so the contract can clawback and transfer the token on behalf of users.
+///
+/// Caller: the `ops` account acts as **creator/admin** for every transaction in this sequence.
+///
+/// Blockchain steps (in order):
+///
+/// 1. **Deploy the app** — see [`deploy_bingle_app`]. Creates the contract and sets
+///    `BinglePrice = 1` microAlgo.
+///
+/// 2. **AssetCreate** — creates the Bingle$ ASA with:
+///    - `total = total_units`, `decimals = 0`, `default_frozen = false`
+///    - `manager`  = creator address (`ops`)
+///    - `reserve`  = app contract address (deterministic from `app_id`)
+///    - `clawback` = app contract address
+///    The creator holds all `total_units` at creation; the reserve field signals that the
+///    contract address is the intended custodian.
+///    Returns `asset_id`.
+///
+/// 3. **`opt_in_to_bingle(uint64)void`** — ApplicationCall (NoOp) by the **creator**.
+///    Dapp: asserts `Txn.sender == Global.creator_address`, then emits an **inner
+///    AssetTransfer** of 0 units from the app account to itself. This is the standard AVM
+///    mechanism for a smart contract to opt-in to an ASA so it can later hold and transfer
+///    the token. Skipped (no-op) if the app account is already opted in.
+///
+/// 4. **AssetConfig** — reconfigures the ASA so its `clawback` address is explicitly set to
+///    the app contract address. This is a safety step: `create_asset_with_reserve_app` already
+///    sets clawback at creation, but this call guarantees correctness even if the asset config
+///    was modified between steps. Signed by the **creator** (who holds the `manager` role).
+///    After this, the contract can execute clawback transfers on behalf of any holder (used by
+///    `buy_bingle` to move tokens from the reserve to buyers).
+///
+/// Returns `(app_id, asset_id)`.
 #[allow(dead_code)]
 pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units: u64) -> (u64, u64) {
     let app_id = deploy_bingle_app(ops);

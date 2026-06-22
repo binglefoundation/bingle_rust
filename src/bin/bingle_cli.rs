@@ -433,7 +433,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
     let mut cli_app_id: Option<u64> = None;
     let mut cli_asset_id: Option<u64> = None;
     let mut stun_servers: Option<Vec<SocketAddr>> = None;
-    let mut dangerous_debug = false;
+    let dangerous_debug = false;
 
     // Remaining args after --interval-ms extraction
     let mut it = args.into_iter();

@@ -668,31 +668,105 @@ impl AlgoOps {
         Ok(false)
     }
 
+    /// Returns the holding amount of a specific asset for a given account.
+    pub fn asset_holding(&self, account_address: &str, asset_id: u64) -> Result<u64> {
+        let client = self.algod_client()?;
+        let address = Self::parse_address(account_address)?;
+        let info = self.algod_call(|| client.account(&address))
+            .map_err(|e| anyhow!("failed to fetch account information: {e}"))?;
+        let v = serde_json::to_value(&info).map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
+        Ok(Self::parse_holding_amount_from_account_value(&v, asset_id))
+    }
+
 
     pub fn set_asset_clawback_to_app(&self, app_id: u64, asset_id: u64) -> Result<()> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
-        // Manager must sign this transaction
-        let sk = self.private_key_bytes()?;
-        let manager = self.require_address()?;
-        let clawback_str = self.contract_address(app_id)?;
-        let clawback = Self::parse_address(&clawback_str)?;
 
         let client = self.algod_client()?;
+
+        // Identify the caller address (signer)
+        let caller = self.require_address()?;
+
+        // Fetch application info to identify the application manager
+        let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
+            .map_err(|e| anyhow!("failed to fetch application information: {e}"))?;
+        let v_app = serde_json::to_value(&app_info).map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
+
+        // 1. Determine the "application manager" address.
+        // Priority:
+        //  - "Manager" or "Admin" key in global state (if it's a 32-byte address)
+        //  - Application creator (fallback)
+        let creator_str = v_app
+            .get("params").and_then(|p| p.get("creator").and_then(|x| x.as_str()))
+            .or_else(|| v_app.get("creator").and_then(|x| x.as_str()))
+            .ok_or_else(|| anyhow!("application info did not contain creator field"))?;
+
+        let mut manager_addr = Self::parse_address(creator_str)?;
+
+        if let Some(params) = v_app.get("params") {
+            if let Some(gs_vec) = Self::json_get(params, "global_state", "global-state").and_then(|x| x.as_array()) {
+                // Decode global state to find Manager/Admin
+                for entry in gs_vec {
+                    let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+                    let key = match general_purpose::STANDARD.decode(key_b64) {
+                        Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| key_b64.to_string()),
+                        Err(_) => key_b64.to_string(),
+                    };
+                    if key == "Manager" || key == "manager" || key == "Admin" || key == "admin" {
+                        let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+                        if val_obj.get("type").and_then(|x| x.as_u64()) == Some(1) { // bytes
+                            let bytes_opt = if let Some(arr) = val_obj.get("bytes").and_then(|x| x.as_array()) {
+                                let mut buf = Vec::new();
+                                for n in arr { if let Some(u) = n.as_u64() { buf.push(u as u8); } }
+                                Some(buf)
+                            } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
+                                general_purpose::STANDARD.decode(b64).ok()
+                            } else { None };
+
+                            if let Some(bytes) = bytes_opt {
+                                if bytes.len() == 32 {
+                                    let mut pk = [0u8; 32];
+                                    pk.copy_from_slice(&bytes);
+                                    if let Ok(addr_str) = byte_key_to_address(&pk) {
+                                        manager_addr = Self::parse_address(&addr_str)?;
+                                        algo_log!("Found application manager in global state: {}", addr_str);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let manager_str = manager_addr.to_string();
+
+        // 2. Authorization check: must be signed by the application manager
+        if caller != manager_addr {
+            bail!("Only the application manager ({}) can set asset clawback, but called by {}", manager_str, caller);
+        }
+
+        // Fetch application address
+        let app_addr_str = self.contract_address(app_id)?;
+        let app_addr = Self::parse_address(&app_addr_str)?;
+
+        // Fetch suggested params
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        algo_log!("Setting clawback to app address: {:?}", clawback);
-
-        // Build asset reconfiguration: explicitly keep manager and reserve; set clawback to app address
-        let tx = algonaut::transaction::builder::UpdateAsset::new(manager, algonaut::core::AssetId(asset_id))
-            .manager(manager)
-            .reserve(clawback) // reserve is the app address in our model
-            .clawback(clawback)
+        // Manager must sign this transaction; use caller as it is verified to be the manager.
+        // Build asset reconfiguration: explicitly keep manager as the caller; set clawback and reserve to app address.
+        let tx = algonaut::transaction::builder::UpdateAsset::new(caller, algonaut::core::AssetId(asset_id))
+            .manager(caller)
+            .reserve(app_addr)
+            .clawback(app_addr)
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
 
+        // Sign and submit
+        let sk = self.private_key_bytes()?;
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
         let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset config transaction: {e}"))?;
@@ -700,7 +774,10 @@ impl AlgoOps {
 
         let tx_id = self.algod_call(|| client.send_raw(&signed))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
-        self.wait_for_confirmation(&tx_id, 10)
+
+        self.wait_for_confirmation(&tx_id, 10)?;
+        algo_log!("Successfully set asset {} clawback and reserve to app address {}", asset_id, app_addr);
+        Ok(())
     }
 
     /// Change an ASA's reserve address using an AssetConfiguration (reconfigure) transaction.
@@ -1051,6 +1128,9 @@ impl AlgoOps {
                     let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone(), app_id, aid);
                     // Propagate any error from the admin call; ignore returned tx id
                     let _ = ab.opt_in_app_to_asset(app_id, aid)?;
+
+                    // Additionally set the reserve and clawback addresses to the application address
+                    self.set_asset_clawback_to_app(app_id, aid)?;
                 }
             }
             Ok((app_id != 0).then_some(app_id))
