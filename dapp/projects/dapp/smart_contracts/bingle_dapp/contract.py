@@ -8,6 +8,8 @@ class BingleDapp(ARC4Contract):
     def __init__(self) -> None:
         self.bingle_price = GlobalState(UInt64, key="BinglePrice")
         self.last_handle_time = GlobalState(UInt64, key="LastHandleTime")
+        self.app_admin = GlobalState(Account, key="AppAdmin")
+        self.app_withdrawer = GlobalState(Account, key="AppWithdrawer")
         # Local state for registration
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
@@ -18,6 +20,11 @@ class BingleDapp(ARC4Contract):
         self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
         # Local state flag: whether caller is allowed to relay (1 == true)
         self.allow_relay = LocalState(UInt64, key="allow_relay")
+
+    @abimethod(create="require")
+    def create(self, app_admin: Account, app_withdrawer: Account) -> None:
+        self.app_admin.value = app_admin
+        self.app_withdrawer.value = app_withdrawer
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
@@ -228,6 +235,16 @@ class BingleDapp(ARC4Contract):
         val = UInt64(1) if allow != UInt64(0) else UInt64(0)
         # Target from foreign accounts
         self.allow_relay[target_address] = val
+
+    @abimethod()
+    def set_app_admin(self, admin: Account) -> None:
+        assert Txn.sender == Global.creator_address
+        self.app_admin.value = admin
+
+    @abimethod()
+    def set_app_withdrawer(self, withdrawer: Account) -> None:
+        assert Txn.sender == Global.creator_address
+        self.app_withdrawer.value = withdrawer
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
