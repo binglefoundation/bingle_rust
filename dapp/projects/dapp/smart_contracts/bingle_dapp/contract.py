@@ -20,6 +20,8 @@ class BingleDapp(ARC4Contract):
         self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
         # Local state flag: whether caller is allowed to relay (1 == true)
         self.allow_relay = LocalState(UInt64, key="allow_relay")
+        # id of the predecessor app; migrate_local validates this to prevent privilege forging
+        self.predecessor_app = GlobalState(UInt64, key="PredecessorApp")
 
     @abimethod(create="require")
     def create(self, app_admin: Account, app_withdrawer: Account) -> None:
@@ -42,10 +44,10 @@ class BingleDapp(ARC4Contract):
     def opt_in_to_bingle(self, asset_id: UInt64) -> None:
         """Opt the application account into the provided ASA.
 
-        Admin-only: must be called by the application creator.
+        Admin-only: must be called by the application admin.
         Performs an inner asset transfer of 0 to the app's own address to complete the opt-in.
         """
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         # Inner transaction: axfer 0 of `asset_id` to current_application_address
         # Use Algopy itxn builder for AssetTransfer with named arguments and submit.
         itxn.AssetTransfer(
@@ -59,7 +61,7 @@ class BingleDapp(ARC4Contract):
     def set_bingle_price(self, price: UInt64) -> None:
         """Set the Bingle$ price in microAlgos.
 
-        Only the application creator can call this method.
+        Only the application admin can call this method.
         Stores the value in global state under key "BinglePrice".
         """
         assert Txn.sender == self.app_admin.value
@@ -250,6 +252,11 @@ class BingleDapp(ARC4Contract):
         self.allow_relay[target_address] = val
 
     @abimethod()
+    def set_predecessor_app(self, predecessor: Application) -> None:
+        assert Txn.sender == Global.creator_address
+        self.predecessor_app.value = predecessor.id
+
+    @abimethod()
     def set_app_admin(self, admin: Account) -> None:
         assert Txn.sender == Global.creator_address
         self.app_admin.value = admin
@@ -284,6 +291,67 @@ class BingleDapp(ARC4Contract):
         withdrawer_bytes, exists = op.AppGlobal.get_ex_bytes(old_app, b"AppWithdrawer")
         if exists:
             self.app_withdrawer.value = Account(withdrawer_bytes)
+
+    @abimethod()
+    def migrate_reserve(self, new_app: Application) -> None:
+        assert Txn.sender == Global.creator_address
+        app_addr = Global.current_application_address
+        app_balance = app_addr.balance
+        app_min = app_addr.min_balance
+        withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
+        assert withdrawable > UInt64(0)
+        itxn.Payment(
+            receiver=new_app.address,
+            amount=withdrawable,
+            fee=Global.min_txn_fee,
+        ).submit()
+
+    @abimethod()
+    def migrate_local(self, old_app: Application) -> None:
+        """Copy the caller's local state from old_app into this contract.
+
+        The old_app must match the stored predecessor_app_id (set by creator via
+        set_predecessor_app), preventing a user from supplying a fake app they
+        control to forge admin-granted permissions such as allow_static or allow_relay.
+
+        handle/handle_time: first-write-wins (not overwritten if already registered here).
+        The handle_time is preserved from the old app but bumped past last_handle_time
+        if needed to avoid duplicate timestamps.
+
+        allow_static, allow_relay: copied as-is (they were admin-granted on the old app).
+        static_endpoint / static_endpoint_x: only copied when allow_static == 1.
+        """
+        predecessor_id, is_set = self.predecessor_app.maybe()
+        assert is_set and old_app.id == predecessor_id
+
+        sender = Txn.sender
+
+        old_handle, has_handle = op.AppLocal.get_ex_bytes(sender, old_app, b"Handle")
+        if has_handle:
+            current, exists = self.handle.maybe(sender)
+            if not exists or current == String():
+                self.handle[sender] = String.from_bytes(old_handle)
+                old_time, has_time = op.AppLocal.get_ex_uint64(sender, old_app, b"HandleTime")
+                if has_time:
+                    last_time = self.last_handle_time.get(default=UInt64(0))
+                    handle_time = old_time if old_time > last_time else last_time + UInt64(1)
+                    self.handle_time[sender] = handle_time
+                    self.last_handle_time.value = handle_time
+
+        old_allow_static, has_allow_static = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_static")
+        if has_allow_static:
+            self.allow_static[sender] = old_allow_static
+            if old_allow_static == UInt64(1):
+                old_endpoint, has_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint")
+                if has_endpoint:
+                    self.static_endpoint[sender] = String.from_bytes(old_endpoint)
+                old_endpoint_x, has_endpoint_x = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint_x")
+                if has_endpoint_x:
+                    self.static_endpoint_x[sender] = String.from_bytes(old_endpoint_x)
+
+        old_allow_relay, has_allow_relay = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_relay")
+        if has_allow_relay:
+            self.allow_relay[sender] = old_allow_relay
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
