@@ -1,5 +1,5 @@
 # pyright: reportMissingModuleSource=false
-from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes
+from algopy import ARC4Contract, Application, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes, op
 from algopy.arc4 import abimethod, baremethod
 
 
@@ -258,6 +258,32 @@ class BingleDapp(ARC4Contract):
     def set_app_withdrawer(self, withdrawer: Account) -> None:
         assert Txn.sender == Global.creator_address
         self.app_withdrawer.value = withdrawer
+
+    @abimethod()
+    def migrate_global(self, old_app: Application) -> None:
+        """Copy global state from old_app into this contract.
+
+        Creator-only. Call once after deploying a new version to carry over
+        BinglePrice, LastHandleTime, AppAdmin, and AppWithdrawer from the old app.
+        old_app must be included in the transaction's foreign apps array.
+        """
+        assert Txn.sender == Global.creator_address
+
+        price, exists = op.AppGlobal.get_ex_uint64(old_app, b"BinglePrice")
+        if exists:
+            self.bingle_price.value = price
+
+        last_time, exists = op.AppGlobal.get_ex_uint64(old_app, b"LastHandleTime")
+        if exists:
+            self.last_handle_time.value = last_time
+
+        admin_bytes, exists = op.AppGlobal.get_ex_bytes(old_app, b"AppAdmin")
+        if exists:
+            self.app_admin.value = Account(admin_bytes)
+
+        withdrawer_bytes, exists = op.AppGlobal.get_ex_bytes(old_app, b"AppWithdrawer")
+        if exists:
+            self.app_withdrawer.value = Account(withdrawer_bytes)
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:
