@@ -21,11 +21,11 @@ class BingleDapp(ARC4Contract):
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
-        return
+        assert Txn.sender == Global.creator_address
 
     @baremethod(allow_actions=["DeleteApplication"])
     def delete_application(self) -> None:
-        return
+        assert Txn.sender == Global.creator_address
 
     @baremethod(allow_actions=["OptIn"])
     def optin(self) -> None:
