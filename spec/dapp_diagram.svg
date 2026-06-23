@@ -21,12 +21,12 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="1"
-     inkscape:cx="493.5"
+     inkscape:cx="526.5"
      inkscape:cy="350"
      inkscape:window-width="1496"
      inkscape:window-height="1199"
      inkscape:window-x="2098"
-     inkscape:window-y="396"
+     inkscape:window-y="368"
      inkscape:window-maximized="0"
      inkscape:current-layer="svg50" />
   <defs
@@ -80,8 +80,8 @@
      height="700"
      fill="#ffffff"
      id="rect4"
-     x="1"
-     y="0" />
+     x="3"
+     y="14" />
   <!-- ===== TOP: Bingle$ Asset box ===== -->
   <rect
      x="30"
@@ -455,7 +455,7 @@
      id="text33">USER</text>
   <!-- withdraw → APP-WITHDRAWER -->
   <circle
-     cx="585"
+     cx="586"
      cy="425"
      r="6"
      fill="#ffffff"
@@ -464,7 +464,7 @@
      id="circle33" />
   <text
      x="600"
-     y="430"
+     y="428"
      font-family="Arial, sans-serif"
      font-size="13px"
      fill="#1a50a0"
@@ -477,8 +477,8 @@
      fill="#444444"
      id="text35">→</text>
   <text
-     x="702"
-     y="430"
+     x="704"
+     y="431"
      font-family="Arial, sans-serif"
      font-size="13px"
      fill="#b06010"
@@ -500,8 +500,8 @@
      fill="#207070"
      id="text37">register</text>
   <text
-     x="599"
-     y="477"
+     x="545"
+     y="490"
      font-family="Arial, sans-serif"
      font-size="13px"
      fill="#b06010"
@@ -646,4 +646,84 @@
      style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
      d="m 308,427 3,164"
      id="path60" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1.05514px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 511.08803,435.17571 62.82394,23.64858"
+     id="path1" />
+  <circle
+     cx="582"
+     cy="453"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle3" />
+  <text
+     x="599"
+     y="455"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text3">migrate_reserve</text>
+  <text
+     x="703"
+     y="452"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text4">→</text>
+  <text
+     xml:space="preserve"
+     style="font-size:40px;line-height:1.25;font-family:sans-serif"
+     x="723"
+     y="445"
+     id="text25"><tspan
+       sodipodi:role="line"
+       id="tspan4"
+       x="723"
+       y="445" /></text>
+  <text
+     xml:space="preserve"
+     style="font-size:13.3333px;line-height:1.25;font-family:sans-serif"
+     x="729"
+     y="452"
+     id="text26"><tspan
+       sodipodi:role="line"
+       id="tspan25"
+       x="729"
+       y="452"
+       style="font-size:13.3333px">new app</tspan></text>
+  <circle
+     cx="587"
+     cy="473"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle26" />
+  <text
+     x="601"
+     y="477"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text38">migrate_storage</text>
+  <text
+     x="703"
+     y="474"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text48" />
+  <text
+     xml:space="preserve"
+     style="font-size:13.3333px;line-height:1.25;font-family:sans-serif"
+     x="729"
+     y="476"
+     id="text49"><tspan
+       sodipodi:role="line"
+       id="tspan48"
+       x="729"
+       y="476"
+       style="font-size:13.3333px">from old app</tspan></text>
 </svg>

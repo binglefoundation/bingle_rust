@@ -110,7 +110,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .subject_name()
             .entries_by_nid(Nid::COMMONNAME)
             .next()
-            .and_then(|e| e.data().as_utf8().ok())
+            .and_then(|e| e.data().to_string().ok())
             .map(|s| s.to_string())
         {
             Some(s) => s,
@@ -188,7 +188,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .issuer_name()
             .entries_by_nid(Nid::COMMONNAME)
             .next()
-            .and_then(|e| e.data().as_utf8().ok())
+            .and_then(|e| e.data().to_string().ok())
             .map(|s| s.to_string())
         {
             Some(s) => s,
@@ -210,7 +210,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .subject_name()
             .entries_by_nid(Nid::COMMONNAME)
             .next()
-            .and_then(|e| e.data().as_utf8().ok())
+            .and_then(|e| e.data().to_string().ok())
             .map(|s| s.to_string())
         {
             if !ee_subj_cn.ends_with(ISSUER_SUFFIX) {
@@ -227,7 +227,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .subject_name()
             .entries_by_nid(Nid::ORGANIZATIONNAME)
             .next()
-            .and_then(|e| e.data().as_utf8().ok())
+            .and_then(|e| e.data().to_string().ok())
             .map(|s| s.to_string());
         if let Some(ca_org) = ca_org_opt {
             if ca_org != expected_addr {
