@@ -62,7 +62,7 @@ class BingleDapp(ARC4Contract):
         Only the application creator can call this method.
         Stores the value in global state under key "BinglePrice".
         """
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         self.bingle_price.value = price
 
     @abimethod()
@@ -203,8 +203,7 @@ class BingleDapp(ARC4Contract):
         Only the application creator may call this method. The target account must be opted-in
         to the application.
         """
-        # Only app creator may grant/revoke
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         # Optional consistency check: the provided address must match Txn.accounts[0]
         # (Not when we pass the creator in accounts)
         # assert target_address == Txn.accounts(0)
@@ -229,8 +228,7 @@ class BingleDapp(ARC4Contract):
         Only the application creator may call this method. The target account must be opted-in
         to the application.
         """
-        # Only app creator may grant/revoke
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         # Normalize to 0/1
         val = UInt64(1) if allow != UInt64(0) else UInt64(0)
         # Target from foreign accounts
