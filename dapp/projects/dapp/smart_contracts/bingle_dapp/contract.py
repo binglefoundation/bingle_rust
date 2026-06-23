@@ -152,6 +152,21 @@ class BingleDapp(ARC4Contract):
         assert saw_axfer
 
     @abimethod()
+    def withdraw(self, address: Account, amount: UInt64) -> None:
+        assert Txn.sender == self.app_withdrawer.value
+        app_addr = Global.current_application_address
+        app_balance = app_addr.balance
+        app_min = app_addr.min_balance
+        withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
+        actual = amount if amount <= withdrawable else withdrawable
+        assert actual > UInt64(0)
+        itxn.Payment(
+            receiver=address,
+            amount=actual,
+            fee=Global.min_txn_fee,
+        ).submit()
+
+    @abimethod()
     def register(self, handle: String) -> None:
         """Register a handle for the caller.
 
