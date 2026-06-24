@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::blockchain::algo_ops::{AlgoOps, AppArg};
+use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 use algonaut::{
     Algod,
@@ -1130,9 +1130,16 @@ impl AlgoBingle {
             let (approval_src, clear_src) = Self::read_teal_from_dir(app_path)?;
             let approval = self.ops.compile_teal(&approval_src)?;
             let clear    = self.ops.compile_teal(&clear_src)?;
-            let id = self.ops.deploy_app(&approval, &clear, None)?
-                .ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
+            // Initial admin and withdrawer are both the creator; they can be changed after deployment.
+            let creator_addr = self.ops.address_str()?;
+            let creator_pk = address_to_byte_key(&creator_addr)?;
+            let id = self.ops.deploy_app(
+                &approval, &clear, None,
+                Some("create(address,address)void"),
+                &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
+            )?.ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
+            // Works because creator == initial app_admin.
             self.ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
             tracing::info!("[deploy_app_and_asset] deployed new app_id={}", id);
             id

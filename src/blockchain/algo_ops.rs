@@ -257,6 +257,13 @@ impl AlgoOps {
         Self::parse_address(addr_str)
     }
 
+    pub fn address_str(&self) -> Result<String> {
+        self.address
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| anyhow!("This operation needs an address"))
+    }
+
     // Helper: JSON field accessor that supports snake_case and kebab-case alternatives.
     fn json_get<'a>(o: &'a serde_json::Value, k1: &str, k2: &str) -> Option<&'a serde_json::Value> {
         o.get(k1).or_else(|| o.get(k2))
@@ -1034,7 +1041,7 @@ impl AlgoOps {
         if sized > min_fee { sized } else { min_fee }
     }
 
-    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>) -> Result<Option<u64>> {
+    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
         // Ensure we have account access
@@ -1044,11 +1051,9 @@ impl AlgoOps {
         // Build programs and schemas
         let approval = algonaut::core::CompiledTeal(approval_program.to_vec());
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
-        // Schema: Global needs at least 2 integers (BinglePrice, LastHandleTime).
-        // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime),
-        // plus allow_static (int), static_endpoint (bytes), static_endpoint_x (bytes), and allow_relay (int).
-        // TODO: this is app specific, we shoould have this info from the artifacts
-        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 2, number_byteslices: 0 };
+        // Global: BinglePrice (int), LastHandleTime (int), PredecessorApp (int), AppAdmin (bytes), AppWithdrawer (bytes).
+        // Local: handle_time (int), allow_static (int), allow_relay (int), Handle (bytes), static_endpoint (bytes), static_endpoint_x (bytes).
+        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
         let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 3 };
 
         let client = self.algod_client()?;
@@ -1087,9 +1092,17 @@ impl AlgoOps {
             balance_micro
         );
 
+        // Build ABI args for the create method if provided.
+        let mut app_args: Vec<Vec<u8>> = Vec::new();
+        if let Some(sig) = method {
+            app_args.push(Self::arc4_selector(sig).to_vec());
+        }
+        app_args.extend(args.iter().map(|a| a.to_bytes()));
+
         // Build create application transaction
         let mut builder = algonaut::transaction::CreateApplication::new(sender, approval, clear, gs, ls);
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
+        if !app_args.is_empty() { builder = builder.app_arguments(app_args); }
         let tx = builder
             .note(Self::unique_note())
             .build(&params)

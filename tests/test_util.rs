@@ -1,4 +1,4 @@
-use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg};
+use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
@@ -176,11 +176,17 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     let approval_bytes = ops.compile_teal(&approval_src).expect("compile approval teal");
     let clear_bytes = ops.compile_teal(&clear_src).expect("compile clear teal");
 
-    let app_id = ops.deploy_app(&approval_bytes, &clear_bytes, None)
-        .expect("deploy app call")
-        .expect("failed to get app_id after deployment");
+    // Set creator as initial admin and withdrawer via create(address,address)void.
+    let creator_addr = ops.address_str().expect("creator address");
+    let creator_pk = address_to_byte_key(&creator_addr).expect("creator pk");
+    let app_id = ops.deploy_app(
+        &approval_bytes, &clear_bytes, None,
+        Some("create(address,address)void"),
+        &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
+    ).expect("deploy app call")
+     .expect("failed to get app_id after deployment");
 
-    // Default: set Bingle price to 1 microAlgo to allow registration/buy flows to work
+    // Default: set Bingle price to 1 microAlgo; works because creator == initial admin.
     let _ = ops.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])
         .expect("set_bingle_price(1) call");
 
