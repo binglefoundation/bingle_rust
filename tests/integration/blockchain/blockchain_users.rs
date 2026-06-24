@@ -1,5 +1,25 @@
 // Granular blockchain test accounts matching the roles in spec/dapp_endpoints.md.
-// Generated via py-algorand-sdk; fund with setup_localnet::ensure_localnet_accounts_funded.
+// Generated via py-algorand-sdk; fund via ensure_funded below.
+
+use rust_comms::algo_ops::AlgoChainConfig;
+
+pub const ALL_ADDRESSES: &[&str] = &[
+    ADDRESS_ASSET_CREATOR,
+    ADDRESS_ASSET_MANAGER,
+    ADDRESS_ASSET_RESERVE,
+    ADDRESS_ASSET_CLAWBACK,
+    ADDRESS_ASSET_FREEZE,
+    ADDRESS_APP_CREATOR,
+    ADDRESS_APP_ADMIN,
+    ADDRESS_APP_WITHDRAWER,
+    ADDRESS_USER,
+    ADDRESS_USER_STATIC,
+];
+
+#[allow(dead_code)]
+pub fn ensure_funded(cfg: &AlgoChainConfig) -> Result<(), String> {
+    crate::setup_localnet::ensure_localnet_accounts_funded(cfg, ALL_ADDRESSES)
+}
 
 // Asset accounts
 #[allow(dead_code)]
