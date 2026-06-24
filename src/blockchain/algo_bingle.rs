@@ -1167,9 +1167,14 @@ impl AlgoBingle {
         // ── 3. Opt new app into the ASA ───────────────────────────────────────────
         self.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
 
-        // ── 4. Transfer old-app balance to new app (only when app changed, asset same) ──
-        if need_new_app && !need_new_asset && self.app_id > 0 && self.app_id != effective_app_id {
-            self.transfer_old_app_asset_balance(self.app_id, effective_app_id, effective_asset_id)?;
+        // ── 4. Transfer old-app balances to new app (only when app changed) ──────────
+        if need_new_app && self.app_id > 0 && self.app_id != effective_app_id {
+            // ALGO balance: call migrate_reserve on the old app (asset_id=0 skips ASA transfer).
+            self.migrate_reserve(self.app_id, effective_app_id, 0)?;
+            // ASA balance: clawback via creator when the asset is being reused.
+            if !need_new_asset {
+                self.transfer_old_app_asset_balance(self.app_id, effective_app_id, effective_asset_id)?;
+            }
         }
 
         Ok((effective_app_id, effective_asset_id))
