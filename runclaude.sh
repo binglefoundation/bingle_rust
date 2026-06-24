@@ -2,4 +2,4 @@
 set -euo pipefail
 
 dir=$(basename "$(cd "$(dirname "$0")" && pwd)")
-exec claude --dangerously-allow-all -w "$dir"
+exec claude --dangerously-skip-permissions -w "$dir"
