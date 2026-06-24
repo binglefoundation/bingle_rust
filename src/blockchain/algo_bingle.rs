@@ -201,15 +201,21 @@ impl AlgoBingle {
     ///
     /// Calls withdraw(address,uint64)void. Must be called by the app withdrawer.
     /// Returns the submitted transaction id on success.
-    pub fn withdraw(&self, app_id: u64, address: &str, amount: u64) -> Result<String> {
+    /// Withdraw Algo and/or Bingle$ from the app account to the given address.
+    ///
+    /// Calls withdraw(address,uint64,uint64,uint64)void. Must be called by the app withdrawer.
+    /// Pass amount=0 to skip Algo withdrawal; pass asset_amount=0 to skip ASA withdrawal.
+    /// Returns the submitted transaction id on success.
+    pub fn withdraw(&self, app_id: u64, address: &str, amount: u64, asset_id: u64, asset_amount: u64) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let pk = crate::blockchain::algo_ops::address_to_byte_key(address)
             .map_err(|e| anyhow!("invalid address: {e}"))?;
+        let foreign_asset = if asset_amount > 0 && asset_id > 0 { Some(asset_id) } else { None };
         let (txid, _logs) = self.ops.call_app(
             app_id,
-            None,
-            Some("withdraw(address,uint64)void"),
-            &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(amount)],
+            foreign_asset,
+            Some("withdraw(address,uint64,uint64,uint64)void"),
+            &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(amount), AppArg::Uint(asset_id), AppArg::Uint(asset_amount)],
         )?;
         Ok(txid)
     }
@@ -224,6 +230,7 @@ impl AlgoBingle {
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             predecessor_app_id,
+            None,
             Some("set_predecessor_app(uint64)void"),
             &[AppArg::Uint(predecessor_app_id)],
         )?;
@@ -274,24 +281,28 @@ impl AlgoBingle {
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             old_app_id,
+            None,
             Some("migrate_global(uint64)void"),
             &[AppArg::Uint(old_app_id)],
         )?;
         Ok(txid)
     }
 
-    /// Transfer the app account balance (minus min_balance) to new_app's address.
+    /// Transfer the app account balance (minus min_balance) and Bingle$ ASA holdings to new_app.
     ///
-    /// Calls migrate_reserve(uint64)void. Must be called by the app creator.
+    /// Calls migrate_reserve(uint64,uint64)void. Must be called by the app creator.
+    /// Pass asset_id=0 to skip ASA migration.
     /// Returns the submitted transaction id on success.
-    pub fn migrate_reserve(&self, app_id: u64, new_app_id: u64) -> Result<String> {
+    pub fn migrate_reserve(&self, app_id: u64, new_app_id: u64, asset_id: u64) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if new_app_id == 0 { bail!("new_app_id must be > 0"); }
+        let foreign_asset = if asset_id > 0 { Some(asset_id) } else { None };
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             new_app_id,
-            Some("migrate_reserve(uint64)void"),
-            &[AppArg::Uint(new_app_id)],
+            foreign_asset,
+            Some("migrate_reserve(uint64,uint64)void"),
+            &[AppArg::Uint(new_app_id), AppArg::Uint(asset_id)],
         )?;
         Ok(txid)
     }
@@ -307,6 +318,7 @@ impl AlgoBingle {
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             old_app_id,
+            None,
             Some("migrate_local(uint64)void"),
             &[AppArg::Uint(old_app_id)],
         )?;

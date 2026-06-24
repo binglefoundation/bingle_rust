@@ -114,7 +114,7 @@ def test_withdraw_exact_amount(ctx: AlgopyTestContext) -> None:
     _fund_app(ctx, contract, 1_000_000)
     recipient = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": withdrawer}):
-        contract.withdraw(recipient, UInt64(500_000))
+        contract.withdraw(recipient, UInt64(500_000), UInt64(0), UInt64(0))
     itxn = ctx.txn.last_group.last_itxn.payment
     assert itxn.receiver == recipient
     assert itxn.amount == UInt64(500_000)
@@ -125,7 +125,7 @@ def test_withdraw_capped_to_balance_minus_min(ctx: AlgopyTestContext) -> None:
     _fund_app(ctx, contract, 1_000_000)
     recipient = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": withdrawer}):
-        contract.withdraw(recipient, UInt64(2_000_000))
+        contract.withdraw(recipient, UInt64(2_000_000), UInt64(0), UInt64(0))
     itxn = ctx.txn.last_group.last_itxn.payment
     assert itxn.receiver == recipient
     assert itxn.amount == UInt64(1_000_000 - MIN_BALANCE)
@@ -137,7 +137,7 @@ def test_withdraw_by_non_withdrawer_fails(ctx: AlgopyTestContext) -> None:
     non_withdrawer = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": non_withdrawer}):
         with pytest.raises(AssertionError):
-            contract.withdraw(ctx.any.account(), UInt64(500_000))
+            contract.withdraw(ctx.any.account(), UInt64(500_000), UInt64(0), UInt64(0))
 
 
 def test_withdraw_nothing_available_fails(ctx: AlgopyTestContext) -> None:
@@ -145,7 +145,21 @@ def test_withdraw_nothing_available_fails(ctx: AlgopyTestContext) -> None:
     _fund_app(ctx, contract, MIN_BALANCE)
     with ctx.txn.create_group(active_txn_overrides={"sender": withdrawer}):
         with pytest.raises(AssertionError):
-            contract.withdraw(ctx.any.account(), UInt64(1))
+            contract.withdraw(ctx.any.account(), UInt64(1), UInt64(0), UInt64(0))
+
+
+def test_withdraw_asset(ctx: AlgopyTestContext) -> None:
+    contract, _, withdrawer = _deploy(ctx)
+    app_address = algosdk.logic.get_application_address(contract.__app_id__)
+    asset = ctx.any.asset()
+    ctx.ledger.update_asset_holdings(asset, app_address, balance=500)
+    recipient = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": withdrawer}):
+        contract.withdraw(recipient, UInt64(0), asset.id, UInt64(200))
+    itxn = ctx.txn.last_group.last_itxn.asset_transfer
+    assert itxn.asset_receiver == recipient
+    assert itxn.asset_amount == UInt64(200)
+    assert itxn.xfer_asset == asset
 
 
 def test_migrate_reserve_transfers_to_new_app(ctx: AlgopyTestContext) -> None:
@@ -153,7 +167,7 @@ def test_migrate_reserve_transfers_to_new_app(ctx: AlgopyTestContext) -> None:
     contract, _, _ = _deploy(ctx)
     _fund_app(ctx, contract, 1_000_000)
     new_app = ctx.any.application()
-    contract.migrate_reserve(new_app)
+    contract.migrate_reserve(new_app, UInt64(0))
     itxn = ctx.txn.last_group.last_itxn.payment
     assert itxn.receiver == Application(new_app.id).address
     assert itxn.amount == UInt64(1_000_000 - MIN_BALANCE)
@@ -165,14 +179,27 @@ def test_migrate_reserve_by_non_creator_fails(ctx: AlgopyTestContext) -> None:
     non_creator = ctx.any.account()
     with ctx.txn.create_group(active_txn_overrides={"sender": non_creator}):
         with pytest.raises(AssertionError):
-            contract.migrate_reserve(ctx.any.application())
+            contract.migrate_reserve(ctx.any.application(), UInt64(0))
 
 
-def test_migrate_reserve_nothing_available_fails(ctx: AlgopyTestContext) -> None:
+def test_migrate_reserve_with_zero_algo_is_noop(ctx: AlgopyTestContext) -> None:
     contract, _, _ = _deploy(ctx)
     _fund_app(ctx, contract, MIN_BALANCE)
-    with pytest.raises(AssertionError):
-        contract.migrate_reserve(ctx.any.application())
+    contract.migrate_reserve(ctx.any.application(), UInt64(0))
+
+
+def test_migrate_reserve_transfers_asset(ctx: AlgopyTestContext) -> None:
+    from algopy import Application
+    contract, _, _ = _deploy(ctx)
+    _fund_app(ctx, contract, 1_000_000)
+    app_address = algosdk.logic.get_application_address(contract.__app_id__)
+    asset = ctx.any.asset()
+    ctx.ledger.update_asset_holdings(asset, app_address, balance=9_000)
+    new_app = ctx.any.application()
+    contract.migrate_reserve(new_app, asset.id)
+    asset_itxn = ctx.txn.last_group.last_itxn.asset_transfer
+    assert asset_itxn.asset_receiver == Application(new_app.id).address
+    assert asset_itxn.asset_amount == UInt64(9_000)
 
 
 def test_set_predecessor_app_by_creator(ctx: AlgopyTestContext) -> None:

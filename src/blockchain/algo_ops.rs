@@ -1222,10 +1222,10 @@ impl AlgoOps {
         self.build_call_app_tx_inner(app_id, asset_id, foreign_app_ids, method, args)
     }
 
-    pub fn call_app_with_foreign_app(&self, app_id: u64, foreign_app_id: u64, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
+    pub fn call_app_with_foreign_app(&self, app_id: u64, foreign_app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if foreign_app_id == 0 { bail!("foreign_app_id must be > 0"); }
-        let tx = self.build_call_app_tx_inner(app_id, None, &[foreign_app_id], method, args)?;
+        let tx = self.build_call_app_tx_inner(app_id, asset_id, &[foreign_app_id], method, args)?;
         algo_log!("[call_app_with_foreign_app] method={:?} app_id={} foreign_app_id={}", method, app_id, foreign_app_id);
         let sk = self.private_key_bytes()?;
         let client = self.algod_client()?;

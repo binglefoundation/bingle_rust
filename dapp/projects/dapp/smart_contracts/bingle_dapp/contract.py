@@ -154,19 +154,23 @@ class BingleDapp(ARC4Contract):
         assert saw_axfer
 
     @abimethod()
-    def withdraw(self, address: Account, amount: UInt64) -> None:
+    def withdraw(self, address: Account, amount: UInt64, asset_id: UInt64, asset_amount: UInt64) -> None:
         assert Txn.sender == self.app_withdrawer.value
-        app_addr = Global.current_application_address
-        app_balance = app_addr.balance
-        app_min = app_addr.min_balance
-        withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
-        actual = amount if amount <= withdrawable else withdrawable
-        assert actual > UInt64(0)
-        itxn.Payment(
-            receiver=address,
-            amount=actual,
-            fee=Global.min_txn_fee,
-        ).submit()
+        if amount > UInt64(0):
+            app_addr = Global.current_application_address
+            app_balance = app_addr.balance
+            app_min = app_addr.min_balance
+            withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
+            actual = amount if amount <= withdrawable else withdrawable
+            assert actual > UInt64(0)
+            itxn.Payment(receiver=address, amount=actual, fee=Global.min_txn_fee).submit()
+        if asset_amount > UInt64(0):
+            itxn.AssetTransfer(
+                xfer_asset=asset_id,
+                asset_receiver=address,
+                asset_amount=asset_amount,
+                fee=Global.min_txn_fee,
+            ).submit()
 
     @abimethod()
     def register(self, handle: String) -> None:
@@ -293,18 +297,27 @@ class BingleDapp(ARC4Contract):
             self.app_withdrawer.value = Account(withdrawer_bytes)
 
     @abimethod()
-    def migrate_reserve(self, new_app: Application) -> None:
+    def migrate_reserve(self, new_app: Application, asset_id: UInt64) -> None:
         assert Txn.sender == Global.creator_address
         app_addr = Global.current_application_address
         app_balance = app_addr.balance
         app_min = app_addr.min_balance
         withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
-        assert withdrawable > UInt64(0)
-        itxn.Payment(
-            receiver=new_app.address,
-            amount=withdrawable,
-            fee=Global.min_txn_fee,
-        ).submit()
+        if withdrawable > UInt64(0):
+            itxn.Payment(
+                receiver=new_app.address,
+                amount=withdrawable,
+                fee=Global.min_txn_fee,
+            ).submit()
+        if asset_id != UInt64(0):
+            asa_balance, has_balance = op.AssetHoldingGet.asset_balance(app_addr, asset_id)
+            if has_balance and asa_balance > UInt64(0):
+                itxn.AssetTransfer(
+                    xfer_asset=asset_id,
+                    asset_receiver=new_app.address,
+                    asset_amount=asa_balance,
+                    fee=Global.min_txn_fee,
+                ).submit()
 
     @abimethod()
     def migrate_local(self, old_app: Application) -> None:
