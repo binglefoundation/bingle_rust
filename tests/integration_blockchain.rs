@@ -11,6 +11,9 @@ pub mod setup_localnet;
 #[path = "integration/blockchain/blockchain_users.rs"]
 pub mod blockchain_users;
 
+#[path = "integration/blockchain/asset_configured_creator_localnet.rs"]
+pub mod asset_configured_creator_localnet;
+
 // Blockchain integration tests that hit localnet
 #[path = "integration/blockchain/algo_bingle_integration_localnet.rs"]
 pub mod algo_bingle_integration_localnet;
