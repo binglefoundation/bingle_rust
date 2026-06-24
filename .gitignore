@@ -1,5 +1,6 @@
 /target
 /tmp
+/.claude/worktrees/
 
 # Ignore Xcode test results
 **/TestResults.xcresult/
