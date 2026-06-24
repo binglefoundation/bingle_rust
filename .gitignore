@@ -45,3 +45,4 @@
 **/react-native-bingle-jsi*.tgz
 
 **/.build_number
+/dapp/projects/dapp/smart_contracts/artifacts/
