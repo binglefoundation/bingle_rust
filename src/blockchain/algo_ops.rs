@@ -1041,6 +1041,14 @@ impl AlgoOps {
         if sized > min_fee { sized } else { min_fee }
     }
 
+    /// Deploy a new Algorand application.
+    ///
+    /// - `asset_id`: if `Some`, the app is opted into this ASA immediately after creation.
+    /// - `method`: ARC-4 method signature to include in the create transaction (e.g.
+    ///   `"create(address,address)void"`). Required when the contract uses
+    ///   `@abimethod(create="require")`. Pass `None` for bare-create contracts.
+    /// - `args`: ABI-encoded arguments for `method`. Must match the method signature.
+    ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
     pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
