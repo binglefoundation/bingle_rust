@@ -158,7 +158,7 @@ impl AlgoBingle {
     /// Grant or revoke permission for a specific address to register a static endpoint.
     ///
     /// Calls set_allow_static on-chain for the provided target address. The caller must be the
-    /// app creator (enforced by the contract). The target address must be opted-in to the app.
+    /// app admin (enforced by the contract). The target address must be opted-in to the app.
     /// Returns the submitted transaction id on success.
     pub fn set_allow_static(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
@@ -179,7 +179,7 @@ impl AlgoBingle {
     /// Grant or revoke permission for a specific address to relay.
     ///
     /// Calls set_allow_relay on-chain for the provided target address. The caller must be the
-    /// app creator (enforced by the contract). The target address must be opted-in to the app.
+    /// app admin (enforced by the contract). The target address must be opted-in to the app.
     /// Returns the submitted transaction id on success.
     pub fn set_allow_relay(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
@@ -194,6 +194,122 @@ impl AlgoBingle {
                 Some("set_allow_relay(address,uint64)void"),
                 &[crate::blockchain::algo_ops::AppArg::Bytes(pk.to_vec()), crate::blockchain::algo_ops::AppArg::Uint(if allow { 1 } else { 0 })],
             )?;
+        Ok(txid)
+    }
+
+    /// Withdraw Algo from the app account to the given address.
+    ///
+    /// Calls withdraw(address,uint64)void. Must be called by the app withdrawer.
+    /// Returns the submitted transaction id on success.
+    pub fn withdraw(&self, app_id: u64, address: &str, amount: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let pk = crate::blockchain::algo_ops::address_to_byte_key(address)
+            .map_err(|e| anyhow!("invalid address: {e}"))?;
+        let (txid, _logs) = self.ops.call_app(
+            app_id,
+            None,
+            Some("withdraw(address,uint64)void"),
+            &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(amount)],
+        )?;
+        Ok(txid)
+    }
+
+    /// Set the predecessor app id so that migrate_local can validate the source app.
+    ///
+    /// Calls set_predecessor_app(uint64)void. Must be called by the app creator.
+    /// Returns the submitted transaction id on success.
+    pub fn set_predecessor_app(&self, app_id: u64, predecessor_app_id: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if predecessor_app_id == 0 { bail!("predecessor_app_id must be > 0"); }
+        let (txid, _logs) = self.ops.call_app_with_foreign_app(
+            app_id,
+            predecessor_app_id,
+            Some("set_predecessor_app(uint64)void"),
+            &[AppArg::Uint(predecessor_app_id)],
+        )?;
+        Ok(txid)
+    }
+
+    /// Set the app admin address.
+    ///
+    /// Calls set_app_admin(address)void. Must be called by the app creator.
+    /// Returns the submitted transaction id on success.
+    pub fn set_app_admin(&self, app_id: u64, admin: &str) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let pk = crate::blockchain::algo_ops::address_to_byte_key(admin)
+            .map_err(|e| anyhow!("invalid admin address: {e}"))?;
+        let (txid, _logs) = self.ops.call_app(
+            app_id,
+            None,
+            Some("set_app_admin(address)void"),
+            &[AppArg::Bytes(pk.to_vec())],
+        )?;
+        Ok(txid)
+    }
+
+    /// Set the app withdrawer address.
+    ///
+    /// Calls set_app_withdrawer(address)void. Must be called by the app creator.
+    /// Returns the submitted transaction id on success.
+    pub fn set_app_withdrawer(&self, app_id: u64, withdrawer: &str) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let pk = crate::blockchain::algo_ops::address_to_byte_key(withdrawer)
+            .map_err(|e| anyhow!("invalid withdrawer address: {e}"))?;
+        let (txid, _logs) = self.ops.call_app(
+            app_id,
+            None,
+            Some("set_app_withdrawer(address)void"),
+            &[AppArg::Bytes(pk.to_vec())],
+        )?;
+        Ok(txid)
+    }
+
+    /// Copy global state from old_app into this contract.
+    ///
+    /// Calls migrate_global(uint64)void. Must be called by the app creator.
+    /// Returns the submitted transaction id on success.
+    pub fn migrate_global(&self, app_id: u64, old_app_id: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if old_app_id == 0 { bail!("old_app_id must be > 0"); }
+        let (txid, _logs) = self.ops.call_app_with_foreign_app(
+            app_id,
+            old_app_id,
+            Some("migrate_global(uint64)void"),
+            &[AppArg::Uint(old_app_id)],
+        )?;
+        Ok(txid)
+    }
+
+    /// Transfer the app account balance (minus min_balance) to new_app's address.
+    ///
+    /// Calls migrate_reserve(uint64)void. Must be called by the app creator.
+    /// Returns the submitted transaction id on success.
+    pub fn migrate_reserve(&self, app_id: u64, new_app_id: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if new_app_id == 0 { bail!("new_app_id must be > 0"); }
+        let (txid, _logs) = self.ops.call_app_with_foreign_app(
+            app_id,
+            new_app_id,
+            Some("migrate_reserve(uint64)void"),
+            &[AppArg::Uint(new_app_id)],
+        )?;
+        Ok(txid)
+    }
+
+    /// Copy the caller's local state from old_app into the new app.
+    ///
+    /// Calls migrate_local(uint64)void. User-callable (no elevated privilege required).
+    /// old_app_id must match the predecessor app stored on-chain by the creator.
+    /// Returns the submitted transaction id on success.
+    pub fn migrate_local(&self, app_id: u64, old_app_id: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if old_app_id == 0 { bail!("old_app_id must be > 0"); }
+        let (txid, _logs) = self.ops.call_app_with_foreign_app(
+            app_id,
+            old_app_id,
+            Some("migrate_local(uint64)void"),
+            &[AppArg::Uint(old_app_id)],
+        )?;
         Ok(txid)
     }
 
@@ -950,7 +1066,7 @@ impl AlgoBingle {
     }
 
     /// Admin method: Opt the application account into the given ASA by calling the
-    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app creator.
+    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app admin.
     /// Returns the transaction id of the app call when an opt-in was required; if the
     /// app was already opted in, returns Ok("") without making a call.
     /// TODO: make this generic as called from deploy

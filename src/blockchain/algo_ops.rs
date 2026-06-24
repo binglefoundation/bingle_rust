@@ -1215,8 +1215,39 @@ impl AlgoOps {
     }
 
     pub fn build_call_app_tx(&self, app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        self.build_call_app_tx_inner(app_id, asset_id, &[], method, args)
+    }
+
+    pub fn build_call_app_tx_with_foreign_apps(&self, app_id: u64, asset_id: Option<u64>, foreign_app_ids: &[u64], method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        self.build_call_app_tx_inner(app_id, asset_id, foreign_app_ids, method, args)
+    }
+
+    pub fn call_app_with_foreign_app(&self, app_id: u64, foreign_app_id: u64, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        // Lookup application information to determine the creator address (to include in foreign accounts)
+        if foreign_app_id == 0 { bail!("foreign_app_id must be > 0"); }
+        let tx = self.build_call_app_tx_inner(app_id, None, &[foreign_app_id], method, args)?;
+        algo_log!("[call_app_with_foreign_app] method={:?} app_id={} foreign_app_id={}", method, app_id, foreign_app_id);
+        let sk = self.private_key_bytes()?;
+        let client = self.algod_client()?;
+        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let account = algonaut::transaction::account::Account::from_seed(seed);
+        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
+        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self.algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        self.wait_for_confirmation(&tx_id, 10)?;
+        let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
+        let p = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+            .map_err(|e| anyhow!("failed to fetch pending transaction info: {e}"))?;
+        let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
+        let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        let mut logs: Vec<Vec<u8>> = Vec::new();
+        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        Ok((tx_id, logs))
+    }
+
+    fn build_call_app_tx_inner(&self, app_id: u64, asset_id: Option<u64>, foreign_app_ids: &[u64], method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
         let client = self.algod_client()?;
         let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
             .map_err(|e| anyhow!("failed to fetch application information: {e}"))?;
@@ -1228,20 +1259,15 @@ impl AlgoOps {
         let creator = Self::parse_address(creator_str)?;
         let sender = self.require_address()?;
 
-        // Prepare args (prepend ARC-4 selector if method provided)
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         if let Some(sig) = method {
-            let sel = Self::arc4_selector(sig);
-            app_args.push(sel.to_vec());
+            app_args.push(Self::arc4_selector(sig).to_vec());
         }
         app_args.extend(args.iter().map(|a| a.to_bytes()));
 
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        // Build application call (NoOp)
-        // Always include creator in accounts for compatibility; for set_allow_static/set_allow_relay we also include the target address as Accounts[0]
-        // TODO: make this generic
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
         if let Some(sig) = method {
             if sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void" {
@@ -1252,7 +1278,6 @@ impl AlgoOps {
                             pk.copy_from_slice(&b[..32]);
                             if let Ok(addr_str) = crate::blockchain::algo_ops::byte_key_to_address(&pk) {
                                 if let Ok(target) = Self::parse_address(&addr_str) {
-                                    // Insert target at index 0 so Txn.Accounts[0] == target
                                     accounts.insert(0, target);
                                 }
                             }
@@ -1261,17 +1286,15 @@ impl AlgoOps {
                 }
             }
         }
-        // Build a helper closure to create the builder with the same parameters each time.
-        // (CallApplication doesn't implement Clone, so we rebuild for fee estimation.)
+        let fapps: Vec<algonaut::core::AppId> = foreign_app_ids.iter().map(|&id| algonaut::core::AppId(id)).collect();
         let make_builder = || {
             let mut b = algonaut::transaction::builder::CallApplication::new(sender, algonaut::core::AppId(app_id))
                 .accounts(accounts.clone())
                 .app_arguments(app_args.clone());
             if let Some(aid) = asset_id { b = b.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
+            if !fapps.is_empty() { b = b.foreign_apps(fapps.clone()); }
             b
         };
-        // Explicitly estimate and set a fee for this transaction. Build a zero-fee txn to estimate size,
-        // then compute fee using helper = max(min_fee, fee_per_byte * estimated_signed_tx_size).
         let tx_zero_fee = make_builder()
             .fee(algonaut::core::MicroAlgos(0))
             .note(Self::unique_note())
