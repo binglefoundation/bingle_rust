@@ -617,27 +617,27 @@ impl AlgoOps {
         Ok(info.asset_index.or(Some(0)).filter(|id| *id != 0))
     }
 
-    /// Create an ASA with the reserve address set to the application address for `app_id`.
-    /// Manager remains the issuer for future reconfiguration; decimals=0.
-    pub fn create_asset_with_reserve_app(&self, name: &str, units_in_issue: u64, app_id: u64) -> Result<Option<u64>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    /// Create an ASA with explicit reserve and clawback addresses.
+    ///
+    /// The caller (`self`) is the ASA manager (the only account that can later reconfigure it).
+    /// `reserve_addr` and `clawback_addr` are Algorand address strings. decimals=0.
+    pub fn create_asset_configured(&self, name: &str, units_in_issue: u64, reserve_addr: &str, clawback_addr: &str) -> Result<Option<u64>> {
         if name.trim().is_empty() { bail!("asset name must not be empty"); }
         if units_in_issue == 0 { bail!("units_in_issue must be > 0"); }
 
         let sk = self.private_key_bytes()?;
         let issuer = self.require_address()?;
-        let reserve_addr_str = self.contract_address(app_id)?;
-        let reserve_addr = Self::parse_address(&reserve_addr_str)?;
+        let reserve = Self::parse_address(reserve_addr)?;
+        let clawback = Self::parse_address(clawback_addr)?;
 
         let client = self.algod_client()?;
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        // Build CreateAsset with reserve and clawback set to app address
         let tx = algonaut::transaction::CreateAsset::new(issuer, units_in_issue, 0, false)
             .manager(issuer)
-            .reserve(reserve_addr)
-            .clawback(reserve_addr)
+            .reserve(reserve)
+            .clawback(clawback)
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
@@ -655,6 +655,14 @@ impl AlgoOps {
         let info = self.algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info for asset id: {e}"))?;
         Ok(info.asset_index.or(Some(0)).filter(|id| *id != 0))
+    }
+
+    /// Create an ASA with the reserve and clawback addresses both set to the application address for `app_id`.
+    /// Manager remains the issuer for future reconfiguration; decimals=0.
+    pub fn create_asset_with_reserve_app(&self, name: &str, units_in_issue: u64, app_id: u64) -> Result<Option<u64>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let app_addr = self.contract_address(app_id)?;
+        self.create_asset_configured(name, units_in_issue, &app_addr, &app_addr)
     }
 
     /// Check whether `account_address` has opted-in to `asset_id`.

@@ -13,6 +13,7 @@
 ///   - for combination 2, old-app balance is transferred to the new app
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use serial_test::serial;
+use std::collections::HashMap;
 
 use crate::setup_localnet;
 use crate::util::test_util;
@@ -85,6 +86,7 @@ pub fn deploy_app_and_asset_both_new() {
             None,
             "BINGLE",
             1_000_000,
+            &HashMap::new(),
         )
         .expect("deploy_app_and_asset (both new)");
 
@@ -125,6 +127,7 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
             Some(asset_id),
             "BINGLE",
             1_000_000,
+            &HashMap::new(),
         )
         .expect("deploy_app_and_asset (new app, existing asset)");
 
@@ -172,6 +175,7 @@ pub fn deploy_app_and_asset_existing_app_new_asset() {
             None,
             "BINGLE_V2",
             2_000_000,
+            &HashMap::new(),
         )
         .expect("deploy_app_and_asset (existing app, new asset)");
 
@@ -206,6 +210,7 @@ pub fn deploy_app_and_asset_both_existing() {
             Some(asset_id),
             "BINGLE",
             1_000_000,
+            &HashMap::new(),
         )
         .expect("deploy_app_and_asset (both existing)");
 

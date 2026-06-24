@@ -42,6 +42,13 @@ pub struct AlgoBingle {
     pub cache: Option<Arc<Mutex<AccountsCache>>>,
 }
 
+/// Named account keys for `deploy_app_and_asset`. Each maps to an `AlgoOps` instance
+/// whose address and signing key are used for the corresponding deployment role.
+pub const ACCOUNT_APP_ADMIN: &str = "APP_ADMIN";
+pub const ACCOUNT_APP_WITHDRAWER: &str = "APP_WITHDRAWER";
+pub const ACCOUNT_ASSET_CREATOR: &str = "ASSET_CREATOR";
+pub const ACCOUNT_ASSET_RESERVE: &str = "ASSET_RESERVE";
+
 const INDEXER_PAGE_SIZE: u64 = 100;
 
 fn indexer_excludes() -> Option<Vec<String>> {
@@ -1114,6 +1121,19 @@ impl AlgoBingle {
     /// *old* app account (i.e. `self.app_id`) is clawbacked to the new app account.
     ///
     /// Returns `(effective_app_id, effective_asset_id)`.
+    /// Deploy or reuse the BingleDapp smart contract and Bingle$ ASA, wiring them together.
+    ///
+    /// `self.ops` must be the APP_CREATOR account. Additional named accounts are supplied via
+    /// `accounts` (keys are the `ACCOUNT_*` constants defined in this module):
+    ///
+    /// - `APP_ADMIN`      — address set as `app_admin` global state; calls `set_bingle_price`.
+    ///                      Defaults to APP_CREATOR if absent.
+    /// - `APP_WITHDRAWER` — address set as `app_withdrawer` global state; opted into the ASA.
+    ///                      Defaults to APP_CREATOR if absent.
+    /// - `ASSET_CREATOR`  — account that creates the ASA (becomes ASA manager).
+    ///                      Defaults to APP_CREATOR if absent.
+    /// - `ASSET_RESERVE`  — address used as the ASA reserve field; opted into the ASA if it
+    ///                      differs from the app account. Defaults to the app address if absent.
     pub fn deploy_app_and_asset(
         &self,
         app_path: &std::path::Path,
@@ -1123,24 +1143,31 @@ impl AlgoBingle {
         asset_id: Option<u64>,
         asset_name: &str,
         total_units: u64,
+        accounts: &HashMap<String, AlgoOps>,
     ) -> Result<(u64, u64)> {
+        // Resolve named accounts (fall back to APP_CREATOR for each missing role).
+        let creator_addr = self.ops.address_str()?;
+        let admin_ops    = accounts.get(ACCOUNT_APP_ADMIN).unwrap_or(&self.ops);
+        let admin_addr   = admin_ops.address_str().unwrap_or_else(|_| creator_addr.clone());
+        let withdrawer_ops  = accounts.get(ACCOUNT_APP_WITHDRAWER).unwrap_or(&self.ops);
+        let withdrawer_addr = withdrawer_ops.address_str().unwrap_or_else(|_| creator_addr.clone());
+        let asset_creator_ops = accounts.get(ACCOUNT_ASSET_CREATOR).unwrap_or(&self.ops);
+
         // ── 1. Resolve effective app ──────────────────────────────────────────────
         let need_new_app = new_app || (app_id.is_none() && self.app_id == 0);
         let effective_app_id = if need_new_app {
             let (approval_src, clear_src) = Self::read_teal_from_dir(app_path)?;
             let approval = self.ops.compile_teal(&approval_src)?;
             let clear    = self.ops.compile_teal(&clear_src)?;
-            // Initial admin and withdrawer are both the creator; they can be changed after deployment.
-            let creator_addr = self.ops.address_str()?;
-            let creator_pk = address_to_byte_key(&creator_addr)?;
+            let admin_pk      = address_to_byte_key(&admin_addr)?;
+            let withdrawer_pk = address_to_byte_key(&withdrawer_addr)?;
             let id = self.ops.deploy_app(
                 &approval, &clear, None,
                 Some("create(address,address)void"),
-                &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
+                &[AppArg::Bytes(admin_pk.to_vec()), AppArg::Bytes(withdrawer_pk.to_vec())],
             )?.ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
-            // Works because creator == initial app_admin.
-            self.ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
+            admin_ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
             tracing::info!("[deploy_app_and_asset] deployed new app_id={}", id);
             id
         } else {
@@ -1150,30 +1177,51 @@ impl AlgoBingle {
         };
 
         // ── 2. Resolve effective asset ────────────────────────────────────────────
+        let app_addr = self.ops.contract_address(effective_app_id)?;
+        let reserve_addr = accounts.get(ACCOUNT_ASSET_RESERVE)
+            .map(|ops| ops.address_str()).transpose()?
+            .unwrap_or_else(|| app_addr.clone());
+
         let need_new_asset = new_asset || (asset_id.is_none() && self.asset_id == 0);
         let effective_asset_id = if need_new_asset {
-            let id = self.ops.create_asset_with_reserve_app(asset_name, total_units, effective_app_id)?
-                .ok_or_else(|| anyhow!("create_asset_with_reserve_app returned no asset_id"))?;
+            let id = asset_creator_ops.create_asset_configured(asset_name, total_units, &reserve_addr, &app_addr)?
+                .ok_or_else(|| anyhow!("create_asset_configured returned no asset_id"))?;
             tracing::info!("[deploy_app_and_asset] created new asset_id={}", id);
             id
         } else {
             let id = asset_id.unwrap_or(self.asset_id);
             // Reconfigure clawback/reserve to point at the (possibly new) app.
-            self.ops.set_asset_clawback_to_app(effective_app_id, id)?;
+            asset_creator_ops.set_asset_clawback_to_app(effective_app_id, id)?;
             tracing::info!("[deploy_app_and_asset] using existing asset_id={} reconfigured to app_id={}", id, effective_app_id);
             id
         };
 
-        // ── 3. Opt new app into the ASA ───────────────────────────────────────────
-        self.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
+        // ── 3. Opt new app into the ASA (admin-signed contract call) ─────────────
+        let admin_ab = AlgoBingle::new(admin_ops.clone(), effective_app_id, effective_asset_id);
+        admin_ab.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
+
+        // Opt APP_WITHDRAWER into the ASA so they can receive ASA withdrawals.
+        if accounts.contains_key(ACCOUNT_APP_WITHDRAWER) {
+            let withdrawer_ab = AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);
+            withdrawer_ab.opt_in_sender_to_asset(effective_asset_id)?;
+        }
+
+        // Opt ASSET_RESERVE into the ASA if it is an external account (not the app address).
+        if let Some(reserve_ops) = accounts.get(ACCOUNT_ASSET_RESERVE) {
+            let res_addr = reserve_ops.address_str()?;
+            if res_addr != app_addr {
+                let reserve_ab = AlgoBingle::new(reserve_ops.clone(), effective_app_id, effective_asset_id);
+                reserve_ab.opt_in_sender_to_asset(effective_asset_id)?;
+            }
+        }
 
         // ── 4. Transfer old-app balances to new app (only when app changed) ──────────
         if need_new_app && self.app_id > 0 && self.app_id != effective_app_id {
             // ALGO balance: call migrate_reserve on the old app (asset_id=0 skips ASA transfer).
             self.migrate_reserve(self.app_id, effective_app_id, 0)?;
-            // ASA balance: clawback via creator when the asset is being reused.
+            // ASA balance: clawback via asset manager when the asset is being reused.
             if !need_new_asset {
-                self.transfer_old_app_asset_balance(self.app_id, effective_app_id, effective_asset_id)?;
+                self.transfer_old_app_asset_balance(self.app_id, effective_app_id, effective_asset_id, asset_creator_ops)?;
             }
         }
 
@@ -1216,6 +1264,7 @@ impl AlgoBingle {
         old_app_id: u64,
         new_app_id: u64,
         asset_id: u64,
+        asset_manager: &AlgoOps,
     ) -> Result<()> {
         let old_app_addr_str = self.ops.contract_address(old_app_id)?;
         let balance = self.ops.asset_holding(&old_app_addr_str, asset_id)?;
@@ -1225,7 +1274,12 @@ impl AlgoBingle {
         }
         tracing::info!("[deploy_app_and_asset] clawbacking {} units of asset {} from old app {} to new app {}", balance, asset_id, old_app_id, new_app_id);
 
-        let (account, caller) = self.sender_account()?;
+        // Use the ASA manager's signing key for all asset config and clawback transactions.
+        let sk = asset_manager.private_key_bytes()?;
+        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let account = Account::from_seed(seed);
+        let caller_str = asset_manager.address_str()?;
+        let caller = Address::from_str(&caller_str).map_err(|e| anyhow!("invalid address: {e}"))?;
         let old_app_addr = self.app_address(old_app_id)?;
         let new_app_addr = self.app_address(new_app_id)?;
         let client = self.ops.algod_client()?;
@@ -1271,7 +1325,7 @@ impl AlgoBingle {
         self.ops.wait_for_confirmation(&tx_id2, 10)?;
 
         // Step 3: restore clawback + reserve to new app.
-        self.ops.set_asset_clawback_to_app(new_app_id, asset_id)?;
+        asset_manager.set_asset_clawback_to_app(new_app_id, asset_id)?;
 
         tracing::info!("[deploy_app_and_asset] balance transfer complete: {} units moved to new app {}", balance, new_app_id);
         Ok(())
