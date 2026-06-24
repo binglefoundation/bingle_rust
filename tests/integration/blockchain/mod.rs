@@ -1,3 +1,4 @@
+pub mod blockchain_users;
 pub mod algo_bingle_integration_localnet;
 pub mod algo_ops_integration_localnet;
 pub mod algo_bingle_buy_flow_localnet;

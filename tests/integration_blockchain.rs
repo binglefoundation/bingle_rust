@@ -7,6 +7,10 @@ pub mod util;
 
 pub mod setup_localnet;
 
+// Granular blockchain user accounts (asset/app/user roles from spec/dapp_endpoints.md)
+#[path = "integration/blockchain/blockchain_users.rs"]
+pub mod blockchain_users;
+
 // Blockchain integration tests that hit localnet
 #[path = "integration/blockchain/algo_bingle_integration_localnet.rs"]
 pub mod algo_bingle_integration_localnet;
