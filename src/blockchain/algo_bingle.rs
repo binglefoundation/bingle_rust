@@ -1145,13 +1145,29 @@ impl AlgoBingle {
         total_units: u64,
         accounts: &HashMap<String, AlgoOps>,
     ) -> Result<(u64, u64)> {
-        // Resolve named accounts (fall back to APP_CREATOR for each missing role).
+        // All four named roles are required; all five addresses must be distinct.
+        let required_roles = [ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE];
+        for role in required_roles {
+            if !accounts.contains_key(role) {
+                return Err(anyhow!("deploy_app_and_asset: missing required account '{}'", role));
+            }
+        }
         let creator_addr = self.ops.address_str()?;
-        let admin_ops    = accounts.get(ACCOUNT_APP_ADMIN).unwrap_or(&self.ops);
-        let admin_addr   = admin_ops.address_str().unwrap_or_else(|_| creator_addr.clone());
-        let withdrawer_ops  = accounts.get(ACCOUNT_APP_WITHDRAWER).unwrap_or(&self.ops);
-        let withdrawer_addr = withdrawer_ops.address_str().unwrap_or_else(|_| creator_addr.clone());
-        let asset_creator_ops = accounts.get(ACCOUNT_ASSET_CREATOR).unwrap_or(&self.ops);
+        let mut seen_addrs = std::collections::HashSet::new();
+        seen_addrs.insert(creator_addr.clone());
+        for role in required_roles {
+            let addr = accounts[role].address_str()?;
+            if !seen_addrs.insert(addr.clone()) {
+                return Err(anyhow!("deploy_app_and_asset: account '{}' address {} is not unique across roles", role, addr));
+            }
+        }
+
+        // Resolve named accounts.
+        let admin_ops         = &accounts[ACCOUNT_APP_ADMIN];
+        let admin_addr        = admin_ops.address_str()?;
+        let withdrawer_ops    = &accounts[ACCOUNT_APP_WITHDRAWER];
+        let withdrawer_addr   = withdrawer_ops.address_str()?;
+        let asset_creator_ops = &accounts[ACCOUNT_ASSET_CREATOR];
 
         // ── 1. Resolve effective app ──────────────────────────────────────────────
         let need_new_app = new_app || (app_id.is_none() && self.app_id == 0);
@@ -1178,9 +1194,7 @@ impl AlgoBingle {
 
         // ── 2. Resolve effective asset ────────────────────────────────────────────
         let app_addr = self.ops.contract_address(effective_app_id)?;
-        let reserve_addr = accounts.get(ACCOUNT_ASSET_RESERVE)
-            .map(|ops| ops.address_str()).transpose()?
-            .unwrap_or_else(|| app_addr.clone());
+        let reserve_addr = accounts[ACCOUNT_ASSET_RESERVE].address_str()?;
 
         let need_new_asset = new_asset || (asset_id.is_none() && self.asset_id == 0);
         let effective_asset_id = if need_new_asset {
@@ -1201,18 +1215,15 @@ impl AlgoBingle {
         admin_ab.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
 
         // Opt APP_WITHDRAWER into the ASA so they can receive ASA withdrawals.
-        if accounts.contains_key(ACCOUNT_APP_WITHDRAWER) {
-            let withdrawer_ab = AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);
-            withdrawer_ab.opt_in_sender_to_asset(effective_asset_id)?;
-        }
+        let withdrawer_ab = AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);
+        withdrawer_ab.opt_in_sender_to_asset(effective_asset_id)?;
 
         // Opt ASSET_RESERVE into the ASA if it is an external account (not the app address).
-        if let Some(reserve_ops) = accounts.get(ACCOUNT_ASSET_RESERVE) {
-            let res_addr = reserve_ops.address_str()?;
-            if res_addr != app_addr {
-                let reserve_ab = AlgoBingle::new(reserve_ops.clone(), effective_app_id, effective_asset_id);
-                reserve_ab.opt_in_sender_to_asset(effective_asset_id)?;
-            }
+        let reserve_ops = &accounts[ACCOUNT_ASSET_RESERVE];
+        let res_addr = reserve_ops.address_str()?;
+        if res_addr != app_addr {
+            let reserve_ab = AlgoBingle::new(reserve_ops.clone(), effective_app_id, effective_asset_id);
+            reserve_ab.opt_in_sender_to_asset(effective_asset_id)?;
         }
 
         // ── 4. Transfer old-app balances to new app (only when app changed) ──────────
