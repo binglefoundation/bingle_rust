@@ -302,7 +302,16 @@ class BingleDapp(ARC4Contract):
         app_addr = Global.current_application_address
         app_balance = app_addr.balance
         app_min = app_addr.min_balance
-        withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
+        # Each inner txn with fee=Global.min_txn_fee deducts from the app account.
+        # Reserve one fee slot per potential inner txn so the app stays at min_balance.
+        fee_reserve = Global.min_txn_fee + (
+            Global.min_txn_fee if asset_id != UInt64(0) else UInt64(0)
+        )
+        withdrawable = (
+            app_balance - app_min - fee_reserve
+            if app_balance > app_min + fee_reserve
+            else UInt64(0)
+        )
         if withdrawable > UInt64(0):
             itxn.Payment(
                 receiver=new_app.address,

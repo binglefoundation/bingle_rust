@@ -1143,6 +1143,7 @@ impl AlgoBingle {
         asset_id: Option<u64>,
         asset_name: &str,
         total_units: u64,
+        initial_hot_bingle: u64,
         accounts: &HashMap<String, AlgoOps>,
     ) -> Result<(u64, u64)> {
         // All four named roles are required; all five addresses must be distinct.
@@ -1224,6 +1225,13 @@ impl AlgoBingle {
         if res_addr != app_addr {
             let reserve_ab = AlgoBingle::new(reserve_ops.clone(), effective_app_id, effective_asset_id);
             reserve_ab.opt_in_sender_to_asset(effective_asset_id)?;
+        }
+
+        // ── 3b. Seed the new app with initial_hot_bingle tokens (new asset only) ─────
+        if need_new_asset && initial_hot_bingle > 0 {
+            asset_creator_ops.send_asset(effective_asset_id, initial_hot_bingle, &app_addr)
+                .map_err(|e| anyhow!("deploy_app_and_asset: failed to seed initial_hot_bingle: {e}"))?;
+            tracing::info!("[deploy_app_and_asset] seeded {} units of asset {} to app {}", initial_hot_bingle, effective_asset_id, effective_app_id);
         }
 
         // ── 4. Transfer old-app balances to new app (only when app changed) ──────────
