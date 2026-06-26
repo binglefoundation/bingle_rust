@@ -1,8 +1,9 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use rust_comms::blockchain::algo_bingle::{AlgoBingle, ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE};
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
+use std::collections::HashMap;
 use std::env;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Once};
@@ -32,6 +33,28 @@ pub const ADDRESS_RECEIVE: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDC
 #[allow(dead_code)]
 pub const PASSPHRASE_RECEIVE: &str = "earth idle country misery matrix wolf tired cabin craft roof quantum comfort answer praise second scout title napkin crop trial industry glue kid absorb midnight";
 
+// Granular dapp lifecycle accounts (shared with blockchain_users.rs in integration_blockchain)
+#[allow(dead_code)]
+pub const ADDRESS_APP_CREATOR: &str = "L4IOKR5LM7Q7UIYB5Y735HV3H4JPKWKHTONM5Z6WHLE6RQWHRGRUVPRGKE";
+#[allow(dead_code)]
+pub const PASSPHRASE_APP_CREATOR: &str = "prize local popular life bronze require amused beef opinion shock gaze utility state hunt raccoon inform junior express zebra find crash blame tide about palace";
+#[allow(dead_code)]
+pub const ADDRESS_APP_ADMIN: &str = "TA2XNGWKWXXSWNHVVK23PW6A5JVYGC3WL2IFAILU4MOMCRJHHD46PCAIL4";
+#[allow(dead_code)]
+pub const PASSPHRASE_APP_ADMIN: &str = "sunset fuel problem limit share same dilemma cool member real satoshi capable brush during body wool kiss parade smooth fan rude assume clever absorb across";
+#[allow(dead_code)]
+pub const ADDRESS_APP_WITHDRAWER: &str = "5FMPY3U5XCCDUOROVX34JYCRXHOZTPDSXDEZ576PXRHOTD4OSWNXXDEA74";
+#[allow(dead_code)]
+pub const PASSPHRASE_APP_WITHDRAWER: &str = "post all tuition hero axis erupt profit same dizzy stage like fly inquiry betray electric glue just space gentle jacket annual hello betray abstract way";
+#[allow(dead_code)]
+pub const ADDRESS_ASSET_CREATOR: &str = "TETZ5CZVNJRMKBY63RFJGJKH6JNLTXX6TS5EHYAZTBY7TX76VWW6UXMAG4";
+#[allow(dead_code)]
+pub const PASSPHRASE_ASSET_CREATOR: &str = "eyebrow bleak multiply material flush host panel column rubber maximum clean episode plate trim excess dignity barrel beyond minute rebuild cliff divert planet absent spray";
+#[allow(dead_code)]
+pub const ADDRESS_ASSET_RESERVE: &str = "ZKPYCKDPCF75XTMJPCTJY5OG32BQDIPJUFFBRGAFATCYUUWPSYCDLXCQKA";
+#[allow(dead_code)]
+pub const PASSPHRASE_ASSET_RESERVE: &str = "weasel open guide until scale stove pull keep truly push tongue anxiety throw acoustic hamster total rare door cost response promote grain adapt ability muffin";
+
 #[allow(dead_code)]
 pub fn localnet_config() -> AlgoChainConfig {
     AlgoChainConfig {
@@ -59,6 +82,16 @@ pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoChainConfig) -> AlgoOp
     // Pass the mnemonic directly as the passphrase (ASCII string)
     let pass = mnem.to_string();
     AlgoOps::new(Some(pass), Some(addr.to_string()), Some(cfg))
+}
+
+#[allow(dead_code)]
+pub fn make_standard_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps> {
+    let mut accounts = HashMap::new();
+    accounts.insert(ACCOUNT_APP_ADMIN.to_string(),     ops_from_mnemonic(ADDRESS_APP_ADMIN,     PASSPHRASE_APP_ADMIN,     cfg.clone()));
+    accounts.insert(ACCOUNT_APP_WITHDRAWER.to_string(), ops_from_mnemonic(ADDRESS_APP_WITHDRAWER, PASSPHRASE_APP_WITHDRAWER, cfg.clone()));
+    accounts.insert(ACCOUNT_ASSET_CREATOR.to_string(), ops_from_mnemonic(ADDRESS_ASSET_CREATOR, PASSPHRASE_ASSET_CREATOR, cfg.clone()));
+    accounts.insert(ACCOUNT_ASSET_RESERVE.to_string(), ops_from_mnemonic(ADDRESS_ASSET_RESERVE, PASSPHRASE_ASSET_RESERVE, cfg.clone()));
+    accounts
 }
 
 // Shared helper for tests: allocate a free UDP port on loopback.
@@ -193,56 +226,25 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     app_id
 }
 
-/// Deploy the BingleDapp smart contract and create the corresponding Bingle$ ASA, fully wired
-/// together so the contract can clawback and transfer the token on behalf of users.
-///
-/// Caller: the `ops` account acts as **creator/admin** for every transaction in this sequence.
-///
-/// Blockchain steps (in order):
-///
-/// 1. **Deploy the app** — see [`deploy_bingle_app`]. Creates the contract and sets
-///    `BinglePrice = 1` microAlgo.
-///
-/// 2. **AssetCreate** — creates the Bingle$ ASA with:
-///    - `total = total_units`, `decimals = 0`, `default_frozen = false`
-///    - `manager`  = creator address (`ops`)
-///    - `reserve`  = app contract address (deterministic from `app_id`)
-///    - `clawback` = app contract address
-///    The creator holds all `total_units` at creation; the reserve field signals that the
-///    contract address is the intended custodian.
-///    Returns `asset_id`.
-///
-/// 3. **`opt_in_to_bingle(uint64)void`** — ApplicationCall (NoOp) by the **creator**.
-///    Dapp: asserts `Txn.sender == Global.creator_address`, then emits an **inner
-///    AssetTransfer** of 0 units from the app account to itself. This is the standard AVM
-///    mechanism for a smart contract to opt-in to an ASA so it can later hold and transfer
-///    the token. Skipped (no-op) if the app account is already opted in.
-///
-/// 4. **AssetConfig** — reconfigures the ASA so its `clawback` address is explicitly set to
-///    the app contract address. This is a safety step: `create_asset_with_reserve_app` already
-///    sets clawback at creation, but this call guarantees correctness even if the asset config
-///    was modified between steps. Signed by the **creator** (who holds the `manager` role).
-///    After this, the contract can execute clawback transfers on behalf of any holder (used by
-///    `buy_bingle` to move tokens from the reserve to buyers).
+/// Deploy the BingleDapp smart contract and create the corresponding Bingle$ ASA using the
+/// canonical set of granular role accounts (APP_CREATOR, APP_ADMIN, APP_WITHDRAWER,
+/// ASSET_CREATOR, ASSET_RESERVE). The `ops` parameter provides the chain configuration only;
+/// the account performing each role is determined by the standard account constants.
 ///
 /// Returns `(app_id, asset_id)`.
 #[allow(dead_code)]
 pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units: u64) -> (u64, u64) {
-    let app_id = deploy_bingle_app(ops);
-
-    // Create ASA with reserve/clawback set to the application address
-    let asset_id = ops.create_asset_with_reserve_app(asset_name, total_units, app_id)
-        .expect("create_asset_with_reserve_app call")
-        .expect("failed to get asset_id after creation");
-
-    // Opt the app account into the ASA so it can receive/send it
-    let ab = rust_comms::blockchain::algo_bingle::AlgoBingle::new(ops.clone(), app_id, asset_id);
-    let _ = ab.opt_in_app_to_asset(app_id, asset_id).expect("opt_in_app_to_asset call");
-
-    // Also ensure clawback is explicitly set to app if not already covered by create_asset_with_reserve_app
-    ops.set_asset_clawback_to_app(app_id, asset_id).expect("set_asset_clawback_to_app call");
-
-    (app_id, asset_id)
+    let cfg = ops.config.clone();
+    crate::setup_localnet::ensure_localnet_accounts_funded(
+        &cfg,
+        &[ADDRESS_APP_CREATOR, ADDRESS_APP_ADMIN, ADDRESS_APP_WITHDRAWER, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE],
+    ).expect("ensure standard accounts funded");
+    let creator_ops = ops_from_mnemonic(ADDRESS_APP_CREATOR, PASSPHRASE_APP_CREATOR, cfg.clone());
+    let accounts = make_standard_accounts(&cfg);
+    let teal_dir = std::path::Path::new("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp");
+    let ab = AlgoBingle::new(creator_ops, 0, 0);
+    ab.deploy_app_and_asset(teal_dir, true, true, None, None, asset_name, total_units, 10, &accounts)
+        .expect("deploy_bingle_app_and_asset: deploy failed")
 }
 
 #[allow(dead_code)]
@@ -252,28 +254,14 @@ pub fn register_client_on_blockchain(
     handle: &str,
     app_id: u64,
     asset_id: u64,
-    creator: &AlgoOps,
+    _creator: &AlgoOps,
     cfg: AlgoChainConfig,
 ) {
     let ops = ops_from_mnemonic(address, passphrase, cfg);
-    // opt_in_app/asset may fail if already opted in (e.g. relays registered via register_relays)
-    if let Err(e) = creator.opt_in_app(app_id) {
-        tracing::info!("[register_client_on_blockchain] opt-in creator to app skipped (may already be opted in): {}", e);
-    }
-    if let Err(e) = creator.opt_in_to_asset(asset_id) {
-        tracing::info!("[register_client_on_blockchain] opt-in creator to asset skipped (may already be opted in): {}", e);
-    }
-
-    if let Err(e) = ops.opt_in_app(app_id) {
-        tracing::info!("[register_client_on_blockchain] {} opt-in app skipped (may already be opted in): {}", handle, e);
-    }
-    if let Err(e) = ops.opt_in_to_asset(asset_id) {
-        tracing::info!("[register_client_on_blockchain] {} opt-in asset skipped (may already be opted in): {}", handle, e);
-    }
-    creator
-        .send_asset(asset_id, 10, address)
-        .unwrap_or_else(|e| panic!("fund {} with ASA: {}", handle, e));
     let ab = AlgoBingle::new(ops.clone(), app_id, asset_id);
+    // Buy 1 unit from the app to cover the registration fee; this also opts the client into the ASA
+    ab.buy_bingle(app_id, asset_id, 1)
+        .unwrap_or_else(|e| panic!("buy Bingle$ for {}: {}", handle, e));
     ab.register(app_id, asset_id, handle, 1)
         .unwrap_or_else(|e| panic!("register handle for {}: {}", handle, e));
 

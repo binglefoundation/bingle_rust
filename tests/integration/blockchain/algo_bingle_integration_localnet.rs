@@ -2,6 +2,8 @@ use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::algo_ops::AlgoChainConfig;
 use serial_test::serial;
 
+const MIN_FEE: u64 = 1_000;
+
 use crate::setup_localnet;
 use crate::util::test_util;
 
@@ -16,7 +18,7 @@ fn fund_test_accounts_or_panic() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 #[serial]
-pub fn bingle_end_to_end_calls() {
+pub fn bingle_buy_register() {
     test_util::assert_localnet_available();
     fund_test_accounts_or_panic();
     let cfg: AlgoChainConfig = localnet_config();
@@ -25,32 +27,37 @@ pub fn bingle_end_to_end_calls() {
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
     let receiver = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
 
-    // Deploy the dapp and create the Bingle$ ASA
+    // Deploy the dapp and create the Bingle$ ASA (app is seeded with 10 units via initial_hot_bingle)
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE", 1_000_000);
 
-    // Stock the app with some units to sell
     let app_addr = creator.contract_address(app_id).expect("app address");
-    creator.send_asset(asset_id, 100, &app_addr).expect("fund app with ASA");
-
-    // Receiver opts in to ASA and receives 10 units
-    receiver.opt_in_to_asset(asset_id).expect("receiver opt-in ASA");
-    creator.send_asset(asset_id, 10, ADDRESS_RECEIVE).expect("transfer ASA to receiver");
-
-    // Receiver opts in to app to allow local state updates
-    // receiver.opt_in_app(app_id).expect("receiver opt-in app");
 
     // Wrap receiver in AlgoBingle
     let ab = AlgoBingle::new(receiver.clone(), app_id, asset_id);
 
-    // buy_bingle: pay 1 microAlgo to app and do self->self ASA xfer of 1 to satisfy checks
+    let app_asa_before   = creator.asset_holding(&app_addr, asset_id).expect("app asa before");
+    let app_algo_before  = creator.microalgos_at(&app_addr).expect("app algo before");
+
+    // buy_bingle: receiver pays 1 µAlgo to app; app sends 1 Bingle$ to receiver
     ab.buy_bingle(app_id, asset_id, 1).expect("buy_bingle group call");
 
-    // sell_bingle: send 2 units to app and self-pay 2 microAlgos to satisfy payout
-    ab.sell_bingle(app_id, asset_id, 2, 1).expect("sell_bingle group call");
+    let receiver_asa_after_buy = creator.asset_holding(ADDRESS_RECEIVE, asset_id).expect("receiver asa after buy");
+    let app_asa_after_buy      = creator.asset_holding(&app_addr, asset_id).expect("app asa after buy");
+    let app_algo_after_buy     = creator.microalgos_at(&app_addr).expect("app algo after buy");
 
-    // register: pay 1 unit of ASA to app and set handle
+    assert_eq!(receiver_asa_after_buy, 1, "receiver should hold 1 Bingle$ after buy");
+    assert_eq!(app_asa_after_buy, app_asa_before - 1, "app should have 1 fewer Bingle$ after buy");
+    assert_eq!(app_algo_after_buy, app_algo_before + 1 - MIN_FEE, "app should net -999 µAlgo after buy (received 1, paid 1000 inner fee)");
+
+    // register: receiver pays 1 Bingle$ to app and sets handle
     let handle = "alice";
     ab.register(app_id, asset_id, handle, 1).expect("register group call");
+
+    let receiver_asa_after_reg = creator.asset_holding(ADDRESS_RECEIVE, asset_id).expect("receiver asa after register");
+    let app_asa_after_reg      = creator.asset_holding(&app_addr, asset_id).expect("app asa after register");
+
+    assert_eq!(receiver_asa_after_reg, 0, "receiver should have 0 Bingle$ after paying registration fee");
+    assert_eq!(app_asa_after_reg, app_asa_after_buy + 1, "app should have 1 more Bingle$ after register");
 
     // Verify local state contains the handle
     let lstate = creator.local_state_for_account(app_id, ADDRESS_RECEIVE).expect("local state query").expect("some local state");

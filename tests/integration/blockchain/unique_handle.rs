@@ -31,12 +31,11 @@ pub fn test_unique_handle_registration() {
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1_000_000);
     tracing::info!("Deployed app_id={}, asset_id={}", app_id, asset_id);
 
-    // Give some assets to Account B so it can attempt registration (fee is 1 unit)
-    ops_b.opt_in_to_asset(asset_id).expect("Account B opt-in ASA");
-    ops_a.send_asset(asset_id, 10, ADDRESS_RECEIVE).expect("fund Account B with ASA");
-
     let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
     let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
+
+    // A needs 1 unit to pay the registration fee; buy from the app
+    ab_a.buy_bingle(app_id, asset_id, 1).expect("Account A buy Bingle$ for registration fee");
 
     let handle = "unique_handle_test";
 
@@ -81,12 +80,12 @@ pub fn test_duplicate_handle_hacked_registration() {
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1_000_000);
     tracing::info!("Deployed app_id={}, asset_id={}", app_id, asset_id);
 
-    // Give some assets to Account B so it can attempt registration
-    ops_b.opt_in_to_asset(asset_id).expect("Account B opt-in ASA");
-    ops_a.send_asset(asset_id, 10, ADDRESS_RECEIVE).expect("fund Account B with ASA");
-
     let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
     let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
+
+    // A and B each need 1 unit to pay their registration fees; buy from the app
+    ab_a.buy_bingle(app_id, asset_id, 1).expect("Account A buy Bingle$ for registration fee");
+    ab_b.buy_bingle(app_id, asset_id, 1).expect("Account B buy Bingle$ for registration fee");
 
     let handle = "hacked_handle_test";
 
