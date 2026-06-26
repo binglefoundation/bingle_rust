@@ -98,33 +98,33 @@ fn start_client(name: &str, passphrase: &str, stun_list: Vec<SocketAddr>, app_id
 
 pub fn register_relays(app_id: u64, asset_id: u64, relay1_addr: SocketAddr, relay2_addr: SocketAddr) {
     let cfg = test_util::localnet_config();
-    let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let ops_relay1 = ops_creator.clone();
-    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+    let ops_admin  = test_util::ops_from_mnemonic(test_util::ADDRESS_APP_ADMIN, test_util::PASSPHRASE_APP_ADMIN, cfg.clone());
+    let ops_relay1 = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND,     test_util::PASSPHRASE_SPEND,     cfg.clone());
+    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE,   test_util::PASSPHRASE_RECEIVE,   cfg.clone());
 
     // Create helpers bound to this app
-    let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
+    let ab_creator = AlgoBingle::new(ops_admin.clone(), app_id, 0);
     let ab_r1 = AlgoBingle::new(ops_relay1.clone(), app_id, 0);
     let ab_r2 = AlgoBingle::new(ops_relay2.clone(), app_id, 0);
 
     // Opt relays into the app and allow static endpoints
     ops_relay1.opt_in_app(app_id).expect("relay1 opt-in app");
     ops_relay2.opt_in_app(app_id).expect("relay2 opt-in app");
-    // Grant allow_static for relay accounts via creator
+    // Grant allow_static for relay accounts via admin
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_static r1");
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
-    // Grant allow_relay for relay accounts via creator
+    // Grant allow_relay for relay accounts via admin
     ab_creator.set_allow_relay(app_id, test_util::ADDRESS_SPEND, true).expect("set_allow_relay r1");
     ab_creator.set_allow_relay(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_relay r2");
 
     // handle must be registered
     register_client_on_blockchain(
         test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, "relay1",
-        app_id, asset_id, &ops_creator, cfg.clone(),
+        app_id, asset_id, &ops_admin, cfg.clone(),
     );
     register_client_on_blockchain(
         test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, "relay2",
-        app_id, asset_id, &ops_creator, cfg.clone(),
+        app_id, asset_id, &ops_admin, cfg.clone(),
     );
 
     // Register endpoints for both relays
@@ -397,8 +397,9 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
         (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
         (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
     ];
-    let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
-    if !wait_for_relays_visible(&ab_creator, app_id, &roots, Duration::from_secs(60)) {
+    let ops_admin = test_util::ops_from_mnemonic(test_util::ADDRESS_APP_ADMIN, test_util::PASSPHRASE_APP_ADMIN, cfg.clone());
+    let ab_admin = AlgoBingle::new(ops_admin.clone(), app_id, 0);
+    if !wait_for_relays_visible(&ab_admin, app_id, &roots, Duration::from_secs(60)) {
         panic!("Root relayids did not become visible via indexer");
     }
 
@@ -412,12 +413,12 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 
     // Wait for root relays to be fully ready (registered in blockchain)??
     tracing::info!("[Test] Waiting for root relays to register themselves in blockchain");
-    if !wait_for_relays_visible(&ab_creator, app_id, &roots, Duration::from_secs(60)) {
+    if !wait_for_relays_visible(&ab_admin, app_id, &roots, Duration::from_secs(60)) {
         panic!("Root relays did not become visible");
     }
 
-    ab_creator.set_allow_relay(app_id, relay3_id, true).expect("set_allow_relay r3");
-    ab_creator.set_allow_relay(app_id, relay4_id, true).expect("set_allow_relay r4");
+    ab_admin.set_allow_relay(app_id, relay3_id, true).expect("set_allow_relay r3");
+    ab_admin.set_allow_relay(app_id, relay4_id, true).expect("set_allow_relay r4");
 
     // Start non-root relays
     tracing::info!("[Test] Starting non-root relays");
@@ -801,7 +802,8 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
         test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, "relay2",
         app_id, asset_id, &creator, cfg.clone(),
     );
-    let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
+    let ops_admin = test_util::ops_from_mnemonic(test_util::ADDRESS_APP_ADMIN, test_util::PASSPHRASE_APP_ADMIN, cfg.clone());
+    let ab_creator = AlgoBingle::new(ops_admin.clone(), app_id, 0);
     ab_creator.set_allow_static(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_static r2");
     ab_creator.set_allow_relay(app_id, test_util::ADDRESS_RECEIVE, true).expect("set_allow_relay r2");
 

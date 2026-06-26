@@ -23,6 +23,7 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
         .expect("Failed to fund localnet accounts");
 
     let ops_creator = AlgoOps::new(Some(creator_pass.to_string()), None, Some(cfg.clone()));
+    let ops_admin = AlgoOps::new(Some(test_util::PASSPHRASE_APP_ADMIN.to_string()), None, Some(cfg.clone()));
     let (app_id, _asset_id) = test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
 
     let ops_relay = AlgoOps::new(Some(relay_pass.to_string()), None, Some(cfg.clone()));
@@ -54,9 +55,9 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
     let err_msg = res.unwrap_err().to_string();
     assert!(err_msg.contains("not allowed to relay"), "expected 'not allowed to relay' error, got: {}", err_msg);
 
-    // Now set it and try again
-    let ab_creator = AlgoBingle::new(ops_creator, app_id, 0);
-    ab_creator.set_allow_relay(app_id, relay_addr_str, true).expect("set_allow_relay");
+    // Now set it and try again (admin signs the allow_relay call)
+    let ab_admin = AlgoBingle::new(ops_admin, app_id, 0);
+    ab_admin.set_allow_relay(app_id, relay_addr_str, true).expect("set_allow_relay");
 
     let res = relay.access_unsafe_for_tests(|api| api.start(&r_opts));
     assert!(res.is_ok(), "relay start should succeed after allow_relay is set: {:?}", res.err());

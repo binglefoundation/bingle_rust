@@ -27,14 +27,13 @@ pub fn test_register_handle_uniqueness() {
     let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
     let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
 
+    // A needs 1 unit to pay the registration fee
+    ab_a.buy_bingle(app_id, asset_id, 1).expect("A buy Bingle$");
+
     // 3. Register with A (should succeed)
     ab_a.register(app_id, asset_id, handle, 1).expect("A register handle");
 
-    // 4. Try to register same handle with B (should fail pre-check)
-    // Give B some Bingle$ first
-    ab_b.opt_in_sender_to_asset(asset_id).expect("B opt-in asset");
-    ops_a.send_asset(asset_id, 10, test_util::ADDRESS_RECEIVE).expect("send Bingle$ to B");
-    
+    // 4. Try to register same handle with B (should fail pre-check before any ASA transfer)
     let res_b = ab_b.register(app_id, asset_id, handle, 1);
     assert!(res_b.is_err(), "B should fail to register handle that is already in use");
     let err_msg = res_b.err().unwrap().to_string();
@@ -58,19 +57,13 @@ pub fn test_register_handle_race_condition() {
     // 2. Deploy app and asset
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1000000);
     
-    // Give B some Bingle$
-    let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
-    ab_b.opt_in_sender_to_asset(asset_id).expect("B opt-in asset");
-    ops_a.send_asset(asset_id, 10, test_util::ADDRESS_RECEIVE).expect("send Bingle$ to B");
-
     let handle = "race_handle";
-    
-    // We want to simulate a race condition.
-    // Since ab.register() has pre-check and post-check, we can't easily make them both pass pre-check 
-    // unless we run them in parallel.
-    
+
+    // Both A and B each need 1 unit to attempt registration
     let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
     let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
+    ab_a.buy_bingle(app_id, asset_id, 1).expect("A buy Bingle$");
+    ab_b.buy_bingle(app_id, asset_id, 1).expect("B buy Bingle$");
 
     let handle_str = handle.to_string();
     let handle_str_2 = handle.to_string();

@@ -31,12 +31,12 @@ fn relay_updater_localnet_e2e_matrix() {
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE])
         .expect("Failed to fund localnet accounts");
 
-    let creator_ops = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let relay1_ops = creator_ops.clone();
-    let relay2_ops = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+    let admin_ops  = test_util::ops_from_mnemonic(test_util::ADDRESS_APP_ADMIN, test_util::PASSPHRASE_APP_ADMIN, cfg.clone());
+    let relay1_ops = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND,     test_util::PASSPHRASE_SPEND,     cfg.clone());
+    let relay2_ops = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE,   test_util::PASSPHRASE_RECEIVE,   cfg.clone());
 
-    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator_ops, "BINGLE$", 1_000_000);
-    let creator_ab = AlgoBingle::new(creator_ops.clone(), app_id, 0);
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&relay1_ops, "BINGLE$", 1_000_000);
+    let creator_ab = AlgoBingle::new(admin_ops.clone(), app_id, 0);
 
     let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), test_util::find_unused_loopback_port());
     let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), test_util::find_unused_loopback_port());
@@ -75,7 +75,7 @@ fn relay_updater_localnet_e2e_matrix() {
         &relay1_opts.handle,
         app_id,
         asset_id,
-        &creator_ops,
+        &admin_ops,
         cfg.clone(),
     );
     start_relay_and_wait_available(&relay1, &relay1_opts, "relay1");
@@ -108,7 +108,7 @@ fn relay_updater_localnet_e2e_matrix() {
         &client1_opts.handle,
         app_id,
         asset_id,
-        &creator_ops,
+        &admin_ops,
         cfg.clone(),
     );
     client1
@@ -152,7 +152,7 @@ fn relay_updater_localnet_e2e_matrix() {
         &relay2_opts.handle,
         app_id,
         asset_id,
-        &creator_ops,
+        &admin_ops,
         cfg.clone(),
     );
     register_relay_static_endpoint(

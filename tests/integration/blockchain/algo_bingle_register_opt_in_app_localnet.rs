@@ -32,6 +32,9 @@ pub fn register_ensures_sender_opted_in_to_app() {
     let _ = creator.clear_state_app(app_id);
     let _ = creator.close_out_app(app_id);
 
+    // Buy 1 unit to cover the registration fee (also opts sender into the ASA)
+    ab.buy_bingle(app_id, asset_id, 1).expect("buy Bingle$ for registration fee");
+
     // 5) Now call register which should internally ensure opt-in to app before app call
     let txid = ab
         .register(app_id, asset_id, "handle_optin_test", 1)
