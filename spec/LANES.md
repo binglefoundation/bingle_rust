@@ -49,7 +49,7 @@ security:
 - ~~Test for extended master secret support~~
 - ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
-- **delegate admin tasks to not be creator**
+- ~~delegate admin tasks to not be creator~~
 - ~~implement permissioned relay only mode~~
 - ~~sign and check AdvertRecords~~
 - ~~root records in DDB need to be signed~~
@@ -90,6 +90,7 @@ robustness:
 + Layer 1
 + ~~Layer 2~~
 - genericise AlgoOps
+- **fix bingle_admin deploy and upgrade**
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
