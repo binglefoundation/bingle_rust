@@ -239,7 +239,6 @@ pub enum DdbMessage {
     #[serde(rename = "initResolve")] InitResolve(DdbInitResolve),
     #[serde(rename = "initResponse")] InitResponse(DdbInitResponse),
     #[serde(rename = "dumpResolve")] DumpResolve(DdbDumpResolve),
-    #[serde(rename = "dumpResolveResponse")] DumpResolveResponse(DdbDumpResolveResponse),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -417,24 +416,6 @@ pub struct DdbInitResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DdbDumpResolve {
     pub app: String, // "ddb"
-    pub record: AdvertRecord,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
-    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
-    pub response_tag: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DdbDumpResolveResponse {
-    pub app: String, // "ddb"
-    #[serde(rename = "recordIndex")]
-    pub record_index: i64,
-    #[serde(rename = "recordId")]
-    pub record_id: String,
     pub record: AdvertRecord,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,

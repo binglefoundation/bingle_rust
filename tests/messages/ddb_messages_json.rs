@@ -168,17 +168,4 @@ pub fn ddb_init_and_dump_roundtrip() {
     let d2 = marshal::from_json_str(&jd).unwrap();
     assert_eq!(dump, d2);
 
-    let dump_resp = Message::Ddb(DdbMessage::DumpResolveResponse(DdbDumpResolveResponse {
-        app: "ddb".into(),
-        record_index: 1,
-        record_id: rec.id.clone(),
-        record: rec.clone(),
-        tag: None,
-        response_tag: None,
-        text: None,
-        data: None,
-    }));
-    let jr = marshal::to_json_string(&dump_resp);
-    let dr2 = marshal::from_json_str(&jr).unwrap();
-    assert_eq!(dump_resp, dr2);
 }

@@ -374,7 +374,7 @@ components:
       description: |
         Called to start initializing a new relay node.
         Sent to the DDB node selected by the sender id and current epoch.
-        The relay node responds with a `DdbInitResponse` message followed by `DdbDumpResolveResponse` messages for each record in the database.
+        The relay node responds with a `DdbInitResponse` message followed by `DdbDumpResolve` messages for each record in the database.
         
         NOTE: currently, the sender must be permissioned as a relay.
       properties:
@@ -670,52 +670,6 @@ components:
           type: integer
           description: The number of records in the database.
       required: [app, type, dbCount]
-      additionalProperties: true
-
-    DdbDumpResolveResponse:
-      type: object
-      description: |
-        Sent from a relay node to the sender of a `DdbDumpResolve` message.
-        One response is sent per record in the database.
-        The response contains the record index, id and advertisement record.
-      properties:
-        app:
-          type: string
-          enum: ["ddb"]
-          description: ddb
-        type:
-          type: string
-          enum: ["dumpResolveResponse"]
-          description: dumpResolveResponse
-        cipher_suite:
-          type: string
-          nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
-        tag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for request/response association.
-        responseTag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for responses.
-        text:
-          type: string
-          nullable: true
-          description: Optional text field if the typed message conveys textual content
-        data:
-          type: object
-          description: Optional structured payload; schema depends on (`app`, `type`)
-          additionalProperties: true
-        recordIndex:
-          type: integer
-          description: The index of the record in the database.
-        recordId:
-          type: string
-          description: The identifier of the node the record describes.
-        record:
-          $ref: '#/components/schemas/AdvertRecord'
-      required: [app, type, recordIndex, recordId, record]
       additionalProperties: true
 
     AdvertRecord:
