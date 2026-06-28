@@ -27,9 +27,9 @@ security:
     *   **Spec**: The description for `DdbInitResolve` says it is followed by `DdbDumpResolveResponse` messages.
     *   **Code**: The implementation in `src/ddb/mod.rs` sends `DdbDumpResolve` messages.
     *   **Note**: The spec contains conflicting info, describing `DdbDumpResolve` as the message carrying the record, while naming it `DdbDumpResolveResponse` in the process flow.
-*   **Signature Verification**: Implement a signature over the AdvertRecord struct.
-    *   **Spec**: Specifies `DdbUpsertResolve` and `DdbDeleteResolve` include an `originalSignature`.
-    *   **Code**: While the fields exist in the structs, the message handlers (`on_ddb_upsert_resolve`) do not currently appear to verify these signatures, relying instead on the DTLS-provided identity.
+*   ~~Signature Verification**: Implement a signature over the AdvertRecord struct.~~
+    ~~*   **Spec**: Specifies `DdbUpsertResolve` and `DdbDeleteResolve` include an `originalSignature`.~~
+    ~~*   **Code**: While the fields exist in the structs, the message handlers (`on_ddb_upsert_resolve`) do not currently appear to verify these signatures, relying instead on the DTLS-provided identity.~~
 * ~~Network Partitioning Algorithm: fixed this inconsistency in the spec~~
 - ~~ensure runs in live with full encryption~~
 - ~~test encryption for entropy~~
@@ -49,7 +49,7 @@ security:
 - ~~Test for extended master secret support~~
 - ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
-- **delegate admin tasks to not be creator**
+- ~~delegate admin tasks to not be creator~~
 - ~~implement permissioned relay only mode~~
 - ~~sign and check AdvertRecords~~
 - ~~root records in DDB need to be signed~~
@@ -90,6 +90,8 @@ robustness:
 + Layer 1
 + ~~Layer 2~~
 - genericise AlgoOps
+- **fix bingle_admin deploy and upgrade**
+- app replace migrate local data
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
