@@ -1,7 +1,7 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::blockchain::algo_bingle::{AlgoBingle, ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE};
+use rust_comms::blockchain::algo_bingle::{AlgoBingle, ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE, ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_FREEZE};
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
 use std::collections::HashMap;
 use std::env;
@@ -54,6 +54,14 @@ pub const PASSPHRASE_ASSET_CREATOR: &str = "eyebrow bleak multiply material flus
 pub const ADDRESS_ASSET_RESERVE: &str = "ZKPYCKDPCF75XTMJPCTJY5OG32BQDIPJUFFBRGAFATCYUUWPSYCDLXCQKA";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_RESERVE: &str = "weasel open guide until scale stove pull keep truly push tongue anxiety throw acoustic hamster total rare door cost response promote grain adapt ability muffin";
+#[allow(dead_code)]
+pub const ADDRESS_ASSET_MANAGER: &str = "PPVIJ3JCZ34DUE3Q3CKTY2ZSKTJV5A32C35A62G7DX462WRPZBE45DOA5Q";
+#[allow(dead_code)]
+pub const PASSPHRASE_ASSET_MANAGER: &str = "narrow tuition slot toddler slim copper pool permit subject elegant favorite cigar legal nurse muscle jewel rifle broom canoe eagle hint uncover unfair about similar";
+#[allow(dead_code)]
+pub const ADDRESS_ASSET_FREEZE: &str = "JSR33VO7TGVWZAHULWH4QNBI4APJFEPUBA3563C5FBO3Q2PNCMS4UVASGM";
+#[allow(dead_code)]
+pub const PASSPHRASE_ASSET_FREEZE: &str = "loan warfare heart chat giraffe skirt radio interest tiger sentence episode cross concert dream under fuel avoid good border congress hope stadium permit about sunset";
 
 #[allow(dead_code)]
 pub fn localnet_config() -> AlgoChainConfig {
@@ -90,7 +98,9 @@ pub fn make_standard_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps>
     accounts.insert(ACCOUNT_APP_ADMIN.to_string(),     ops_from_mnemonic(ADDRESS_APP_ADMIN,     PASSPHRASE_APP_ADMIN,     cfg.clone()));
     accounts.insert(ACCOUNT_APP_WITHDRAWER.to_string(), ops_from_mnemonic(ADDRESS_APP_WITHDRAWER, PASSPHRASE_APP_WITHDRAWER, cfg.clone()));
     accounts.insert(ACCOUNT_ASSET_CREATOR.to_string(), ops_from_mnemonic(ADDRESS_ASSET_CREATOR, PASSPHRASE_ASSET_CREATOR, cfg.clone()));
-    accounts.insert(ACCOUNT_ASSET_RESERVE.to_string(), ops_from_mnemonic(ADDRESS_ASSET_RESERVE, PASSPHRASE_ASSET_RESERVE, cfg.clone()));
+    accounts.insert(ACCOUNT_ASSET_RESERVE.to_string(),  ops_from_mnemonic(ADDRESS_ASSET_RESERVE,  PASSPHRASE_ASSET_RESERVE,  cfg.clone()));
+    accounts.insert(ACCOUNT_ASSET_MANAGER.to_string(),  ops_from_mnemonic(ADDRESS_ASSET_MANAGER,  PASSPHRASE_ASSET_MANAGER,  cfg.clone()));
+    accounts.insert(ACCOUNT_ASSET_FREEZE.to_string(),   ops_from_mnemonic(ADDRESS_ASSET_FREEZE,   PASSPHRASE_ASSET_FREEZE,   cfg.clone()));
     accounts
 }
 
@@ -237,7 +247,7 @@ pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units:
     let cfg = ops.config.clone();
     crate::setup_localnet::ensure_localnet_accounts_funded(
         &cfg,
-        &[ADDRESS_APP_CREATOR, ADDRESS_APP_ADMIN, ADDRESS_APP_WITHDRAWER, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE],
+        &[ADDRESS_APP_CREATOR, ADDRESS_APP_ADMIN, ADDRESS_APP_WITHDRAWER, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE, ADDRESS_ASSET_MANAGER, ADDRESS_ASSET_FREEZE],
     ).expect("ensure standard accounts funded");
     let creator_ops = ops_from_mnemonic(ADDRESS_APP_CREATOR, PASSPHRASE_APP_CREATOR, cfg.clone());
     let accounts = make_standard_accounts(&cfg);

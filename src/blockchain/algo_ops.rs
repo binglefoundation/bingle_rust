@@ -621,23 +621,26 @@ impl AlgoOps {
     ///
     /// The caller (`self`) is the ASA manager (the only account that can later reconfigure it).
     /// `reserve_addr` and `clawback_addr` are Algorand address strings. decimals=0.
-    pub fn create_asset_configured(&self, name: &str, units_in_issue: u64, reserve_addr: &str, clawback_addr: &str) -> Result<Option<u64>> {
+    pub fn create_asset_configured(&self, name: &str, units_in_issue: u64, manager_addr: &str, reserve_addr: &str, clawback_addr: &str, freeze_addr: &str) -> Result<Option<u64>> {
         if name.trim().is_empty() { bail!("asset name must not be empty"); }
         if units_in_issue == 0 { bail!("units_in_issue must be > 0"); }
 
         let sk = self.private_key_bytes()?;
         let issuer = self.require_address()?;
+        let manager = Self::parse_address(manager_addr)?;
         let reserve = Self::parse_address(reserve_addr)?;
         let clawback = Self::parse_address(clawback_addr)?;
+        let freeze = Self::parse_address(freeze_addr)?;
 
         let client = self.algod_client()?;
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         let tx = algonaut::transaction::CreateAsset::new(issuer, units_in_issue, 0, false)
-            .manager(issuer)
+            .manager(manager)
             .reserve(reserve)
             .clawback(clawback)
+            .freeze(freeze)
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
@@ -662,7 +665,8 @@ impl AlgoOps {
     pub fn create_asset_with_reserve_app(&self, name: &str, units_in_issue: u64, app_id: u64) -> Result<Option<u64>> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let app_addr = self.contract_address(app_id)?;
-        self.create_asset_configured(name, units_in_issue, &app_addr, &app_addr)
+        let issuer_addr = self.address_str()?;
+        self.create_asset_configured(name, units_in_issue, &issuer_addr, &app_addr, &app_addr, &issuer_addr)
     }
 
     /// Check whether `account_address` has opted-in to `asset_id`.

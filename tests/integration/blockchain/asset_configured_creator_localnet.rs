@@ -1,7 +1,4 @@
-use crate::blockchain_users::{
-    ADDRESS_ASSET_CLAWBACK, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE,
-    PASSPHRASE_ASSET_CREATOR,
-};
+use crate::blockchain_users::{ADDRESS_ASSET_CLAWBACK, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_FREEZE, ADDRESS_ASSET_MANAGER, ADDRESS_ASSET_RESERVE, PASSPHRASE_ASSET_CREATOR};
 use crate::setup_localnet;
 use crate::util::test_util;
 
@@ -13,14 +10,14 @@ pub fn create_asset_configured_sets_manager_reserve_clawback() {
     let cfg = test_util::localnet_config();
     setup_localnet::ensure_localnet_accounts_funded(
         &cfg,
-        &[ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE, ADDRESS_ASSET_CLAWBACK],
+        &[ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_MANAGER, ADDRESS_ASSET_RESERVE, ADDRESS_ASSET_CLAWBACK, ADDRESS_ASSET_FREEZE],
     )
     .expect("fund blockchain user accounts; ensure algokit localnet is running");
 
     let creator = test_util::ops_from_mnemonic(ADDRESS_ASSET_CREATOR, PASSPHRASE_ASSET_CREATOR, cfg.clone());
 
     let asset_id = creator
-        .create_asset_configured("CFGCHK", 1_000, ADDRESS_ASSET_RESERVE, ADDRESS_ASSET_CLAWBACK)
+        .create_asset_configured("CFGCHK", 1_000, ADDRESS_ASSET_MANAGER, ADDRESS_ASSET_RESERVE, ADDRESS_ASSET_CLAWBACK, ADDRESS_ASSET_FREEZE)
         .expect("create_asset_configured call")
         .expect("asset id returned");
 
@@ -47,7 +44,8 @@ pub fn create_asset_configured_sets_manager_reserve_clawback() {
             .to_string()
     };
 
-    assert_eq!(field("manager", "manager-address"), ADDRESS_ASSET_CREATOR, "manager should be asset creator");
+    assert_eq!(field("manager", "manager-address"), ADDRESS_ASSET_MANAGER, "manager should be asset manager");
     assert_eq!(field("reserve", "reserve-address"), ADDRESS_ASSET_RESERVE, "reserve should be ASSET_RESERVE");
     assert_eq!(field("clawback", "clawback-address"), ADDRESS_ASSET_CLAWBACK, "clawback should be ASSET_CLAWBACK");
+    assert_eq!(field("freeze", "freeze-address"), ADDRESS_ASSET_FREEZE, "clawback should be ASSET_FREEZE");
 }

@@ -48,6 +48,8 @@ pub const ACCOUNT_APP_ADMIN: &str = "APP_ADMIN";
 pub const ACCOUNT_APP_WITHDRAWER: &str = "APP_WITHDRAWER";
 pub const ACCOUNT_ASSET_CREATOR: &str = "ASSET_CREATOR";
 pub const ACCOUNT_ASSET_RESERVE: &str = "ASSET_RESERVE";
+pub const ACCOUNT_ASSET_MANAGER: &str = "ASSET_MANAGER";
+pub const ACCOUNT_ASSET_FREEZE: &str = "ASSET_FREEZE";
 
 const INDEXER_PAGE_SIZE: u64 = 100;
 
@@ -1134,6 +1136,8 @@ impl AlgoBingle {
     ///                      Defaults to APP_CREATOR if absent.
     /// - `ASSET_RESERVE`  — address used as the ASA reserve field; opted into the ASA if it
     ///                      differs from the app account. Defaults to the app address if absent.
+    /// - `ASSET_MANAGER`  — address set as the ASA manager field, allowing future reconfiguration.
+    /// - `ASSET_FREEZE`   — address set as the ASA freeze field.
     pub fn deploy_app_and_asset(
         &self,
         app_path: &std::path::Path,
@@ -1146,8 +1150,8 @@ impl AlgoBingle {
         initial_hot_bingle: u64,
         accounts: &HashMap<String, AlgoOps>,
     ) -> Result<(u64, u64)> {
-        // All four named roles are required; all five addresses must be distinct.
-        let required_roles = [ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE];
+        // All six named roles are required; all seven addresses must be distinct.
+        let required_roles = [ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE, ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_FREEZE];
         for role in required_roles {
             if !accounts.contains_key(role) {
                 return Err(anyhow!("deploy_app_and_asset: missing required account '{}'", role));
@@ -1195,11 +1199,13 @@ impl AlgoBingle {
 
         // ── 2. Resolve effective asset ────────────────────────────────────────────
         let app_addr = self.ops.contract_address(effective_app_id)?;
-        let reserve_addr = accounts[ACCOUNT_ASSET_RESERVE].address_str()?;
+        let reserve_addr  = accounts[ACCOUNT_ASSET_RESERVE].address_str()?;
+        let manager_addr  = accounts[ACCOUNT_ASSET_MANAGER].address_str()?;
+        let freeze_addr   = accounts[ACCOUNT_ASSET_FREEZE].address_str()?;
 
         let need_new_asset = new_asset || (asset_id.is_none() && self.asset_id == 0);
         let effective_asset_id = if need_new_asset {
-            let id = asset_creator_ops.create_asset_configured(asset_name, total_units, &reserve_addr, &app_addr)?
+            let id = asset_creator_ops.create_asset_configured(asset_name, total_units, &manager_addr, &reserve_addr, &app_addr, &freeze_addr)?
                 .ok_or_else(|| anyhow!("create_asset_configured returned no asset_id"))?;
             tracing::info!("[deploy_app_and_asset] created new asset_id={}", id);
             id
