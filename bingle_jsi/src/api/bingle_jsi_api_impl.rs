@@ -232,7 +232,7 @@ impl BingleJsiApiImpl {
             asset_id,
             log_level: config.log_level,
             handle_cache_expiry,
-            dangerous_debug: config.debug,
+            dangerous_debug: false, // We don't want to enable dangerous debug DTLS features
             log_mode: rust_comms::util::logging::LogMode::JS,
             wait_response_timeout: None,    // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
         };
