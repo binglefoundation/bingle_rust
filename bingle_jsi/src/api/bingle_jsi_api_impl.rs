@@ -503,6 +503,8 @@ impl BingleJsiApiImpl {
                                     "text": msg.text,
                                 });
 
+                                tracing::info!("BingleJsiApiImpl][send_message_to_handles] Sending message to handle: {:?}", handle);
+
                                 let res = api_clone.send_message_to_handle(
                                     handle,
                                     payload,
@@ -927,6 +929,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
     }
 
     fn start(&self) -> Result<(), BingleJsiError> {
+        tracing::info!("[BingleJsiApiImpl][start] Starting engine");
         // Check if already started
         {
             let guard = self.started.lock().map_err(|_| BingleJsiError::InternalError {
@@ -943,6 +946,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let mut bypass_status = false;
         if let Ok(opts) = self.opts.lock() {
             if opts.dangerous_debug {
+                tracing::info!("[BingleJsiApiImpl][start] Bypassing keypair status check");
                 bypass_status = true;
             }
         }
@@ -951,6 +955,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let status = guard
             .keypair_status()
             .map_err(bingle_error_to_jsi)?;
+        tracing::info!("[BingleJsiApiImpl][start] Keypair status: {:?}", status.status);
         let kp_status = parse_keypair_status(&status.status);
         if !bypass_status && kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
             return Err(BingleJsiError::InvalidRequest {
@@ -960,6 +965,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 ),
             });
         }
+        tracing::info!("[BingleJsiApiImpl][start] Keypair status check passed");
 
         // Build opts with handle and passphrase from local API
         let mut opts_clone = self.opts.lock().map_err(|_| BingleJsiError::InternalError {
@@ -973,6 +979,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         }
         drop(guard);
 
+        tracing::info!("[BingleJsiApiImpl][start] Built opts with handle {} and passphrase from local API", opts_clone.handle);
         // Start the engine
         let api_clone = self.api.clone();
         let mut start_err = None;
@@ -984,6 +991,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         });
 
         if let Some(err) = start_err {
+            tracing::info!("[BingleJsiApiImpl][start] Failed to start Bingle API: {:?}", err);
             return Err(err);
         }
 
@@ -991,6 +999,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         if let Ok(mut started_guard) = self.started.lock() {
             *started_guard = true;
         }
+        tracing::info!("[BingleJsiApiImpl][start] Bingle API started, will run processing loop");
 
         // Start processing thread
         let api_inner = self.api.clone();
@@ -1006,12 +1015,15 @@ impl BingleJsiApi for BingleJsiApiImpl {
             *guard = Some(processing_thread);
         }
 
+        tracing::info!("[BingleJsiApiImpl][start] Bingle API has started processing loop");
+
+
         // Output INFO with version information
         if let Ok(versions) = self.get_versions() {
-            tracing::info!("Bingle JSI started. Versions: {:?}", versions);
+            tracing::info!("BingleJsiApiImpl][start] Bingle JSI started. Versions: {:?}", versions);
         }
 
-        tracing::info!("Bingle engine started");
+        tracing::info!("BingleJsiApiImpl][start] Bingle engine started");
         Ok(())
     }
 
