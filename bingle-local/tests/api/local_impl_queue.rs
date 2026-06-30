@@ -23,14 +23,14 @@ fn test_add_message_and_update_status() {
     
     // Check initial state (add_message sets progress to 1.0)
     let msgs = api.get_messages().expect("get_messages");
-    assert_eq!(msgs[0].progress, 1.0);
+    assert_eq!(msgs[0].progress, Some(1.0));
     
     // Update status
     api.update_message_status(timestamp, 0.5, Some("Sending...".to_string()))
         .expect("update_message_status");
     
     let msgs = api.get_messages().expect("get_messages");
-    assert_eq!(msgs[0].progress, 0.5);
+    assert_eq!(msgs[0].progress, Some(0.5));
     assert_eq!(msgs[0].failure_reason, Some("Sending...".to_string()));
     
     // Update to success
@@ -38,7 +38,7 @@ fn test_add_message_and_update_status() {
         .expect("update_message_status");
         
     let msgs = api.get_messages().expect("get_messages");
-    assert_eq!(msgs[0].progress, 1.0);
+    assert_eq!(msgs[0].progress, Some(1.0));
     assert_eq!(msgs[0].failure_reason, None);
 }
 

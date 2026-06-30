@@ -103,10 +103,10 @@ fn test_message_queue_with_mock_progress() {
         std::thread::sleep(Duration::from_millis(1000));
         let msgs = jsi.get_messages().unwrap();
         if let Some(msg) = msgs.iter().find(|m| m.timestamp == timestamp) {
-            if msg.progress >= 0.5 {
+            if msg.progress.map_or(false, |p| p >= 0.5) {
                 reached_0_5 = true;
             }
-            if msg.progress == 1.0 {
+            if msg.progress == Some(1.0) {
                 reached_1_0 = true;
                 break;
             }

@@ -281,7 +281,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             timestamp,
             text,
             cipher_suite,
-            progress: 1.0,
+            progress: Some(1.0),
             failure_reason: None,
         };
         let mut guard = match self.messages.lock() {
@@ -316,7 +316,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             timestamp,
             text,
             cipher_suite: None,
-            progress: 0.0,
+            progress: Some(0.0),
             failure_reason: None,
         };
 
@@ -343,7 +343,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
 
         if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
-            msg.progress = progress;
+            msg.progress = Some(progress);
             msg.failure_reason = failure_reason;
             Ok(())
         } else {
@@ -360,7 +360,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 return Err(BingleError::Other(msg));
             }
         };
-        Ok(guard.iter().filter(|m| m.progress < 1.0).cloned().collect())
+        Ok(guard.iter().filter(|m| m.progress.map_or(false, |p| p < 1.0)).cloned().collect())
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
@@ -537,7 +537,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
-        tracing::debug!("[BingleLocalApi] Checking keypair status");
+        tracing::info!("[BingleLocalApi] Checking keypair status");
         // 1) Check if keypair exists
         let kp = {
             let guard = match self.keypair.lock() {

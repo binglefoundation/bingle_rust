@@ -56,7 +56,7 @@ fn get_messages_returns_clone() {
         timestamp: 9,
         text: "zzz".into(),
         cipher_suite: None,
-        progress: 1.0,
+        progress: Some(1.0),
         failure_reason: None,
     });
     // fetch again and ensure original store is unchanged

@@ -943,6 +943,10 @@ impl Engine {
         let res = self.packet_transport.send(to, data);
         // Update send_status regardless of success or failure
         if let Some(key) = to.get_key() {
+            match &res {
+                Ok(_) => tracing::info!("[Engine::send_to_peer] sent to key={:?}", key),
+                Err(e) => tracing::warn!("[Engine::send_to_peer] send failed key={:?} error={}", key, e),
+            }
             if let Ok(mut status_map) = self.endpoint_status.lock() {
                 status_map.insert(
                     key.clone(),
@@ -1177,6 +1181,7 @@ impl Engine {
                     // 2) Mark endpoint as working: an arriving application packet confirms reachability
                     if let Some(key) = from.get_key() {
                         if let Ok(mut status_map) = endpoint_status.lock() {
+                            tracing::debug!("[Engine::install_dtls_handler][cb] marking endpoint as working: {:?}", key);
                             status_map.insert(key, EndpointStatus {
                                 last_checked_timestamp: Instant::now(),
                                 is_working: true,

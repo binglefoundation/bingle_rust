@@ -32,7 +32,8 @@ pub struct Message {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cipher_suite: Option<String>,
     // Delivery tracking
-    pub progress: f32, // 0.0 to 1.0 (1.0 = completed/sent/failed-permanently)
+    #[serde(default)]
+    pub progress: Option<f32>, // 0.0 to 1.0 (1.0 = completed/sent/failed-permanently)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
 }
