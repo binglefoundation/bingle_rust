@@ -6,6 +6,38 @@ use crate::messages::types::*;
 use tracing::{error, warn};
 use std::sync::{Arc, Mutex};
 
+/// Delay before sending TriangleTest1Response when a corner node is available, to allow the
+/// triangle test to complete before the initiator processes the response.
+pub const TRIANGLE_TEST_1_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Send a TriangleTest1Response to the originator after an optional delay.
+/// Called with `delay = TRIANGLE_TEST_1_DELAY` when a corner node was found, or `Duration::ZERO`
+/// when no corner node is available (can't validate full NAT config, so respond immediately).
+pub fn send_triangle_test1_response(
+    api: &Arc<dyn BingleApiBoth>,
+    from_nsk: &crate::api::bingle_api::NetworkEndpoint,
+    from_user_id: &str,
+    response_tag: Option<String>,
+    no_corner_node: bool,
+    delay: std::time::Duration,
+) {
+    if !delay.is_zero() {
+        std::thread::sleep(delay);
+    }
+    let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response {
+        app: None,
+        no_corner_node,
+        response_tag,
+    }));
+    let resp_json = crate::messages::marshal::to_json_value(&resp);
+    if from_user_id.is_empty() {
+        warn!("[handlers::send_triangle_test1_response] skipping: empty sender id");
+    } else {
+        let ok = api.send_message_to_network(from_nsk, &from_user_id.to_string(), resp_json, None);
+        tracing::info!("[handlers::send_triangle_test1_response] no_corner_node={} sent ok={:?}", no_corner_node, ok);
+    }
+}
+
 
 #[derive(Clone)]
 pub struct FromStruct {
@@ -736,13 +768,8 @@ impl MessageHandler for DefaultPrintingHandler {
                 Ok(info) => info,
                 Err(e) => {
                     warn!("[handlers::on_triangle_test1] find_relay failed: {}", e);
-                    // No corner node available — send TriangleTest1Response with no_corner_node=true
-                    let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: true, response_tag: msg_tag }));
-                    let resp_json = crate::messages::marshal::to_json_value(&resp);
-                    if !from_user_id.is_empty() {
-                        let ok = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
-                        tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response (no_corner_node) sent ok={:?}", ok);
-                    }
+                    // No corner node — respond immediately; can't validate full NAT config
+                    send_triangle_test1_response(&api_for_thread, &from_nsk, &from_user_id, msg_tag, true, std::time::Duration::ZERO);
                     return;
                 }
             };
@@ -761,17 +788,8 @@ impl MessageHandler for DefaultPrintingHandler {
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
             tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={:?}", associated_relay.address(), ok);
 
-            // After sending TriangleTest2 to the peer relay, send TriangleTest1Response back to the sender of TriangleTest1
-
-            let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response { app: None, no_corner_node: false, response_tag: msg_tag }));
-            let resp_json = crate::messages::marshal::to_json_value(&resp);
-
-            if from_user_id.is_empty() {
-                warn!("[handlers::on_triangle_test1] Skipping TriangleTest1Response: invalid sender id");
-            } else {
-                let ok2 = api_for_thread.send_message_to_network(&from_nsk, &from_user_id, resp_json, None);
-                tracing::info!("[handlers::on_triangle_test1] TriangleTest1Response sent ok={:?}", ok2);
-            }
+            // Delay before responding to allow the triangle test to complete, then send TriangleTest1Response
+            send_triangle_test1_response(&api_for_thread, &from_nsk, &from_user_id, msg_tag, false, TRIANGLE_TEST_1_DELAY);
 
             tracing::info!("[handlers::on_triangle_test1] done for {:?}", msg2);
         });

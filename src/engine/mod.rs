@@ -914,7 +914,10 @@ impl Engine {
         to: &crate::api::bingle_api::NetworkEndpoint,
         data: &[u8],
     ) -> Result<(), String> {
-        tracing::info!("[Engine::send_to_peer] {}, {:?}", to, data);
+        match std::str::from_utf8(data) {
+            Ok(s) => tracing::info!("[Engine::send_to_peer] to={} data={}", to, s),
+            Err(_) => tracing::info!("[Engine::send_to_peer] to={} data=<{} bytes>", to, data.len()),
+        }
         // Guard: reject incomplete relay endpoints (missing channel); fully-configured
         // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
         if to.is_relay() && to.relay_channel().is_none() {

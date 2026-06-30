@@ -51,6 +51,9 @@ impl BingleLocalApi for ControllableLocalApi {
         _cipher_suite: Option<String>,
     ) -> Result<(), BingleError> { Ok(()) }
 
+    fn queue_message(&mut self, _recipient_handles: Vec<String>, _text: String) -> Result<(), BingleError> { Ok(()) }
+    fn update_message_status(&mut self, _timestamp: i64, _progress: f32, _failure_reason: Option<String>) -> Result<(), BingleError> { Ok(()) }
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(Vec::new()) }
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(Vec::new()) }
     fn save(&self, _path: &str) -> Result<(), BingleError> { Ok(()) }
     fn load(&mut self, _path: &str) -> Result<(), BingleError> { Ok(()) }

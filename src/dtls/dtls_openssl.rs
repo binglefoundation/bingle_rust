@@ -870,7 +870,7 @@ pub mod openssl_impl {
 
     impl std::io::Write for CommonNetworkMuxConn {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            tracing::warn!("[dtls muxconn][Write:write] legacy call {} bytes", buf.len());
+            tracing::debug!("[dtls muxconn][Write:write] legacy call {} bytes", buf.len());
             // Prefer direct inet address for logging; otherwise, show relay target if available.
             let peer_str = if let Some(addr) = self.peer.inet_socket_address() {
                 addr.to_string()
@@ -883,7 +883,7 @@ pub mod openssl_impl {
             {
                 let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    tracing::warn!("[dtls muxconn][send][{} -> {}] {}", from_ip, peer_str, json);
+                    tracing::info!("[dtls muxconn][send][{} -> {}] {}", from_ip, peer_str, json);
                 } else {
                     tracing::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, peer_str, buf.len());
                 }
@@ -951,12 +951,12 @@ pub mod openssl_impl {
             _cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<std::io::Result<usize>> {
-            tracing::info!("[dtls muxconn][Poll_write] poll_write");
+            tracing::debug!("[dtls muxconn][Poll_write] poll_write");
             Poll::Ready(std::io::Write::write(&mut *self, buf))
         }
 
         fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            tracing::info!("[dtls muxconn][Poll_flush] poll_flush");
+            tracing::debug!("[dtls muxconn][Poll_flush] poll_flush");
             Poll::Ready(std::io::Write::flush(&mut *self))
         }
 
