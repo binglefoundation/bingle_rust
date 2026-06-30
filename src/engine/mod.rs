@@ -1788,6 +1788,11 @@ impl Engine {
         self.set_last_public_addr(public_addr);
 
         // Transition to TrianglePing and perform relay triangle test
+        if self.state == EngineState::TrianglePing {
+            tracing::info!("[Engine] already in TrianglePing");
+            return;
+        }
+
         let prev = self.state;
         self.state = EngineState::TrianglePing;
         tracing::info!("[Engine] state change: {:?} -> TrianglePing", prev);
