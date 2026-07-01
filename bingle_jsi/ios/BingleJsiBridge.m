@@ -62,6 +62,7 @@ RCT_EXTERN_METHOD(addMessage:(NSString *)senderHandle
                   recipientHandles:(NSArray *)recipientHandles
                   timestamp:(double)timestamp
                   text:(NSString *)text
+                  cipherSuite:(nullable NSString *)cipherSuite
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

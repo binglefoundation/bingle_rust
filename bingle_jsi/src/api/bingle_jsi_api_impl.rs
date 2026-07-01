@@ -929,75 +929,76 @@ impl BingleJsiApi for BingleJsiApiImpl {
     }
 
     fn start(&self) -> Result<(), BingleJsiError> {
-        tracing::info!("[BingleJsiApiImpl][start] Starting engine");
         // Check if already started
-        {
+        let already_started = {
             let guard = self.started.lock().map_err(|_| BingleJsiError::InternalError {
                 reason: "Started flag lock poisoned".to_string(),
             })?;
-            if *guard {
+            *guard
+        };
+
+        if already_started {
+            tracing::info!("[BingleJsiApiImpl][start] Engine already started, skipping engine start");
+        } else {
+            tracing::info!("[BingleJsiApiImpl][start] Starting engine");
+
+            // Check keypair status is FUNDED or ACTIVE (bypass in debug mode)
+            let mut bypass_status = false;
+            if let Ok(opts) = self.opts.lock() {
+                if opts.dangerous_debug {
+                    tracing::info!("[BingleJsiApiImpl][start] Bypassing keypair status check");
+                    bypass_status = true;
+                }
+            }
+
+            let guard = local_api_guard(&self.local_api)?;
+            let status = guard
+                .keypair_status()
+                .map_err(bingle_error_to_jsi)?;
+            tracing::info!("[BingleJsiApiImpl][start] Keypair status: {:?}", status.status);
+            let kp_status = parse_keypair_status(&status.status);
+            if !bypass_status && kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
                 return Err(BingleJsiError::InvalidRequest {
-                    reason: "Engine already started".to_string(),
+                    reason: format!(
+                        "Cannot start engine: keypair must be FUNDED or ACTIVE, but is {:?}",
+                        kp_status
+                    ),
                 });
             }
-        }
+            tracing::info!("[BingleJsiApiImpl][start] Keypair status check passed");
 
-        // Check keypair status is FUNDED or ACTIVE (bypass in debug mode)
-        let mut bypass_status = false;
-        if let Ok(opts) = self.opts.lock() {
-            if opts.dangerous_debug {
-                tracing::info!("[BingleJsiApiImpl][start] Bypassing keypair status check");
-                bypass_status = true;
+            // Build opts with handle and passphrase from local API
+            let mut opts_clone = self.opts.lock().map_err(|_| BingleJsiError::InternalError {
+                reason: "Opts lock poisoned".to_string(),
+            })?.clone();
+            if let Some(handle) = &status.handle {
+                opts_clone.handle = handle.clone();
             }
-        }
+            if let Ok(Some(kp)) = guard.get_keypair() {
+                opts_clone.algo_passphrase = Some(kp.passphrase);
+            }
+            drop(guard);
 
-        let guard = local_api_guard(&self.local_api)?;
-        let status = guard
-            .keypair_status()
-            .map_err(bingle_error_to_jsi)?;
-        tracing::info!("[BingleJsiApiImpl][start] Keypair status: {:?}", status.status);
-        let kp_status = parse_keypair_status(&status.status);
-        if !bypass_status && kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
-            return Err(BingleJsiError::InvalidRequest {
-                reason: format!(
-                    "Cannot start engine: keypair must be FUNDED or ACTIVE, but is {:?}",
-                    kp_status
-                ),
+            tracing::info!("[BingleJsiApiImpl][start] Built opts with handle {} and passphrase from local API", opts_clone.handle);
+            // Start the engine
+            let api_clone = self.api.clone();
+            let mut start_err = None;
+            api_clone.access_unsafe_for_tests(|api_mut| {
+                if let Err(e) = api_mut.start(&opts_clone) {
+                    tracing::error!("Failed to start Bingle API: {}", e);
+                    start_err = Some(bingle_error_to_jsi(e));
+                }
             });
-        }
-        tracing::info!("[BingleJsiApiImpl][start] Keypair status check passed");
 
-        // Build opts with handle and passphrase from local API
-        let mut opts_clone = self.opts.lock().map_err(|_| BingleJsiError::InternalError {
-            reason: "Opts lock poisoned".to_string(),
-        })?.clone();
-        if let Some(handle) = &status.handle {
-            opts_clone.handle = handle.clone();
-        }
-        if let Ok(Some(kp)) = guard.get_keypair() {
-            opts_clone.algo_passphrase = Some(kp.passphrase);
-        }
-        drop(guard);
-
-        tracing::info!("[BingleJsiApiImpl][start] Built opts with handle {} and passphrase from local API", opts_clone.handle);
-        // Start the engine
-        let api_clone = self.api.clone();
-        let mut start_err = None;
-        api_clone.access_unsafe_for_tests(|api_mut| {
-            if let Err(e) = api_mut.start(&opts_clone) {
-                tracing::error!("Failed to start Bingle API: {}", e);
-                start_err = Some(bingle_error_to_jsi(e));
+            if let Some(err) = start_err {
+                tracing::info!("[BingleJsiApiImpl][start] Failed to start Bingle API: {:?}", err);
+                return Err(err);
             }
-        });
 
-        if let Some(err) = start_err {
-            tracing::info!("[BingleJsiApiImpl][start] Failed to start Bingle API: {:?}", err);
-            return Err(err);
-        }
-
-        // Mark as started
-        if let Ok(mut started_guard) = self.started.lock() {
-            *started_guard = true;
+            // Mark as started
+            if let Ok(mut started_guard) = self.started.lock() {
+                *started_guard = true;
+            }
         }
         tracing::info!("[BingleJsiApiImpl][start] Bingle API started, will run processing loop");
 

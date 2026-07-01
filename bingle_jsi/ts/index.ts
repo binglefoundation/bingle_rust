@@ -111,7 +111,8 @@ export const BingleJsi = BingleJsiNative as {
     senderHandle: string,
     recipientHandles: string[],
     timestamp: number,
-    text: string
+    text: string,
+    cipherSuite?: string | null
   ): Promise<void>;
   getMessages(): Promise<
     {
