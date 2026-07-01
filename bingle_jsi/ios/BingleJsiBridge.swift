@@ -358,6 +358,46 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     @objc
+    func processSendQueue(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let messages = try api.getMessages()
+                var processed = 0
+                for msg in messages where msg.progress < 1.0 {
+                    let bingleMsg = BingleMessage(
+                        app: nil, type: nil, tag: nil, responseTag: nil,
+                        text: msg.text, data: nil, cipherSuite: nil
+                    )
+                    var allSuccess = true
+                    var lastError: String? = nil
+                    for handle in msg.recipientHandles {
+                        do {
+                            _ = try api.sendMessageToHandle(handle: handle, message: bingleMsg)
+                        } catch {
+                            allSuccess = false
+                            lastError = "\(error)"
+                            break
+                        }
+                    }
+                    if allSuccess {
+                        try api.updateMessageStatus(timestamp: msg.timestamp, progress: 1.0, failureReason: nil)
+                    } else if let err = lastError {
+                        try api.updateMessageStatus(timestamp: msg.timestamp, progress: 1.0, failureReason: err)
+                    }
+                    processed += 1
+                }
+                resolve(processed)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
     func keypairStatus(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
