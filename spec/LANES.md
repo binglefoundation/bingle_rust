@@ -121,3 +121,9 @@ deploy:
 - production deploy
 - release of iOS app
 - release of Android app
+
+Bugs:
+- NAT timeout causes incoming relay data loss ([#5](https://github.com/bingle-foundation/bingle_rust/issues/5))
+- Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))
+- After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))
+- ~~STUN handler does not pick up a change to inconsistent ([#2](https://github.com/bingle-foundation/bingle_rust/issues/2))~~
