@@ -55,7 +55,7 @@ security:
 - ~~root records in DDB need to be signed~~
 - ~~validate rippled messages are from relays~~
 - ~~validate a DDB entry with am_relay=true references a permissioned relay~~
-- document all crates
+- ~~document all crates~~
 
 robustness:
 - ~~fail sensibly with message when Bingle network down (< 2 relays))~~
