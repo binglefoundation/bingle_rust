@@ -315,7 +315,7 @@ class BingleJsiBridge: RCTEventEmitter {
                         "timestamp": $0.timestamp,
                         "text": $0.text,
                         "cipher_suite": $0.cipherSuite as Any,
-                        "progress": $0.progress,
+                        "progress": $0.progress as Any,
                         "failure_reason": $0.failureReason as Any,
                     ] as [String: Any]
                 })
@@ -367,7 +367,7 @@ class BingleJsiBridge: RCTEventEmitter {
             do {
                 let messages = try api.getMessages()
                 var processed = 0
-                for msg in messages where msg.progress < 1.0 {
+                for msg in messages where (msg.progress ?? 1.0) < 1.0 {
                     let bingleMsg = BingleMessage(
                         app: nil, type: nil, tag: nil, responseTag: nil,
                         text: msg.text, data: nil, cipherSuite: nil

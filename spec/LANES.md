@@ -60,7 +60,7 @@ security:
 robustness:
 - ~~fail sensibly with message when Bingle network down (< 2 relays))~~
 - ~~relay channel doesnt pass echo message after some reloads~~
-- NOTE: this will be further fixed when we retry sends and hold messages in pending
+- ~~NOTE: this will be further fixed when we retry sends and hold messages in pending~~
 - ~~indicate when we get no STUN responses (UDP blocked)~~
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
@@ -90,7 +90,7 @@ robustness:
 + Layer 1
 + ~~Layer 2~~
 - genericise AlgoOps
-- **fix bingle_admin deploy and upgrade**
+- ~~fix bingle_admin deploy and upgrade~~
 - app replace migrate local data
 
 network:
