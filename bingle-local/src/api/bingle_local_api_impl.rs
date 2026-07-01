@@ -344,7 +344,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
             msg.progress = Some(progress);
-            msg.failure_reason = failure_reason;
+            if failure_reason.is_some() {
+                msg.failure_reason = failure_reason;
+            }
             Ok(())
         } else {
             Err(BingleError::Other(format!("Message with timestamp {} not found", timestamp)))
