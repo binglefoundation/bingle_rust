@@ -92,6 +92,8 @@ impl BingleApiInternal for BothAsApi {
     fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.inner.ddb_register_ip(endpoint, am_relay) }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.inner.ddb_register_relay(relay_id, relay_sig) }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), BingleError> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
+    fn start_relay_keep_alive(&self, relay_id: String, relay_addr: std::net::SocketAddr) { self.inner.start_relay_keep_alive(relay_id, relay_addr) }
+    fn stop_relay_keep_alive(&self) { self.inner.stop_relay_keep_alive() }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) { self.inner.turn_client_handle_listen_response(relay_addr, relay_id) }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> { self.inner.turn_lookup_addr_by_id(id) }
     fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source_id, dest_id, source, dest) }
@@ -328,7 +330,24 @@ pub trait MessageHandler {
     fn on_relay_listen_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
     fn on_relay_check_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
     fn on_relay_call_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
-    fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayKeepAlive) { self.on_unimplemented(&Message::Relay(RelayMessage::KeepAlive(_msg.clone()))); }
+    fn on_relay_keep_alive(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayKeepAlive) {
+        // Fire-and-forget refresh of the client's TURN listener mapping; no response.
+        let router = &from.router;
+        if !router.get_am_relay() {
+            warn!("[handlers::on_relay_keep_alive] Not a relay: ignoring KeepAlive");
+            return;
+        }
+        let src = match router.get_last_from() {
+            Some(a) => a,
+            None => {
+                warn!("[handlers::on_relay_keep_alive] No source address available");
+                return;
+            }
+        };
+        let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        // Re-registering also picks up a NAT rebind to a new public port.
+        let _ok = api.turn_handle_listen(source_id, src);
+    }
 
     // New: RelayCalled handler (client-side) – register TURN mapping via internal API
     fn on_relay_called(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayCalled) {
@@ -1075,7 +1094,10 @@ impl DefaultPrintingHandler {
                 tracing::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id());
                 api_for_thread.set_state(crate::engine::EngineState::Registered);
                 // Notify that we are listening now
-                api_for_thread.notify_listening(true, crate::engine::NatType::Restricted)
+                api_for_thread.notify_listening(true, crate::engine::NatType::Restricted);
+                // Keep the NAT mapping towards this relay alive so inbound relayed data
+                // is deliverable even after long idle periods.
+                api_for_thread.start_relay_keep_alive(relay_info.id().to_string(), relay_info.address());
             }
         } else {
             tracing::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);

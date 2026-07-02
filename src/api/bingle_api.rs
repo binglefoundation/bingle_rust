@@ -68,6 +68,11 @@ pub trait BingleApiInternal: Send + Sync {
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), BingleError> { Ok(()) }
+    /// Start (or restart) the periodic keep-alive towards the relay we registered with,
+    /// refreshing the NAT mapping so inbound relayed data stays deliverable.
+    fn start_relay_keep_alive(&self, _relay_id: String, _relay_addr: SocketAddr) {}
+    /// Stop the periodic relay keep-alive, if running.
+    fn stop_relay_keep_alive(&self) {}
     /// Client-side handler invoked on ListenResponse to register allowed relay id <-> addr mapping.
     fn turn_client_handle_listen_response(&self, _relay_addr: SocketAddr, _relay_id: String) {}
     /// Lookup a previously registered address for the given id (TURN mapping).
