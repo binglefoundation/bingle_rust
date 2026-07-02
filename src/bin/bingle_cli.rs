@@ -203,6 +203,10 @@ fn cmd_run(mut args: Vec<String>) {
         }
     };
 
+    // The compact record this process registered on-chain at startup; used on shutdown
+    // to make sure we only clear our own registration (see resolve_shutdown_action).
+    let mut registered_static_record: Option<String> = None;
+
     // If a static IP was provided, attempt to register it on-chain for discovery BEFORE starting the protocol
     if let Some(static_addr) = opts.static_ip {
         // Resolve app_id from StartOptions or APP_ID env
@@ -242,6 +246,7 @@ fn cmd_run(mut args: Vec<String>) {
                         match bingle.register_endpoint(app_id, &compact) {
                             Ok(txid) => {
                                 tracing::info!("Registered static endpoint {} for app_id {} (tx: {})", static_addr, app_id, txid);
+                                registered_static_record = Some(compact);
                             }
                             Err(e) => {
                                 warn!("Failed to register static endpoint '{}': {}", static_addr, e);
@@ -354,16 +359,37 @@ fn cmd_run(mut args: Vec<String>) {
     let action = resolve_shutdown_action(&opts, app_id_env);
     match action {
         ShutdownAction::Unregister { app_id, passphrase, algo_provider_config, asset_id } => {
-            tracing::info!("[cmd_run] Unregistering static endpoint for app_id={}", app_id);
             let ops = AlgoOps::new(Some(passphrase), None, algo_provider_config.clone());
             let asset_id_for_ctor = asset_id.or_else(|| algo_provider_config.as_ref().and_then(|c| c.asset_id)).unwrap_or(0);
-            let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
-            match bingle.register_endpoint(app_id, "") {
-                Ok(txid) => {
-                    tracing::info!("[cmd_run] Unregistered static endpoint for app_id {} (tx: {})", app_id, txid);
-                }
-                Err(e) => {
-                    tracing::warn!("[cmd_run] Failed to unregister static endpoint for app_id {}: {}", app_id, e);
+            let bingle = AlgoBingle::new(ops.clone(), app_id, asset_id_for_ctor);
+            // Guard against the redeploy race: a replacement task may already have
+            // registered a newer record under the same account, so only clear the
+            // record this process wrote at startup.
+            let proceed = match ops.address.clone() {
+                Some(addr) => match bingle.get_static_endpoint(app_id, &addr) {
+                    Ok(current) => {
+                        let clear = AlgoBingle::should_clear_static_endpoint(registered_static_record.as_deref(), current.as_deref());
+                        if !clear {
+                            tracing::info!("[cmd_run] Skipping static endpoint unregistration: on-chain record {:?} is not the record registered by this process {:?}", current, registered_static_record);
+                        }
+                        clear
+                    }
+                    Err(e) => {
+                        tracing::warn!("[cmd_run] Could not read current static endpoint ({}); unregistering anyway", e);
+                        true
+                    }
+                },
+                None => true,
+            };
+            if proceed {
+                tracing::info!("[cmd_run] Unregistering static endpoint for app_id={}", app_id);
+                match bingle.register_endpoint(app_id, "") {
+                    Ok(txid) => {
+                        tracing::info!("[cmd_run] Unregistered static endpoint for app_id {} (tx: {})", app_id, txid);
+                    }
+                    Err(e) => {
+                        tracing::warn!("[cmd_run] Failed to unregister static endpoint for app_id {}: {}", app_id, e);
+                    }
                 }
             }
         }
