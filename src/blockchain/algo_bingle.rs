@@ -376,6 +376,38 @@ impl AlgoBingle {
         self.broadcast_group(&client, vec![signed])
     }
 
+    /// Read the static endpoint record currently registered on-chain by `address`.
+    /// The record may be split across the "static_endpoint" and "static_endpoint_x"
+    /// local state keys; the parts are concatenated.
+    /// Returns Ok(None) if the account is not opted in or no record is present.
+    pub fn get_static_endpoint(&self, app_id: u64, address: &str) -> Result<Option<String>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let kvs = match self.ops.local_state_for_account(app_id, address)? {
+            Some(entries) => entries,
+            None => return Ok(None),
+        };
+        let ep = kvs.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
+        let ep_x = kvs.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+        let full = format!("{}{}", ep, ep_x);
+        if full.is_empty() { Ok(None) } else { Ok(Some(full)) }
+    }
+
+    /// Decide whether shutdown should clear the on-chain static endpoint record.
+    ///
+    /// Guards against a redeploy race where a replacement task has already registered
+    /// a newer record under the same account: only clear when the record this process
+    /// registered at startup is still the one on-chain.
+    ///
+    /// `registered_record` is the compact record this process wrote at startup (None if
+    /// registration never happened or failed); `current_record` is the record currently
+    /// on-chain (None if absent).
+    pub fn should_clear_static_endpoint(registered_record: Option<&str>, current_record: Option<&str>) -> bool {
+        match (registered_record, current_record) {
+            (Some(ours), Some(current)) => ours == current,
+            _ => false,
+        }
+    }
+
     /// Parse a RelayIP string into a SocketAddr. Accepts forms like "host:port" or "ip:port".
     /// Returns None if parsing fails.
     pub fn parse_relay_ip(ip: &str) -> Option<std::net::SocketAddr> {

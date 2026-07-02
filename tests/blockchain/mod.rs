@@ -57,3 +57,6 @@ pub mod test_node_errors;
 #[path = "test_retry_logic.rs"]
 pub mod test_retry_logic;
 
+#[path = "static_endpoint_guard.rs"]
+pub mod static_endpoint_guard;
+
