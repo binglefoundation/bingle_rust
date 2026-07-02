@@ -83,11 +83,12 @@ impl AlgoOps {
         let passphrase = format!("b64:{}", general_purpose::STANDARD.encode(sk));
         (id, passphrase)
     }
+
+    pub fn new_indexer(config: Option<AlgoChainConfig>) -> Self {
+        Self::new(None, None, config)
+    }
+
     pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoChainConfig>) -> Self {
-        // Enforce that a source of address is provided (either explicit address or a passphrase/seed)
-        if passphrase.is_none() && address.is_none() {
-            panic!("AlgoOps::new requires either a passphrase or an address");
-        }
         // Use explicit config if provided; else Default (localnet)
         let config = config.unwrap_or_default();
         let mut ops = Self {
