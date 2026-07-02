@@ -21,6 +21,7 @@ pub fn only_from_relay(msg: &Message) -> bool {
                 DdbMessage::Signon(_) => true,
                 DdbMessage::UpsertResolve(m) => m.rippled,
                 DdbMessage::DeleteResolve(m) => m.rippled,
+                DdbMessage::Signoff(m) => m.rippled,
                 DdbMessage::InitResolve(_) => true,
                 DdbMessage::UpdateResponse(_) | DdbMessage::QueryResponse(_) | DdbMessage::SignonResponse(_) |
                 DdbMessage::RelaysStatusResponse(_) | DdbMessage::InitResponse(_) |
@@ -164,6 +165,7 @@ impl Router {
                 DdbMessage::RelaysStatusResponse(m) => handler.on_ddb_relays_status_response(api.clone(), from, m),
                 DdbMessage::Signon(m) => handler.on_ddb_signon(api.clone(), from, m),
                 DdbMessage::SignonResponse(m) => handler.on_ddb_signon_response(api.clone(), from, m),
+                DdbMessage::Signoff(m) => handler.on_ddb_signoff(api.clone(), from, m),
                 _ => handler.on_unimplemented(msg),
             },
             Message::Ping(p) => match p {
