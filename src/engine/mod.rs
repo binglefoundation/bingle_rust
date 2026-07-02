@@ -225,6 +225,10 @@ pub struct Engine {
     pub(crate) span: tracing::Span,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
+    // Periodic keep-alive towards our registered relay, refreshing the NAT mapping
+    // (Mutex so it can be started/stopped through &self from the API wrappers)
+    relay_keep_alive: Mutex<Option<crate::relay::relay_keep_alive::RelayKeepAliveSender>>,
+    relay_keep_alive_interval: std::time::Duration,
     weak_self: std::sync::Weak<Engine>,
 }
 
@@ -571,6 +575,8 @@ impl Engine {
             endpoint_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
             span: tracing::Span::none(),
             custom_message_handler: None,
+            relay_keep_alive: Mutex::new(None),
+            relay_keep_alive_interval: crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL,
             weak_self: std::sync::Weak::new(),
         };
         eng.set_last_public_addr(options.static_ip.clone());
@@ -1776,6 +1782,8 @@ impl Engine {
             self.state = EngineState::TrianglePing;
             self.set_nat_type(NatType::Unknown);
             self.notify_listening(false);
+            // Our relay registration is tied to the old public address; stop refreshing it.
+            self.stop_relay_keep_alive();
             // Forget all DTLS peer connections so fresh handshakes are performed.
             self.packet_transport.dtls().forget_peers();
             // Clear engine-level connection tracking.
@@ -2056,10 +2064,43 @@ impl Engine {
             tracing::info!("[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}", relay_info.id());
             api.set_state(EngineState::Registered);
             api.notify_listening(true, NatType::Restricted);
+            // Keep the NAT mapping towards this relay alive so inbound relayed data
+            // is deliverable even after long idle periods.
+            self.start_relay_keep_alive(relay_info.id().to_string(), relay_info.address());
+        }
+    }
+
+    /// Start (or restart) the periodic keep-alive towards the relay we just registered
+    /// with. Any previously running sender is stopped first so re-registration never
+    /// leaves two live loops.
+    pub(crate) fn start_relay_keep_alive(&self, relay_id: String, relay_addr: SocketAddr) {
+        let Ok(mut guard) = self.relay_keep_alive.lock() else {
+            tracing::error!("[Engine::start_relay_keep_alive] relay_keep_alive mutex poisoned");
+            return;
+        };
+        if let Some(mut old) = guard.take() {
+            old.stop();
+        }
+        let mut sender = crate::relay::relay_keep_alive::RelayKeepAliveSender::new(
+            self.bingle_api.clone(),
+            relay_id,
+            relay_addr,
+            self.relay_keep_alive_interval,
+        );
+        sender.start();
+        *guard = Some(sender);
+    }
+
+    /// Stop the periodic relay keep-alive, if running.
+    pub(crate) fn stop_relay_keep_alive(&self) {
+        let old = self.relay_keep_alive.lock().ok().and_then(|mut g| g.take());
+        if let Some(mut old) = old {
+            old.stop();
         }
     }
 
     pub(crate) fn on_stun_blocked(&mut self) {
+        self.stop_relay_keep_alive();
         self.set_nat_type(NatType::NoConnection);
         self.state = EngineState::StunIdentify;
         self.notify_listening(false);
@@ -2072,6 +2113,7 @@ impl Engine {
     pub(crate) fn on_stun_none(&mut self) {
         use std::sync::atomic::Ordering;
         tracing::info!("[Engine] on_stun_none: STUN servers silent for timeout period; resetting to StunIdentify");
+        self.stop_relay_keep_alive();
         self.set_nat_type(NatType::Unknown);
         // Clear registered/endpoint_ready/nat_restricted flags so state() returns StunIdentify.
         self.registered.store(false, Ordering::SeqCst);
@@ -2146,7 +2188,9 @@ impl Engine {
     pub fn stop(&mut self) {
         let last_addr = self.last_public_addr();
         tracing::info!("[Engine::stop] starting {:?}:{:?}", self.issuer, last_addr);
-        // First, clear any API pointers and global router callbacks to avoid dangling references across tests
+        // Stop the relay keep-alive first so no send races the teardown below
+        self.stop_relay_keep_alive();
+        // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
         self.packet_transport.dtls_mut().stop().expect(&format!(
             "DTLS stop failed in Engine::stop {}:{}",
@@ -2314,6 +2358,20 @@ impl Engine {
             std::sync::Arc::new(move || relays.clone());
         let finder = crate::relay::relay_finder::RelayFinder::new(api, discover);
         self.relay_finder = Some(std::sync::Arc::new(finder));
+    }
+
+    /// Test helper: override the relay keep-alive interval (short for sender tests,
+    /// long to keep sends from firing during engine lifecycle tests).
+    pub fn test_set_relay_keep_alive_interval(&mut self, interval: std::time::Duration) {
+        self.relay_keep_alive_interval = interval;
+    }
+
+    /// Test helper: the (relay_id, relay_addr) the running keep-alive targets, if any.
+    pub fn relay_keep_alive_target_for_tests(&self) -> Option<(String, SocketAddr)> {
+        self.relay_keep_alive
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|s| (s.relay_id().to_string(), s.relay_addr())))
     }
 
     pub fn test_force_stun_blocked(&mut self) {

@@ -102,6 +102,8 @@ impl BingleApiInternal for LockingApiWrapper {
     fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.api("ddb_register_ip").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_ip(endpoint, am_relay)) }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.api("ddb_register_relay").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_relay(relay_id, relay_sig)) }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), BingleError> { self.api("update_turn_listener_relay").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
+    fn start_relay_keep_alive(&self, relay_id: String, relay_addr: SocketAddr) { if let Some(a) = self.api("start_relay_keep_alive") { a.start_relay_keep_alive(relay_id, relay_addr) } }
+    fn stop_relay_keep_alive(&self) { if let Some(a) = self.api("stop_relay_keep_alive") { a.stop_relay_keep_alive() } }
     fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: String) { if let Some(a) = self.api("turn_client_handle_listen_response") { a.turn_client_handle_listen_response(relay_addr, relay_id) } }
     fn turn_lookup_addr_by_id(&self, id: String) -> Option<SocketAddr> { self.api("turn_lookup_addr_by_id").and_then(|a| a.turn_lookup_addr_by_id(id)) }
     fn turn_handle_call(&self, source_id: String, dest_id: String, source: SocketAddr, dest: SocketAddr) -> i32 { self.api("turn_handle_call").map(|a| a.turn_handle_call(source_id, dest_id, source, dest)).unwrap_or(-1) }

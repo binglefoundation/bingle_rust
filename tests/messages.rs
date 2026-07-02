@@ -54,6 +54,9 @@ pub mod triangle_test3_registers;
 #[path = "messages/relay_listen.rs"]
 pub mod relay_listen;
 
+#[path = "messages/relay_keep_alive.rs"]
+pub mod relay_keep_alive;
+
 #[path = "messages/relay_call.rs"]
 pub mod relay_call;
 
