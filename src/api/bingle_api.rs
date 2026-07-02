@@ -108,6 +108,9 @@ pub trait BingleApiInternal: Send + Sync {
     /// Remove a relay from the relay finder cache.
     fn relay_finder_remove_relay(&self, _relay_id: &str) { /* default no-op */ }
 
+    /// Clear cached relay states in the relay finder so the pool is re-queried.
+    fn relay_finder_clear_state_cache(&self) { /* default no-op */ }
+
     /// Get current number of records in the DDB backend.
     fn ddb_backend_size(&self) -> usize { 0 }
 
@@ -158,6 +161,7 @@ macro_rules! impl_bingle_api_internal_noop {
             fn ddb_upsert_record(&self, _record: $crate::ddb::AdvertRecord) {}
             fn ddb_delete_record(&self, _id: &str) {}
             fn relay_finder_remove_relay(&self, _relay_id: &str) {}
+            fn relay_finder_clear_state_cache(&self) {}
             fn ddb_backend_size(&self) -> usize { 0 }
             fn initialize_relay(&self) {}
             fn is_relay(&self) -> bool { false }

@@ -615,6 +615,56 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
+    fn on_ddb_signoff(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignoff) {
+        let router = &from.router;
+        if !router.get_am_relay() { return; }
+        // Validate sender id from transport against message startId
+        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
+        if !msg.rippled && msg.start_id != sender_id {
+            tracing::warn!("[handlers::on_ddb_signoff] Unauthorized signoff attempt: sender={} target={}", sender_id, msg.start_id);
+            return;
+        }
+
+        // Endpoint the signoff arrived from, for validation against the registered record.
+        let sender_ep = from.network_source_key.inet_socket_address().map(InetSocketAddress::from);
+
+        // Delete from backend
+        if let Some(backend) = router.get_ddb_backend()
+            && let Ok(mut b) = backend.lock() {
+                if let Some(record) = b.lookup(&msg.start_id)
+                    && !msg.rippled {
+                        // Validate the record belongs to the sender.
+                        if record.id != sender_id {
+                            tracing::warn!("[handlers::on_ddb_signoff] Record ID mismatch for signoff: record.id={} sender_id={}", record.id, sender_id);
+                            return;
+                        }
+                        // Validate the signoff comes from the endpoint registered for the node.
+                        if let Some(reg_ep) = &record.endpoint
+                            && sender_ep.as_ref() != Some(reg_ep) {
+                                tracing::warn!("[handlers::on_ddb_signoff] Endpoint mismatch for signoff: registered={} sender={:?}", reg_ep, sender_ep);
+                                return;
+                            }
+                    }
+                b.delete(&msg.start_id);
+            }
+
+        // Drop the node from the relay pool so it is no longer offered as a relay.
+        api.relay_finder_clear_state_cache();
+
+        // No response is pushed: the transport ACK confirms delivery.
+
+        if !msg.rippled {
+            let mut rippled_msg = msg.clone();
+            rippled_msg.rippled = true;
+            let ripple_msg = Message::Ddb(DdbMessage::Signoff(rippled_msg));
+            let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
+            if let Some(backend) = router.get_ddb_backend()
+                && let Ok(b) = backend.lock() {
+                    api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
+                }
+        }
+    }
+
     fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, q: &DdbQueryResolve) {
         let router = &from.router;
         if !router.get_am_relay() { return; }
