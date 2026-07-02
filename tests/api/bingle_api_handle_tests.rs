@@ -89,6 +89,7 @@ impl DdbClient for MockDdbClient {
         self.lookup_results.lock().unwrap().get(id).cloned().ok_or_else(|| BingleError::Other("not found".to_string()))
     }
     fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, BingleError> { Ok(0) }
+    fn signoff(&self) -> Result<(), BingleError> { Ok(()) }
 }
 
 #[test]

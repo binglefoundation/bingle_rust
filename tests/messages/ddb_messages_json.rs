@@ -75,6 +75,38 @@ pub fn ddb_update_and_delete_roundtrip() {
     assert_eq!(del, d2);
 }
 
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn ddb_signoff_roundtrip() {
+    let signoff = Message::Ddb(DdbMessage::Signoff(DdbSignoff {
+        app: "ddb".into(),
+        start_id: "LEAVING".into(),
+        rippled: false,
+        tag: Some("t".into()),
+        response_tag: None,
+        text: None,
+        data: None,
+    }));
+    let js = marshal::to_json_string(&signoff);
+    assert!(js.contains("\"type\":\"signoff\""), "expected signoff type tag in {}", js);
+    let s2 = marshal::from_json_str(&js).unwrap();
+    assert_eq!(signoff, s2);
+
+    // rippled variant also round-trips
+    let rippled = Message::Ddb(DdbMessage::Signoff(DdbSignoff {
+        app: "ddb".into(),
+        start_id: "LEAVING".into(),
+        rippled: true,
+        tag: None,
+        response_tag: None,
+        text: None,
+        data: None,
+    }));
+    let jr = marshal::to_json_string(&rippled);
+    let r2 = marshal::from_json_str(&jr).unwrap();
+    assert_eq!(rippled, r2);
+}
+
 
 #[test]
 #[cfg(not(target_os = "ios"))]

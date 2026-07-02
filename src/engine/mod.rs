@@ -2308,6 +2308,14 @@ impl Engine {
         }
     }
 
+    pub fn relay_finder_clear_state_cache(&self) {
+        if let Some(finder) = &self.relay_finder {
+            finder.clear_state_cache();
+        } else {
+            tracing::warn!("[Engine::relay_finder_clear_state_cache] relay_finder not initialized, cannot clear state cache");
+        }
+    }
+
     pub fn ddb_backend_size(&self) -> usize {
         if let Ok(b) = self.ddb_backend.lock() {
             b.len()

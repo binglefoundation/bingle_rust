@@ -65,6 +65,8 @@ pub trait BingleApiInternal: Send + Sync {
     fn ddb_register_ip(&self, _endpoint: SocketAddr, _am_relay: bool) -> Result<(), BingleError> { Ok(()) }
     /// Register a relay association via the engine's DDB client.
     fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), BingleError> { Ok(()) }
+    /// Notify a relay we are shutting down so it removes our DDB entry.
+    fn ddb_signoff(&self) -> Result<(), BingleError> { Ok(()) }
 
     // Update the TURN client listener relay - called after a Listen message has been sent.
     fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: SocketAddr) -> Result<(), BingleError> { Ok(()) }
@@ -108,6 +110,9 @@ pub trait BingleApiInternal: Send + Sync {
     /// Remove a relay from the relay finder cache.
     fn relay_finder_remove_relay(&self, _relay_id: &str) { /* default no-op */ }
 
+    /// Clear cached relay states in the relay finder so the pool is re-queried.
+    fn relay_finder_clear_state_cache(&self) { /* default no-op */ }
+
     /// Get current number of records in the DDB backend.
     fn ddb_backend_size(&self) -> usize { 0 }
 
@@ -144,6 +149,7 @@ macro_rules! impl_bingle_api_internal_noop {
             fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { None }
             fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
             fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
+            fn ddb_signoff(&self) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
             fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), $crate::api::bingle_api::BingleError> { Ok(()) }
             fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
             fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> { None }
@@ -158,6 +164,7 @@ macro_rules! impl_bingle_api_internal_noop {
             fn ddb_upsert_record(&self, _record: $crate::ddb::AdvertRecord) {}
             fn ddb_delete_record(&self, _id: &str) {}
             fn relay_finder_remove_relay(&self, _relay_id: &str) {}
+            fn relay_finder_clear_state_cache(&self) {}
             fn ddb_backend_size(&self) -> usize { 0 }
             fn initialize_relay(&self) {}
             fn is_relay(&self) -> bool { false }

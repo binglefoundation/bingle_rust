@@ -43,6 +43,7 @@ impl DdbClient for DdbMock {
     fn register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("not used".into())) }
     fn lookup(&self, _id: &str) -> Result<NetworkEndpoint, rust_comms::api::bingle_api::BingleError> { self.lookup_result.clone().ok_or_else(|| rust_comms::api::bingle_api::BingleError::Other("no lookup".into())) }
     fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("not used".into())) }
+    fn signoff(&self) -> Result<(), rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("not used".into())) }
 }
 
 // ---------------- Tests ----------------

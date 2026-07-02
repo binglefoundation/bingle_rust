@@ -6,7 +6,7 @@ use rust_comms::engine::RelayState;
 use rust_comms::messages::types::{
     DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve,
     DdbInitResponse, DdbMessage, DdbQueryResolve, DdbQueryResponse, DdbRelaysStatusResponse,
-    DdbSignon, DdbSignonResponse, DdbUpdateResponse, DdbUpsertResolve, FailVote, Message,
+    DdbSignoff, DdbSignon, DdbSignonResponse, DdbUpdateResponse, DdbUpsertResolve, FailVote, Message,
     MutexMessage, MutexRelease, MutexRequest, MutexResponse, PingMessage, PingPing, PingResponse,
     PlainTextMessage, RelayCall, RelayCallResponse, RelayCalled, RelayCheck, RelayCheckResponse,
     RelayKeepAlive, RelayListen, RelayListenResponse, RelayMessage, RelayReportFailed,
@@ -187,6 +187,19 @@ pub fn all_message_samples() -> Vec<(&'static str, Message)> {
                 start_id: "start1".to_string(),
                 epoch: 1,
                 original_signature: "origsig".to_string(),
+                rippled: false,
+                tag: None,
+                response_tag: None,
+                text: None,
+                data: None,
+            })),
+        ),
+        // Ddb::Signoff
+        (
+            "Ddb::Signoff",
+            Message::Ddb(DdbMessage::Signoff(DdbSignoff {
+                app: "ddb".to_string(),
+                start_id: "start1".to_string(),
                 rippled: false,
                 tag: None,
                 response_tag: None,

@@ -1042,6 +1042,13 @@ impl BingleJsiApi for BingleJsiApiImpl {
             *guard = false;
         }
 
+        // Tell a relay we are leaving so it removes our DDB entry. Best-effort:
+        // relies on the transport ACK, and a failure here must not block shutdown.
+        match self.api.ddb_signoff() {
+            Ok(()) => tracing::info!("Sent DDB signoff"),
+            Err(e) => tracing::warn!("DDB signoff failed (continuing shutdown): {}", e),
+        }
+
         // Stop the engine
         self.api.access_unsafe_for_tests(|api_mut| {
             api_mut.stop();
