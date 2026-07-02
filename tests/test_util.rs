@@ -212,9 +212,11 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     let approval_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
     let clear_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
+    let arc56_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
 
     let approval_src = fs::read_to_string(approval_path).expect("read approval teal from artifacts");
     let clear_src = fs::read_to_string(clear_path).expect("read clear teal from artifacts");
+    let arc56_json = fs::read_to_string(arc56_path).expect("read arc56 app spec from artifacts");
 
     let approval_bytes = ops.compile_teal(&approval_src).expect("compile approval teal");
     let clear_bytes = ops.compile_teal(&clear_src).expect("compile clear teal");
@@ -226,6 +228,7 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
         &approval_bytes, &clear_bytes, None,
         Some("create(address,address)void"),
         &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
+        &arc56_json,
     ).expect("deploy app call")
      .expect("failed to get app_id after deployment");
 

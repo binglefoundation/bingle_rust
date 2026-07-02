@@ -1016,6 +1016,37 @@ impl AlgoOps {
         if sized > min_fee { sized } else { min_fee }
     }
 
+    /// Parse the global and local `StateSchema` from an ARC-56 app spec's `state/schema`.
+    fn state_schema_from_arc56(
+        arc56_json: &str,
+    ) -> Result<(
+        algonaut::transaction::transaction::StateSchema,
+        algonaut::transaction::transaction::StateSchema,
+    )> {
+        let spec: serde_json::Value = serde_json::from_str(arc56_json)
+            .map_err(|e| anyhow!("failed to parse ARC-56 app spec json: {e}"))?;
+        let schema = spec
+            .get("state")
+            .and_then(|s| s.get("schema"))
+            .ok_or_else(|| anyhow!("ARC-56 app spec missing state/schema"))?;
+        let read = |section: &str, field: &str| -> Result<u64> {
+            schema
+                .get(section)
+                .and_then(|v| v.get(field))
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| anyhow!("ARC-56 app spec missing state/schema/{}/{}", section, field))
+        };
+        let global = algonaut::transaction::transaction::StateSchema {
+            number_ints: read("global", "ints")?,
+            number_byteslices: read("global", "bytes")?,
+        };
+        let local = algonaut::transaction::transaction::StateSchema {
+            number_ints: read("local", "ints")?,
+            number_byteslices: read("local", "bytes")?,
+        };
+        Ok((global, local))
+    }
+
     /// Deploy a new Algorand application.
     ///
     /// - `asset_id`: if `Some`, the app is opted into this ASA immediately after creation.
@@ -1024,20 +1055,20 @@ impl AlgoOps {
     ///   `@abimethod(create="require")`. Pass `None` for bare-create contracts.
     /// - `args`: ABI-encoded arguments for `method`. Must match the method signature.
     ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
-    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<Option<u64>> {
+    /// - `arc56_json`: text of the contract's ARC-56 app spec (the `*.arc56.json` that sits
+    ///   alongside the TEAL). The global/local state schema is read from its `state/schema`.
+    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], arc56_json: &str) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
         // Ensure we have account access
         let sk = self.private_key_bytes()?;
         let sender = self.require_address()?;
 
-        // Build programs and schemas
+        // Build programs and derive the state schema from the ARC-56 app spec (state/schema)
+        // so the allocation stays in sync with the contract rather than being hardcoded.
         let approval = algonaut::core::CompiledTeal(approval_program.to_vec());
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
-        // Global: BinglePrice (int), LastHandleTime (int), PredecessorApp (int), AppAdmin (bytes), AppWithdrawer (bytes).
-        // Local: handle_time (int), allow_static (int), allow_relay (int), Handle (bytes), static_endpoint (bytes), static_endpoint_x (bytes).
-        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
-        let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 3 };
+        let (gs, ls) = Self::state_schema_from_arc56(arc56_json)?;
 
         let client = self.algod_client()?;
         let params = self.algod_call(|| client.suggested_params())

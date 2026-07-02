@@ -31,9 +31,12 @@ pub fn deploy_call_validate_and_delete_teal_app() {
     let approval_prog = ops.compile_teal(&approval_src).expect("compile approval teal");
     let clear_prog = ops.compile_teal(&clear_src).expect("compile clear teal");
 
+    // The mini contract holds no application state; supply a minimal ARC-56 spec to match.
+    let arc56_json = r#"{"state":{"schema":{"global":{"ints":0,"bytes":0},"local":{"ints":0,"bytes":0}}}}"#;
+
     // Deploy
     let app_id = ops
-        .deploy_app(&approval_prog, &clear_prog, None, None, &[])
+        .deploy_app(&approval_prog, &clear_prog, None, None, &[], arc56_json)
         .expect("deploy app call")
         .expect("created app id");
 

@@ -1177,7 +1177,7 @@ impl AlgoBingle {
         // ── 1. Resolve effective app ──────────────────────────────────────────────
         let need_new_app = new_app || (app_id.is_none() && self.app_id == 0);
         let effective_app_id = if need_new_app {
-            let (approval_src, clear_src) = Self::read_teal_from_dir(app_path)?;
+            let (approval_src, clear_src, arc56_json) = Self::read_teal_from_dir(app_path)?;
             let approval = self.ops.compile_teal(&approval_src)?;
             let clear    = self.ops.compile_teal(&clear_src)?;
             let admin_pk      = address_to_byte_key(&admin_addr)?;
@@ -1186,6 +1186,7 @@ impl AlgoBingle {
                 &approval, &clear, None,
                 Some("create(address,address)void"),
                 &[AppArg::Bytes(admin_pk.to_vec()), AppArg::Bytes(withdrawer_pk.to_vec())],
+                &arc56_json,
             )?.ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
             admin_ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
@@ -1253,8 +1254,9 @@ impl AlgoBingle {
         Ok((effective_app_id, effective_asset_id))
     }
 
-    /// Read `*.approval.teal` and `*.clear.teal` from `dir`, returning their contents.
-    fn read_teal_from_dir(dir: &std::path::Path) -> Result<(String, String)> {
+    /// Read `*.approval.teal`, `*.clear.teal` and `*.arc56.json` from `dir`, returning their
+    /// contents as `(approval, clear, arc56)`.
+    fn read_teal_from_dir(dir: &std::path::Path) -> Result<(String, String, String)> {
         let entries: Vec<std::fs::DirEntry> = std::fs::read_dir(dir)
             .map_err(|e| anyhow!("cannot read app_path {:?}: {e}", dir))?
             .filter_map(|e| e.ok())
@@ -1270,12 +1272,19 @@ impl AlgoBingle {
             .map(|e| e.path())
             .ok_or_else(|| anyhow!("no *.clear.teal found in {:?}", dir))?;
 
+        let arc56_path = entries.iter()
+            .find(|e| e.file_name().to_string_lossy().ends_with(".arc56.json"))
+            .map(|e| e.path())
+            .ok_or_else(|| anyhow!("no *.arc56.json found in {:?}", dir))?;
+
         let approval_src = std::fs::read_to_string(&approval_path)
             .map_err(|e| anyhow!("failed to read {:?}: {e}", approval_path))?;
         let clear_src = std::fs::read_to_string(&clear_path)
             .map_err(|e| anyhow!("failed to read {:?}: {e}", clear_path))?;
+        let arc56_json = std::fs::read_to_string(&arc56_path)
+            .map_err(|e| anyhow!("failed to read {:?}: {e}", arc56_path))?;
 
-        Ok((approval_src, clear_src))
+        Ok((approval_src, clear_src, arc56_json))
     }
 
     /// Clawback any ASA balance held by `old_app_id` to `new_app_id`.
