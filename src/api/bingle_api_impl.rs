@@ -1012,6 +1012,12 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         tracing::info!("[BingleApiImpl::update_turn_listener_relay][exit] Ok(())");
         Ok(())
     }
+    fn start_relay_keep_alive(&self, relay_id: String, relay_addr: std::net::SocketAddr) {
+        self.engine.access(|e| e.start_relay_keep_alive(relay_id, relay_addr));
+    }
+    fn stop_relay_keep_alive(&self) {
+        self.engine.access(|e| e.stop_relay_keep_alive());
+    }
     fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
         tracing::info!("[BingleApiImpl::turn_client_handle_listen_response][enter] id={} addr={}", relay_id, relay_addr);
         self.engine.access(|e| e.turn_client_handle_listen_response(relay_addr, &relay_id));
