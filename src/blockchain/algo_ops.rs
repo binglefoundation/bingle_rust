@@ -1050,7 +1050,6 @@ impl AlgoOps {
     ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
     /// - `arc56_json`: text of the contract's ARC-56 app spec (the `*.arc56.json` that sits
     ///   alongside the TEAL). The global/local state schema is read from its `state/schema`.
-    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], arc56_json: &str) -> Result<Option<u64>> {
     pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], opt_in_method_name: &str, arc56_json: &str) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
