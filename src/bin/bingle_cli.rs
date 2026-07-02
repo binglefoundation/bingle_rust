@@ -3,7 +3,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender};
 
-use rust_comms::api::bingle_api::{BingleApi, BingleError, OnConnectHandler, OnListeningHandler, OnMessageHandler};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, BingleError, OnConnectHandler, OnListeningHandler, OnMessageHandler};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::util::config_utils::{parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids};
 use rust_comms::util::cli_utils::parse_start_options_from_args;
@@ -402,6 +402,13 @@ fn cmd_run(mut args: Vec<String>) {
         ShutdownAction::NoPassphrase => {
             tracing::debug!("[cmd_run] No passphrase available; skipping endpoint unregistration");
         }
+    }
+
+    // Tell a relay we are leaving so it removes our DDB entry. Best-effort:
+    // relies on the transport ACK, and a failure here must not block shutdown.
+    match api.ddb_signoff() {
+        Ok(()) => tracing::info!("[cmd_run] Sent DDB signoff"),
+        Err(e) => tracing::warn!("[cmd_run] DDB signoff failed (continuing shutdown): {}", e),
     }
 
     // Stop API
