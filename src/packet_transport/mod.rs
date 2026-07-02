@@ -526,8 +526,8 @@ impl PacketTransport for DtlsReliablePacketTransport {
                         tx_id,
                         attempt
                     );
-                    if attempt + 1 < delays.len() {
-                        if let Err(e) = self.dtls.send(to, &packet) {
+                    if attempt + 1 < delays.len()
+                        && let Err(e) = self.dtls.send(to, &packet) {
                             if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
                                 tracing::warn!(
                                     "[DtlsReliablePacketTransport::send] failed to clear pending ACK after retry send error for tx_id={}: {}",
@@ -537,7 +537,6 @@ impl PacketTransport for DtlsReliablePacketTransport {
                             }
                             return Err(e);
                         }
-                    }
                 }
                 Err(e) => {
                     if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {

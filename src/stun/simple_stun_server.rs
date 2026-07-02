@@ -70,9 +70,8 @@ impl SimpleStunServer {
                                 };
                                 let mut port = from.port();
                                 // If attach_to set, override IP (keep port unless broken_nat wants to change)
-                                if let Some(att) = opts.attach_to {
-                                    if let std::net::IpAddr::V4(v4) = att.ip() { ip = v4.octets(); }
-                                }
+                                if let Some(att) = opts.attach_to
+                                    && let std::net::IpAddr::V4(v4) = att.ip() { ip = v4.octets(); }
                                 if opts.broken_nat {
                                     // Derive a deterministic but different mapping per requester
                                     // Simple hash: xor octets and ports into a small seed
@@ -85,9 +84,8 @@ impl SimpleStunServer {
                                     if let Ok(mut m) = map_thread.lock() {
                                         m.entry(from).or_insert((port, ip));
                                     }
-                                } else if let Ok(m) = map_thread.lock() {
-                                    if let Some((p, i)) = m.get(&from) { port = *p; ip = *i; }
-                                }
+                                } else if let Ok(m) = map_thread.lock()
+                                    && let Some((p, i)) = m.get(&from) { port = *p; ip = *i; }
                                 (ip, port)
                             };
 
@@ -95,7 +93,7 @@ impl SimpleStunServer {
                             let atype: [u8;2] = [0x00, 0x20];
                             let alen: [u8;2] = [0x00, 0x08];
                             let family: [u8;2] = [0x00, 0x01]; // IPv4
-                            let xport = ((port ^ 0x2112) as u16).to_be_bytes();
+                            let xport = ((port ^ 0x2112)).to_be_bytes();
                             let mut xip = ip_bytes;
                             let cookie = [0x21u8, 0x12, 0xA4, 0x42];
                             for i in 0..4 { xip[i] ^= cookie[i]; }
@@ -116,7 +114,7 @@ impl SimpleStunServer {
                     }
                     Err(e) => {
                         if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut {
-                            std::thread::sleep(std::time::Duration::from_millis(5));
+                            thread::sleep(std::time::Duration::from_millis(5));
                             continue;
                         } else {
                             // Stop on hard errors

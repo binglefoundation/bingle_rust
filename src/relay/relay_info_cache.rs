@@ -30,13 +30,12 @@ impl RelayInfoCache {
     }
 
     pub fn update_relay(&self, relay: RelayInfo) -> bool {
-        if let Ok(mut relays) = self.relays.lock() {
-            if let Some(index) = relays.iter().position(|entry| entry.id() == relay.id()) {
+        if let Ok(mut relays) = self.relays.lock()
+            && let Some(index) = relays.iter().position(|entry| entry.id() == relay.id()) {
                 relays[index] = relay.with_updated();
                 relays.sort_by(|left, right| left.id().cmp(right.id()));
                 return true;
             }
-        }
         false
     }
 

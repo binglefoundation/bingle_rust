@@ -230,13 +230,12 @@ impl ModifiedLamportDistributedMutex {
             // Check current holder lease
             let now = Instant::now();
             let mut deferred_by_lease = false;
-            if let Some((holder, _ts, deadline)) = &st.last_holder {
-                if *holder != from_id && *deadline > now {
+            if let Some((holder, _ts, deadline)) = &st.last_holder
+                && *holder != from_id && *deadline > now {
                     // Defer granting while current lease valid
                     st.deferred.insert((req.lamport_timestamp, from_id.to_string()));
                     deferred_by_lease = true;
                 }
-            }
 
             if !deferred_by_lease {
                 // Decide based on our own request status
@@ -304,9 +303,8 @@ impl ModifiedLamportDistributedMutex {
             self.cv.notify_all();
         }
 
-        if let Some((holder, _ts, _)) = &st.last_holder {
-            if holder == from_id { st.last_holder = None; }
-        }
+        if let Some((holder, _ts, _)) = &st.last_holder
+            && holder == from_id { st.last_holder = None; }
 
         let mut next_grant = None;
         // On release, grant only the next (earliest) deferred request to preserve majority safety
@@ -433,7 +431,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
             let first = st.deferred.iter().next().cloned();
             if let Some((ts_grant, id_grant)) = &first {
                 // Remove from deferred and set a lease for the next holder
-                st.deferred.remove(&(ts_grant.clone(), id_grant.clone()));
+                st.deferred.remove(&(*ts_grant, id_grant.clone()));
                 st.last_holder = Some((id_grant.clone(), *ts_grant, Instant::now() + self.lease_duration));
                 debug!("[mutex:{}] RELEASE: granting next {:?} with ts={} and broadcasting reply", self.self_id, id_grant, ts_grant);
             } else {

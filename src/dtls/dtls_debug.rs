@@ -245,7 +245,7 @@ pub fn dtls_udp_to_json_with_level(datagram: &[u8], level: tracing::Level) -> Re
         }
 
         let packet = DtlsUdpPacketJson { records };
-        return serde_json::to_string_pretty(&packet).map_err(|e| e.to_string());
+        serde_json::to_string_pretty(&packet).map_err(|e| e.to_string())
     } else if level >= tracing::Level::DEBUG {
         // Produce a terse single-line summary without heavy parsing
         let mut i: usize = 0;

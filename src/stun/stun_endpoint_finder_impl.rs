@@ -101,7 +101,7 @@ impl Inner {
         // 2. Decide if it is time to poll based on the current state's interval
         let interval_ticks = self.choose_interval();
 
-        if self.last_poll_tick.map_or(true, |last| now.saturating_sub(last) >= interval_ticks) {
+        if self.last_poll_tick.is_none_or(|last| now.saturating_sub(last) >= interval_ticks) {
             self.last_poll_tick = Some(now);
 
             // Determine servers to poll
@@ -235,6 +235,12 @@ pub struct StunEndpointFinderImpl {
     stop_cond: Arc<Condvar>,
     /// Override the no-response timeout (used in tests to avoid 30s waits).
     no_response_timeout_override: Option<Duration>,
+}
+
+impl Default for StunEndpointFinderImpl {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StunEndpointFinderImpl {

@@ -42,7 +42,7 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
     let ca_name = name_builder.build();
 
     // CA cert builder
-    let mut ca_builder = openssl::x509::X509::builder().map_err(|e| format!("x509 builder: {}", e))?;
+    let mut ca_builder = X509::builder().map_err(|e| format!("x509 builder: {}", e))?;
     let mut serial = BigNum::new().map_err(|e| format!("serial: {}", e))?;
     serial
         .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)

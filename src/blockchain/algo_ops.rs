@@ -98,8 +98,8 @@ impl AlgoOps {
         };
 
         // If no address was provided but we have a passphrase, derive the address immediately
-        if ops.address.is_none() {
-            if let Some(ref pass) = ops.passphrase {
+        if ops.address.is_none()
+            && let Some(ref pass) = ops.passphrase {
                 // Try Algorand mnemonic first
                 let maybe_seed = if !pass.is_empty() {
                     match algonaut::crypto::mnemonic::to_key(pass) {
@@ -111,7 +111,7 @@ impl AlgoOps {
                 let seed32: Option<[u8; 32]> = if let Some(bytes) = maybe_seed {
                     bytes.as_slice().try_into().ok()
                 } else if let Some(rest) = pass.strip_prefix("b64:") {
-                    match base64::engine::general_purpose::STANDARD.decode(rest) {
+                    match general_purpose::STANDARD.decode(rest) {
                         Ok(b) => b.as_slice().try_into().ok(),
                         Err(_) => None,
                     }
@@ -129,7 +129,6 @@ impl AlgoOps {
                     }
                 }
             }
-        }
 
         ops
     }
@@ -162,11 +161,10 @@ impl AlgoOps {
 
     // Returns true if the algonaut error is a retryable transient HTTP error.
     pub fn is_retryable(e: &algonaut::Error) -> bool {
-        if let algonaut::Error::Request(req) = e {
-            if let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
+        if let algonaut::Error::Request(req) = e
+            && let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
                 return Self::RETRYABLE_STATUS_CODES.contains(status);
             }
-        }
         false
     }
 
@@ -180,7 +178,7 @@ impl AlgoOps {
     where
         T: Send,
         F: Fn() -> Fut,
-        Fut: std::future::Future<Output = Result<T, algonaut::Error>> + Send,
+        Fut: Future<Output = Result<T, algonaut::Error>> + Send,
     {
         const MAX_RETRIES: u32 = 3;
         const RETRY_BASE_MS: u64 = 1_000;
@@ -207,7 +205,7 @@ impl AlgoOps {
                 }
                 Err(e) => {
                     if attempt >= MAX_RETRIES && Self::is_retryable(&e) {
-                        return Err(crate::blockchain::error::AlgoError::transient(
+                        return Err(AlgoError::transient(
                             "algod call",
                             &e.to_string(),
                         )
@@ -220,7 +218,7 @@ impl AlgoOps {
     }
 
     // Helper: run an async future on a fresh current-thread Tokio runtime.
-    fn rt_block_on<T: Send>(&self, fut: impl std::future::Future<Output = T> + Send) -> Result<T> {
+    fn rt_block_on<T: Send>(&self, fut: impl Future<Output = T> + Send) -> Result<T> {
         // If we are already in a tokio runtime, we must avoid nested block_on and 
         // the "cannot drop runtime" panic during unwinding/drop.
         if tokio::runtime::Handle::try_current().is_ok() {
@@ -293,16 +291,12 @@ impl AlgoOps {
                     for n in arr {
                         if let Some(u) = n.as_u64() {
                             buf.push((u & 0xFF) as u8);
-                        } else if let Some(i) = n.as_i64() {
-                            if i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
-                        }
+                        } else if let Some(i) = n.as_i64()
+                            && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
                     }
                     Some(buf)
                 } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
-                    match general_purpose::STANDARD.decode(b64) {
-                        Ok(b) => Some(b),
-                        Err(_) => None,
-                    }
+                    general_purpose::STANDARD.decode(b64).ok()
                 } else {
                     None
                 };
@@ -363,15 +357,14 @@ impl AlgoOps {
             .ok_or_else(|| anyhow!("This operation needs account access"))?;
 
         // New behavior: expect ASCII mnemonic passphrase. Derive 32-byte key using Algorand mnemonic.
-        if !pass.is_empty() {
-            if let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass) {
+        if !pass.is_empty()
+            && let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass) {
                 if key32.len() == 32 {
                     return Ok(key32.to_vec());
                 } else {
                     bail!("Derived key must be 32 bytes, got {}", key32.len());
                 }
             }
-        }
 
         // Backward compatibility: support legacy base64 format with "b64:" prefix
         if let Some(rest) = pass.strip_prefix("b64:") {
@@ -481,12 +474,11 @@ impl AlgoOps {
         let mut out: Vec<(u64, Vec<(String, String)>)> = Vec::new();
         for app in created {
             let id = match app.get("id").and_then(|x| x.as_u64()) { Some(i) => i, None => continue };
-            if let Some(filter) = maybe_app_id { if filter != id { continue; } }
+            if let Some(filter) = maybe_app_id && filter != id { continue; }
             let params = match app.get("params").and_then(|x| x.as_object()) { Some(p) => p, None => continue };
             let params_value = serde_json::Value::Object(params.clone());
             let gs_vec: Vec<serde_json::Value> = Self::json_get(&params_value, "global_state", "global-state")
-                .and_then(|x| x.as_array())
-                .map(|v| v.clone())
+                .and_then(|x| x.as_array()).cloned()
                 .unwrap_or_default();
             let kvs = Self::decode_state_entries(&gs_vec);
             out.push((id, kvs));
@@ -518,8 +510,7 @@ impl AlgoOps {
             let id = st.get("id").and_then(|x| x.as_u64());
             if id == Some(app_id) {
                 let keyvals_vec: Vec<serde_json::Value> = Self::json_get(st, "key_value", "key-value")
-                    .and_then(|x| x.as_array())
-                    .map(|v| v.clone())
+                    .and_then(|x| x.as_array()).cloned()
                     .unwrap_or_default();
                 let out = Self::decode_state_entries(&keyvals_vec);
                 return Ok(Some(out));
@@ -791,7 +782,7 @@ impl AlgoOps {
             .ok_or_else(|| anyhow!("asset info did not contain creator field"))?;
         let caller_str = {
             use std::str::FromStr;
-            algonaut::core::Address::from_str(&self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?)
+            algonaut::core::Address::from_str(self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?)
                 .map_err(|e| anyhow!("invalid caller address: {e}"))?
                 .to_string()
         };
@@ -1207,7 +1198,7 @@ impl AlgoOps {
         let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
         let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
         let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        for l in logs_arr { if let Some(s) = l.as_str() && let Ok(bytes) = general_purpose::STANDARD.decode(s) { logs.push(bytes); } }
         Ok((tx_id, logs))
     }
 
@@ -1239,7 +1230,7 @@ impl AlgoOps {
         let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
         let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
         let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        for l in logs_arr { if let Some(s) = l.as_str() && let Ok(bytes) = general_purpose::STANDARD.decode(s) { logs.push(bytes); } }
         Ok((tx_id, logs))
     }
 
@@ -1267,21 +1258,17 @@ impl AlgoOps {
 
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
         if let Some(sig) = method {
-            if sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void" {
-                if let Some(first) = args.get(0) {
-                    if let AppArg::Bytes(b) = first {
-                        if b.len() == 32 {
+            if (sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void")
+                && let Some(first) = args.first()
+                    && let AppArg::Bytes(b) = first
+                        && b.len() == 32 {
                             let mut pk = [0u8; 32];
                             pk.copy_from_slice(&b[..32]);
-                            if let Ok(addr_str) = crate::blockchain::algo_ops::byte_key_to_address(&pk) {
-                                if let Ok(target) = Self::parse_address(&addr_str) {
+                            if let Ok(addr_str) = byte_key_to_address(&pk)
+                                && let Ok(target) = Self::parse_address(&addr_str) {
                                     accounts.insert(0, target);
                                 }
-                            }
                         }
-                    }
-                }
-            }
         }
         let fapps: Vec<algonaut::core::AppId> = foreign_app_ids.iter().map(|&id| algonaut::core::AppId(id)).collect();
         let make_builder = || {
@@ -1449,11 +1436,10 @@ impl AlgoOps {
             let tx_id_obj = algonaut::core::TransactionId::from(tx_id);
             match self.algod_call(|| client.pending_transaction(&tx_id_obj)) {
                 Ok(p) => {
-                    if let Some(cr) = p.confirmed_round {
-                        if cr > 0 {
+                    if let Some(cr) = p.confirmed_round
+                        && cr > 0 {
                             return Ok(());
                         }
-                    }
                     if !p.pool_error.is_empty() {
                         bail!("Transaction rejected with pool error: {}", p.pool_error);
                     }
