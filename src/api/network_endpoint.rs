@@ -67,8 +67,8 @@ impl NetworkEndpoint {
     pub fn new_relay(relay_id: String, relay_address: Option<SocketAddr>, relay_channel: Option<u16>) -> Self {
         Self {
             inet_socket_address: None,
-            relay_channel: relay_channel,
-            relay_address: relay_address,
+            relay_channel,
+            relay_address,
             relay_id: Some(relay_id),
         }
     }

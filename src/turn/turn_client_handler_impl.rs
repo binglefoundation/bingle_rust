@@ -24,7 +24,7 @@ fn build_channel_data(channel: u16, data: &[u8]) -> Option<Vec<u8>> {
     out.extend_from_slice(&(data.len() as u16).to_be_bytes());
     out.extend_from_slice(data);
     let pad = (4 - (data.len() % 4)) % 4;
-    if pad > 0 { out.extend(std::iter::repeat(0u8).take(pad)); }
+    if pad > 0 { out.extend(std::iter::repeat_n(0u8, pad)); }
     Some(out)
 }
 
@@ -106,22 +106,22 @@ impl TurnHandler for TurnClientHandlerImpl {
                             ch,
                             len
                         );
-                        return Some(WrappedMessageWithNetworkEndpoint { ip_address: *relay_addr, message: payload, network_endpoint, is_relay_local: false });
+                        Some(WrappedMessageWithNetworkEndpoint { ip_address: *relay_addr, message: payload, network_endpoint, is_relay_local: false })
                     }
                     else {
                         tracing::warn!("[TurnClientHandlerImpl::handle_turn_incoming] packet from unknown relay {:?}; dropping", relay_addr);
-                        return None;
+                        None
                     }
                 }
                 Err(_) => {
                     tracing::error!("[TurnClientHandlerImpl::handle_turn_incoming] failed to lock allowed_addr_to_id");
-                    return None;
+                    None
                 }
             }
         }
         else {
             tracing::warn!("[TurnClientHandlerImpl::handle_turn_incoming] no sender address for incoming packet; dropping");
-            return None;
+            None
         }
     }
 

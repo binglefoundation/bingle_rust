@@ -36,7 +36,7 @@ pub fn deploy_call_validate_and_delete_teal_app() {
 
     // Deploy
     let app_id = ops
-        .deploy_app(&approval_prog, &clear_prog, None, None, &[], arc56_json)
+        .deploy_app(&approval_prog, &clear_prog, None, None, &[], "opt_in_to_bingle(uint64)void", arc56_json)
         .expect("deploy app call")
         .expect("created app id");
 

@@ -44,7 +44,7 @@ pub trait Dtls {
      * @param data the data to send
      * @return Ok(()) if the data was queued/sent, Err(()) otherwise
      */
-    fn send(&self, to: &crate::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()>;
+    fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()>;
 
 
     /**
@@ -164,7 +164,7 @@ pub trait Dtls {
      * Returns None if the handshake has not completed yet or the endpoint is unknown.
      * This value is derived from the connection and is not transmitted on the wire.
      */
-    fn get_cipher_suite(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> Option<String>;
+    fn get_cipher_suite(&self, endpoint: &NetworkEndpoint) -> Option<String>;
 
     /**
      * Forget all peer connections, closing their workers.

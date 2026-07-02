@@ -81,8 +81,8 @@ impl RelayUpdater {
 
         let all_relays = self.relay_info_cache.list_all_relays(my_id_norm, true);
 
-        let root_expired = all_relays.iter().filter(|relay| relay.is_root).any(|relay| is_expired(relay));
-        let non_root_expired = all_relays.iter().filter(|relay| !relay.is_root).any(|relay| is_expired(relay));
+        let root_expired = all_relays.iter().filter(|relay| relay.is_root).any(&is_expired);
+        let non_root_expired = all_relays.iter().filter(|relay| !relay.is_root).any(is_expired);
 
         if !root_expired && !non_root_expired {
             return;

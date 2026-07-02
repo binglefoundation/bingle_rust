@@ -33,7 +33,7 @@ pub fn build_channel_data(channel: u16, data: &[u8]) -> Option<Vec<u8>> {
     out.extend_from_slice(data);
     let pad = (4 - (data.len() % 4)) % 4;
     if pad > 0 {
-        out.extend(std::iter::repeat(0u8).take(pad));
+        out.extend(std::iter::repeat_n(0u8, pad));
     }
     Some(out)
 }
@@ -181,7 +181,7 @@ impl TurnHandlerImpl {
         // Probe up to range size for a free slot
         for _ in 0..range {
             // Ensure candidate is within [MIN, MAX]
-            if candidate < Self::MIN_CH || candidate > Self::MAX_CH {
+            if !(Self::MIN_CH..=Self::MAX_CH).contains(&candidate) {
                 candidate = Self::MIN_CH;
             }
             if let Ok(map) = self.ch_to_pair.lock() {
@@ -370,7 +370,7 @@ impl TurnHandler for TurnHandlerImpl {
         Some(WrappedMessageWithNetworkEndpoint {
             ip_address: if is_packet_from_dest { source_addr } else { dest_addr },
             message: payload,
-            network_endpoint: network_endpoint,
+            network_endpoint,
             is_relay_local: source_addr == dest_addr,
         })
     }
@@ -417,7 +417,7 @@ impl TurnHandler for TurnHandlerImpl {
     }
 }
 
-impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
+impl TurnRelayHandler for TurnHandlerImpl {
     fn handle_call(&self, source_id: &str, dest_id: &str, source: &SocketAddr, dest: &SocketAddr) -> i32 {
         // If already have a channel for this (source, dest) pair, return it
         if let Ok(map) = self.pair_to_ch.lock() {
@@ -471,7 +471,7 @@ impl super::turn_handler::TurnRelayHandler for TurnHandlerImpl {
 }
 
 // Provide client-side control callbacks on TurnHandlerImpl for backward compatibility
-impl super::turn_handler::TurnClientHandler for TurnHandlerImpl {
+impl TurnClientHandler for TurnHandlerImpl {
     fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
         if let (Ok(mut id2a), Ok(mut a2id)) = (
             self.allowed_id_to_addr.lock(),
@@ -664,7 +664,7 @@ impl TurnHandler for TurnClientImpl {
     }
 }
 
-impl super::turn_handler::TurnClientHandler for TurnClientImpl {
+impl TurnClientHandler for TurnClientImpl {
     fn handle_listen_response(&self, relay_address: &SocketAddr, relay_id: &str) {
         if let (Ok(mut id2a), Ok(mut a2id)) = (
             self.allowed_id_to_addr.lock(),

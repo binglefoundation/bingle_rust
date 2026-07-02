@@ -25,7 +25,7 @@ fn build_channel_data(channel: u16, data: &[u8]) -> Option<Vec<u8>> {
     out.extend_from_slice(&(data.len() as u16).to_be_bytes());
     out.extend_from_slice(data);
     let pad = (4 - (data.len() % 4)) % 4;
-    if pad > 0 { out.extend(std::iter::repeat(0u8).take(pad)); }
+    if pad > 0 { out.extend(std::iter::repeat_n(0u8, pad)); }
     Some(out)
 }
 
@@ -71,7 +71,7 @@ impl TurnRelayHandlerImpl {
         let range = (MAX_CH - MIN_CH + 1) as u32;
         let mut candidate: u16 = (MIN_CH as u32 + (seed as u32 % range)) as u16;
         for _ in 0..range {
-            if candidate < MIN_CH || candidate > MAX_CH { candidate = MIN_CH; }
+            if !(MIN_CH..=MAX_CH).contains(&candidate) { candidate = MIN_CH; }
             if let Ok(map) = self.ch_to_pair.lock() { if !map.contains_key(&candidate) { return Some(candidate); } } else { return None; }
             candidate = if candidate == MAX_CH { MIN_CH } else { candidate + 1 };
         }

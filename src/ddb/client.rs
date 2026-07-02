@@ -108,8 +108,8 @@ impl DdbClientImpl {
         };
         let ids: Vec<String> = ids_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
         let eps_opt = resp.get("relayEndpoints").and_then(|v| v.as_array());
-        if let Some(eps) = eps_opt {
-            if eps.len() == ids.len() {
+        if let Some(eps) = eps_opt
+            && eps.len() == ids.len() {
                 let mut out: Vec<(String, SocketAddr)> = Vec::new();
                 for (i, id) in ids.iter().enumerate() {
                     let ep = &eps[i];
@@ -133,13 +133,18 @@ impl DdbClientImpl {
                 }
                 return Ok(out);
             }
-        }
         // If endpoints are absent or misaligned, return empty to allow caller fallback
         Ok(Vec::new())
     }
 }
 
 pub struct NullDdbClient;
+
+impl Default for NullDdbClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl NullDdbClient {
     pub fn new() -> Self { Self }
@@ -459,7 +464,7 @@ impl DdbClient for DdbClientImpl {
         };
 
         // Deserialize advert record and validate signature
-        let record: super::AdvertRecord = serde_json::from_value(advert.clone())
+        let record: AdvertRecord = serde_json::from_value(advert.clone())
             .map_err(|e| BingleError::Other(format!("Failed to deserialize AdvertRecord: {}", e)))?;
 
         if !record.verify() {

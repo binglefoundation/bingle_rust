@@ -48,7 +48,7 @@ pub struct Router {
     on_message: Mutex<Option<Arc<crate::api::bingle_api::OnMessageHandler>>>,
     // DDB/relay context
     am_relay: std::sync::atomic::AtomicBool,
-    ddb_backend: Mutex<Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>>,
+    ddb_backend: Mutex<Option<Arc<Mutex<crate::ddb::InMemoryDdbBackend>>>>,
 }
 
 struct LockingApiWrapper {
@@ -80,7 +80,7 @@ impl BingleApi for LockingApiWrapper {
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> { self.api("handle_lookup").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.handle_lookup(handle)) }
     fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> { self.api("handle_lookup_by_id").and_then(|a| a.handle_lookup_by_id(user_id)) }
     fn send_message_to_id(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_id").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_id(user_id, message, progress)) }
-    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_handle").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle(handle, message, progress)) }
+    fn send_message_to_handle(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_handle").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle(handle, message, progress)) }
     fn send_message_to_network(&self, nsk: &NetworkEndpoint, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.api("send_message_to_network").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_network(nsk, user_id, message, progress)) }
     fn send_message_to_id_with_response(&self, user_id: &UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api("send_message_to_id_with_response").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_id_with_response(user_id, message, progress)) }
     fn send_message_to_handle_with_response(&self, handle: &Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.api("send_message_to_handle_with_response").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.send_message_to_handle_with_response(handle, message, progress)) }
@@ -91,9 +91,9 @@ impl BingleApi for LockingApiWrapper {
 }
 
 impl BingleApiInternal for LockingApiWrapper {
-    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { if let Some(a) = self.api("mutex_handle_request") { a.mutex_handle_request(from_id, req) } }
-    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { if let Some(a) = self.api("mutex_handle_response") { a.mutex_handle_response(from_id, resp) } }
-    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { if let Some(a) = self.api("mutex_handle_release") { a.mutex_handle_release(from_id, rel) } }
+    fn mutex_handle_request(&self, from_id: String, req: MutexRequest) { if let Some(a) = self.api("mutex_handle_request") { a.mutex_handle_request(from_id, req) } }
+    fn mutex_handle_response(&self, from_id: String, resp: MutexResponse) { if let Some(a) = self.api("mutex_handle_response") { a.mutex_handle_response(from_id, resp) } }
+    fn mutex_handle_release(&self, from_id: String, rel: MutexRelease) { if let Some(a) = self.api("mutex_handle_release") { a.mutex_handle_release(from_id, rel) } }
     fn get_relay_state(&self) -> String { self.api("get_relay_state").map(|a| a.get_relay_state()).unwrap_or_else(|| "off".to_string()) }
     fn set_state(&self, state: crate::engine::EngineState) { if let Some(a) = self.api("set_state") { a.set_state(state) } }
     fn get_state(&self) -> crate::engine::EngineState { self.api("get_state").map(|a| a.get_state()).unwrap_or(crate::engine::EngineState::StunIdentify) }
@@ -110,7 +110,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { if let Some(a) = self.api("notify_listening") { a.notify_listening(listening, nat_type) } }
     fn set_relay_state(&self, state: crate::engine::RelayState) { if let Some(a) = self.api("set_relay_state") { a.set_relay_state(state) } }
     fn get_peer_ddb_target(&self) -> Option<usize> { self.api("get_peer_ddb_target").and_then(|a| a.get_peer_ddb_target()) }
-    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { if let Some(a) = self.api("ddb_upsert_record") { a.ddb_upsert_record(record) } }
+    fn ddb_upsert_record(&self, record: AdvertRecord) { if let Some(a) = self.api("ddb_upsert_record") { a.ddb_upsert_record(record) } }
     fn ddb_delete_record(&self, id: &str) { if let Some(a) = self.api("ddb_delete_record") { a.ddb_delete_record(id) } }
     fn relay_finder_remove_relay(&self, relay_id: &str) { if let Some(a) = self.api("relay_finder_remove_relay") { a.relay_finder_remove_relay(relay_id) } }
     fn ddb_backend_size(&self) -> usize { self.api("ddb_backend_size").map(|a| a.ddb_backend_size()).unwrap_or(0) }
@@ -201,7 +201,7 @@ impl Router {
     }
 
     pub fn set_bingle_api(&self, api: Option<crate::api::bingle_api::BingleApiBothType>) { if let Ok(mut g) = self.api.lock() { *g = api; } }
-    pub fn get_bingle_api(&self) -> Option<Arc<dyn crate::api::bingle_api::BingleApiBoth>> {
+    pub fn get_bingle_api(&self) -> Option<Arc<dyn BingleApiBoth>> {
         match self.api.lock() {
             Ok(g) => g.as_ref().and_then(|w| w.upgrade()),
             Err(_) => None,
@@ -219,8 +219,8 @@ impl Router {
 
     pub fn set_am_relay(&self, b: bool) { self.am_relay.store(b, std::sync::atomic::Ordering::SeqCst); }
     pub fn get_am_relay(&self) -> bool { self.am_relay.load(std::sync::atomic::Ordering::SeqCst) }
-    pub fn set_ddb_backend(&self, backend: Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
-    pub fn get_ddb_backend(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
+    pub fn set_ddb_backend(&self, backend: Option<Arc<Mutex<crate::ddb::InMemoryDdbBackend>>>) { if let Ok(mut g) = self.ddb_backend.lock() { *g = backend; } }
+    pub fn get_ddb_backend(&self) -> Option<Arc<Mutex<crate::ddb::InMemoryDdbBackend>>> { match self.ddb_backend.lock() { Ok(g) => g.clone(), Err(_) => None } }
 
 
     fn send_outbound_response(&self, from: &FromStruct, outbound: serde_json::Value) {

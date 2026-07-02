@@ -5,18 +5,18 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
+use crate::blockchain::algo_ops::{address_to_byte_key, AlgoOps, AppArg};
 
 use algonaut::{
-    Algod,
     core::{Address, AppId, AssetId, MicroAlgos, ToMsgPack},
+    model::algod::SuggestedParams,
     transaction::{
         account::Account,
         builder::{CallApplication, ClawbackAsset, UpdateAsset},
         transaction::Transaction,
-        TransferAsset, Pay,
+        Pay, TransferAsset,
     },
-    model::algod::SuggestedParams,
+    Algod,
 };
 
 /// Lightweight helper around AlgoOps for calling the Bingle dApp.
@@ -105,7 +105,7 @@ impl AlgoBingle {
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         let client = self.ops.algod_client()?;
-        let app_info = self.ops.algod_call(|| client.app(algonaut::core::AppId(app_id)))
+        let app_info = self.ops.algod_call(|| client.app(AppId(app_id)))
             .map_err(|e| anyhow!("application_information failed: {e}"))?;
         let v = serde_json::to_value(&app_info)
             .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
@@ -140,11 +140,11 @@ impl AlgoBingle {
                     let mut buf: Vec<u8> = Vec::with_capacity(arr.len());
                     for n in arr {
                         if let Some(u) = n.as_u64() { buf.push((u & 0xFF) as u8); }
-                        else if let Some(i) = n.as_i64() { if i >= 0 { buf.push(((i as u64) & 0xFF) as u8); } }
+                        else if let Some(i) = n.as_i64() && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
                     }
                     Some(buf)
                 } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
-                    match base64::engine::general_purpose::STANDARD.decode(b64) { Ok(b) => Some(b), Err(_) => None }
+                    base64::engine::general_purpose::STANDARD.decode(b64).ok()
                 } else { None };
                 if let Some(bytes) = bytes_opt {
                     match String::from_utf8(bytes.clone()) {
@@ -172,7 +172,7 @@ impl AlgoBingle {
     pub fn set_allow_static(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
-        let pk = crate::blockchain::algo_ops::address_to_byte_key(target_address)
+        let pk = address_to_byte_key(target_address)
             .map_err(|e| anyhow!("invalid target address: {e}"))?;
         let (txid, _logs) = self
             .ops
@@ -180,7 +180,7 @@ impl AlgoBingle {
                 app_id,
                 None,
                 Some("set_allow_static(address,uint64)void"),
-                &[crate::blockchain::algo_ops::AppArg::Bytes(pk.to_vec()), crate::blockchain::algo_ops::AppArg::Uint(if allow { 1 } else { 0 })],
+                &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(if allow { 1 } else { 0 })],
             )?;
         Ok(txid)
     }
@@ -193,7 +193,7 @@ impl AlgoBingle {
     pub fn set_allow_relay(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
-        let pk = crate::blockchain::algo_ops::address_to_byte_key(target_address)
+        let pk = address_to_byte_key(target_address)
             .map_err(|e| anyhow!("invalid target address: {e}"))?;
         let (txid, _logs) = self
             .ops
@@ -201,7 +201,7 @@ impl AlgoBingle {
                 app_id,
                 None,
                 Some("set_allow_relay(address,uint64)void"),
-                &[crate::blockchain::algo_ops::AppArg::Bytes(pk.to_vec()), crate::blockchain::algo_ops::AppArg::Uint(if allow { 1 } else { 0 })],
+                &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(if allow { 1 } else { 0 })],
             )?;
         Ok(txid)
     }
@@ -217,7 +217,7 @@ impl AlgoBingle {
     /// Returns the submitted transaction id on success.
     pub fn withdraw(&self, app_id: u64, address: &str, amount: u64, asset_id: u64, asset_amount: u64) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let pk = crate::blockchain::algo_ops::address_to_byte_key(address)
+        let pk = address_to_byte_key(address)
             .map_err(|e| anyhow!("invalid address: {e}"))?;
         let foreign_asset = if asset_amount > 0 && asset_id > 0 { Some(asset_id) } else { None };
         let (txid, _logs) = self.ops.call_app(
@@ -252,7 +252,7 @@ impl AlgoBingle {
     /// Returns the submitted transaction id on success.
     pub fn set_app_admin(&self, app_id: u64, admin: &str) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let pk = crate::blockchain::algo_ops::address_to_byte_key(admin)
+        let pk = address_to_byte_key(admin)
             .map_err(|e| anyhow!("invalid admin address: {e}"))?;
         let (txid, _logs) = self.ops.call_app(
             app_id,
@@ -269,7 +269,7 @@ impl AlgoBingle {
     /// Returns the submitted transaction id on success.
     pub fn set_app_withdrawer(&self, app_id: u64, withdrawer: &str) -> Result<String> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        let pk = crate::blockchain::algo_ops::address_to_byte_key(withdrawer)
+        let pk = address_to_byte_key(withdrawer)
             .map_err(|e| anyhow!("invalid withdrawer address: {e}"))?;
         let (txid, _logs) = self.ops.call_app(
             app_id,
@@ -458,13 +458,12 @@ impl AlgoBingle {
         addresses: &mut HashSet<String>,
     ) {
         addresses.insert(txn.sender.clone());
-        if let Some(app_txn) = &txn.application_transaction {
-            if let Some(accounts) = &app_txn.accounts {
+        if let Some(app_txn) = &txn.application_transaction
+            && let Some(accounts) = &app_txn.accounts {
                 for addr in accounts {
                     addresses.insert(addr.clone());
                 }
             }
-        }
         if let Some(inner_txns) = &txn.inner_txns {
             for inner in inner_txns {
                 Self::collect_addresses(inner, addresses);
@@ -502,9 +501,9 @@ impl AlgoBingle {
                 .as_secs();
 
             let mut effective_mode = mode;
-            if mode == QueryMode::Refresh {
-                if let Some(lifetime) = cache_lifetime_secs {
-                    if now < cache.last_updated + lifetime {
+            if mode == QueryMode::Refresh
+                && let Some(lifetime) = cache_lifetime_secs
+                    && now < cache.last_updated + lifetime {
                         algo_log!(
                             "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: cache is fresh ({} < {} + {}), falling back to CacheOnly",
                             now,
@@ -513,8 +512,6 @@ impl AlgoBingle {
                         );
                         effective_mode = QueryMode::CacheOnly;
                     }
-                }
-            }
 
             match effective_mode {
                 QueryMode::CacheOnly => {
@@ -546,7 +543,7 @@ impl AlgoBingle {
                                     None,
                                     None,
                                     None,
-                                    Some(algonaut::core::AppId(app_id)),
+                                    Some(AppId(app_id)),
                                 )
                             })
                             .map_err(|e| anyhow!("incremental indexer request failed: {e}"))?;
@@ -670,7 +667,7 @@ impl AlgoBingle {
                 None,
                 None,
                 None,
-                Some(algonaut::core::AppId(app_id)),
+                Some(AppId(app_id)),
             )).map_err(|e| anyhow!("full indexer request failed: {e}"))?;
             
             for acct in response.accounts {
@@ -733,14 +730,13 @@ impl AlgoBingle {
                     let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
                     let kvs = Self::decode_state_entries(&keyvals);
                     algo_log!("[extract_handle_match] address={} decoded_state={:?}", addr, kvs);
-                    if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle") {
-                        if Self::normalize_handle(h) == normalised_handle {
+                    if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle")
+                        && Self::normalize_handle(h) == normalised_handle {
                             let time = kvs.iter().find(|(k, _)| k == "HandleTime")
                                 .and_then(|(_, v)| v.parse::<u64>().ok())
                                 .unwrap_or(0);
                             matches.push((addr.clone(), time));
                         }
-                    }
                 }
             }
         }
@@ -762,46 +758,6 @@ impl AlgoBingle {
             Some(matches[0].0.clone())
         }
     }
-
-    /// Discover root relay ids and socket addresses by scanning provided accounts' local state for key "static_endpoint".
-    /// This variant uses an injected local-state getter for testability.
-    // pub fn discover_root_relays_with<F>(
-    //     app_id: u64,
-    //     accounts: &[String],
-    //     get_local: F,
-    // ) -> Vec<(String, std::net::SocketAddr)>
-    // where
-    //     F: Fn(u64, &str) -> Option<Vec<(String, String)>>,
-    // {
-    //     let mut out: Vec<(String, std::net::SocketAddr)> = Vec::new();
-    //     for acct in accounts {
-    //         if let Some(entries) = get_local(app_id, acct) {
-    //             let ep = entries.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
-    //             let ep_x = entries.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
-    //             let v = format!("{}{}", ep, ep_x);
-    //             if !v.is_empty() {
-    //                 if let Some(addr) = Self::parse_relay_ip(&v) {
-    //                     out.push((acct.clone(), addr));
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     out
-    // }
-
-    /// Discover root relay ids and socket addresses using AlgoOps for local state fetching.
-    /// Requires a list of candidate accounts to check.
-    // pub fn discover_root_relays(&self, app_id: u64, accounts: &[String]) -> anyhow::Result<Vec<(String, std::net::SocketAddr)>> {
-    //     let res = Self::discover_root_relays_with(app_id, accounts, |aid, acct| {
-    //         match self.ops.local_state_for_account(aid, acct) {
-    //             Ok(v) => v,
-    //             Err(_) => None,
-    //         }
-    //     });
-    //     Ok(res)
-    // }
-
-
 
     fn sender_account(&self) -> Result<(Account, Address)> {
         let sk = self.ops.private_key_bytes()?;
@@ -947,7 +903,7 @@ impl AlgoBingle {
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if amount == 0 { bail!("amount must be > 0"); }
         // Ensure the app account is opted-in to the ASA so it can receive transfers
-        self.opt_in_app_to_asset(app_id, asset_id)?;
+        self.ops.opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
         let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
@@ -971,7 +927,7 @@ impl AlgoBingle {
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(AlgoOps::arc4_selector("sell_bingle(uint64)void").to_vec());
         // ARC-4 uint64 as 8-byte big endian
-        app_args.push((amount as u64).to_be_bytes().to_vec());
+        app_args.push({ amount }.to_be_bytes().to_vec());
         let tx_app = CallApplication::new(sender, AppId(app_id))
             .app_arguments(app_args)
             .foreign_assets(vec![AssetId(asset_id)])
@@ -1000,11 +956,10 @@ impl AlgoBingle {
         let sender_str = self.ops.address.as_ref().ok_or_else(|| anyhow!("No sender address"))?.to_string();
 
         // 1. Pre-check: Handle uniqueness via indexer
-        if let Some(existing_owner) = self.handle_lookup(handle)? {
-            if existing_owner != sender_str {
+        if let Some(existing_owner) = self.handle_lookup(handle)?
+            && existing_owner != sender_str {
                 bail!("Handle already in use by {}", existing_owner);
             }
-        }
 
         let tx_id = self.register_unchecked(app_id, asset_id, handle, price_units)?;
 
@@ -1022,7 +977,7 @@ impl AlgoBingle {
         let (account, sender) = self.sender_account()?;
 
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
-        self.opt_in_app_to_asset(app_id, asset_id)?;
+        self.ops.opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
         
         // Ensure the caller (sender) is opted-in to the ASA so the axfer succeeds
         let _ = self.opt_in_sender_to_asset(asset_id)?;
@@ -1086,26 +1041,6 @@ impl AlgoBingle {
         Ok(())
     }
 
-    /// Admin method: Opt the application account into the given ASA by calling the
-    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app admin.
-    /// Returns the transaction id of the app call when an opt-in was required; if the
-    /// app was already opted in, returns Ok("") without making a call.
-    /// TODO: make this generic as called from deploy
-    pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64) -> Result<String> {
-        tracing::info!("opt_in_app_to_asset: app_id={}", app_id);
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
-        // If the app address already holds the asset, nothing to do
-        let app_addr_str = self.ops.contract_address(app_id)?;
-        if self.ops.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
-        // Call the admin method on the contract; this must be signed by the creator
-        let (tx_id, _logs) = self
-            .ops
-            .call_app(app_id, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
-        // Return tx id to signal a call occurred; fetch from tuple index 0
-        Ok(tx_id)
-    }
-
     /// Deploy or reuse the BingleDapp smart contract and Bingle$ ASA, wiring them together.
     ///
     /// `app_path` is a directory containing `*.approval.teal` and `*.clear.teal` files; used
@@ -1158,7 +1093,7 @@ impl AlgoBingle {
             }
         }
         let creator_addr = self.ops.address_str()?;
-        let mut seen_addrs = std::collections::HashSet::new();
+        let mut seen_addrs = HashSet::new();
         seen_addrs.insert(creator_addr.clone());
         for role in required_roles {
             let addr = accounts[role].address_str()?;
@@ -1186,6 +1121,7 @@ impl AlgoBingle {
                 &approval, &clear, None,
                 Some("create(address,address)void"),
                 &[AppArg::Bytes(admin_pk.to_vec()), AppArg::Bytes(withdrawer_pk.to_vec())],
+                "opt_in_to_bingle(uint64)void",
                 &arc56_json,
             )?.ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
@@ -1220,7 +1156,7 @@ impl AlgoBingle {
 
         // ── 3. Opt new app into the ASA (admin-signed contract call) ─────────────
         let admin_ab = AlgoBingle::new(admin_ops.clone(), effective_app_id, effective_asset_id);
-        admin_ab.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
+        admin_ab.ops.opt_in_app_to_asset(effective_app_id, effective_asset_id, "opt_in_to_bingle(uint64)void")?;
 
         // Opt APP_WITHDRAWER into the ASA so they can receive ASA withdrawals.
         let withdrawer_ab = AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);

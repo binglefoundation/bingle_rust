@@ -47,7 +47,7 @@ impl BingleApiLocalImpl {
 impl BingleLocalApi for BingleApiLocalImpl {
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
         tracing::info!("[BingleLocalApi] Generating new keypair");
-        let (id, passphrase) = rust_comms::blockchain::algo_ops::AlgoOps::generate_keypair();
+        let (id, passphrase) = AlgoOps::generate_keypair();
         let kp = Keypair { id, passphrase };
         tracing::info!("[BingleLocalApi] Generated keypair with id: {}", kp.id);
         if let Ok(mut guard) = self.keypair.lock() {
@@ -115,7 +115,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(true)
     }
 
-    fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, BingleError> {
+    fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         // 1) Return cached instance if available
         {
             let guard = match self.algo_ops.lock() {

@@ -83,11 +83,12 @@ impl AlgoOps {
         let passphrase = format!("b64:{}", general_purpose::STANDARD.encode(sk));
         (id, passphrase)
     }
+
+    pub fn new_indexer(config: Option<AlgoChainConfig>) -> Self {
+        Self::new(None, None, config)
+    }
+
     pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoChainConfig>) -> Self {
-        // Enforce that a source of address is provided (either explicit address or a passphrase/seed)
-        if passphrase.is_none() && address.is_none() {
-            panic!("AlgoOps::new requires either a passphrase or an address");
-        }
         // Use explicit config if provided; else Default (localnet)
         let config = config.unwrap_or_default();
         let mut ops = Self {
@@ -97,8 +98,8 @@ impl AlgoOps {
         };
 
         // If no address was provided but we have a passphrase, derive the address immediately
-        if ops.address.is_none() {
-            if let Some(ref pass) = ops.passphrase {
+        if ops.address.is_none()
+            && let Some(ref pass) = ops.passphrase {
                 // Try Algorand mnemonic first
                 let maybe_seed = if !pass.is_empty() {
                     match algonaut::crypto::mnemonic::to_key(pass) {
@@ -110,7 +111,7 @@ impl AlgoOps {
                 let seed32: Option<[u8; 32]> = if let Some(bytes) = maybe_seed {
                     bytes.as_slice().try_into().ok()
                 } else if let Some(rest) = pass.strip_prefix("b64:") {
-                    match base64::engine::general_purpose::STANDARD.decode(rest) {
+                    match general_purpose::STANDARD.decode(rest) {
                         Ok(b) => b.as_slice().try_into().ok(),
                         Err(_) => None,
                     }
@@ -128,7 +129,6 @@ impl AlgoOps {
                     }
                 }
             }
-        }
 
         ops
     }
@@ -161,11 +161,10 @@ impl AlgoOps {
 
     // Returns true if the algonaut error is a retryable transient HTTP error.
     pub fn is_retryable(e: &algonaut::Error) -> bool {
-        if let algonaut::Error::Request(req) = e {
-            if let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
+        if let algonaut::Error::Request(req) = e
+            && let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
                 return Self::RETRYABLE_STATUS_CODES.contains(status);
             }
-        }
         false
     }
 
@@ -179,7 +178,7 @@ impl AlgoOps {
     where
         T: Send,
         F: Fn() -> Fut,
-        Fut: std::future::Future<Output = Result<T, algonaut::Error>> + Send,
+        Fut: Future<Output = Result<T, algonaut::Error>> + Send,
     {
         const MAX_RETRIES: u32 = 3;
         const RETRY_BASE_MS: u64 = 1_000;
@@ -206,7 +205,7 @@ impl AlgoOps {
                 }
                 Err(e) => {
                     if attempt >= MAX_RETRIES && Self::is_retryable(&e) {
-                        return Err(crate::blockchain::error::AlgoError::transient(
+                        return Err(AlgoError::transient(
                             "algod call",
                             &e.to_string(),
                         )
@@ -219,7 +218,7 @@ impl AlgoOps {
     }
 
     // Helper: run an async future on a fresh current-thread Tokio runtime.
-    fn rt_block_on<T: Send>(&self, fut: impl std::future::Future<Output = T> + Send) -> Result<T> {
+    fn rt_block_on<T: Send>(&self, fut: impl Future<Output = T> + Send) -> Result<T> {
         // If we are already in a tokio runtime, we must avoid nested block_on and 
         // the "cannot drop runtime" panic during unwinding/drop.
         if tokio::runtime::Handle::try_current().is_ok() {
@@ -292,16 +291,12 @@ impl AlgoOps {
                     for n in arr {
                         if let Some(u) = n.as_u64() {
                             buf.push((u & 0xFF) as u8);
-                        } else if let Some(i) = n.as_i64() {
-                            if i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
-                        }
+                        } else if let Some(i) = n.as_i64()
+                            && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
                     }
                     Some(buf)
                 } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
-                    match general_purpose::STANDARD.decode(b64) {
-                        Ok(b) => Some(b),
-                        Err(_) => None,
-                    }
+                    general_purpose::STANDARD.decode(b64).ok()
                 } else {
                     None
                 };
@@ -362,15 +357,14 @@ impl AlgoOps {
             .ok_or_else(|| anyhow!("This operation needs account access"))?;
 
         // New behavior: expect ASCII mnemonic passphrase. Derive 32-byte key using Algorand mnemonic.
-        if !pass.is_empty() {
-            if let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass) {
+        if !pass.is_empty()
+            && let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass) {
                 if key32.len() == 32 {
                     return Ok(key32.to_vec());
                 } else {
                     bail!("Derived key must be 32 bytes, got {}", key32.len());
                 }
             }
-        }
 
         // Backward compatibility: support legacy base64 format with "b64:" prefix
         if let Some(rest) = pass.strip_prefix("b64:") {
@@ -480,12 +474,11 @@ impl AlgoOps {
         let mut out: Vec<(u64, Vec<(String, String)>)> = Vec::new();
         for app in created {
             let id = match app.get("id").and_then(|x| x.as_u64()) { Some(i) => i, None => continue };
-            if let Some(filter) = maybe_app_id { if filter != id { continue; } }
+            if let Some(filter) = maybe_app_id && filter != id { continue; }
             let params = match app.get("params").and_then(|x| x.as_object()) { Some(p) => p, None => continue };
             let params_value = serde_json::Value::Object(params.clone());
             let gs_vec: Vec<serde_json::Value> = Self::json_get(&params_value, "global_state", "global-state")
-                .and_then(|x| x.as_array())
-                .map(|v| v.clone())
+                .and_then(|x| x.as_array()).cloned()
                 .unwrap_or_default();
             let kvs = Self::decode_state_entries(&gs_vec);
             out.push((id, kvs));
@@ -517,8 +510,7 @@ impl AlgoOps {
             let id = st.get("id").and_then(|x| x.as_u64());
             if id == Some(app_id) {
                 let keyvals_vec: Vec<serde_json::Value> = Self::json_get(st, "key_value", "key-value")
-                    .and_then(|x| x.as_array())
-                    .map(|v| v.clone())
+                    .and_then(|x| x.as_array()).cloned()
                     .unwrap_or_default();
                 let out = Self::decode_state_entries(&keyvals_vec);
                 return Ok(Some(out));
@@ -790,7 +782,7 @@ impl AlgoOps {
             .ok_or_else(|| anyhow!("asset info did not contain creator field"))?;
         let caller_str = {
             use std::str::FromStr;
-            algonaut::core::Address::from_str(&self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?)
+            algonaut::core::Address::from_str(self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?)
                 .map_err(|e| anyhow!("invalid caller address: {e}"))?
                 .to_string()
         };
@@ -1054,10 +1046,12 @@ impl AlgoOps {
     ///   `"create(address,address)void"`). Required when the contract uses
     ///   `@abimethod(create="require")`. Pass `None` for bare-create contracts.
     /// - `args`: ABI-encoded arguments for `method`. Must match the method signature.
+    /// - `opt_in_method_name`: name of the method on the creator that opts the app in using Teal, signature opt_in(app_id)
     ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
     /// - `arc56_json`: text of the contract's ARC-56 app spec (the `*.arc56.json` that sits
     ///   alongside the TEAL). The global/local state schema is read from its `state/schema`.
     pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], arc56_json: &str) -> Result<Option<u64>> {
+    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], opt_in_method_name: &str, arc56_json: &str) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
         // Ensure we have account access
@@ -1151,10 +1145,8 @@ impl AlgoOps {
                 }
                 // If an asset id was provided, opt the app address in via the dApp admin method
                 if let Some(aid) = asset_id {
-                    // Use AlgoBingle helper to call the admin method
-                    let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone(), app_id, aid);
                     // Propagate any error from the admin call; ignore returned tx id
-                    let _ = ab.opt_in_app_to_asset(app_id, aid)?;
+                    let _ = self.opt_in_app_to_asset(app_id, aid, opt_in_method_name)?;
 
                     // Additionally set the reserve and clawback addresses to the application address
                     self.set_asset_clawback_to_app(app_id, aid)?;
@@ -1237,7 +1229,7 @@ impl AlgoOps {
         let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
         let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
         let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        for l in logs_arr { if let Some(s) = l.as_str() && let Ok(bytes) = general_purpose::STANDARD.decode(s) { logs.push(bytes); } }
         Ok((tx_id, logs))
     }
 
@@ -1269,7 +1261,7 @@ impl AlgoOps {
         let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
         let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
         let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        for l in logs_arr { if let Some(s) = l.as_str() && let Ok(bytes) = general_purpose::STANDARD.decode(s) { logs.push(bytes); } }
         Ok((tx_id, logs))
     }
 
@@ -1297,21 +1289,17 @@ impl AlgoOps {
 
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
         if let Some(sig) = method {
-            if sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void" {
-                if let Some(first) = args.get(0) {
-                    if let AppArg::Bytes(b) = first {
-                        if b.len() == 32 {
+            if (sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void")
+                && let Some(first) = args.first()
+                    && let AppArg::Bytes(b) = first
+                        && b.len() == 32 {
                             let mut pk = [0u8; 32];
                             pk.copy_from_slice(&b[..32]);
-                            if let Ok(addr_str) = crate::blockchain::algo_ops::byte_key_to_address(&pk) {
-                                if let Ok(target) = Self::parse_address(&addr_str) {
+                            if let Ok(addr_str) = byte_key_to_address(&pk)
+                                && let Ok(target) = Self::parse_address(&addr_str) {
                                     accounts.insert(0, target);
                                 }
-                            }
                         }
-                    }
-                }
-            }
         }
         let fapps: Vec<algonaut::core::AppId> = foreign_app_ids.iter().map(|&id| algonaut::core::AppId(id)).collect();
         let make_builder = || {
@@ -1441,6 +1429,24 @@ impl AlgoOps {
         self.wait_for_confirmation(&tx_id, 10)
     }
 
+    /// Admin method: Opt the application account into the given ASA by a method on the creator
+    /// like "opt_(app_id)" which opts the app in using Teal
+    /// Returns the transaction id of the app call when an opt-in was required; if the
+    /// app was already opted in, returns Ok("") without making a call.
+    /// opt_in_method_name must be a method on the creator like "opt_(app_id)" which opts the app in using Teal
+    pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64, opt_in_method_name: &str) -> Result<String> {
+        tracing::info!("opt_in_app_to_asset: app_id={}", app_id);
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        // If the app address already holds the asset, nothing to do
+        let app_addr_str = self.contract_address(app_id)?;
+        if self.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
+        // Call the admin method on the contract; this must be signed by the creator
+        let (tx_id, _logs) = self.call_app(app_id, Some(asset_id), Some(opt_in_method_name), &[AppArg::Uint(asset_id)])?;
+        // Return tx id to signal a call occurred; fetch from tuple index 0
+        Ok(tx_id)
+    }
+
     /// Wait for a transaction to be confirmed up to `timeout_rounds` rounds.
     /// Follows the Kotlin logic: poll pending tx info and wait for next rounds.
     pub fn wait_for_confirmation(&self, tx_id: &str, timeout_rounds: u64) -> Result<()> {
@@ -1461,11 +1467,10 @@ impl AlgoOps {
             let tx_id_obj = algonaut::core::TransactionId::from(tx_id);
             match self.algod_call(|| client.pending_transaction(&tx_id_obj)) {
                 Ok(p) => {
-                    if let Some(cr) = p.confirmed_round {
-                        if cr > 0 {
+                    if let Some(cr) = p.confirmed_round
+                        && cr > 0 {
                             return Ok(());
                         }
-                    }
                     if !p.pool_error.is_empty() {
                         bail!("Transaction rejected with pool error: {}", p.pool_error);
                     }

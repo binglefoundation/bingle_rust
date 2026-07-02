@@ -74,18 +74,15 @@ macro_rules! debug_theme {
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum LogMode {
+    #[default]
     Plain,
     ANSI,
     AWS,
     JS,
 }
 
-impl Default for LogMode {
-    fn default() -> Self {
-        LogMode::Plain
-    }
-}
 
 pub struct HandleExtension(pub String);
 
@@ -168,8 +165,8 @@ where
 
         // 1. Try to find handle in span extensions
         let mut handle_str = String::new();
-        if show_handle {
-            if let Some(scope) = ctx.event_scope() {
+        if show_handle
+            && let Some(scope) = ctx.event_scope() {
                 for span in scope {
                     if let Some(ext) = span.extensions().get::<HandleExtension>() {
                         handle_str = ext.0.clone();
@@ -177,7 +174,6 @@ where
                     }
                 }
             }
-        }
 
         // 2. Format handle with color if present
         if !handle_str.is_empty() {

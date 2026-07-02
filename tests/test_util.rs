@@ -228,8 +228,9 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
         &approval_bytes, &clear_bytes, None,
         Some("create(address,address)void"),
         &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
-        &arc56_json,
-    ).expect("deploy app call")
+        "opt_in_to_bingle(uint64)void",
+        &arc56_json)
+     .expect("deploy app call")
      .expect("failed to get app_id after deployment");
 
     // Default: set Bingle price to 1 microAlgo; works because creator == initial admin.
