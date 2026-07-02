@@ -1398,8 +1398,8 @@ impl AlgoOps {
         self.wait_for_confirmation(&tx_id, 10)
     }
 
-    /// Admin method: Opt the application account into the given ASA by calling the
-    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app admin.
+    /// Admin method: Opt the application account into the given ASA by a method on the creator
+    /// like "opt_(app_id)" which opts the app in using Teal
     /// Returns the transaction id of the app call when an opt-in was required; if the
     /// app was already opted in, returns Ok("") without making a call.
     /// opt_in_method_name must be a method on the creator like "opt_(app_id)" which opts the app in using Teal
