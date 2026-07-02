@@ -66,8 +66,42 @@ impl BingleLocalApi for DummyLocal {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
-        self.messages.push(Message { sender_handle, recipient_handles, timestamp, text, cipher_suite });
+        self.messages.push(Message {
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite,
+            progress: Some(1.0),
+            failure_reason: None,
+        });
         Ok(())
+    }
+
+    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError> {
+        let sender_handle = self.keypair_status()?.handle.unwrap_or_default();
+        self.messages.push(Message {
+            sender_handle,
+            recipient_handles,
+            timestamp: 999,
+            text,
+            cipher_suite: None,
+            progress: Some(0.0),
+            failure_reason: None,
+        });
+        Ok(())
+    }
+
+    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError> {
+        if let Some(m) = self.messages.iter_mut().find(|m| m.timestamp == timestamp) {
+            m.progress = Some(progress);
+            m.failure_reason = failure_reason;
+        }
+        Ok(())
+    }
+
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
+        Ok(self.messages.iter().filter(|m| m.progress.map_or(false, |p| p < 1.0)).cloned().collect())
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(self.messages.clone()) }

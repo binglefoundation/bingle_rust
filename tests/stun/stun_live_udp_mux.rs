@@ -18,7 +18,7 @@ fn stun_handler(_src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]) {
 }
 
 fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
-    (host, port).to_socket_addrs().ok()?.next()
+    (host, port).to_socket_addrs().ok()?.find(|a| a.is_ipv4())
 }
 
 #[test]

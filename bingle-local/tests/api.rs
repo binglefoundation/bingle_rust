@@ -15,5 +15,8 @@ mod local_impl_persistence;
 #[path = "api/local_impl_keypair_status.rs"]
 mod local_impl_keypair_status;
 
+#[path = "api/local_impl_queue.rs"]
+mod local_impl_queue;
+
 #[path = "module_version.rs"]
 mod module_version;

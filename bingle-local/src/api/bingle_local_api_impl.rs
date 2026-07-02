@@ -275,7 +275,15 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err(BingleError::Other("recipient_handles cannot contain empty handles".to_string())); }
         if text.trim().is_empty() { return Err(BingleError::Other("text cannot be empty".to_string())); }
 
-        let msg = Message { sender_handle, recipient_handles, timestamp, text, cipher_suite };
+        let msg = Message {
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite,
+            progress: Some(1.0),
+            failure_reason: None,
+        };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -286,6 +294,75 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
         guard.push(msg);
         Ok(())
+    }
+
+    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError> {
+        tracing::debug!("[BingleLocalApi] Queuing message to: {:?}", recipient_handles);
+        let status = self.keypair_status()?;
+        let sender_handle = status.handle.ok_or_else(|| BingleError::Other("No handle registered for current keypair".to_string()))?;
+
+        if recipient_handles.is_empty() { return Err(BingleError::Other("recipient_handles cannot be empty".to_string())); }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err(BingleError::Other("recipient_handles cannot contain empty handles".to_string())); }
+        if text.trim().is_empty() { return Err(BingleError::Other("text cannot be empty".to_string())); }
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| BingleError::Other(e.to_string()))?
+            .as_millis() as i64;
+
+        let msg = Message {
+            sender_handle,
+            recipient_handles,
+            timestamp,
+            text,
+            cipher_suite: None,
+            progress: Some(0.0),
+            failure_reason: None,
+        };
+
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[queue_message] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        guard.push(msg);
+        Ok(())
+    }
+
+    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError> {
+        let mut guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[update_message_status] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+
+        if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
+            msg.progress = Some(progress);
+            if failure_reason.is_some() {
+                msg.failure_reason = failure_reason;
+            }
+            Ok(())
+        } else {
+            Err(BingleError::Other(format!("Message with timestamp {} not found", timestamp)))
+        }
+    }
+
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
+        let guard = match self.messages.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                let msg = format!("mutex poisoned: {}", e);
+                tracing::error!("[get_pending_messages] Failed to lock messages: {}", msg);
+                return Err(BingleError::Other(msg));
+            }
+        };
+        Ok(guard.iter().filter(|m| m.progress.map_or(false, |p| p < 1.0)).cloned().collect())
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
@@ -462,7 +539,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
-        tracing::debug!("[BingleLocalApi] Checking keypair status");
+        tracing::info!("[BingleLocalApi] Checking keypair status");
         // 1) Check if keypair exists
         let kp = {
             let guard = match self.keypair.lock() {

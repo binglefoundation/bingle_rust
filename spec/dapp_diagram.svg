@@ -1,0 +1,729 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="1200"
+   height="700"
+   viewBox="0 0 1200 700"
+   version="1.1"
+   id="svg50"
+   sodipodi:docname="dapp_diagram.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview50"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1"
+     inkscape:cx="526.5"
+     inkscape:cy="350"
+     inkscape:window-width="1496"
+     inkscape:window-height="1199"
+     inkscape:window-x="2098"
+     inkscape:window-y="368"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg50" />
+  <defs
+     id="defs4">
+    <!-- Key symbol: ring bow on left, shaft + two teeth on right -->
+    <symbol
+       id="key"
+       viewBox="0 0 22 12">
+      <circle
+         cx="5.5"
+         cy="6"
+         r="4.5"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="1.6"
+         id="circle1" />
+      <circle
+         cx="5.5"
+         cy="6"
+         r="1.8"
+         fill="currentColor"
+         id="circle2" />
+      <line
+         x1="10"
+         y1="6"
+         x2="22"
+         y2="6"
+         stroke="currentColor"
+         stroke-width="2"
+         id="line2" />
+      <line
+         x1="15"
+         y1="6"
+         x2="15"
+         y2="11"
+         stroke="currentColor"
+         stroke-width="2"
+         id="line3" />
+      <line
+         x1="19"
+         y1="6"
+         x2="19"
+         y2="10"
+         stroke="currentColor"
+         stroke-width="2"
+         id="line4" />
+    </symbol>
+  </defs>
+  <rect
+     width="1200"
+     height="700"
+     fill="#ffffff"
+     id="rect4"
+     x="3"
+     y="14" />
+  <!-- ===== TOP: Bingle$ Asset box ===== -->
+  <rect
+     x="30"
+     y="22"
+     width="185"
+     height="56"
+     rx="14"
+     fill="white"
+     stroke="#1a50a0"
+     stroke-width="2.5"
+     id="rect5" />
+  <text
+     x="122"
+     y="57"
+     font-family="Arial, sans-serif"
+     font-size="15"
+     fill="#1a50a0"
+     font-weight="bold"
+     text-anchor="middle"
+     id="text5">Bingle$  Asset</text>
+  <!-- → create marker -->
+  <text
+     x="225"
+     y="57"
+     font-family="Arial, sans-serif"
+     font-size="14"
+     fill="#d03020"
+     font-weight="bold"
+     id="text6">→  create</text>
+  <!-- ASSET roles (right of box), OT = key icon -->
+  <text
+     x="291"
+     y="58"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#555555"
+     id="text7">ASSET-CREATOR</text>
+  <use
+     href="#key"
+     x="436"
+     y="27"
+     width="20"
+     height="11"
+     color="#555555"
+     id="use7"
+     transform="translate(-29,20)" />
+  <text
+     x="279"
+     y="88"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#555555"
+     id="text8">ASSET-MANAGER</text>
+  <use
+     href="#key"
+     x="436"
+     y="49"
+     width="20"
+     height="11"
+     color="#555555"
+     id="use8"
+     transform="translate(-41,28)" />
+  <text
+     x="279"
+     y="110"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#555555"
+     id="text9">ASSET-RESERVE</text>
+  <use
+     href="#key"
+     x="436"
+     y="71"
+     width="20"
+     height="11"
+     color="#555555"
+     id="use9"
+     transform="translate(-41,28)" />
+  <text
+     x="279"
+     y="132"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#555555"
+     id="text10">ASSET-CLAWBACK</text>
+  <use
+     href="#key"
+     x="446"
+     y="93"
+     width="20"
+     height="11"
+     color="#555555"
+     id="use10"
+     transform="translate(-41,28)" />
+  <text
+     x="429"
+     y="132"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#555555"
+     id="text11">— holds TOTAL-hot*</text>
+  <text
+     x="279"
+     y="154"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#555555"
+     id="text12">ASSET-FREEZE</text>
+  <use
+     href="#key"
+     x="426"
+     y="115"
+     width="20"
+     height="11"
+     color="#555555"
+     id="use12"
+     transform="translate(-41,28)" />
+  <!-- Separator -->
+  <line
+     x1="7"
+     y1="205"
+     x2="1167"
+     y2="205"
+     stroke="#dddddd"
+     stroke-width="1"
+     id="line12" />
+  <!-- ===== LEFT SIDE: key + APP-CREATOR feeding into DApp left-side pins ===== -->
+  <!-- Key symbol + APP-CREATOR label (above Create pin) -->
+  <use
+     href="#key"
+     x="15"
+     y="265"
+     width="20"
+     height="11"
+     color="#2a8040"
+     id="use13"
+     transform="translate(2,80)" />
+  <text
+     x="42"
+     y="357"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#2a8040"
+     font-weight="bold"
+     id="text13">APP-CREATOR</text>
+  <!-- Create pin (red) -->
+  <text
+     x="165"
+     y="303"
+     font-family="Arial, sans-serif"
+     font-size="13"
+     fill="#d03020"
+     font-weight="bold"
+     id="text14">Create</text>
+  <line
+     x1="161"
+     y1="310"
+     x2="284"
+     y2="310"
+     stroke="#d03020"
+     stroke-width="2"
+     id="line14" />
+  <circle
+     cx="155"
+     cy="310"
+     r="6"
+     fill="white"
+     stroke="#d03020"
+     stroke-width="2"
+     id="circle14" />
+  <!-- Update pin (green) -->
+  <text
+     x="165"
+     y="345"
+     font-family="Arial, sans-serif"
+     font-size="13"
+     fill="#2a8040"
+     id="text15">Update</text>
+  <line
+     x1="161"
+     y1="352"
+     x2="278"
+     y2="352"
+     stroke="#2a8040"
+     stroke-width="2"
+     id="line15" />
+  <circle
+     cx="155"
+     cy="352"
+     r="6"
+     fill="white"
+     stroke="#2a8040"
+     stroke-width="2"
+     id="circle15" />
+  <!-- Delete pin (green) -->
+  <text
+     x="165"
+     y="387"
+     font-family="Arial, sans-serif"
+     font-size="13"
+     fill="#2a8040"
+     id="text16">Delete</text>
+  <line
+     x1="161"
+     y1="394"
+     x2="271"
+     y2="394"
+     stroke="#2a8040"
+     stroke-width="2"
+     id="line16" />
+  <circle
+     cx="155"
+     cy="394"
+     r="6"
+     fill="white"
+     stroke="#2a8040"
+     stroke-width="2"
+     id="circle16" />
+  <!-- ===== DApp chip (parallelogram, shifted right to make room for left pins) ===== -->
+  <polygon
+     points="290,275 540,275 515,430 265,430"
+     fill="#f5f5ff"
+     stroke="#333"
+     stroke-width="2"
+     id="polygon16" />
+  <text
+     x="370"
+     y="363"
+     font-family="Arial, sans-serif"
+     font-size="22px"
+     fill="#222222"
+     font-weight="bold"
+     id="text17">Dapp</text>
+  <!-- ===== Bracket from DApp right side to operations list ===== -->
+  <!-- DAPP-ACCOUNT label (above/below bracket arm) -->
+  <text
+     x="453"
+     y="245"
+     font-family="Arial, sans-serif"
+     font-size="14px"
+     fill="#1a50a0"
+     font-weight="bold"
+     id="text18">DAPP-ACCOUNT</text>
+  <text
+     x="602"
+     y="244"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text19">→ — holds &quot;hot&quot;</text>
+  <!-- ===== Operations list ===== -->
+  <!-- opt-in-to-bingle ← USER -->
+  <circle
+     cx="585"
+     cy="285"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle19" />
+  <text
+     x="600"
+     y="290"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text20">opt-in-to-bingle</text>
+  <text
+     x="710"
+     y="288"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text21">←</text>
+  <text
+     x="745"
+     y="290"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text22">USER</text>
+  <!-- set-bingle-price ← USER → APP-ADMIN -->
+  <circle
+     cx="585"
+     cy="320"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle22" />
+  <text
+     x="600"
+     y="325"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text23">set-bingle-price</text>
+  <text
+     x="710"
+     y="326"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text24">←</text>
+  <text
+     x="739"
+     y="328"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text27">APP-ADMIN</text>
+  <!-- buy-bingle ← USER -->
+  <circle
+     cx="585"
+     cy="355"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle27" />
+  <text
+     x="600"
+     y="360"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text28">buy-bingle</text>
+  <text
+     x="694"
+     y="360"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text29">←</text>
+  <text
+     x="715"
+     y="360"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text30">USER</text>
+  <!-- sell-bingle ← USER -->
+  <circle
+     cx="585"
+     cy="390"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle30" />
+  <text
+     x="600"
+     y="395"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text31">sell-bingle</text>
+  <text
+     x="687"
+     y="395"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text32">←</text>
+  <text
+     x="708"
+     y="395"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text33">USER</text>
+  <!-- withdraw → APP-WITHDRAWER -->
+  <circle
+     cx="586"
+     cy="425"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle33" />
+  <text
+     x="600"
+     y="428"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text34">withdraw</text>
+  <text
+     x="681"
+     y="430"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text35">→</text>
+  <text
+     x="704"
+     y="431"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text36">APP-WITHDRAWER</text>
+  <!-- register → USER -->
+  <circle
+     cx="498"
+     cy="472"
+     r="6"
+     fill="#ffffff"
+     stroke="#207070"
+     stroke-width="1.5"
+     id="circle36" />
+  <text
+     x="513"
+     y="477"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#207070"
+     id="text37">register</text>
+  <text
+     x="545"
+     y="490"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text39">USER</text>
+  <!-- ===== Lower-left green operations ===== -->
+  <!-- set-allow-relay → APP-ADMIN -->
+  <circle
+     cx="439"
+     cy="518"
+     r="6"
+     fill="#ffffff"
+     stroke="#2a8040"
+     stroke-width="1.5"
+     id="circle39" />
+  <text
+     x="454"
+     y="523"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#2a8040"
+     id="text40">set-allow-relay</text>
+  <text
+     x="569"
+     y="523"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text41">→</text>
+  <text
+     x="590"
+     y="523"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text42">APP-ADMIN</text>
+  <!-- set-allow-state → APP-ADMIN -->
+  <circle
+     cx="384"
+     cy="561"
+     r="6"
+     fill="#ffffff"
+     stroke="#2a8040"
+     stroke-width="1.5"
+     id="circle42" />
+  <text
+     x="399"
+     y="566"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#2a8040"
+     id="text43">set-allow-state</text>
+  <text
+     x="514"
+     y="566"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text44">→</text>
+  <text
+     x="535"
+     y="566"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text45">APP-ADMIN</text>
+  <!-- register-endpoint → APP-ADMIN → USER-STATIC -->
+  <circle
+     cx="314"
+     cy="600"
+     r="6"
+     fill="#ffffff"
+     stroke="#2a8040"
+     stroke-width="1.5"
+     id="circle45" />
+  <text
+     x="329"
+     y="605"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#2a8040"
+     id="text46">register-endpoint</text>
+  <text
+     x="457"
+     y="605"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text47">→</text>
+  <text
+     x="481"
+     y="606"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#b06010"
+     id="text50">USER-STATIC</text>
+  <use
+     href="#key"
+     x="15"
+     y="265"
+     width="20"
+     height="11"
+     color="#2a8040"
+     id="use50"
+     transform="translate(557,-33)" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 566,253 32,-36 v 0"
+     id="path51" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 535,281 40,2 v 0"
+     id="path52" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 529,312 46,4"
+     id="path53" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 523,351 52,2"
+     id="path54" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 520,386 55,2"
+     id="path55" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 515,418 60,4"
+     id="path56" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 495,427 v 35"
+     id="path57" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 436,425 v 83"
+     id="path58" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 369,429 13,120"
+     id="path59" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 308,427 3,164"
+     id="path60" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1.05514px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     d="m 511.08803,435.17571 62.82394,23.64858"
+     id="path1" />
+  <circle
+     cx="582"
+     cy="453"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle3" />
+  <text
+     x="599"
+     y="455"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text3">migrate_reserve</text>
+  <text
+     x="703"
+     y="452"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text4">→</text>
+  <text
+     xml:space="preserve"
+     style="font-size:40px;line-height:1.25;font-family:sans-serif"
+     x="723"
+     y="445"
+     id="text25"><tspan
+       sodipodi:role="line"
+       id="tspan4"
+       x="723"
+       y="445" /></text>
+  <text
+     xml:space="preserve"
+     style="font-size:13.3333px;line-height:1.25;font-family:sans-serif"
+     x="729"
+     y="452"
+     id="text26"><tspan
+       sodipodi:role="line"
+       id="tspan25"
+       x="729"
+       y="452"
+       style="font-size:13.3333px">new app</tspan></text>
+  <circle
+     cx="587"
+     cy="473"
+     r="6"
+     fill="#ffffff"
+     stroke="#1a50a0"
+     stroke-width="1.5"
+     id="circle26" />
+  <text
+     x="601"
+     y="477"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#1a50a0"
+     id="text38">migrate_storage</text>
+  <text
+     x="703"
+     y="474"
+     font-family="Arial, sans-serif"
+     font-size="13px"
+     fill="#444444"
+     id="text48" />
+  <text
+     xml:space="preserve"
+     style="font-size:13.3333px;line-height:1.25;font-family:sans-serif"
+     x="729"
+     y="476"
+     id="text49"><tspan
+       sodipodi:role="line"
+       id="tspan48"
+       x="729"
+       y="476"
+       style="font-size:13.3333px">from old app</tspan></text>
+</svg>

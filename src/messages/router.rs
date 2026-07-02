@@ -23,7 +23,7 @@ pub fn only_from_relay(msg: &Message) -> bool {
                 DdbMessage::DeleteResolve(m) => m.rippled,
                 DdbMessage::InitResolve(_) => true,
                 DdbMessage::UpdateResponse(_) | DdbMessage::QueryResponse(_) | DdbMessage::SignonResponse(_) |
-                DdbMessage::RelaysStatusResponse(_) | DdbMessage::InitResponse(_) | DdbMessage::DumpResolveResponse(_) |
+                DdbMessage::RelaysStatusResponse(_) | DdbMessage::InitResponse(_) |
                 DdbMessage::DumpResolve(_) => true,
                 _ => false,
             }

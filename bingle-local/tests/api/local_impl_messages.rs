@@ -50,7 +50,15 @@ fn get_messages_returns_clone() {
     api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into(), None).unwrap();
     let mut msgs: Vec<Message> = api.get_messages().unwrap();
     // mutate the returned vector
-    msgs.push(Message { sender_handle: "z".into(), recipient_handles: vec!["y".into()], timestamp: 9, text: "zzz".into(), cipher_suite: None });
+    msgs.push(Message {
+        sender_handle: "z".into(),
+        recipient_handles: vec!["y".into()],
+        timestamp: 9,
+        text: "zzz".into(),
+        cipher_suite: None,
+        progress: Some(1.0),
+        failure_reason: None,
+    });
     // fetch again and ensure original store is unchanged
     let msgs2 = api.get_messages().unwrap();
     assert_eq!(msgs2.len(), 1);

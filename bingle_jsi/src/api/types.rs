@@ -73,6 +73,8 @@ pub struct Message {
     /// The cipher suite negotiated for the DTLS session on which this message was received.
     /// Derived by the receiving client from the connection; not transmitted on the wire.
     pub cipher_suite: Option<String>,
+    pub progress: Option<f32>,
+    pub failure_reason: Option<String>,
 }
 
 /// Keypair funding / registration status.

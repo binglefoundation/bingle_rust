@@ -30,16 +30,13 @@ pub fn test_register_collision_same_block() {
     // 2. Deploy app and asset
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1000000);
     
-    // 3. Opt-in B to app and asset
+    // 3. Give A and B each 1 unit for their registration fees (buy_bingle also opts into ASA)
     let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
-    ab_b.opt_in_sender_to_asset(asset_id).expect("B opt-in asset");
-    ops_b.opt_in_app(app_id).expect("B opt-in app");
-    
-    // Give some Bingle$ to B so it can pay the registration fee
-    ops_a.send_asset(asset_id, 10, test_util::ADDRESS_RECEIVE).expect("send Bingle$ to B");
-
-    // Also opt-in A to app (deployer is already creator, but needs to opt-in to write local state)
+    AlgoBingle::new(ops_a.clone(), app_id, asset_id).buy_bingle(app_id, asset_id, 1).expect("A buy Bingle$");
+    ab_b.buy_bingle(app_id, asset_id, 1).expect("B buy Bingle$");
+    // Manual register txns bypass opt-in helpers, so opt both into the app explicitly
     ops_a.opt_in_app(app_id).expect("A opt-in app");
+    ops_b.opt_in_app(app_id).expect("B opt-in app");
 
     // 4. Build group of 4 transactions
     let client = ops_a.algod_client().expect("algod client");

@@ -167,6 +167,8 @@ fn message_construction() {
         timestamp: 1700000000,
         text: "Hello everyone".to_string(),
         cipher_suite: None,
+        progress: Some(1.0),
+        failure_reason: None,
     };
     assert_eq!(msg.sender_handle, "alice");
     assert_eq!(msg.recipient_handles.len(), 2);
@@ -183,9 +185,13 @@ fn message_with_cipher_suite() {
         timestamp: 1700000001,
         text: "Encrypted hello".to_string(),
         cipher_suite: Some("TLS_AES_256_GCM_SHA384".to_string()),
+        progress: Some(0.5),
+        failure_reason: Some("Retrying...".to_string()),
     };
     let cs = msg.cipher_suite.expect("cipher_suite should be Some");
     assert_eq!(cs, "TLS_AES_256_GCM_SHA384");
+    assert_eq!(msg.progress, Some(0.5));
+    assert_eq!(msg.failure_reason, Some("Retrying...".to_string()));
 }
 
 #[test]

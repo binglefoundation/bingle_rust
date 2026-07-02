@@ -18,9 +18,22 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         let message: BingleMessage
     }
 
+    struct QueueMessageCall {
+        let recipientHandles: [String]
+        let text: String
+    }
+
+    struct UpdateMessageStatusCall {
+        let timestamp: Int64
+        let progress: Float
+        let failureReason: String?
+    }
+
     var handleLookupCalls: [String] = []
     var sendMessageToIdCalls: [SendMessageToIdCall] = []
     var sendMessageToHandleCalls: [SendMessageToHandleCall] = []
+    var queueMessageCalls: [QueueMessageCall] = []
+    var updateMessageStatusCalls: [UpdateMessageStatusCall] = []
     var startCalled = false
     var isStartedCalled = false
     var messageCallback: MessageCallback?
@@ -47,6 +60,8 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         status: .active, id: "mock-id", handle: "mock-handle", requiredAlgo: nil
     )
     var isBlockedResult: Bool = false
+    var localHandle: String = "self"
+    var nextQueueTimestamp: Int64 = 1700000000
 
     // MARK: - Error injection
 
@@ -131,6 +146,35 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         return messagesResult
     }
 
+    func queueMessage(recipientHandles: [String], text: String) throws {
+        queueMessageCalls.append(QueueMessageCall(recipientHandles: recipientHandles, text: text))
+        messagesResult.append(Message(
+            senderHandle: localHandle,
+            recipientHandles: recipientHandles,
+            timestamp: nextQueueTimestamp,
+            text: text,
+            cipherSuite: nil,
+            progress: 0.0,
+            failureReason: nil
+        ))
+    }
+
+    func updateMessageStatus(timestamp: Int64, progress: Float, failureReason: String?) throws {
+        updateMessageStatusCalls.append(UpdateMessageStatusCall(timestamp: timestamp, progress: progress, failureReason: failureReason))
+        messagesResult = messagesResult.map { msg in
+            guard msg.timestamp == timestamp else { return msg }
+            return Message(
+                senderHandle: msg.senderHandle,
+                recipientHandles: msg.recipientHandles,
+                timestamp: msg.timestamp,
+                text: msg.text,
+                cipherSuite: msg.cipherSuite,
+                progress: progress,
+                failureReason: failureReason
+            )
+        }
+    }
+
     func keypairStatus() throws -> KeypairStatusResponse {
         return keypairStatusResult
     }
@@ -154,6 +198,8 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     func start() throws {
         startCalled = true
     }
+
+    func stop() throws {}
 
     func isStarted() -> Bool {
         isStartedCalled = true

@@ -75,16 +75,16 @@ pub fn bingle_api_register_via_forced_stun() {
     // Ensure relay accounts are funded
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE])
         .expect("Failed to fund localnet accounts");
-    // Build AlgoOps for two relay accounts and one creator (use SPEND as creator)
-    let ops_creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let ops_relay1 = ops_creator.clone();
-    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+    // Build AlgoOps: relay accounts use SPEND/RECEIVE, admin calls use ADDRESS_APP_ADMIN
+    let ops_admin  = test_util::ops_from_mnemonic(test_util::ADDRESS_APP_ADMIN, test_util::PASSPHRASE_APP_ADMIN, cfg.clone());
+    let ops_relay1 = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND,     test_util::PASSPHRASE_SPEND,     cfg.clone());
+    let ops_relay2 = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE,   test_util::PASSPHRASE_RECEIVE,   cfg.clone());
 
     // Deploy the BingleDapp from artifacts using common helper
-    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_relay1, "BINGLE$", 1_000_000);
 
     // Create helpers bound to this app
-    let ab_creator = AlgoBingle::new(ops_creator.clone(), app_id, 0);
+    let ab_creator = AlgoBingle::new(ops_admin.clone(), app_id, 0);
 
     register_relay_static_endpoint(
         "relay1",
@@ -151,7 +151,7 @@ pub fn bingle_api_register_via_forced_stun() {
     ops_client.opt_in_app(app_id).expect("client opt-in app");
     register_client_on_blockchain(
         test_util::ADDRESS_10MIL, test_util::PASSPHRASE_10MIL, "client1",
-        app_id, asset_id, &ops_creator, cfg.clone(),
+        app_id, asset_id, &ops_admin, cfg.clone(),
     );
 
     client1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&c1_opts)).expect("client1 start() failed");

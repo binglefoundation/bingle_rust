@@ -23,13 +23,13 @@ security:
 *   ~~**Certificate Algorithms**: Ed25519 on CA key, EC (P-256) for signing and ECDHE for protocol on server/client keys.~~
     *   ~~**Spec**: Updated to reflect EC (NIST P-256).~~
     *   ~~**Code**: Updated to use EC (P-256).~~
-        -*   **`DdbDumpResolve` vs. `DdbDumpResolveResponse`**: Resolve the following
-    *   **Spec**: The description for `DdbInitResolve` says it is followed by `DdbDumpResolveResponse` messages.
-    *   **Code**: The implementation in `src/ddb/mod.rs` sends `DdbDumpResolve` messages.
-    *   **Note**: The spec contains conflicting info, describing `DdbDumpResolve` as the message carrying the record, while naming it `DdbDumpResolveResponse` in the process flow.
-*   **Signature Verification**: Implement a signature over the AdvertRecord struct.
-    *   **Spec**: Specifies `DdbUpsertResolve` and `DdbDeleteResolve` include an `originalSignature`.
-    *   **Code**: While the fields exist in the structs, the message handlers (`on_ddb_upsert_resolve`) do not currently appear to verify these signatures, relying instead on the DTLS-provided identity.
+       ~~*   **`DdbDumpResolve` vs. `DdbDumpResolveResponse`**: Resolve the following~~
+    *  ~~**Spec**: The description for `DdbInitResolve` says it is followed by `DdbDumpResolveResponse` messages.~~
+    *  ~~**Code**: The implementation in `src/ddb/mod.rs` sends `DdbDumpResolve` messages.~~
+    *  ~~**Note**: The spec contains conflicting info, describing `DdbDumpResolve` as the message carrying the record, while naming it `DdbDumpResolveResponse` in the process flow.~~
+*   ~~Signature Verification**: Implement a signature over the AdvertRecord struct.~~
+    ~~*   **Spec**: Specifies `DdbUpsertResolve` and `DdbDeleteResolve` include an `originalSignature`.~~
+    ~~*   **Code**: While the fields exist in the structs, the message handlers (`on_ddb_upsert_resolve`) do not currently appear to verify these signatures, relying instead on the DTLS-provided identity.~~
 * ~~Network Partitioning Algorithm: fixed this inconsistency in the spec~~
 - ~~ensure runs in live with full encryption~~
 - ~~test encryption for entropy~~
@@ -49,17 +49,18 @@ security:
 - ~~Test for extended master secret support~~
 - ~~ensure id is checked (must be opted in etc) and fails on impersonation~~
 - ensure DAPP methods perform all required checks
-- delegate admin tasks to not be creator
+- ~~delegate admin tasks to not be creator~~
 - ~~implement permissioned relay only mode~~
 - ~~sign and check AdvertRecords~~
 - ~~root records in DDB need to be signed~~
 - ~~validate rippled messages are from relays~~
-- document all crates
+- ~~validate a DDB entry with am_relay=true references a permissioned relay~~
+- ~~document all crates~~
 
 robustness:
 - ~~fail sensibly with message when Bingle network down (< 2 relays))~~
 - ~~relay channel doesnt pass echo message after some reloads~~
-- NOTE: this will be further fixed when we retry sends and hold messages in pending
+- ~~NOTE: this will be further fixed when we retry sends and hold messages in pending~~
 - ~~indicate when we get no STUN responses (UDP blocked)~~
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
@@ -89,6 +90,8 @@ robustness:
 + Layer 1
 + ~~Layer 2~~
 - genericise AlgoOps
+- ~~fix bingle_admin deploy and upgrade~~
+- app replace migrate local data
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
@@ -118,3 +121,9 @@ deploy:
 - production deploy
 - release of iOS app
 - release of Android app
+
+Bugs:
+- NAT timeout causes incoming relay data loss ([#5](https://github.com/bingle-foundation/bingle_rust/issues/5))
+- Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))
+- After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))
+- ~~STUN handler does not pick up a change to inconsistent ([#2](https://github.com/bingle-foundation/bingle_rust/issues/2))~~

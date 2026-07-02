@@ -914,7 +914,10 @@ impl Engine {
         to: &crate::api::bingle_api::NetworkEndpoint,
         data: &[u8],
     ) -> Result<(), String> {
-        tracing::info!("[Engine::send_to_peer] {}, {:?}", to, data);
+        match std::str::from_utf8(data) {
+            Ok(s) => tracing::info!("[Engine::send_to_peer] to={} data={}", to, s),
+            Err(_) => tracing::info!("[Engine::send_to_peer] to={} data=<{} bytes>", to, data.len()),
+        }
         // Guard: reject incomplete relay endpoints (missing channel); fully-configured
         // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
         if to.is_relay() && to.relay_channel().is_none() {
@@ -943,6 +946,10 @@ impl Engine {
         let res = self.packet_transport.send(to, data);
         // Update send_status regardless of success or failure
         if let Some(key) = to.get_key() {
+            match &res {
+                Ok(_) => tracing::info!("[Engine::send_to_peer] sent to key={:?}", key),
+                Err(e) => tracing::warn!("[Engine::send_to_peer] send failed key={:?} error={}", key, e),
+            }
             if let Ok(mut status_map) = self.endpoint_status.lock() {
                 status_map.insert(
                     key.clone(),
@@ -1177,6 +1184,7 @@ impl Engine {
                     // 2) Mark endpoint as working: an arriving application packet confirms reachability
                     if let Some(key) = from.get_key() {
                         if let Ok(mut status_map) = endpoint_status.lock() {
+                            tracing::debug!("[Engine::install_dtls_handler][cb] marking endpoint as working: {:?}", key);
                             status_map.insert(key, EndpointStatus {
                                 last_checked_timestamp: Instant::now(),
                                 is_working: true,
@@ -1780,6 +1788,11 @@ impl Engine {
         self.set_last_public_addr(public_addr);
 
         // Transition to TrianglePing and perform relay triangle test
+        if self.state == EngineState::TrianglePing {
+            tracing::info!("[Engine] already in TrianglePing");
+            return;
+        }
+
         let prev = self.state;
         self.state = EngineState::TrianglePing;
         tracing::info!("[Engine] state change: {:?} -> TrianglePing", prev);

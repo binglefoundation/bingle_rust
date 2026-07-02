@@ -7,4 +7,5 @@
 #[macro_use]
 #[path = "util_support/mod.rs"]
 pub mod util;
+pub mod setup_localnet;
 pub mod flaky;

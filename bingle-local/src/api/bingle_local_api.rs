@@ -20,7 +20,7 @@ pub struct Contact {
 }
 
 /// Message record stored locally.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub sender_handle: String,
     pub recipient_handles: Vec<String>,
@@ -31,6 +31,11 @@ pub struct Message {
     /// Derived by the receiving client from the connection; not transmitted on the wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cipher_suite: Option<String>,
+    // Delivery tracking
+    #[serde(default)]
+    pub progress: Option<f32>, // 0.0 to 1.0 (1.0 = completed/sent/failed-permanently)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }
 
 /// Generated Algorand keypair details.
@@ -96,6 +101,15 @@ pub trait BingleLocalApi: Send + Sync {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError>;
+
+    /// Queue a message to be sent by the background processor.
+    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError>;
+
+    /// Update the status of a message.
+    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError>;
+
+    /// Get all messages that are pending (progress < 1.0).
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError>;
 
     /// Get the list of stored messages.
     fn get_messages(&self) -> Result<Vec<Message>, BingleError>;

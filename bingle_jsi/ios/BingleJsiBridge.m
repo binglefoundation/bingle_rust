@@ -62,10 +62,22 @@ RCT_EXTERN_METHOD(addMessage:(NSString *)senderHandle
                   recipientHandles:(NSArray *)recipientHandles
                   timestamp:(double)timestamp
                   text:(NSString *)text
+                  cipherSuite:(nullable NSString *)cipherSuite
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(getMessages:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(queueMessage:(NSArray *)recipientHandles
+                  text:(NSString *)text
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(updateMessageStatus:(double)timestamp
+                  progress:(double)progress
+                  failureReason:(nullable NSString *)failureReason
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(keypairStatus:(RCTPromiseResolveBlock)resolve

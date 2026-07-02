@@ -33,7 +33,7 @@ pub fn deploy_call_validate_and_delete_teal_app() {
 
     // Deploy
     let app_id = ops
-        .deploy_app(&approval_prog, &clear_prog, None)
+        .deploy_app(&approval_prog, &clear_prog, None, None, &[])
         .expect("deploy app call")
         .expect("created app id");
 

@@ -19,7 +19,7 @@ fn extract_subject_cn(pem: &[u8]) -> String {
     cert.subject_name()
         .entries_by_nid(Nid::COMMONNAME)
         .next()
-        .and_then(|e| e.data().as_utf8().ok())
+        .and_then(|e| e.data().to_string().ok())
         .map(|s| s.to_string())
         .unwrap_or_default()
 }

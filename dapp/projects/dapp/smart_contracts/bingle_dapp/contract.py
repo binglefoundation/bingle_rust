@@ -1,5 +1,5 @@
 # pyright: reportMissingModuleSource=false
-from algopy import ARC4Contract, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes
+from algopy import ARC4Contract, Application, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes, op
 from algopy.arc4 import abimethod, baremethod
 
 
@@ -8,6 +8,8 @@ class BingleDapp(ARC4Contract):
     def __init__(self) -> None:
         self.bingle_price = GlobalState(UInt64, key="BinglePrice")
         self.last_handle_time = GlobalState(UInt64, key="LastHandleTime")
+        self.app_admin = GlobalState(Account, key="AppAdmin")
+        self.app_withdrawer = GlobalState(Account, key="AppWithdrawer")
         # Local state for registration
         self.handle = LocalState(String, key="Handle")
         self.handle_time = LocalState(UInt64, key="HandleTime")
@@ -18,14 +20,21 @@ class BingleDapp(ARC4Contract):
         self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
         # Local state flag: whether caller is allowed to relay (1 == true)
         self.allow_relay = LocalState(UInt64, key="allow_relay")
+        # id of the predecessor app; migrate_local validates this to prevent privilege forging
+        self.predecessor_app = GlobalState(UInt64, key="PredecessorApp")
+
+    @abimethod(create="require")
+    def create(self, app_admin: Account, app_withdrawer: Account) -> None:
+        self.app_admin.value = app_admin
+        self.app_withdrawer.value = app_withdrawer
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
-        return
+        assert Txn.sender == Global.creator_address
 
     @baremethod(allow_actions=["DeleteApplication"])
     def delete_application(self) -> None:
-        return
+        assert Txn.sender == Global.creator_address
 
     @baremethod(allow_actions=["OptIn"])
     def optin(self) -> None:
@@ -35,10 +44,10 @@ class BingleDapp(ARC4Contract):
     def opt_in_to_bingle(self, asset_id: UInt64) -> None:
         """Opt the application account into the provided ASA.
 
-        Admin-only: must be called by the application creator.
+        Admin-only: must be called by the application admin.
         Performs an inner asset transfer of 0 to the app's own address to complete the opt-in.
         """
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         # Inner transaction: axfer 0 of `asset_id` to current_application_address
         # Use Algopy itxn builder for AssetTransfer with named arguments and submit.
         itxn.AssetTransfer(
@@ -52,10 +61,10 @@ class BingleDapp(ARC4Contract):
     def set_bingle_price(self, price: UInt64) -> None:
         """Set the Bingle$ price in microAlgos.
 
-        Only the application creator can call this method.
+        Only the application admin can call this method.
         Stores the value in global state under key "BinglePrice".
         """
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         self.bingle_price.value = price
 
     @abimethod()
@@ -145,6 +154,25 @@ class BingleDapp(ARC4Contract):
         assert saw_axfer
 
     @abimethod()
+    def withdraw(self, address: Account, amount: UInt64, asset_id: UInt64, asset_amount: UInt64) -> None:
+        assert Txn.sender == self.app_withdrawer.value
+        if amount > UInt64(0):
+            app_addr = Global.current_application_address
+            app_balance = app_addr.balance
+            app_min = app_addr.min_balance
+            withdrawable = app_balance - app_min if app_balance > app_min else UInt64(0)
+            actual = amount if amount <= withdrawable else withdrawable
+            assert actual > UInt64(0)
+            itxn.Payment(receiver=address, amount=actual, fee=Global.min_txn_fee).submit()
+        if asset_amount > UInt64(0):
+            itxn.AssetTransfer(
+                xfer_asset=asset_id,
+                asset_receiver=address,
+                asset_amount=asset_amount,
+                fee=Global.min_txn_fee,
+            ).submit()
+
+    @abimethod()
     def register(self, handle: String) -> None:
         """Register a handle for the caller.
 
@@ -196,8 +224,7 @@ class BingleDapp(ARC4Contract):
         Only the application creator may call this method. The target account must be opted-in
         to the application.
         """
-        # Only app creator may grant/revoke
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         # Optional consistency check: the provided address must match Txn.accounts[0]
         # (Not when we pass the creator in accounts)
         # assert target_address == Txn.accounts(0)
@@ -222,12 +249,131 @@ class BingleDapp(ARC4Contract):
         Only the application creator may call this method. The target account must be opted-in
         to the application.
         """
-        # Only app creator may grant/revoke
-        assert Txn.sender == Global.creator_address
+        assert Txn.sender == self.app_admin.value
         # Normalize to 0/1
         val = UInt64(1) if allow != UInt64(0) else UInt64(0)
         # Target from foreign accounts
         self.allow_relay[target_address] = val
+
+    @abimethod()
+    def set_predecessor_app(self, predecessor: Application) -> None:
+        assert Txn.sender == Global.creator_address
+        self.predecessor_app.value = predecessor.id
+
+    @abimethod()
+    def set_app_admin(self, admin: Account) -> None:
+        assert Txn.sender == Global.creator_address
+        self.app_admin.value = admin
+
+    @abimethod()
+    def set_app_withdrawer(self, withdrawer: Account) -> None:
+        assert Txn.sender == Global.creator_address
+        self.app_withdrawer.value = withdrawer
+
+    @abimethod()
+    def migrate_global(self, old_app: Application) -> None:
+        """Copy global state from old_app into this contract.
+
+        Creator-only. Call once after deploying a new version to carry over
+        BinglePrice, LastHandleTime, AppAdmin, and AppWithdrawer from the old app.
+        old_app must be included in the transaction's foreign apps array.
+        """
+        assert Txn.sender == Global.creator_address
+
+        price, exists = op.AppGlobal.get_ex_uint64(old_app, b"BinglePrice")
+        if exists:
+            self.bingle_price.value = price
+
+        last_time, exists = op.AppGlobal.get_ex_uint64(old_app, b"LastHandleTime")
+        if exists:
+            self.last_handle_time.value = last_time
+
+        admin_bytes, exists = op.AppGlobal.get_ex_bytes(old_app, b"AppAdmin")
+        if exists:
+            self.app_admin.value = Account(admin_bytes)
+
+        withdrawer_bytes, exists = op.AppGlobal.get_ex_bytes(old_app, b"AppWithdrawer")
+        if exists:
+            self.app_withdrawer.value = Account(withdrawer_bytes)
+
+    @abimethod()
+    def migrate_reserve(self, new_app: Application, asset_id: UInt64) -> None:
+        assert Txn.sender == Global.creator_address
+        app_addr = Global.current_application_address
+        app_balance = app_addr.balance
+        app_min = app_addr.min_balance
+        # Each inner txn with fee=Global.min_txn_fee deducts from the app account.
+        # Reserve one fee slot per potential inner txn so the app stays at min_balance.
+        fee_reserve = Global.min_txn_fee + (
+            Global.min_txn_fee if asset_id != UInt64(0) else UInt64(0)
+        )
+        withdrawable = (
+            app_balance - app_min - fee_reserve
+            if app_balance > app_min + fee_reserve
+            else UInt64(0)
+        )
+        if withdrawable > UInt64(0):
+            itxn.Payment(
+                receiver=new_app.address,
+                amount=withdrawable,
+                fee=Global.min_txn_fee,
+            ).submit()
+        if asset_id != UInt64(0):
+            asa_balance, has_balance = op.AssetHoldingGet.asset_balance(app_addr, asset_id)
+            if has_balance and asa_balance > UInt64(0):
+                itxn.AssetTransfer(
+                    xfer_asset=asset_id,
+                    asset_receiver=new_app.address,
+                    asset_amount=asa_balance,
+                    fee=Global.min_txn_fee,
+                ).submit()
+
+    @abimethod()
+    def migrate_local(self, old_app: Application) -> None:
+        """Copy the caller's local state from old_app into this contract.
+
+        The old_app must match the stored predecessor_app_id (set by creator via
+        set_predecessor_app), preventing a user from supplying a fake app they
+        control to forge admin-granted permissions such as allow_static or allow_relay.
+
+        handle/handle_time: first-write-wins (not overwritten if already registered here).
+        The handle_time is preserved from the old app but bumped past last_handle_time
+        if needed to avoid duplicate timestamps.
+
+        allow_static, allow_relay: copied as-is (they were admin-granted on the old app).
+        static_endpoint / static_endpoint_x: only copied when allow_static == 1.
+        """
+        predecessor_id, is_set = self.predecessor_app.maybe()
+        assert is_set and old_app.id == predecessor_id
+
+        sender = Txn.sender
+
+        old_handle, has_handle = op.AppLocal.get_ex_bytes(sender, old_app, b"Handle")
+        if has_handle:
+            current, exists = self.handle.maybe(sender)
+            if not exists or current == String():
+                self.handle[sender] = String.from_bytes(old_handle)
+                old_time, has_time = op.AppLocal.get_ex_uint64(sender, old_app, b"HandleTime")
+                if has_time:
+                    last_time = self.last_handle_time.get(default=UInt64(0))
+                    handle_time = old_time if old_time > last_time else last_time + UInt64(1)
+                    self.handle_time[sender] = handle_time
+                    self.last_handle_time.value = handle_time
+
+        old_allow_static, has_allow_static = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_static")
+        if has_allow_static:
+            self.allow_static[sender] = old_allow_static
+            if old_allow_static == UInt64(1):
+                old_endpoint, has_endpoint = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint")
+                if has_endpoint:
+                    self.static_endpoint[sender] = String.from_bytes(old_endpoint)
+                old_endpoint_x, has_endpoint_x = op.AppLocal.get_ex_bytes(sender, old_app, b"static_endpoint_x")
+                if has_endpoint_x:
+                    self.static_endpoint_x[sender] = String.from_bytes(old_endpoint_x)
+
+        old_allow_relay, has_allow_relay = op.AppLocal.get_ex_uint64(sender, old_app, b"allow_relay")
+        if has_allow_relay:
+            self.allow_relay[sender] = old_allow_relay
 
     @abimethod()
     def register_endpoint(self, endpoint: String) -> None:

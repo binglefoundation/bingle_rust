@@ -45,6 +45,12 @@ pub mod generate_keypair;
 #[path = "account_balance_test.rs"]
 pub mod account_balance_test;
 
+#[path = "asset_holding_test.rs"]
+pub mod asset_holding_test;
+
+#[path = "set_asset_clawback_test.rs"]
+pub mod set_asset_clawback_test;
+
 #[path = "test_node_errors.rs"]
 pub mod test_node_errors;
 

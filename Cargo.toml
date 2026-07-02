@@ -31,8 +31,8 @@ tracing = "0.1"
 # tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Moving to dev-deps if only used there, or keep here if needed for lib
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
-openssl = { version = "0.10", features = ["vendored"] }
-openssl-sys = { version = "0.9" }
+openssl = { version = "0.10.81", features = ["vendored"] }
+openssl-sys = { version = "0.9.117" }
 
 [workspace]
 members = [

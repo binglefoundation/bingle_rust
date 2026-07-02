@@ -1,10 +1,12 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use serde_json::Value as JsonValue;
 
-use rust_comms::api::bingle_api::{BingleApi, BingleError, StartOptions};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::api::network_endpoint::NetworkEndpoint;
 use rust_comms::blockchain::error::AlgoErrorKind;
@@ -23,13 +25,15 @@ use crate::api::bingle_jsi_api::BingleJsiApi;
 
 /// Concrete implementation of BingleJsiApi backed by BingleApiImpl and BingleApiLocalImpl.
 pub struct BingleJsiApiImpl {
-    api: Arc<BingleApiImpl>,
+    api: Arc<dyn BingleApiBoth>,
     messages: Arc<Mutex<Vec<JsonValue>>>,
     local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: Option<PathBuf>,
     nat_type: Arc<Mutex<String>>,
     message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
     listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
+    listening: Arc<AtomicBool>,
+    processing_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     started: Arc<Mutex<bool>>,
     opts: Arc<Mutex<StartOptions>>,
 }
@@ -133,6 +137,7 @@ fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
             BingleJsiError::NoBlockchain { reason: ae.to_string() }
         }
+        BingleError::Retryable(reason) => BingleJsiError::Retryable { reason },
         _ => BingleJsiError::InternalError { reason: e.to_string() },
     }
 }
@@ -227,7 +232,7 @@ impl BingleJsiApiImpl {
             asset_id,
             log_level: config.log_level,
             handle_cache_expiry,
-            dangerous_debug: false,
+            dangerous_debug: false, // We don't want to enable dangerous debug DTLS features
             log_mode: rust_comms::util::logging::LogMode::JS,
             wait_response_timeout: None,    // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
         };
@@ -271,6 +276,8 @@ impl BingleJsiApiImpl {
         let message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>> =
             Arc::new(Mutex::new(None));
 
+        let listening = Arc::new(AtomicBool::new(false));
+        let processing_thread = Arc::new(Mutex::new(None));
         let started = Arc::new(Mutex::new(false));
         let opts_mutex = Arc::new(Mutex::new(opts.clone()));
 
@@ -282,6 +289,8 @@ impl BingleJsiApiImpl {
             nat_type: nat_type.clone(),
             message_callback: message_callback.clone(),
             listening_callback: listening_callback.clone(),
+            listening: listening.clone(),
+            processing_thread: processing_thread.clone(),
             started: started.clone(),
             opts: opts_mutex,
         });
@@ -295,22 +304,24 @@ impl BingleJsiApiImpl {
         {
             let nat_type_for_closure = nat_type.clone();
             let lcb = listening_callback.clone();
+            let listening_atomic = listening.clone();
             api.access_unsafe_for_tests(|api_mut| {
                 let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> =
-                    Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
-                        let type_str = if listening {
+                    Arc::new(move |listening_val: bool, nt: rust_comms::engine::NatType| {
+                        let type_str = if listening_val {
                             format!("{:?}", nt)
                         } else {
                             "Unknown".to_string()
                         };
-                        tracing::info!("on_listening: listening={} nat_type={}", listening, type_str);
+                        tracing::info!("on_listening: listening={} nat_type={}", listening_val, type_str);
+                        listening_atomic.store(listening_val, Ordering::SeqCst);
                         if let Ok(mut guard) = nat_type_for_closure.lock() {
                             *guard = type_str.clone();
                         }
                         // Invoke user listening callback if registered
                         if let Ok(guard) = lcb.lock() {
                             if let Some(ref callback) = *guard {
-                                callback.on_listening(listening, type_str);
+                                callback.on_listening(listening_val, type_str);
                             }
                         }
                     });
@@ -443,6 +454,150 @@ impl BingleJsiApiImpl {
         }
 
         Ok(api_instance)
+    }
+
+    fn run_processing_loop(
+        api: Arc<dyn BingleApiBoth>,
+        local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+        listening: Arc<AtomicBool>,
+        started: Arc<Mutex<bool>>,
+    ) {
+        tracing::info!("[BingleJsiApiImpl] Starting background processing loop");
+        while *started.lock().unwrap_or_else(|e| e.into_inner()) {
+            if listening.load(Ordering::SeqCst) {
+                if let Some(ref local_arc) = local_api {
+                    let pendingMessageList = match local_arc.lock() {
+                        Ok(guard) => guard.get_pending_messages(),
+                        Err(_) => {
+                            tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
+                            break;
+                        }
+                    };
+
+                    if let Ok(messages) = pendingMessageList {
+                        for msg in messages {
+                            tracing::info!(
+                                "[BingleJsiApiImpl] Processing pending message: {}",
+                                msg.timestamp
+                            );
+                            let api_clone = api.clone();
+                            let local_api_clone = local_arc.clone();
+                            let timestamp = msg.timestamp;
+
+                            let progress_callback =
+                                Arc::new(move |percent: u8, status_msg: String| {
+                                    // Note: progress messages don't come with a good failure reason
+                                    // we could separate these through the API but TMWFN
+                                    if let Ok(mut guard) = local_api_clone.lock() {
+                                        let _ = guard.update_message_status(
+                                            timestamp,
+                                            percent as f32 / 100.0,
+                                            None,
+                                        );
+                                    }
+                                });
+
+                            let mut all_success = true;
+                            let mut last_error = None;
+
+                            for handle in &msg.recipient_handles {
+                                let payload = serde_json::json!({
+                                    "text": msg.text,
+                                });
+
+                                tracing::info!("BingleJsiApiImpl][send_message_to_handles] Sending message to handle: {:?}", handle);
+
+                                let res = api_clone.send_message_to_handle(
+                                    handle,
+                                    payload,
+                                    Some(progress_callback.clone()),
+                                );
+                                match res {
+                                    Ok(true) => {}
+                                    Ok(false) => {
+                                        all_success = false;
+                                        last_error = Some("Send returned false".to_string());
+                                    }
+                                    Err(BingleError::Retryable(e)) => {
+                                        all_success = false;
+                                        last_error = Some(format!("Retryable: {}", e));
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        all_success = false;
+                                        last_error = Some(e.to_string());
+                                    }
+                                }
+                            }
+
+                            if all_success {
+                                if let Ok(mut guard) = local_arc.lock() {
+                                    let _ = guard.update_message_status(timestamp, 1.0, None);
+                                }
+                            } else if let Some(err) = last_error {
+                                if err.starts_with("Retryable:") {
+                                    if let Ok(mut guard) = local_arc.lock() {
+                                        let _ =
+                                            guard.update_message_status(timestamp, 0.0, Some(err));
+                                    }
+                                } else {
+                                    if let Ok(mut guard) = local_arc.lock() {
+                                        let _ =
+                                            guard.update_message_status(timestamp, 1.0, Some(err));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
+        tracing::info!("[BingleJsiApiImpl] Background processing loop stopped");
+    }
+
+    pub fn api_for_tests(&self) -> Arc<dyn BingleApiBoth> {
+        self.api.clone()
+    }
+
+    pub fn init_for_tests(
+        api: Arc<dyn BingleApiBoth>,
+        local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
+    ) -> Arc<Self> {
+        let messages: Arc<Mutex<Vec<JsonValue>>> = Arc::new(Mutex::new(Vec::new()));
+        let nat_type: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let listening = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(Mutex::new(false));
+        let mut opts_obj = StartOptions::new("test".to_string());
+        opts_obj.dangerous_debug = true;
+        let opts = Arc::new(Mutex::new(opts_obj));
+
+        let listening_atomic = listening.clone();
+        api.access_unsafe_for_tests(|api_mut| {
+             api_mut.set_on_listening(Some(Arc::new(move |listening_val, _nat| {
+                 listening_atomic.store(listening_val, Ordering::SeqCst);
+             })));
+        });
+
+        Arc::new(Self {
+            api,
+            messages,
+            local_api,
+            local_file: None,
+            nat_type,
+            message_callback: Arc::new(Mutex::new(None)),
+            listening_callback: Arc::new(Mutex::new(None)),
+            listening,
+            processing_thread: Arc::new(Mutex::new(None)),
+            started,
+            opts,
+        })
+    }
+
+    pub fn set_local_api_for_tests(&self, _local_api: Arc<Mutex<Box<dyn BingleLocalApi>>>) {
+        // This is safe because we are just replacing the Arc in the Option.
+        // Wait, self.local_api is Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>.
+        // It is NOT behind a Mutex itself. So I can't change it if I only have &self.
     }
 }
 
@@ -699,8 +854,30 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 timestamp: m.timestamp,
                 text: m.text,
                 cipher_suite: m.cipher_suite,
+                progress: m.progress,
+                failure_reason: m.failure_reason,
             })
             .collect())
+    }
+
+    fn queue_message(&self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .queue_message(recipient_handles, text)
+            .map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
+    }
+
+    fn update_message_status(&self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        guard
+            .update_message_status(timestamp, progress, failure_reason)
+            .map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(())
     }
 
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
@@ -755,69 +932,133 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
     fn start(&self) -> Result<(), BingleJsiError> {
         // Check if already started
-        {
+        let already_started = {
             let guard = self.started.lock().map_err(|_| BingleJsiError::InternalError {
                 reason: "Started flag lock poisoned".to_string(),
             })?;
-            if *guard {
+            *guard
+        };
+
+        if already_started {
+            tracing::info!("[BingleJsiApiImpl][start] Engine already started, skipping engine start");
+        } else {
+            tracing::info!("[BingleJsiApiImpl][start] Starting engine");
+
+            // Check keypair status is FUNDED or ACTIVE (bypass in debug mode)
+            let mut bypass_status = false;
+            if let Ok(opts) = self.opts.lock() {
+                if opts.dangerous_debug {
+                    tracing::info!("[BingleJsiApiImpl][start] Bypassing keypair status check");
+                    bypass_status = true;
+                }
+            }
+
+            let guard = local_api_guard(&self.local_api)?;
+            let status = guard
+                .keypair_status()
+                .map_err(bingle_error_to_jsi)?;
+            tracing::info!("[BingleJsiApiImpl][start] Keypair status: {:?}", status.status);
+            let kp_status = parse_keypair_status(&status.status);
+            if !bypass_status && kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
                 return Err(BingleJsiError::InvalidRequest {
-                    reason: "Engine already started".to_string(),
+                    reason: format!(
+                        "Cannot start engine: keypair must be FUNDED or ACTIVE, but is {:?}",
+                        kp_status
+                    ),
                 });
             }
-        }
+            tracing::info!("[BingleJsiApiImpl][start] Keypair status check passed");
 
-        // Check keypair status is FUNDED or ACTIVE
-        let guard = local_api_guard(&self.local_api)?;
-        let status = guard
-            .keypair_status()
-            .map_err(bingle_error_to_jsi)?;
-        let kp_status = parse_keypair_status(&status.status);
-        if kp_status != KeypairStatus::Funded && kp_status != KeypairStatus::Active {
-            return Err(BingleJsiError::InvalidRequest {
-                reason: format!(
-                    "Cannot start engine: keypair must be FUNDED or ACTIVE, but is {:?}",
-                    kp_status
-                ),
-            });
-        }
-
-        // Build opts with handle and passphrase from local API
-        let mut opts_clone = self.opts.lock().map_err(|_| BingleJsiError::InternalError {
-            reason: "Opts lock poisoned".to_string(),
-        })?.clone();
-        if let Some(handle) = &status.handle {
-            opts_clone.handle = handle.clone();
-        }
-        if let Ok(Some(kp)) = guard.get_keypair() {
-            opts_clone.algo_passphrase = Some(kp.passphrase);
-        }
-        drop(guard);
-
-        // Start the engine
-        let api_clone = self.api.clone();
-        let mut start_err = None;
-        api_clone.access_unsafe_for_tests(|api_mut| {
-            if let Err(e) = api_mut.start(&opts_clone) {
-                tracing::error!("Failed to start Bingle API: {}", e);
-                start_err = Some(bingle_error_to_jsi(e));
+            // Build opts with handle and passphrase from local API
+            let mut opts_clone = self.opts.lock().map_err(|_| BingleJsiError::InternalError {
+                reason: "Opts lock poisoned".to_string(),
+            })?.clone();
+            if let Some(handle) = &status.handle {
+                opts_clone.handle = handle.clone();
             }
+            if let Ok(Some(kp)) = guard.get_keypair() {
+                opts_clone.algo_passphrase = Some(kp.passphrase);
+            }
+            drop(guard);
+
+            tracing::info!("[BingleJsiApiImpl][start] Built opts with handle {} and passphrase from local API", opts_clone.handle);
+            // Start the engine
+            let api_clone = self.api.clone();
+            let mut start_err = None;
+            api_clone.access_unsafe_for_tests(|api_mut| {
+                if let Err(e) = api_mut.start(&opts_clone) {
+                    tracing::error!("Failed to start Bingle API: {}", e);
+                    start_err = Some(bingle_error_to_jsi(e));
+                }
+            });
+
+            if let Some(err) = start_err {
+                tracing::info!("[BingleJsiApiImpl][start] Failed to start Bingle API: {:?}", err);
+                return Err(err);
+            }
+
+            // Mark as started
+            if let Ok(mut started_guard) = self.started.lock() {
+                *started_guard = true;
+            }
+        }
+        tracing::info!("[BingleJsiApiImpl][start] Bingle API started, will run processing loop");
+
+        // Start processing thread
+        let api_inner = self.api.clone();
+        let local_inner = self.local_api.clone();
+        let listening_inner = self.listening.clone();
+        let started_inner = self.started.clone();
+
+        let processing_thread = std::thread::spawn(move || {
+            Self::run_processing_loop(api_inner, local_inner, listening_inner, started_inner);
         });
 
-        if let Some(err) = start_err {
-            return Err(err);
+        if let Ok(mut guard) = self.processing_thread.lock() {
+            *guard = Some(processing_thread);
         }
 
-        // Mark as started
-        if let Ok(mut started_guard) = self.started.lock() {
-            *started_guard = true;
-        }
+        tracing::info!("[BingleJsiApiImpl][start] Bingle API has started processing loop");
+
 
         // Output INFO with version information
         if let Ok(versions) = self.get_versions() {
-            tracing::info!("Bingle JSI started. Versions: {:?}", versions);
+            tracing::info!("BingleJsiApiImpl][start] Bingle JSI started. Versions: {:?}", versions);
         }
 
-        tracing::info!("Bingle engine started");
+        tracing::info!("BingleJsiApiImpl][start] Bingle engine started");
+        Ok(())
+    }
+
+    fn stop(&self) -> Result<(), BingleJsiError> {
+        // Mark as stopped
+        {
+            let mut guard = self.started.lock().map_err(|_| BingleJsiError::InternalError {
+                reason: "Started flag lock poisoned".to_string(),
+            })?;
+            if !*guard {
+                return Ok(()); // Already stopped
+            }
+            *guard = false;
+        }
+
+        // Stop the engine
+        self.api.access_unsafe_for_tests(|api_mut| {
+            api_mut.stop();
+        });
+
+        // Join the processing thread
+        let mut thread_guard =
+            self.processing_thread
+                .lock()
+                .map_err(|_| BingleJsiError::InternalError {
+                    reason: "Processing thread lock poisoned".to_string(),
+                })?;
+        if let Some(handle) = thread_guard.take() {
+            let _ = handle.join();
+        }
+
+        tracing::info!("Bingle engine stopped");
         Ok(())
     }
 

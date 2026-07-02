@@ -37,21 +37,21 @@ pub fn generate_pki_from_ops_produces_valid_chain_and_expected_cns() {
     dump_cert_info("client_gen", &cc, true);
 
     // CA CN == VIRTUAL_CA
-    let ca_cn = ca.subject_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().as_utf8().ok()).map(|s| s.to_string()).expect("ca cn");
+    let ca_cn = ca.subject_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().to_string().ok()).map(|s| s.to_string()).expect("ca cn");
     assert_eq!(ca_cn, VIRTUAL_CA);
     // CA OrganizationName (O) equals the provided address
-    let ca_org = ca.subject_name().entries_by_nid(Nid::ORGANIZATIONNAME).next().and_then(|e| e.data().as_utf8().ok()).map(|s| s.to_string()).expect("ca org");
+    let ca_org = ca.subject_name().entries_by_nid(Nid::ORGANIZATIONNAME).next().and_then(|e| e.data().to_string().ok()).map(|s| s.to_string()).expect("ca org");
     assert_eq!(ca_org, address);
 
     // Issuer for server/client equals VIRTUAL_CA
-    let sc_issuer = sc.issuer_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().as_utf8().ok()).map(|s| s.to_string()).expect("sc issuer cn");
-    let cc_issuer = cc.issuer_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().as_utf8().ok()).map(|s| s.to_string()).expect("cc issuer cn");
+    let sc_issuer = sc.issuer_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().to_string().ok()).map(|s| s.to_string()).expect("sc issuer cn");
+    let cc_issuer = cc.issuer_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().to_string().ok()).map(|s| s.to_string()).expect("cc issuer cn");
     assert_eq!(sc_issuer, VIRTUAL_CA);
     assert_eq!(cc_issuer, VIRTUAL_CA);
 
     // Subjects end with ISSUER_SUFFIX
-    let sc_subj = sc.subject_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().as_utf8().ok()).map(|s| s.to_string()).expect("sc subj cn");
-    let cc_subj = cc.subject_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().as_utf8().ok()).map(|s| s.to_string()).expect("cc subj cn");
+    let sc_subj = sc.subject_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().to_string().ok()).map(|s| s.to_string()).expect("sc subj cn");
+    let cc_subj = cc.subject_name().entries_by_nid(Nid::COMMONNAME).next().and_then(|e| e.data().to_string().ok()).map(|s| s.to_string()).expect("cc subj cn");
     assert!(sc_subj.ends_with(ISSUER_SUFFIX));
     assert!(cc_subj.ends_with(ISSUER_SUFFIX));
 

@@ -107,8 +107,15 @@ pub struct BingleApiImpl {
 }
 
 impl BingleApiImpl {
+    fn check_dangerous_debug(options: &StartOptions) {
+        if options.dangerous_debug && !cfg!(debug_assertions) {
+            panic!("dangerous_debug is only allowed in debug builds");
+        }
+    }
+
     pub fn new(options: &StartOptions) -> Arc<Self> {
         tracing::info!("[BingleApiImpl::new][enter]");
+        Self::check_dangerous_debug(options);
         let initial_options = options.clone();
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
@@ -153,6 +160,7 @@ impl BingleApiImpl {
     /// Test-oriented constructor to inject custom DTLS and options.
     pub fn new_with_dtls_and_options(dtls: Box<dyn Dtls + Send + Sync>, options: StartOptions) -> Arc<Self> {
         tracing::info!("[BingleApiImpl::new_with_dtls_and_options][enter] dtls_provided=true am_relay={}", options.am_relay);
+        Self::check_dangerous_debug(&options);
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
             let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
@@ -314,7 +322,11 @@ impl BingleApiImpl {
             Ok(_) => Ok(true),
             Err(err) => {
                 warn!("[BingleApiImpl] Engine send_to_peer failed: {}", err);
-                Ok(false)
+                if err.contains("rejecting") {
+                    Ok(false)
+                } else {
+                    Err(BingleError::Retryable(err))
+                }
             }
         }
     }
@@ -389,6 +401,8 @@ impl BingleApi for BingleApiImpl {
         let span = tracing::info_span!("BingleApi", handle = %options.handle);
         self.span = span.clone();
         let _guard = span.enter();
+
+        Self::check_dangerous_debug(options);
 
         // Algorand node connectivity check (fail-fast per requirement)
         if let Some(config) = &options.algo_provider_config {
@@ -646,8 +660,8 @@ impl BingleApi for BingleApiImpl {
             Err(err) => {
                 warn!("[BingleApiImpl::send_message_to_id] DDB lookup failed: {}", err);
                 if let Some(cb) = progress.as_ref() { cb(100, format!("DDB lookup failed: {}", err)); }
-                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return=false");
-                Ok(false)
+                tracing::info!("[BingleApiImpl::send_message_to_id][exit] return=error");
+                Err(err)
             }
         }
     }
@@ -828,7 +842,11 @@ impl BingleApi for BingleApiImpl {
             let err = if sent_ok { "timeout waiting for response".to_string() } else { "send failed".to_string() };
             tracing::warn!("[BingleApiImpl::send_message_to_network_with_response][exit] nsk={} user_id={} msg={} Err({})", network_source_key, user_id, msg_with_tag.clone(), err);
             #[allow(unused)] {  }
-            Err(BingleError::Other(err))
+            if sent_ok {
+                Err(BingleError::Retryable(err))
+            } else {
+                Err(BingleError::Other(err))
+            }
         }
     }
 

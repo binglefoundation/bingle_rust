@@ -436,6 +436,138 @@ final class BingleJsiBridgeTests: XCTestCase {
         XCTAssertEqual(resolvedValue as? Bool, true)
     }
 
+    // MARK: - queueMessage
+
+    func testQueueMessage_callsApiWithCorrectArgs() {
+        let expectation = self.expectation(description: "resolve called")
+        var resolvedValue: Any?
+
+        bridge.queueMessage(
+            ["alice", "bob"],
+            text: "hello queue",
+            resolver: { value in
+                resolvedValue = value
+                expectation.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+
+        waitForExpectations(timeout: 2.0)
+        XCTAssertNil(resolvedValue)
+        XCTAssertEqual(mockApi.queueMessageCalls.count, 1)
+        XCTAssertEqual(mockApi.queueMessageCalls[0].recipientHandles, ["alice", "bob"])
+        XCTAssertEqual(mockApi.queueMessageCalls[0].text, "hello queue")
+    }
+
+    func testQueueMessage_appearsInGetMessagesWithZeroProgress() {
+        mockApi.nextQueueTimestamp = 1700001000
+
+        let queueExp = expectation(description: "queueMessage resolves")
+        bridge.queueMessage(
+            ["alice"],
+            text: "outbound",
+            resolver: { _ in queueExp.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        let getExp = expectation(description: "getMessages resolves")
+        var messages: [[String: Any]]?
+        bridge.getMessages(
+            { value in
+                messages = value as? [[String: Any]]
+                getExp.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        XCTAssertEqual(messages?.count, 1)
+        let msg = messages?[0]
+        XCTAssertEqual(msg?["recipient_handles"] as? [String], ["alice"])
+        XCTAssertEqual(msg?["text"] as? String, "outbound")
+        XCTAssertEqual(msg?["progress"] as? Float, 0.0)
+        XCTAssertNil(msg?["failure_reason"] as? String)
+    }
+
+    func testProcessSendQueue_callsSendMessageToHandleAndUpdatesProgress() {
+        mockApi.nextQueueTimestamp = 1700003000
+
+        let queueExp = expectation(description: "queueMessage resolves")
+        bridge.queueMessage(
+            ["alice"],
+            text: "queued text",
+            resolver: { _ in queueExp.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        let sendExp = expectation(description: "processSendQueue resolves")
+        var processedCount: Any?
+        bridge.processSendQueue(
+            { value in
+                processedCount = value
+                sendExp.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        XCTAssertEqual(processedCount as? Int, 1)
+        XCTAssertEqual(mockApi.sendMessageToHandleCalls.count, 1)
+        XCTAssertEqual(mockApi.sendMessageToHandleCalls[0].handle, "alice")
+        XCTAssertEqual(mockApi.sendMessageToHandleCalls[0].message.text, "queued text")
+        XCTAssertEqual(mockApi.updateMessageStatusCalls.count, 1)
+        XCTAssertEqual(mockApi.updateMessageStatusCalls[0].timestamp, mockApi.nextQueueTimestamp)
+        XCTAssertEqual(mockApi.updateMessageStatusCalls[0].progress, 1.0)
+        XCTAssertNil(mockApi.updateMessageStatusCalls[0].failureReason)
+    }
+
+    func testSendingLoop_updatesProgressAndSuccessInQueue() {
+        mockApi.nextQueueTimestamp = 1700002000
+
+        let queueExp = expectation(description: "queueMessage resolves")
+        bridge.queueMessage(
+            ["bob"],
+            text: "test message",
+            resolver: { _ in queueExp.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        // simulate the background sender completing successfully
+        let updateExp = expectation(description: "updateMessageStatus resolves")
+        bridge.updateMessageStatus(
+            Double(mockApi.nextQueueTimestamp),
+            progress: 1.0,
+            failureReason: nil,
+            resolver: { _ in updateExp.fulfill() },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        let getExp = expectation(description: "getMessages resolves")
+        var messages: [[String: Any]]?
+        bridge.getMessages(
+            { value in
+                messages = value as? [[String: Any]]
+                getExp.fulfill()
+            },
+            rejecter: { _, _, _ in XCTFail("unexpected rejection") }
+        )
+        waitForExpectations(timeout: 2.0)
+
+        XCTAssertEqual(messages?.count, 1)
+        let msg = messages?[0]
+        XCTAssertEqual(msg?["text"] as? String, "test message")
+        XCTAssertEqual(msg?["progress"] as? Float, 1.0)
+        XCTAssertNil(msg?["failure_reason"] as? String)
+        XCTAssertEqual(mockApi.updateMessageStatusCalls.count, 1)
+        XCTAssertEqual(mockApi.updateMessageStatusCalls[0].timestamp, mockApi.nextQueueTimestamp)
+        XCTAssertEqual(mockApi.updateMessageStatusCalls[0].progress, 1.0)
+        XCTAssertNil(mockApi.updateMessageStatusCalls[0].failureReason)
+    }
+
     // MARK: - getMessages
 
     func testGetMessages_includesCipherSuite() {
@@ -445,14 +577,18 @@ final class BingleJsiBridgeTests: XCTestCase {
                 recipientHandles: ["bob"],
                 timestamp: 1700000000,
                 text: "hi",
-                cipherSuite: "TLS_AES_256_GCM_SHA384"
+                cipherSuite: "TLS_AES_256_GCM_SHA384",
+                progress: 1.0,
+                failureReason: nil
             ),
             Message(
                 senderHandle: "carol",
                 recipientHandles: ["bob"],
                 timestamp: 1700000001,
                 text: "hey",
-                cipherSuite: nil
+                cipherSuite: nil,
+                progress: 1.0,
+                failureReason: nil
             ),
         ]
         let expectation = self.expectation(description: "resolve called")

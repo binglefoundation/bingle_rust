@@ -257,6 +257,13 @@ impl AlgoOps {
         Self::parse_address(addr_str)
     }
 
+    pub fn address_str(&self) -> Result<String> {
+        self.address
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| anyhow!("This operation needs an address"))
+    }
+
     // Helper: JSON field accessor that supports snake_case and kebab-case alternatives.
     fn json_get<'a>(o: &'a serde_json::Value, k1: &str, k2: &str) -> Option<&'a serde_json::Value> {
         o.get(k1).or_else(|| o.get(k2))
@@ -610,27 +617,30 @@ impl AlgoOps {
         Ok(info.asset_index.or(Some(0)).filter(|id| *id != 0))
     }
 
-    /// Create an ASA with the reserve address set to the application address for `app_id`.
-    /// Manager remains the issuer for future reconfiguration; decimals=0.
-    pub fn create_asset_with_reserve_app(&self, name: &str, units_in_issue: u64, app_id: u64) -> Result<Option<u64>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    /// Create an ASA with explicit reserve and clawback addresses.
+    ///
+    /// The caller (`self`) is the ASA manager (the only account that can later reconfigure it).
+    /// `reserve_addr` and `clawback_addr` are Algorand address strings. decimals=0.
+    pub fn create_asset_configured(&self, name: &str, units_in_issue: u64, manager_addr: &str, reserve_addr: &str, clawback_addr: &str, freeze_addr: &str) -> Result<Option<u64>> {
         if name.trim().is_empty() { bail!("asset name must not be empty"); }
         if units_in_issue == 0 { bail!("units_in_issue must be > 0"); }
 
         let sk = self.private_key_bytes()?;
         let issuer = self.require_address()?;
-        let reserve_addr_str = self.contract_address(app_id)?;
-        let reserve_addr = Self::parse_address(&reserve_addr_str)?;
+        let manager = Self::parse_address(manager_addr)?;
+        let reserve = Self::parse_address(reserve_addr)?;
+        let clawback = Self::parse_address(clawback_addr)?;
+        let freeze = Self::parse_address(freeze_addr)?;
 
         let client = self.algod_client()?;
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        // Build CreateAsset with reserve and clawback set to app address
         let tx = algonaut::transaction::CreateAsset::new(issuer, units_in_issue, 0, false)
-            .manager(issuer)
-            .reserve(reserve_addr)
-            .clawback(reserve_addr)
+            .manager(manager)
+            .reserve(reserve)
+            .clawback(clawback)
+            .freeze(freeze)
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
@@ -648,6 +658,15 @@ impl AlgoOps {
         let info = self.algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info for asset id: {e}"))?;
         Ok(info.asset_index.or(Some(0)).filter(|id| *id != 0))
+    }
+
+    /// Create an ASA with the reserve and clawback addresses both set to the application address for `app_id`.
+    /// Manager remains the issuer for future reconfiguration; decimals=0.
+    pub fn create_asset_with_reserve_app(&self, name: &str, units_in_issue: u64, app_id: u64) -> Result<Option<u64>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let app_addr = self.contract_address(app_id)?;
+        let issuer_addr = self.address_str()?;
+        self.create_asset_configured(name, units_in_issue, &issuer_addr, &app_addr, &app_addr, &issuer_addr)
     }
 
     /// Check whether `account_address` has opted-in to `asset_id`.
@@ -668,31 +687,68 @@ impl AlgoOps {
         Ok(false)
     }
 
+    /// Returns the holding amount of a specific asset for a given account.
+    pub fn asset_holding(&self, account_address: &str, asset_id: u64) -> Result<u64> {
+        let client = self.algod_client()?;
+        let address = Self::parse_address(account_address)?;
+        let info = self.algod_call(|| client.account(&address))
+            .map_err(|e| anyhow!("failed to fetch account information: {e}"))?;
+        let v = serde_json::to_value(&info).map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
+        Ok(Self::parse_holding_amount_from_account_value(&v, asset_id))
+    }
+
+    /// Returns the µALGO balance of any on-chain address (need not be the signer).
+    pub fn microalgos_at(&self, account_address: &str) -> Result<u64> {
+        let client = self.algod_client()?;
+        let address = Self::parse_address(account_address)?;
+        let info = self.algod_call(|| client.account(&address))
+            .map_err(|e| anyhow!("failed to fetch account information for {account_address}: {e}"))?;
+        Ok(info.amount)
+    }
+
 
     pub fn set_asset_clawback_to_app(&self, app_id: u64, asset_id: u64) -> Result<()> {
         if app_id == 0 { bail!("app_id must be > 0"); }
         if asset_id == 0 { bail!("asset_id must be > 0"); }
-        // Manager must sign this transaction
-        let sk = self.private_key_bytes()?;
-        let manager = self.require_address()?;
-        let clawback_str = self.contract_address(app_id)?;
-        let clawback = Self::parse_address(&clawback_str)?;
 
         let client = self.algod_client()?;
+
+        // Identify the caller address (signer)
+        let caller = self.require_address()?;
+
+        // Authorization check: the caller must be the asset manager (on-chain authority for UpdateAsset).
+        let asset_info = self.algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
+            .map_err(|e| anyhow!("failed to fetch asset information: {e}"))?;
+        let v_asset = serde_json::to_value(&asset_info)
+            .map_err(|e| anyhow!("failed to serialize asset info: {e}"))?;
+        let asset_manager_str = v_asset
+            .get("params").and_then(|p| p.get("manager").and_then(|x| x.as_str()))
+            .ok_or_else(|| anyhow!("asset {} info did not contain manager field", asset_id))?;
+        let asset_manager = Self::parse_address(asset_manager_str)?;
+        if caller != asset_manager {
+            bail!("Only the asset manager ({}) can set asset clawback, but called by {}", asset_manager_str, caller);
+        }
+
+        // Fetch application address
+        let app_addr_str = self.contract_address(app_id)?;
+        let app_addr = Self::parse_address(&app_addr_str)?;
+
+        // Fetch suggested params
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        algo_log!("Setting clawback to app address: {:?}", clawback);
-
-        // Build asset reconfiguration: explicitly keep manager and reserve; set clawback to app address
-        let tx = algonaut::transaction::builder::UpdateAsset::new(manager, algonaut::core::AssetId(asset_id))
-            .manager(manager)
-            .reserve(clawback) // reserve is the app address in our model
-            .clawback(clawback)
+        // Manager must sign this transaction; use caller as it is verified to be the manager.
+        // Build asset reconfiguration: explicitly keep manager as the caller; set clawback and reserve to app address.
+        let tx = algonaut::transaction::builder::UpdateAsset::new(caller, algonaut::core::AssetId(asset_id))
+            .manager(caller)
+            .reserve(app_addr)
+            .clawback(app_addr)
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
 
+        // Sign and submit
+        let sk = self.private_key_bytes()?;
         let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
         let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset config transaction: {e}"))?;
@@ -700,7 +756,10 @@ impl AlgoOps {
 
         let tx_id = self.algod_call(|| client.send_raw(&signed))
             .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
-        self.wait_for_confirmation(&tx_id, 10)
+
+        self.wait_for_confirmation(&tx_id, 10)?;
+        algo_log!("Successfully set asset {} clawback and reserve to app address {}", asset_id, app_addr);
+        Ok(())
     }
 
     /// Change an ASA's reserve address using an AssetConfiguration (reconfigure) transaction.
@@ -957,7 +1016,15 @@ impl AlgoOps {
         if sized > min_fee { sized } else { min_fee }
     }
 
-    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>) -> Result<Option<u64>> {
+    /// Deploy a new Algorand application.
+    ///
+    /// - `asset_id`: if `Some`, the app is opted into this ASA immediately after creation.
+    /// - `method`: ARC-4 method signature to include in the create transaction (e.g.
+    ///   `"create(address,address)void"`). Required when the contract uses
+    ///   `@abimethod(create="require")`. Pass `None` for bare-create contracts.
+    /// - `args`: ABI-encoded arguments for `method`. Must match the method signature.
+    ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
+    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
         // Ensure we have account access
@@ -967,11 +1034,9 @@ impl AlgoOps {
         // Build programs and schemas
         let approval = algonaut::core::CompiledTeal(approval_program.to_vec());
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
-        // Schema: Global needs at least 2 integers (BinglePrice, LastHandleTime).
-        // Local needs at least 1 byteslice (Handle) and 1 integer (HandleTime),
-        // plus allow_static (int), static_endpoint (bytes), static_endpoint_x (bytes), and allow_relay (int).
-        // TODO: this is app specific, we shoould have this info from the artifacts
-        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 2, number_byteslices: 0 };
+        // Global: BinglePrice (int), LastHandleTime (int), PredecessorApp (int), AppAdmin (bytes), AppWithdrawer (bytes).
+        // Local: handle_time (int), allow_static (int), allow_relay (int), Handle (bytes), static_endpoint (bytes), static_endpoint_x (bytes).
+        let gs = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 2 };
         let ls = algonaut::transaction::transaction::StateSchema { number_ints: 3, number_byteslices: 3 };
 
         let client = self.algod_client()?;
@@ -1010,9 +1075,17 @@ impl AlgoOps {
             balance_micro
         );
 
+        // Build ABI args for the create method if provided.
+        let mut app_args: Vec<Vec<u8>> = Vec::new();
+        if let Some(sig) = method {
+            app_args.push(Self::arc4_selector(sig).to_vec());
+        }
+        app_args.extend(args.iter().map(|a| a.to_bytes()));
+
         // Build create application transaction
         let mut builder = algonaut::transaction::CreateApplication::new(sender, approval, clear, gs, ls);
         if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
+        if !app_args.is_empty() { builder = builder.app_arguments(app_args); }
         let tx = builder
             .note(Self::unique_note())
             .build(&params)
@@ -1051,6 +1124,9 @@ impl AlgoOps {
                     let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone(), app_id, aid);
                     // Propagate any error from the admin call; ignore returned tx id
                     let _ = ab.opt_in_app_to_asset(app_id, aid)?;
+
+                    // Additionally set the reserve and clawback addresses to the application address
+                    self.set_asset_clawback_to_app(app_id, aid)?;
                 }
             }
             Ok((app_id != 0).then_some(app_id))
@@ -1135,8 +1211,39 @@ impl AlgoOps {
     }
 
     pub fn build_call_app_tx(&self, app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        self.build_call_app_tx_inner(app_id, asset_id, &[], method, args)
+    }
+
+    pub fn build_call_app_tx_with_foreign_apps(&self, app_id: u64, asset_id: Option<u64>, foreign_app_ids: &[u64], method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        self.build_call_app_tx_inner(app_id, asset_id, foreign_app_ids, method, args)
+    }
+
+    pub fn call_app_with_foreign_app(&self, app_id: u64, foreign_app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
         if app_id == 0 { bail!("app_id must be > 0"); }
-        // Lookup application information to determine the creator address (to include in foreign accounts)
+        if foreign_app_id == 0 { bail!("foreign_app_id must be > 0"); }
+        let tx = self.build_call_app_tx_inner(app_id, asset_id, &[foreign_app_id], method, args)?;
+        algo_log!("[call_app_with_foreign_app] method={:?} app_id={} foreign_app_id={}", method, app_id, foreign_app_id);
+        let sk = self.private_key_bytes()?;
+        let client = self.algod_client()?;
+        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let account = algonaut::transaction::account::Account::from_seed(seed);
+        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
+        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self.algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        self.wait_for_confirmation(&tx_id, 10)?;
+        let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
+        let p = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+            .map_err(|e| anyhow!("failed to fetch pending transaction info: {e}"))?;
+        let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
+        let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        let mut logs: Vec<Vec<u8>> = Vec::new();
+        for l in logs_arr { if let Some(s) = l.as_str() { if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(s) { logs.push(bytes); } } }
+        Ok((tx_id, logs))
+    }
+
+    fn build_call_app_tx_inner(&self, app_id: u64, asset_id: Option<u64>, foreign_app_ids: &[u64], method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
         let client = self.algod_client()?;
         let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
             .map_err(|e| anyhow!("failed to fetch application information: {e}"))?;
@@ -1148,20 +1255,15 @@ impl AlgoOps {
         let creator = Self::parse_address(creator_str)?;
         let sender = self.require_address()?;
 
-        // Prepare args (prepend ARC-4 selector if method provided)
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         if let Some(sig) = method {
-            let sel = Self::arc4_selector(sig);
-            app_args.push(sel.to_vec());
+            app_args.push(Self::arc4_selector(sig).to_vec());
         }
         app_args.extend(args.iter().map(|a| a.to_bytes()));
 
         let params = self.algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        // Build application call (NoOp)
-        // Always include creator in accounts for compatibility; for set_allow_static/set_allow_relay we also include the target address as Accounts[0]
-        // TODO: make this generic
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
         if let Some(sig) = method {
             if sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void" {
@@ -1172,7 +1274,6 @@ impl AlgoOps {
                             pk.copy_from_slice(&b[..32]);
                             if let Ok(addr_str) = crate::blockchain::algo_ops::byte_key_to_address(&pk) {
                                 if let Ok(target) = Self::parse_address(&addr_str) {
-                                    // Insert target at index 0 so Txn.Accounts[0] == target
                                     accounts.insert(0, target);
                                 }
                             }
@@ -1181,17 +1282,15 @@ impl AlgoOps {
                 }
             }
         }
-        // Build a helper closure to create the builder with the same parameters each time.
-        // (CallApplication doesn't implement Clone, so we rebuild for fee estimation.)
+        let fapps: Vec<algonaut::core::AppId> = foreign_app_ids.iter().map(|&id| algonaut::core::AppId(id)).collect();
         let make_builder = || {
             let mut b = algonaut::transaction::builder::CallApplication::new(sender, algonaut::core::AppId(app_id))
                 .accounts(accounts.clone())
                 .app_arguments(app_args.clone());
             if let Some(aid) = asset_id { b = b.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
+            if !fapps.is_empty() { b = b.foreign_apps(fapps.clone()); }
             b
         };
-        // Explicitly estimate and set a fee for this transaction. Build a zero-fee txn to estimate size,
-        // then compute fee using helper = max(min_fee, fee_per_byte * estimated_signed_tx_size).
         let tx_zero_fee = make_builder()
             .fee(algonaut::core::MicroAlgos(0))
             .note(Self::unique_note())

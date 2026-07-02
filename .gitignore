@@ -1,5 +1,6 @@
 /target
 /tmp
+/.claude/worktrees/
 
 # Ignore Xcode test results
 **/TestResults.xcresult/
@@ -33,6 +34,7 @@
 /bingle_jsi/android/generated/
 /bingle_jsi/android/src/main/jniLibs/
 /bingle_jsi/node_modules/
+/bingle_jsi/android/build/
 
 # Ignore bingle_jsi example app generated artifacts
 /bingle_jsi/example/node_modules/
@@ -45,3 +47,6 @@
 **/react-native-bingle-jsi*.tgz
 
 **/.build_number
+/dapp/projects/dapp/smart_contracts/artifacts/
+dapp/projects/dapp/smart_contracts/bingle_dapp/smart_contracts/artifacts/bingle_dapp
+

@@ -4,7 +4,7 @@
 use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
 use rust_comms::engine::RelayState;
 use rust_comms::messages::types::{
-    DdbDeleteResolve, DdbDumpResolve, DdbDumpResolveResponse, DdbGetRelaysStatus, DdbInitResolve,
+    DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve,
     DdbInitResponse, DdbMessage, DdbQueryResolve, DdbQueryResponse, DdbRelaysStatusResponse,
     DdbSignon, DdbSignonResponse, DdbUpdateResponse, DdbUpsertResolve, FailVote, Message,
     MutexMessage, MutexRelease, MutexRequest, MutexResponse, PingMessage, PingPing, PingResponse,
@@ -307,20 +307,6 @@ pub fn all_message_samples() -> Vec<(&'static str, Message)> {
             "Ddb::DumpResolve",
             Message::Ddb(DdbMessage::DumpResolve(DdbDumpResolve {
                 app: "ddb".to_string(),
-                record: sample_advert_record(),
-                tag: None,
-                response_tag: None,
-                text: None,
-                data: None,
-            })),
-        ),
-        // Ddb::DumpResolveResponse
-        (
-            "Ddb::DumpResolveResponse",
-            Message::Ddb(DdbMessage::DumpResolveResponse(DdbDumpResolveResponse {
-                app: "ddb".to_string(),
-                record_index: 0,
-                record_id: "node1".to_string(),
                 record: sample_advert_record(),
                 tag: None,
                 response_tag: None,
