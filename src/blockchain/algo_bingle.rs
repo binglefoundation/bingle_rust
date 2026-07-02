@@ -5,18 +5,18 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
+use crate::blockchain::algo_ops::{address_to_byte_key, AlgoOps, AppArg};
 
 use algonaut::{
-    Algod,
     core::{Address, AppId, AssetId, MicroAlgos, ToMsgPack},
+    model::algod::SuggestedParams,
     transaction::{
         account::Account,
         builder::{CallApplication, ClawbackAsset, UpdateAsset},
         transaction::Transaction,
-        TransferAsset, Pay,
+        Pay, TransferAsset,
     },
-    model::algod::SuggestedParams,
+    Algod,
 };
 
 /// Lightweight helper around AlgoOps for calling the Bingle dApp.
@@ -947,7 +947,7 @@ impl AlgoBingle {
         if asset_id == 0 { bail!("asset_id must be > 0"); }
         if amount == 0 { bail!("amount must be > 0"); }
         // Ensure the app account is opted-in to the ASA so it can receive transfers
-        self.opt_in_app_to_asset(app_id, asset_id)?;
+        self.ops.opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
         let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
@@ -1022,7 +1022,7 @@ impl AlgoBingle {
         let (account, sender) = self.sender_account()?;
 
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
-        self.opt_in_app_to_asset(app_id, asset_id)?;
+        self.ops.opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
         
         // Ensure the caller (sender) is opted-in to the ASA so the axfer succeeds
         let _ = self.opt_in_sender_to_asset(asset_id)?;
@@ -1084,26 +1084,6 @@ impl AlgoBingle {
             algo_log!("Warning: handle registration verification timed out for handle '{}'. It may still be pending in indexer.", handle);
         }
         Ok(())
-    }
-
-    /// Admin method: Opt the application account into the given ASA by calling the
-    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app admin.
-    /// Returns the transaction id of the app call when an opt-in was required; if the
-    /// app was already opted in, returns Ok("") without making a call.
-    /// TODO: make this generic as called from deploy
-    pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64) -> Result<String> {
-        tracing::info!("opt_in_app_to_asset: app_id={}", app_id);
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
-        // If the app address already holds the asset, nothing to do
-        let app_addr_str = self.ops.contract_address(app_id)?;
-        if self.ops.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
-        // Call the admin method on the contract; this must be signed by the creator
-        let (tx_id, _logs) = self
-            .ops
-            .call_app(app_id, Some(asset_id), Some("opt_in_to_bingle(uint64)void"), &[AppArg::Uint(asset_id)])?;
-        // Return tx id to signal a call occurred; fetch from tuple index 0
-        Ok(tx_id)
     }
 
     /// Deploy or reuse the BingleDapp smart contract and Bingle$ ASA, wiring them together.
@@ -1185,7 +1165,9 @@ impl AlgoBingle {
             let id = self.ops.deploy_app(
                 &approval, &clear, None,
                 Some("create(address,address)void"),
-                &[AppArg::Bytes(admin_pk.to_vec()), AppArg::Bytes(withdrawer_pk.to_vec())],
+                &[AppArg::Bytes(admin_pk.to_vec()),
+                    AppArg::Bytes(withdrawer_pk.to_vec())],
+                "opt_in_to_bingle(uint64)void",
             )?.ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
             admin_ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
@@ -1219,7 +1201,7 @@ impl AlgoBingle {
 
         // ── 3. Opt new app into the ASA (admin-signed contract call) ─────────────
         let admin_ab = AlgoBingle::new(admin_ops.clone(), effective_app_id, effective_asset_id);
-        admin_ab.opt_in_app_to_asset(effective_app_id, effective_asset_id)?;
+        admin_ab.ops.opt_in_app_to_asset(effective_app_id, effective_asset_id, "opt_in_to_bingle(uint64)void")?;
 
         // Opt APP_WITHDRAWER into the ASA so they can receive ASA withdrawals.
         let withdrawer_ab = AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);

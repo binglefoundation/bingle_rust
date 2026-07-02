@@ -226,6 +226,7 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
         &approval_bytes, &clear_bytes, None,
         Some("create(address,address)void"),
         &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
+        "opt_in_to_bingle(uint64)void",
     ).expect("deploy app call")
      .expect("failed to get app_id after deployment");
 

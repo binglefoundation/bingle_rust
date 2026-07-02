@@ -1024,8 +1024,9 @@ impl AlgoOps {
     ///   `"create(address,address)void"`). Required when the contract uses
     ///   `@abimethod(create="require")`. Pass `None` for bare-create contracts.
     /// - `args`: ABI-encoded arguments for `method`. Must match the method signature.
+    /// - `opt_in_method_name`: name of the method on the creator that opts the app in using Teal, signature opt_in(app_id)
     ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
-    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<Option<u64>> {
+    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], opt_in_method_name: &str) -> Result<Option<u64>> {
         if approval_program.is_empty() { bail!("approval_program must not be empty"); }
         if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
         // Ensure we have account access
@@ -1033,6 +1034,7 @@ impl AlgoOps {
         let sender = self.require_address()?;
 
         // Build programs and schemas
+        // TODO: get this from application meta so we are generic
         let approval = algonaut::core::CompiledTeal(approval_program.to_vec());
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
         // Global: BinglePrice (int), LastHandleTime (int), PredecessorApp (int), AppAdmin (bytes), AppWithdrawer (bytes).
@@ -1121,10 +1123,8 @@ impl AlgoOps {
                 }
                 // If an asset id was provided, opt the app address in via the dApp admin method
                 if let Some(aid) = asset_id {
-                    // Use AlgoBingle helper to call the admin method
-                    let ab = crate::blockchain::algo_bingle::AlgoBingle::new(self.clone(), app_id, aid);
                     // Propagate any error from the admin call; ignore returned tx id
-                    let _ = ab.opt_in_app_to_asset(app_id, aid)?;
+                    let _ = self.opt_in_app_to_asset(app_id, aid, opt_in_method_name)?;
 
                     // Additionally set the reserve and clawback addresses to the application address
                     self.set_asset_clawback_to_app(app_id, aid)?;
@@ -1411,6 +1411,24 @@ impl AlgoOps {
         self.wait_for_confirmation(&tx_id, 10)
     }
 
+    /// Admin method: Opt the application account into the given ASA by calling the
+    /// dApp's opt_in_to_bingle(uint64) method. Must be called by the app admin.
+    /// Returns the transaction id of the app call when an opt-in was required; if the
+    /// app was already opted in, returns Ok("") without making a call.
+    /// opt_in_method_name must be a method on the creator like "opt_(app_id)" which opts the app in using Teal
+    pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64, opt_in_method_name: &str) -> Result<String> {
+        tracing::info!("opt_in_app_to_asset: app_id={}", app_id);
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        // If the app address already holds the asset, nothing to do
+        let app_addr_str = self.contract_address(app_id)?;
+        if self.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
+        // Call the admin method on the contract; this must be signed by the creator
+        let (tx_id, _logs) = self.call_app(app_id, Some(asset_id), Some(opt_in_method_name), &[AppArg::Uint(asset_id)])?;
+        // Return tx id to signal a call occurred; fetch from tuple index 0
+        Ok(tx_id)
+    }
+    
     /// Wait for a transaction to be confirmed up to `timeout_rounds` rounds.
     /// Follows the Kotlin logic: poll pending tx info and wait for next rounds.
     pub fn wait_for_confirmation(&self, tx_id: &str, timeout_rounds: u64) -> Result<()> {
