@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 pub const MINIMUM_MTU: usize = 1492;
 /// How long to suppress sends to a peer that recently failed.
-pub const SEND_FAIL_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
+pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
 
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(
@@ -90,7 +90,7 @@ pub enum RelayState {
     Own,
 }
 
-pub type EngineType = std::sync::Arc<Engine>;
+pub type EngineType = Arc<Engine>;
 
 pub trait BingleAccess<T: ?Sized> {
     fn access<F, R>(&self, f: F) -> R
@@ -98,7 +98,7 @@ pub trait BingleAccess<T: ?Sized> {
         F: FnOnce(&T) -> R;
 }
 
-impl<T: ?Sized> BingleAccess<T> for std::sync::Arc<T> {
+impl<T: ?Sized> BingleAccess<T> for Arc<T> {
     fn access<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
@@ -132,7 +132,7 @@ pub trait BingleAccessUnsafeForTests<T: ?Sized> {
         F: FnOnce(&mut T) -> R;
 }
 
-impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Arc<T> {
+impl<T: ?Sized> BingleAccessUnsafeForTests<T> for Arc<T> {
     fn access_unsafe_for_tests<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
@@ -140,7 +140,7 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Arc<T> {
         // We can't use Arc::get_mut as it requires &mut self.
         // But this is access_unsafe_for_tests, so we just use the pointer.
         unsafe {
-            let ptr = std::sync::Arc::as_ptr(self) as *mut T;
+            let ptr = Arc::as_ptr(self) as *mut T;
             f(&mut *ptr)
         }
     }
@@ -157,7 +157,7 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
         });
 
         unsafe {
-            let ptr = std::sync::Arc::as_ptr(&arc) as *mut T;
+            let ptr = Arc::as_ptr(&arc) as *mut T;
             f(&mut *ptr)
         }
     }
@@ -167,7 +167,7 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
 pub struct Engine {
     // Distributed mutex used to coordinate relay initialization across peer relays
     relay_init_mutex:
-        Option<std::sync::Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
+        Option<Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
     options: StartOptions,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
     // Packet transport layer (step 1: pass-through) that owns DTLS.
@@ -192,27 +192,27 @@ pub struct Engine {
     // Current NAT type classification
     nat_type: std::sync::atomic::AtomicU8,
     // Per-connection state tracked at the Engine level (keyed by NetworkEndpointKey)
-    connections: std::sync::Arc<
-        std::sync::Mutex<
-            std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>,
+    connections: Arc<
+        Mutex<
+            HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>,
         >,
     >,
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<Arc<String>>,
     // In-memory DDB backend used by relay nodes (and for tests)
-    ddb_backend: std::sync::Arc<std::sync::Mutex<crate::ddb::InMemoryDdbBackend>>,
+    ddb_backend: Arc<Mutex<crate::ddb::InMemoryDdbBackend>>,
     // Per-API router instance bound to this engine
-    router: std::sync::Arc<crate::messages::router::Router>,
+    router: Arc<crate::messages::router::Router>,
     // DDB client bound to the API instance (always present; may be a NullDdbClient)
-    ddb_client: std::sync::Arc<dyn crate::ddb::DdbClient>,
+    ddb_client: Arc<dyn crate::ddb::DdbClient>,
     // TURN handlers (split): client and relay variants
     turn_handler_client:
-        Option<std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>>,
-    turn_handler_relay: Option<std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>>,
+        Option<Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>>,
+    turn_handler_relay: Option<Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>>,
     // Application-level callback for listening state changes (set by API)
-    on_listening_cb: std::sync::Arc<
-        std::sync::Mutex<Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>>,
+    on_listening_cb: Arc<
+        Mutex<Option<Arc<crate::api::bingle_api::OnListeningHandler>>>,
     >,
     // When loading DDB from a peer, store the reported record count
     peer_ddb_records: Option<usize>,
@@ -221,7 +221,7 @@ pub struct Engine {
     // Set of endpoints we have seen (sent to)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
     // Tracks success/failure of the most recent send to each known endpoint
-    endpoint_status: Arc<Mutex<std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus>>>,
+    endpoint_status: Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus>>>,
     pub(crate) span: tracing::Span,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
@@ -293,7 +293,7 @@ impl Engine {
     }
 
     /// Return the appropriate TURN handler for current role (client vs relay)
-    pub fn get_approp_turn_handler(&self) -> std::sync::Arc<dyn TurnHandler + Send + Sync> {
+    pub fn get_approp_turn_handler(&self) -> Arc<dyn TurnHandler + Send + Sync> {
         if self.options.am_relay {
             self.turn_handler_relay.clone().expect("Relay must have turn_handler_relay")
         } else {
@@ -327,10 +327,10 @@ impl Engine {
     }
 
     /// Test helper to query backend for a given id.
-    pub fn ddb_backend_lookup_for_tests(&self, id: &str) -> Option<crate::ddb::AdvertRecord> {
+    pub fn ddb_backend_lookup_for_tests(&self, id: &str) -> Option<AdvertRecord> {
         self.ddb_backend.lock().ok().and_then(|b| b.lookup(id))
     }
-    pub fn ddb_client(&self) -> std::sync::Arc<dyn crate::ddb::DdbClient> {
+    pub fn ddb_client(&self) -> Arc<dyn crate::ddb::DdbClient> {
         self.ddb_client.clone()
     }
 
@@ -355,7 +355,7 @@ impl Engine {
     /// Install or clear the application-level OnListening handler (set by API).
     pub fn set_on_listening_handler(
         &mut self,
-        cb: Option<std::sync::Arc<crate::api::bingle_api::OnListeningHandler>>,
+        cb: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     ) {
         if let Ok(mut g) = self.on_listening_cb.lock() {
             *g = cb;
@@ -365,19 +365,18 @@ impl Engine {
     /// Notify the application-level OnListening handler, if installed.
     pub fn notify_listening(&self, listening: bool) {
         let nat = self.nat_type();
-        if let Ok(g) = self.on_listening_cb.lock() {
-            if let Some(cb) = &*g {
+        if let Ok(g) = self.on_listening_cb.lock()
+            && let Some(cb) = &*g {
                 cb(listening, nat);
             }
-        }
     }
 
     /// Create a common TURN handler for both relay and client modes
     fn create_turn_handler(
         &self,
-    ) -> std::sync::Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
+    ) -> Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> {
         let am_relay = self.options.am_relay;
-        let turn: std::sync::Arc<dyn TurnHandler + Send + Sync> = self.get_approp_turn_handler();
+        let turn: Arc<dyn TurnHandler + Send + Sync> = self.get_approp_turn_handler();
         let last_public_addr_shared = self.last_public_addr_shared.clone();
 
         Arc::new(
@@ -406,7 +405,7 @@ impl Engine {
                             // This is the special case where a relay (us) is sending via another relay
                             if let Some(udp) = source
                                 .as_any()
-                                .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
+                                .downcast_ref::<UdpNetworkMux>(
                             ) {
                                 tracing::info!(
                                     "[Engine][TURN relay] message for own relay node, re-injecting {} bytes from {}",
@@ -428,13 +427,13 @@ impl Engine {
                             // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
                             if let Some(udp) = source
                                 .as_any()
-                                .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
+                                .downcast_ref::<UdpNetworkMux>(
                             ) {
-                                let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(
+                                let nsk = NetworkEndpoint::new_direct(
                                     wrapped.ip_address,
                                 );
                                 // Here we forward the TURN packet including channel number to the resolved ip_address
-                                if let Err(e) = udp.write(&nsk, &packet) {
+                                if let Err(e) = udp.write(&nsk, packet) {
                                     tracing::warn!(
                                         "[Engine][TURN relay] forward to {} failed: {}",
                                         wrapped.ip_address,
@@ -462,7 +461,7 @@ impl Engine {
                         // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
                         if let Some(udp) = source
                             .as_any()
-                            .downcast_ref::<crate::dtls::network_mux_udp::UdpNetworkMux>(
+                            .downcast_ref::<UdpNetworkMux>(
                         ) {
                             udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
                             tracing::info!(
@@ -517,7 +516,7 @@ impl Engine {
         #[allow(unused)]
         {}
         // Build a DDB client now (always present); choose real or null implementation
-        let ddb: std::sync::Arc<dyn crate::ddb::DdbClient> = {
+        let ddb: Arc<dyn crate::ddb::DdbClient> = {
             let have_app = options.app_id.or_else(|| {
                 std::env::var("BINGLE_APP_ID")
                     .ok()
@@ -527,13 +526,13 @@ impl Engine {
                 tracing::error!("[Engine::new] no BINGLE_APP_ID set will use NullDdbClient");
             }
             if let Some(app_id) = have_app {
-                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(
+                Arc::new(crate::ddb::DdbClientImpl::new(
                     api.clone(),
                     app_id,
                     options.algo_provider_config.clone(),
                 ))
             } else {
-                std::sync::Arc::new(crate::ddb::NullDdbClient::new())
+                Arc::new(crate::ddb::NullDdbClient::new())
             }
         };
 
@@ -554,32 +553,32 @@ impl Engine {
             nat_restricted: std::sync::atomic::AtomicBool::new(false),
             registered: std::sync::atomic::AtomicBool::new(false),
             nat_type: std::sync::atomic::AtomicU8::new(NatType::Unknown as u8),
-            connections: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            connections: Arc::new(Mutex::new(HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
-            ddb_backend: std::sync::Arc::new(std::sync::Mutex::new(
+            ddb_backend: Arc::new(Mutex::new(
                 crate::ddb::InMemoryDdbBackend::new(),
             )),
-            router: std::sync::Arc::new(crate::messages::router::Router::new(api.clone())),
+            router: Arc::new(crate::messages::router::Router::new(api.clone())),
             ddb_client: ddb,
-            turn_handler_client: if options.am_relay { None } else { Some(std::sync::Arc::new(
+            turn_handler_client: if options.am_relay { None } else { Some(Arc::new(
                 crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new(),
             )) },
-            turn_handler_relay: if options.am_relay {Some(std::sync::Arc::new(
+            turn_handler_relay: if options.am_relay {Some(Arc::new(
                 crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl::new(),
             )) } else { None},
-            on_listening_cb: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            on_listening_cb: Arc::new(Mutex::new(None)),
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            endpoint_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            endpoint_status: Arc::new(Mutex::new(HashMap::new())),
             span: tracing::Span::none(),
             custom_message_handler: None,
             relay_keep_alive: Mutex::new(None),
             relay_keep_alive_interval: crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL,
             weak_self: std::sync::Weak::new(),
         };
-        eng.set_last_public_addr(options.static_ip.clone());
+        eng.set_last_public_addr(options.static_ip);
         eng
     }
 
@@ -588,7 +587,7 @@ impl Engine {
     }
 
     /// Provide a per-API router instance to avoid global state collisions across APIs/tests.
-    pub fn set_router(&mut self, router: std::sync::Arc<crate::messages::router::Router>) {
+    pub fn set_router(&mut self, router: Arc<crate::messages::router::Router>) {
         self.router = router;
     }
 
@@ -598,7 +597,7 @@ impl Engine {
     }
 
     /// Test helper: Override retry delays on the packet transport (use short delays in unit tests).
-    pub fn set_retry_delays_for_packet_transport(&mut self, delays: Vec<std::time::Duration>) {
+    pub fn set_retry_delays_for_packet_transport(&mut self, delays: Vec<Duration>) {
         self.packet_transport.set_retry_delays(delays);
     }
 
@@ -641,7 +640,7 @@ impl Engine {
 
     /// Test helper: simulate receiving a message from the network.
     pub fn receive_message_for_tests(&mut self, from_ep: &NetworkEndpoint, data: &[u8]) {
-        let msg = match crate::messages::marshal::from_json_str(&String::from_utf8_lossy(data)) {
+        let msg = match from_json_str(&String::from_utf8_lossy(data)) {
             Ok(m) => m,
             Err(_) => {
                 tracing::warn!("[Engine::receive_message_for_tests] failed to parse message: {:?}", String::from_utf8_lossy(data));
@@ -670,11 +669,11 @@ impl Engine {
     pub fn start_with_addr_for_tests(
         &mut self,
         _options: &StartOptions,
-        bind_addr: std::net::SocketAddr,
+        bind_addr: SocketAddr,
     ) -> Result<(), BingleError> {
         use std::net::{IpAddr, Ipv4Addr};
         let port = bind_addr.port();
-        let bind_all = std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+        let bind_all = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
         let mux = Arc::new(
             UdpNetworkMux::bind(bind_all)
                 .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?,
@@ -856,13 +855,13 @@ impl Engine {
                     .and_then(|s| s.parse::<u64>().ok())
             });
             self.ddb_client = if let Some(app_id) = have_app {
-                std::sync::Arc::new(crate::ddb::DdbClientImpl::new(
+                Arc::new(crate::ddb::DdbClientImpl::new(
                     api.clone(),
                     app_id,
                     self.options.algo_provider_config.clone(),
                 ))
             } else {
-                std::sync::Arc::new(crate::ddb::NullDdbClient::new())
+                Arc::new(crate::ddb::NullDdbClient::new())
             };
         }
     }
@@ -876,7 +875,7 @@ impl Engine {
     }
 
     /// Check whether the engine believes a connection to endpoint exists.
-    pub fn has_connection(&self, endpoint: &crate::api::bingle_api::NetworkEndpoint) -> bool {
+    pub fn has_connection(&self, endpoint: &NetworkEndpoint) -> bool {
         if let Some(key) = endpoint.get_key() {
             self.connections
                 .lock()
@@ -900,7 +899,7 @@ impl Engine {
     /// Testing helper: get a copy of the send_status map.
     pub fn endpoint_status_for_tests(
         &self,
-    ) -> std::collections::HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus> {
+    ) -> HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus> {
         self.endpoint_status.lock().unwrap().clone()
     }
 
@@ -917,7 +916,7 @@ impl Engine {
     /// If this is the first interaction with the peer, create a connection entry on successful send.
     pub fn send_to_peer(
         &self,
-        to: &crate::api::bingle_api::NetworkEndpoint,
+        to: &NetworkEndpoint,
         data: &[u8],
     ) -> Result<(), String> {
         match std::str::from_utf8(data) {
@@ -930,22 +929,18 @@ impl Engine {
             return Err(format!("[Engine::send_to_peer] rejecting incomplete relay endpoint (no channel): {}", to));
         }
         // Guard: do not send to ourselves
-        if let Some(target_addr) = to.inet_socket_address() {
-            if self.last_public_addr() == Some(target_addr) {
+        if let Some(target_addr) = to.inet_socket_address()
+            && self.last_public_addr() == Some(target_addr) {
                 return Err(format!("[Engine::send_to_peer] rejecting send to self: {}", target_addr));
             }
-        }
         // Guard: skip send if the peer recently failed (within SEND_FAIL_BACKOFF).
         // Placed after structural guards so that get_key() is only called for valid endpoints.
-        if let Some(key) = to.get_key() {
-            if let Ok(status_map) = self.endpoint_status.lock() {
-                if let Some(status) = status_map.get(&key) {
-                    if !status.is_working && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF {
+        if let Some(key) = to.get_key()
+            && let Ok(status_map) = self.endpoint_status.lock()
+                && let Some(status) = status_map.get(&key)
+                    && !status.is_working && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF {
                         return Err("Sending is failing".to_string());
                     }
-                }
-            }
-        }
         // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
@@ -970,11 +965,10 @@ impl Engine {
         }
         if res.is_ok() {
             // Track seen endpoints
-            if let Some(addr) = to.inet_socket_address() {
-                if let Ok(mut seen) = self.seen_endpoints.lock() {
+            if let Some(addr) = to.inet_socket_address()
+                && let Ok(mut seen) = self.seen_endpoints.lock() {
                     seen.insert(addr.into());
                 }
-            }
             // Track connection using NetworkEndpointKey derived from `to`
             if let Some(key) = to.get_key() {
                 if let Ok(mut m) = self.connections.lock() {
@@ -1024,14 +1018,14 @@ impl Engine {
 
         // Use endpoints from make_epoch_info if available, otherwise try to look them up individually
         if let Some(endpoints) = relay_endpoints_opt {
-            for (id, endpoint) in relay_ids.into_iter().zip(endpoints.into_iter()) {
+            for (id, endpoint) in relay_ids.into_iter().zip(endpoints) {
                 if id == my_id || id == originator_id {
                     tracing::debug!("[Engine::ripple_message][endpoints known] skipping relay {} my_id={}, originator_id={}", id, my_id, originator_id);
                     continue;
                 }
-                if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
+                if let Ok(addr) = SocketAddr::try_from(endpoint) {
                     tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
-                    let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                    let nsk = NetworkEndpoint::new_direct(addr);
                     let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                 }
             }
@@ -1041,15 +1035,13 @@ impl Engine {
                     tracing::debug!("[Engine::ripple_message][no endpoints known] skipping relay {} my_id={}, originator_id={}", id, my_id, originator_id);
                     continue;
                 }
-                if let Some(rec) = ddb.lookup(&id) {
-                    if let Some(endpoint) = rec.endpoint {
-                        if let Ok(addr) = std::net::SocketAddr::try_from(endpoint) {
+                if let Some(rec) = ddb.lookup(&id)
+                    && let Some(endpoint) = rec.endpoint
+                        && let Ok(addr) = SocketAddr::try_from(endpoint) {
                             tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
-                            let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                            let nsk = NetworkEndpoint::new_direct(addr);
                             let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                         }
-                    }
-                }
             }
         }
     }
@@ -1092,7 +1084,7 @@ impl Engine {
         router: &Arc<crate::messages::router::Router>,
         issuer: &str,
         from: &NetworkEndpoint,
-        custom_handler: Option<&Arc<dyn crate::messages::handlers::MessageHandler + Send + Sync>>,
+        custom_handler: Option<&Arc<dyn MessageHandler + Send + Sync>>,
     ) {
         match std::str::from_utf8(data) {
             Ok(s) => {
@@ -1120,13 +1112,13 @@ impl Engine {
                     }
                     Err(e) => {
                         tracing::warn!("[Engine::route_incoming] not valid json {} {:?}", s_with_cipher, e);
-                        DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::String(s_with_cipher)));
+                        DefaultPrintingHandler.on_unimplemented(&Message::Unknown(serde_json::Value::String(s_with_cipher)));
                     }
                 }
             }
             Err(e) => {
                 tracing::warn!("[Engine::route_incoming] not UTF-8 {:?}", e);
-                DefaultPrintingHandler.on_unimplemented(&crate::messages::Message::Unknown(serde_json::Value::Null));
+                DefaultPrintingHandler.on_unimplemented(&Message::Unknown(serde_json::Value::Null));
             }
         }
     }
@@ -1148,7 +1140,7 @@ impl Engine {
         let router_arc = self.router.clone();
 
         self.packet_transport
-            .set_handle_message(Some(std::sync::Arc::new(move |server, from, issuer, data| {
+            .set_handle_message(Some(Arc::new(move |server, from, issuer, data| {
                 let _guard = span.enter();
                 tracing::info!("[Engine::install_dtls_handler][cb] invoked from={} issuer={} bytes={}", from, issuer, data.len());
                 let dtls_handler_worker = || -> Result<Option<Vec<u8>>, String> {
@@ -1213,8 +1205,8 @@ impl Engine {
                     router_arc.set_last_from(from.inet_socket_address());
 
                     // Try JSON parse to extract request/response tags and fulfill waiters
-                    if let Ok(s) = std::str::from_utf8(data) {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                    if let Ok(s) = std::str::from_utf8(data)
+                        && let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
                             tracing::info!("[Engine::install_dtls_handler][cb] checking for request/response tags in {}", v);
                             // Expose request tag (if present). Handlers will echo it back as responseTag.
                             if let Some(tag) = v.get("tag").and_then(|vv| vv.as_str()) {
@@ -1226,7 +1218,7 @@ impl Engine {
                             // This has been camelcased
                             let tag_str_opt = v.get("responseTag").and_then(|vv| vv.as_str());
                             if let Some(tag_str) = tag_str_opt {
-                                if let Ok(tag_uuid) = uuid::Uuid::parse_str(tag_str) {
+                                if let Ok(tag_uuid) = Uuid::parse_str(tag_str) {
                                     if let Ok(map) = pending_responses.lock() {
                                         if let Some(wait) = map.get(&tag_uuid) {
                                             if let Ok(mut g) = wait.0.lock() {
@@ -1258,7 +1250,6 @@ impl Engine {
                             }
                             // No response tag is normal assuming we are an outbound message
                         }
-                    }
 
                     // Get cipher suite from the DTLS session for this endpoint
                     let cipher_suite_opt: Option<String> = server.get_cipher_suite(from);
@@ -1270,7 +1261,7 @@ impl Engine {
                         cipher_suite_opt.as_deref(),
                         &router_arc,
                         issuer,
-                        &from,
+                        from,
                         custom_handler.as_ref(),
                     );
 
@@ -1355,7 +1346,7 @@ impl Engine {
         self.triangle_wait = Some((triangle_signal, Instant::now()));
 
         // After DTLS and mux are running, configure and start STUN finder logic
-        self.start_stun_find(&options, &finder, &mux)?;
+        self.start_stun_find(options, &finder, &mux)?;
         Ok(())
     }
 
@@ -1454,7 +1445,7 @@ impl Engine {
         let send_request = {
             let send_common = send_common.clone();
             move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
-                let msg = crate::messages::types::Message::Mutex(
+                let msg = Message::Mutex(
                     crate::messages::types::MutexMessage::Request(req.clone()),
                 );
                 let json_val = crate::messages::marshal::to_json_value(&msg);
@@ -1464,7 +1455,7 @@ impl Engine {
         let send_reply = {
             let send_common = send_common.clone();
             move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
-                let msg = crate::messages::types::Message::Mutex(
+                let msg = Message::Mutex(
                     crate::messages::types::MutexMessage::Response(resp.clone()),
                 );
                 let json_val = crate::messages::marshal::to_json_value(&msg);
@@ -1474,7 +1465,7 @@ impl Engine {
         let send_release = {
             let send_common = send_common.clone();
             move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
-                let msg = crate::messages::types::Message::Mutex(
+                let msg = Message::Mutex(
                     crate::messages::types::MutexMessage::Release(rel.clone()),
                 );
                 let json_val = crate::messages::marshal::to_json_value(&msg);
@@ -1493,7 +1484,7 @@ impl Engine {
             send_reply,
             send_release,
         );
-        self.relay_init_mutex = Some(std::sync::Arc::new(mtx));
+        self.relay_init_mutex = Some(Arc::new(mtx));
         tracing::info!("[Engine::initialize_relay] created distributed mutex");
 
         // Use the mutex to serialize initialization of the DDB one node at a time
@@ -1619,7 +1610,6 @@ impl Engine {
         self.set_last_public_addr(Some(
             self.options
                 .static_ip
-                .clone()
                 .expect("start_with_address when no static address"),
         ));
 
@@ -1680,7 +1670,7 @@ impl Engine {
             };
             let cache = api.get_accounts_cache();
             let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
-            let finder = crate::relay::relay_finder::RelayFinder::new(
+            let finder = RelayFinder::new(
                 self.bingle_api.clone(),
                 discover,
             );
@@ -1814,7 +1804,7 @@ impl Engine {
         // For now, discovery is stubbed to the provided public_addr (if any) and RelayCheck always returns available.
         let mut relay_target: Option<RelayInfo> = None;
         if let Some(addr) = public_addr {
-            let _a2 = addr.clone();
+            let _a2 = addr;
             // Use the real BingleApi provided via router
             let api = self.bingle_api.clone();
 
@@ -1845,7 +1835,7 @@ impl Engine {
                 }
             };
 
-            let finder = crate::relay::relay_finder::RelayFinder::new(
+            let finder = RelayFinder::new(
                 api.clone(),
                 discover,
             );
@@ -1880,11 +1870,10 @@ impl Engine {
                 self.notify_listening(false);
                 // Reset the STUN finder state to None so that future STUN responses can
                 // re-trigger the state change handler and retry relay discovery.
-                if let Some(stun_arc) = &self.stun {
-                    if let Ok(mut finder) = stun_arc.lock() {
+                if let Some(stun_arc) = &self.stun
+                    && let Ok(mut finder) = stun_arc.lock() {
                         finder.reset_state();
                     }
-                }
                 return;
             }
             self.relay_finder = Some(Arc::new(finder));
@@ -1932,11 +1921,10 @@ impl Engine {
             self.notify_listening(false);
             // Reset the STUN finder state to None so that future STUN responses can
             // re-trigger the state change handler and retry relay discovery.
-            if let Some(stun_arc) = &self.stun {
-                if let Ok(mut finder) = stun_arc.lock() {
+            if let Some(stun_arc) = &self.stun
+                && let Ok(mut finder) = stun_arc.lock() {
                     finder.reset_state();
                 }
-            }
         }
     }
 
@@ -1969,7 +1957,7 @@ impl Engine {
     ///
     /// `relay_info_override`: when Some, skips relay discovery and uses the provided relay directly
     /// (used by test helpers to avoid real network relay checks).
-    fn register_with_relay(&mut self, relay_info_override: Option<crate::relay::relay_finder::RelayInfo>) {
+    fn register_with_relay(&mut self, relay_info_override: Option<RelayInfo>) {
         use crate::relay::relay_finder::RelayInfo;
 
         // Resolve my_id from issuer (strip suffix) or options handle.
@@ -2014,7 +2002,7 @@ impl Engine {
                 self.options.algo_provider_config.clone(),
                 cache,
             );
-            let finder = crate::relay::relay_finder::RelayFinder::new(self.bingle_api.clone(), discover);
+            let finder = RelayFinder::new(self.bingle_api.clone(), discover);
             match finder.find_relay(&my_id) {
                 Ok(info) => info,
                 Err(e) => {
@@ -2037,7 +2025,7 @@ impl Engine {
 
         // Send Relay::Listen and expect a ListenResponse.
         let listen = crate::messages::types::RelayListen { app: None, tag: None };
-        let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
+        let msg = Message::Relay(RelayMessage::Listen(listen));
         let json = crate::messages::marshal::to_json_value(&msg);
         let nsk = NetworkEndpoint::new_direct(relay_info.address());
         let uid = relay_info.id().to_string();
@@ -2137,10 +2125,10 @@ impl Engine {
             let mux_clone = mux.clone();
             f.set_send_packet_handler(Some(Arc::new(move |host, port, payload| {
                 // Resolve host string to IP and wrap into NetworkSourceKey for direct UDP send
-                match host.parse::<std::net::IpAddr>() {
+                match host.parse::<IpAddr>() {
                     Ok(ip) => {
-                        let addr = std::net::SocketAddr::new(ip, port);
-                        let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                        let addr = SocketAddr::new(ip, port);
+                        let nsk = NetworkEndpoint::new_direct(addr);
                         mux_clone
                             .write(&nsk, payload)
                             .expect("UDP mux write failed in STUN send_packet_handler");
@@ -2192,13 +2180,11 @@ impl Engine {
         self.stop_relay_keep_alive();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
-        self.packet_transport.dtls_mut().stop().expect(&format!(
-            "DTLS stop failed in Engine::stop {}:{}",
+        self.packet_transport.dtls_mut().stop().unwrap_or_else(|_| panic!("DTLS stop failed in Engine::stop {}:{}",
             self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
             last_addr
                 .map(|addr| addr.to_string())
-                .unwrap_or_else(|| "None".to_string())
-        ));
+                .unwrap_or_else(|| "None".to_string())));
 
         if let Some(mux) = &self.mux {
             mux.stop();
@@ -2346,18 +2332,18 @@ impl Engine {
 
     /// Synchronous variant for unit tests: registers with the given relay directly,
     /// bypassing relay discovery so no real network relay check is needed.
-    pub fn test_register_with_relay_direct(&mut self, relay_info: crate::relay::relay_finder::RelayInfo) {
+    pub fn test_register_with_relay_direct(&mut self, relay_info: RelayInfo) {
         self.register_with_relay(Some(relay_info));
     }
 
     /// Test helper: pre-load a relay finder with a fixed relay list so that
     /// on_stun_inconsistent can register without hitting the real indexer.
-    pub fn test_set_relay_finder_for_inconsistent(&mut self, relays: Vec<crate::relay::relay_finder::RelayInfo>) {
+    pub fn test_set_relay_finder_for_inconsistent(&mut self, relays: Vec<RelayInfo>) {
         let api = self.bingle_api.clone();
-        let discover: std::sync::Arc<dyn Fn() -> Vec<crate::relay::relay_finder::RelayInfo> + Send + Sync> =
-            std::sync::Arc::new(move || relays.clone());
-        let finder = crate::relay::relay_finder::RelayFinder::new(api, discover);
-        self.relay_finder = Some(std::sync::Arc::new(finder));
+        let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> =
+            Arc::new(move || relays.clone());
+        let finder = RelayFinder::new(api, discover);
+        self.relay_finder = Some(Arc::new(finder));
     }
 
     /// Test helper: override the relay keep-alive interval (short for sender tests,
@@ -2395,19 +2381,19 @@ impl Engine {
     /// Relays are available if `relays` is non-empty; the first relay is used directly.
     pub fn test_stun_consistent_process_with_relays(
         &mut self,
-        addr: std::net::SocketAddr,
-        relays: Vec<crate::relay::relay_finder::RelayInfo>,
+        addr: SocketAddr,
+        relays: Vec<RelayInfo>,
     ) {
         if let Some(r) = relays.first() {
             tracing::info!("[Engine::test_stun_consistent_process_with_relays] relay found: {}", r.address());
-            let discover: std::sync::Arc<dyn Fn() -> Vec<crate::relay::relay_finder::RelayInfo> + Send + Sync> =
-                std::sync::Arc::new(move || relays.clone());
+            let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> =
+                Arc::new(move || relays.clone());
             let api = self.bingle_api.clone();
-            let finder = crate::relay::relay_finder::RelayFinder::new(
+            let finder = RelayFinder::new(
                 api,
                 discover,
             );
-            self.relay_finder = Some(std::sync::Arc::new(finder));
+            self.relay_finder = Some(Arc::new(finder));
             self.set_last_public_addr(Some(addr));
             let prev = self.state;
             self.state = EngineState::TrianglePing;
@@ -2469,12 +2455,12 @@ impl Engine {
     /// Test-only accessors to the TURN handler instances (exposed for integration tests).
     pub fn turn_client_handler_for_tests(
         &self,
-    ) -> std::sync::Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
+    ) -> Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
         self.turn_handler_client.clone().expect("In turn_client_handler_for_tests must have turn_handler_client")
     }
     pub fn turn_relay_handler_for_tests(
         &self,
-    ) -> std::sync::Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
+    ) -> Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
         self.turn_handler_relay.clone().expect("In turn_relay_handler_for_tests must have turn_handler_relay")
     }
 }

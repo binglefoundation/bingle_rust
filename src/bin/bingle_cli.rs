@@ -270,8 +270,8 @@ fn cmd_run(mut args: Vec<String>) {
                 if echo_mode {
                     // Check if this is a PlainTextMessage: has "text" field and no non-null "app"/"type"
                     if let Some(text) = message.get("text").and_then(|v| v.as_str()) {
-                        let is_plain = message.get("app").map_or(true, |v| v.is_null())
-                            && message.get("type").map_or(true, |v| v.is_null());
+                        let is_plain = message.get("app").is_none_or(|v| v.is_null())
+                            && message.get("type").is_none_or(|v| v.is_null());
                         if is_plain {
                             let echo_text = format!("Echo: {}", text);
                             let echo_msg = serde_json::json!({ "text": echo_text });
@@ -327,13 +327,12 @@ fn cmd_run(mut args: Vec<String>) {
         match start_res {
             Ok(_) => break,
             Err(e) => {
-                if let BingleError::Algo(ae) = &e {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let BingleError::Algo(ae) = &e
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 warn!("Failed to start: {}", e);
                 std::process::exit(1);
             }
@@ -555,13 +554,12 @@ fn cmd_checkrelays(mut args: Vec<String>) {
         match start_res {
             Ok(_) => break,
             Err(e) => {
-                if let BingleError::Algo(ae) = &e {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let BingleError::Algo(ae) = &e
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 warn!("Failed to start API: {}", e);
                 std::process::exit(2);
             }
@@ -644,12 +642,11 @@ fn cmd_register(args: Vec<String>) {
     let mut node_file: Option<String> = None;
     let mut passphrase: Option<String> = None;
 
-    if let Some(arg) = it.clone().next() {
-        if arg == "--help" || arg == "-h" {
+    if let Some(arg) = it.clone().next()
+        && (arg == "--help" || arg == "-h") {
             warn!("Usage: bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]");
             std::process::exit(0);
         }
-    }
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -707,13 +704,12 @@ fn cmd_register(args: Vec<String>) {
                 std::process::exit(2);
             }
             Err(e) => {
-                if let Some(ae) = e.downcast_ref::<AlgoError>() {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 warn!("Failed to query account balance: {}", e);
                 std::process::exit(2);
             }
@@ -734,13 +730,12 @@ fn cmd_register(args: Vec<String>) {
                 break;
             }
             Err(e) => {
-                if let Some(ae) = e.downcast_ref::<AlgoError>() {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 warn!("Failed to register handle: {}", e);
                 std::process::exit(1);
             }
@@ -797,13 +792,12 @@ fn cmd_buybingle(args: Vec<String>) {
             Ok(Some(b)) => break b,
             Ok(None) => break 0.0,
             Err(e) => {
-                if let Some(ae) = e.downcast_ref::<AlgoError>() {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 break 0.0;
             }
         }
@@ -819,13 +813,12 @@ fn cmd_buybingle(args: Vec<String>) {
                 break;
             }
             Err(e) => {
-                if let Some(ae) = e.downcast_ref::<AlgoError>() {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 warn!("buybingle failed: {}", e);
                 std::process::exit(1);
             }
@@ -883,13 +876,12 @@ fn cmd_sellbingle(args: Vec<String>) {
             Ok(Some(b)) => break b,
             Ok(None) => break 0.0,
             Err(e) => {
-                if let Some(ae) = e.downcast_ref::<AlgoError>() {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 break 0.0;
             }
         }
@@ -905,13 +897,12 @@ fn cmd_sellbingle(args: Vec<String>) {
                 break;
             }
             Err(e) => {
-                if let Some(ae) = e.downcast_ref::<AlgoError>() {
-                    if ae.kind == AlgoErrorKind::HostUnreachable {
+                if let Some(ae) = e.downcast_ref::<AlgoError>()
+                    && ae.kind == AlgoErrorKind::HostUnreachable {
                         tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
-                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(60));
                         continue;
                     }
-                }
                 warn!("sellbingle failed: {}", e);
                 std::process::exit(1);
             }

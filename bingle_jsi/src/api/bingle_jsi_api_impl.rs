@@ -466,7 +466,7 @@ impl BingleJsiApiImpl {
         while *started.lock().unwrap_or_else(|e| e.into_inner()) {
             if listening.load(Ordering::SeqCst) {
                 if let Some(ref local_arc) = local_api {
-                    let pendingMessageList = match local_arc.lock() {
+                    let pending_message_list = match local_arc.lock() {
                         Ok(guard) => guard.get_pending_messages(),
                         Err(_) => {
                             tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
@@ -474,7 +474,7 @@ impl BingleJsiApiImpl {
                         }
                     };
 
-                    if let Ok(messages) = pendingMessageList {
+                    if let Ok(messages) = pending_message_list {
                         for msg in messages {
                             tracing::info!(
                                 "[BingleJsiApiImpl] Processing pending message: {}",
@@ -485,7 +485,7 @@ impl BingleJsiApiImpl {
                             let timestamp = msg.timestamp;
 
                             let progress_callback =
-                                Arc::new(move |percent: u8, status_msg: String| {
+                                Arc::new(move |percent: u8, _status_msg: String| {
                                     // Note: progress messages don't come with a good failure reason
                                     // we could separate these through the API but TMWFN
                                     if let Ok(mut guard) = local_api_clone.lock() {

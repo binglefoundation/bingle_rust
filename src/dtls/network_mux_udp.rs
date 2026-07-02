@@ -50,7 +50,7 @@ pub struct UdpNetworkMux {
     socket: Mutex<Option<UdpSocket>>,
     handle_dtls: Mutex<Option<HandleDtls>>,
     handle_stun: Mutex<Option<HandleStun>>,
-    handle_turn: std::sync::OnceLock<HandleTurn>,
+    handle_turn: OnceLock<HandleTurn>,
     running: AtomicBool,
     rx_thread: Mutex<Option<JoinHandle<()>>>,
     pub(crate) span: tracing::Span,
@@ -65,13 +65,13 @@ impl UdpNetworkMux {
             crate::util::printing::enable_immediate_prints();
         }
         warn!("[UdpNetworkMux] bind {:?}", addr);
-        let socket = UdpSocket::bind(&addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("udp bind to {:?} failed: {}", addr, e)))?;
+        let socket = UdpSocket::bind(&addr).map_err(|e| std::io::Error::other(format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         Ok(Self {
             socket: Mutex::new(Some(socket)),
-            handle_dtls: std::sync::Mutex::new(None),
-            handle_stun: std::sync::Mutex::new(None),
+            handle_dtls: Mutex::new(None),
+            handle_stun: Mutex::new(None),
             handle_turn: OnceLock::new(),
             running: AtomicBool::new(false),
             rx_thread: Mutex::new(None),
@@ -81,7 +81,7 @@ impl UdpNetworkMux {
 
     /// Get the local socket address this mux is bound to
     pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
-        let guard = self.socket.lock().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socket lock poisoned"))?;
+        let guard = self.socket.lock().map_err(|_| std::io::Error::other("socket lock poisoned"))?;
         guard.as_ref().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?.local_addr()
     }
 
@@ -92,7 +92,7 @@ impl UdpNetworkMux {
 
     /// Set read timeout on the underlying socket
     pub fn set_read_timeout(&self, dur: Option<Duration>) -> std::io::Result<()> {
-        let guard = self.socket.lock().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socket lock poisoned"))?;
+        let guard = self.socket.lock().map_err(|_| std::io::Error::other("socket lock poisoned"))?;
         if let Some(s) = guard.as_ref() { s.set_read_timeout(dur) } else { Ok(()) }
     }
 
@@ -104,7 +104,7 @@ impl UdpNetworkMux {
             return Ok(());
         }
         let socket = {
-            let guard = self.socket.lock().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socket lock poisoned"))?;
+            let guard = self.socket.lock().map_err(|_| std::io::Error::other("socket lock poisoned"))?;
             guard.as_ref().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?.try_clone()?
         };
         let this = Arc::clone(self);
@@ -195,7 +195,7 @@ impl Drop for UdpNetworkMux {
 }
 
 impl NetworkMux for UdpNetworkMux {
-    fn write(&self, to: &crate::api::bingle_api::NetworkEndpoint, buf: &[u8]) -> Result<()> {
+    fn write(&self, to: &NetworkEndpoint, buf: &[u8]) -> Result<()> {
         // Support two paths:
         // - Relay: when relay_channel and relay_address are provided, wrap payload in TURN ChannelData and send to relay_address
         // - Direct: otherwise, require inet_socket_address and send raw payload
@@ -266,7 +266,7 @@ impl NetworkMux for UdpNetworkMux {
         self
     }
 
-    fn get_handle_turn<'a>(&'a self) -> Option<&'a HandleTurn> { self.handle_turn.get() }
+    fn get_handle_turn(&self) -> Option<&HandleTurn> { self.handle_turn.get() }
 
     fn set_handle_turn(&mut self, handler: Option<&HandleTurn>) { 
         tracing::debug!("[UdpNetworkMux] set_handle_turn: handler={}", if handler.is_some() { "Some" } else { "None" });
@@ -335,12 +335,12 @@ mod tests {
 
 impl UdpNetworkMux {
     /// Arc-friendly setter for DTLS handler to allow installing from Arc<UdpNetworkMux>.
-    pub fn set_handle_dtls_arc(self: &std::sync::Arc<Self>, handler: Option<HandleDtls>) {
+    pub fn set_handle_dtls_arc(self: &Arc<Self>, handler: Option<HandleDtls>) {
         if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; }
     }
 
     /// Arc-friendly setter for STUN handler to allow installing from Arc<UdpNetworkMux>.
-    pub fn set_handle_stun_arc(self: &std::sync::Arc<Self>, handler: Option<HandleStun>) {
+    pub fn set_handle_stun_arc(self: &Arc<Self>, handler: Option<HandleStun>) {
         if let Ok(mut g) = self.handle_stun.lock() { *g = handler; }
     }
 
@@ -407,7 +407,7 @@ impl UdpNetworkMux {
     /// Re-dispatch a buffer as if it was received from the socket from the specified source endpoint.
     /// This mirrors the classification and handler invocation logic used in the receive loop
     /// and additionally enqueues DTLS packets into the internal queue for dtls_recv_* helpers.
-    pub fn reprocess(&self, from: &crate::api::bingle_api::NetworkEndpoint, buf: &[u8]) {
+    pub fn reprocess(&self, from: &NetworkEndpoint, buf: &[u8]) {
         if buf.is_empty() { return; }
         
         self.process_packet(from, buf);

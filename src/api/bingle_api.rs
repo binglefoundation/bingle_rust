@@ -294,7 +294,7 @@ pub trait BingleApi: Send + Sync {
     /// Returns the persistent accounts cache for the Algorand Indexer, if available.
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> { None }
     /// Clears the persistent accounts cache.
-    fn clear_accounts_cache(&self) -> () {}
+    fn clear_accounts_cache(&self) {}
     /// Start the node using the provided options. Implementations may spawn background tasks.
     fn start(&mut self, options: &StartOptions) -> Result<(), BingleError>;
 

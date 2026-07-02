@@ -37,7 +37,7 @@ pub trait NetworkMux {
      * only direct inet_socket_address is supported; implementors should extract it
      * and perform a UDP send. Implementations may panic if inet_socket_address is None.
      */
-    fn write(&self, to: &crate::api::bingle_api::NetworkEndpoint, buf: &[u8]) -> Result<()>
+    fn write(&self, to: &NetworkEndpoint, buf: &[u8]) -> Result<()>
     where
         Self: Sized;
 
@@ -78,7 +78,7 @@ pub trait NetworkMux {
     /**
      * Get the TURN handler function
      */
-    fn get_handle_turn<'a>(&'a self) -> Option<&'a HandleTurn>;
+    fn get_handle_turn(&self) -> Option<&HandleTurn>;
 
     /**
      * Set the TURN handler function

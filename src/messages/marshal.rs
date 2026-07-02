@@ -36,11 +36,10 @@ pub fn from_json_value(val: JsonValue) -> Result<Message, MarshalError> {
                     if let Ok(mx) = serde_json::from_value::<MutexMessage>(JsonValue::Object(map.clone())) {
                         return Ok(Message::Mutex(mx));
                     }
-                } else if app_str == "reportFail" {
-                    if let Ok(rf) = serde_json::from_value::<ReportFailMessage>(JsonValue::Object(map.clone())) {
+                } else if app_str == "reportFail"
+                    && let Ok(rf) = serde_json::from_value::<ReportFailMessage>(JsonValue::Object(map.clone())) {
                         return Ok(Message::ReportFail(rf));
                     }
-                }
             }
 
             // Try relay typed messages when type present and app is null (or missing)
@@ -52,11 +51,10 @@ pub fn from_json_value(val: JsonValue) -> Result<Message, MarshalError> {
             }
 
             // Try PlainText
-            if !has_app && !has_type {
-                if let Ok(pt) = serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone())) {
+            if !has_app && !has_type
+                && let Ok(pt) = serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone())) {
                     return Ok(Message::PlainText(pt));
                 }
-            }
 
             // As a last resort, try to infer PlainText with explicit nulls
             if let Ok(pt) = serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone())) {

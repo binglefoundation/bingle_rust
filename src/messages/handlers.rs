@@ -81,9 +81,9 @@ impl std::fmt::Debug for FromStruct {
 // Adapter to allow passing the composite API where a plain BingleApi is required (e.g., RelayFinder)
 struct BothAsApi { inner: Arc<dyn BingleApiBoth> }
 impl BingleApiInternal for BothAsApi {
-    fn mutex_handle_request(&self, from_id: String, req: crate::messages::types::MutexRequest) { self.inner.mutex_handle_request(from_id, req) }
-    fn mutex_handle_response(&self, from_id: String, resp: crate::messages::types::MutexResponse) { self.inner.mutex_handle_response(from_id, resp) }
-    fn mutex_handle_release(&self, from_id: String, rel: crate::messages::types::MutexRelease) { self.inner.mutex_handle_release(from_id, rel) }
+    fn mutex_handle_request(&self, from_id: String, req: MutexRequest) { self.inner.mutex_handle_request(from_id, req) }
+    fn mutex_handle_response(&self, from_id: String, resp: MutexResponse) { self.inner.mutex_handle_response(from_id, resp) }
+    fn mutex_handle_release(&self, from_id: String, rel: MutexRelease) { self.inner.mutex_handle_release(from_id, rel) }
     fn get_relay_state(&self) -> String { self.inner.get_relay_state() }
     fn set_state(&self, state: crate::engine::EngineState) { self.inner.set_state(state) }
     fn get_state(&self) -> crate::engine::EngineState { self.inner.get_state() }
@@ -100,15 +100,15 @@ impl BingleApiInternal for BothAsApi {
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool { self.inner.turn_handle_listen(id, source) }
     fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) { self.inner.turn_handle_called(source, dest, channel) }
     fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { self.inner.notify_listening(listening, nat_type) }
-    fn set_relay_state(&self, state: crate::engine::RelayState) { self.inner.set_relay_state(state) }
+    fn set_relay_state(&self, state: RelayState) { self.inner.set_relay_state(state) }
     fn get_peer_ddb_target(&self) -> Option<usize> { self.inner.get_peer_ddb_target() }
-    fn ddb_upsert_record(&self, record: crate::ddb::AdvertRecord) { self.inner.ddb_upsert_record(record) }
+    fn ddb_upsert_record(&self, record: AdvertRecord) { self.inner.ddb_upsert_record(record) }
     fn ddb_backend_size(&self) -> usize { self.inner.ddb_backend_size() }
     fn initialize_relay(&self) { self.inner.initialize_relay() }
     fn is_relay(&self) -> bool { self.inner.is_relay() }
     fn signal_signon_complete(&self) { self.inner.signal_signon_complete() }
     fn reset_signon_complete(&self) { self.inner.reset_signon_complete() }
-    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn crate::ddb::DdbBackend) { self.inner.ripple_message(message, originator_id, ddb_backend) }
+    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn DdbBackend) { self.inner.ripple_message(message, originator_id, ddb_backend) }
 }
 impl BingleApi for BothAsApi {
     fn debug_print_options(&self) { self.inner.debug_print_options() }
@@ -304,7 +304,7 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_check] No sender available");
             if let Some(router) = router_opt {
                 // Use typed Fail message per OpenAPI instead of building a raw map
-                let fail = crate::messages::types::Fail { app: None, typ: "fail".to_string(), response_tag: router.get_last_response_tag(), reason: "no sender available".to_string() };
+                let fail = Fail { app: None, typ: "fail".to_string(), response_tag: router.get_last_response_tag(), reason: "no sender available".to_string() };
                 let json = serde_json::to_value(fail).unwrap_or(serde_json::Value::Null);
                 from.push_response(json);
             }
@@ -458,7 +458,7 @@ impl MessageHandler for DefaultPrintingHandler {
             if let Ok(backend) = backend_arc.lock() {
                 let (relay_ids, relay_endpoints) = backend.make_epoch_info();
                 let relay_states = vec![responder_state; relay_ids.len()];
-                let info = crate::messages::types::DdbRelaysStatusResponse {
+                let info = DdbRelaysStatusResponse {
                     app: "ddb".into(),
                     responder_state,
                     epoch_id: msg.epoch_id,
@@ -470,8 +470,8 @@ impl MessageHandler for DefaultPrintingHandler {
                     text: None,
                     data: None,
                 };
-                let resp = crate::messages::types::Message::Ddb(
-                    crate::messages::types::DdbMessage::RelaysStatusResponse(info)
+                let resp = Message::Ddb(
+                    DdbMessage::RelaysStatusResponse(info)
                 );
                 let json = crate::messages::marshal::to_json_value(&resp);
                 from.push_response(json);
@@ -551,18 +551,17 @@ impl MessageHandler for DefaultPrintingHandler {
             rippled_up.rippled = true;
             let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
             let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-            if let Some(backend) = router.get_ddb_backend() {
-                if let Ok(b) = backend.lock() {
+            if let Some(backend) = router.get_ddb_backend()
+                && let Ok(b) = backend.lock() {
                     _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
                 }
-            }
 
             // Prepare response JSON and stash on router for Engine/DTLS layer to send.
             let response_tag = up.tag.clone();
 
-            let resp = crate::messages::types::Message::Ddb(
-                crate::messages::types::DdbMessage::UpdateResponse(
-                    crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
+            let resp = Message::Ddb(
+                DdbMessage::UpdateResponse(
+                    DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
                 )
             );
             let json = crate::messages::marshal::to_json_value(&resp);
@@ -581,25 +580,23 @@ impl MessageHandler for DefaultPrintingHandler {
         }
 
         // Delete from backend
-        if let Some(backend) = router.get_ddb_backend() {
-            if let Ok(mut b) = backend.lock() {
+        if let Some(backend) = router.get_ddb_backend()
+            && let Ok(mut b) = backend.lock() {
                 // Validate that the existing record matches the sender if not rippled
                 // FUTURE: delete messages will also be signed by id
-                if let Some(record) = b.lookup(&msg.start_id) {
-                    if !msg.rippled && record.id != sender_id {
+                if let Some(record) = b.lookup(&msg.start_id)
+                    && !msg.rippled && record.id != sender_id {
                         tracing::warn!("[handlers::on_ddb_delete_resolve] Record ID mismatch for delete: record.id={} sender_id={}", record.id, sender_id);
                         return;
                     }
-                }
                 b.delete(&msg.start_id);
             }
-        }
 
         // Prepare response JSON and stash on router for Engine/DTLS layer to send.
         let response_tag = msg.tag.clone();
-        let resp = crate::messages::types::Message::Ddb(
-            crate::messages::types::DdbMessage::UpdateResponse(
-                crate::messages::types::DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
+        let resp = Message::Ddb(
+            DdbMessage::UpdateResponse(
+                DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -610,11 +607,10 @@ impl MessageHandler for DefaultPrintingHandler {
             rippled_msg.rippled = true;
             let ripple_msg = Message::Ddb(DdbMessage::DeleteResolve(rippled_msg));
             let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
-            if let Some(backend) = router.get_ddb_backend() {
-                if let Ok(b) = backend.lock() {
+            if let Some(backend) = router.get_ddb_backend()
+                && let Ok(b) = backend.lock() {
                     api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
                 }
-            }
         }
     }
 
@@ -626,9 +622,9 @@ impl MessageHandler for DefaultPrintingHandler {
             if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
         } else { (false, None) };
         let response_tag = q.tag.clone();
-        let resp = crate::messages::types::Message::Ddb(
-            crate::messages::types::DdbMessage::QueryResponse(
-                crate::messages::types::DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
+        let resp = Message::Ddb(
+            DdbMessage::QueryResponse(
+                DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
             )
         );
         let json = crate::messages::marshal::to_json_value(&resp);
@@ -638,8 +634,8 @@ impl MessageHandler for DefaultPrintingHandler {
     fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDumpResolve) {
         tracing::info!("[handlers::on_ddb_dump_resolve] upserting from {:?}", msg);
         api.ddb_upsert_record(msg.record.clone());
-        if let Some(target) = api.get_peer_ddb_target() {
-            if target == api.ddb_backend_size() {
+        if let Some(target) = api.get_peer_ddb_target()
+            && target == api.ddb_backend_size() {
                 tracing::info!("[handlers::on_ddb_dump_resolve] DDB sync complete (all {} records received). Sending DdbSignon.", target);
                 let my_id = match api.get_my_id() {
                     Some(id) => id,
@@ -672,7 +668,6 @@ impl MessageHandler for DefaultPrintingHandler {
                     tracing::info!("[on_ddb_dump_resolve] DdbSignon sent ok={:?}", ok);
                 });
             }
-        }
     }
 
     fn on_ddb_signon_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbSignonResponse) {
@@ -732,11 +727,10 @@ impl MessageHandler for DefaultPrintingHandler {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(3));
                 tracing::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
-                if let Some(backend) = router_clone.get_ddb_backend() {
-                    if let Ok(b) = backend.lock() {
+                if let Some(backend) = router_clone.get_ddb_backend()
+                    && let Ok(b) = backend.lock() {
                         api_clone.ripple_message(ripple_json, start_id, &*b);
                     }
-                }
             });
         }
     }
@@ -763,7 +757,7 @@ impl MessageHandler for DefaultPrintingHandler {
             // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
             tracing::info!("[handlers::on_triangle_test1] in thread for triangle test1: {:?}", msg2);
-            let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
+            let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                 // Prefer app_id from API options; fallback to env var for legacy
                 let app_id_opt = api_for_thread
                     .get_app_id()
@@ -774,7 +768,7 @@ impl MessageHandler for DefaultPrintingHandler {
                 crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache)
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
-            let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
+            let api_plain: Arc<dyn BingleApiBoth> = Arc::new(BothAsApi { inner: api_for_thread.clone() });
             let finder = RelayFinder::new(Arc::downgrade(&api_plain), discover);
 
             // Obtain our id from API (derived from engine issuer)
@@ -1037,14 +1031,14 @@ impl DefaultPrintingHandler {
     fn post_triangle_relay_register(api_for_thread: Arc<dyn BingleApiBoth>) {
         let cur = api_for_thread.get_state();
         if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
-            let _ = api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
+            api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
             api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
 
             // After setting NAT type Restricted, contact our associated relay to start TURN Listen and register relay in DDB.
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
 
             // Build discovery closure similar to on_triangle_test1
-            let discover: std::sync::Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
+            let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                 let app_id_opt = api_for_thread
                     .get_app_id()
                     .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
@@ -1058,7 +1052,7 @@ impl DefaultPrintingHandler {
             };
 
             // Wrap combined API as plain BingleApiBoth for RelayFinder
-            let api_plain: std::sync::Arc<dyn crate::api::bingle_api::BingleApiBoth> = std::sync::Arc::new(BothAsApi { inner: api_for_thread.clone() });
+            let api_plain: Arc<dyn BingleApiBoth> = Arc::new(BothAsApi { inner: api_for_thread.clone() });
             let finder = RelayFinder::new(Arc::downgrade(&api_plain), discover);
             let my_id = match api_for_thread.get_my_id() {
                 Some(id) => id,
@@ -1070,8 +1064,8 @@ impl DefaultPrintingHandler {
             };
 
             // Send Relay::Listen and expect Relay::ListenResponse
-            let listen = crate::messages::types::RelayListen { app: None, tag: None };
-            let msg = crate::messages::types::Message::Relay(crate::messages::types::RelayMessage::Listen(listen));
+            let listen = RelayListen { app: None, tag: None };
+            let msg = Message::Relay(RelayMessage::Listen(listen));
             let json = crate::messages::marshal::to_json_value(&msg);
             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address());
             let uid = relay_info.id().to_string();

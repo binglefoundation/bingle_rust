@@ -97,9 +97,8 @@ impl NetDetGraph {
         if idx >= self.up.len() || idx >= self.down.len() {
             return res;
         }
-        if let Some(u) = self.up[idx] {
-            if !seen.contains(&u) { res.insert(u); }
-        }
+        if let Some(u) = self.up[idx]
+            && !seen.contains(&u) { res.insert(u); }
         for &d in &self.down[idx] {
             if !seen.contains(&d) { res.insert(d); }
         }
