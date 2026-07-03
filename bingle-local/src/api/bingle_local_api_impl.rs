@@ -381,7 +381,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
             msg.progress = Some(progress);
-            if failure_reason.is_some() {
+            if failure_reason.is_some() || progress >= 1.0 {
                 msg.failure_reason = failure_reason;
             }
             Ok(())
