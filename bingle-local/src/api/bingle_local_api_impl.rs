@@ -107,7 +107,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
         match bgl.register(app_id, asset_id, &handle, 1) {
             Ok(tx) => { let _ = tx; }
             Err(e) => {
-                tracing::error!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, e);
+                // This is a user action, they need to choose an unused handle probably
+                tracing::info!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, e);
                 return Err(BingleError::from_anyhow(e));
             }
         }
