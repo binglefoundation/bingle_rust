@@ -85,19 +85,18 @@ robustness:
 + ~~retry on indexer lookups~~
 + ~~cache indexer lookups~~
 + ~~refactor StunEndpointFinderImpl to be more testable~~
-+ **remove need for placeholder to get an indexer**
++ ~~remove need for placeholder to get an indexer~~
 - integration tests on bingle_jsi
 + Layer 1
 + ~~Layer 2~~
-- genericise AlgoOps
+- ~~genericise AlgoOps~~
 - ~~fix bingle_admin deploy and upgrade~~
 - app replace migrate local data
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
-- remove DDB entries on node stop
-- handle clean relay shutdown
-- cache DDB locally with timeout / cancel
+- ~~remove DDB entries on node stop~~
+- ~~handle clean relay shutdown~~
 - ~~detect relay unresponsive from peers and remove~~
 - ~~reregister after a network restart~~
 
@@ -123,7 +122,10 @@ deploy:
 - release of Android app
 
 Bugs:
-- **NAT timeout causes incoming relay data loss ([#5](https://github.com/bingle-foundation/bingle_rust/issues/5))**
+- ~~NAT timeout causes incoming relay data loss ([#5](https://github.com/bingle-foundation/bingle_rust/issues/5))~~
 - Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))
 - After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))
 - ~~STUN handler does not pick up a change to inconsistent ([#2](https://github.com/bingle-foundation/bingle_rust/issues/2))~~
+
+Deferred (to create bugs):
+- cache DDB locally with timeout / cancel

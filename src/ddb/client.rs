@@ -255,7 +255,7 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("[DdbClientImpl::register_ip] find_relay failed: {}", e);
+                tracing::warn!("[DdbClientImpl::register_ip] find_relay failed: {}", e);
                 return Err(e);
             }
         };
@@ -334,7 +334,7 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("[DdbClientImpl::signoff] find_relay failed: {}", e);
+                tracing::warn!("[DdbClientImpl::signoff] find_relay failed: {}", e);
                 return Err(e);
             }
         };
@@ -384,7 +384,7 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("[DdbClientImpl::register_relay] find_relay failed: {}", e);
+                tracing::warn!("[DdbClientImpl::register_relay] find_relay failed: {}", e);
                 return Err(e);
             }
         };
@@ -469,7 +469,7 @@ impl DdbClient for DdbClientImpl {
         let relay = match self.find_relay() {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("[DdbClientImpl::lookup] find_relay failed: {}", e);
+                tracing::warn!("[DdbClientImpl::lookup] find_relay failed: {}", e);
                 return Err(e);
             }
         };
