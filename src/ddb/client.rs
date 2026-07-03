@@ -25,6 +25,10 @@ pub trait DdbClient: Send + Sync {
     /// Lookup an id in the DDB and build a NetworkSourceKey from its AdvertRecord.
     fn lookup(&self, id: &str) -> Result<NetworkEndpoint, BingleError>;
 
+    /// Tell a relay we are shutting down so it removes our DDB entry.
+    /// Best-effort, fire-and-forget: relies on the transport ACK, no reply is awaited.
+    fn signoff(&self) -> Result<(), BingleError>;
+
     /// Start loading the DDB from a peer relay by sending DdbInitResolve.
     /// Returns the number of records reported by DdbInitResponse (dbCount) on success.
     fn start_load_from_peer(&self, peer_id: &str) -> Result<usize, BingleError>;
@@ -161,6 +165,9 @@ impl DdbClient for NullDdbClient {
         Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
     }
     fn start_load_from_peer(&self, _peer_id: &str) -> Result<usize, BingleError> {
+        Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
+    }
+    fn signoff(&self) -> Result<(), BingleError> {
         Err(BingleError::Other("DDB client not configured (missing app_id or unsupported platform)".to_string()))
     }
 }
@@ -320,6 +327,56 @@ impl DdbClient for DdbClientImpl {
         let app_ok = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("updateResponse");
         if app_ok && ty_ok { Ok(()) } else { Err(BingleError::Other("unexpected response (expected DdbUpdateResponse)".to_string())) }
+    }
+
+    fn signoff(&self) -> Result<(), BingleError> {
+        // 1) Find a relay to notify
+        let relay = match self.find_relay() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("[DdbClientImpl::signoff] find_relay failed: {}", e);
+                return Err(e);
+            }
+        };
+        let relay_user_b64 = match Self::relay_user_id(relay.id()) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::error!("[DdbClientImpl::signoff] relay_user_id failed: {}", e);
+                return Err(e);
+            }
+        };
+        let nsk = NetworkEndpoint::new_direct(relay.address());
+
+        // 2) Build Signoff using our id as startId
+        let my_id = match self.api()?.get_my_id() {
+            Some(id) => id,
+            None => {
+                let err = "get_my_id returned None".to_string();
+                tracing::error!("[DdbClientImpl::signoff] {}", err);
+                return Err(BingleError::Other(err));
+            }
+        };
+        let msg = Message::Ddb(DdbMessage::Signoff(DdbSignoff {
+            app: "ddb".to_string(),
+            start_id: my_id,
+            rippled: false,
+            tag: None,
+            response_tag: None,
+            text: None,
+            data: None,
+        }));
+        let json: JsonValue = to_json_value(&msg);
+
+        // 3) Fire-and-forget: the transport ACK confirms delivery, no reply is awaited.
+        tracing::debug!("[DdbClientImpl::signoff] sending DdbSignoff: {:?}", json);
+        match self.api()?.send_message_to_network(&nsk, &relay_user_b64, json, None) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(BingleError::Other("signoff send returned false".to_string())),
+            Err(e) => {
+                tracing::error!("[DdbClientImpl::signoff] send_message_to_network failed: {}", e);
+                Err(e)
+            }
+        }
     }
 
     fn register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> {

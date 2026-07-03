@@ -336,6 +336,11 @@ Resources:
       DesiredCount: 1
       LaunchType: EC2
       DeploymentConfiguration:
+        # stop the old task before starting the new one: the old task unregisters the
+        # static endpoint on shutdown and would otherwise clobber the record the
+        # replacement task has just registered
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
         DeploymentCircuitBreaker:
           Enable: true
           Rollback: true

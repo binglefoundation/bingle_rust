@@ -90,6 +90,9 @@ pub mod marshalling_and_routing;
 #[path = "messages/ddb_delete_handler.rs"]
 pub mod ddb_delete_handler;
 
+#[path = "messages/ddb_signoff_handler.rs"]
+pub mod ddb_signoff_handler;
+
 // Some repositories include an additional test file for TriangleTest3 state setting.
 // If present in this repo, include it; otherwise harmless if missing when not referenced.
 // Note: We cannot conditionally include based on file existence in Rust at build time.

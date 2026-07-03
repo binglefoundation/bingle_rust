@@ -21,6 +21,7 @@ pub fn only_from_relay(msg: &Message) -> bool {
                 DdbMessage::Signon(_) => true,
                 DdbMessage::UpsertResolve(m) => m.rippled,
                 DdbMessage::DeleteResolve(m) => m.rippled,
+                DdbMessage::Signoff(m) => m.rippled,
                 DdbMessage::InitResolve(_) => true,
                 DdbMessage::UpdateResponse(_) | DdbMessage::QueryResponse(_) | DdbMessage::SignonResponse(_) |
                 DdbMessage::RelaysStatusResponse(_) | DdbMessage::InitResponse(_) |
@@ -101,6 +102,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn get_last_public_addr(&self) -> Option<SocketAddr> { self.api("get_last_public_addr").and_then(|a| a.get_last_public_addr()) }
     fn ddb_register_ip(&self, endpoint: SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.api("ddb_register_ip").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_ip(endpoint, am_relay)) }
     fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.api("ddb_register_relay").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_register_relay(relay_id, relay_sig)) }
+    fn ddb_signoff(&self) -> Result<(), BingleError> { self.api("ddb_signoff").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.ddb_signoff()) }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), BingleError> { self.api("update_turn_listener_relay").ok_or_else(|| BingleError::Other("API dropped".to_string())).and_then(|a| a.update_turn_listener_relay(relay_id, relay_addr)) }
     fn start_relay_keep_alive(&self, relay_id: String, relay_addr: SocketAddr) { if let Some(a) = self.api("start_relay_keep_alive") { a.start_relay_keep_alive(relay_id, relay_addr) } }
     fn stop_relay_keep_alive(&self) { if let Some(a) = self.api("stop_relay_keep_alive") { a.stop_relay_keep_alive() } }
@@ -115,6 +117,7 @@ impl BingleApiInternal for LockingApiWrapper {
     fn ddb_upsert_record(&self, record: AdvertRecord) { if let Some(a) = self.api("ddb_upsert_record") { a.ddb_upsert_record(record) } }
     fn ddb_delete_record(&self, id: &str) { if let Some(a) = self.api("ddb_delete_record") { a.ddb_delete_record(id) } }
     fn relay_finder_remove_relay(&self, relay_id: &str) { if let Some(a) = self.api("relay_finder_remove_relay") { a.relay_finder_remove_relay(relay_id) } }
+    fn relay_finder_clear_state_cache(&self) { if let Some(a) = self.api("relay_finder_clear_state_cache") { a.relay_finder_clear_state_cache() } }
     fn ddb_backend_size(&self) -> usize { self.api("ddb_backend_size").map(|a| a.ddb_backend_size()).unwrap_or(0) }
     fn initialize_relay(&self) { if let Some(a) = self.api("initialize_relay") { a.initialize_relay() } }
     fn is_relay(&self) -> bool { self.api("is_relay").map(|a| a.is_relay()).unwrap_or(false) }
@@ -164,6 +167,7 @@ impl Router {
                 DdbMessage::RelaysStatusResponse(m) => handler.on_ddb_relays_status_response(api.clone(), from, m),
                 DdbMessage::Signon(m) => handler.on_ddb_signon(api.clone(), from, m),
                 DdbMessage::SignonResponse(m) => handler.on_ddb_signon_response(api.clone(), from, m),
+                DdbMessage::Signoff(m) => handler.on_ddb_signoff(api.clone(), from, m),
                 _ => handler.on_unimplemented(msg),
             },
             Message::Ping(p) => match p {

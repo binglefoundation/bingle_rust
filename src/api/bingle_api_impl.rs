@@ -992,6 +992,11 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         tracing::info!("[BingleApiImpl::ddb_register_relay] registering relay: id={}", relay_id);
         cli.register_relay(relay_id, relay_sig)
     }
+    fn ddb_signoff(&self) -> Result<(), BingleError> {
+        let cli = self.engine.access(|e| e.ddb_client());
+        tracing::info!("[BingleApiImpl::ddb_signoff] signing off");
+        cli.signoff()
+    }
     fn update_turn_listener_relay(&self, relay_id: String, relay_addr: SocketAddr) -> Result<(), BingleError> {
         tracing::info!("[BingleApiImpl::update_turn_listener_relay][enter] id={} addr={}", relay_id, relay_addr);
         // Backwards-compatible: delegate to client-side listen response handler
@@ -1048,6 +1053,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn relay_finder_remove_relay(&self, relay_id: &str) {
         self.engine.access(|e| e.relay_finder_remove_relay(relay_id))
+    }
+    fn relay_finder_clear_state_cache(&self) {
+        self.engine.access(|e| e.relay_finder_clear_state_cache())
     }
     fn ddb_backend_size(&self) -> usize {
         self.engine.access(|e| e.ddb_backend_size())

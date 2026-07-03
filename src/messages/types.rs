@@ -229,6 +229,7 @@ pub struct Fail {
 pub enum DdbMessage {
     #[serde(rename = "upsertResolve")] UpsertResolve(DdbUpsertResolve),
     #[serde(rename = "deleteResolve")] DeleteResolve(DdbDeleteResolve),
+    #[serde(rename = "signoff")] Signoff(DdbSignoff),
     #[serde(rename = "queryResolve")] QueryResolve(DdbQueryResolve),
     #[serde(rename = "queryResponse")] QueryResponse(DdbQueryResponse),
     #[serde(rename = "updateResponse")] UpdateResponse(DdbUpdateResponse),
@@ -269,6 +270,23 @@ pub struct DdbDeleteResolve {
     pub epoch: u64,
     #[serde(rename = "originalSignature")]
     pub original_signature: String,
+    pub rippled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(rename = "responseTag", default, skip_serializing_if = "Option::is_none")]
+    pub response_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DdbSignoff {
+    pub app: String, // "ddb"
+    #[serde(rename = "startId")]
+    pub start_id: String,
+    #[serde(default)]
     pub rippled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
