@@ -482,8 +482,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
+            #[serde(default)]
             keypair: Option<Keypair>,
+            #[serde(default)]
             contacts: Vec<ContactEntry>,
+            #[serde(default)]
             messages: Vec<Message>,
         }
 

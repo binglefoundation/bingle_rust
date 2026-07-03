@@ -63,6 +63,23 @@ fn load_missing_file_errors() {
 }
 
 #[test]
+fn load_empty_json_object_yields_empty_state() {
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let tf = tempfile::NamedTempFile::new().expect("tempfile");
+    fs::write(tf.path(), "{}").expect("write empty json");
+    let path = tf.path().to_str().unwrap().to_string();
+
+    api.load(&path).expect("load empty {} ok");
+
+    // No contacts and no messages
+    assert!(api.get_contacts().expect("contacts").is_empty());
+    assert!(api.get_messages().expect("messages").is_empty());
+
+    // No keypair loaded, so AlgoOps cannot be constructed
+    assert!(api.get_algo_ops().is_err());
+}
+
+#[test]
 fn save_creates_parent_directories() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     let _kp = api.generate_keypair().expect("keypair");
