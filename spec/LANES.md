@@ -11,6 +11,7 @@ UX:
 - **message delivery indication and retry**
 - ~~handle register failure on/post start~~
 - ~~lookup handle match~~
+- UX to offline credentials
 
 security:
 - ensure protocol is built as documented, changes as follows:
@@ -56,6 +57,9 @@ security:
 - ~~validate rippled messages are from relays~~
 - ~~validate a DDB entry with am_relay=true references a permissioned relay~~
 - ~~document all crates~~
+- local creds encrypt password
+- export creds as printed qrcode and keyword list
+- fix start prompts
 
 robustness:
 - ~~fail sensibly with message when Bingle network down (< 2 relays))~~
@@ -92,6 +96,7 @@ robustness:
 - ~~genericise AlgoOps~~
 - ~~fix bingle_admin deploy and upgrade~~
 - app replace migrate local data
+- reorganize naming
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
@@ -110,6 +115,7 @@ android:
 - build APK
 
 deploy:
+- Rewrite README.md with descriion and instructions to get started with iOS app
 - quick deploy steps for UX/backend change
 - ~~deploy update to relay stack without total replace~~
   This is in README.md --redeploy
@@ -117,6 +123,8 @@ deploy:
 - stabilise integration tests and run on CD with localnet
 - run staging tests on CD / AWS
 - deploy bingle_jsi into npm
+- deploy rust crates
+- mainnet production deploy docs DEPLOY_APP.md, DEPLOY_RELAY.md, DEPLOY_CODE.md
 - production deploy
 - release of iOS app
 - release of Android app
