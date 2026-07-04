@@ -14,7 +14,7 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
     use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectKeyIdentifier};
     use openssl::x509::{X509NameBuilder, X509};
 
-    tracing::info!("[generate_pki_from_ops] Generated {:?} secret {:?}", ops.address, ops.passphrase);
+    tracing::info!("[generate_pki_from_ops] Generating {:?} from algo", ops.address);
 
     // 1) Build CA PKey from Algorand private key (ed25519 32 bytes)
     let sk = ops

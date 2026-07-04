@@ -21,6 +21,42 @@ impl Default for LocalApiConfig {
     }
 }
 
+/// Decide the keypair status from resolved on-chain facts.
+///
+/// ACTIVE requires both the Bingle$ asset and a registered handle. When the
+/// account holds the asset but has no handle, we fall through to the balance
+/// check (FUNDED / UNFUNDED). `balance_algos` is only consulted when the
+/// account is not ACTIVE.
+pub fn keypair_status_from_facts(
+    algorand_id: String,
+    has_asset: bool,
+    handle: Option<String>,
+    balance_algos: f64,
+) -> KeypairStatus {
+    if has_asset && handle.is_some() {
+        KeypairStatus {
+            status: "ACTIVE".to_string(),
+            id: Some(algorand_id),
+            handle,
+            required_algo: None,
+        }
+    } else if balance_algos >= REQUIRED_ALGO {
+        KeypairStatus {
+            status: "FUNDED".to_string(),
+            id: Some(algorand_id),
+            handle: None,
+            required_algo: None,
+        }
+    } else {
+        KeypairStatus {
+            status: "UNFUNDED".to_string(),
+            id: Some(algorand_id),
+            handle: None,
+            required_algo: Some(REQUIRED_ALGO),
+        }
+    }
+}
+
 /// Basic local implementation stub. For now it only supports keypair generation.
 pub struct BingleApiLocalImpl {
     keypair: Mutex<Option<Keypair>>, // interior mutability to allow &self methods to ensure keypair exists
@@ -107,7 +143,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
         match bgl.register(app_id, asset_id, &handle, 1) {
             Ok(tx) => { let _ = tx; }
             Err(e) => {
-                tracing::error!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, e);
+                // This is a user action, they need to choose an unused handle probably
+                tracing::info!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, e);
                 return Err(BingleError::from_anyhow(e));
             }
         }
@@ -344,7 +381,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
             msg.progress = Some(progress);
-            if failure_reason.is_some() {
+            if failure_reason.is_some() || progress >= 1.0 {
                 msg.failure_reason = failure_reason;
             }
             Ok(())
@@ -482,8 +519,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
         #[derive(Debug, Clone, Serialize, Deserialize)]
         struct LocalState {
+            #[serde(default)]
             keypair: Option<Keypair>,
+            #[serde(default)]
             contacts: Vec<ContactEntry>,
+            #[serde(default)]
             messages: Vec<Message>,
         }
 
@@ -539,21 +579,21 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
-        tracing::info!("[BingleLocalApi] Checking keypair status");
+        tracing::info!("[BingleLocalApi][keypair_status] Checking keypair status");
         // 1) Check if keypair exists
         let kp = {
             let guard = match self.keypair.lock() {
                 Ok(g) => g,
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
-                    tracing::error!("[keypair_status] Failed to lock keypair: {}", msg);
+                    tracing::error!("[BingleLocalApi][keypair_status] Failed to lock keypair: {}", msg);
                     return Err(BingleError::Other(msg));
                 }
             };
             match guard.as_ref() {
                 Some(k) => k.clone(),
                 None => {
-                    tracing::info!("[BingleLocalApi] Keypair status: None (no keypair)");
+                    tracing::info!("[BingleLocalApi][keypair_status] Keypair status: None (no keypair)");
                     return Ok(KeypairStatus {
                         status: "None".to_string(),
                         id: None,
@@ -570,7 +610,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let ops = match self.get_algo_ops() {
             Ok(o) => o,
             Err(e) => {
-                tracing::error!("[keypair_status] Failed to get AlgoOps: {}", e);
+                tracing::error!("[BingleLocalApi][keypair_status] Failed to get AlgoOps: {}", e);
                 return Err(e);
             }
         };
@@ -581,7 +621,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
                 Ok(v) => v,
                 Err(e) => {
-                    tracing::error!("[keypair_status] Failed to check asset opt-in for {} (asset {}): {}", algorand_id, asset_id, e);
+                    tracing::error!("[BingleLocalApi][keypair_status] Failed to check asset opt-in for {} (asset {}): {}", algorand_id, asset_id, e);
                     return Err(BingleError::from_anyhow(e));
                 }
             }
@@ -589,14 +629,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
             false
         };
 
-        if has_asset {
-            // ACTIVE: has Bingle$ asset — look up handle from on-chain local state
+        // If the account holds the Bingle$ asset, look up its handle from on-chain local state
+        let handle = if has_asset {
             let app_id = self.config.app_id;
-            let handle = if app_id > 0 {
+            if app_id > 0 {
                 let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
                     Ok(s) => s,
                     Err(e) => {
-                        tracing::error!("[keypair_status] Failed to get local state for {} (app {}): {}", algorand_id, app_id, e);
+                        tracing::error!("[BingleLocalApi][keypair_status] Failed to get local state for {} (app {}): {}", algorand_id, app_id, e);
                         return Err(BingleError::from_anyhow(e));
                     }
                 };
@@ -607,41 +647,35 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 })
             } else {
                 None
-            };
-            Ok(KeypairStatus {
-                status: "ACTIVE".to_string(),
-                id: Some(algorand_id),
-                handle,
-                required_algo: None,
-            })
+            }
         } else {
-            // Check balance
+            None
+        };
+
+        // ACTIVE requires both the Bingle$ asset and a registered handle. If the
+        // account holds the asset but has no Handle entry, fall through to the
+        // balance check rather than reporting ACTIVE.
+        if has_asset && handle.is_none() {
+            tracing::debug!("[BingleLocalApi][keypair_status] Account {} holds Bingle$ asset but no Handle entry found; falling through to balance check", algorand_id);
+        }
+
+        // Balance is only needed when the account is not ACTIVE; skip the query otherwise.
+        let balance_algos = if has_asset && handle.is_some() {
+            0.0
+        } else {
             let balance = match ops.account_balance() {
                 Ok(b) => b,
                 Err(e) => {
-                    tracing::error!("[keypair_status] Failed to get account balance: {}", e);
+                    tracing::error!("[BingleLocalApi][keypair_status] Failed to get account balance: {}", e);
                     return Err(BingleError::from_anyhow(e));
                 }
             };
             let balance_algos = balance.unwrap_or(0.0);
-            tracing::info!("[BingleLocalApi] Balance: {} ALGOs (raw: {:?})", balance_algos, balance);
+            tracing::info!("[BingleLocalApi][keypair_status] Balance: {} ALGOs (raw: {:?})", balance_algos, balance);
+            balance_algos
+        };
 
-            if balance_algos >= REQUIRED_ALGO {
-                Ok(KeypairStatus {
-                    status: "FUNDED".to_string(),
-                    id: Some(algorand_id),
-                    handle: None,
-                    required_algo: None,
-                })
-            } else {
-                Ok(KeypairStatus {
-                    status: "UNFUNDED".to_string(),
-                    id: Some(algorand_id),
-                    handle: None,
-                    required_algo: Some(REQUIRED_ALGO),
-                })
-            }
-        }
+        Ok(keypair_status_from_facts(algorand_id, has_asset, handle, balance_algos))
     }
 
     fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
