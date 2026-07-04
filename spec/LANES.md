@@ -57,9 +57,8 @@ security:
 - ~~validate rippled messages are from relays~~
 - ~~validate a DDB entry with am_relay=true references a permissioned relay~~
 - ~~document all crates~~
-- local creds encrypt password
-- export creds as printed qrcode and keyword list
-- fix start prompts
+- ~~local creds encrypt password~~
+- ~~export creds as printed qrcode and keyword list~~
 
 robustness:
 - ~~fail sensibly with message when Bingle network down (< 2 relays))~~
@@ -115,7 +114,7 @@ android:
 - build APK
 
 deploy:
-- Rewrite README.md with descriion and instructions to get started with iOS app
+- Rewrite README.md with description and instructions to get started with iOS app
 - quick deploy steps for UX/backend change
 - ~~deploy update to relay stack without total replace~~
   This is in README.md --redeploy
