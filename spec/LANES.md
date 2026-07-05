@@ -12,7 +12,7 @@ UX:
 - ~~handle register failure on/post start~~
 - ~~lookup handle match~~
 - ~~UX to offline credentials~~
-- UX to restart
+- ~~UX to restart~~
 
 security:
 - ensure protocol is built as documented, changes as follows:
@@ -68,7 +68,6 @@ robustness:
 - ~~indicate when we get no STUN responses (UDP blocked)~~
 - ~~Refactor DTLS OpenSSL with PeerCmd to remove polling delays~~
 - clean up duplicated code
-- ensure fails result in a fail message which gets handled
 - ~~implement retry for packet loss and retryable fails (FRPT implementation, no large blocks yet)~~
 - ~~run command processing in a thread~~
 - ~~implement relay cache properly with expiry~~
@@ -137,3 +136,4 @@ Bugs:
 
 Deferred (to create bugs):
 - cache DDB locally with timeout / cancel
+- (protocol review) ensure fails result in a fail message which gets handled
