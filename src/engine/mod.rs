@@ -2232,6 +2232,23 @@ impl Engine {
         }
         self.mux = None;
         self.stun = None;
+
+        // Reset runtime identification state. The Engine object is reused across a
+        // stop/start cycle (the app can restart the node without recreating the Engine), so
+        // if we leave stale state here — in particular self.state == TrianglePing left over
+        // from a prior registration — the next stun_consistent_process on restart hits the
+        // `if self.state == TrianglePing { return }` guard and early-returns ("already in
+        // TrianglePing"), never re-sending TriangleTest1 and never re-registering. Clearing
+        // last_public_addr too means the first STUN-consistent after restart is treated as a
+        // fresh identification (addr_changed == false) rather than an address change.
+        self.state = EngineState::StunIdentify;
+        self.registered.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.endpoint_ready.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.nat_restricted.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.set_nat_type(NatType::Unknown);
+        self.set_last_public_addr(None);
+        self.last_registered_relay = None;
+
         tracing::info!("[Engine::stop] done {:?}:{:?}", self.issuer, last_addr);
     }
 

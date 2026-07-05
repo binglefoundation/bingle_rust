@@ -72,6 +72,9 @@ pub mod stun_inconsistent_relay;
 #[path = "relay_keep_alive_engine.rs"]
 pub mod relay_keep_alive_engine;
 
+#[path = "engine_restart_reidentify.rs"]
+pub mod engine_restart_reidentify;
+
 #[path = "sender_auth.rs"]
 pub mod sender_auth;
 
