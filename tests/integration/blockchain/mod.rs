@@ -8,3 +8,4 @@ pub mod algo_bingle_static_endpoint_integration;
 pub mod asset_manager_creator_localnet;
 pub mod asset_clawback_creator_localnet;
 pub mod unique_handle;
+pub mod migrate_local_localnet;
