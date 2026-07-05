@@ -139,5 +139,6 @@ export const BingleJsi = BingleJsiNative as {
   setMessageCallback(): Promise<void>;
   setListeningCallback(): Promise<void>;
   start(): Promise<void>;
+  stop(): Promise<void>;
   isStarted(): Promise<boolean>;
 };

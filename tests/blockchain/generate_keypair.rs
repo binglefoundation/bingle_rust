@@ -7,7 +7,7 @@ fn generate_keypair_produces_valid_address_and_passphrase() {
 
     // Basic sanity checks
     assert!(!id.is_empty(), "id must not be empty");
-    assert!(passphrase.starts_with("b64:"), "passphrase must start with b64:");
+    assert_eq!(passphrase.split_whitespace().count(), 25, "passphrase must be 25 words");
 
     // Derive address again from passphrase and ensure it matches
     let ops = AlgoOps::new(Some(passphrase.clone()), None, None);

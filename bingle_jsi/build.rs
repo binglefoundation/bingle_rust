@@ -17,8 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .unwrap_or(0);
 
-    build_num += 1;
-    fs::write(build_num_file, build_num.to_string())?;
+    if should_bump_build_number() {
+        build_num += 1;
+        fs::write(build_num_file, build_num.to_string())?;
+    }
 
     println!("cargo:rustc-env=BINGLE_BUILD_NUMBER={}", build_num);
     
@@ -30,4 +32,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DO NOT add .build_number to rerun-if-changed to avoid circular triggers
 
     Ok(())
+}
+
+fn should_bump_build_number() -> bool {
+    let get_output = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+    };
+
+    if get_output(&["rev-parse", "--abbrev-ref", "HEAD"]).as_deref() != Some("master") {
+        return false;
+    }
+
+    if let Some(toplevel_path) = get_output(&["rev-parse", "--show-toplevel"]) {
+        let path = std::path::Path::new(&toplevel_path);
+        if path.file_name().and_then(|s| s.to_str()) != Some("master") {
+            return false;
+        }
+        if !path.join(".git").is_dir() {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    true
 }
