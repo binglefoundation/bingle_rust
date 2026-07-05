@@ -59,11 +59,7 @@ impl AlgoOps {
     /// Generate a new Algorand keypair (secure random) and return `(id, passphrase)`.
     ///
     /// - `id` is the Algorand base32 address derived from the public key.
-    /// - `passphrase` is a base64-encoded 32-byte seed prefixed with `b64:` (compatible with AlgoOps::new).
-    ///
-    /// Note: We return a base64 passphrase to ensure compatibility with existing parsing
-    /// logic (mnemonic first, then legacy `b64:`). Callers can store/display it or convert
-    /// to a mnemonic externally if desired.
+    /// - `passphrase` is the 25-word Algorand mnemonic.
     pub fn generate_keypair() -> (String, String) {
         use ed25519_dalek::SigningKey;
         use rand_core::{OsRng, RngCore};
@@ -79,8 +75,8 @@ impl AlgoOps {
         let pk: [u8; 32] = verifying_key.to_bytes();
         let id = byte_key_to_address(&pk).expect("failed to derive Algorand address from public key");
 
-        // Encode secret seed as base64 passphrase with b64: prefix (supported by AlgoOps::new)
-        let passphrase = format!("b64:{}", general_purpose::STANDARD.encode(sk));
+        // Encode secret seed as 25-word mnemonic passphrase
+        let passphrase = algonaut::crypto::mnemonic::from_key(&sk).expect("failed to generate mnemonic");
         (id, passphrase)
     }
 
