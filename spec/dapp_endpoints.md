@@ -3,6 +3,8 @@
 The application account holds the `hot` balance, which can be withdrawn using the `withdraw` endpoint.
 The rserver value is held by the ASSET_RESERVE account.
 
+See [dapp_rights.md](dapp_rights.md) for per-method signer, auth, foreign refs, transaction group, and state requirements.
+
 ## Asset accounts
 
 | Account        | Description                                |
@@ -30,7 +32,7 @@ The rserver value is held by the ASSET_RESERVE account.
 | `opt_in_to_bingle` | `@abimethod` | APP_CREATOR    | Used after app creation.                                                                                   |
 | `buy_bingle` | `@abimethod` | USER           | Requires payment of `BinglePrice` µAlgo in group; inner clawback of 1 Bingle$ to buyer.                    |
 | `sell_bingle` | `@abimethod` | USER           | Requires axfer of `amount` Bingle$ to app + payment of `price × amount` to seller in group.                |
-| `withdraw` | `@abimethod` | APP_WITHDRAWER | To be implemented.                                                                                         |
+| `withdraw` | `@abimethod` | APP_WITHDRAWER | Withdraws Algo (capped to balance − min_balance) and/or Bingle$ from the app account to a target address via inner txns. |
 | `register` | `@abimethod` | USER           | Requires opt-in to app + 1 Bingle$ axfer to app in group. Stores handle in local state (first write wins). |
 
 ## Admin / permission endpoints
