@@ -11,7 +11,7 @@ UX:
 - ~~message delivery indication and retry~~
 - ~~handle register failure on/post start~~
 - ~~lookup handle match~~
-- UX to offline credentials
+- ~~UX to offline credentials~~
 - UX to restart
 
 security:
