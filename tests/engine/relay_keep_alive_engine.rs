@@ -179,3 +179,49 @@ pub fn engine_stop_stops_keep_alive() {
     eng.stop();
     assert_eq!(eng.relay_keep_alive_target_for_tests(), None, "Engine::stop must stop the keep-alive");
 }
+
+// Regression test for the STUN port-change re-registration bug: STUN becomes consistent on
+// port P and the node registers with a relay (keep-alive running); the NAT then remaps and
+// STUN becomes consistent on a NEW port Q. The node must re-register / reconnect to the relay
+// for the new endpoint.
+//
+// The bug: Engine::stun_consistent_process detected the address change, tore down the relay
+// keep-alive and forgot peers, set state = TrianglePing, then hit the
+// `if self.state == EngineState::TrianglePing { return; }` guard and early-returned WITHOUT
+// re-registering — leaving the keep-alive dead and the node stuck in TrianglePing forever.
+//
+// The fix: on an address change while registered, re-register with the remembered relay
+// (Engine::last_registered_relay) on the new mapping before that guard, which restarts the
+// keep-alive.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn stun_port_change_after_register_reconnects_relay() {
+    let mut eng = build_engine();
+
+    let port_p: SocketAddr = "203.0.113.7:1111".parse().unwrap();
+    let port_q: SocketAddr = "203.0.113.7:2222".parse().unwrap();
+    let relay_addr: SocketAddr = "127.0.0.1:19920".parse().unwrap();
+
+    // STUN became consistent on port P and we registered with a relay: keep-alive is running.
+    eng.set_last_public_addr(Some(port_p));
+    eng.test_register_with_relay_direct(relay_info("relay_p", relay_addr));
+    assert_eq!(
+        eng.relay_keep_alive_target_for_tests(),
+        Some(("relay_p".to_string(), relay_addr)),
+        "precondition: registering while consistent on port P must start the relay keep-alive"
+    );
+
+    // NAT remaps: STUN is now consistent on a NEW port Q.
+    eng.test_stun_consistent_process_with_addr(port_q);
+
+    // The node must re-register / reconnect to the relay for the new endpoint, so the relay
+    // keep-alive must be running again and still target the known relay.
+    assert_eq!(
+        eng.relay_keep_alive_target_for_tests(),
+        Some(("relay_p".to_string(), relay_addr)),
+        "after the STUN port changed P -> Q the engine must re-register and reconnect to the \
+         known relay, restarting the keep-alive"
+    );
+
+    eng.stop();
+}

@@ -177,6 +177,10 @@ pub struct Engine {
     last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
     stun: Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>, // background STUN
     relay_finder: Option<Arc<RelayFinder>>, // used to locate peer relay
+    // The relay we most recently registered with. Retained so that, if our public endpoint
+    // changes (e.g. a NAT port remap), we can re-register with the same relay on the new
+    // mapping without a full re-discovery.
+    last_registered_relay: Option<RelayInfo>,
     triangle_wait: Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>, // wait for TriangleTest3
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle:
@@ -546,6 +550,7 @@ impl Engine {
             last_public_addr_shared: Arc::new(Mutex::new(None)),
             stun: None,
             relay_finder: None,
+            last_registered_relay: None,
             triangle_wait: None,
             send_via_bingle: None,
             bingle_api: api.clone(),
@@ -1785,6 +1790,23 @@ impl Engine {
         // Save last known public address (for validation/tests)
         self.set_last_public_addr(public_addr);
 
+        // If our public endpoint changed while we were already registered with a relay, the
+        // old registration (and NAT mapping) is tied to the previous address. Re-register with
+        // the same relay on the new mapping so inbound relayed traffic keeps reaching us. The
+        // address-change reset above set state to TrianglePing, which would otherwise cause the
+        // guard below to early-return and leave us permanently stuck without re-registering.
+        if addr_changed
+            && let Some(relay) = self.last_registered_relay.clone()
+        {
+            tracing::info!(
+                "[Engine] public address changed; re-registering with known relay {} (id={})",
+                relay.address(),
+                relay.id()
+            );
+            self.register_with_relay(Some(relay));
+            return;
+        }
+
         // Transition to TrianglePing and perform relay triangle test
         if self.state == EngineState::TrianglePing {
             tracing::info!("[Engine] already in TrianglePing");
@@ -2052,6 +2074,9 @@ impl Engine {
             tracing::info!("[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}", relay_info.id());
             api.set_state(EngineState::Registered);
             api.notify_listening(true, NatType::Restricted);
+            // Remember the relay so we can re-register with it directly if our public endpoint
+            // later changes (NAT port remap) without repeating relay discovery.
+            self.last_registered_relay = Some(relay_info.clone());
             // Keep the NAT mapping towards this relay alive so inbound relayed data
             // is deliverable even after long idle periods.
             self.start_relay_keep_alive(relay_info.id().to_string(), relay_info.address());
