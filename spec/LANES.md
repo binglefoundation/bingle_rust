@@ -96,6 +96,8 @@ robustness:
 - ~~fix bingle_admin deploy and upgrade~~
 - app replace migrate local data
 - reorganize naming
+- identify `unsafe` and fix
+- run code quality tools, fixup and ignore
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
