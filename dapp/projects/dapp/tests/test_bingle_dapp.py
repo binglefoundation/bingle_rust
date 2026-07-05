@@ -6,6 +6,8 @@ from algopy_testing import AlgopyTestContext, algopy_testing_context
 from smart_contracts.bingle_dapp.contract import BingleDapp
 
 MIN_BALANCE = 100_000
+# migrate_reserve keeps one min_txn_fee back per potential inner txn so the app stays at min balance.
+MIN_TXN_FEE = 1_000
 
 
 @pytest.fixture()
@@ -170,7 +172,8 @@ def test_migrate_reserve_transfers_to_new_app(ctx: AlgopyTestContext) -> None:
     contract.migrate_reserve(new_app, UInt64(0))
     itxn = ctx.txn.last_group.last_itxn.payment
     assert itxn.receiver == Application(new_app.id).address
-    assert itxn.amount == UInt64(1_000_000 - MIN_BALANCE)
+    # one min_txn_fee is held back for the payment inner txn
+    assert itxn.amount == UInt64(1_000_000 - MIN_BALANCE - MIN_TXN_FEE)
 
 
 def test_migrate_reserve_by_non_creator_fails(ctx: AlgopyTestContext) -> None:
