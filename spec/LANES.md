@@ -8,10 +8,11 @@ UX:
 - ~~tidy up bugs~~
 - ~~info option to show cipher suite (now in API, needs UX)~~
 - ~~fix info box to show sender, receiver, format header and text, have a copy button on id, show date iso style, tap to close~~
-- **message delivery indication and retry**
+- ~~message delivery indication and retry~~
 - ~~handle register failure on/post start~~
 - ~~lookup handle match~~
 - UX to offline credentials
+- UX to restart
 
 security:
 - ensure protocol is built as documented, changes as follows:
