@@ -512,7 +512,7 @@ impl Engine {
         api: crate::api::bingle_api::BingleApiBothType,
         dtls: Box<dyn Dtls + Send + Sync>,
     ) -> Self {
-        tracing::info!("[Engine::new] options={:?}", options);
+        tracing::info!("[Engine::new] options={}", options);
         #[allow(unused)]
         {}
         // Build a DDB client now (always present); choose real or null implementation

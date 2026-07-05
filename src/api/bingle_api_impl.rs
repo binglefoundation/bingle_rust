@@ -340,7 +340,7 @@ impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
         let span = self.span.clone();
         let _guard = span.enter();
-        info_theme!(themes::API, "[BingleApiImpl::debug_print_options] started_options={:?}", self.started_options);
+        info_theme!(themes::API, "[BingleApiImpl::debug_print_options] started_options={}", self.started_options);
     }
     fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
         let span = self.span.clone();
@@ -441,7 +441,7 @@ impl BingleApi for BingleApiImpl {
             (*engine_ptr).span = self.span.clone();
         }
 
-        info_theme!(themes::API, "[BingleApiImpl::start][enter] options={:?}", options);
+        info_theme!(themes::API, "[BingleApiImpl::start][enter] options={}", options);
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
         self.started_options = options.clone();
         self.ensure_dtls();

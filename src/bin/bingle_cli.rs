@@ -210,7 +210,7 @@ fn cmd_run(mut args: Vec<String>) {
     // If a static IP was provided, attempt to register it on-chain for discovery BEFORE starting the protocol
     if let Some(static_addr) = opts.static_ip {
         // Resolve app_id from StartOptions or APP_ID env
-        warn!("Registering static IP {} for on-chain discovery, opts={:?}", static_addr, opts);
+        warn!("Registering static IP {} for on-chain discovery, opts={}", static_addr, opts);
         let app_id_opt = opts.app_id.or_else(|| std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
         match app_id_opt {
             Some(app_id) => {

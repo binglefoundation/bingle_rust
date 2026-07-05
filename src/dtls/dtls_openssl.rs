@@ -895,7 +895,7 @@ pub mod openssl_impl {
             }
         }
         fn flush(&mut self) -> std::io::Result<()> {
-            tracing::info!("[dtls muxconn][Write:flush]")   ;
+            tracing::debug!("[dtls muxconn][Write:flush]")   ;
             Ok(())
         }
     }

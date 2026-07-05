@@ -282,6 +282,31 @@ impl StartOptions {
     }
 }
 
+impl std::fmt::Display for StartOptions {
+    /// Human-readable form for logging. Deliberately does not leak `algo_passphrase`;
+    /// only whether one is present is shown. Use this instead of the `Debug` impl when logging.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "StartOptions {{ handle: {:?}, algo_passphrase: {}, static_ip: {:?}, am_relay: {}, stun_servers: {:?}, algo_provider_config: {:?}, algo_network: {:?}, app_id: {:?}, asset_id: {:?}, log_level: {:?}, handle_cache_expiry: {:?}, dangerous_debug: {}, log_mode: {:?}, wait_response_timeout: {:?} }}",
+            self.handle,
+            if self.algo_passphrase.is_some() { "<set>" } else { "None" },
+            self.static_ip,
+            self.am_relay,
+            self.stun_servers,
+            self.algo_provider_config,
+            self.algo_network,
+            self.app_id,
+            self.asset_id,
+            self.log_level,
+            self.handle_cache_expiry,
+            self.dangerous_debug,
+            self.log_mode,
+            self.wait_response_timeout,
+        )
+    }
+}
+
 /// The Bingle API trait surface.
 /// This describes the minimal shape expected by the Bingle client per spec.
 pub trait BingleApi: Send + Sync {

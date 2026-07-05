@@ -19,6 +19,9 @@ pub mod bingle_api_relay_check_two_nodes;
 #[path = "bingle_getters.rs"]
 pub mod bingle_getters;
 
+#[path = "start_options_display.rs"]
+pub mod start_options_display;
+
 #[path = "bingle_api_impl/list_all_relays.rs"]
 pub mod list_all_relays;
 
