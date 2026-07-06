@@ -104,6 +104,7 @@ export enum KeypairStatus {
   Unfunded = "Unfunded",
   Funded = "Funded",
   Active = "Active",
+  UpgradeRequired = "UpgradeRequired",
 }
 
 export enum NatType {

@@ -61,3 +61,23 @@ permissions.
 | `migrate_local` | `@abimethod` | USER | Copies the caller's local state (`Handle`/`HandleTime`, `allow_relay`, `allow_static`, and `static_endpoint`/`static_endpoint_x` when `allow_static == 1`) from a blessed ancestor app into this app. Handle is first-write-wins; requires the caller opted in to this app. |
 | `migrate_global` | `@abimethod` | APP_CREATOR | Copies global state (`BinglePrice`, `LastHandleTime`, `AppAdmin`, `AppWithdrawer`) from an old app. |
 | `migrate_reserve` | `@abimethod` | APP_CREATOR | Transfers the app account's spendable Algo and Bingle$ ASA holdings to a new app. |
+
+## Superseding an app
+
+When a newer dapp replaces this one, the creator marks this app **superseded** by calling
+`set_successor_app` **on the app being retired**, passing the replacement as the successor (an
+app can only write its own global state, so this is the forward-pointing mirror of
+`set_predecessor_app`). This records the successor's id in the global `SuccessorApp` value
+(8-byte big-endian; empty means not superseded).
+
+Once superseded, the app **hard-rejects** its user-facing state-changing methods — `register`,
+`buy_bingle`, `sell_bingle`, and `register_endpoint` all assert the app is not superseded and
+fail. Admin/creator methods (`set_*`, `withdraw`, `migrate_global`, `migrate_reserve`), the
+bare `OptIn`, and `migrate_local` stay callable, so the retired app can still be wound down and
+users can still migrate their local state out of it. Clients read `SuccessorApp` on start and,
+when it is set, report `UPGRADE_REQUIRED` and prompt the user to update rather than transacting
+against the dead app.
+
+| Endpoint | Method | Caller | Notes |
+|---|---|---|---|
+| `set_successor_app` | `@abimethod` | APP_CREATOR | Marks this app superseded by `successor`; records global `SuccessorApp`. Re-pointable. `successor` must be in the transaction's foreign apps. |

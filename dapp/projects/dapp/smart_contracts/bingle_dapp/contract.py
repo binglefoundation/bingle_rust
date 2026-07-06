@@ -26,6 +26,11 @@ class BingleDapp(ARC4Contract):
         # set_predecessor_app. Bounded by the 128-byte global value limit (~15 ancestors),
         # which is ample for the interim migration solution.
         self.ancestor_apps = GlobalState(Bytes, key="AncestorApps")
+        # Successor app pointer: an 8-byte big-endian app id (empty == not superseded). When
+        # set (via set_successor_app on this app), the app is superseded by a newer deployment:
+        # user-facing state-changing methods hard-reject, and clients read this to prompt the
+        # user to upgrade. Same encoding as AncestorApps so app_global_bytes can read it.
+        self.successor_app = GlobalState(Bytes, key="SuccessorApp")
 
     @abimethod(create="require")
     def create(self, app_admin: Account, app_withdrawer: Account) -> None:
@@ -42,6 +47,11 @@ class BingleDapp(ARC4Contract):
             if op.extract(lineage, i * UInt64(8), UInt64(8)) == target:
                 found = True
         return found
+
+    @subroutine
+    def _is_superseded(self) -> bool:
+        """True if this app has been marked superseded via set_successor_app."""
+        return self.successor_app.get(default=Bytes()).length != UInt64(0)
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
@@ -96,6 +106,8 @@ class BingleDapp(ARC4Contract):
         clawbacks 1 unit of the Bingle$ ASA from the creator-held reserve to the caller.
         This requires the ASA's clawback address to be the application address.
         """
+        # Reject once superseded: force the client to upgrade to the successor app.
+        assert not self._is_superseded()
         # Ensure a foreign asset is supplied to identify Bingle$ ASA
         asset_id = Txn.assets(0)
 
@@ -140,6 +152,8 @@ class BingleDapp(ARC4Contract):
         than performing inner transfers. Any account may fund the payout as long as the
         amount is correct.
         """
+        # Reject once superseded: force the client to upgrade to the successor app.
+        assert not self._is_superseded()
         # Identify the ASA and compute payout
         asset_id = Txn.assets(0)
         price = self.bingle_price.value
@@ -202,6 +216,8 @@ class BingleDapp(ARC4Contract):
           key "HandleTime" set to Global.latest_timestamp(). If a handle is already set,
           it will not be overwritten (oldest handle is kept).
         """
+        # Reject once superseded: force the client to upgrade to the successor app.
+        assert not self._is_superseded()
         asset_id = Txn.assets(0)
         app_addr = Global.current_application_address
         sender = Txn.sender
@@ -303,6 +319,20 @@ class BingleDapp(ARC4Contract):
             lineage += op.itob(old_pred)
 
         self.ancestor_apps.value = lineage
+
+    @abimethod()
+    def set_successor_app(self, successor: Application) -> None:
+        """Mark this app as superseded by `successor`, forcing clients to upgrade.
+
+        Creator-only. Records `successor`'s id as the SuccessorApp global (8-byte big-endian).
+        Once set, the user-facing state-changing methods (register, buy_bingle, sell_bingle,
+        register_endpoint) hard-reject, and clients read this pointer on start to prompt the
+        user to update. Admin/creator methods, withdraw, and the migrate_* methods stay
+        callable so the old app can still be wound down and users migrated. Re-pointable.
+        `successor` must be included in the transaction's foreign apps array.
+        """
+        assert Txn.sender == Global.creator_address
+        self.successor_app.value = op.itob(successor.id)
 
     @abimethod()
     def set_app_admin(self, admin: Account) -> None:
@@ -429,6 +459,8 @@ class BingleDapp(ARC4Contract):
           "static_endpoint_x" (if needed) in local state.
         - If `endpoint` is empty (""), delete both local state keys.
         """
+        # Reject once superseded: force the client to upgrade to the successor app.
+        assert not self._is_superseded()
         # Ensure the caller is allowed to set a static endpoint
         allow_val, allow_exists = self.allow_static.maybe(Txn.sender)
         assert allow_exists and allow_val == UInt64(1)

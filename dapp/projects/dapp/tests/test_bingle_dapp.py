@@ -361,3 +361,70 @@ def test_migrate_local_copies_allow_relay(ctx: AlgopyTestContext) -> None:
     with ctx.txn.create_group(active_txn_overrides={"sender": user}):
         contract.migrate_local(old_app)
     assert contract.allow_relay[user] == UInt64(1)
+
+
+def test_set_successor_app_by_creator(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    successor = ctx.any.application()
+    contract.set_successor_app(successor)
+    assert contract.successor_app.value == op.itob(successor.id)
+
+
+def test_set_successor_app_by_non_creator_fails(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    non_creator = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": non_creator}):
+        with pytest.raises(AssertionError):
+            contract.set_successor_app(ctx.any.application())
+
+
+def test_register_fails_when_superseded(ctx: AlgopyTestContext) -> None:
+    from algopy import String
+    contract, _, _ = _deploy(ctx)
+    contract.set_successor_app(ctx.any.application())
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.register(String("dave"))
+
+
+def test_buy_bingle_fails_when_superseded(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    contract.set_successor_app(ctx.any.application())
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.buy_bingle()
+
+
+def test_sell_bingle_fails_when_superseded(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    contract.set_successor_app(ctx.any.application())
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.sell_bingle(UInt64(1))
+
+
+def test_register_endpoint_fails_when_superseded(ctx: AlgopyTestContext) -> None:
+    from algopy import String
+    contract, _, _ = _deploy(ctx)
+    contract.set_successor_app(ctx.any.application())
+    user = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        with pytest.raises(AssertionError):
+            contract.register_endpoint(String("1.2.3.4:5678"))
+
+
+def test_withdraw_still_works_when_superseded(ctx: AlgopyTestContext) -> None:
+    # Admin/creator winddown paths stay callable after the app is superseded so the old
+    # app can be drained; only the user-facing state-changing methods are hard-blocked.
+    contract, _, withdrawer = _deploy(ctx)
+    _fund_app(ctx, contract, 1_000_000)
+    contract.set_successor_app(ctx.any.application())
+    recipient = ctx.any.account()
+    with ctx.txn.create_group(active_txn_overrides={"sender": withdrawer}):
+        contract.withdraw(recipient, UInt64(500_000), UInt64(0), UInt64(0))
+    itxn = ctx.txn.last_group.last_itxn.payment
+    assert itxn.receiver == recipient
+    assert itxn.amount == UInt64(500_000)

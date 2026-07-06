@@ -628,6 +628,34 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         let algorand_id = kp.id.clone();
 
+        // Superseded-app gate: if the configured app has been marked superseded (a newer app
+        // replaced it), the client must upgrade. Report UPGRADE_REQUIRED and short-circuit
+        // ahead of the funding/registration checks — the whole app is retired regardless of
+        // this account's funding or handle. Best-effort: a read error falls through to the
+        // normal status rather than blocking the user.
+        let configured_app_id = self.config.app_id;
+        if configured_app_id > 0 {
+            match self.get_algo_ops() {
+                Ok(ops) => {
+                    let bgl = AlgoBingle::new(ops, configured_app_id, self.config.asset_id);
+                    match bgl.successor_app(configured_app_id) {
+                        Ok(Some(successor)) => {
+                            tracing::info!("[BingleLocalApi][keypair_status] app {} superseded by {}; UPGRADE_REQUIRED", configured_app_id, successor);
+                            return Ok(KeypairStatus {
+                                status: "UPGRADE_REQUIRED".to_string(),
+                                id: Some(algorand_id),
+                                handle: None,
+                                required_algo: None,
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(e) => tracing::warn!("[BingleLocalApi][keypair_status] successor check failed (continuing): {}", e),
+                    }
+                }
+                Err(e) => tracing::warn!("[BingleLocalApi][keypair_status] get_algo_ops for successor check failed (continuing): {}", e),
+            }
+        }
+
         // 2) Get AlgoOps for blockchain queries
         let ops = match self.get_algo_ops() {
             Ok(o) => o,

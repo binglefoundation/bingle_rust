@@ -84,6 +84,9 @@ pub enum KeypairStatus {
     Unfunded,
     Funded,
     Active,
+    /// The configured app has been superseded by a newer deployment; the client must be
+    /// upgraded before it can run.
+    UpgradeRequired,
 }
 
 /// Full keypair status response.

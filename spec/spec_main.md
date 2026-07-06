@@ -267,6 +267,25 @@ older single-predecessor contract via their legacy `PredecessorApp` pointer). Se
 [dapp_endpoints.md](dapp_endpoints.md) for the on-chain methods and
 [migrate_local_storage.md](migrate_local_storage.md) for the full design.
 
+## Superseding an app
+
+When the dapp is replaced, old clients whose configured `app_id` still points at the retired
+app must be forced to upgrade. The creator marks the old app superseded by calling
+`set_successor_app` on it, pointing at the replacement; this records a `SuccessorApp` pointer
+(the forward-pointing mirror of the migration lineage).
+
+On start the node reads its configured app's `SuccessorApp`. When it is set, the node reports the
+keypair status as `UPGRADE_REQUIRED` and does **not** start — it neither migrates nor connects,
+so the UI prompts the user to update the app instead of failing silently. As an on-chain backstop
+the retired app also hard-rejects its user-facing state-changing methods (`register`,
+`buy_bingle`, `sell_bingle`, `register_endpoint`), so a stale client cannot transact against it.
+Admin winddown and the `migrate_*` methods stay callable, so users who then upgrade still migrate
+their local state out of the superseded app via the lineage above.
+
+Interim limitations: only apps built with this contract carry a `SuccessorApp` pointer, so an
+already-deployed old app cannot be flagged — protection applies from the next replacement onward.
+See [block_old_app.md](block_old_app.md) for the full design.
+
 ## Network change detection
 
 A network change can be detected by continually verifying STUN responses and validating that either the responses are inconsistent or the IP address and port have changed.
