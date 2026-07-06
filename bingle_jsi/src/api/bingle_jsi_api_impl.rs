@@ -147,6 +147,7 @@ fn parse_keypair_status(status: &str) -> KeypairStatus {
         "UNFUNDED" => KeypairStatus::Unfunded,
         "FUNDED" => KeypairStatus::Funded,
         "ACTIVE" => KeypairStatus::Active,
+        "UPGRADE_REQUIRED" => KeypairStatus::UpgradeRequired,
         _ => KeypairStatus::None,
     }
 }
@@ -450,42 +451,49 @@ impl BingleJsiApiImpl {
             if let Some(local_arc) = &local_api {
                 if let Ok(guard) = local_arc.lock() {
                     if let Ok(mut status) = guard.keypair_status() {
-                        // If not yet active on the configured app, attempt a one-time migration
-                        // of local state from a blessed predecessor app, then re-check. This
-                        // transparently upgrades a user whose registration lives on an older app
-                        // instead of prompting them to register again. Best-effort: failures do
-                        // not block start.
-                        if status.status != "ACTIVE" {
-                            match guard.ensure_local_migrated() {
-                                Ok(Some(tx)) => {
-                                    tracing::info!("Migrated local state from predecessor app (tx {})", tx);
-                                    if let Ok(s2) = guard.keypair_status() { status = s2; }
-                                }
-                                Ok(None) => {}
-                                Err(e) => tracing::warn!("Local-state migration check failed (continuing): {}", e),
-                            }
-                        }
-                        if status.status == "ACTIVE" {
-                            let api_clone = api.clone();
-                            let mut opts_clone = opts.clone();
-                            if let Some(handle) = &status.handle {
-                                opts_clone.handle = handle.clone();
-                            }
-                            if let Ok(Some(kp)) = guard.get_keypair() {
-                                opts_clone.algo_passphrase = Some(kp.passphrase);
-                            }
-                            api_clone.access_unsafe_for_tests(|api_mut| {
-                                if let Err(e) = api_mut.start(&opts_clone) {
-                                    tracing::error!("Failed to start Bingle API: {}", e);
-                                }
-                            });
-                            api_started = true;
-                            tracing::info!("Bingle API started (keypair is ACTIVE)");
+                        // If the configured app has been superseded, do not migrate or start:
+                        // the client must be upgraded. The UPGRADE_REQUIRED status is surfaced to
+                        // the UI to prompt the user to update the app.
+                        if status.status == "UPGRADE_REQUIRED" {
+                            tracing::warn!("Bingle API start blocked: configured app is superseded, upgrade required");
                         } else {
-                            tracing::info!(
-                                "Bingle API start deferred (keypair status: {})",
-                                status.status
-                            );
+                            // If not yet active on the configured app, attempt a one-time migration
+                            // of local state from a blessed predecessor app, then re-check. This
+                            // transparently upgrades a user whose registration lives on an older app
+                            // instead of prompting them to register again. Best-effort: failures do
+                            // not block start.
+                            if status.status != "ACTIVE" {
+                                match guard.ensure_local_migrated() {
+                                    Ok(Some(tx)) => {
+                                        tracing::info!("Migrated local state from predecessor app (tx {})", tx);
+                                        if let Ok(s2) = guard.keypair_status() { status = s2; }
+                                    }
+                                    Ok(None) => {}
+                                    Err(e) => tracing::warn!("Local-state migration check failed (continuing): {}", e),
+                                }
+                            }
+                            if status.status == "ACTIVE" {
+                                let api_clone = api.clone();
+                                let mut opts_clone = opts.clone();
+                                if let Some(handle) = &status.handle {
+                                    opts_clone.handle = handle.clone();
+                                }
+                                if let Ok(Some(kp)) = guard.get_keypair() {
+                                    opts_clone.algo_passphrase = Some(kp.passphrase);
+                                }
+                                api_clone.access_unsafe_for_tests(|api_mut| {
+                                    if let Err(e) = api_mut.start(&opts_clone) {
+                                        tracing::error!("Failed to start Bingle API: {}", e);
+                                    }
+                                });
+                                api_started = true;
+                                tracing::info!("Bingle API started (keypair is ACTIVE)");
+                            } else {
+                                tracing::info!(
+                                    "Bingle API start deferred (keypair status: {})",
+                                    status.status
+                                );
+                            }
                         }
                     }
                 }

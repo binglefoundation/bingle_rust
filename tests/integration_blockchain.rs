@@ -35,6 +35,8 @@ pub mod deploy_app_and_asset_localnet;
 pub mod unique_handle;
 #[path = "integration/blockchain/migrate_local_localnet.rs"]
 pub mod migrate_local_localnet;
+#[path = "integration/blockchain/block_old_app_localnet.rs"]
+pub mod block_old_app_localnet;
 
 // API integration tests that need localnet
 #[path = "integration/api/connection_tests.rs"]

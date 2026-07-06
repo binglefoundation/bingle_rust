@@ -334,6 +334,25 @@ impl AlgoBingle {
         Ok(txid)
     }
 
+    /// Mark `app_id` as superseded by `successor_app_id`, forcing clients to upgrade.
+    ///
+    /// Calls set_successor_app(uint64)void on `app_id`. Must be called by the app creator,
+    /// on the app being retired (an app can only write its own global state). Once set, the
+    /// old app hard-rejects user transactions and clients report UPGRADE_REQUIRED.
+    /// Returns the submitted transaction id on success.
+    pub fn set_successor_app(&self, app_id: u64, successor_app_id: u64) -> Result<String> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        if successor_app_id == 0 { bail!("successor_app_id must be > 0"); }
+        let (txid, _logs) = self.ops.call_app_with_foreign_app(
+            app_id,
+            successor_app_id,
+            None,
+            Some("set_successor_app(uint64)void"),
+            &[AppArg::Uint(successor_app_id)],
+        )?;
+        Ok(txid)
+    }
+
     /// Set the app admin address.
     ///
     /// Calls set_app_admin(address)void. Must be called by the app creator.
@@ -450,6 +469,21 @@ impl AlgoBingle {
             ids.push(u64::from_be_bytes(b));
         }
         Ok(ids)
+    }
+
+    /// Read the successor app pointer of `app_id` — the app that supersedes it, if any —
+    /// decoded from the 8-byte big-endian `SuccessorApp` global. Returns `None` when the app
+    /// is not superseded (global absent or empty).
+    pub fn successor_app(&self, app_id: u64) -> Result<Option<u64>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let raw = self.ops.app_global_bytes(app_id, "SuccessorApp")?.unwrap_or_default();
+        if raw.len() != 8 {
+            return Ok(None);
+        }
+        let mut b = [0u8; 8];
+        b.copy_from_slice(&raw);
+        let id = u64::from_be_bytes(b);
+        Ok(if id == 0 { None } else { Some(id) })
     }
 
     /// Find the nearest blessed ancestor of `new_app_id` on which `account` still holds local
