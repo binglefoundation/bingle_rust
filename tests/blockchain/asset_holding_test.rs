@@ -1,4 +1,4 @@
-use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
+use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps};
 
 fn default_cfg() -> AlgoChainConfig {
     AlgoChainConfig::default()

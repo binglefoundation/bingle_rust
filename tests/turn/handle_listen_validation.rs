@@ -1,7 +1,9 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl, TurnRelayHandler};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -14,12 +16,17 @@ pub fn unit_turn_incoming_rejected_without_listen_and_call() {
     assert!(ch >= 0);
     // Build a small payload and wrap
     let payload = b"xyz";
-    let wrapped = handler.send_turn_outgoing(&src, &dst, payload).expect("wrap outgoing");
+    let wrapped = handler
+        .send_turn_outgoing(&src, &dst, payload)
+        .expect("wrap outgoing");
 
     // handler_unbound has no handle_listen or handle_call
     let handler_unbound = TurnHandlerImpl::new();
     let incoming = handler_unbound.handle_turn_incoming(Some(&src), Some(dst), &wrapped.message);
-    assert!(incoming.is_none(), "expected rejection before listen registration");
+    assert!(
+        incoming.is_none(),
+        "expected rejection before listen registration"
+    );
 }
 
 #[test]
@@ -36,10 +43,15 @@ pub fn unit_turn_incoming_accepted_after_listen() {
     assert!(ch >= 0);
     // Wrap a payload
     let payload = b"abcd"; // len 4, no padding
-    let wrapped = handler.send_turn_outgoing(&src, &dst, payload).expect("wrap outgoing");
+    let wrapped = handler
+        .send_turn_outgoing(&src, &dst, payload)
+        .expect("wrap outgoing");
     // Incoming should now be accepted
-    let incoming = handler.handle_turn_incoming(Some(&src), Some(dst),  &wrapped.message);
-    assert!(incoming.is_some(), "expected acceptance after listen registration");
+    let incoming = handler.handle_turn_incoming(Some(&src), Some(dst), &wrapped.message);
+    assert!(
+        incoming.is_some(),
+        "expected acceptance after listen registration"
+    );
     let incoming = incoming.unwrap();
     assert_eq!(incoming.ip_address, dst);
     assert_eq!(incoming.message, payload);

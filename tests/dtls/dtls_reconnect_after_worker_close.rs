@@ -1,19 +1,20 @@
-
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
 pub mod pki;
 pub mod test_handlers;
+#[path = "../test_util.rs"]
+pub mod test_util;
 
-use test_util::init_test_logging;
-use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 use rust_comms::api::bingle_api::NetworkEndpoint;
+use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
+use test_util::init_test_logging;
 
-fn make_counting_server_handler(hello_count: Arc<Mutex<u32>>) -> impl Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) + Send + Sync + 'static {
+fn make_counting_server_handler(
+    hello_count: Arc<Mutex<u32>>,
+) -> impl Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) + Send + Sync + 'static {
     move |_server, _from, _issuer, data| {
         if data == b"Hello" {
             let mut g = hello_count.lock().unwrap();
@@ -50,7 +51,9 @@ pub fn dtls_reconnect_after_worker_channel_close() {
     let hello_count = Arc::new(Mutex::new(0u32));
 
     let mut server = DtlsOpenSsl::new("srv".to_string())
-        .with_handle_message(Arc::new(make_counting_server_handler(Arc::clone(&hello_count))))
+        .with_handle_message(Arc::new(make_counting_server_handler(Arc::clone(
+            &hello_count,
+        ))))
         .with_server_signing_cert(certs.server_crt.clone())
         .with_server_signing_private_key(certs.server_key.clone())
         .with_ca_cert(ca_pem.clone())
@@ -80,13 +83,19 @@ pub fn dtls_reconnect_after_worker_channel_close() {
     thread::sleep(Duration::from_millis(200));
 
     let endpoint = NetworkEndpoint::new_direct(addr_srv);
-    client1.send(&endpoint, b"Hello").expect("first send failed");
+    client1
+        .send(&endpoint, b"Hello")
+        .expect("first send failed");
 
     let start = Instant::now();
     while *hello_count.lock().unwrap() < 1 && start.elapsed() < Duration::from_secs(5) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(*hello_count.lock().unwrap(), 1, "server did not receive first Hello");
+    assert_eq!(
+        *hello_count.lock().unwrap(),
+        1,
+        "server did not receive first Hello"
+    );
 
     // --- simulate network outage: stop client 1 entirely ---
     tracing::info!("[test] stopping client 1 to simulate network outage");
@@ -112,13 +121,19 @@ pub fn dtls_reconnect_after_worker_channel_close() {
     thread::sleep(Duration::from_millis(200));
 
     tracing::info!("[test] sending second Hello after reconnect");
-    client2.send(&endpoint, b"Hello").expect("second send failed");
+    client2
+        .send(&endpoint, b"Hello")
+        .expect("second send failed");
 
     let start = Instant::now();
     while *hello_count.lock().unwrap() < 2 && start.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(*hello_count.lock().unwrap(), 2, "server did not receive second Hello after reconnect");
+    assert_eq!(
+        *hello_count.lock().unwrap(),
+        2,
+        "server did not receive second Hello after reconnect"
+    );
 
     client2.stop().expect("client2 stop");
     mux_cli2.stop();

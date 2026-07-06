@@ -1,10 +1,10 @@
 use rust_comms::api::bingle_api::NetworkEndpoint;
-use rust_comms::dtls::dtls_trait::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use rust_comms::dtls::UdpNetworkMux;
+use rust_comms::dtls::dtls_trait::{
+    Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult,
+};
 use rust_comms::packet_transport::{
-    DtlsReliablePacketTransport,
-    PacketTransport,
-    PacketTransportHandleMessage,
+    DtlsReliablePacketTransport, PacketTransport, PacketTransportHandleMessage,
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -97,7 +97,11 @@ impl Dtls for MockDtls {
         self.handle_message = handler;
     }
 
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
 
     fn with_handle_message(mut self, handler: HandleMessage) -> Self
     where
@@ -204,8 +208,15 @@ impl Dtls for MockDtls {
     }
 
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
+        None
+    }
     fn forget_peers(&self) {}
 }
 
@@ -216,13 +227,14 @@ pub fn new_installs_dtls_handler_that_uses_transport_handler() {
 
     let calls: Arc<Mutex<Vec<(String, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
-    let transport_handler: PacketTransportHandleMessage = Arc::new(move |_server, _from, issuer, packet| {
-        calls_clone
-            .lock()
-            .expect("calls lock should not be poisoned")
-            .push((issuer.to_string(), packet.to_vec()));
-        Ok(Some(packet.to_vec()))
-    });
+    let transport_handler: PacketTransportHandleMessage =
+        Arc::new(move |_server, _from, issuer, packet| {
+            calls_clone
+                .lock()
+                .expect("calls lock should not be poisoned")
+                .push((issuer.to_string(), packet.to_vec()));
+            Ok(Some(packet.to_vec()))
+        });
     transport.set_handle_message(Some(transport_handler));
 
     let dtls_handler = transport
@@ -255,7 +267,8 @@ pub fn with_handle_message_and_dispatch_handle_message_are_transport_instance_sc
         Ok(Some(vec![0xAA]))
     });
 
-    let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492).with_handle_message(handler);
+    let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492)
+        .with_handle_message(handler);
     assert!(transport.get_handle_message().is_some());
 
     let from_addr: SocketAddr = "127.0.0.1:9191".parse().expect("valid socket address");
@@ -303,8 +316,14 @@ pub fn send_wraps_payload_as_data_single_and_increments_tx_id() {
     assert_eq!(packets[0].0, to_addr);
     assert_eq!(packets[1].0, to_addr);
 
-    assert_eq!(packets[0].1, vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']);
-    assert_eq!(packets[1].1, vec![0x11, 0x00, 0x00, 0x01, b'w', b'o', b'r', b'l', b'd']);
+    assert_eq!(
+        packets[0].1,
+        vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']
+    );
+    assert_eq!(
+        packets[1].1,
+        vec![0x11, 0x00, 0x00, 0x01, b'w', b'o', b'r', b'l', b'd']
+    );
 }
 
 #[test]
@@ -324,7 +343,11 @@ pub fn send_rejects_payload_that_requires_fragmentation() {
 #[cfg(not(target_os = "ios"))]
 pub fn send_waits_for_ack_complete_before_returning() {
     let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
-    transport.set_retry_delays(vec![Duration::from_millis(300), Duration::from_millis(600), Duration::from_millis(1200)]);
+    transport.set_retry_delays(vec![
+        Duration::from_millis(300),
+        Duration::from_millis(600),
+        Duration::from_millis(1200),
+    ]);
 
     let transport = Arc::new(transport);
     let to_addr: SocketAddr = "127.0.0.1:7005".parse().expect("valid socket address");
@@ -361,7 +384,10 @@ pub fn send_waits_for_ack_complete_before_returning() {
         .expect("sent_packets lock should not be poisoned");
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].0, to_addr);
-    assert_eq!(packets[0].1, vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']);
+    assert_eq!(
+        packets[0].1,
+        vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']
+    );
 }
 
 #[test]
@@ -413,9 +439,17 @@ pub fn send_succeeds_when_ack_arrives_after_first_retry() {
     let packets = sent_packets
         .lock()
         .expect("sent_packets lock should not be poisoned");
-    assert_eq!(packets.len(), 2, "should have sent initial packet plus one retry");
+    assert_eq!(
+        packets.len(),
+        2,
+        "should have sent initial packet plus one retry"
+    );
     assert!(packets.iter().all(|(addr, _)| *addr == to_addr));
-    assert!(packets.iter().all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']));
+    assert!(
+        packets
+            .iter()
+            .all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o'])
+    );
 }
 
 #[test]
@@ -453,9 +487,17 @@ pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
     let packets = sent_packets
         .lock()
         .expect("sent_packets lock should not be poisoned");
-    assert_eq!(packets.len(), 3, "should have sent initial packet plus 2 retries");
+    assert_eq!(
+        packets.len(),
+        3,
+        "should have sent initial packet plus 2 retries"
+    );
     assert!(packets.iter().all(|(addr, _)| *addr == to_addr));
-    assert!(packets.iter().all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o']));
+    assert!(
+        packets
+            .iter()
+            .all(|(_, pkt)| pkt == &vec![0x11, 0x00, 0x00, 0x00, b'h', b'e', b'l', b'l', b'o'])
+    );
 }
 
 #[test]

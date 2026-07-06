@@ -1,13 +1,16 @@
-use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::algo_ops::AlgoChainConfig;
+use rust_comms::blockchain::algo_bingle::AlgoBingle;
 
 use crate::setup_localnet;
 use crate::util::test_util;
 
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND, ADDRESS_RECEIVE, PASSPHRASE_RECEIVE};
-use std::time::{Duration, Instant};
-use std::thread;
 use std::net::SocketAddr;
+use std::thread;
+use std::time::{Duration, Instant};
+use test_util::{
+    ADDRESS_RECEIVE, ADDRESS_SPEND, PASSPHRASE_RECEIVE, PASSPHRASE_SPEND, localnet_config,
+    ops_from_mnemonic,
+};
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -19,9 +22,18 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     // Extra guard: ensure Indexer is reachable; otherwise skip to avoid false negatives when only algod is up.
     {
         use rust_comms::blockchain::algo_ops::AlgoOps;
-        let tmp_ops = AlgoOps::new(None, Some(test_util::ADDRESS_SPEND.to_string()), Some(cfg.clone()));
-        let indexer = tmp_ops.indexer_client().expect("failed to build indexer client");
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio rt");
+        let tmp_ops = AlgoOps::new(
+            None,
+            Some(test_util::ADDRESS_SPEND.to_string()),
+            Some(cfg.clone()),
+        );
+        let indexer = tmp_ops
+            .indexer_client()
+            .expect("failed to build indexer client");
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio rt");
         match rt.block_on(indexer.health()) {
             Ok(_) => { /* ok */ }
             Err(e) => {
@@ -32,7 +44,9 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     }
 
     setup_localnet::ensure_localnet_accounts_funded(&cfg, &[ADDRESS_SPEND, ADDRESS_RECEIVE])
-        .expect("Failed to ensure localnet test accounts funded; install algokit and start localnet");
+        .expect(
+            "Failed to ensure localnet test accounts funded; install algokit and start localnet",
+        );
 
     // Creator and user ops
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
@@ -47,11 +61,15 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
 
     // Grant static permission for the user via the app creator, then user registers a static endpoint
     let ab_creator = AlgoBingle::new(creator.clone(), app_id, 0);
-    let _ = ab_creator.set_allow_static(app_id, ADDRESS_RECEIVE, true).expect("set_allow_static call");
+    let _ = ab_creator
+        .set_allow_static(app_id, ADDRESS_RECEIVE, true)
+        .expect("set_allow_static call");
     let ab_user = AlgoBingle::new(user.clone(), app_id, 0);
     let addr: SocketAddr = "127.0.0.1:54321".parse().unwrap();
     let endpoint = test_util::get_compact_advert_record(&user, addr, false);
-    let _ = ab_user.register_endpoint(app_id, &endpoint).expect("register_endpoint call");
+    let _ = ab_user
+        .register_endpoint(app_id, &endpoint)
+        .expect("register_endpoint call");
 
     // Query via Indexer and validate our account appears with the endpoint.
     // Indexer is eventually consistent; poll for up to ~10 seconds.
@@ -59,9 +77,18 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
     let mut list: Vec<(String, String)>;
     let ab = AlgoBingle::new(user.clone(), app_id, 0);
     loop {
-        list = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list");
-        if list.iter().any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == &endpoint) { break; }
-        if start.elapsed() > Duration::from_secs(45) { break; }
+        list = ab
+            .list_static_endpoints_via_indexer(app_id)
+            .expect("indexer list");
+        if list
+            .iter()
+            .any(|(addr, ep)| addr == ADDRESS_RECEIVE && ep == &endpoint)
+        {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(45) {
+            break;
+        }
         thread::sleep(Duration::from_millis(250));
     }
     let mut found = false;
@@ -71,18 +98,34 @@ pub fn set_allow_and_register_endpoint_then_list_and_clear() {
             found = true;
         }
     }
-    assert!(found, "user ADDRESS_RECEIVE not found in static_endpoint indexer list: {:?}", list);
+    assert!(
+        found,
+        "user ADDRESS_RECEIVE not found in static_endpoint indexer list: {:?}",
+        list
+    );
 
     // Clear the endpoint and verify removal (also with polling to account for indexer lag)
-    let _ = ab_user.register_endpoint(app_id, "").expect("clear endpoint call");
+    let _ = ab_user
+        .register_endpoint(app_id, "")
+        .expect("clear endpoint call");
     let start2 = Instant::now();
     let mut list2;
     loop {
-        list2 = ab.list_static_endpoints_via_indexer(app_id).expect("indexer list after clear");
-        if !list2.iter().any(|(addr, _)| addr == ADDRESS_RECEIVE) { break; }
-        if start2.elapsed() > Duration::from_secs(10) { break; }
+        list2 = ab
+            .list_static_endpoints_via_indexer(app_id)
+            .expect("indexer list after clear");
+        if !list2.iter().any(|(addr, _)| addr == ADDRESS_RECEIVE) {
+            break;
+        }
+        if start2.elapsed() > Duration::from_secs(10) {
+            break;
+        }
         thread::sleep(Duration::from_millis(250));
     }
     let still_present = list2.iter().any(|(addr, _)| addr == ADDRESS_RECEIVE);
-    assert!(!still_present, "user ADDRESS_RECEIVE should not be present after clearing endpoint; got {:?}", list2);
+    assert!(
+        !still_present,
+        "user ADDRESS_RECEIVE should not be present after clearing endpoint; got {:?}",
+        list2
+    );
 }

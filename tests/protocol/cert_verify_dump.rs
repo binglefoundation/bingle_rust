@@ -1,5 +1,3 @@
-
-
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
 
 #[test]
@@ -10,8 +8,10 @@ pub fn peer_certificate_handler_generates_dump_and_verifies() {
     use openssl::hash::MessageDigest;
     use openssl::nid::Nid;
     use openssl::pkey::{PKey, Private};
-    use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, KeyUsage, SubjectKeyIdentifier};
-    use openssl::x509::{X509NameBuilder, X509};
+    use openssl::x509::extension::{
+        AuthorityKeyIdentifier, BasicConstraints, KeyUsage, SubjectKeyIdentifier,
+    };
+    use openssl::x509::{X509, X509NameBuilder};
 
     // 1) Create Ed25519 CA key and self-signed certificate with CN = VIRTUAL_CA
     let ca_pkey: PKey<Private> = PKey::generate_ed25519().expect("generate ed25519");
@@ -71,7 +71,9 @@ pub fn peer_certificate_handler_generates_dump_and_verifies() {
     ee_builder.set_version(2).expect("set version");
     ee_builder.set_serial_number(&s).expect("set serial");
     ee_builder.set_subject_name(&ee_name).expect("set subj");
-    ee_builder.set_issuer_name(ca_cert.subject_name()).expect("set issuer");
+    ee_builder
+        .set_issuer_name(ca_cert.subject_name())
+        .expect("set issuer");
     ee_builder.set_pubkey(&ee_pkey).expect("set pubkey");
     let nb2 = Asn1Time::days_from_now(0).expect("nb2");
     let na2 = Asn1Time::days_from_now(365).expect("na2");

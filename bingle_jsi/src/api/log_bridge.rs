@@ -1,10 +1,10 @@
+use chrono::Local;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing_subscriber::Layer;
 use tracing::Subscriber;
-use tracing_subscriber::registry::LookupSpan;
 use tracing::field::Visit;
-use chrono::Local;
+use tracing_subscriber::Layer;
+use tracing_subscriber::registry::LookupSpan;
 
 use crate::api::callback::LogCallback;
 
@@ -43,8 +43,8 @@ impl Visit for MessageVisitor {
 /// Custom layer that forwards to the registered LogCallback.
 struct CallbackLayer;
 
-impl<S> Layer<S> for CallbackLayer 
-where 
+impl<S> Layer<S> for CallbackLayer
+where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_event(&self, event: &tracing::Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
@@ -54,9 +54,9 @@ where
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0);
-                
+
                 let level = event.metadata().level().to_string();
-                
+
                 let mut prefix = String::new();
                 if let Some(scope) = ctx.event_scope(event) {
                     for span in scope {
@@ -67,11 +67,17 @@ where
                     }
                 }
 
-                let mut visitor = MessageVisitor { message: String::new() };
+                let mut visitor = MessageVisitor {
+                    message: String::new(),
+                };
                 event.record(&mut visitor);
-                
+
                 let iso_timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f");
-                cb.on_log(timestamp, level, format!("{} {}{}", iso_timestamp, prefix, visitor.message));
+                cb.on_log(
+                    timestamp,
+                    level,
+                    format!("{} {}{}", iso_timestamp, prefix, visitor.message),
+                );
             }
         }
     }
@@ -82,9 +88,7 @@ pub fn install_log_bridge(level: tracing_subscriber::filter::LevelFilter) -> boo
     use tracing_subscriber::prelude::*;
     let _ = global_callback();
     let layer = CallbackLayer;
-    let subscriber = tracing_subscriber::registry()
-        .with(layer)
-        .with(level);
-    
+    let subscriber = tracing_subscriber::registry().with(layer).with(level);
+
     tracing::subscriber::set_global_default(subscriber).is_ok()
 }

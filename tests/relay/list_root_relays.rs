@@ -1,12 +1,23 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
-use crate::util::reusable_mock_api::{to_weak, InnerBingleApi, MockApiBoth};
 
 #[derive(Clone)]
 struct MockApi;
-impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, _nsk: &rust_comms::api::bingle_api::NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
+impl InnerBingleApi for MockApi {
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &rust_comms::api::bingle_api::NetworkEndpoint,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
+    }
 }
 
 #[path = "../test_util.rs"]
@@ -34,5 +45,9 @@ pub fn list_root_relays_excludes_self_and_caches() {
     // Second call should use cache (no extra discover invocations)
     let list2 = finder.list_root_relays("AAA", false);
     assert_eq!(list2.len(), 1);
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "discover should be called only once due to cache");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "discover should be called only once due to cache"
+    );
 }

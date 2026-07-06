@@ -4,8 +4,8 @@ use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
-    BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
-    Message, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse, Message,
+    NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -93,7 +93,9 @@ impl BingleJsiApi for StubApi {
         })
     }
 
-    fn get_versions(&self) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError> {
+    fn get_versions(
+        &self,
+    ) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "get_versions".to_string(),
         })
@@ -171,13 +173,22 @@ impl BingleJsiApi for StubApi {
         })
     }
 
-    fn queue_message(&self, _recipient_handles: Vec<String>, _text: String) -> Result<(), BingleJsiError> {
+    fn queue_message(
+        &self,
+        _recipient_handles: Vec<String>,
+        _text: String,
+    ) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "queue_message".to_string(),
         })
     }
 
-    fn update_message_status(&self, _timestamp: i64, _progress: f32, _failure_reason: Option<String>) -> Result<(), BingleJsiError> {
+    fn update_message_status(
+        &self,
+        _timestamp: i64,
+        _progress: f32,
+        _failure_reason: Option<String>,
+    ) -> Result<(), BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "update_message_status".to_string(),
         })
@@ -371,7 +382,9 @@ fn stub_set_log_callback_does_not_panic() {
 
     let api = StubApi;
     let called = Arc::new(AtomicBool::new(false));
-    let cb = TestLogCallback { called: called.clone() };
+    let cb = TestLogCallback {
+        called: called.clone(),
+    };
     api.set_log_callback(Box::new(cb));
     // StubApi is a no-op, so called should remain false
     assert!(!called.load(Ordering::SeqCst));
@@ -392,7 +405,9 @@ fn stub_set_message_callback_does_not_panic() {
 
     let api = StubApi;
     let called = Arc::new(AtomicBool::new(false));
-    let cb = TestMessageCallback { called: called.clone() };
+    let cb = TestMessageCallback {
+        called: called.clone(),
+    };
     api.set_message_callback(Box::new(cb));
     // StubApi is a no-op, so called should remain false
     assert!(!called.load(Ordering::SeqCst));
@@ -413,7 +428,9 @@ fn stub_set_listening_callback_does_not_panic() {
 
     let api = StubApi;
     let called = Arc::new(AtomicBool::new(false));
-    let cb = TestListeningCallback { called: called.clone() };
+    let cb = TestListeningCallback {
+        called: called.clone(),
+    };
     api.set_listening_callback(Box::new(cb));
     // StubApi is a no-op, so called should remain false
     assert!(!called.load(Ordering::SeqCst));

@@ -1,10 +1,10 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::engine::RelayState;
-use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayFinderTestTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTestTrait, RelayFinderTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -25,13 +25,25 @@ impl MockApi {
             map.insert(a, s.to_string());
             v.push((id, a, s.to_string()));
         }
-        Self { entries: Arc::new(v), states: Arc::new(map) }
+        Self {
+            entries: Arc::new(v),
+            states: Arc::new(map),
+        }
     }
 }
 
-impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
-        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+impl InnerBingleApi for MockApi {
+    fn send_message_to_network_with_response(
+        &self,
+        nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        let ty = message
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
         match (message.get("app"), ty) {
             (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
                 // Return a DDB RelaysStatusResponse with relayIds and aligned relayEndpoints based on entries
@@ -39,9 +51,13 @@ impl InnerBingleApi for MockApi {
                 let mut eps: Vec<serde_json::Value> = Vec::new();
                 for (id, addr, _st) in self.entries.iter() {
                     ids.push(serde_json::Value::String(id.clone()));
-                    eps.push(serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}));
+                    eps.push(
+                        serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}),
+                    );
                 }
-                let states: Vec<serde_json::Value> = self.entries.iter()
+                let states: Vec<serde_json::Value> = self
+                    .entries
+                    .iter()
                     .map(|(_, _, st)| serde_json::Value::String(st.clone()))
                     .collect();
                 Ok(serde_json::json!({
@@ -58,15 +74,23 @@ impl InnerBingleApi for MockApi {
             (app, "Check") if app.is_none() || app.unwrap().is_null() => {
                 // RelayCheck: reply with CheckResponse using configured state
                 let addr = nsk.inet_socket_address().expect("direct endpoint required");
-                let st = self.states.get(&addr).cloned().unwrap_or_else(|| "off".to_string());
+                let st = self
+                    .states
+                    .get(&addr)
+                    .cloned()
+                    .unwrap_or_else(|| "off".to_string());
                 Ok(serde_json::json!({ "app": null, "type": "CheckResponse", "state": st }))
             }
-            _ => Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
+            _ => Err(rust_comms::api::bingle_api::BingleError::Other(
+                "unexpected message".into(),
+            )),
         }
     }
 }
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -96,7 +120,10 @@ pub fn clear_state_cache_resets_and_reloads() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
+    let finder = RelayFinder::new(
+        to_weak_api_both(MockApiBoth::new_with_api_override(api)),
+        discover,
+    );
 
     // Initial load populates states
     let _ = finder.find_relay("MYID");

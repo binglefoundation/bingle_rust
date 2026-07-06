@@ -3,7 +3,7 @@
 // Graph model: two directed trees (upper and lower) connected via roots and an optional middle row.
 // Each node has at most one `up` edge and zero or more `down` edges.
 
-use std::collections::{HashSet};
+use std::collections::HashSet;
 
 /// Public trait for Deterministic Network (NetDet) operations
 pub trait NetDet {
@@ -74,7 +74,8 @@ impl NetDetGraph {
     fn sum_power(&self, n: usize) -> usize {
         // sum_{k=0..n-1} b^k
         // Using integer formula where possible; we use f64 to keep parity with Kotlin rounding.
-        if self.tree_order == 1 { // avoid division by zero in float form
+        if self.tree_order == 1 {
+            // avoid division by zero in float form
             // When b==1, sum_power(n) = n
             return n;
         }
@@ -98,22 +99,42 @@ impl NetDetGraph {
             return res;
         }
         if let Some(u) = self.up[idx]
-            && !seen.contains(&u) { res.insert(u); }
+            && !seen.contains(&u)
+        {
+            res.insert(u);
+        }
         for &d in &self.down[idx] {
-            if !seen.contains(&d) { res.insert(d); }
+            if !seen.contains(&d) {
+                res.insert(d);
+            }
         }
         res
     }
 
-    fn flood_from(&self, seen: &mut HashSet<usize>, start: usize, for_node: usize, _level: usize) -> HashSet<usize> {
+    fn flood_from(
+        &self,
+        seen: &mut HashSet<usize>,
+        start: usize,
+        for_node: usize,
+        _level: usize,
+    ) -> HashSet<usize> {
         seen.insert(start);
         let next_nodes = self.unseen_neighbours(seen, start);
         if start == for_node {
             return next_nodes;
         }
-        let to_fill: Vec<usize> = next_nodes.iter().copied().filter(|n| !seen.contains(n)).collect();
-        for n in &to_fill { seen.insert(*n); }
-        to_fill.into_iter().flat_map(|n| self.flood_from(seen, n, for_node, _level + 1)).collect()
+        let to_fill: Vec<usize> = next_nodes
+            .iter()
+            .copied()
+            .filter(|n| !seen.contains(n))
+            .collect();
+        for n in &to_fill {
+            seen.insert(*n);
+        }
+        to_fill
+            .into_iter()
+            .flat_map(|n| self.flood_from(seen, n, for_node, _level + 1))
+            .collect()
     }
 }
 
@@ -159,7 +180,9 @@ impl NetDet for NetDetGraph {
                     current_row.push(n);
                 }
                 n += 1;
-                if n >= self.number_nodes { break; }
+                if n >= self.number_nodes {
+                    break;
+                }
             }
             prev_row = Some(current_row.clone());
             current_row.clear();
@@ -192,7 +215,9 @@ impl NetDet for NetDetGraph {
                     self.down[parent].push(n);
                     current_row.push(n);
                 }
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 n -= 1;
             }
             prev_row = Some(current_row.clone());
@@ -235,8 +260,14 @@ impl NetDet for NetDetGraph {
     fn required_depth(&self) -> usize {
         let tree_depth = self.inv_sum_power(self.number_nodes / 2) as usize;
         let middle_row_capacity = (self.tree_order as f64).powi(tree_depth as i32) as usize;
-        let middle_nodes = self.number_nodes.saturating_sub(self.sum_power(tree_depth) * 2);
-        if middle_nodes > middle_row_capacity { tree_depth + 1 } else { tree_depth }
+        let middle_nodes = self
+            .number_nodes
+            .saturating_sub(self.sum_power(tree_depth) * 2);
+        if middle_nodes > middle_row_capacity {
+            tree_depth + 1
+        } else {
+            tree_depth
+        }
     }
 
     fn flood(&self, start_origin: usize, for_node: usize) -> HashSet<usize> {
@@ -245,8 +276,12 @@ impl NetDet for NetDetGraph {
     }
 
     fn mean_edges(&self) -> Option<f64> {
-        if self.fail { return None; }
-        if self.number_nodes == 0 { return None; }
+        if self.fail {
+            return None;
+        }
+        if self.number_nodes == 0 {
+            return None;
+        }
         let mut sum = 0usize;
         for i in 0..self.number_nodes {
             // per Kotlin: down.size + 1
@@ -256,8 +291,13 @@ impl NetDet for NetDetGraph {
     }
 
     fn variance_edges(&self) -> f64 {
-        if self.fail { return f64::INFINITY; }
-        let mean = match self.mean_edges() { Some(m) => m, None => return f64::INFINITY };
+        if self.fail {
+            return f64::INFINITY;
+        }
+        let mean = match self.mean_edges() {
+            Some(m) => m,
+            None => return f64::INFINITY,
+        };
         let mut acc = 0.0f64;
         for i in 0..self.number_nodes {
             let e = (self.down.get(i).map(|v| v.len()).unwrap_or(0) + 1) as f64;
@@ -267,7 +307,11 @@ impl NetDet for NetDetGraph {
         acc / (self.number_nodes as f64)
     }
 
-    fn failed(&self) -> bool { self.fail }
+    fn failed(&self) -> bool {
+        self.fail
+    }
 
-    fn root(&self) -> Option<usize> { self.root_node }
+    fn root(&self) -> Option<usize> {
+        self.root_node
+    }
 }

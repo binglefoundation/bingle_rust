@@ -45,13 +45,12 @@ pub mod dtls_debug_alert;
 #[path = "dtls_debug_sequence.rs"]
 pub mod dtls_debug_sequence;
 
+#[path = "dtls_client_reconnect.rs"]
+pub mod dtls_client_reconnect;
 #[path = "pki.rs"]
 pub mod pki;
 #[path = "test_handlers.rs"]
 pub mod test_handlers;
-#[path = "dtls_client_reconnect.rs"]
-pub mod dtls_client_reconnect;
-
 
 #[path = "dtls_debug_handshake.rs"]
 pub mod dtls_debug_handshake;
@@ -62,12 +61,12 @@ pub mod dtls_issuer_mapping;
 #[path = "dtls_peer_certificate_issuer_trim.rs"]
 pub mod dtls_peer_certificate_issuer_trim;
 
+#[path = "dtls_handshake_failure_retry.rs"]
+pub mod dtls_handshake_failure_retry;
 #[path = "dtls_send_signature.rs"]
 pub mod dtls_send_signature;
 #[path = "network_mux_udp_socket_close.rs"]
 pub mod network_mux_udp_socket_close;
-#[path = "dtls_handshake_failure_retry.rs"]
-pub mod dtls_handshake_failure_retry;
 
 #[path = "dtls_send_stream_lock_contention.rs"]
 pub mod dtls_send_stream_lock_contention;

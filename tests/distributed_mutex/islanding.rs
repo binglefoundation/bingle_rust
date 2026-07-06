@@ -1,11 +1,14 @@
-use std::sync::{Arc, atomic::{AtomicBool, AtomicIsize, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicIsize, Ordering},
+};
 use std::thread;
 use std::time::Duration;
 
 use rust_comms::distributed_mutex::DistributedMutex;
 pub mod common;
-use common::TestNetwork;
 use crate::util::test_util::init_test_logging;
+use common::TestNetwork;
 
 #[ntest::timeout(60000)]
 #[test]
@@ -32,10 +35,14 @@ pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
     let ta = thread::spawn(move || {
         a.acquire(|| {
             let prev = in_cs_a.fetch_add(1, Ordering::SeqCst);
-            if prev != 0 { panic!("A should enter alone"); }
+            if prev != 0 {
+                panic!("A should enter alone");
+            }
             thread::sleep(Duration::from_millis(40));
             let prev2 = in_cs_a.fetch_sub(1, Ordering::SeqCst);
-            if prev2 != 1 { panic!("A should exit from 1"); }
+            if prev2 != 1 {
+                panic!("A should exit from 1");
+            }
         });
     });
 
@@ -46,10 +53,14 @@ pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
     let tb = thread::spawn(move || {
         b.acquire(|| {
             let prev = in_cs_b.fetch_add(1, Ordering::SeqCst);
-            if prev != 0 { panic!("B should enter alone"); }
+            if prev != 0 {
+                panic!("B should enter alone");
+            }
             thread::sleep(Duration::from_millis(40));
             let prev2 = in_cs_b.fetch_sub(1, Ordering::SeqCst);
-            if prev2 != 1 { panic!("B should exit from 1"); }
+            if prev2 != 1 {
+                panic!("B should exit from 1");
+            }
         });
     });
 
@@ -66,7 +77,9 @@ pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
     let tc = thread::spawn(move || {
         c.acquire(|| {
             let prev = in_cs_c.fetch_add(1, Ordering::SeqCst);
-            if prev != 0 { violation_c.store(true, Ordering::SeqCst); }
+            if prev != 0 {
+                violation_c.store(true, Ordering::SeqCst);
+            }
             thread::sleep(Duration::from_millis(500));
             let _ = in_cs_c.fetch_sub(1, Ordering::SeqCst);
         });
@@ -77,7 +90,9 @@ pub fn modified_lamport_partitioned_networks_no_dual_hold_c_and_d() {
     let td = thread::spawn(move || {
         d.acquire(|| {
             let prev = in_cs_d.fetch_add(1, Ordering::SeqCst);
-            if prev != 0 { violation_d.store(true, Ordering::SeqCst); }
+            if prev != 0 {
+                violation_d.store(true, Ordering::SeqCst);
+            }
             thread::sleep(Duration::from_millis(500));
             let _ = in_cs_d.fetch_sub(1, Ordering::SeqCst);
         });

@@ -1,18 +1,15 @@
-use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::api::bingle_api::{StartOptions, Handle, NetworkEndpoint, BingleApi};
+use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn bingle_api_relay_check_two_nodes() {
-
-
     // 1) Pick unused ports up-front for relay and client, and compute addresses
     let relay_port = test_util::find_unused_loopback_port();
     let client_port = test_util::find_unused_loopback_port();
@@ -28,7 +25,11 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
     let relay = BingleApiImpl::new(&relay_opts);
     relay.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
@@ -38,7 +39,9 @@ pub fn bingle_api_relay_check_two_nodes() {
             Ok(Some("mock-client".to_string()))
         }
     }));
-    relay.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&relay_opts)).expect("relay start");
+    relay
+        .access_unsafe_for_tests(|r: &mut BingleApiImpl| r.start(&relay_opts))
+        .expect("relay start");
     if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {
         panic!("relay did not become Available within 30s");
     }
@@ -52,18 +55,26 @@ pub fn bingle_api_relay_check_two_nodes() {
     relay.access_unsafe_for_tests(|guard: &mut BingleApiImpl| {
         let client_addr_for_cb = client_addr.clone();
         guard.set_on_message(Some(Arc::new(move |sender_id, sender_handle, msg| {
-            tracing::info!("[test][relay on_message] sender={} handle={} msg={}", sender_id, sender_handle, msg);
-            let is_check = msg.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("Check")
+            tracing::info!(
+                "[test][relay on_message] sender={} handle={} msg={}",
+                sender_id,
+                sender_handle,
+                msg
+            );
+            let is_check = msg.get("type").and_then(|v: &serde_json::Value| v.as_str())
+                == Some("Check")
                 && msg.get("app").map(|v| v.is_null()).unwrap_or(true);
             if is_check {
                 let resp = serde_json::json!({
                     "app": null,
                     "type": "CheckResponse",
-                    "state": "available", 
+                    "state": "available",
                 });
                 let nsk = NetworkEndpoint::new_direct(client_addr_for_cb);
                 // Validate that locking succeeds and attempt to send the response.
-                let _ok = relay_for_cb.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.send_message_to_network(&nsk, &client_id, resp, None));
+                let _ok = relay_for_cb.access_unsafe_for_tests(|r: &mut BingleApiImpl| {
+                    r.send_message_to_network(&nsk, &client_id, resp, None)
+                });
             }
         })));
     });
@@ -80,7 +91,11 @@ pub fn bingle_api_relay_check_two_nodes() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
     client.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
         if user_id.is_empty() {
@@ -89,20 +104,35 @@ pub fn bingle_api_relay_check_two_nodes() {
             Ok(Some("mock-relay".to_string()))
         }
     }));
-    client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start");
+    client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts))
+        .expect("client start");
 
     // 3) Send RelayCheck from client to relay directly
     let nsk_relay = NetworkEndpoint::new_direct(relay_addr);
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let payload = serde_json::json!({ "app": null, "type": "Check" });
 
-    let response = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network_with_response(&nsk_relay, &relay_id, payload, None));
-    assert!(response.is_ok(), "client send_message_to_network should return true");
-    
+    let response = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| {
+        c.send_message_to_network_with_response(&nsk_relay, &relay_id, payload, None)
+    });
+    assert!(
+        response.is_ok(),
+        "client send_message_to_network should return true"
+    );
+
     let seen = response.unwrap();
     assert_eq!(seen.get("app"), Some(&serde_json::Value::Null));
-    assert_eq!(seen.get("type").and_then(|v: &serde_json::Value| v.as_str()), Some("CheckResponse"));
-    assert_eq!(seen.get("state").and_then(|v: &serde_json::Value| v.as_str()), Some("available"));
+    assert_eq!(
+        seen.get("type")
+            .and_then(|v: &serde_json::Value| v.as_str()),
+        Some("CheckResponse")
+    );
+    assert_eq!(
+        seen.get("state")
+            .and_then(|v: &serde_json::Value| v.as_str()),
+        Some("available")
+    );
 
     // Optional: stop nodes (best-effort)
     relay_arc.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());

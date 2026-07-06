@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-pub mod client;
 pub mod advert_record;
+pub mod client;
 
-pub use client::{DdbClient, DdbClientImpl, NullDdbClient};
 pub use advert_record::{AdvertRecord, InetSocketAddress};
+pub use client::{DdbClient, DdbClientImpl, NullDdbClient};
 
 /// DDB backend trait: minimal CRUD required by issue
 pub trait DdbBackend {
@@ -42,7 +42,11 @@ pub struct InMemoryDdbBackend {
 }
 
 impl InMemoryDdbBackend {
-    pub fn new() -> Self { Self { map: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
 }
 
 impl DdbBackend for InMemoryDdbBackend {
@@ -71,7 +75,10 @@ impl DdbBackend for InMemoryDdbBackend {
         let ids: Vec<String> = rels.iter().map(|(id, _)| id.clone()).collect();
         // Only include endpoints when all relays have one; keep order aligned with ids
         if rels.iter().all(|(_, ep)| ep.is_some()) {
-            let endpoints: Vec<InetSocketAddress> = rels.into_iter().map(|(_, ep)| ep.expect("checked" )).collect();
+            let endpoints: Vec<InetSocketAddress> = rels
+                .into_iter()
+                .map(|(_, ep)| ep.expect("checked"))
+                .collect();
             (ids, Some(endpoints))
         } else {
             (ids, None)
@@ -85,7 +92,13 @@ impl DdbBackend for InMemoryDdbBackend {
         response_tag: Option<String>,
         sender: &dyn Fn(&crate::api::bingle_api::NetworkEndpoint, &str, serde_json::Value) -> bool,
     ) {
-        tracing::info!("[InMemoryDdbBackend::handle_init] nsk={} user_id={} response_tag={:?} db_size={}", nsk, user_id, response_tag, self.map.len());
+        tracing::info!(
+            "[InMemoryDdbBackend::handle_init] nsk={} user_id={} response_tag={:?} db_size={}",
+            nsk,
+            user_id,
+            response_tag,
+            self.map.len()
+        );
         // Snapshot keys to avoid holding the map across sends
         let mut records: Vec<AdvertRecord> = self.map.values().cloned().collect();
         // Deterministic ordering for tests
@@ -93,33 +106,48 @@ impl DdbBackend for InMemoryDdbBackend {
         let db_count = records.len() as i64;
 
         // Send InitResponse with dbCount
-        let init_resp = crate::messages::types::Message::Ddb(
-            crate::messages::types::DdbMessage::InitResponse(
+        let init_resp =
+            crate::messages::types::Message::Ddb(crate::messages::types::DdbMessage::InitResponse(
                 crate::messages::types::DdbInitResponse {
                     app: "ddb".to_string(),
                     db_count,
                     response_tag: response_tag.clone(),
                     text: None,
                     data: None,
-                }
-            )
-        );
+                },
+            ));
         let init_json = crate::messages::marshal::to_json_value(&init_resp);
-        tracing::info!("[InMemoryDdbBackend::handle_init] sending InitResponse: {}", init_json);
+        tracing::info!(
+            "[InMemoryDdbBackend::handle_init] sending InitResponse: {}",
+            init_json
+        );
         let _ = sender(nsk, user_id, init_json);
 
         // Send one DumpResolve per record
         for rec in records.into_iter() {
             let dump = crate::messages::types::Message::Ddb(
                 crate::messages::types::DdbMessage::DumpResolve(
-                    crate::messages::types::DdbDumpResolve { app: "ddb".into(), record: rec, tag: None, response_tag: None, text: None, data: None }
-                )
+                    crate::messages::types::DdbDumpResolve {
+                        app: "ddb".into(),
+                        record: rec,
+                        tag: None,
+                        response_tag: None,
+                        text: None,
+                        data: None,
+                    },
+                ),
             );
             let dump_json = crate::messages::marshal::to_json_value(&dump);
-            tracing::info!("[InMemoryDdbBackend::handle_init] sending DumpResolve: {}", dump_json);
+            tracing::info!(
+                "[InMemoryDdbBackend::handle_init] sending DumpResolve: {}",
+                dump_json
+            );
             let _ = sender(nsk, user_id, dump_json);
         }
-        tracing::info!("[InMemoryDdbBackend::handle_init] done, sent {} DumpResolve messages", db_count);
+        tracing::info!(
+            "[InMemoryDdbBackend::handle_init] done, sent {} DumpResolve messages",
+            db_count
+        );
     }
 
     fn len(&self) -> usize {

@@ -6,23 +6,20 @@ use std::time::{Duration, Instant};
 use crate::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions, UserId};
 use crate::themes;
 
-use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use crate::blockchain::algo_bingle::AlgoBingle;
+use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use crate::ddb::{AdvertRecord, DdbBackend, InetSocketAddress};
-use ed25519_dalek::SigningKey;
 use crate::distributed_mutex::DistributedMutex;
 use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
-use crate::messages::{from_json_str, DefaultPrintingHandler};
-use crate::packet_transport::{
-    DtlsReliablePacketTransport,
-    PacketTransport,
-};
-use crate::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+use crate::messages::{DefaultPrintingHandler, from_json_str};
+use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
+use crate::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
 use crate::stun::stun_endpoint_finder::StunEndpointFinder;
 use crate::stun::stun_endpoint_finder_impl::StunEndpointFinderImpl;
 use crate::turn::turn_handler::TurnHandler;
+use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,10 +28,7 @@ pub const MINIMUM_MTU: usize = 1492;
 pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
 
 // Helper: count peer states (excluding self) from finder caches
-fn count_peer_states(
-    finder: &dyn RelayFinderTrait,
-    my_id: &str,
-) -> (usize, usize) {
+fn count_peer_states(finder: &dyn RelayFinderTrait, my_id: &str) -> (usize, usize) {
     let peers = finder.list_root_relays(my_id, false);
     let mut available = 0usize;
     let mut starting = 0usize;
@@ -166,8 +160,7 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
 /// Minimal Engine implementation that wires UDP mux + DTLS and routes inbound JSON messages.
 pub struct Engine {
     // Distributed mutex used to coordinate relay initialization across peer relays
-    relay_init_mutex:
-        Option<Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
+    relay_init_mutex: Option<Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>>,
     options: StartOptions,
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
     // Packet transport layer (step 1: pass-through) that owns DTLS.
@@ -196,11 +189,7 @@ pub struct Engine {
     // Current NAT type classification
     nat_type: std::sync::atomic::AtomicU8,
     // Per-connection state tracked at the Engine level (keyed by NetworkEndpointKey)
-    connections: Arc<
-        Mutex<
-            HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>,
-        >,
-    >,
+    connections: Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, ConnectionEntry>>>,
     // Pending responses map and issuer state moved from BingleApiImpl
     pending_responses: Arc<Mutex<HashMap<Uuid, Arc<(Mutex<ResponseWait>, Condvar)>>>>,
     issuer: Option<Arc<String>>,
@@ -211,13 +200,10 @@ pub struct Engine {
     // DDB client bound to the API instance (always present; may be a NullDdbClient)
     ddb_client: Arc<dyn crate::ddb::DdbClient>,
     // TURN handlers (split): client and relay variants
-    turn_handler_client:
-        Option<Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>>,
+    turn_handler_client: Option<Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl>>,
     turn_handler_relay: Option<Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl>>,
     // Application-level callback for listening state changes (set by API)
-    on_listening_cb: Arc<
-        Mutex<Option<Arc<crate::api::bingle_api::OnListeningHandler>>>,
-    >,
+    on_listening_cb: Arc<Mutex<Option<Arc<crate::api::bingle_api::OnListeningHandler>>>>,
     // When loading DDB from a peer, store the reported record count
     peer_ddb_records: Option<usize>,
     // Signon completion signal
@@ -225,7 +211,8 @@ pub struct Engine {
     // Set of endpoints we have seen (sent to)
     seen_endpoints: Arc<Mutex<std::collections::HashSet<InetSocketAddress>>>,
     // Tracks success/failure of the most recent send to each known endpoint
-    endpoint_status: Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus>>>,
+    endpoint_status:
+        Arc<Mutex<HashMap<crate::api::bingle_api::NetworkEndpointKey, EndpointStatus>>>,
     pub(crate) span: tracing::Span,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Option<Arc<dyn MessageHandler + Send + Sync>>,
@@ -299,9 +286,13 @@ impl Engine {
     /// Return the appropriate TURN handler for current role (client vs relay)
     pub fn get_approp_turn_handler(&self) -> Arc<dyn TurnHandler + Send + Sync> {
         if self.options.am_relay {
-            self.turn_handler_relay.clone().expect("Relay must have turn_handler_relay")
+            self.turn_handler_relay
+                .clone()
+                .expect("Relay must have turn_handler_relay")
         } else {
-            self.turn_handler_client.clone().expect("Non-relay must have turn_handler_client")
+            self.turn_handler_client
+                .clone()
+                .expect("Non-relay must have turn_handler_client")
         }
     }
 
@@ -321,7 +312,10 @@ impl Engine {
             }
             tracing::info!("[Engine::upsert_roots_into_backend] upsert complete");
         } else {
-            warn_theme!(themes::ENGINE, "[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert");
+            warn_theme!(
+                themes::ENGINE,
+                "[Engine::upsert_roots_into_backend] failed to lock ddb_backend for upsert"
+            );
         }
     }
 
@@ -370,9 +364,10 @@ impl Engine {
     pub fn notify_listening(&self, listening: bool) {
         let nat = self.nat_type();
         if let Ok(g) = self.on_listening_cb.lock()
-            && let Some(cb) = &*g {
-                cb(listening, nat);
-            }
+            && let Some(cb) = &*g
+        {
+            cb(listening, nat);
+        }
     }
 
     /// Create a common TURN handler for both relay and client modes
@@ -389,16 +384,19 @@ impl Engine {
                     Ok(g) => match *g {
                         Some(addr) => addr,
                         None => {
-                            tracing::error!("[Engine][TURN] no last_public_addr_shared; cannot handle TURN packet");
+                            tracing::error!(
+                                "[Engine][TURN] no last_public_addr_shared; cannot handle TURN packet"
+                            );
                             return;
                         }
                     },
                     Err(_) => {
-                        tracing::error!("[Engine][TURN] failed to lock last_public_addr_shared; cannot handle TURN packet");
+                        tracing::error!(
+                            "[Engine][TURN] failed to lock last_public_addr_shared; cannot handle TURN packet"
+                        );
                         return;
                     }
                 };
-
 
                 // Parse/unwrap the TURN ChannelData using our handler
                 if let Some(wrapped) =
@@ -407,10 +405,7 @@ impl Engine {
                     if am_relay {
                         if wrapped.is_relay_local {
                             // This is the special case where a relay (us) is sending via another relay
-                            if let Some(udp) = source
-                                .as_any()
-                                .downcast_ref::<UdpNetworkMux>(
-                            ) {
+                            if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
                                 tracing::info!(
                                     "[Engine][TURN relay] message for own relay node, re-injecting {} bytes from {}",
                                     wrapped.message.len(),
@@ -429,13 +424,8 @@ impl Engine {
                                 wrapped.network_endpoint
                             );
                             // Relay role: forward stripped payload to resolved ip_address via concrete UDP mux
-                            if let Some(udp) = source
-                                .as_any()
-                                .downcast_ref::<UdpNetworkMux>(
-                            ) {
-                                let nsk = NetworkEndpoint::new_direct(
-                                    wrapped.ip_address,
-                                );
+                            if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
+                                let nsk = NetworkEndpoint::new_direct(wrapped.ip_address);
                                 // Here we forward the TURN packet including channel number to the resolved ip_address
                                 if let Err(e) = udp.write(&nsk, packet) {
                                     tracing::warn!(
@@ -463,10 +453,7 @@ impl Engine {
                             wrapped.network_endpoint
                         );
                         // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
-                        if let Some(udp) = source
-                            .as_any()
-                            .downcast_ref::<UdpNetworkMux>(
-                        ) {
+                        if let Some(udp) = source.as_any().downcast_ref::<UdpNetworkMux>() {
                             udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
                             tracing::info!(
                                 "[Engine][TURN client] reprocessed {} bytes from {}",
@@ -506,8 +493,9 @@ pub struct EndpointStatus {
 
 impl Engine {
     pub fn new(options: &StartOptions, api: crate::api::bingle_api::BingleApiBothType) -> Self {
-        let dtls: Box<dyn Dtls + Send + Sync> =
-            Box::new(DtlsOpenSsl::new(options.handle.clone()).with_dangerous_debug(options.dangerous_debug));
+        let dtls: Box<dyn Dtls + Send + Sync> = Box::new(
+            DtlsOpenSsl::new(options.handle.clone()).with_dangerous_debug(options.dangerous_debug),
+        );
         Self::new_with_dtls(options, api, dtls)
     }
 
@@ -561,17 +549,23 @@ impl Engine {
             connections: Arc::new(Mutex::new(HashMap::new())),
             pending_responses: Arc::new(Mutex::new(HashMap::new())),
             issuer: None,
-            ddb_backend: Arc::new(Mutex::new(
-                crate::ddb::InMemoryDdbBackend::new(),
-            )),
+            ddb_backend: Arc::new(Mutex::new(crate::ddb::InMemoryDdbBackend::new())),
             router: Arc::new(crate::messages::router::Router::new(api.clone())),
             ddb_client: ddb,
-            turn_handler_client: if options.am_relay { None } else { Some(Arc::new(
-                crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new(),
-            )) },
-            turn_handler_relay: if options.am_relay {Some(Arc::new(
-                crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl::new(),
-            )) } else { None},
+            turn_handler_client: if options.am_relay {
+                None
+            } else {
+                Some(Arc::new(
+                    crate::turn::turn_client_handler_impl::TurnClientHandlerImpl::new(),
+                ))
+            },
+            turn_handler_relay: if options.am_relay {
+                Some(Arc::new(
+                    crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl::new(),
+                ))
+            } else {
+                None
+            },
             on_listening_cb: Arc::new(Mutex::new(None)),
             peer_ddb_records: None,
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
@@ -611,7 +605,6 @@ impl Engine {
         self.packet_transport.dtls()
     }
 
-
     /// Test helper: Inject a custom DDB client.
     pub fn set_ddb_client_for_tests(&mut self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         self.ddb_client = ddb;
@@ -619,10 +612,7 @@ impl Engine {
 
     /// Test helper: install a custom MessageHandler that replaces DefaultPrintingHandler
     /// during routing in `install_dtls_handler`.  Must be called before `install_dtls_handler`.
-    pub fn set_custom_message_handler(
-        &mut self,
-        handler: Arc<dyn MessageHandler + Send + Sync>,
-    ) {
+    pub fn set_custom_message_handler(&mut self, handler: Arc<dyn MessageHandler + Send + Sync>) {
         self.custom_message_handler = Some(handler);
     }
 
@@ -648,9 +638,12 @@ impl Engine {
         let msg = match from_json_str(&String::from_utf8_lossy(data)) {
             Ok(m) => m,
             Err(_) => {
-                tracing::warn!("[Engine::receive_message_for_tests] failed to parse message: {:?}", String::from_utf8_lossy(data));
+                tracing::warn!(
+                    "[Engine::receive_message_for_tests] failed to parse message: {:?}",
+                    String::from_utf8_lossy(data)
+                );
                 return;
-            },
+            }
         };
         let issuer = self.issuer.as_ref().map(|i| i.as_str()).unwrap_or("test");
         self.router
@@ -790,7 +783,10 @@ impl Engine {
                 None
             }
         } else {
-            tracing::warn!("[Engine::wait_for_response] no pending response for tag={:?}", tag);
+            tracing::warn!(
+                "[Engine::wait_for_response] no pending response for tag={:?}",
+                tag
+            );
             None
         }
     }
@@ -823,7 +819,10 @@ impl Engine {
         let (lock, cvar) = &*self.signon_complete;
         let mut complete = lock.lock().unwrap();
         let start = Instant::now();
-        tracing::info!("[Engine::await_signon_complete] awaiting signon completion with timeout {:?}", timeout);
+        tracing::info!(
+            "[Engine::await_signon_complete] awaiting signon completion with timeout {:?}",
+            timeout
+        );
         while !*complete {
             let remaining = timeout.saturating_sub(start.elapsed());
             if remaining.is_zero() {
@@ -898,7 +897,12 @@ impl Engine {
 
     /// Testing helper: get copy of seen endpoints.
     pub fn seen_endpoints_for_tests(&self) -> Vec<InetSocketAddress> {
-        self.seen_endpoints.lock().unwrap().iter().cloned().collect()
+        self.seen_endpoints
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Testing helper: get a copy of the send_status map.
@@ -919,33 +923,42 @@ impl Engine {
 
     /// Send bytes to a peer and track the connection's last_seen.
     /// If this is the first interaction with the peer, create a connection entry on successful send.
-    pub fn send_to_peer(
-        &self,
-        to: &NetworkEndpoint,
-        data: &[u8],
-    ) -> Result<(), String> {
+    pub fn send_to_peer(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<(), String> {
         match std::str::from_utf8(data) {
             Ok(s) => tracing::info!("[Engine::send_to_peer] to={} data={}", to, s),
-            Err(_) => tracing::info!("[Engine::send_to_peer] to={} data=<{} bytes>", to, data.len()),
+            Err(_) => tracing::info!(
+                "[Engine::send_to_peer] to={} data=<{} bytes>",
+                to,
+                data.len()
+            ),
         }
         // Guard: reject incomplete relay endpoints (missing channel); fully-configured
         // relay endpoints (with channel+address) are handled by the TURN layer in DTLS.
         if to.is_relay() && to.relay_channel().is_none() {
-            return Err(format!("[Engine::send_to_peer] rejecting incomplete relay endpoint (no channel): {}", to));
+            return Err(format!(
+                "[Engine::send_to_peer] rejecting incomplete relay endpoint (no channel): {}",
+                to
+            ));
         }
         // Guard: do not send to ourselves
         if let Some(target_addr) = to.inet_socket_address()
-            && self.last_public_addr() == Some(target_addr) {
-                return Err(format!("[Engine::send_to_peer] rejecting send to self: {}", target_addr));
-            }
+            && self.last_public_addr() == Some(target_addr)
+        {
+            return Err(format!(
+                "[Engine::send_to_peer] rejecting send to self: {}",
+                target_addr
+            ));
+        }
         // Guard: skip send if the peer recently failed (within SEND_FAIL_BACKOFF).
         // Placed after structural guards so that get_key() is only called for valid endpoints.
         if let Some(key) = to.get_key()
             && let Ok(status_map) = self.endpoint_status.lock()
-                && let Some(status) = status_map.get(&key)
-                    && !status.is_working && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF {
-                        return Err("Sending is failing".to_string());
-                    }
+            && let Some(status) = status_map.get(&key)
+            && !status.is_working
+            && status.last_checked_timestamp.elapsed() < SEND_FAIL_BACKOFF
+        {
+            return Err("Sending is failing".to_string());
+        }
         // Perform the packet transport send using the configured transport (avoid pre-locking connections to
         // prevent rare OS mutex EINVAL during early send paths). We update the connection map only
         // after a successful send.
@@ -954,7 +967,11 @@ impl Engine {
         if let Some(key) = to.get_key() {
             match &res {
                 Ok(_) => tracing::info!("[Engine::send_to_peer] sent to key={:?}", key),
-                Err(e) => tracing::warn!("[Engine::send_to_peer] send failed key={:?} error={}", key, e),
+                Err(e) => tracing::warn!(
+                    "[Engine::send_to_peer] send failed key={:?} error={}",
+                    key,
+                    e
+                ),
             }
             if let Ok(mut status_map) = self.endpoint_status.lock() {
                 status_map.insert(
@@ -971,9 +988,10 @@ impl Engine {
         if res.is_ok() {
             // Track seen endpoints
             if let Some(addr) = to.inet_socket_address()
-                && let Ok(mut seen) = self.seen_endpoints.lock() {
-                    seen.insert(addr.into());
-                }
+                && let Ok(mut seen) = self.seen_endpoints.lock()
+            {
+                seen.insert(addr.into());
+            }
             // Track connection using NetworkEndpointKey derived from `to`
             if let Some(key) = to.get_key() {
                 if let Ok(mut m) = self.connections.lock() {
@@ -988,12 +1006,10 @@ impl Engine {
                             });
                         }
                     }
-                }
-                else {
+                } else {
                     tracing::warn!("[Engine::send_to_peer] could not lock connections");
                 }
-            }
-            else {
+            } else {
                 tracing::warn!("[Engine::send_to_peer] could not get key from NetworkEndpoint");
             }
         }
@@ -1001,7 +1017,12 @@ impl Engine {
     }
 
     /// Send a message to all known relays (except ourselves and the message originator).
-    pub fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb: &dyn DdbBackend) {
+    pub fn ripple_message(
+        &self,
+        message: serde_json::Value,
+        originator_id: String,
+        ddb: &dyn DdbBackend,
+    ) {
         tracing::info!("[Engine::ripple_message] originator={}", originator_id);
         let api = match self.bingle_api.upgrade() {
             Some(a) => a,
@@ -1011,7 +1032,9 @@ impl Engine {
             }
         };
         let my_id = match self.issuer() {
-            Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
+            Ok(iss) => iss
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string(),
             Err(_) => {
                 tracing::warn!("[Engine::ripple_message] issuer not set, cannot ripple");
                 return;
@@ -1025,11 +1048,20 @@ impl Engine {
         if let Some(endpoints) = relay_endpoints_opt {
             for (id, endpoint) in relay_ids.into_iter().zip(endpoints) {
                 if id == my_id || id == originator_id {
-                    tracing::debug!("[Engine::ripple_message][endpoints known] skipping relay {} my_id={}, originator_id={}", id, my_id, originator_id);
+                    tracing::debug!(
+                        "[Engine::ripple_message][endpoints known] skipping relay {} my_id={}, originator_id={}",
+                        id,
+                        my_id,
+                        originator_id
+                    );
                     continue;
                 }
                 if let Ok(addr) = SocketAddr::try_from(endpoint) {
-                    tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
+                    tracing::info!(
+                        "[Engine::ripple_message] sending to relay={} at {:?}",
+                        id,
+                        addr
+                    );
                     let nsk = NetworkEndpoint::new_direct(addr);
                     let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
                 }
@@ -1037,16 +1069,26 @@ impl Engine {
         } else {
             for id in relay_ids {
                 if id == my_id || id == originator_id {
-                    tracing::debug!("[Engine::ripple_message][no endpoints known] skipping relay {} my_id={}, originator_id={}", id, my_id, originator_id);
+                    tracing::debug!(
+                        "[Engine::ripple_message][no endpoints known] skipping relay {} my_id={}, originator_id={}",
+                        id,
+                        my_id,
+                        originator_id
+                    );
                     continue;
                 }
                 if let Some(rec) = ddb.lookup(&id)
                     && let Some(endpoint) = rec.endpoint
-                        && let Ok(addr) = SocketAddr::try_from(endpoint) {
-                            tracing::info!("[Engine::ripple_message] sending to relay={} at {:?}", id, addr);
-                            let nsk = NetworkEndpoint::new_direct(addr);
-                            let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
-                        }
+                    && let Ok(addr) = SocketAddr::try_from(endpoint)
+                {
+                    tracing::info!(
+                        "[Engine::ripple_message] sending to relay={} at {:?}",
+                        id,
+                        addr
+                    );
+                    let nsk = NetworkEndpoint::new_direct(addr);
+                    let _ = api.send_message_to_network(&nsk, &id, message.clone(), None);
+                }
             }
         }
     }
@@ -1059,7 +1101,9 @@ impl Engine {
         let _guard = span.enter();
         tracing::info!("[Engine::list_all_relays] include_self={}", include_self);
         let my_id = match self.issuer() {
-            Ok(iss) => iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string(),
+            Ok(iss) => iss
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string(),
             Err(e) => {
                 tracing::warn!("[Engine::list_all_relays] issuer unavailable: {}", e);
                 return Vec::new();
@@ -1097,7 +1141,10 @@ impl Engine {
                 let s_with_cipher = if let Some(cs) = cipher_suite_opt {
                     if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(s) {
                         if let Some(obj) = v.as_object_mut() {
-                            obj.insert("cipher_suite".to_string(), serde_json::Value::String(cs.to_string()));
+                            obj.insert(
+                                "cipher_suite".to_string(),
+                                serde_json::Value::String(cs.to_string()),
+                            );
                         }
                         serde_json::to_string(&v).unwrap_or_else(|_| s.to_string())
                     } else {
@@ -1116,8 +1163,14 @@ impl Engine {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("[Engine::route_incoming] not valid json {} {:?}", s_with_cipher, e);
-                        DefaultPrintingHandler.on_unimplemented(&Message::Unknown(serde_json::Value::String(s_with_cipher)));
+                        tracing::warn!(
+                            "[Engine::route_incoming] not valid json {} {:?}",
+                            s_with_cipher,
+                            e
+                        );
+                        DefaultPrintingHandler.on_unimplemented(&Message::Unknown(
+                            serde_json::Value::String(s_with_cipher),
+                        ));
                     }
                 }
             }
@@ -1363,7 +1416,9 @@ impl Engine {
         let finder_arc = match self.relay_finder.clone() {
             Some(f) => f,
             None => {
-                tracing::error!("[Engine::initialize_relay] relay_finder not initialized; cannot proceed");
+                tracing::error!(
+                    "[Engine::initialize_relay] relay_finder not initialized; cannot proceed"
+                );
                 return;
             }
         };
@@ -1422,7 +1477,11 @@ impl Engine {
             "[Engine::initialize_relay] discovered {:?} relays (including self)",
             all_relays
         );
-        let mut ids: Vec<String> = all_relays.iter().filter(|r| r.state != Some(RelayState::Off)).map(|r| r.id().to_string()).collect();
+        let mut ids: Vec<String> = all_relays
+            .iter()
+            .filter(|r| r.state != Some(RelayState::Off))
+            .map(|r| r.id().to_string())
+            .collect();
         ids.sort();
         ids.dedup();
         tracing::info!(
@@ -1436,8 +1495,10 @@ impl Engine {
         let send_common = move |dest_id: &str, json_val: serde_json::Value| {
             let uid = dest_id.to_string();
 
-            let ok =
-                api_weak.access(|a| a.send_message_to_id(&uid, json_val.clone(), None).unwrap_or(false));
+            let ok = api_weak.access(|a| {
+                a.send_message_to_id(&uid, json_val.clone(), None)
+                    .unwrap_or(false)
+            });
             if !ok {
                 tracing::warn!(
                     "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
@@ -1450,9 +1511,8 @@ impl Engine {
         let send_request = {
             let send_common = send_common.clone();
             move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
-                let msg = Message::Mutex(
-                    crate::messages::types::MutexMessage::Request(req.clone()),
-                );
+                let msg =
+                    Message::Mutex(crate::messages::types::MutexMessage::Request(req.clone()));
                 let json_val = crate::messages::marshal::to_json_value(&msg);
                 send_common(dest_id, json_val);
             }
@@ -1460,9 +1520,8 @@ impl Engine {
         let send_reply = {
             let send_common = send_common.clone();
             move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
-                let msg = Message::Mutex(
-                    crate::messages::types::MutexMessage::Response(resp.clone()),
-                );
+                let msg =
+                    Message::Mutex(crate::messages::types::MutexMessage::Response(resp.clone()));
                 let json_val = crate::messages::marshal::to_json_value(&msg);
                 send_common(dest_id, json_val);
             }
@@ -1470,16 +1529,13 @@ impl Engine {
         let send_release = {
             let send_common = send_common.clone();
             move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
-                let msg = Message::Mutex(
-                    crate::messages::types::MutexMessage::Release(rel.clone()),
-                );
+                let msg =
+                    Message::Mutex(crate::messages::types::MutexMessage::Release(rel.clone()));
                 let json_val = crate::messages::marshal::to_json_value(&msg);
                 send_common(dest_id, json_val);
             }
         };
-        tracing::info!(
-            "[Engine::initialize_relay] prepared distributed mutex messaging closures"
-        );
+        tracing::info!("[Engine::initialize_relay] prepared distributed mutex messaging closures");
 
         // Create and store the distributed mutex
         let mtx = crate::distributed_mutex::ModifiedLamportDistributedMutex::new(
@@ -1604,7 +1660,6 @@ impl Engine {
         tracing::info!("[Engine::initialize_relay] complete for {:?}", self.issuer);
     }
 
-
     fn start_with_addr(
         &mut self,
         _options: &StartOptions,
@@ -1628,8 +1683,8 @@ impl Engine {
             bind_all
         );
 
-        let mut mux0 =
-            UdpNetworkMux::bind(bind_all).map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
+        let mut mux0 = UdpNetworkMux::bind(bind_all)
+            .map_err(|e| BingleError::Other(format!("Failed to bind UDP mux: {}", e)))?;
         // Determine the concrete local address after bind (handles port 0)
         let _local_addr: SocketAddr = mux0
             .local_addr()
@@ -1649,7 +1704,8 @@ impl Engine {
         let mux = Arc::new(mux0);
 
         // Start the UDP mux background loop first
-        mux.start().map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
+        mux.start()
+            .map_err(|e| BingleError::Other(format!("Failed to start UDP mux: {}", e)))?;
 
         // Start DTLS accept loop with the mux
         self.packet_transport
@@ -1675,25 +1731,30 @@ impl Engine {
             };
             let cache = api.get_accounts_cache();
             let discover = crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache);
-            let finder = RelayFinder::new(
-                self.bingle_api.clone(),
-                discover,
-            );
+            let finder = RelayFinder::new(self.bingle_api.clone(), discover);
             tracing::info!("[Engine::start_with_addr] RelayFinder constructed");
             self.relay_finder = Some(Arc::new(finder));
         }
 
         self.set_nat_type(NatType::FullCone);
-        let static_addr = self.options.static_ip.expect("start_with_address when no static address");
+        let static_addr = self
+            .options
+            .static_ip
+            .expect("start_with_address when no static address");
 
         match self.bingle_api.upgrade() {
             Some(api) => {
                 if let Err(e) = api.ddb_register_ip(static_addr, false) {
-                    tracing::warn!("[Engine::start_with_addr] initial ddb_register_ip(false) failed: {}", e);
+                    tracing::warn!(
+                        "[Engine::start_with_addr] initial ddb_register_ip(false) failed: {}",
+                        e
+                    );
                 }
             }
             None => {
-                tracing::error!("[Engine::start_with_addr] bingle_api upgrade failed for initial ddb_register_ip");
+                tracing::error!(
+                    "[Engine::start_with_addr] bingle_api upgrade failed for initial ddb_register_ip"
+                );
             }
         }
 
@@ -1705,7 +1766,9 @@ impl Engine {
                 std::thread::spawn(move || {
                     let _guard = span.enter();
                     let Some(arc_self) = weak_self.upgrade() else {
-                        tracing::warn!("[Engine::start_with_addr] self dropped, skipping background process");
+                        tracing::warn!(
+                            "[Engine::start_with_addr] self dropped, skipping background process"
+                        );
                         return;
                     };
                     let eng = unsafe { &mut *(Arc::as_ptr(&arc_self) as *mut Engine) };
@@ -1714,23 +1777,40 @@ impl Engine {
 
                     match api_weak.upgrade() {
                         Some(api) => {
-                            tracing::info!("[Engine::start_with_addr] second ddb_register_ip {}, true", static_addr);
+                            tracing::info!(
+                                "[Engine::start_with_addr] second ddb_register_ip {}, true",
+                                static_addr
+                            );
                             if let Err(e) = api.ddb_register_ip(static_addr, true) {
-                                tracing::warn!("[Engine::start_with_addr] second ddb_register_ip({}, true) failed: {}", static_addr, e);
+                                tracing::warn!(
+                                    "[Engine::start_with_addr] second ddb_register_ip({}, true) failed: {}",
+                                    static_addr,
+                                    e
+                                );
                             } else {
-                                tracing::info!("[Engine::start_with_addr] relay DDB registration successful: {}", static_addr);
+                                tracing::info!(
+                                    "[Engine::start_with_addr] relay DDB registration successful: {}",
+                                    static_addr
+                                );
                             }
                             api.set_state(EngineState::Registered);
                             api.notify_listening(true, NatType::FullCone);
                         }
                         None => {
-                            tracing::error!("[Engine::start_with_addr] bingle_api upgrade failed in background thread");
+                            tracing::error!(
+                                "[Engine::start_with_addr] bingle_api upgrade failed in background thread"
+                            );
                         }
                     }
                 });
             } else {
-                tracing::warn!("[Engine::start_with_addr] app_id not configured; skipping relay discovery and marking Available directly");
-                self.set_relay_state(RelayState::Available, "start_with_addr: no app_id; skipping discovery");
+                tracing::warn!(
+                    "[Engine::start_with_addr] app_id not configured; skipping relay discovery and marking Available directly"
+                );
+                self.set_relay_state(
+                    RelayState::Available,
+                    "start_with_addr: no app_id; skipping discovery",
+                );
                 self.notify_listening(true);
                 self.set_state_internal(EngineState::Registered);
             }
@@ -1795,9 +1875,7 @@ impl Engine {
         // the same relay on the new mapping so inbound relayed traffic keeps reaching us. The
         // address-change reset above set state to TrianglePing, which would otherwise cause the
         // guard below to early-return and leave us permanently stuck without re-registering.
-        if addr_changed
-            && let Some(relay) = self.last_registered_relay.clone()
-        {
+        if addr_changed && let Some(relay) = self.last_registered_relay.clone() {
             tracing::info!(
                 "[Engine] public address changed; re-registering with known relay {} (id={})",
                 relay.address(),
@@ -1845,7 +1923,9 @@ impl Engine {
                     let api = match self.bingle_api.upgrade() {
                         Some(a) => a,
                         None => {
-                            tracing::error!("[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache");
+                            tracing::error!(
+                                "[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache"
+                            );
                             return;
                         }
                     };
@@ -1857,10 +1937,7 @@ impl Engine {
                 }
             };
 
-            let finder = RelayFinder::new(
-                api.clone(),
-                discover,
-            );
+            let finder = RelayFinder::new(api.clone(), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
             let my_id: String = if let Some(iss) = self.issuer.as_deref() {
@@ -1878,7 +1955,9 @@ impl Engine {
                     roots.len()
                 );
                 self.upsert_roots_into_backend(&roots);
-                tracing::info!("[Engine::stun_consistent_process] upserted root relays into backend");
+                tracing::info!(
+                    "[Engine::stun_consistent_process] upserted root relays into backend"
+                );
             }
 
             let relay = finder.find_relay(&my_id);
@@ -1893,9 +1972,10 @@ impl Engine {
                 // Reset the STUN finder state to None so that future STUN responses can
                 // re-trigger the state change handler and retry relay discovery.
                 if let Some(stun_arc) = &self.stun
-                    && let Ok(mut finder) = stun_arc.lock() {
-                        finder.reset_state();
-                    }
+                    && let Ok(mut finder) = stun_arc.lock()
+                {
+                    finder.reset_state();
+                }
                 return;
             }
             self.relay_finder = Some(Arc::new(finder));
@@ -1905,12 +1985,18 @@ impl Engine {
         if let Some(target) = relay_target {
             let to_addr = target.address();
             let checking_ep = public_addr.unwrap_or(to_addr);
-            let seen = self.seen_endpoints.lock().unwrap().iter().cloned().collect();
+            let seen = self
+                .seen_endpoints
+                .lock()
+                .unwrap()
+                .iter()
+                .cloned()
+                .collect();
             let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 {
                 app: None,
                 checking_endpoint: checking_ep.into(),
                 do_not_use_endpoints: seen,
-                tag: None
+                tag: None,
             }));
             let nsk = NetworkEndpoint::new_direct(to_addr);
             // Build JSON value for the message
@@ -1944,9 +2030,10 @@ impl Engine {
             // Reset the STUN finder state to None so that future STUN responses can
             // re-trigger the state change handler and retry relay discovery.
             if let Some(stun_arc) = &self.stun
-                && let Ok(mut finder) = stun_arc.lock() {
-                    finder.reset_state();
-                }
+                && let Ok(mut finder) = stun_arc.lock()
+            {
+                finder.reset_state();
+            }
         }
     }
 
@@ -1984,7 +2071,8 @@ impl Engine {
 
         // Resolve my_id from issuer (strip suffix) or options handle.
         let my_id: String = if let Some(iss) = self.issuer.as_deref() {
-            iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string()
+            iss.trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string()
         } else {
             self.options.handle.clone()
         };
@@ -1996,25 +2084,34 @@ impl Engine {
             match finder.find_relay(&my_id) {
                 Ok(info) => info,
                 Err(e) => {
-                    tracing::warn!("[Engine::register_with_relay] find_relay (cached finder) failed: {}", e);
+                    tracing::warn!(
+                        "[Engine::register_with_relay] find_relay (cached finder) failed: {}",
+                        e
+                    );
                     return;
                 }
             }
         } else {
             // Build a fresh finder using the indexer — requires app_id.
-            let app_id = match self.options.app_id
-                .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()))
-            {
+            let app_id = match self.options.app_id.or_else(|| {
+                std::env::var("BINGLE_APP_ID")
+                    .ok()
+                    .and_then(|s| s.parse::<u64>().ok())
+            }) {
                 Some(id) => id,
                 None => {
-                    tracing::warn!("[Engine::register_with_relay] app_id missing; cannot discover relay");
+                    tracing::warn!(
+                        "[Engine::register_with_relay] app_id missing; cannot discover relay"
+                    );
                     return;
                 }
             };
             let api = match self.bingle_api.upgrade() {
                 Some(a) => a,
                 None => {
-                    tracing::error!("[Engine::register_with_relay] bingle_api upgrade failed for accounts cache");
+                    tracing::error!(
+                        "[Engine::register_with_relay] bingle_api upgrade failed for accounts cache"
+                    );
                     return;
                 }
             };
@@ -2034,7 +2131,11 @@ impl Engine {
             }
         };
 
-        tracing::info!("[Engine::register_with_relay] chosen relay {} (id={})", relay_info.address(), relay_info.id());
+        tracing::info!(
+            "[Engine::register_with_relay] chosen relay {} (id={})",
+            relay_info.address(),
+            relay_info.id()
+        );
 
         // Upgrade the API weak reference.
         let api = match self.bingle_api.upgrade() {
@@ -2046,7 +2147,10 @@ impl Engine {
         };
 
         // Send Relay::Listen and expect a ListenResponse.
-        let listen = crate::messages::types::RelayListen { app: None, tag: None };
+        let listen = crate::messages::types::RelayListen {
+            app: None,
+            tag: None,
+        };
         let msg = Message::Relay(RelayMessage::Listen(listen));
         let json = crate::messages::marshal::to_json_value(&msg);
         let nsk = NetworkEndpoint::new_direct(relay_info.address());
@@ -2055,11 +2159,19 @@ impl Engine {
             Ok(resp) => {
                 let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
                 if !ty_ok {
-                    tracing::warn!("[Engine::register_with_relay] unexpected response to Listen: {}", resp);
+                    tracing::warn!(
+                        "[Engine::register_with_relay] unexpected response to Listen: {}",
+                        resp
+                    );
                     return;
                 }
-                tracing::info!("[Engine::register_with_relay] Relay ListenResponse received; registering relay listener");
-                api.turn_client_handle_listen_response(relay_info.address(), relay_info.id().to_string());
+                tracing::info!(
+                    "[Engine::register_with_relay] Relay ListenResponse received; registering relay listener"
+                );
+                api.turn_client_handle_listen_response(
+                    relay_info.address(),
+                    relay_info.id().to_string(),
+                );
             }
             Err(e) => {
                 tracing::warn!("[Engine::register_with_relay] Listen request failed: {}", e);
@@ -2069,9 +2181,15 @@ impl Engine {
 
         // Register relay association in DDB and mark registered.
         if let Err(e) = api.ddb_register_relay(relay_info.id().to_string(), None) {
-            tracing::warn!("[Engine::register_with_relay] ddb_register_relay failed: {}", e);
+            tracing::warn!(
+                "[Engine::register_with_relay] ddb_register_relay failed: {}",
+                e
+            );
         } else {
-            tracing::info!("[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}", relay_info.id());
+            tracing::info!(
+                "[Engine::register_with_relay] ddb_register_relay succeeded for relay_id={}",
+                relay_info.id()
+            );
             api.set_state(EngineState::Registered);
             api.notify_listening(true, NatType::Restricted);
             // Remember the relay so we can re-register with it directly if our public endpoint
@@ -2125,7 +2243,9 @@ impl Engine {
     /// servers become reachable again.
     pub(crate) fn on_stun_none(&mut self) {
         use std::sync::atomic::Ordering;
-        tracing::info!("[Engine] on_stun_none: STUN servers silent for timeout period; resetting to StunIdentify");
+        tracing::info!(
+            "[Engine] on_stun_none: STUN servers silent for timeout period; resetting to StunIdentify"
+        );
         self.stop_relay_keep_alive();
         self.set_nat_type(NatType::Unknown);
         // Clear registered/endpoint_ready/nat_restricted flags so state() returns StunIdentify.
@@ -2205,30 +2325,43 @@ impl Engine {
         self.stop_relay_keep_alive();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
-        self.packet_transport.dtls_mut().stop().unwrap_or_else(|_| panic!("DTLS stop failed in Engine::stop {}:{}",
-            self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
-            last_addr
-                .map(|addr| addr.to_string())
-                .unwrap_or_else(|| "None".to_string())));
+        self.packet_transport.dtls_mut().stop().unwrap_or_else(|_| {
+            panic!(
+                "DTLS stop failed in Engine::stop {}:{}",
+                self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),
+                last_addr
+                    .map(|addr| addr.to_string())
+                    .unwrap_or_else(|| "None".to_string())
+            )
+        });
 
         if let Some(mux) = &self.mux {
             mux.stop();
-        }
-        else {
-            tracing::warn!("[Engine::stop] mux is not running at stop time {:?}:{:?}", self.issuer, last_addr);
+        } else {
+            tracing::warn!(
+                "[Engine::stop] mux is not running at stop time {:?}:{:?}",
+                self.issuer,
+                last_addr
+            );
         }
         if let Some(stun_arc) = &self.stun {
             tracing::info!("[Engine::stop] locking STUN finder");
             if let Ok(mut finder) = stun_arc.lock() {
                 tracing::info!("[Engine::stop] stopping STUN finder");
                 finder.stop();
+            } else {
+                tracing::error!(
+                    "[Engine::stop] STUN finder lock failed {:?}:{:?}",
+                    self.issuer,
+                    last_addr
+                );
             }
-            else {
-                tracing::error!("[Engine::stop] STUN finder lock failed {:?}:{:?}", self.issuer, last_addr);
-            }
-        }
-        else {
-            tracing::warn!("[Engine::stop] STUN finder is not running at stop time {:?}:{:?}", self.issuer, last_addr);
+        } else {
+            tracing::warn!(
+                "[Engine::stop] STUN finder is not running at stop time {:?}:{:?}",
+                self.issuer,
+                last_addr
+            );
         }
         self.mux = None;
         self.stun = None;
@@ -2242,9 +2375,12 @@ impl Engine {
         // last_public_addr too means the first STUN-consistent after restart is treated as a
         // fresh identification (addr_changed == false) rather than an address change.
         self.state = EngineState::StunIdentify;
-        self.registered.store(false, std::sync::atomic::Ordering::SeqCst);
-        self.endpoint_ready.store(false, std::sync::atomic::Ordering::SeqCst);
-        self.nat_restricted.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.registered
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.endpoint_ready
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.nat_restricted
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         self.set_nat_type(NatType::Unknown);
         self.set_last_public_addr(None);
         self.last_registered_relay = None;
@@ -2278,7 +2414,10 @@ impl Engine {
 
     pub fn ddb_upsert_record(&self, record: AdvertRecord) {
         if !record.verify() {
-            tracing::warn!("[Engine::ddb_upsert_record] signature verification failed for record id={}", record.id);
+            tracing::warn!(
+                "[Engine::ddb_upsert_record] signature verification failed for record id={}",
+                record.id
+            );
             return;
         }
 
@@ -2286,21 +2425,30 @@ impl Engine {
             let api = match self.bingle_api.upgrade() {
                 Some(a) => a,
                 None => {
-                    tracing::warn!("[Engine::ddb_upsert_record] BingleApi not available; rejecting relay record id={}", record.id);
+                    tracing::warn!(
+                        "[Engine::ddb_upsert_record] BingleApi not available; rejecting relay record id={}",
+                        record.id
+                    );
                     return;
                 }
             };
             let app_id = match api.get_app_id() {
                 Some(id) => id,
                 None => {
-                    tracing::warn!("[Engine::ddb_upsert_record] app_id not available; rejecting relay record id={}", record.id);
+                    tracing::warn!(
+                        "[Engine::ddb_upsert_record] app_id not available; rejecting relay record id={}",
+                        record.id
+                    );
                     return;
                 }
             };
             let config = match api.get_algo_provider_config() {
                 Some(cfg) => cfg,
                 None => {
-                    tracing::warn!("[Engine::ddb_upsert_record] algo_provider_config not available; rejecting relay record id={}", record.id);
+                    tracing::warn!(
+                        "[Engine::ddb_upsert_record] algo_provider_config not available; rejecting relay record id={}",
+                        record.id
+                    );
                     return;
                 }
             };
@@ -2314,18 +2462,32 @@ impl Engine {
 
             match algo_bingle.check_allow_relay(app_id, &record.id) {
                 Ok(Some(true)) => {
-                    tracing::info!("[Engine::ddb_upsert_record] blockchain verified allow_relay for id={}", record.id);
+                    tracing::info!(
+                        "[Engine::ddb_upsert_record] blockchain verified allow_relay for id={}",
+                        record.id
+                    );
                 }
                 Ok(Some(false)) => {
-                    tracing::warn!("[Engine::ddb_upsert_record] blockchain check FAILED: allow_relay is false for id={}", record.id);
+                    tracing::warn!(
+                        "[Engine::ddb_upsert_record] blockchain check FAILED: allow_relay is false for id={}",
+                        record.id
+                    );
                     return;
                 }
                 Ok(None) => {
-                    tracing::warn!("[Engine::ddb_upsert_record] blockchain check FAILED: id={} not opted-in to app {}", record.id, app_id);
+                    tracing::warn!(
+                        "[Engine::ddb_upsert_record] blockchain check FAILED: id={} not opted-in to app {}",
+                        record.id,
+                        app_id
+                    );
                     return;
                 }
                 Err(e) => {
-                    tracing::warn!("[Engine::ddb_upsert_record] blockchain check ERROR for id={}: {}", record.id, e);
+                    tracing::warn!(
+                        "[Engine::ddb_upsert_record] blockchain check ERROR for id={}: {}",
+                        record.id,
+                        e
+                    );
                     return;
                 }
             }
@@ -2346,7 +2508,10 @@ impl Engine {
         if let Some(finder) = &self.relay_finder {
             finder.remove_relay(relay_id);
         } else {
-            tracing::warn!("[Engine::relay_finder_remove_relay] relay_finder not initialized, cannot remove relay {}", relay_id);
+            tracing::warn!(
+                "[Engine::relay_finder_remove_relay] relay_finder not initialized, cannot remove relay {}",
+                relay_id
+            );
         }
     }
 
@@ -2354,7 +2519,9 @@ impl Engine {
         if let Some(finder) = &self.relay_finder {
             finder.clear_state_cache();
         } else {
-            tracing::warn!("[Engine::relay_finder_clear_state_cache] relay_finder not initialized, cannot clear state cache");
+            tracing::warn!(
+                "[Engine::relay_finder_clear_state_cache] relay_finder not initialized, cannot clear state cache"
+            );
         }
     }
 
@@ -2404,10 +2571,10 @@ impl Engine {
 
     /// Test helper: the (relay_id, relay_addr) the running keep-alive targets, if any.
     pub fn relay_keep_alive_target_for_tests(&self) -> Option<(String, SocketAddr)> {
-        self.relay_keep_alive
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|s| (s.relay_id().to_string(), s.relay_addr())))
+        self.relay_keep_alive.lock().ok().and_then(|g| {
+            g.as_ref()
+                .map(|s| (s.relay_id().to_string(), s.relay_addr()))
+        })
     }
 
     pub fn test_force_stun_blocked(&mut self) {
@@ -2435,14 +2602,14 @@ impl Engine {
         relays: Vec<RelayInfo>,
     ) {
         if let Some(r) = relays.first() {
-            tracing::info!("[Engine::test_stun_consistent_process_with_relays] relay found: {}", r.address());
+            tracing::info!(
+                "[Engine::test_stun_consistent_process_with_relays] relay found: {}",
+                r.address()
+            );
             let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> =
                 Arc::new(move || relays.clone());
             let api = self.bingle_api.clone();
-            let finder = RelayFinder::new(
-                api,
-                discover,
-            );
+            let finder = RelayFinder::new(api, discover);
             self.relay_finder = Some(Arc::new(finder));
             self.set_last_public_addr(Some(addr));
             let prev = self.state;
@@ -2450,7 +2617,9 @@ impl Engine {
             tracing::info!("[Engine] test state change: {:?} -> TrianglePing", prev);
             self.notify_listening(true);
         } else {
-            tracing::warn!("[Engine::test_stun_consistent_process_with_relays] no relay found; setting NoConnection");
+            tracing::warn!(
+                "[Engine::test_stun_consistent_process_with_relays] no relay found; setting NoConnection"
+            );
             self.set_nat_type(NatType::NoConnection);
             self.state = EngineState::StunIdentify;
             self.notify_listening(false);
@@ -2506,30 +2675,49 @@ impl Engine {
     pub fn turn_client_handler_for_tests(
         &self,
     ) -> Arc<crate::turn::turn_client_handler_impl::TurnClientHandlerImpl> {
-        self.turn_handler_client.clone().expect("In turn_client_handler_for_tests must have turn_handler_client")
+        self.turn_handler_client
+            .clone()
+            .expect("In turn_client_handler_for_tests must have turn_handler_client")
     }
     pub fn turn_relay_handler_for_tests(
         &self,
     ) -> Arc<crate::turn::turn_relay_handler_impl::TurnRelayHandlerImpl> {
-        self.turn_handler_relay.clone().expect("In turn_relay_handler_for_tests must have turn_handler_relay")
+        self.turn_handler_relay
+            .clone()
+            .expect("In turn_relay_handler_for_tests must have turn_handler_relay")
     }
 }
 
 impl Engine {
     /// Relay-side: register a listener relay id -> address mapping (non-test API)
     pub fn turn_relay_handle_listen(&self, relay_id: &str, relay_addr: &SocketAddr) -> bool {
-        self.turn_handler_relay.clone().expect("In turn_relay_handle_listen must have turn_handler_relay").handle_listen(relay_id, relay_addr)
+        self.turn_handler_relay
+            .clone()
+            .expect("In turn_relay_handle_listen must have turn_handler_relay")
+            .handle_listen(relay_id, relay_addr)
     }
 
     /// Relay-side: lookup address by id (non-test API)
     pub fn turn_relay_lookup_addr_by_id(&self, relay_id: &str) -> Option<SocketAddr> {
-        self.turn_handler_relay.clone().expect("In turn_relay_lookup_addr_by_id must have turn_handler_relay").lookup_addr_by_id(relay_id)
+        self.turn_handler_relay
+            .clone()
+            .expect("In turn_relay_lookup_addr_by_id must have turn_handler_relay")
+            .lookup_addr_by_id(relay_id)
     }
 
     /// Relay-side: handle a Call by allocating channel (non-test API)
-    pub fn turn_relay_handle_call(&self, source_id: &str, dest_id: &str, source: SocketAddr, dest: SocketAddr) -> i32 {
+    pub fn turn_relay_handle_call(
+        &self,
+        source_id: &str,
+        dest_id: &str,
+        source: SocketAddr,
+        dest: SocketAddr,
+    ) -> i32 {
         crate::turn::turn_handler::TurnRelayHandler::handle_call(
-            &*self.turn_handler_relay.clone().expect("In turn_relay_handle_call must have turn_handler_relay"),
+            &*self
+                .turn_handler_relay
+                .clone()
+                .expect("In turn_relay_handle_call must have turn_handler_relay"),
             source_id,
             dest_id,
             &source,
@@ -2540,7 +2728,10 @@ impl Engine {
     /// Client-side: record ListenResponse mapping (non-test API)
     pub fn turn_client_handle_listen_response(&self, relay_addr: SocketAddr, relay_id: &str) {
         crate::turn::turn_handler::TurnClientHandler::handle_listen_response(
-            &*self.turn_handler_client.clone().expect("In turn_client_handle_listen_response must have turn_handler_client"),
+            &*self
+                .turn_handler_client
+                .clone()
+                .expect("In turn_client_handle_listen_response must have turn_handler_client"),
             &relay_addr,
             relay_id,
         );
@@ -2566,7 +2757,10 @@ impl Engine {
     /// Client-side: record Called mapping (non-test API)
     pub fn turn_client_handle_called(&self, source: SocketAddr, dest: SocketAddr, channel: u16) {
         crate::turn::turn_handler::TurnClientHandler::handle_called(
-            &*self.turn_handler_client.clone().expect("In turn_client_handle_called must have turn_handler_client"),
+            &*self
+                .turn_handler_client
+                .clone()
+                .expect("In turn_client_handle_called must have turn_handler_client"),
             &source,
             &dest,
             channel,

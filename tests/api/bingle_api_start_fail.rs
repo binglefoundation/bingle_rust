@@ -1,6 +1,6 @@
-use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 // Ensure tests for src/api are under tests/api per project guidelines.
@@ -25,10 +25,19 @@ pub fn start_returns_err_on_invalid_passphrase() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
 
-    let err = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect_err("start should fail for invalid passphrase");
+    let err = api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
+        .expect_err("start should fail for invalid passphrase");
     // Check that the error message includes context from private_key_bytes failure mapping
-    assert!(err.to_string().contains("Failed to get private key bytes"), "Unexpected error: {err}");
+    assert!(
+        err.to_string().contains("Failed to get private key bytes"),
+        "Unexpected error: {err}"
+    );
 }

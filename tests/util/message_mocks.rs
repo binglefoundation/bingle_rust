@@ -4,10 +4,10 @@
 use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
 use rust_comms::engine::RelayState;
 use rust_comms::messages::types::{
-    DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve,
-    DdbInitResponse, DdbMessage, DdbQueryResolve, DdbQueryResponse, DdbRelaysStatusResponse,
-    DdbSignoff, DdbSignon, DdbSignonResponse, DdbUpdateResponse, DdbUpsertResolve, FailVote, Message,
-    MutexMessage, MutexRelease, MutexRequest, MutexResponse, PingMessage, PingPing, PingResponse,
+    DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve, DdbInitResponse,
+    DdbMessage, DdbQueryResolve, DdbQueryResponse, DdbRelaysStatusResponse, DdbSignoff, DdbSignon,
+    DdbSignonResponse, DdbUpdateResponse, DdbUpsertResolve, FailVote, Message, MutexMessage,
+    MutexRelease, MutexRequest, MutexResponse, PingMessage, PingPing, PingResponse,
     PlainTextMessage, RelayCall, RelayCallResponse, RelayCalled, RelayCheck, RelayCheckResponse,
     RelayKeepAlive, RelayListen, RelayListenResponse, RelayMessage, RelayReportFailed,
     RelayResponse, RelayTriangleTest1, RelayTriangleTest1Response, RelayTriangleTest2,
@@ -94,7 +94,9 @@ pub fn all_message_samples() -> Vec<(&'static str, Message)> {
         // Relay::TriangleTest3
         (
             "Relay::TriangleTest3",
-            Message::Relay(RelayMessage::TriangleTest3(RelayTriangleTest3 { app: None })),
+            Message::Relay(RelayMessage::TriangleTest3(RelayTriangleTest3 {
+                app: None,
+            })),
         ),
         // Relay::TriangleTest1Response
         (

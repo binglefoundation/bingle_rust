@@ -3,7 +3,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::turn::turn_client_handler_impl::TurnClientHandlerImpl;
 use rust_comms::turn::turn_handler::{TurnClientHandler, TurnHandler};
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 fn build_channel_data(channel: u16, data: &[u8]) -> Vec<u8> {
     let pad = (4 - (data.len() % 4)) % 4;
@@ -11,7 +13,9 @@ fn build_channel_data(channel: u16, data: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&channel.to_be_bytes());
     out.extend_from_slice(&(data.len() as u16).to_be_bytes());
     out.extend_from_slice(data);
-    if pad > 0 { out.extend(std::iter::repeat(0u8).take(pad)); }
+    if pad > 0 {
+        out.extend(std::iter::repeat(0u8).take(pad));
+    }
     out
 }
 
@@ -22,7 +26,10 @@ pub fn client_handle_listen_fails_with_error() {
     let client = TurnClientHandlerImpl::new();
     let src = addr(8001);
     // Expected behavior: client should reject listen and log an error
-    assert!(!client.handle_listen("SRCID_CLIENT", &src), "client-side handle_listen should fail");
+    assert!(
+        !client.handle_listen("SRCID_CLIENT", &src),
+        "client-side handle_listen should fail"
+    );
 }
 
 // 2) handle_turn_incoming from the listener relay on an open channel should return a WrappedMessageWithNetworkEndpoint
@@ -78,16 +85,29 @@ pub fn client_incoming_from_called_relay_returns_wrapped() {
     // Expected: incoming from the relay should be accepted and wrapped as relay endpoint
     // This test is ignored until implementation provides/uses the relay UDP address mapping.
     let wrapped = client.handle_turn_incoming(Some(&relay_dest), Some(relay_dest), &packet);
-    assert!(wrapped.is_some(), "expected wrapped message from called relay");
+    assert!(
+        wrapped.is_some(),
+        "expected wrapped message from called relay"
+    );
     let wrapped = wrapped.unwrap();
 
     // Assert ip_address is 127.0.0.1:8021
     assert_eq!(wrapped.ip_address.to_string(), "127.0.0.1:8021");
 
     // Assert network_endpoint has correct relay properties
-    assert_eq!(wrapped.network_endpoint.relay_id().expect("A relay id"), "RELAY_B");
+    assert_eq!(
+        wrapped.network_endpoint.relay_id().expect("A relay id"),
+        "RELAY_B"
+    );
     assert_eq!(wrapped.network_endpoint.relay_channel(), Some(16386));
-    assert_eq!(wrapped.network_endpoint.relay_address().unwrap().to_string(), "127.0.0.1:8021");
+    assert_eq!(
+        wrapped
+            .network_endpoint
+            .relay_address()
+            .unwrap()
+            .to_string(),
+        "127.0.0.1:8021"
+    );
     assert_eq!(wrapped.network_endpoint.inet_socket_address(), None);
 
     // Assert message content matches "hello-called"
@@ -193,4 +213,3 @@ pub fn client_called_after_listen_response_registers_channel() {
         .expect("send should succeed after Called with listen");
     assert_eq!(wrapped.ip_address, dest);
 }
-

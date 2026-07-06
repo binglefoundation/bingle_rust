@@ -27,21 +27,48 @@ fn make_client_error() -> algonaut::Error {
 #[test]
 fn test_retryable_status_codes_constant_contains_expected_codes() {
     let codes = AlgoOps::RETRYABLE_STATUS_CODES;
-    assert!(codes.contains(&408), "408 (request timeout) should be retryable");
+    assert!(
+        codes.contains(&408),
+        "408 (request timeout) should be retryable"
+    );
     assert!(codes.contains(&425), "425 (too early) should be retryable");
-    assert!(codes.contains(&429), "429 (too many requests) should be retryable");
-    assert!(codes.contains(&502), "502 (bad gateway) should be retryable");
-    assert!(codes.contains(&503), "503 (service unavailable) should be retryable");
-    assert!(codes.contains(&504), "504 (gateway timeout) should be retryable");
+    assert!(
+        codes.contains(&429),
+        "429 (too many requests) should be retryable"
+    );
+    assert!(
+        codes.contains(&502),
+        "502 (bad gateway) should be retryable"
+    );
+    assert!(
+        codes.contains(&503),
+        "503 (service unavailable) should be retryable"
+    );
+    assert!(
+        codes.contains(&504),
+        "504 (gateway timeout) should be retryable"
+    );
 }
 
 #[test]
 fn test_retryable_status_codes_constant_does_not_contain_non_retryable_codes() {
     let codes = AlgoOps::RETRYABLE_STATUS_CODES;
-    assert!(!codes.contains(&400), "400 (bad request) should not be retryable");
-    assert!(!codes.contains(&401), "401 (unauthorized) should not be retryable");
-    assert!(!codes.contains(&404), "404 (not found) should not be retryable");
-    assert!(!codes.contains(&500), "500 (internal server error) should not be retryable");
+    assert!(
+        !codes.contains(&400),
+        "400 (bad request) should not be retryable"
+    );
+    assert!(
+        !codes.contains(&401),
+        "401 (unauthorized) should not be retryable"
+    );
+    assert!(
+        !codes.contains(&404),
+        "404 (not found) should not be retryable"
+    );
+    assert!(
+        !codes.contains(&500),
+        "500 (internal server error) should not be retryable"
+    );
 }
 
 #[test]

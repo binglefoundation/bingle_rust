@@ -23,22 +23,26 @@ pub fn ensure_funded(cfg: &AlgoChainConfig) -> Result<(), String> {
 
 // Asset accounts
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_CREATOR: &str = "TETZ5CZVNJRMKBY63RFJGJKH6JNLTXX6TS5EHYAZTBY7TX76VWW6UXMAG4";
+pub const ADDRESS_ASSET_CREATOR: &str =
+    "TETZ5CZVNJRMKBY63RFJGJKH6JNLTXX6TS5EHYAZTBY7TX76VWW6UXMAG4";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_CREATOR: &str = "eyebrow bleak multiply material flush host panel column rubber maximum clean episode plate trim excess dignity barrel beyond minute rebuild cliff divert planet absent spray";
 
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_MANAGER: &str = "PPVIJ3JCZ34DUE3Q3CKTY2ZSKTJV5A32C35A62G7DX462WRPZBE45DOA5Q";
+pub const ADDRESS_ASSET_MANAGER: &str =
+    "PPVIJ3JCZ34DUE3Q3CKTY2ZSKTJV5A32C35A62G7DX462WRPZBE45DOA5Q";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_MANAGER: &str = "narrow tuition slot toddler slim copper pool permit subject elegant favorite cigar legal nurse muscle jewel rifle broom canoe eagle hint uncover unfair about similar";
 
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_RESERVE: &str = "ZKPYCKDPCF75XTMJPCTJY5OG32BQDIPJUFFBRGAFATCYUUWPSYCDLXCQKA";
+pub const ADDRESS_ASSET_RESERVE: &str =
+    "ZKPYCKDPCF75XTMJPCTJY5OG32BQDIPJUFFBRGAFATCYUUWPSYCDLXCQKA";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_RESERVE: &str = "weasel open guide until scale stove pull keep truly push tongue anxiety throw acoustic hamster total rare door cost response promote grain adapt ability muffin";
 
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_CLAWBACK: &str = "6HQIHZWTWMLYC2ANOES35PJ4VIRQFEVYG4XZ34AK6B4TTSHQXF4WHJVXGQ";
+pub const ADDRESS_ASSET_CLAWBACK: &str =
+    "6HQIHZWTWMLYC2ANOES35PJ4VIRQFEVYG4XZ34AK6B4TTSHQXF4WHJVXGQ";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_CLAWBACK: &str = "green hold found smart between transfer congress coil runway keen purse exhaust robot pool task accuse fiber meadow blossom wrong false recycle organ ability news";
 
@@ -60,7 +64,8 @@ pub const ADDRESS_APP_ADMIN: &str = "TA2XNGWKWXXSWNHVVK23PW6A5JVYGC3WL2IFAILU4MO
 pub const PASSPHRASE_APP_ADMIN: &str = "sunset fuel problem limit share same dilemma cool member real satoshi capable brush during body wool kiss parade smooth fan rude assume clever absorb across";
 
 #[allow(dead_code)]
-pub const ADDRESS_APP_WITHDRAWER: &str = "5FMPY3U5XCCDUOROVX34JYCRXHOZTPDSXDEZ576PXRHOTD4OSWNXXDEA74";
+pub const ADDRESS_APP_WITHDRAWER: &str =
+    "5FMPY3U5XCCDUOROVX34JYCRXHOZTPDSXDEZ576PXRHOTD4OSWNXXDEA74";
 #[allow(dead_code)]
 pub const PASSPHRASE_APP_WITHDRAWER: &str = "post all tuition hero axis erupt profit same dizzy stage like fly inquiry betray electric glue just space gentle jacket annual hello betray abstract way";
 

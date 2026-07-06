@@ -1,5 +1,3 @@
-
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
@@ -39,17 +37,31 @@ pub fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
 
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("api.start should succeed");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
+        .expect("api.start should succeed");
 
     // Retrieve the actual bound address and assert it's 0.0.0.0 with the same port
-    let local = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_local_bind_addr_for_tests());
+    let local =
+        api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_local_bind_addr_for_tests());
     assert!(local.is_some(), "engine should expose local bind addr");
     let local = local.unwrap();
-    assert_eq!(local.port(), port, "bound port should match requested static port");
-    assert_eq!(local.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), "engine test accessor should return 127.0.0.1 for unspecified bind");
+    assert_eq!(
+        local.port(),
+        port,
+        "bound port should match requested static port"
+    );
+    assert_eq!(
+        local.ip(),
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        "engine test accessor should return 127.0.0.1 for unspecified bind"
+    );
 
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.stop());
 }

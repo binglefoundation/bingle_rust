@@ -4,8 +4,8 @@
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-pub mod net_det;
 pub mod mock_bingle_api;
+pub mod net_det;
 pub mod reusable_mock_api;
 pub mod version;
 
@@ -36,7 +36,7 @@ pub mod stun_comments;
 #[path = "stun/ipv4_only.rs"]
 pub mod stun_ipv4_only;
 
-pub mod relay_test_util;
 pub mod message_mocks;
 #[path = "parse_algos_test.rs"]
 pub mod parse_algos_test;
+pub mod relay_test_util;

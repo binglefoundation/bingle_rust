@@ -19,8 +19,8 @@
 ///   - ALGO balances decrease by exactly (tx_count × MIN_FEE) for each signing account
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::algo_bingle::{
-    AlgoBingle, ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR,
-    ACCOUNT_ASSET_RESERVE,
+    ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE,
+    AlgoBingle,
 };
 use serial_test::serial;
 use std::collections::HashMap;
@@ -29,8 +29,8 @@ use crate::util::test_util;
 use test_util::init_test_logging_with_filter;
 
 const TEAL_DIR: &str = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp";
-const MIN_FEE: u64 = 1_000;         // µAlgos per transaction on localnet
-const APP_FUND: u64 = 3_210_000;    // µAlgos sent from APP_CREATOR to new app account on deploy
+const MIN_FEE: u64 = 1_000; // µAlgos per transaction on localnet
+const APP_FUND: u64 = 3_210_000; // µAlgos sent from APP_CREATOR to new app account on deploy
 const MIN_BALANCE_WITH_ASA: u64 = 200_000; // minimum balance for an account opted in to 1 ASA
 
 fn setup() -> (AlgoChainConfig, AlgoOps, HashMap<String, AlgoOps>) {
@@ -60,7 +60,11 @@ fn make_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps> {
     );
     accounts.insert(
         ACCOUNT_APP_WITHDRAWER.to_string(),
-        test_util::ops_from_mnemonic(ADDRESS_APP_WITHDRAWER, PASSPHRASE_APP_WITHDRAWER, cfg.clone()),
+        test_util::ops_from_mnemonic(
+            ADDRESS_APP_WITHDRAWER,
+            PASSPHRASE_APP_WITHDRAWER,
+            cfg.clone(),
+        ),
     );
     accounts.insert(
         ACCOUNT_ASSET_CREATOR.to_string(),
@@ -78,7 +82,11 @@ fn verify_app_opted_into_asset(ops: &AlgoOps, app_id: u64, asset_id: u64) {
     let opted_in = ops
         .is_account_opted_in_to_asset(&app_addr, asset_id)
         .expect("is_account_opted_in_to_asset");
-    assert!(opted_in, "app {} should be opted in to asset {}", app_id, asset_id);
+    assert!(
+        opted_in,
+        "app {} should be opted in to asset {}",
+        app_id, asset_id
+    );
 }
 
 fn verify_clawback_is_app(ops: &AlgoOps, app_id: u64, asset_id: u64) {
@@ -111,7 +119,11 @@ fn verify_reserve(ops: &AlgoOps, asset_id: u64, expected_reserve: &str) {
         .get("params")
         .and_then(|p| p.get("reserve").and_then(|x| x.as_str()))
         .expect("reserve field in asset params");
-    assert_eq!(reserve, expected_reserve, "ASA reserve should equal {}", expected_reserve);
+    assert_eq!(
+        reserve, expected_reserve,
+        "ASA reserve should equal {}",
+        expected_reserve
+    );
 }
 
 fn microalgos(ops: &AlgoOps) -> u64 {
@@ -137,19 +149,18 @@ struct BalanceSnapshot {
 
 fn snapshot(creator_ops: &AlgoOps, accounts: &HashMap<String, AlgoOps>) -> BalanceSnapshot {
     BalanceSnapshot {
-        app_creator:    microalgos(creator_ops),
-        app_admin:      microalgos(&accounts[ACCOUNT_APP_ADMIN]),
+        app_creator: microalgos(creator_ops),
+        app_admin: microalgos(&accounts[ACCOUNT_APP_ADMIN]),
         app_withdrawer: microalgos(&accounts[ACCOUNT_APP_WITHDRAWER]),
-        asset_creator:  microalgos(&accounts[ACCOUNT_ASSET_CREATOR]),
-        asset_reserve:  microalgos(&accounts[ACCOUNT_ASSET_RESERVE]),
+        asset_creator: microalgos(&accounts[ACCOUNT_ASSET_CREATOR]),
+        asset_reserve: microalgos(&accounts[ACCOUNT_ASSET_RESERVE]),
     }
 }
 
 fn assert_algo_spent(label: &str, before: u64, after: u64, expected_ua: u64) {
     let spent = before as i64 - after as i64;
     assert_eq!(
-        spent,
-        expected_ua as i64,
+        spent, expected_ua as i64,
         "{}: expected {}uA spent, got {}uA",
         label, expected_ua, spent,
     );
@@ -166,7 +177,14 @@ fn deploy_initial(
     let ab = AlgoBingle::new(creator_ops.clone(), 0, 0);
     ab.deploy_app_and_asset(
         std::path::Path::new(TEAL_DIR),
-        true, true, None, None, asset_name, total_units, 0, accounts,
+        true,
+        true,
+        None,
+        None,
+        asset_name,
+        total_units,
+        0,
+        accounts,
     )
     .expect("deploy_initial")
 }
@@ -177,7 +195,9 @@ fn deploy_initial(
 #[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn deploy_app_and_asset_both_new() {
-    unsafe { std::env::set_var("BINGLE_ALGO_DEBUG", "true"); }
+    unsafe {
+        std::env::set_var("BINGLE_ALGO_DEBUG", "true");
+    }
     init_test_logging_with_filter("info");
     let (_cfg, creator_ops, accounts) = setup();
 
@@ -203,22 +223,57 @@ pub fn deploy_app_and_asset_both_new() {
     assert!(asset_id > 0, "asset_id must be non-zero");
     verify_app_opted_into_asset(&creator_ops, app_id, asset_id);
     verify_clawback_is_app(&creator_ops, app_id, asset_id);
-    verify_reserve(&creator_ops, asset_id, crate::blockchain_users::ADDRESS_ASSET_RESERVE);
+    verify_reserve(
+        &creator_ops,
+        asset_id,
+        crate::blockchain_users::ADDRESS_ASSET_RESERVE,
+    );
     // APP_CREATOR:  create_app(1 fee) + send_algo to app(1 fee + APP_FUND)
     // APP_ADMIN:    set_bingle_price(1) + opt_in_app_to_asset(1)
     // ASSET_CREATOR: create_asset(1) + send_asset initial_hot_bingle(1)
     // APP_WITHDRAWER, ASSET_RESERVE: 1 fee each
-    assert_algo_spent("APP_CREATOR",    before.app_creator,    after.app_creator,    2 * MIN_FEE + APP_FUND);
-    assert_algo_spent("APP_ADMIN",      before.app_admin,      after.app_admin,      2 * MIN_FEE);
-    assert_algo_spent("ASSET_CREATOR",  before.asset_creator,  after.asset_creator,  2 * MIN_FEE);
-    assert_algo_spent("APP_WITHDRAWER", before.app_withdrawer, after.app_withdrawer, MIN_FEE);
-    assert_algo_spent("ASSET_RESERVE",  before.asset_reserve,  after.asset_reserve,  MIN_FEE);
+    assert_algo_spent(
+        "APP_CREATOR",
+        before.app_creator,
+        after.app_creator,
+        2 * MIN_FEE + APP_FUND,
+    );
+    assert_algo_spent("APP_ADMIN", before.app_admin, after.app_admin, 2 * MIN_FEE);
+    assert_algo_spent(
+        "ASSET_CREATOR",
+        before.asset_creator,
+        after.asset_creator,
+        2 * MIN_FEE,
+    );
+    assert_algo_spent(
+        "APP_WITHDRAWER",
+        before.app_withdrawer,
+        after.app_withdrawer,
+        MIN_FEE,
+    );
+    assert_algo_spent(
+        "ASSET_RESERVE",
+        before.asset_reserve,
+        after.asset_reserve,
+        MIN_FEE,
+    );
 
-    let app_addr = creator_ops.contract_address(app_id).expect("app contract address");
-    let app_asa_balance = creator_ops.asset_holding(&app_addr, asset_id).expect("app asset holding");
-    assert_eq!(app_asa_balance, INITIAL_HOT_BINGLE, "app should hold initial_hot_bingle units of the new asset");
+    let app_addr = creator_ops
+        .contract_address(app_id)
+        .expect("app contract address");
+    let app_asa_balance = creator_ops
+        .asset_holding(&app_addr, asset_id)
+        .expect("app asset holding");
+    assert_eq!(
+        app_asa_balance, INITIAL_HOT_BINGLE,
+        "app should hold initial_hot_bingle units of the new asset"
+    );
     // New app: funded with APP_FUND, pays 1 inner fee for ASA opt-in.
-    assert_eq!(app_microalgos(&creator_ops, app_id), APP_FUND - MIN_FEE, "app ALGO balance after deploy");
+    assert_eq!(
+        app_microalgos(&creator_ops, app_id),
+        APP_FUND - MIN_FEE,
+        "app ALGO balance after deploy"
+    );
 }
 
 // ── Test 2: new app, existing asset (balance transfer) ─────────────────────
@@ -227,7 +282,9 @@ pub fn deploy_app_and_asset_both_new() {
 #[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn deploy_app_and_asset_new_app_existing_asset() {
-    unsafe { std::env::set_var("BINGLE_ALGO_DEBUG", "true"); }
+    unsafe {
+        std::env::set_var("BINGLE_ALGO_DEBUG", "true");
+    }
     init_test_logging_with_filter("info");
     let (_cfg, creator_ops, accounts) = setup();
 
@@ -237,7 +294,9 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
 
     // Fund the old app with some units so we can verify the balance transfer.
     // ASSET_CREATOR holds the supply after create_asset_configured.
-    let old_app_addr = creator_ops.contract_address(old_app_id).expect("old app addr");
+    let old_app_addr = creator_ops
+        .contract_address(old_app_id)
+        .expect("old app addr");
     accounts[ACCOUNT_ASSET_CREATOR]
         .send_asset(asset_id, 50, &old_app_addr)
         .expect("fund old app with ASA");
@@ -254,13 +313,16 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
             Some(asset_id),
             "BINGLE",
             1_000_000,
-            0,     // initial_hot_bingle ignored when reusing existing asset
+            0, // initial_hot_bingle ignored when reusing existing asset
             &accounts,
         )
         .expect("deploy_app_and_asset (new app, existing asset)");
     let after = snapshot(&creator_ops, &accounts);
 
-    assert!(new_app_id > 0 && new_app_id != old_app_id, "a new app should have been created");
+    assert!(
+        new_app_id > 0 && new_app_id != old_app_id,
+        "a new app should have been created"
+    );
     assert_eq!(same_asset_id, asset_id, "asset id should be unchanged");
 
     verify_app_opted_into_asset(&creator_ops, new_app_id, asset_id);
@@ -269,23 +331,53 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
     // APP_ADMIN:     set_bingle_price(1) + opt_in_app_to_asset(1) — new app not yet opted in
     // ASSET_CREATOR: set_clawback(1) + transfer_old_balance[UpdateAsset(1)+Clawback(1)+set_clawback(1)]
     // APP_WITHDRAWER, ASSET_RESERVE: already opted in by deploy_initial → 0 fees
-    assert_algo_spent("APP_CREATOR",    before.app_creator,    after.app_creator,    3 * MIN_FEE + APP_FUND);
-    assert_algo_spent("APP_ADMIN",      before.app_admin,      after.app_admin,      2 * MIN_FEE);
-    assert_algo_spent("ASSET_CREATOR",  before.asset_creator,  after.asset_creator,  4 * MIN_FEE);
-    assert_algo_spent("APP_WITHDRAWER", before.app_withdrawer, after.app_withdrawer, 0);
-    assert_algo_spent("ASSET_RESERVE",  before.asset_reserve,  after.asset_reserve,  0);
+    assert_algo_spent(
+        "APP_CREATOR",
+        before.app_creator,
+        after.app_creator,
+        3 * MIN_FEE + APP_FUND,
+    );
+    assert_algo_spent("APP_ADMIN", before.app_admin, after.app_admin, 2 * MIN_FEE);
+    assert_algo_spent(
+        "ASSET_CREATOR",
+        before.asset_creator,
+        after.asset_creator,
+        4 * MIN_FEE,
+    );
+    assert_algo_spent(
+        "APP_WITHDRAWER",
+        before.app_withdrawer,
+        after.app_withdrawer,
+        0,
+    );
+    assert_algo_spent(
+        "ASSET_RESERVE",
+        before.asset_reserve,
+        after.asset_reserve,
+        0,
+    );
 
     // Old app's 50-unit balance should have been transferred to the new app.
-    let new_app_addr = creator_ops.contract_address(new_app_id).expect("new app addr");
-    let new_balance = creator_ops.asset_holding(&new_app_addr, asset_id).expect("new app balance");
+    let new_app_addr = creator_ops
+        .contract_address(new_app_id)
+        .expect("new app addr");
+    let new_balance = creator_ops
+        .asset_holding(&new_app_addr, asset_id)
+        .expect("new app balance");
     assert!(
         new_balance >= 50,
         "new app should hold at least 50 units after balance transfer, got {}",
         new_balance
     );
 
-    let old_balance = creator_ops.asset_holding(&old_app_addr, asset_id).expect("old app balance");
-    assert_eq!(old_balance, 0, "old app should have zero balance after transfer, got {}", old_balance);
+    let old_balance = creator_ops
+        .asset_holding(&old_app_addr, asset_id)
+        .expect("old app balance");
+    assert_eq!(
+        old_balance, 0,
+        "old app should have zero balance after transfer, got {}",
+        old_balance
+    );
 
     // migrate_reserve leaves the old app at exactly its minimum balance (1 ASA opt-in).
     assert_eq!(
@@ -311,7 +403,9 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
 #[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn deploy_app_and_asset_existing_app_new_asset() {
-    unsafe { std::env::set_var("BINGLE_ALGO_DEBUG", "true"); }
+    unsafe {
+        std::env::set_var("BINGLE_ALGO_DEBUG", "true");
+    }
     init_test_logging_with_filter("info");
     let (_cfg, creator_ops, accounts) = setup();
 
@@ -338,26 +432,59 @@ pub fn deploy_app_and_asset_existing_app_new_asset() {
     let after = snapshot(&creator_ops, &accounts);
 
     assert_eq!(same_app_id, app_id, "app id should be unchanged");
-    assert!(new_asset_id > 0 && new_asset_id != old_asset_id, "a new asset should have been created");
+    assert!(
+        new_asset_id > 0 && new_asset_id != old_asset_id,
+        "a new asset should have been created"
+    );
 
     verify_app_opted_into_asset(&creator_ops, app_id, new_asset_id);
     verify_clawback_is_app(&creator_ops, app_id, new_asset_id);
-    verify_reserve(&creator_ops, new_asset_id, crate::blockchain_users::ADDRESS_ASSET_RESERVE);
+    verify_reserve(
+        &creator_ops,
+        new_asset_id,
+        crate::blockchain_users::ADDRESS_ASSET_RESERVE,
+    );
     // APP_CREATOR: nothing (existing app, no migrate)
     // APP_ADMIN:   opt_in_app_to_asset(1) — new asset so not yet opted in; no set_bingle_price
     // ASSET_CREATOR: create_asset(1) + send_asset initial_hot_bingle(1)
     // APP_WITHDRAWER, ASSET_RESERVE: 1 fee each
-    assert_algo_spent("APP_CREATOR",    before.app_creator,    after.app_creator,    0);
-    assert_algo_spent("APP_ADMIN",      before.app_admin,      after.app_admin,      MIN_FEE);
-    assert_algo_spent("ASSET_CREATOR",  before.asset_creator,  after.asset_creator,  2 * MIN_FEE);
-    assert_algo_spent("APP_WITHDRAWER", before.app_withdrawer, after.app_withdrawer, MIN_FEE);
-    assert_algo_spent("ASSET_RESERVE",  before.asset_reserve,  after.asset_reserve,  MIN_FEE);
+    assert_algo_spent("APP_CREATOR", before.app_creator, after.app_creator, 0);
+    assert_algo_spent("APP_ADMIN", before.app_admin, after.app_admin, MIN_FEE);
+    assert_algo_spent(
+        "ASSET_CREATOR",
+        before.asset_creator,
+        after.asset_creator,
+        2 * MIN_FEE,
+    );
+    assert_algo_spent(
+        "APP_WITHDRAWER",
+        before.app_withdrawer,
+        after.app_withdrawer,
+        MIN_FEE,
+    );
+    assert_algo_spent(
+        "ASSET_RESERVE",
+        before.asset_reserve,
+        after.asset_reserve,
+        MIN_FEE,
+    );
 
-    let app_addr = creator_ops.contract_address(app_id).expect("app contract address");
-    let app_asa_balance = creator_ops.asset_holding(&app_addr, new_asset_id).expect("app asset holding");
-    assert_eq!(app_asa_balance, INITIAL_HOT_BINGLE, "app should hold initial_hot_bingle units of the new asset");
+    let app_addr = creator_ops
+        .contract_address(app_id)
+        .expect("app contract address");
+    let app_asa_balance = creator_ops
+        .asset_holding(&app_addr, new_asset_id)
+        .expect("app asset holding");
+    assert_eq!(
+        app_asa_balance, INITIAL_HOT_BINGLE,
+        "app should hold initial_hot_bingle units of the new asset"
+    );
     // Existing app: had APP_FUND - MIN_FEE after deploy_initial, pays 1 more inner fee for new ASA opt-in.
-    assert_eq!(app_microalgos(&creator_ops, app_id), APP_FUND - 2 * MIN_FEE, "app ALGO balance after new asset deploy");
+    assert_eq!(
+        app_microalgos(&creator_ops, app_id),
+        APP_FUND - 2 * MIN_FEE,
+        "app ALGO balance after new asset deploy"
+    );
 }
 
 // ── Test 4: both existing ───────────────────────────────────────────────────
@@ -366,7 +493,9 @@ pub fn deploy_app_and_asset_existing_app_new_asset() {
 #[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn deploy_app_and_asset_both_existing() {
-    unsafe { std::env::set_var("BINGLE_ALGO_DEBUG", "true"); }
+    unsafe {
+        std::env::set_var("BINGLE_ALGO_DEBUG", "true");
+    }
     init_test_logging_with_filter("info");
     let (_cfg, creator_ops, accounts) = setup();
 
@@ -385,7 +514,7 @@ pub fn deploy_app_and_asset_both_existing() {
             Some(asset_id),
             "BINGLE",
             1_000_000,
-            0,     // initial_hot_bingle ignored when reusing existing asset
+            0, // initial_hot_bingle ignored when reusing existing asset
             &accounts,
         )
         .expect("deploy_app_and_asset (both existing)");
@@ -400,13 +529,32 @@ pub fn deploy_app_and_asset_both_existing() {
     // APP_ADMIN:     opt_in_app_to_asset skipped (app already opted in → early return)
     // ASSET_CREATOR: set_asset_clawback_to_app(1)
     // APP_WITHDRAWER, ASSET_RESERVE: already opted in by deploy_initial → 0 fees
-    assert_algo_spent("APP_CREATOR",    before.app_creator,    after.app_creator,    0);
-    assert_algo_spent("APP_ADMIN",      before.app_admin,      after.app_admin,      0);
-    assert_algo_spent("ASSET_CREATOR",  before.asset_creator,  after.asset_creator,  MIN_FEE);
-    assert_algo_spent("APP_WITHDRAWER", before.app_withdrawer, after.app_withdrawer, 0);
-    assert_algo_spent("ASSET_RESERVE",  before.asset_reserve,  after.asset_reserve,  0);
+    assert_algo_spent("APP_CREATOR", before.app_creator, after.app_creator, 0);
+    assert_algo_spent("APP_ADMIN", before.app_admin, after.app_admin, 0);
+    assert_algo_spent(
+        "ASSET_CREATOR",
+        before.asset_creator,
+        after.asset_creator,
+        MIN_FEE,
+    );
+    assert_algo_spent(
+        "APP_WITHDRAWER",
+        before.app_withdrawer,
+        after.app_withdrawer,
+        0,
+    );
+    assert_algo_spent(
+        "ASSET_RESERVE",
+        before.asset_reserve,
+        after.asset_reserve,
+        0,
+    );
     // Existing app already opted in — no inner fee, balance unchanged from deploy_initial.
-    assert_eq!(app_microalgos(&creator_ops, app_id), APP_FUND - MIN_FEE, "app ALGO balance unchanged on idempotent redeploy");
+    assert_eq!(
+        app_microalgos(&creator_ops, app_id),
+        APP_FUND - MIN_FEE,
+        "app ALGO balance unchanged on idempotent redeploy"
+    );
 }
 
 // ── Validation: accounts map must be complete and unique ────────────────────
@@ -415,7 +563,9 @@ pub fn deploy_app_and_asset_both_existing() {
 #[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn deploy_app_and_asset_missing_required_account_fails() {
-    unsafe { std::env::set_var("BINGLE_ALGO_DEBUG", "true"); }
+    unsafe {
+        std::env::set_var("BINGLE_ALGO_DEBUG", "true");
+    }
     init_test_logging_with_filter("info");
     let (_cfg, creator_ops, accounts) = setup();
 
@@ -431,14 +581,22 @@ pub fn deploy_app_and_asset_missing_required_account_fails() {
         let ab = AlgoBingle::new(creator_ops.clone(), 0, 0);
         let result = ab.deploy_app_and_asset(
             std::path::Path::new(TEAL_DIR),
-            true, true, None, None, "BINGLE", 1_000_000, 0, &partial,
+            true,
+            true,
+            None,
+            None,
+            "BINGLE",
+            1_000_000,
+            0,
+            &partial,
         );
         assert!(result.is_err(), "should fail when '{}' is missing", missing);
         let msg = result.unwrap_err().to_string();
         assert!(
             msg.contains(missing),
             "error should name the missing role '{}', got: {}",
-            missing, msg
+            missing,
+            msg
         );
     }
 }
@@ -447,7 +605,9 @@ pub fn deploy_app_and_asset_missing_required_account_fails() {
 #[cfg(not(target_os = "ios"))]
 #[serial]
 pub fn deploy_app_and_asset_duplicate_address_fails() {
-    unsafe { std::env::set_var("BINGLE_ALGO_DEBUG", "true"); }
+    unsafe {
+        std::env::set_var("BINGLE_ALGO_DEBUG", "true");
+    }
     init_test_logging_with_filter("info");
     let (cfg, creator_ops, mut accounts) = setup();
 
@@ -464,9 +624,19 @@ pub fn deploy_app_and_asset_duplicate_address_fails() {
     let ab = AlgoBingle::new(creator_ops, 0, 0);
     let result = ab.deploy_app_and_asset(
         std::path::Path::new(TEAL_DIR),
-        true, true, None, None, "BINGLE", 1_000_000, 0, &accounts,
+        true,
+        true,
+        None,
+        None,
+        "BINGLE",
+        1_000_000,
+        0,
+        &accounts,
     );
-    assert!(result.is_err(), "should fail when two roles share the same address");
+    assert!(
+        result.is_err(),
+        "should fail when two roles share the same address"
+    );
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("not unique"),

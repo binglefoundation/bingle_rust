@@ -1,18 +1,18 @@
-use axum::{
-    extract::{Query, Json, State},
-    response::IntoResponse,
-    http::StatusCode,
-};
-use serde::Deserialize;
-use rust_comms::api::network_endpoint::NetworkEndpoint;
 use axum::Json as AxumJson;
 use axum::response::Response as AxumResponse;
-
-use crate::models::{
-    SendMessageToIdRequest, SendMessageToHandleRequest, SendMessageToNetworkRequest,
-    RegisterKeypairRequest, AddContactRequest, IdRequest, AddMessageRequest, PathRequest,
+use axum::{
+    extract::{Json, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
 };
+use rust_comms::api::network_endpoint::NetworkEndpoint;
+use serde::Deserialize;
+
 use crate::AppState;
+use crate::models::{
+    AddContactRequest, AddMessageRequest, IdRequest, PathRequest, RegisterKeypairRequest,
+    SendMessageToHandleRequest, SendMessageToIdRequest, SendMessageToNetworkRequest,
+};
 use crate::try_start_api;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 use rust_comms::api::bingle_api::BingleError;
@@ -34,24 +34,26 @@ pub struct HandleQuery {
 
 pub async fn handle_lookup(
     State(state): State<AppState>,
-    Query(query): Query<HandleQuery>
+    Query(query): Query<HandleQuery>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let handle = query.handle;
-    let result = tokio::task::spawn_blocking(move || {
-        api.handle_lookup(&handle)
-    }).await;
+    let result = tokio::task::spawn_blocking(move || api.handle_lookup(&handle)).await;
     match result {
         Ok(Ok(Some(id))) => Json(id).into_response(),
         Ok(Ok(None)) => (StatusCode::NOT_FOUND, "Handle not found").into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
 pub async fn send_message_to_id(
     State(state): State<AppState>,
-    Json(payload): Json<SendMessageToIdRequest>
+    Json(payload): Json<SendMessageToIdRequest>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let local_api_arc = state.local_api.clone();
@@ -105,84 +107,113 @@ pub async fn send_message_to_id(
     match result {
         Ok(Ok(ok)) => Json(ok).into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
 pub async fn send_message_to_handle(
     State(state): State<AppState>,
-    Json(payload): Json<SendMessageToHandleRequest>
+    Json(payload): Json<SendMessageToHandleRequest>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let result = tokio::task::spawn_blocking(move || {
         api.send_message_to_handle(&payload.handle, payload.message, None)
-    }).await;
+    })
+    .await;
     match result {
         Ok(Ok(ok)) => Json(ok).into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
 pub async fn send_message_to_network(
     State(state): State<AppState>,
-    Json(payload): Json<SendMessageToNetworkRequest>
+    Json(payload): Json<SendMessageToNetworkRequest>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let result = tokio::task::spawn_blocking(move || {
         let nsk: NetworkEndpoint = payload.network_source_key.into();
         api.send_message_to_network(&nsk, &payload.user_id, payload.message, None)
-    }).await;
+    })
+    .await;
     match result {
         Ok(Ok(ok)) => Json(ok).into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
 pub async fn send_message_to_id_with_response(
     State(state): State<AppState>,
-    Json(payload): Json<SendMessageToIdRequest>
+    Json(payload): Json<SendMessageToIdRequest>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let result = tokio::task::spawn_blocking(move || {
         api.send_message_to_id_with_response(&payload.user_id, payload.message, None)
-    }).await;
+    })
+    .await;
     match result {
         Ok(Ok(res)) => Json(res).into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
 pub async fn send_message_to_handle_with_response(
     State(state): State<AppState>,
-    Json(payload): Json<SendMessageToHandleRequest>
+    Json(payload): Json<SendMessageToHandleRequest>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let result = tokio::task::spawn_blocking(move || {
         api.send_message_to_handle_with_response(&payload.handle, payload.message, None)
-    }).await;
+    })
+    .await;
     match result {
         Ok(Ok(res)) => Json(res).into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
 pub async fn send_message_to_network_with_response(
     State(state): State<AppState>,
-    Json(payload): Json<SendMessageToNetworkRequest>
+    Json(payload): Json<SendMessageToNetworkRequest>,
 ) -> impl IntoResponse {
     let api = state.api.clone();
     let result = tokio::task::spawn_blocking(move || {
         let nsk: NetworkEndpoint = payload.network_source_key.into();
         api.send_message_to_network_with_response(&nsk, &payload.user_id, payload.message, None)
-    }).await;
+    })
+    .await;
     match result {
         Ok(Ok(res)) => Json(res).into_response(),
         Ok(Err(e)) => handle_bingle_error(e),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -196,7 +227,9 @@ pub async fn handle_version() -> impl IntoResponse {
     Json(version_info).into_response()
 }
 
-fn local_api_guard(state: &AppState) -> Result<std::sync::MutexGuard<'_, Box<dyn BingleLocalApi>>, AxumResponse> {
+fn local_api_guard(
+    state: &AppState,
+) -> Result<std::sync::MutexGuard<'_, Box<dyn BingleLocalApi>>, AxumResponse> {
     let Some(local_arc) = &state.local_api else {
         return Err((StatusCode::METHOD_NOT_ALLOWED, "Local API disabled").into_response());
     };
@@ -207,7 +240,9 @@ fn local_api_guard(state: &AppState) -> Result<std::sync::MutexGuard<'_, Box<dyn
 }
 
 fn save_if_configured(state: &AppState) {
-    let (Some(local_arc), Some(path)) = (&state.local_api, &state.local_file) else { return; };
+    let (Some(local_arc), Some(path)) = (&state.local_api, &state.local_file) else {
+        return;
+    };
     if let Ok(guard) = local_arc.lock() {
         let _ = guard.save(path.to_string_lossy().as_ref());
     }
@@ -242,7 +277,13 @@ pub async fn local_register_keypair(
         let local_arc = state.local_api.as_ref().unwrap();
         let api = match local_arc.lock() {
             Ok(g) => g,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned".to_string()).into_response(),
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Local API poisoned".to_string(),
+                )
+                    .into_response();
+            }
         };
         match api.register_keypair(req.handle) {
             Ok(_) => {
@@ -253,10 +294,15 @@ pub async fn local_register_keypair(
             }
             Err(e) => handle_bingle_error(e),
         }
-    }).await;
+    })
+    .await;
     match result {
         Ok(resp) => resp,
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -326,7 +372,9 @@ pub async fn local_remove_contact(
 }
 
 #[derive(Deserialize)]
-pub struct IdQuery { pub id: String }
+pub struct IdQuery {
+    pub id: String,
+}
 
 pub async fn local_is_blocked(
     State(state): State<AppState>,
@@ -418,16 +466,27 @@ pub async fn local_keypair_status(State(state): State<AppState>) -> impl IntoRes
         let local_arc = state.local_api.as_ref().unwrap();
         let api = match local_arc.lock() {
             Ok(g) => g,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Local API poisoned".to_string()).into_response(),
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Local API poisoned".to_string(),
+                )
+                    .into_response();
+            }
         };
         match api.keypair_status() {
             Ok(status) => AxumJson(status).into_response(),
             Err(e) => handle_bingle_error(e),
         }
-    }).await;
+    })
+    .await;
     match result {
         Ok(resp) => resp,
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task failed: {}", e),
+        )
+            .into_response(),
     }
 }
 

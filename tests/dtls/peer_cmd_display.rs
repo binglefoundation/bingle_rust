@@ -8,13 +8,19 @@ fn peer_cmd_stop_displays_as_stop() {
 #[test]
 fn peer_cmd_send_printable_text_displays_as_text() {
     let payload = b"hello world".to_vec();
-    assert_eq!(format!("{}", PeerCmd::Send(payload)), "Send(\"hello world\")");
+    assert_eq!(
+        format!("{}", PeerCmd::Send(payload)),
+        "Send(\"hello world\")"
+    );
 }
 
 #[test]
 fn peer_cmd_send_text_with_newline_displays_as_text() {
     let payload = b"line1\nline2".to_vec();
-    assert_eq!(format!("{}", PeerCmd::Send(payload)), "Send(\"line1\nline2\")");
+    assert_eq!(
+        format!("{}", PeerCmd::Send(payload)),
+        "Send(\"line1\nline2\")"
+    );
 }
 
 #[test]

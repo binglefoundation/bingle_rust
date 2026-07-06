@@ -1,12 +1,13 @@
-
-
 use std::net::SocketAddr;
-use std::sync::{Arc, OnceLock, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
+use crate::util::test_util::init_test_logging;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use rust_comms::protocol::{ISSUER_SUFFIX, VIRTUAL_CA};
-use crate::util::test_util::init_test_logging;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -18,17 +19,21 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     use openssl::nid::Nid;
     use openssl::pkey::{PKey, Private};
     use openssl::x509::extension::{BasicConstraints, KeyUsage};
-    use openssl::x509::{X509NameBuilder, X509};
+    use openssl::x509::{X509, X509NameBuilder};
 
     init_test_logging();
     // CA key + cert (Ed25519, self-signed, CN=VIRTUAL_CA)
     let ca_pkey: PKey<Private> = PKey::generate_ed25519().expect("generate ed25519");
     let mut ca_name_b = X509NameBuilder::new().expect("name builder");
-    ca_name_b.append_entry_by_nid(Nid::COMMONNAME, VIRTUAL_CA).expect("set CN");
+    ca_name_b
+        .append_entry_by_nid(Nid::COMMONNAME, VIRTUAL_CA)
+        .expect("set CN");
     let ca_name = ca_name_b.build();
     let mut ca_builder = X509::builder().expect("x509 builder");
     let mut serial = BigNum::new().expect("serial");
-    serial.rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false).expect("serial gen");
+    serial
+        .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+        .expect("serial gen");
     let serial = serial.to_asn1_integer().expect("serial asn1");
     ca_builder.set_version(2).expect("set version");
     ca_builder.set_serial_number(&serial).expect("set serial");
@@ -41,9 +46,16 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     ca_builder.set_not_after(&na).expect("set na");
     let bc = BasicConstraints::new().critical().ca().build().expect("bc");
     ca_builder.append_extension(bc).expect("append bc");
-    let ku = KeyUsage::new().critical().key_cert_sign().crl_sign().build().expect("ku");
+    let ku = KeyUsage::new()
+        .critical()
+        .key_cert_sign()
+        .crl_sign()
+        .build()
+        .expect("ku");
     ca_builder.append_extension(ku).expect("append ku");
-    ca_builder.sign(&ca_pkey, MessageDigest::null()).expect("sign ca");
+    ca_builder
+        .sign(&ca_pkey, MessageDigest::null())
+        .expect("sign ca");
     let ca_cert = ca_builder.build();
     let ca_pem = ca_cert.to_pem().expect("ca pem");
 
@@ -52,16 +64,22 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let server_ec = openssl::ec::EcKey::generate(&group).expect("ec gen");
     let server_key = PKey::from_ec_key(server_ec).expect("pkey from ec");
     let mut server_name_b = X509NameBuilder::new().expect("srv name builder");
-    server_name_b.append_entry_by_nid(Nid::COMMONNAME, "server.").expect("srv cn");
+    server_name_b
+        .append_entry_by_nid(Nid::COMMONNAME, "server.")
+        .expect("srv cn");
     let server_name = server_name_b.build();
     let mut server_b = X509::builder().expect("srv x509 builder");
     let mut s_serial = BigNum::new().expect("serial");
-    s_serial.rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false).expect("serial gen");
+    s_serial
+        .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+        .expect("serial gen");
     let s_serial = s_serial.to_asn1_integer().expect("serial asn1");
     server_b.set_version(2).expect("set version");
     server_b.set_serial_number(&s_serial).expect("set serial");
     server_b.set_subject_name(&server_name).expect("set subj");
-    server_b.set_issuer_name(ca_cert.subject_name()).expect("set issuer");
+    server_b
+        .set_issuer_name(ca_cert.subject_name())
+        .expect("set issuer");
     server_b.set_pubkey(&server_key).expect("set pubkey");
     server_b.set_not_before(&nb).expect("set nb");
     server_b.set_not_after(&na).expect("set na");
@@ -69,7 +87,9 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     server_b.append_extension(bc).expect("append bc");
     let ku = KeyUsage::new().digital_signature().build().expect("ku");
     server_b.append_extension(ku).expect("append ku");
-    server_b.sign(&ca_pkey, MessageDigest::null()).expect("sign srv");
+    server_b
+        .sign(&ca_pkey, MessageDigest::null())
+        .expect("sign srv");
     let server_cert_pem = server_b.build().to_pem().expect("srv pem");
     let server_key_pem = server_key.private_key_to_pem_pkcs8().expect("srv key pem");
 
@@ -79,16 +99,22 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let id_without_suffix = "user";
     let client_cn = format!("{}{}", id_without_suffix, ISSUER_SUFFIX);
     let mut client_name_b = X509NameBuilder::new().expect("cli name builder");
-    client_name_b.append_entry_by_nid(Nid::COMMONNAME, &client_cn).expect("cli cn");
+    client_name_b
+        .append_entry_by_nid(Nid::COMMONNAME, &client_cn)
+        .expect("cli cn");
     let client_name = client_name_b.build();
     let mut client_b = X509::builder().expect("cli x509 builder");
     let mut c_serial = BigNum::new().expect("serial");
-    c_serial.rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false).expect("serial gen");
+    c_serial
+        .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+        .expect("serial gen");
     let c_serial = c_serial.to_asn1_integer().expect("serial asn1");
     client_b.set_version(2).expect("set version");
     client_b.set_serial_number(&c_serial).expect("set serial");
     client_b.set_subject_name(&client_name).expect("set subj");
-    client_b.set_issuer_name(ca_cert.subject_name()).expect("set issuer");
+    client_b
+        .set_issuer_name(ca_cert.subject_name())
+        .expect("set issuer");
     client_b.set_pubkey(&client_key).expect("set pubkey");
     client_b.set_not_before(&nb).expect("set nb");
     client_b.set_not_after(&na).expect("set na");
@@ -96,7 +122,9 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     client_b.append_extension(bc).expect("append bc");
     let ku = KeyUsage::new().digital_signature().build().expect("ku");
     client_b.append_extension(ku).expect("append ku");
-    client_b.sign(&ca_pkey, MessageDigest::null()).expect("sign client");
+    client_b
+        .sign(&ca_pkey, MessageDigest::null())
+        .expect("sign client");
     let client_cert_pem = client_b.build().to_pem().expect("cli pem");
     let client_key_pem = client_key.private_key_to_pem_pkcs8().expect("cli key pem");
 
@@ -104,7 +132,8 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let mux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux");
     let mux = std::sync::Arc::new(mux0);
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
-    let (seen_flag, seen_issuer): (Arc<AtomicBool>, Arc<OnceLock<String>>) = (Arc::new(AtomicBool::new(false)), Arc::new(OnceLock::new()));
+    let (seen_flag, seen_issuer): (Arc<AtomicBool>, Arc<OnceLock<String>>) =
+        (Arc::new(AtomicBool::new(false)), Arc::new(OnceLock::new()));
 
     let mut server = DtlsOpenSsl::new("server".to_string())
         .with_dangerous_debug(true)
@@ -142,7 +171,12 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
 
     // Send a small JSON payload to trigger delivery
     let payload = br#"{\"hello\":\"world\"}"#;
-    let _ = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload).expect("client send");
+    let _ = client
+        .send(
+            &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+            payload,
+        )
+        .expect("client send");
 
     // Wait for server to capture issuer
     let start = Instant::now();
@@ -151,5 +185,9 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     }
     let issuer_seen = seen_issuer.get().cloned();
     assert!(issuer_seen.is_some(), "issuer not delivered to app layer");
-    assert_eq!(issuer_seen.unwrap(), id_without_suffix.to_string(), "issuer should be trimmed of ISSUER_SUFFIX");
+    assert_eq!(
+        issuer_seen.unwrap(),
+        id_without_suffix.to_string(),
+        "issuer should be trimmed of ISSUER_SUFFIX"
+    );
 }

@@ -1,9 +1,11 @@
 // #![cfg(not(target_os = "ios"))]
 
-use rust_comms::algo_ops::{self, AlgoOps};
 use crate::tests_common::TestAlgo;
+use rust_comms::algo_ops::{self, AlgoOps};
 
-fn err<E: std::fmt::Display>(e: E) -> String { format!("{}", e) }
+fn err<E: std::fmt::Display>(e: E) -> String {
+    format!("{}", e)
+}
 
 pub struct RealBackend {
     inner: AlgoOps,
@@ -20,7 +22,7 @@ impl TestAlgo for RealBackend {
                 token: Some("a".repeat(64)),
                 token_key: Some("X-API-Key".to_string()),
                 app_id: None,
-                asset_id: None, 
+                asset_id: None,
             })
         } else {
             None
@@ -30,7 +32,9 @@ impl TestAlgo for RealBackend {
     }
 
     fn create_address(&mut self, save: bool, always_new_address: bool) -> Result<String, String> {
-        self.inner.create_address(save, always_new_address).map_err(err)
+        self.inner
+            .create_address(save, always_new_address)
+            .map_err(err)
     }
 
     fn public_key_bytes(&self) -> Result<[u8; 32], String> {
@@ -65,7 +69,9 @@ impl TestAlgo for RealBackend {
         app_id: u64,
         account_address: &str,
     ) -> Result<Option<Vec<(String, String)>>, String> {
-        self.inner.local_state_for_account(app_id, account_address).map_err(err)
+        self.inner
+            .local_state_for_account(app_id, account_address)
+            .map_err(err)
     }
 
     fn send_algo(&self, to_address: &str, amount_algos: f64) -> Result<(), String> {

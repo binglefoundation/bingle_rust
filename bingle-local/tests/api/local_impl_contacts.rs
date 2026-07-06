@@ -1,6 +1,8 @@
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, ContactSource, LocalApiConfig};
 
-fn mk_api() -> BingleApiLocalImpl { BingleApiLocalImpl::new(LocalApiConfig::default()) }
+fn mk_api() -> BingleApiLocalImpl {
+    BingleApiLocalImpl::new(LocalApiConfig::default())
+}
 
 #[test]
 fn contacts_initially_empty() {
@@ -12,8 +14,10 @@ fn contacts_initially_empty() {
 #[test]
 fn add_and_list_contacts() {
     let mut api = mk_api();
-    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual).expect("add alice");
-    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received).expect("add bob");
+    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual)
+        .expect("add alice");
+    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received)
+        .expect("add bob");
 
     let mut list = api.get_contacts().expect("get_contacts");
     list.sort_by(|a, b| a.handle.cmp(&b.handle));
@@ -25,16 +29,21 @@ fn add_and_list_contacts() {
 #[test]
 fn duplicate_add_errors() {
     let mut api = mk_api();
-    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap();
-    let err = api.add_contact("alice2".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap_err();
+    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual)
+        .unwrap();
+    let err = api
+        .add_contact("alice2".into(), "ID_ALICE".into(), ContactSource::Manual)
+        .unwrap_err();
     assert!(err.to_string().to_lowercase().contains("exists"));
 }
 
 #[test]
 fn block_hides_contact_and_is_blocked_true() {
     let mut api = mk_api();
-    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap();
-    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received).unwrap();
+    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual)
+        .unwrap();
+    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received)
+        .unwrap();
 
     api.block_contact("ID_BOB".into()).expect("block");
 
@@ -49,7 +58,8 @@ fn block_hides_contact_and_is_blocked_true() {
 #[test]
 fn remove_contact_works_and_then_missing_errors() {
     let mut api = mk_api();
-    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap();
+    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual)
+        .unwrap();
     api.remove_contact("ID_ALICE".into()).expect("remove");
 
     // Removing again should error

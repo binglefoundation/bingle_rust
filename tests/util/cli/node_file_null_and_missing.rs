@@ -17,18 +17,23 @@ fn write_temp_nodefile(content: &str, suffix: &str) -> PathBuf {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn parses_node_file_with_null_token_fields() {
-    let file = write_temp_nodefile(r#"{
+    let file = write_temp_nodefile(
+        r#"{
         "client_api_url": "https://api.example",
         "client_api_port": 443,
         "indexer_api_url": "https://idx.example",
         "indexer_api_port": 443,
         "token": null,
         "token_key": null
-    }"#, "json");
+    }"#,
+        "json",
+    );
 
     let args = vec![
-        "--handle".into(), "user-null".into(),
-        "--node-file".into(), file.to_string_lossy().to_string(),
+        "--handle".into(),
+        "user-null".into(),
+        "--node-file".into(),
+        file.to_string_lossy().to_string(),
     ];
 
     let opts = parse_start_options_from_args(args).expect("should parse args");
@@ -44,17 +49,22 @@ pub fn parses_node_file_with_null_token_fields() {
 #[cfg(not(target_os = "ios"))]
 pub fn parses_node_file_with_missing_token_fields() {
     // token and token_key completely omitted
-    let file = write_temp_nodefile(r#"{
+    let file = write_temp_nodefile(
+        r#"{
         "network": "mainnet",
         "client_api_url": "https://api2.example",
         "client_api_port": 443,
         "indexer_api_url": "https://idx2.example",
         "indexer_api_port": 443
-    }"#, "json");
+    }"#,
+        "json",
+    );
 
     let args = vec![
-        "--handle".into(), "user-missing".into(),
-        "--node-file".into(), file.to_string_lossy().to_string(),
+        "--handle".into(),
+        "user-missing".into(),
+        "--node-file".into(),
+        file.to_string_lossy().to_string(),
     ];
 
     let opts = parse_start_options_from_args(args).expect("should parse args");

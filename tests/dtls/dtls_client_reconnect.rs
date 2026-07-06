@@ -1,24 +1,28 @@
-
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
 pub mod pki;
 pub mod test_handlers;
+#[path = "../test_util.rs"]
+pub mod test_util;
 
-use test_util::init_test_logging;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
 use test_handlers::*;
+use test_util::init_test_logging;
 
 // Clearable storage for validation
 static SERVER_HELLO_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static SERVER_CLIENT_ECHOED_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static CLIENT_PING_SEEN_2: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
-fn server_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn server_handler_2(
+    server: &dyn Dtls,
+    from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     tracing::info!("server_handler_2: {}", String::from_utf8_lossy(data));
     if data == b"Hello" {
         let mut g = SERVER_HELLO_2.lock().unwrap();
@@ -32,7 +36,12 @@ fn server_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Netwo
     }
 }
 
-fn client_handler_2(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn client_handler_2(
+    server: &dyn Dtls,
+    from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     tracing::info!("client_handler_2: {}", String::from_utf8_lossy(data));
     if data == b"Ping" {
         let mut g = CLIENT_PING_SEEN_2.lock().unwrap();
@@ -58,7 +67,7 @@ pub fn dtls_client_reconnect() {
     let addr_srv = mux_srv.local_addr().expect("server addr");
 
     let mut server = DtlsOpenSsl::new("server".to_string())
-       // .with_null_encryption()
+        // .with_null_encryption()
         .with_handle_message(Arc::new(server_handler_2))
         .with_server_signing_cert(certs.server_crt.clone())
         .with_server_signing_private_key(certs.server_key.clone())
@@ -74,11 +83,15 @@ pub fn dtls_client_reconnect() {
     let client_mux_port = test_util::find_unused_loopback_port();
     let client_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), client_mux_port);
 
-    tracing::info!("Starting client 1 on addr:port {} server on {}", client_addr, mux_srv.local_addr().unwrap());
+    tracing::info!(
+        "Starting client 1 on addr:port {} server on {}",
+        client_addr,
+        mux_srv.local_addr().unwrap()
+    );
 
     let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 1 mux"));
     let mut client1 = DtlsOpenSsl::new("client1".to_string())
-      //  .with_null_encryption()
+        //  .with_null_encryption()
         .with_handle_message(Arc::new(client_handler_2))
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
@@ -105,7 +118,7 @@ pub fn dtls_client_reconnect() {
 
     // 4. Build another DTLS client and mux on same address and port
     tracing::info!("Starting client 2 on same addr:port {}...", client_addr);
-    
+
     // Clear validation storage for round 2
     {
         *SERVER_HELLO_2.lock().unwrap() = None;
@@ -138,7 +151,10 @@ fn do_roundtrip(client: &dyn Dtls, server_addr: SocketAddr, label: &str) {
     let endpoint = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr);
     let mut ok = false;
     for _ in 0..1 {
-        if client.send(&endpoint, b"Hello").is_ok() { ok = true; break; }
+        if client.send(&endpoint, b"Hello").is_ok() {
+            ok = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(100));
     }
     assert!(ok, "{} client DTLS send of 'Hello' failed", label);
@@ -148,22 +164,39 @@ fn do_roundtrip(client: &dyn Dtls, server_addr: SocketAddr, label: &str) {
     while SERVER_HELLO_2.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(5) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(SERVER_HELLO_2.lock().unwrap().is_some(), "{} server did not receive 'Hello'", label);
+    assert!(
+        SERVER_HELLO_2.lock().unwrap().is_some(),
+        "{} server did not receive 'Hello'",
+        label
+    );
 
     // Validate client received Ping
     let start = Instant::now();
     while CLIENT_PING_SEEN_2.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(3) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(CLIENT_PING_SEEN_2.lock().unwrap().is_some(), "{} client did not receive 'Ping'", label);
+    assert!(
+        CLIENT_PING_SEEN_2.lock().unwrap().is_some(),
+        "{} client did not receive 'Ping'",
+        label
+    );
 
     tracing::info!("[Test] {}: Ping received awaiting echo", label);
     // Validate server received client's echoed message
     let start = Instant::now();
-    while SERVER_CLIENT_ECHOED_2.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(10) {
+    while SERVER_CLIENT_ECHOED_2.lock().unwrap().is_none()
+        && start.elapsed() < Duration::from_secs(10)
+    {
         thread::sleep(Duration::from_millis(10));
     }
     let echoed = SERVER_CLIENT_ECHOED_2.lock().unwrap();
-    let echoed_vec = echoed.as_ref().expect(&format!("{} server did not receive client's echo", label));
-    assert_eq!(echoed_vec.as_slice(), b"CLIENT ECHOED: Ping", "{} server received wrong echo", label);
+    let echoed_vec = echoed
+        .as_ref()
+        .expect(&format!("{} server did not receive client's echo", label));
+    assert_eq!(
+        echoed_vec.as_slice(),
+        b"CLIENT ECHOED: Ping",
+        "{} server received wrong echo",
+        label
+    );
 }

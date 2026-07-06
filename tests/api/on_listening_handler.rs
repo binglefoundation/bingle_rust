@@ -2,7 +2,7 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::fs;
 use std::sync::Arc;
 
-use rust_comms::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions, BingleApiInternal};
+use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, OnListeningHandler, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[test]
@@ -16,24 +16,41 @@ pub fn on_listening_handler_creates_and_deletes_sentinel() {
     // Set up API and install an OnListeningHandler that mirrors CLI behavior
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     let path_clone = sentinel_str.clone();
-    let handler: Arc<OnListeningHandler> = Arc::new(move |listening: bool, _nat_type: rust_comms::engine::NatType| {
-        if listening {
-            // Create or truncate the sentinel file
-            if let Ok(mut f) = fs::OpenOptions::new().create(true).write(true).truncate(true).open(&path_clone) {
-                use std::io::Write;
-                let _ = writeln!(f, "listening");
+    let handler: Arc<OnListeningHandler> = Arc::new(
+        move |listening: bool, _nat_type: rust_comms::engine::NatType| {
+            if listening {
+                // Create or truncate the sentinel file
+                if let Ok(mut f) = fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&path_clone)
+                {
+                    use std::io::Write;
+                    let _ = writeln!(f, "listening");
+                }
+            } else {
+                let _ = fs::remove_file(&path_clone);
             }
-        } else {
-            let _ = fs::remove_file(&path_clone);
-        }
-    });
+        },
+    );
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.set_on_listening(Some(handler)));
 
     // Notify true -> file should exist
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.notify_listening(true, rust_comms::engine::NatType::Unknown));
-    assert!(sentinel_path.exists(), "sentinel file should be created on listening=true");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.notify_listening(true, rust_comms::engine::NatType::Unknown)
+    });
+    assert!(
+        sentinel_path.exists(),
+        "sentinel file should be created on listening=true"
+    );
 
     // Notify false -> file should be removed
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.notify_listening(false, rust_comms::engine::NatType::Unknown));
-    assert!(!sentinel_path.exists(), "sentinel file should be removed on listening=false");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.notify_listening(false, rust_comms::engine::NatType::Unknown)
+    });
+    assert!(
+        !sentinel_path.exists(),
+        "sentinel file should be removed on listening=false"
+    );
 }

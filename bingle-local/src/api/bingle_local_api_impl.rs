@@ -1,10 +1,12 @@
-use crate::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, REQUIRED_ALGO};
+use crate::api::{
+    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, REQUIRED_ALGO,
+};
 use rust_comms::api::bingle_api::BingleError;
-use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
+use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 /// Configuration for the local API implementation.
 /// Includes the blockchain provider configuration and required ids.
@@ -17,7 +19,11 @@ pub struct LocalApiConfig {
 
 impl Default for LocalApiConfig {
     fn default() -> Self {
-        Self { algo_config: AlgoChainConfig::default(), app_id: 0, asset_id: 0 }
+        Self {
+            algo_config: AlgoChainConfig::default(),
+            app_id: 0,
+            asset_id: 0,
+        }
     }
 }
 
@@ -97,12 +103,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
     }
 
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
-        tracing::info!("[BingleLocalApi] Registering keypair with handle: {}", handle);
+        tracing::info!(
+            "[BingleLocalApi] Registering keypair with handle: {}",
+            handle
+        );
         // Validate config
         let app_id = self.config.app_id;
         let asset_id = self.config.asset_id;
-        if app_id == 0 { return Err(BingleError::Other("app_id not set in config".to_string())); }
-        if asset_id == 0 { return Err(BingleError::Other("asset_id not set in config".to_string())); }
+        if app_id == 0 {
+            return Err(BingleError::Other("app_id not set in config".to_string()));
+        }
+        if asset_id == 0 {
+            return Err(BingleError::Other("asset_id not set in config".to_string()));
+        }
 
         // Ensure we have blockchain ops bound to current keypair
         let ops = match self.get_algo_ops() {
@@ -115,11 +128,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         // Execute on-chain steps
         if let Err(e) = ops.opt_in_app(app_id) {
-            tracing::error!("[register_keypair] Failed to opt in to app {}: {}", app_id, e);
+            tracing::error!(
+                "[register_keypair] Failed to opt in to app {}: {}",
+                app_id,
+                e
+            );
             return Err(BingleError::from_anyhow(e));
         }
         if let Err(e) = ops.opt_in_to_asset(asset_id) {
-            tracing::error!("[register_keypair] Failed to opt in to asset {}: {}", asset_id, e);
+            tracing::error!(
+                "[register_keypair] Failed to opt in to asset {}: {}",
+                asset_id,
+                e
+            );
             return Err(BingleError::from_anyhow(e));
         }
 
@@ -129,26 +150,49 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let price = match bgl.get_bingle_price(app_id) {
             Ok(p) => p,
             Err(e) => {
-                tracing::error!("[register_keypair] Failed to get Bingle price for app {}: {}", app_id, e);
+                tracing::error!(
+                    "[register_keypair] Failed to get Bingle price for app {}: {}",
+                    app_id,
+                    e
+                );
                 return Err(BingleError::from_anyhow(e));
             }
         };
         match bgl.buy_bingle(app_id, asset_id, price) {
-            Ok(tx) => { let _ = tx; }
+            Ok(tx) => {
+                let _ = tx;
+            }
             Err(e) => {
-                tracing::error!("[register_keypair] Failed to buy Bingle (app={}, asset={}, price={}): {}", app_id, asset_id, price, e);
+                tracing::error!(
+                    "[register_keypair] Failed to buy Bingle (app={}, asset={}, price={}): {}",
+                    app_id,
+                    asset_id,
+                    price,
+                    e
+                );
                 return Err(BingleError::from_anyhow(e));
             }
         }
         match bgl.register(app_id, asset_id, &handle, 1) {
-            Ok(tx) => { let _ = tx; }
+            Ok(tx) => {
+                let _ = tx;
+            }
             Err(e) => {
                 // This is a user action, they need to choose an unused handle probably
-                tracing::info!("[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}", handle, app_id, asset_id, e);
+                tracing::info!(
+                    "[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}",
+                    handle,
+                    app_id,
+                    asset_id,
+                    e
+                );
                 return Err(BingleError::from_anyhow(e));
             }
         }
-        tracing::info!("[BingleLocalApi] Keypair registered successfully with handle: {}", handle);
+        tracing::info!(
+            "[BingleLocalApi] Keypair registered successfully with handle: {}",
+            handle
+        );
         Ok(true)
     }
 
@@ -189,7 +233,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
 
         // 3) Construct and cache AlgoOps bound to this passphrase
-        tracing::debug!("[BingleLocalApi] get_algo_ops: constructing new AlgoOps with config: \
+        tracing::debug!(
+            "[BingleLocalApi] get_algo_ops: constructing new AlgoOps with config: \
             client_api_url={}, client_api_port={}, indexer_api_url={}, indexer_api_port={}, \
             token={}, token_key={}, app_id={:?}, asset_id={:?}",
             self.config.algo_config.client_api_url,
@@ -197,7 +242,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             self.config.algo_config.indexer_api_url,
             self.config.algo_config.indexer_api_port,
             self.config.algo_config.token.as_deref().unwrap_or("<none>"),
-            self.config.algo_config.token_key.as_deref().unwrap_or("<none>"),
+            self.config
+                .algo_config
+                .token_key
+                .as_deref()
+                .unwrap_or("<none>"),
             self.config.algo_config.app_id,
             self.config.algo_config.asset_id,
         );
@@ -206,7 +255,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
             Ok(g) => g,
             Err(e) => {
                 let msg = format!("mutex poisoned: {}", e);
-                tracing::error!("[get_algo_ops] Failed to lock algo_ops for caching: {}", msg);
+                tracing::error!(
+                    "[get_algo_ops] Failed to lock algo_ops for caching: {}",
+                    msg
+                );
                 return Err(BingleError::Other(msg));
             }
         };
@@ -214,11 +266,25 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(ops)
     }
 
-    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), BingleError> {
-        tracing::info!("[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}", handle, id, source);
+    fn add_contact(
+        &mut self,
+        handle: String,
+        id: String,
+        source: ContactSource,
+    ) -> Result<(), BingleError> {
+        tracing::info!(
+            "[BingleLocalApi] Adding contact: handle={}, id={}, source={:?}",
+            handle,
+            id,
+            source
+        );
         // Validate inputs
-        if handle.trim().is_empty() { return Err(BingleError::Other("handle cannot be empty".to_string())); }
-        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
+        if handle.trim().is_empty() {
+            return Err(BingleError::Other("handle cannot be empty".to_string()));
+        }
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
 
         let mut map = match self.contacts.lock() {
             Ok(g) => g,
@@ -237,7 +303,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn block_contact(&mut self, id: String) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Blocking contact: id={}", id);
-        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
         let mut map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -247,14 +315,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
         match map.get_mut(&id) {
-            Some((_h, _s, blocked)) => { *blocked = true; Ok(()) }
+            Some((_h, _s, blocked)) => {
+                *blocked = true;
+                Ok(())
+            }
             None => Err(BingleError::Other("contact not found".to_string())),
         }
     }
 
     fn remove_contact(&mut self, id: String) -> Result<(), BingleError> {
         tracing::info!("[BingleLocalApi] Removing contact: id={}", id);
-        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
         let mut map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -263,11 +336,17 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 return Err(BingleError::Other(msg));
             }
         };
-        if map.remove(&id).is_some() { Ok(()) } else { Err(BingleError::Other("contact not found".to_string())) }
+        if map.remove(&id).is_some() {
+            Ok(())
+        } else {
+            Err(BingleError::Other("contact not found".to_string()))
+        }
     }
 
     fn is_blocked(&self, id: &str) -> Result<bool, BingleError> {
-        if id.trim().is_empty() { return Err(BingleError::Other("id cannot be empty".to_string())); }
+        if id.trim().is_empty() {
+            return Err(BingleError::Other("id cannot be empty".to_string()));
+        }
         let map = match self.contacts.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -291,7 +370,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let mut out: Vec<Contact> = Vec::new();
         for (id, (handle, _source, blocked)) in map.iter() {
             if !*blocked {
-                out.push(Contact { handle: handle.clone(), id: id.clone(), fields: HashMap::new() });
+                out.push(Contact {
+                    handle: handle.clone(),
+                    id: id.clone(),
+                    fields: HashMap::new(),
+                });
             }
         }
         Ok(out)
@@ -305,12 +388,30 @@ impl BingleLocalApi for BingleApiLocalImpl {
         text: String,
         cipher_suite: Option<String>,
     ) -> Result<(), BingleError> {
-        tracing::debug!("[BingleLocalApi] Adding message from: {} to: {:?}", sender_handle, recipient_handles);
+        tracing::debug!(
+            "[BingleLocalApi] Adding message from: {} to: {:?}",
+            sender_handle,
+            recipient_handles
+        );
         // Basic input validation
-        if sender_handle.trim().is_empty() { return Err(BingleError::Other("sender_handle cannot be empty".to_string())); }
-        if recipient_handles.is_empty() { return Err(BingleError::Other("recipient_handles cannot be empty".to_string())); }
-        if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err(BingleError::Other("recipient_handles cannot contain empty handles".to_string())); }
-        if text.trim().is_empty() { return Err(BingleError::Other("text cannot be empty".to_string())); }
+        if sender_handle.trim().is_empty() {
+            return Err(BingleError::Other(
+                "sender_handle cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.is_empty() {
+            return Err(BingleError::Other(
+                "recipient_handles cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) {
+            return Err(BingleError::Other(
+                "recipient_handles cannot contain empty handles".to_string(),
+            ));
+        }
+        if text.trim().is_empty() {
+            return Err(BingleError::Other("text cannot be empty".to_string()));
+        }
 
         let msg = Message {
             sender_handle,
@@ -333,14 +434,33 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(())
     }
 
-    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError> {
-        tracing::debug!("[BingleLocalApi] Queuing message to: {:?}", recipient_handles);
+    fn queue_message(
+        &mut self,
+        recipient_handles: Vec<String>,
+        text: String,
+    ) -> Result<(), BingleError> {
+        tracing::debug!(
+            "[BingleLocalApi] Queuing message to: {:?}",
+            recipient_handles
+        );
         let status = self.keypair_status()?;
-        let sender_handle = status.handle.ok_or_else(|| BingleError::Other("No handle registered for current keypair".to_string()))?;
+        let sender_handle = status.handle.ok_or_else(|| {
+            BingleError::Other("No handle registered for current keypair".to_string())
+        })?;
 
-        if recipient_handles.is_empty() { return Err(BingleError::Other("recipient_handles cannot be empty".to_string())); }
-        if recipient_handles.iter().any(|h| h.trim().is_empty()) { return Err(BingleError::Other("recipient_handles cannot contain empty handles".to_string())); }
-        if text.trim().is_empty() { return Err(BingleError::Other("text cannot be empty".to_string())); }
+        if recipient_handles.is_empty() {
+            return Err(BingleError::Other(
+                "recipient_handles cannot be empty".to_string(),
+            ));
+        }
+        if recipient_handles.iter().any(|h| h.trim().is_empty()) {
+            return Err(BingleError::Other(
+                "recipient_handles cannot contain empty handles".to_string(),
+            ));
+        }
+        if text.trim().is_empty() {
+            return Err(BingleError::Other("text cannot be empty".to_string()));
+        }
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -369,7 +489,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(())
     }
 
-    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError> {
+    fn update_message_status(
+        &mut self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+    ) -> Result<(), BingleError> {
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -386,7 +511,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
             Ok(())
         } else {
-            Err(BingleError::Other(format!("Message with timestamp {} not found", timestamp)))
+            Err(BingleError::Other(format!(
+                "Message with timestamp {} not found",
+                timestamp
+            )))
         }
     }
 
@@ -399,7 +527,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 return Err(BingleError::Other(msg));
             }
         };
-        Ok(guard.iter().filter(|m| m.progress.map_or(false, |p| p < 1.0)).cloned().collect())
+        Ok(guard
+            .iter()
+            .filter(|m| m.progress.map_or(false, |p| p < 1.0))
+            .cloned()
+            .collect())
     }
 
     fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
@@ -473,7 +605,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             g.clone()
         };
 
-        let state = LocalState { keypair, contacts: contacts_vec, messages };
+        let state = LocalState {
+            keypair,
+            contacts: contacts_vec,
+            messages,
+        };
 
         // Ensure parent directory exists
         if let Some(parent) = std::path::Path::new(path).parent() {
@@ -586,14 +722,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 Ok(g) => g,
                 Err(e) => {
                     let msg = format!("mutex poisoned: {}", e);
-                    tracing::error!("[BingleLocalApi][keypair_status] Failed to lock keypair: {}", msg);
+                    tracing::error!(
+                        "[BingleLocalApi][keypair_status] Failed to lock keypair: {}",
+                        msg
+                    );
                     return Err(BingleError::Other(msg));
                 }
             };
             match guard.as_ref() {
                 Some(k) => k.clone(),
                 None => {
-                    tracing::info!("[BingleLocalApi][keypair_status] Keypair status: None (no keypair)");
+                    tracing::info!(
+                        "[BingleLocalApi][keypair_status] Keypair status: None (no keypair)"
+                    );
                     return Ok(KeypairStatus {
                         status: "None".to_string(),
                         id: None,
@@ -610,7 +751,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
         let ops = match self.get_algo_ops() {
             Ok(o) => o,
             Err(e) => {
-                tracing::error!("[BingleLocalApi][keypair_status] Failed to get AlgoOps: {}", e);
+                tracing::error!(
+                    "[BingleLocalApi][keypair_status] Failed to get AlgoOps: {}",
+                    e
+                );
                 return Err(e);
             }
         };
@@ -621,7 +765,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
             match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
                 Ok(v) => v,
                 Err(e) => {
-                    tracing::error!("[BingleLocalApi][keypair_status] Failed to check asset opt-in for {} (asset {}): {}", algorand_id, asset_id, e);
+                    tracing::error!(
+                        "[BingleLocalApi][keypair_status] Failed to check asset opt-in for {} (asset {}): {}",
+                        algorand_id,
+                        asset_id,
+                        e
+                    );
                     return Err(BingleError::from_anyhow(e));
                 }
             }
@@ -636,12 +785,18 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
                     Ok(s) => s,
                     Err(e) => {
-                        tracing::error!("[BingleLocalApi][keypair_status] Failed to get local state for {} (app {}): {}", algorand_id, app_id, e);
+                        tracing::error!(
+                            "[BingleLocalApi][keypair_status] Failed to get local state for {} (app {}): {}",
+                            algorand_id,
+                            app_id,
+                            e
+                        );
                         return Err(BingleError::from_anyhow(e));
                     }
                 };
                 local_state.and_then(|entries| {
-                    entries.into_iter()
+                    entries
+                        .into_iter()
                         .find(|(k, _)| k == "Handle")
                         .map(|(_, v)| v)
                 })
@@ -656,7 +811,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
         // account holds the asset but has no Handle entry, fall through to the
         // balance check rather than reporting ACTIVE.
         if has_asset && handle.is_none() {
-            tracing::debug!("[BingleLocalApi][keypair_status] Account {} holds Bingle$ asset but no Handle entry found; falling through to balance check", algorand_id);
+            tracing::debug!(
+                "[BingleLocalApi][keypair_status] Account {} holds Bingle$ asset but no Handle entry found; falling through to balance check",
+                algorand_id
+            );
         }
 
         // Balance is only needed when the account is not ACTIVE; skip the query otherwise.
@@ -666,16 +824,28 @@ impl BingleLocalApi for BingleApiLocalImpl {
             let balance = match ops.account_balance() {
                 Ok(b) => b,
                 Err(e) => {
-                    tracing::error!("[BingleLocalApi][keypair_status] Failed to get account balance: {}", e);
+                    tracing::error!(
+                        "[BingleLocalApi][keypair_status] Failed to get account balance: {}",
+                        e
+                    );
                     return Err(BingleError::from_anyhow(e));
                 }
             };
             let balance_algos = balance.unwrap_or(0.0);
-            tracing::info!("[BingleLocalApi][keypair_status] Balance: {} ALGOs (raw: {:?})", balance_algos, balance);
+            tracing::info!(
+                "[BingleLocalApi][keypair_status] Balance: {} ALGOs (raw: {:?})",
+                balance_algos,
+                balance
+            );
             balance_algos
         };
 
-        Ok(keypair_status_from_facts(algorand_id, has_asset, handle, balance_algos))
+        Ok(keypair_status_from_facts(
+            algorand_id,
+            has_asset,
+            handle,
+            balance_algos,
+        ))
     }
 
     fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {

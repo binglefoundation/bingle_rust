@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use rust_comms::api::bingle_api::{BingleApiBoth, BingleApiBothType};
+use std::sync::Arc;
 
 pub fn to_weak<T: BingleApiBoth + 'static>(api: T) -> BingleApiBothType {
     let arc: Arc<dyn BingleApiBoth> = Arc::new(api);

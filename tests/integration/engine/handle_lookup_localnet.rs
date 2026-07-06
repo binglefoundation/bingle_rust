@@ -65,10 +65,12 @@ pub fn registered_user_handle_retrieved_from_blockchain() {
     )
     .expect("fund test accounts");
 
-    let creator =
-        test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let (app_id, asset_id) =
-        test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
     // Register a user on the blockchain with a known handle.
     let handle = "alice_auth_test";
@@ -106,14 +108,14 @@ pub fn unregistered_user_handle_not_found_on_blockchain() {
     test_util::assert_localnet_available();
 
     let cfg = test_util::localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(
-        &cfg,
-        &[test_util::ADDRESS_SPEND],
-    )
-    .expect("fund test accounts");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND])
+        .expect("fund test accounts");
 
-    let creator =
-        test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
     // Deploy a fresh app so no accounts have registered against it.
     let (app_id, _asset_id) =
         test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
@@ -125,8 +127,7 @@ pub fn unregistered_user_handle_not_found_on_blockchain() {
     let result = api.handle_lookup_by_id(&user_id);
 
     assert_eq!(
-        result,
-        None,
+        result, None,
         "handle_lookup_by_id should return None for an unregistered user, got {:?}",
         result
     );

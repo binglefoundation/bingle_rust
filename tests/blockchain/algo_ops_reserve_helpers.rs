@@ -54,6 +54,9 @@ pub fn test_parse_holding_amount_from_account_value() {
     });
     assert_eq!(AlgoOps::parse_holding_amount_from_account_value(&v, 111), 5);
     assert_eq!(AlgoOps::parse_holding_amount_from_account_value(&v, 222), 0);
-    assert_eq!(AlgoOps::parse_holding_amount_from_account_value(&v, 333), 42);
+    assert_eq!(
+        AlgoOps::parse_holding_amount_from_account_value(&v, 333),
+        42
+    );
     assert_eq!(AlgoOps::parse_holding_amount_from_account_value(&v, 444), 0);
 }

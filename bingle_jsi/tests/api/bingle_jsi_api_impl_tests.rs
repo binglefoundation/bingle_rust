@@ -4,7 +4,9 @@ use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
 use bingle_jsi::api::callback::{ListeningCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
-use bingle_jsi::api::types::{BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType};
+use bingle_jsi::api::types::{
+    BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType,
+};
 
 /// Helper: build a minimal config with only `handle` set.
 fn config_with_handle(handle: &str) -> BingleJsiConfig {
@@ -68,15 +70,25 @@ fn empty_config() -> BingleJsiConfig {
 #[test]
 fn init_with_handle_succeeds() {
     let api = BingleJsiApiImpl::init(config_with_handle("testuser"));
-    assert!(api.is_ok(), "init should succeed with handle: {:?}", api.err());
+    assert!(
+        api.is_ok(),
+        "init should succeed with handle: {:?}",
+        api.err()
+    );
 }
 
 #[test]
 fn create_bingle_api_returns_trait_object() {
     let api = bingle_jsi::create_bingle_api(config_with_handle("testuser"));
-    assert!(api.is_ok(), "create_bingle_api should succeed: {:?}", api.err());
+    assert!(
+        api.is_ok(),
+        "create_bingle_api should succeed: {:?}",
+        api.err()
+    );
     let api = api.unwrap();
-    let info = api.version().expect("version should succeed on trait object");
+    let info = api
+        .version()
+        .expect("version should succeed on trait object");
     assert!(!info.version.is_empty());
 }
 
@@ -84,7 +96,11 @@ fn create_bingle_api_returns_trait_object() {
 fn init_with_local_and_no_handle_succeeds() {
     let tmp = std::env::temp_dir().join("bingle_jsi_test_init_local.json");
     let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()));
-    assert!(api.is_ok(), "init with local and no handle should succeed: {:?}", api.err());
+    assert!(
+        api.is_ok(),
+        "init with local and no handle should succeed: {:?}",
+        api.err()
+    );
     let _ = std::fs::remove_file(&tmp);
 }
 
@@ -135,7 +151,10 @@ fn local_methods_fail_without_local_flag() {
 
     let result = api.generate_keypair();
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), BingleJsiError::InvalidRequest { .. }));
+    assert!(matches!(
+        result.unwrap_err(),
+        BingleJsiError::InvalidRequest { .. }
+    ));
 
     let result = api.get_contacts();
     assert!(result.is_err());
@@ -176,7 +195,9 @@ fn keypair_status_returns_none_initially() {
 #[test]
 fn generate_keypair_succeeds() {
     let api = init_with_local_helper();
-    let kp = api.generate_keypair().expect("generate_keypair should succeed");
+    let kp = api
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
     assert!(!kp.id.is_empty());
     assert!(!kp.passphrase.is_empty());
 }
@@ -185,7 +206,9 @@ fn generate_keypair_succeeds() {
 #[ignore] // needs localnet
 fn generate_keypair_changes_status_to_unfunded() {
     let api = init_with_local_helper();
-    let _kp = api.generate_keypair().expect("generate_keypair should succeed");
+    let _kp = api
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
     let status = api.keypair_status().expect("keypair_status should succeed");
     assert_eq!(status.status, KeypairStatus::Unfunded);
     assert!(status.id.is_some());
@@ -220,7 +243,9 @@ fn block_contact_hides_from_contacts() {
     api.block_contact("BOB_ID".to_string())
         .expect("block_contact should succeed");
 
-    let blocked = api.is_blocked("BOB_ID".to_string()).expect("is_blocked should succeed");
+    let blocked = api
+        .is_blocked("BOB_ID".to_string())
+        .expect("is_blocked should succeed");
     assert!(blocked);
 
     let contacts = api.get_contacts().expect("get_contacts should succeed");
@@ -243,7 +268,9 @@ fn remove_contact_removes_without_blocking() {
     let contacts = api.get_contacts().expect("get_contacts should succeed");
     assert!(contacts.is_empty());
 
-    let blocked = api.is_blocked("CAROL_ID".to_string()).expect("is_blocked should succeed");
+    let blocked = api
+        .is_blocked("CAROL_ID".to_string())
+        .expect("is_blocked should succeed");
     assert!(!blocked);
 }
 
@@ -265,7 +292,10 @@ fn add_and_get_messages() {
     assert_eq!(messages[0].recipient_handles, vec!["bob".to_string()]);
     assert_eq!(messages[0].timestamp, 1000);
     assert_eq!(messages[0].text, "Hello Bob");
-    let cs = messages[0].cipher_suite.as_ref().expect("cipher_suite should be Some");
+    let cs = messages[0]
+        .cipher_suite
+        .as_ref()
+        .expect("cipher_suite should be Some");
     assert_eq!(cs, "TLS_AES_256_GCM_SHA384");
 }
 
@@ -320,30 +350,41 @@ fn init_with_optional_fields() {
         local: None,
     };
     let api = BingleJsiApiImpl::init(config);
-    assert!(api.is_ok(), "init with optional fields should succeed: {:?}", api.err());
+    assert!(
+        api.is_ok(),
+        "init with optional fields should succeed: {:?}",
+        api.err()
+    );
 }
 
 // ── start / is_started tests ─────────────────────────────────────────
 
 #[test]
 fn is_started_true_after_init_without_local() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
-    assert!(api.is_started(), "engine should be started when no local mode");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
+    assert!(
+        api.is_started(),
+        "engine should be started when no local mode"
+    );
 }
 
 #[test]
 fn is_started_false_after_init_with_local() {
     let api = init_with_local_helper();
-    assert!(!api.is_started(), "engine should not be started in local mode without funded keypair");
+    assert!(
+        !api.is_started(),
+        "engine should not be started in local mode without funded keypair"
+    );
 }
 
 #[test]
 fn start_fails_without_local_api() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let result = api.start();
-    assert!(result.is_err(), "start should fail when already started or no local API");
+    assert!(
+        result.is_err(),
+        "start should fail when already started or no local API"
+    );
 }
 
 #[test]
@@ -353,7 +394,11 @@ fn start_fails_when_keypair_none() {
     assert!(result.is_err());
     match result {
         Err(BingleJsiError::InvalidRequest { reason }) => {
-            assert!(reason.contains("FUNDED"), "error should mention FUNDED: {}", reason);
+            assert!(
+                reason.contains("FUNDED"),
+                "error should mention FUNDED: {}",
+                reason
+            );
         }
         other => panic!("Expected InvalidRequest, got {:?}", other),
     }
@@ -363,7 +408,9 @@ fn start_fails_when_keypair_none() {
 #[ignore] // Need localnet
 fn start_fails_when_keypair_unfunded() {
     let api = init_with_local_helper();
-    let _kp = api.generate_keypair().expect("generate_keypair should succeed");
+    let _kp = api
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
     let status = api.keypair_status().expect("keypair_status should succeed");
     assert_eq!(status.status, KeypairStatus::Unfunded);
 
@@ -371,7 +418,11 @@ fn start_fails_when_keypair_unfunded() {
     assert!(result.is_err());
     match result {
         Err(BingleJsiError::InvalidRequest { reason }) => {
-            assert!(reason.contains("FUNDED"), "error should mention FUNDED: {}", reason);
+            assert!(
+                reason.contains("FUNDED"),
+                "error should mention FUNDED: {}",
+                reason
+            );
         }
         other => panic!("Expected InvalidRequest, got {:?}", other),
     }
@@ -380,16 +431,22 @@ fn start_fails_when_keypair_unfunded() {
 
 #[test]
 fn start_fails_when_already_started() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     assert!(api.is_started());
     let result = api.start();
     assert!(result.is_err());
     match result {
         Err(BingleJsiError::InvalidRequest { reason }) => {
-            assert!(reason.contains("already started"), "error should mention already started: {}", reason);
+            assert!(
+                reason.contains("already started"),
+                "error should mention already started: {}",
+                reason
+            );
         }
-        other => panic!("Expected InvalidRequest about already started, got {:?}", other),
+        other => panic!(
+            "Expected InvalidRequest about already started, got {:?}",
+            other
+        ),
     }
 }
 
@@ -409,8 +466,7 @@ impl MessageCallback for RecordingCallback {
 
 #[test]
 fn set_message_callback_succeeds() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let received: Arc<Mutex<Vec<(String, String, BingleMessage)>>> =
         Arc::new(Mutex::new(Vec::new()));
     let cb = RecordingCallback {
@@ -422,8 +478,7 @@ fn set_message_callback_succeeds() {
 
 #[test]
 fn set_message_callback_replaces_previous() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
 
     let received1: Arc<Mutex<Vec<(String, String, BingleMessage)>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -457,8 +512,7 @@ impl ListeningCallback for RecordingListeningCallback {
 
 #[test]
 fn set_listening_callback_succeeds() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     let events: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let cb = RecordingListeningCallback {
         events: events.clone(),
@@ -469,8 +523,7 @@ fn set_listening_callback_succeeds() {
 
 #[test]
 fn set_listening_callback_replaces_previous() {
-    let api = BingleJsiApiImpl::init(config_with_handle("testuser"))
-        .expect("init should succeed");
+    let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
 
     let events1: Arc<Mutex<Vec<(bool, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let cb1 = RecordingListeningCallback {

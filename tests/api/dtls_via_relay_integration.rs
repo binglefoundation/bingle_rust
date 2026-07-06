@@ -3,16 +3,16 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rust_comms::api::bingle_api::{BingleApi, BingleError, Handle, NetworkEndpoint, StartOptions};
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::dtls::{Dtls, DtlsOpenSsl};
-use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
-use rust_comms::dtls::network_mux_trait::NetworkMux;
-use rust_comms::messages::{Message, PlainTextMessage, RelayMessage};
-use rust_comms::messages::types::{RelayCall, RelayListen};
-use rust_comms::turn::turn_handler::TurnHandler;
 use crate::relay::relay_states::test_util::init_test_logging;
 use crate::util::test_util::{ADDRESS_10MIL, ADDRESS_RECEIVE, ADDRESS_SPEND};
+use rust_comms::api::bingle_api::{BingleApi, BingleError, Handle, NetworkEndpoint, StartOptions};
+use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::dtls::network_mux_trait::NetworkMux;
+use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
+use rust_comms::dtls::{Dtls, DtlsOpenSsl};
+use rust_comms::messages::types::{RelayCall, RelayListen};
+use rust_comms::messages::{Message, PlainTextMessage, RelayMessage};
+use rust_comms::turn::turn_handler::TurnHandler;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -20,7 +20,9 @@ pub mod test_util;
 #[path = "../dtls/pki.rs"]
 pub mod pki;
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -35,7 +37,8 @@ pub fn dtls_send_via_relay_end_to_end() {
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     let target_port = test_util::find_unused_loopback_port();
-    let mut mux_target = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, target_port)).expect("bind target mux");
+    let mut mux_target =
+        UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, target_port)).expect("bind target mux");
 
     // Server will record the first plaintext message it receives
     let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -63,25 +66,42 @@ pub fn dtls_send_via_relay_end_to_end() {
     {
         let turn_client_clone = turn_client.clone();
         let local_address = Some(mux_target.local_addr().unwrap());
-        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-            // Handle TURN ChannelData for client (non-relay) mode
-            if let Some(wrapped) = turn_client_clone.handle_turn_incoming(Some(from), local_address, packet) {
-                // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
-                if let Some(udp) = source.as_any().downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>() {
-                    udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                    tracing::info!("[handle turn target] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
+        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(
+            move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+                // Handle TURN ChannelData for client (non-relay) mode
+                if let Some(wrapped) =
+                    turn_client_clone.handle_turn_incoming(Some(from), local_address, packet)
+                {
+                    // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
+                    if let Some(udp) = source
+                        .as_any()
+                        .downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>(
+                    ) {
+                        udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
+                        tracing::info!(
+                            "[handle turn target] reprocessed {} bytes from {}",
+                            wrapped.message.len(),
+                            wrapped.network_endpoint
+                        );
+                    } else {
+                        tracing::warn!(
+                            "[handle turn target] source is not UdpNetworkMux; cannot reprocess"
+                        );
+                    }
                 } else {
-                    tracing::warn!("[handle turn target] source is not UdpNetworkMux; cannot reprocess");
+                    tracing::debug!(
+                        "[handle_turn target] handle_turn_incoming returned None (ignored)"
+                    );
                 }
-            } else {
-                tracing::debug!("[handle_turn target] handle_turn_incoming returned None (ignored)");
-            }
-        });
+            },
+        );
         mux_target.set_handle_turn(Some(&th));
     }
     let mux_target_arc = Arc::new(mux_target);
     mux_target_arc.start().expect("start target mux");
-    dtls_server.start(mux_target_arc.clone()).expect("start dtls server");
+    dtls_server
+        .start(mux_target_arc.clone())
+        .expect("start dtls server");
 
     // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun)
     let relay_port = test_util::find_unused_loopback_port();
@@ -98,7 +118,9 @@ pub fn dtls_send_via_relay_end_to_end() {
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
     let relay_api = BingleApiImpl::new(&relay_opts);
     relay_api.set_id_to_handle_lookup_mock_for_tests(Box::new(|user_id| {
@@ -108,15 +130,22 @@ pub fn dtls_send_via_relay_end_to_end() {
             Ok(Some("mock-dtls-peer".to_string()))
         }
     }));
-    relay_api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts)).expect("start relay api");
+    relay_api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts))
+        .expect("start relay api");
     if !test_util::wait_for_relay_available(&relay_api, Duration::from_secs(30)) {
         panic!("relay did not become Available within 30s");
     }
 
     // 3) Send RelayListen from the DTLS target node to the relay and validate registration
-    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen { app: None, tag: None }));
+    let listen_msg = Message::Relay(RelayMessage::Listen(RelayListen {
+        app: None,
+        tag: None,
+    }));
     let listen_msg_bytes = serde_json::to_vec(&listen_msg).expect("serialize listenMsg");
-    dtls_server.send(&NetworkEndpoint::new_direct(relay_addr), &listen_msg_bytes).expect("send listenMsg");
+    dtls_server
+        .send(&NetworkEndpoint::new_direct(relay_addr), &listen_msg_bytes)
+        .expect("send listenMsg");
 
     turn_client.handle_listen(ADDRESS_10MIL, &relay_addr);
 
@@ -127,7 +156,8 @@ pub fn dtls_send_via_relay_end_to_end() {
     let ca_pem2: Vec<u8> = certs2.ca_crt.clone();
 
     let client_port = test_util::find_unused_loopback_port();
-    let mut mux_client = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, client_port)).expect("bind target mux 2");
+    let mut mux_client =
+        UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, client_port)).expect("bind target mux 2");
 
     // Add TURN handler to dtls_client for client mode (non-relay)
     let turn_client2 = Arc::new(rust_comms::turn::turn_handler::TurnClientImpl::new());
@@ -136,20 +166,35 @@ pub fn dtls_send_via_relay_end_to_end() {
     // Install TURN handler on the mutable mux_client before wrapping in Arc
     {
         let local_address = Some(mux_client.local_addr().unwrap());
-        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
-        // Handle TURN ChannelData for client (non-relay) mode
-        if let Some(wrapped) = turn_client2_clone.handle_turn_incoming(Some(from), local_address, packet) {
-            // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
-            if let Some(udp) = source.as_any().downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>() {
-                udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
-                tracing::info!("[handle turn client] reprocessed {} bytes from {}", wrapped.message.len(), wrapped.network_endpoint);
-            } else {
-                tracing::warn!("[handle turn client] source is not UdpNetworkMux; cannot reprocess");
-            }
-        } else {
-            tracing::debug!("[handle_turn client] handle_turn_incoming returned None (ignored)");
-        }
-    });
+        let th: Arc<dyn Fn(&dyn NetworkMux, &SocketAddr, &[u8]) + Send + Sync> = Arc::new(
+            move |source: &dyn NetworkMux, from: &SocketAddr, packet: &[u8]| {
+                // Handle TURN ChannelData for client (non-relay) mode
+                if let Some(wrapped) =
+                    turn_client2_clone.handle_turn_incoming(Some(from), local_address, packet)
+                {
+                    // Non-relay role: this packet is for us. Re-inject the stripped payload into the UDP mux
+                    if let Some(udp) = source
+                        .as_any()
+                        .downcast_ref::<rust_comms::dtls::network_mux_udp::UdpNetworkMux>(
+                    ) {
+                        udp.reprocess(&wrapped.network_endpoint, &wrapped.message);
+                        tracing::info!(
+                            "[handle turn client] reprocessed {} bytes from {}",
+                            wrapped.message.len(),
+                            wrapped.network_endpoint
+                        );
+                    } else {
+                        tracing::warn!(
+                            "[handle turn client] source is not UdpNetworkMux; cannot reprocess"
+                        );
+                    }
+                } else {
+                    tracing::debug!(
+                        "[handle_turn client] handle_turn_incoming returned None (ignored)"
+                    );
+                }
+            },
+        );
         mux_client.set_handle_turn(Some(&th));
     }
 
@@ -187,12 +232,20 @@ pub fn dtls_send_via_relay_end_to_end() {
         }));
 
     mux_client_arc.start().expect("start client mux");
-    dtls_client.start(mux_client_arc.clone()).expect("start dtls client");
+    dtls_client
+        .start(mux_client_arc.clone())
+        .expect("start dtls client");
 
     // 4) Send RelayCall from dtls client to relay
-    let call_msg = Message::Relay(RelayMessage::Call(RelayCall { app: None, called_id: ADDRESS_RECEIVE.to_string(), tag: None }));
+    let call_msg = Message::Relay(RelayMessage::Call(RelayCall {
+        app: None,
+        called_id: ADDRESS_RECEIVE.to_string(),
+        tag: None,
+    }));
     let call_msg_bytes = serde_json::to_vec(&call_msg).expect("serialize call_msg");
-    dtls_client.send(&NetworkEndpoint::new_direct(relay_addr), &call_msg_bytes).expect("send listenMsg");
+    dtls_client
+        .send(&NetworkEndpoint::new_direct(relay_addr), &call_msg_bytes)
+        .expect("send listenMsg");
 
     // Wait long enough for relay-side send to include packet-transport ACK wait.
     // Without retries implemented yet, send may pause for the ACK wait timeout.
@@ -207,7 +260,10 @@ pub fn dtls_send_via_relay_end_to_end() {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    assert!(channel_received, "Should receive RelayResponse with channel");
+    assert!(
+        channel_received,
+        "Should receive RelayResponse with channel"
+    );
 
     // Extract the channel value and create relay endpoint
     let channel = {
@@ -215,45 +271,146 @@ pub fn dtls_send_via_relay_end_to_end() {
         guard.expect("channel should be present")
     };
 
-    TurnHandler::handle_call_response(turn_client2.as_ref(), &(relay_addr.clone()),
-                                      &(mux_target_arc.local_addr().expect("mux target has local addr")), channel, ADDRESS_10MIL
+    TurnHandler::handle_call_response(
+        turn_client2.as_ref(),
+        &(relay_addr.clone()),
+        &(mux_target_arc
+            .local_addr()
+            .expect("mux target has local addr")),
+        channel,
+        ADDRESS_10MIL,
     );
-    
-    let relay_endpoint = NetworkEndpoint::new_relay(ADDRESS_10MIL.to_string(), Some(relay_addr), Some(channel));
 
-    let test_msg = Message::PlainText(PlainTextMessage { app:None, r#type:None, text: "Via relay".to_string(), cipher_suite: None });
+    let relay_endpoint =
+        NetworkEndpoint::new_relay(ADDRESS_10MIL.to_string(), Some(relay_addr), Some(channel));
+
+    let test_msg = Message::PlainText(PlainTextMessage {
+        app: None,
+        r#type: None,
+        text: "Via relay".to_string(),
+        cipher_suite: None,
+    });
     let test_msg_bytes = serde_json::to_vec(&test_msg).expect("serialize listenMsg");
 
-    dtls_client.send(&relay_endpoint, &test_msg_bytes).expect("send test_msg");
+    dtls_client
+        .send(&relay_endpoint, &test_msg_bytes)
+        .expect("send test_msg");
 }
 
 // Minimal API stub for Router context in this test
 #[allow(dead_code)]
 struct MockApi;
-impl rust_comms::api::bingle_api::BingleApi for MockApi { 
-    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
-    fn set_on_listening(&mut self, _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>) {} 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None } 
-    fn get_handle(&self) -> Option<String> { None } 
-    fn get_user_id(&self) -> Option<String> { None }
+impl rust_comms::api::bingle_api::BingleApi for MockApi {
+    fn list_all_relays(
+        &self,
+        _include_self: bool,
+    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+        Vec::new()
+    }
+    fn set_on_listening(
+        &mut self,
+        _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>,
+    ) {
+    }
+    fn get_algo_provider_config(
+        &self,
+    ) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
+        None
+    }
+    fn get_handle(&self) -> Option<String> {
+        None
+    }
+    fn get_user_id(&self) -> Option<String> {
+        None
+    }
     fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), BingleError> { Ok(()) }
+    fn get_my_id(&self) -> Option<String> {
+        None
+    }
+    fn get_app_id(&self) -> Option<u64> {
+        None
+    }
+    fn start(&mut self, _options: &StartOptions) -> Result<(), BingleError> {
+        Ok(())
+    }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
-    fn handle_lookup(&self, _handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, BingleError> { Ok(None) }
-    fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> { None }
-    fn send_message_to_id(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { Ok(false) }
-    fn send_message_to_handle(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { Ok(false) }
-    fn send_message_to_network(&self, _network_source_key: &NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { Ok(false) }
-    fn send_message_to_id_with_response(&self, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { Err(BingleError::Other("ni".into())) }
-    fn send_message_to_handle_with_response(&self, _handle: &rust_comms::api::bingle_api::Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { Err(BingleError::Other("ni".into())) }
-    fn send_message_to_network_with_response(&self, _network_source_key: &NetworkEndpoint, _user_id: &rust_comms::api::bingle_api::UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { Err(BingleError::Other("ni".into())) }
-    fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
+    fn handle_lookup(
+        &self,
+        _handle: &rust_comms::api::bingle_api::Handle,
+    ) -> Result<Option<rust_comms::api::bingle_api::UserId>, BingleError> {
+        Ok(None)
+    }
+    fn handle_lookup_by_id(
+        &self,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+    ) -> Option<rust_comms::api::bingle_api::Handle> {
+        None
+    }
+    fn send_message_to_id(
+        &self,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        Ok(false)
+    }
+    fn send_message_to_handle(
+        &self,
+        _handle: &rust_comms::api::bingle_api::Handle,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        Ok(false)
+    }
+    fn send_message_to_network(
+        &self,
+        _network_source_key: &NetworkEndpoint,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        Ok(false)
+    }
+    fn send_message_to_id_with_response(
+        &self,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        Err(BingleError::Other("ni".into()))
+    }
+    fn send_message_to_handle_with_response(
+        &self,
+        _handle: &rust_comms::api::bingle_api::Handle,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        Err(BingleError::Other("ni".into()))
+    }
+    fn send_message_to_network_with_response(
+        &self,
+        _network_source_key: &NetworkEndpoint,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        Err(BingleError::Other("ni".into()))
+    }
+    fn set_on_message(
+        &mut self,
+        _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>,
+    ) {
+    }
+    fn set_on_connect(
+        &mut self,
+        _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>,
+    ) {
+    }
 }
 
 impl rust_comms::api::bingle_api::BingleApiInternal for MockApi {
-    fn get_relay_state(&self) -> String { "off".to_string() }
+    fn get_relay_state(&self) -> String {
+        "off".to_string()
+    }
 }

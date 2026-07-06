@@ -1,6 +1,9 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-use std::time::Duration;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::thread;
+use std::time::Duration;
 
 use rust_comms::distributed_mutex::{DistributedMutex, LocalDistributedMutex};
 
@@ -38,10 +41,20 @@ pub fn unit_exclusive_execution_across_threads() {
                         let current = inside.load(Ordering::SeqCst);
                         loop {
                             let recorded = max_inside.load(Ordering::SeqCst);
-                            if current <= recorded { break; }
+                            if current <= recorded {
+                                break;
+                            }
                             if max_inside
-                                .compare_exchange(recorded, current, Ordering::SeqCst, Ordering::SeqCst)
-                                .is_ok() { break; }
+                                .compare_exchange(
+                                    recorded,
+                                    current,
+                                    Ordering::SeqCst,
+                                    Ordering::SeqCst,
+                                )
+                                .is_ok()
+                            {
+                                break;
+                            }
                         }
 
                         let prev2 = inside.fetch_sub(1, Ordering::SeqCst);
@@ -56,5 +69,9 @@ pub fn unit_exclusive_execution_across_threads() {
         t.join().expect("thread join");
     }
 
-    assert_eq!(max_inside.load(Ordering::SeqCst), 1, "observed more than one concurrent entry");
+    assert_eq!(
+        max_inside.load(Ordering::SeqCst),
+        1,
+        "observed more than one concurrent entry"
+    );
 }

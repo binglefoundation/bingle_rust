@@ -1,22 +1,27 @@
-use std::sync::{Arc, atomic::{AtomicIsize, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicIsize, Ordering},
+};
 use std::thread;
 use std::time::Duration;
 
 use rust_comms::distributed_mutex::DistributedMutex;
 pub mod common;
-use common::TestNetwork;
 use crate::util::test_util::init_test_logging;
+use common::TestNetwork;
 
 #[ntest::timeout(30000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn modified_lamport_dynamic_add_node_after_start() {
     init_test_logging();
-    
+
     // Start with three nodes where only A and B are of interest; C exists but is idle.
     let net = TestNetwork::new();
     let ids = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-    for id in &ids { net.add_node(id); }
+    for id in &ids {
+        net.add_node(id);
+    }
 
     let a = net.create_mutex("A", vec!["A".to_string(), "B".to_string()]);
     let b = net.create_mutex("B", vec!["A".to_string(), "B".to_string()]);
@@ -46,7 +51,15 @@ pub fn modified_lamport_dynamic_add_node_after_start() {
 
         // Add Z with the extended view that includes itself.
         net2.add_node("Z");
-        let z = net2.create_mutex("Z",vec!["A".to_string(), "B".to_string(), "C".to_string(), "Z".to_string()]);
+        let z = net2.create_mutex(
+            "Z",
+            vec![
+                "A".to_string(),
+                "B".to_string(),
+                "C".to_string(),
+                "Z".to_string(),
+            ],
+        );
 
         tracing::info!("Z added to network: z={:?}", z);
 

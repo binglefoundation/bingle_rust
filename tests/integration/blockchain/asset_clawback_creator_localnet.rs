@@ -2,10 +2,9 @@ use rust_comms::algo_ops::AlgoChainConfig;
 
 use crate::setup_localnet;
 
-
 use crate::util::test_util;
 
-use test_util::{localnet_config, ops_from_mnemonic, ADDRESS_SPEND, PASSPHRASE_SPEND};
+use test_util::{ADDRESS_SPEND, PASSPHRASE_SPEND, localnet_config, ops_from_mnemonic};
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -14,8 +13,9 @@ pub fn asset_creation_sets_clawback_to_creator() {
 
     // Ensure funding for the creator test account
     let cfg: AlgoChainConfig = localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[ADDRESS_SPEND])
-        .expect("Failed to ensure localnet test account funded; install algokit and start localnet");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[ADDRESS_SPEND]).expect(
+        "Failed to ensure localnet test account funded; install algokit and start localnet",
+    );
 
     // Ops for creator
     let creator = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
@@ -34,16 +34,29 @@ pub fn asset_creation_sets_clawback_to_creator() {
     };
 
     let info = {
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("rt");
-        rt.block_on(async { algod.asset(algonaut::core::AssetId(asset_id)).await }).expect("asset info ok")
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("rt");
+        rt.block_on(async { algod.asset(algonaut::core::AssetId(asset_id)).await })
+            .expect("asset info ok")
     };
 
     let v = serde_json::to_value(&info).expect("json");
     // clawback can appear under params.clawback or params.clawback-address
     let cb = v
-        .get("params").and_then(|p| p.get("clawback").and_then(|x| x.as_str())
-            .or_else(|| p.get("clawback-address").or_else(|| p.get("clawback_address")).and_then(|x| x.as_str())))
+        .get("params")
+        .and_then(|p| {
+            p.get("clawback").and_then(|x| x.as_str()).or_else(|| {
+                p.get("clawback-address")
+                    .or_else(|| p.get("clawback_address"))
+                    .and_then(|x| x.as_str())
+            })
+        })
         .expect("clawback field present");
 
-    assert_eq!(cb, ADDRESS_SPEND, "asset clawback should be the creator address");
+    assert_eq!(
+        cb, ADDRESS_SPEND,
+        "asset clawback should be the creator address"
+    );
 }

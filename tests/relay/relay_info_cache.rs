@@ -1,9 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
+use crate::util::test_util::{signed_non_root_relay, signed_root_relay, signed_root_relay_with};
 use rust_comms::engine::RelayState;
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfoCache};
-use crate::util::test_util::{signed_root_relay, signed_root_relay_with, signed_non_root_relay};
 
 fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
@@ -107,8 +107,14 @@ pub fn relay_info_last_updated_set_on_construction() {
     let before = Instant::now();
     let relay = signed_root_relay("RID1", addr(52001));
     let after = Instant::now();
-    assert!(relay.last_updated >= before, "last_updated should be >= before construction");
-    assert!(relay.last_updated <= after, "last_updated should be <= after construction");
+    assert!(
+        relay.last_updated >= before,
+        "last_updated should be >= before construction"
+    );
+    assert!(
+        relay.last_updated <= after,
+        "last_updated should be <= after construction"
+    );
 }
 
 #[test]
@@ -169,7 +175,16 @@ pub fn relay_info_cache_update_relay_refreshes_last_updated() {
         .expect("relay should still exist after update")
         .last_updated;
 
-    assert!(stored > original_updated, "last_updated should advance after update_relay");
-    assert!(stored >= before_update, "last_updated should be >= before_update instant");
-    assert!(stored <= after_update, "last_updated should be <= after_update instant");
+    assert!(
+        stored > original_updated,
+        "last_updated should advance after update_relay"
+    );
+    assert!(
+        stored >= before_update,
+        "last_updated should be >= before_update instant"
+    );
+    assert!(
+        stored <= after_update,
+        "last_updated should be <= after_update instant"
+    );
 }

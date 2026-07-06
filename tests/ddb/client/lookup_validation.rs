@@ -1,11 +1,10 @@
-
+use serde_json::{Value as JsonValue, json};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use serde_json::{json, Value as JsonValue};
 
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint};
-use rust_comms::ddb::{DdbClient, DdbClientImpl, AdvertRecord, InetSocketAddress};
+use rust_comms::ddb::{AdvertRecord, DdbClient, DdbClientImpl, InetSocketAddress};
 use rust_comms::relay::relay_finder::RelayInfo;
 
 #[path = "../../test_util.rs"]
@@ -17,7 +16,10 @@ struct MockLookupApi {
 
 impl InnerBingleApi for MockLookupApi {
     fn list_all_relays(&self, _include_self: bool) -> Vec<RelayInfo> {
-        vec![test_util::signed_root_relay(test_util::ADDRESS_RECEIVE, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999))]
+        vec![test_util::signed_root_relay(
+            test_util::ADDRESS_RECEIVE,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999),
+        )]
     }
 
     fn send_message_to_network_with_response(
@@ -53,7 +55,10 @@ fn ddb_client_lookup_fails_on_invalid_signature() {
     // 1. Create an AdvertRecord with an invalid signature
     let mut record = AdvertRecord::new_unsigned(
         test_util::ADDRESS_RECEIVE.to_string(),
-        Some(InetSocketAddress { host: "127.0.0.1".to_string(), port: 1234 }),
+        Some(InetSocketAddress {
+            host: "127.0.0.1".to_string(),
+            port: 1234,
+        }),
         None,
         None,
         None,
@@ -72,18 +77,22 @@ fn ddb_client_lookup_fails_on_invalid_signature() {
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999);
     let discover = Arc::new(move || vec![test_util::signed_root_relay(&relay_id, relay_addr)]);
-    
+
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),
-        discover
+        discover,
     );
 
     // 2. lookup should fail because of invalid signature
     let result = cli.lookup("some-id");
-    
+
     match result {
         Err(BingleError::Other(e)) => {
-            assert!(e.contains("signature"), "Error message should mention signature failure, got: {}", e);
+            assert!(
+                e.contains("signature"),
+                "Error message should mention signature failure, got: {}",
+                e
+            );
         }
         _ => panic!("Expected signature verification error, got {:?}", result),
     }
@@ -95,7 +104,10 @@ fn ddb_client_lookup_fails_on_missing_signature() {
     // 1. Create an AdvertRecord without a signature
     let record = AdvertRecord::new_unsigned(
         test_util::ADDRESS_RECEIVE.to_string(),
-        Some(InetSocketAddress { host: "127.0.0.1".to_string(), port: 1234 }),
+        Some(InetSocketAddress {
+            host: "127.0.0.1".to_string(),
+            port: 1234,
+        }),
         None,
         None,
         None,
@@ -113,18 +125,22 @@ fn ddb_client_lookup_fails_on_missing_signature() {
     let relay_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9999);
     let discover = Arc::new(move || vec![test_util::signed_root_relay(&relay_id, relay_addr)]);
-    
+
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),
-        discover
+        discover,
     );
 
     // 2. lookup should fail because of missing signature
     let result = cli.lookup("some-id");
-    
+
     match result {
         Err(BingleError::Other(e)) => {
-            assert!(e.contains("missing signature") || e.contains("signature"), "Error message should mention signature, got: {}", e);
+            assert!(
+                e.contains("missing signature") || e.contains("signature"),
+                "Error message should mention signature, got: {}",
+                e
+            );
         }
         _ => panic!("Expected signature verification error, got {:?}", result),
     }

@@ -2,7 +2,7 @@ use rust_comms::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{NetworkEndpoint, BingleApi};
+use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 #[path = "../test_util.rs"]
@@ -17,52 +17,145 @@ struct MockDtls {
 impl MockDtls {
     fn new() -> (Self, Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>) {
         let v = Arc::new(Mutex::new(vec![]));
-        (Self { sends: v.clone(), handle_message: Arc::new(Mutex::new(None)) }, v)
+        (
+            Self {
+                sends: v.clone(),
+                handle_message: Arc::new(Mutex::new(None)),
+            },
+            v,
+        )
     }
 }
 
 impl Dtls for MockDtls {
-    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
-    fn stop(&mut self) -> Result<()> { Ok(()) }
+    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> Result<()> {
+        Ok(())
+    }
     fn send(&self, to: &rust_comms::api::bingle_api::NetworkEndpoint, data: &[u8]) -> Result<()> {
-        let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
+        let addr = to
+            .inet_socket_address()
+            .expect("MockDtls::send requires inet_socket_address");
         self.sends.lock().unwrap().push((addr, data.to_vec()));
         if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
             if let Some(h) = self.handle_message.lock().unwrap().clone() {
-                h(self, to, "mock-auto-ack", &vec![0x14, 0x00, data[2], data[3]]);
+                h(
+                    self,
+                    to,
+                    "mock-auto-ack",
+                    &vec![0x14, 0x00, data[2], data[3]],
+                );
             }
         }
         Ok(())
     }
-    fn get_handle_message(&self) -> Option<HandleMessage> { self.handle_message.lock().unwrap().clone() }
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>) { *self.handle_message.lock().unwrap() = handler; }
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
-    fn with_handle_message(mut self, handler: HandleMessage) -> Self where Self: Sized { self.set_handle_message(Some(handler)); self }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn get_handle_message(&self) -> Option<HandleMessage> {
+        self.handle_message.lock().unwrap().clone()
+    }
+    fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
+        *self.handle_message.lock().unwrap() = handler;
+    }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
+    fn with_handle_message(mut self, handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
+        self.set_handle_message(Some(handler));
+        self
+    }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_cipher_suite(
+        &self,
+        _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint,
+    ) -> Option<String> {
+        None
+    }
     fn forget_peers(&self) {}
 }
 
@@ -79,11 +172,20 @@ pub fn send_over_dtls_rejects_incomplete_relay_endpoint() {
         None,
     );
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-        a.send_message_to_network(&relay_nsk, &uid, serde_json::json!({"test": true}), None)
-    }).unwrap();
-    assert!(!ok, "send_message_to_network should return false for incomplete relay endpoint");
-    assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
+    let ok = api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+            a.send_message_to_network(&relay_nsk, &uid, serde_json::json!({"test": true}), None)
+        })
+        .unwrap();
+    assert!(
+        !ok,
+        "send_message_to_network should return false for incomplete relay endpoint"
+    );
+    assert_eq!(
+        sent_vec.lock().unwrap().len(),
+        0,
+        "MockDtls::send should not have been called"
+    );
 }
 
 /// send_message_to_network returns false when the target address matches our own public address
@@ -100,11 +202,20 @@ pub fn send_over_dtls_rejects_send_to_self() {
     });
     let nsk = NetworkEndpoint::new_direct(my_addr);
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-        a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
-    }).unwrap();
-    assert!(!ok, "send_message_to_network should return false when sending to self");
-    assert_eq!(sent_vec.lock().unwrap().len(), 0, "MockDtls::send should not have been called");
+    let ok = api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+            a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
+        })
+        .unwrap();
+    assert!(
+        !ok,
+        "send_message_to_network should return false when sending to self"
+    );
+    assert_eq!(
+        sent_vec.lock().unwrap().len(),
+        0,
+        "MockDtls::send should not have been called"
+    );
 }
 
 /// send_message_to_network succeeds for a direct endpoint to a different address.
@@ -120,9 +231,18 @@ pub fn send_over_dtls_allows_direct_to_different_addr() {
     let other_addr: SocketAddr = "10.0.0.1:5000".parse().expect("valid addr");
     let nsk = NetworkEndpoint::new_direct(other_addr);
     let uid = test_util::ADDRESS_SPEND.to_string();
-    let ok = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-        a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
-    }).unwrap();
-    assert!(ok, "send_message_to_network should succeed for direct endpoint to different addr");
-    assert_eq!(sent_vec.lock().unwrap().len(), 1, "MockDtls::send should have been called once");
+    let ok = api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+            a.send_message_to_network(&nsk, &uid, serde_json::json!({"test": true}), None)
+        })
+        .unwrap();
+    assert!(
+        ok,
+        "send_message_to_network should succeed for direct endpoint to different addr"
+    );
+    assert_eq!(
+        sent_vec.lock().unwrap().len(),
+        1,
+        "MockDtls::send should have been called once"
+    );
 }

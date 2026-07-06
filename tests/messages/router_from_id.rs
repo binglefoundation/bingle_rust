@@ -11,15 +11,25 @@ struct CapturingHandler {
 }
 
 impl CapturingHandler {
-    fn new(store: Arc<Mutex<Option<String>>>) -> Self { Self { last_from_id: store } }
-}
-
-impl MessageHandler for CapturingHandler {
-    fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, from: &rust_comms::messages::handlers::FromStruct, _msg: &RelayTriangleTest1) {
-        if let Ok(mut g) = self.last_from_id.lock() { *g = Some(from.id.to_string()); }
+    fn new(store: Arc<Mutex<Option<String>>>) -> Self {
+        Self {
+            last_from_id: store,
+        }
     }
 }
 
+impl MessageHandler for CapturingHandler {
+    fn on_triangle_test1(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        from: &rust_comms::messages::handlers::FromStruct,
+        _msg: &RelayTriangleTest1,
+    ) {
+        if let Ok(mut g) = self.last_from_id.lock() {
+            *g = Some(from.id.to_string());
+        }
+    }
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -28,9 +38,11 @@ pub fn route_passes_from_id_into_handler() {
     let handler = CapturingHandler::new(store.clone());
 
     // Provide a per-test Router with MockApi and route within its context
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
-    let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 { 
-        app: None, 
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
+    ));
+    let msg = Message::Relay(RelayMessage::TriangleTest1(RelayTriangleTest1 {
+        app: None,
         checking_endpoint: "127.0.0.1:5000".parse().unwrap(),
         do_not_use_endpoints: Vec::new(),
         tag: None,

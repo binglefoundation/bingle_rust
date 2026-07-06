@@ -31,11 +31,12 @@ impl RelayInfoCache {
 
     pub fn update_relay(&self, relay: RelayInfo) -> bool {
         if let Ok(mut relays) = self.relays.lock()
-            && let Some(index) = relays.iter().position(|entry| entry.id() == relay.id()) {
-                relays[index] = relay.with_updated();
-                relays.sort_by(|left, right| left.id().cmp(right.id()));
-                return true;
-            }
+            && let Some(index) = relays.iter().position(|entry| entry.id() == relay.id())
+        {
+            relays[index] = relay.with_updated();
+            relays.sort_by(|left, right| left.id().cmp(right.id()));
+            return true;
+        }
         false
     }
 
@@ -49,7 +50,10 @@ impl RelayInfoCache {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.relays.lock().map(|guard| guard.is_empty()).unwrap_or(true)
+        self.relays
+            .lock()
+            .map(|guard| guard.is_empty())
+            .unwrap_or(true)
     }
 
     pub fn replace_relays(&self, relays: Vec<RelayInfo>) {
@@ -60,7 +64,10 @@ impl RelayInfoCache {
     }
 
     fn snapshot_relays(&self) -> Vec<RelayInfo> {
-        self.relays.lock().map(|guard| guard.clone()).unwrap_or_default()
+        self.relays
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
     }
 }
 

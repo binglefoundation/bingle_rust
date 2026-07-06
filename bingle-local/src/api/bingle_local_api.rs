@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use rust_comms::api::bingle_api::BingleError;
 
@@ -78,7 +78,12 @@ pub trait BingleLocalApi: Send + Sync {
     fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, BingleError>;
 
     /// Add a contact to the local store.
-    fn add_contact(&mut self, handle: String, id: String, source: ContactSource) -> Result<(), BingleError>;
+    fn add_contact(
+        &mut self,
+        handle: String,
+        id: String,
+        source: ContactSource,
+    ) -> Result<(), BingleError>;
 
     /// Block a contact by id.
     fn block_contact(&mut self, id: String) -> Result<(), BingleError>;
@@ -103,10 +108,19 @@ pub trait BingleLocalApi: Send + Sync {
     ) -> Result<(), BingleError>;
 
     /// Queue a message to be sent by the background processor.
-    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError>;
+    fn queue_message(
+        &mut self,
+        recipient_handles: Vec<String>,
+        text: String,
+    ) -> Result<(), BingleError>;
 
     /// Update the status of a message.
-    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError>;
+    fn update_message_status(
+        &mut self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+    ) -> Result<(), BingleError>;
 
     /// Get all messages that are pending (progress < 1.0).
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError>;

@@ -1,15 +1,15 @@
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use bingle_webserver::{start_server, AppState};
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::util::cli_utils::parse_start_options_from_args;
-use rust_comms::util::logging::{BingleFormatter, LogMode, HandleLayer};
-use tracing_subscriber::prelude::*;
-use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler};
-use rust_comms::engine::BingleAccessUnsafeForTests;
-use std::path::PathBuf;
-use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
+use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_webserver::{AppState, start_server};
+use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler};
+use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::BingleAccessUnsafeForTests;
+use rust_comms::util::cli_utils::parse_start_options_from_args;
+use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tracing_subscriber::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -81,8 +81,8 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => return Err(anyhow::anyhow!(e)),
     };
     // Initialize logger with selected mode
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .event_format(BingleFormatter { mode: log_mode });
+    let fmt_layer =
+        tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode: log_mode });
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,rust_comms=debug"));
 
@@ -120,13 +120,22 @@ async fn main() -> anyhow::Result<()> {
     {
         let nat_type_for_closure = nat_type.clone();
         api.access_unsafe_for_tests(|api_mut| {
-            let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> = Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
-                let type_str = if listening { format!("{:?}", nt) } else { "Unknown".to_string() };
-                tracing::info!("on_listening: listening={} nat_type={}", listening, type_str);
-                if let Ok(mut guard) = nat_type_for_closure.lock() {
-                    *guard = type_str;
-                }
-            });
+            let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> =
+                Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
+                    let type_str = if listening {
+                        format!("{:?}", nt)
+                    } else {
+                        "Unknown".to_string()
+                    };
+                    tracing::info!(
+                        "on_listening: listening={} nat_type={}",
+                        listening,
+                        type_str
+                    );
+                    if let Ok(mut guard) = nat_type_for_closure.lock() {
+                        *guard = type_str;
+                    }
+                });
             api_mut.set_on_listening(Some(on_listening));
         });
     }
@@ -214,7 +223,10 @@ async fn main() -> anyhow::Result<()> {
                         api_started = true;
                         tracing::info!("Bingle API started (keypair is ACTIVE)");
                     } else {
-                        tracing::info!("Bingle API start deferred (keypair status: {})", status.status);
+                        tracing::info!(
+                            "Bingle API start deferred (keypair status: {})",
+                            status.status
+                        );
                     }
                 }
             }
@@ -236,7 +248,11 @@ async fn main() -> anyhow::Result<()> {
         messages,
         local_api,
         local_file,
-        start_opts: if api_started { None } else { Some(opts.clone()) },
+        start_opts: if api_started {
+            None
+        } else {
+            Some(opts.clone())
+        },
         api_started: Arc::new(Mutex::new(api_started)),
         nat_type,
     };

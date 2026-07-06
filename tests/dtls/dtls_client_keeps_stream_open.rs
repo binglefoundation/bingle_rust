@@ -1,14 +1,12 @@
-
-
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+pub mod pki;
 #[path = "../test_util.rs"]
 pub mod test_util;
-pub mod pki;
-use test_util::init_test_logging;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
+use test_util::init_test_logging;
 
 fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<String> {
     Ok(test_util::ADDRESS_SPEND.to_string())
@@ -20,7 +18,12 @@ fn reset_test_state() {
     MSG_COUNT.store(0, Ordering::Relaxed);
 }
 
-fn server_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn server_handler(
+    _server: &dyn Dtls,
+    _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     if !data.is_empty() {
         MSG_COUNT.fetch_add(1, Ordering::Relaxed);
     }
@@ -75,26 +78,50 @@ pub fn dtls_client_keeps_stream_open_across_sends() {
 
     // First send (triggers handshake)
     let payload1 = b"first-message";
-    assert!(client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr), payload1).is_ok(), "first send failed");
+    assert!(
+        client
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr),
+                payload1
+            )
+            .is_ok(),
+        "first send failed"
+    );
 
     // Wait until server receives first message
     let start = Instant::now();
     while MSG_COUNT.load(Ordering::Relaxed) < 1 && start.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 1, "server did not receive first message");
+    assert_eq!(
+        MSG_COUNT.load(Ordering::Relaxed),
+        1,
+        "server did not receive first message"
+    );
     tracing::info!("[Test] Server received first message, proceeding with second send");
 
     // Second send should reuse the same client DTLS stream; the stream must remain open across send()
     let payload2 = b"second-message";
-    assert!(client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr), payload2).is_ok(), "second send failed (stream may have been closed)");
+    assert!(
+        client
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(server_addr),
+                payload2
+            )
+            .is_ok(),
+        "second send failed (stream may have been closed)"
+    );
     tracing::info!("[Test] Client sent second message");
     // Wait for second message
     let start2 = Instant::now();
     while MSG_COUNT.load(Ordering::Relaxed) < 2 && start2.elapsed() < Duration::from_secs(10) {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(MSG_COUNT.load(Ordering::Relaxed), 2, "server did not receive second message; client stream might not be kept open");
+    assert_eq!(
+        MSG_COUNT.load(Ordering::Relaxed),
+        2,
+        "server did not receive second message; client stream might not be kept open"
+    );
     tracing::info!("[Test] Server received second message");
 
     client.stop().expect("client stop");

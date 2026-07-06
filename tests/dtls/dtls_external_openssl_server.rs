@@ -1,5 +1,3 @@
-
-
 use std::io::{Read, Write};
 use std::net::{SocketAddr, UdpSocket};
 use std::process::{Command, Stdio};
@@ -21,7 +19,12 @@ static CLIENT_SEEN: OnceLock<Vec<u8>> = OnceLock::new();
 #[cfg(not(target_os = "ios"))]
 pub fn dtls_openssl_external_s_server_client_send() {
     // Check that openssl CLI is available; if not, skip test gracefully.
-    match Command::new("openssl").arg("version").stdout(Stdio::null()).stderr(Stdio::null()).status() {
+    match Command::new("openssl")
+        .arg("version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
         Ok(status) if status.success() => {}
         _ => {
             eprintln!("[skipped] openssl CLI not available");
@@ -52,12 +55,18 @@ pub fn dtls_openssl_external_s_server_client_send() {
     let mut child = match Command::new("openssl")
         .arg("s_server")
         .arg("-dtls1_2")
-        .arg("-accept").arg(format!("{}:{}", addr.ip(), addr.port()))
-        .arg("-cert").arg(server_crt_path.to_string_lossy().to_string())
-        .arg("-cert_chain").arg(ca_crt_path.to_string_lossy().to_string())
-        .arg("-key").arg(server_key_path.to_string_lossy().to_string())
-        .arg("-verify").arg("0")
-        .arg("-cipher").arg("eNULL:@SECLEVEL=0")
+        .arg("-accept")
+        .arg(format!("{}:{}", addr.ip(), addr.port()))
+        .arg("-cert")
+        .arg(server_crt_path.to_string_lossy().to_string())
+        .arg("-cert_chain")
+        .arg(ca_crt_path.to_string_lossy().to_string())
+        .arg("-key")
+        .arg(server_key_path.to_string_lossy().to_string())
+        .arg("-verify")
+        .arg("0")
+        .arg("-cipher")
+        .arg("eNULL:@SECLEVEL=0")
         .arg("-debug")
         .arg("-msg")
         .arg("-trace")
@@ -87,7 +96,9 @@ pub fn dtls_openssl_external_s_server_client_send() {
                     Ok(0) => break,
                     Ok(n) => {
                         eprintln!("[openssl stdout] {}", String::from_utf8_lossy(&chunk[..n]));
-                        if let Ok(mut b) = out_buf.lock() { b.extend_from_slice(&chunk[..n]); }
+                        if let Ok(mut b) = out_buf.lock() {
+                            b.extend_from_slice(&chunk[..n]);
+                        }
                     }
                     Err(e) => {
                         eprintln!("[openssl stdout read err] {}", e);
@@ -107,7 +118,9 @@ pub fn dtls_openssl_external_s_server_client_send() {
                     Ok(0) => break,
                     Ok(n) => {
                         eprintln!("[openssl stderr] {}", String::from_utf8_lossy(&chunk[..n]));
-                        if let Ok(mut b) = err_buf.lock() { b.extend_from_slice(&chunk[..n]); }
+                        if let Ok(mut b) = err_buf.lock() {
+                            b.extend_from_slice(&chunk[..n]);
+                        }
                     }
                     Err(e) => {
                         eprintln!("[openssl stderr read err] {}", e);
@@ -130,7 +143,10 @@ pub fn dtls_openssl_external_s_server_client_send() {
     if let Some(mut stdin) = child_stdin.take() {
         let _ = stdin.write_all(payload);
         let _ = stdin.flush();
-        eprintln!("[openssl stdin] wrote payload: {:?}", std::str::from_utf8(payload).unwrap_or("<non-utf8>"));
+        eprintln!(
+            "[openssl stdin] wrote payload: {:?}",
+            std::str::from_utf8(payload).unwrap_or("<non-utf8>")
+        );
     } else {
         eprintln!("[warn] no stdin available to write to openssl s_server");
     }
@@ -138,7 +154,12 @@ pub fn dtls_openssl_external_s_server_client_send() {
     // Step 2: Attempt to receive the payload by creating a fresh client that handshakes and reads once
     use std::sync::atomic::{AtomicBool, Ordering};
     static RECEIVED: AtomicBool = AtomicBool::new(false);
-    fn capture_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+    fn capture_handler(
+        _server: &dyn Dtls,
+        _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+        _issuer: &str,
+        data: &[u8],
+    ) {
         if !data.is_empty() && !RECEIVED.load(Ordering::Relaxed) {
             // store into CLIENT_SEEN only first time
             let _ = CLIENT_SEEN.set(data.to_vec());
@@ -159,23 +180,43 @@ pub fn dtls_openssl_external_s_server_client_send() {
             .with_ca_cert(certs_b.ca_crt.clone())
             .with_handle_peer_certificate(mock_peer_cert_handler);
         // Start client mux and DTLS before sending
-        let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
+        let cmux0 =
+            rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
         let cmux = std::sync::Arc::new(cmux0);
         cmux.start().expect("client mux start");
         client.start(cmux.clone()).expect("client start");
-        if client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"probe").is_ok() { attempt_ok = true; }
+        if client
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                b"probe",
+            )
+            .is_ok()
+        {
+            attempt_ok = true;
+        }
         // if not yet received, wait a moment before next attempt
-        if CLIENT_SEEN.get().is_some() { break; }
+        if CLIENT_SEEN.get().is_some() {
+            break;
+        }
         thread::sleep(Duration::from_millis(100));
     }
-    assert!(attempt_ok, "DtlsOpenSsl client failed to establish/read from openssl s_server");
+    assert!(
+        attempt_ok,
+        "DtlsOpenSsl client failed to establish/read from openssl s_server"
+    );
 
     // Validate that the client handler captured the payload from s_server
     let seen = CLIENT_SEEN.get().cloned().unwrap_or_default();
-    assert_eq!(seen.as_slice(), payload, "client did not receive payload from openssl s_server via stdin");
+    assert_eq!(
+        seen.as_slice(),
+        payload,
+        "client did not receive payload from openssl s_server via stdin"
+    );
 
     // Cleanup: try to terminate the server process and join reader threads.
     let _ = child.kill();
     let _ = child.wait();
-    for h in join_handles { let _ = h.join(); }
+    for h in join_handles {
+        let _ = h.join();
+    }
 }

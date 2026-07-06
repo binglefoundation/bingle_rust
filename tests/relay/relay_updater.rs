@@ -2,16 +2,20 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::util::test_util::{
+    signed_non_root_relay, signed_non_root_relay_with, signed_root_relay, signed_root_relay_with,
+};
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
+use rust_comms::ddb::InetSocketAddress;
 use rust_comms::engine::RelayState;
 use rust_comms::messages::marshal::{from_json_value, to_json_value};
-use rust_comms::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message, ReportFailMessage};
-use rust_comms::ddb::InetSocketAddress;
+use rust_comms::messages::types::{
+    DdbMessage, DdbRelaysStatusResponse, Message, ReportFailMessage,
+};
 use rust_comms::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use rust_comms::relay::relay_updater::RelayUpdater;
-use crate::util::test_util::{signed_root_relay, signed_root_relay_with, signed_non_root_relay, signed_non_root_relay_with};
 
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 
 fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
@@ -32,8 +36,14 @@ impl InnerBingleApi for QueryMockApi {
         message: serde_json::Value,
         _progress: Option<Arc<ProgressCallback>>,
     ) -> Result<serde_json::Value, BingleError> {
-        assert_eq!(message.get("type").and_then(|value| value.as_str()), Some("getRelaysStatus"));
-        assert_eq!(message.get("app").and_then(|value| value.as_str()), Some("ddb"));
+        assert_eq!(
+            message.get("type").and_then(|value| value.as_str()),
+            Some("getRelaysStatus")
+        );
+        assert_eq!(
+            message.get("app").and_then(|value| value.as_str()),
+            Some("ddb")
+        );
 
         let query_index = {
             let mut queried_ids = self
@@ -241,7 +251,11 @@ pub fn relay_select_and_query_falls_back_to_alternate_when_preferred_fails() {
                 return Err(BingleError::Other("simulated failure".to_string()));
             }
 
-            let alternate = if queried_id == "ROOTA" { "ROOTB" } else { "ROOTA" };
+            let alternate = if queried_id == "ROOTA" {
+                "ROOTB"
+            } else {
+                "ROOTA"
+            };
             Ok(relays_status_response_json(
                 RelayState::Available,
                 vec![
@@ -350,7 +364,12 @@ pub fn update_when_expired_is_noop_when_nothing_expired() {
         "MYID.".to_string(),
         Arc::new(move || {
             *counter_clone.lock().expect("lock should succeed") += 1;
-            vec![signed_root_relay_with("ROOT1", addr(57001), Some(RelayState::Unknown), Some(30_000))]
+            vec![signed_root_relay_with(
+                "ROOT1",
+                addr(57001),
+                Some(RelayState::Unknown),
+                Some(30_000),
+            )]
         }),
     );
     updater.init_from_blockchain();
@@ -361,7 +380,10 @@ pub fn update_when_expired_is_noop_when_nothing_expired() {
     updater.update_when_expired();
 
     let calls = *discover_call_count.lock().expect("lock should succeed");
-    assert_eq!(calls, 0, "discover_roots should not be called when no entries are expired");
+    assert_eq!(
+        calls, 0,
+        "discover_roots should not be called when no entries are expired"
+    );
 }
 
 #[test]
@@ -373,15 +395,25 @@ pub fn update_when_expired_calls_init_from_blockchain_when_root_expired() {
         "MYID.".to_string(),
         Arc::new(move || {
             *counter_clone.lock().expect("lock should succeed") += 1;
-            vec![signed_root_relay_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(30_000))]
+            vec![signed_root_relay_with(
+                "ROOT1",
+                addr(57101),
+                Some(RelayState::Unknown),
+                Some(30_000),
+            )]
         }),
     );
 
     // Directly populate the cache with a ttl=0 root entry so we can trigger expiry without
     // waiting 30 seconds (init_from_blockchain always sets SHORT_TTL_SECS=30 for non-own relays)
-    updater.relay_info_cache().replace_relays(vec![
-        signed_root_relay_with("ROOT1", addr(57101), Some(RelayState::Unknown), Some(0)),
-    ]);
+    updater
+        .relay_info_cache()
+        .replace_relays(vec![signed_root_relay_with(
+            "ROOT1",
+            addr(57101),
+            Some(RelayState::Unknown),
+            Some(0),
+        )]);
 
     // Sleep so the ttl=0 entry is now expired (last_updated + 0s < now)
     std::thread::sleep(Duration::from_millis(5));
@@ -389,7 +421,10 @@ pub fn update_when_expired_calls_init_from_blockchain_when_root_expired() {
     updater.update_when_expired();
 
     let calls = *discover_call_count.lock().expect("lock should succeed");
-    assert!(calls > 0, "discover_roots should be called when a root entry is expired");
+    assert!(
+        calls > 0,
+        "discover_roots should be called when a root entry is expired"
+    );
 }
 
 #[test]
@@ -414,7 +449,12 @@ pub fn update_when_expired_calls_relay_select_when_only_non_root_expired() {
     // Root relay has a long TTL (not expired); non-root has ttl=0 (will expire immediately)
     let relays = vec![
         signed_root_relay_with("MYID", addr(57201), Some(RelayState::Own), Some(30_000)),
-        signed_root_relay_with("ROOT1", addr(57202), Some(RelayState::Unknown), Some(30_000)),
+        signed_root_relay_with(
+            "ROOT1",
+            addr(57202),
+            Some(RelayState::Unknown),
+            Some(30_000),
+        ),
         signed_non_root_relay_with("NR1", addr(57203), Some(RelayState::Unknown), Some(0)),
     ];
     let updater = updater_with_api("MYID.", relays.clone(), api);
@@ -426,7 +466,10 @@ pub fn update_when_expired_calls_relay_select_when_only_non_root_expired() {
     updater.update_when_expired();
 
     let ids = queried_ids.lock().expect("lock should succeed").clone();
-    assert!(!ids.is_empty(), "relay_select_and_query should have queried a root relay for non-root expiry");
+    assert!(
+        !ids.is_empty(),
+        "relay_select_and_query should have queried a root relay for non-root expiry"
+    );
 }
 
 struct ReportTrackingApi {
@@ -444,7 +487,10 @@ impl InnerBingleApi for ReportTrackingApi {
         message: serde_json::Value,
         _progress: Option<Arc<ProgressCallback>>,
     ) -> Result<serde_json::Value, BingleError> {
-        assert_eq!(message.get("type").and_then(|value| value.as_str()), Some("getRelaysStatus"));
+        assert_eq!(
+            message.get("type").and_then(|value| value.as_str()),
+            Some("getRelaysStatus")
+        );
 
         let query_index = {
             let mut queried_ids = self
@@ -500,7 +546,9 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
         queried_ids: queried_ids.clone(),
         responder: Arc::new(move |_user_id: &str, query_index: usize| {
             if query_index == 0 {
-                return Err(BingleError::Other("simulated preferred failure".to_string()));
+                return Err(BingleError::Other(
+                    "simulated preferred failure".to_string(),
+                ));
             }
             Ok(alternate_response.clone())
         }),
@@ -523,7 +571,10 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
         .relay_select_and_query(&[])
         .expect("alternate should be selected after preferred fails");
 
-    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    let ids = queried_ids
+        .lock()
+        .expect("queried_ids lock should succeed")
+        .clone();
     assert_eq!(ids.len(), 2, "should have queried preferred then alternate");
 
     let failed = reported_failed_ids
@@ -531,14 +582,21 @@ pub fn relay_report_failed_sent_when_preferred_relay_errors() {
         .expect("reported_failed_ids lock should succeed")
         .clone();
     assert_eq!(failed.len(), 1, "should have reported one failed relay");
-    assert_eq!(failed[0], ids[0], "reported failed relay should be the preferred one");
+    assert_eq!(
+        failed[0], ids[0],
+        "reported failed relay should be the preferred one"
+    );
 
     let reported_to = reported_to_relay_id
         .lock()
         .expect("reported_to_relay_id lock should succeed")
         .clone()
         .expect("should have a relay to report to");
-    assert_eq!(reported_to, selected.id(), "should have reported to the selected relay");
+    assert_eq!(
+        reported_to,
+        selected.id(),
+        "should have reported to the selected relay"
+    );
 }
 
 #[test]
@@ -593,7 +651,10 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
         .relay_select_and_query(&[])
         .expect("alternate should be selected after preferred is not available");
 
-    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
+    let ids = queried_ids
+        .lock()
+        .expect("queried_ids lock should succeed")
+        .clone();
     assert_eq!(ids.len(), 2, "should have queried preferred then alternate");
 
     let failed = reported_failed_ids
@@ -601,14 +662,21 @@ pub fn relay_report_failed_sent_when_preferred_relay_not_available() {
         .expect("reported_failed_ids lock should succeed")
         .clone();
     assert_eq!(failed.len(), 1, "should have reported one failed relay");
-    assert_eq!(failed[0], ids[0], "reported failed relay should be the preferred one");
+    assert_eq!(
+        failed[0], ids[0],
+        "reported failed relay should be the preferred one"
+    );
 
     let reported_to = reported_to_relay_id
         .lock()
         .expect("reported_to_relay_id lock should succeed")
         .clone()
         .expect("should have a relay to report to");
-    assert_eq!(reported_to, selected.id(), "should have reported to the selected relay");
+    assert_eq!(
+        reported_to,
+        selected.id(),
+        "should have reported to the selected relay"
+    );
 }
 
 #[test]
@@ -652,13 +720,19 @@ pub fn relay_report_failed_not_sent_when_preferred_succeeds() {
         .lock()
         .expect("reported_failed_ids lock should succeed")
         .clone();
-    assert!(failed.is_empty(), "no failed relays should be reported when preferred succeeds");
+    assert!(
+        failed.is_empty(),
+        "no failed relays should be reported when preferred succeeds"
+    );
 
     let reported_to = reported_to_relay_id
         .lock()
         .expect("reported_to_relay_id lock should succeed")
         .clone();
-    assert!(reported_to.is_none(), "no report should be sent when preferred succeeds");
+    assert!(
+        reported_to.is_none(),
+        "no report should be sent when preferred succeeds"
+    );
 }
 
 #[test]
@@ -695,10 +769,20 @@ pub fn relay_select_and_query_excludes_id_from_candidates() {
         .relay_select_and_query(&exclude)
         .expect("should select ROOTB when ROOTA is excluded");
 
-    assert_eq!(selected.id(), "ROOTB", "excluded relay should not be selected");
+    assert_eq!(
+        selected.id(),
+        "ROOTB",
+        "excluded relay should not be selected"
+    );
 
-    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
-    assert!(!ids.contains(&"ROOTA".to_string()), "excluded relay should never be queried");
+    let ids = queried_ids
+        .lock()
+        .expect("queried_ids lock should succeed")
+        .clone();
+    assert!(
+        !ids.contains(&"ROOTA".to_string()),
+        "excluded relay should never be queried"
+    );
 }
 
 #[test]
@@ -747,24 +831,31 @@ pub fn relay_select_and_query_considers_non_root_relays() {
         responder: Arc::new(move |_user_id: &str, _query_index: usize| Ok(response.clone())),
     });
 
-    let updater = updater_with_api(
-        "MYID.",
-        vec![],
-        api,
-    );
+    let updater = updater_with_api("MYID.", vec![], api);
 
     // Manually populate the cache with a non-root relay so the updater sees it
-    updater.relay_info_cache().replace_relays(vec![
-        signed_non_root_relay("NONROOT1", addr(59202)),
-    ]);
+    updater
+        .relay_info_cache()
+        .replace_relays(vec![signed_non_root_relay("NONROOT1", addr(59202))]);
 
     let selected = updater
         .relay_select_and_query(&[])
         .expect("non-root relay should be a valid candidate");
 
-    assert_eq!(selected.id(), "NONROOT1", "non-root relay should be selectable");
-    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
-    assert_eq!(ids, vec!["NONROOT1".to_string()], "non-root relay should have been queried");
+    assert_eq!(
+        selected.id(),
+        "NONROOT1",
+        "non-root relay should be selectable"
+    );
+    let ids = queried_ids
+        .lock()
+        .expect("queried_ids lock should succeed")
+        .clone();
+    assert_eq!(
+        ids,
+        vec!["NONROOT1".to_string()],
+        "non-root relay should have been queried"
+    );
 }
 
 #[test]
@@ -800,6 +891,12 @@ pub fn relay_select_and_query_excludes_my_id_always() {
 
     assert_eq!(selected.id(), "ROOT1", "own id should never be selected");
 
-    let ids = queried_ids.lock().expect("queried_ids lock should succeed").clone();
-    assert!(!ids.contains(&"MYID".to_string()), "own id should never be queried");
+    let ids = queried_ids
+        .lock()
+        .expect("queried_ids lock should succeed")
+        .clone();
+    assert!(
+        !ids.contains(&"MYID".to_string()),
+        "own id should never be queried"
+    );
 }

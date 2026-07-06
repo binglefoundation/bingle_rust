@@ -104,6 +104,11 @@ fn save_succeeds_when_parent_directory_already_exists() {
     assert!(fs::metadata(&file_path).expect("file exists").is_file());
 
     // Second save should succeed without EEXIST error since parent already exists
-    api.save(&path).expect("second save ok (parent dir already exists)");
-    assert!(fs::metadata(&file_path).expect("file still exists").is_file());
+    api.save(&path)
+        .expect("second save ok (parent dir already exists)");
+    assert!(
+        fs::metadata(&file_path)
+            .expect("file still exists")
+            .is_file()
+    );
 }

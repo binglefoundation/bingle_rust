@@ -14,16 +14,18 @@
 
 use std::net::SocketAddr;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
 
-use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, OnListeningHandler, StartOptions, UserId};
+use crate::engine::ddb_upsert::test_util::init_test_logging;
+use rust_comms::api::bingle_api::{
+    BingleApi, Handle, NetworkEndpoint, OnListeningHandler, StartOptions, UserId,
+};
 use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
 use rust_comms::engine::{Engine, NatType};
 use rust_comms::messages::router::Router;
-use crate::engine::ddb_upsert::test_util::init_test_logging;
 
 // ---------------------------------------------------------------------------
 // Minimal DTLS stub — starts/stops successfully, never sends or receives.
@@ -32,38 +34,114 @@ use crate::engine::ddb_upsert::test_util::init_test_logging;
 struct NullDtls;
 
 impl Dtls for NullDtls {
-    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> DtlsResult<()> { Ok(()) }
-    fn stop(&mut self) -> DtlsResult<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> DtlsResult<()> { Ok(()) }
-    fn get_handle_message(&self) -> Option<HandleMessage> { None }
+    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> DtlsResult<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> DtlsResult<()> {
+        Ok(())
+    }
+    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> DtlsResult<()> {
+        Ok(())
+    }
+    fn get_handle_message(&self) -> Option<HandleMessage> {
+        None
+    }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
-    fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
+    fn with_handle_message(self, _handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
+        None
+    }
     fn forget_peers(&self) {}
 }
 
@@ -74,31 +152,114 @@ impl Dtls for NullDtls {
 struct NullApi;
 
 impl BingleApi for NullApi {
-    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
+    fn list_all_relays(
+        &self,
+        _include_self: bool,
+    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+        Vec::new()
+    }
     fn set_on_listening(&mut self, _handler: Option<Arc<OnListeningHandler>>) {}
-    fn get_user_id(&self) -> Option<String> { None }
+    fn get_user_id(&self) -> Option<String> {
+        None
+    }
     fn debug_print_options(&self) {}
-    fn get_my_id(&self) -> Option<String> { None }
-    fn get_handle(&self) -> Option<String> { None }
-    fn get_app_id(&self) -> Option<u64> { None }
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> { None }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> { Ok(()) }
+    fn get_my_id(&self) -> Option<String> {
+        None
+    }
+    fn get_handle(&self) -> Option<String> {
+        None
+    }
+    fn get_app_id(&self) -> Option<u64> {
+        None
+    }
+    fn get_algo_provider_config(
+        &self,
+    ) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
+        None
+    }
+    fn start(
+        &mut self,
+        _options: &StartOptions,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        Ok(())
+    }
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
-    fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, rust_comms::api::bingle_api::BingleError> { Ok(None) }
-    fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> { None }
-    fn send_message_to_id(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
-    fn send_message_to_handle(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
-    fn send_message_to_network(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<bool, rust_comms::api::bingle_api::BingleError> { Ok(false) }
-    fn send_message_to_id_with_response(&self, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
-    fn send_message_to_handle_with_response(&self, _handle: &Handle, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
-    fn set_on_message(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
+    fn handle_lookup(
+        &self,
+        _handle: &Handle,
+    ) -> Result<Option<UserId>, rust_comms::api::bingle_api::BingleError> {
+        Ok(None)
+    }
+    fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
+        None
+    }
+    fn send_message_to_id(
+        &self,
+        _user_id: &UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
+        Ok(false)
+    }
+    fn send_message_to_handle(
+        &self,
+        _handle: &Handle,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
+        Ok(false)
+    }
+    fn send_message_to_network(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
+        Ok(false)
+    }
+    fn send_message_to_id_with_response(
+        &self,
+        _user_id: &UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
+    }
+    fn send_message_to_handle_with_response(
+        &self,
+        _handle: &Handle,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
+    }
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
+    }
+    fn set_on_message(
+        &mut self,
+        _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>,
+    ) {
+    }
+    fn set_on_connect(
+        &mut self,
+        _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>,
+    ) {
+    }
 }
 
 impl rust_comms::api::bingle_api::BingleApiInternal for NullApi {
-    fn get_relay_state(&self) -> String { "off".to_string() }
+    fn get_relay_state(&self) -> String {
+        "off".to_string()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +312,10 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         wait_response_timeout: None,
     };
     let null_api = NullApi;
-    let eng = Arc::new(Engine::new(&opts, crate::util::mock_bingle_api::to_weak(null_api.clone())));
+    let eng = Arc::new(Engine::new(
+        &opts,
+        crate::util::mock_bingle_api::to_weak(null_api.clone()),
+    ));
     unsafe {
         let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
         (*eng_ptr).set_weak_self(Arc::downgrade(&eng));
@@ -165,10 +329,10 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
 
     // Track on_listening calls
     let called_false = Arc::new(AtomicBool::new(false));
-    let called_true  = Arc::new(AtomicBool::new(false));
+    let called_true = Arc::new(AtomicBool::new(false));
 
     let flag_false = called_false.clone();
-    let flag_true  = called_true.clone();
+    let flag_true = called_true.clone();
     unsafe {
         let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
         (*eng_ptr).set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
@@ -179,7 +343,9 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
             }
         })));
 
-        (*eng_ptr).start(&opts).expect("engine.start should succeed");
+        (*eng_ptr)
+            .start(&opts)
+            .expect("engine.start should succeed");
     }
 
     // Wait for the STUN finder to raise Blocked (3 × 2 s search intervals ≈ 6 s minimum).

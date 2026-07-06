@@ -1,30 +1,40 @@
 pub mod tests_common;
 
-
 extern crate self as bingle_test;
 
 mod ffi_tests;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_comms_run_algo_ops_tests() -> u8 {
-    if ffi_tests::run_algo_ops_tests() { 1 } else { 0 }
+    if ffi_tests::run_algo_ops_tests() {
+        1
+    } else {
+        0
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_comms_run_algo_ops_more_tests() -> u8 {
-    if ffi_tests::run_algo_ops_more_tests() { 1 } else { 0 }
+    if ffi_tests::run_algo_ops_more_tests() {
+        1
+    } else {
+        0
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_comms_run_asset_ops_tests() -> u8 {
-    if ffi_tests::run_asset_ops_tests() { 1 } else { 0 }
+    if ffi_tests::run_asset_ops_tests() {
+        1
+    } else {
+        0
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_comms_run_stun_tests() -> u8 {
     if ffi_tests::run_stun_tests() { 1 } else { 0 }
 }
-
 
 #[cfg(target_os = "ios")]
 #[path = "../../tests/api/mod.rs"]
@@ -87,10 +97,8 @@ pub mod setup_localnet;
 #[path = "../../tests/messages.rs"]
 pub mod messages;
 
-
 #[cfg(target_os = "ios")]
 mod all_tests_ffi;
-
 
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
@@ -98,16 +106,21 @@ pub extern "C" fn rust_comms_run_all_unit_tests() -> u32 {
     157
 }
 
-
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_comms_run_named_test(name: *const libc::c_char) -> u8 {
     use std::ffi::CStr;
-    if name.is_null() { return 0; }
+    if name.is_null() {
+        return 0;
+    }
     let cstr = unsafe { CStr::from_ptr(name) };
     let test_name = match cstr.to_str() {
         Ok(s) => s,
         Err(_) => return 0,
     };
-    if all_tests_ffi::run_named_test(test_name) { 1 } else { 0 }
+    if all_tests_ffi::run_named_test(test_name) {
+        1
+    } else {
+        0
+    }
 }

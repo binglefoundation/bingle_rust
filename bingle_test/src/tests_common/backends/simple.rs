@@ -1,6 +1,6 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use data_encoding::BASE32_NOPAD;
-use ed25519_dalek::{Signature, SigningKey, Signer, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use sha2::{Digest, Sha512_256};
 
 use crate::tests_common::TestAlgo;
@@ -63,7 +63,10 @@ impl SimpleBackend {
 
 impl TestAlgo for SimpleBackend {
     fn new(passphrase: Option<String>, address: Option<String>, _use_dummy_config: bool) -> Self {
-        Self { passphrase, address }
+        Self {
+            passphrase,
+            address,
+        }
     }
 
     fn create_address(&mut self, _save: bool, _always_new_address: bool) -> Result<String, String> {
@@ -155,7 +158,8 @@ impl TestAlgo for SimpleBackend {
             return Err("amount must be positive".to_string());
         }
         // Validate receiver address
-        let _ = Self::pk_from_addr_impl(to_address).map_err(|_| "invalid receiver address".to_string())?;
+        let _ = Self::pk_from_addr_impl(to_address)
+            .map_err(|_| "invalid receiver address".to_string())?;
         Err("network error".to_string())
     }
 

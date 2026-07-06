@@ -1,22 +1,22 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use sha2::{Digest, Sha512_256};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::blockchain::algo_ops::{address_to_byte_key, AlgoOps, AppArg};
+use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
 
 use algonaut::{
+    Algod,
     core::{Address, AppId, AssetId, MicroAlgos, ToMsgPack},
     model::algod::SuggestedParams,
     transaction::{
+        Pay, TransferAsset,
         account::Account,
         builder::{CallApplication, ClawbackAsset, UpdateAsset},
         transaction::Transaction,
-        Pay, TransferAsset,
     },
-    Algod,
 };
 
 /// Lightweight helper around AlgoOps for calling the Bingle dApp.
@@ -73,21 +73,45 @@ pub struct AccountsCache {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryMode {
-    Refresh,     // Incremental if cache exists, else Full
-    CacheOnly,   // Use cache without network
-    ForceFull,   // Force a full scan
+    Refresh,   // Incremental if cache exists, else Full
+    CacheOnly, // Use cache without network
+    ForceFull, // Force a full scan
 }
 
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
-        algo_log!("[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}", ops.config, app_id, asset_id);
-        Self { ops, app_id, asset_id, cache: None }
+        algo_log!(
+            "[AlgoBingle::new] ops.config={:?} app_id={} asset_id={}",
+            ops.config,
+            app_id,
+            asset_id
+        );
+        Self {
+            ops,
+            app_id,
+            asset_id,
+            cache: None,
+        }
     }
 
-    pub fn new_with_cache(ops: AlgoOps, app_id: u64, asset_id: u64, cache: Arc<Mutex<AccountsCache>>) -> Self {
-        algo_log!("[AlgoBingle::new_with_cache] app_id={} asset_id={}", app_id, asset_id);
-        Self { ops, app_id, asset_id, cache: Some(cache) }
+    pub fn new_with_cache(
+        ops: AlgoOps,
+        app_id: u64,
+        asset_id: u64,
+        cache: Arc<Mutex<AccountsCache>>,
+    ) -> Self {
+        algo_log!(
+            "[AlgoBingle::new_with_cache] app_id={} asset_id={}",
+            app_id,
+            asset_id
+        );
+        Self {
+            ops,
+            app_id,
+            asset_id,
+            cache: Some(cache),
+        }
     }
 
     /// Extract the BinglePrice value from already-decoded global state entries.
@@ -103,9 +127,13 @@ impl AlgoBingle {
     /// The price is stored as a uint in global state (microAlgos per Bingle unit).
     /// Errors if the key is not set or the application cannot be queried.
     pub fn get_bingle_price(&self, app_id: u64) -> Result<u64> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let client = self.ops.algod_client()?;
-        let app_info = self.ops.algod_call(|| client.app(AppId(app_id)))
+        let app_info = self
+            .ops
+            .algod_call(|| client.app(AppId(app_id)))
             .map_err(|e| anyhow!("application_information failed: {e}"))?;
         let v = serde_json::to_value(&app_info)
             .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
@@ -119,7 +147,9 @@ impl AlgoBingle {
         let entries = Self::decode_state_entries(&gs_vec);
         match Self::extract_bingle_price(&entries) {
             Some(p) => Ok(p),
-            None => Err(anyhow!("BinglePrice not set in global state for app_id {app_id}")),
+            None => Err(anyhow!(
+                "BinglePrice not set in global state for app_id {app_id}"
+            )),
         }
     }
 
@@ -127,37 +157,58 @@ impl AlgoBingle {
         use base64::Engine as _;
         let mut kvs: Vec<(String, String)> = Vec::new();
         for entry in entries {
-            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
             let key = match base64::engine::general_purpose::STANDARD.decode(key_b64) {
                 Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| key_b64.to_string()),
                 Err(_) => key_b64.to_string(),
             };
-            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) {
+                Some(o) => o,
+                None => continue,
+            };
             let vtype = val_obj.get("type").and_then(|x| x.as_u64()).unwrap_or(0);
             let val = if vtype == 1 {
                 // bytes can be an array of numbers or a base64 string
                 let bytes_opt = if let Some(arr) = val_obj.get("bytes").and_then(|x| x.as_array()) {
                     let mut buf: Vec<u8> = Vec::with_capacity(arr.len());
                     for n in arr {
-                        if let Some(u) = n.as_u64() { buf.push((u & 0xFF) as u8); }
-                        else if let Some(i) = n.as_i64() && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
+                        if let Some(u) = n.as_u64() {
+                            buf.push((u & 0xFF) as u8);
+                        } else if let Some(i) = n.as_i64()
+                            && i >= 0
+                        {
+                            buf.push(((i as u64) & 0xFF) as u8);
+                        }
                     }
                     Some(buf)
                 } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
                     base64::engine::general_purpose::STANDARD.decode(b64).ok()
-                } else { None };
+                } else {
+                    None
+                };
                 if let Some(bytes) = bytes_opt {
                     match String::from_utf8(bytes.clone()) {
                         Ok(s) => s,
                         Err(_) => {
                             let mut hex = String::from("0x");
-                            for byte in bytes { hex.push_str(&format!("{:02x}", byte)); }
+                            for byte in bytes {
+                                hex.push_str(&format!("{:02x}", byte));
+                            }
                             hex
                         }
                     }
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             } else {
-                val_obj.get("uint").and_then(|x| x.as_u64()).map(|u| u.to_string()).unwrap_or_else(|| "0".to_string())
+                val_obj
+                    .get("uint")
+                    .and_then(|x| x.as_u64())
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| "0".to_string())
             };
             kvs.push((key, val));
         }
@@ -169,19 +220,27 @@ impl AlgoBingle {
     /// Calls set_allow_static on-chain for the provided target address. The caller must be the
     /// app admin (enforced by the contract). The target address must be opted-in to the app.
     /// Returns the submitted transaction id on success.
-    pub fn set_allow_static(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    pub fn set_allow_static(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        allow: bool,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
         let pk = address_to_byte_key(target_address)
             .map_err(|e| anyhow!("invalid target address: {e}"))?;
-        let (txid, _logs) = self
-            .ops
-            .call_app(
-                app_id,
-                None,
-                Some("set_allow_static(address,uint64)void"),
-                &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(if allow { 1 } else { 0 })],
-            )?;
+        let (txid, _logs) = self.ops.call_app(
+            app_id,
+            None,
+            Some("set_allow_static(address,uint64)void"),
+            &[
+                AppArg::Bytes(pk.to_vec()),
+                AppArg::Uint(if allow { 1 } else { 0 }),
+            ],
+        )?;
         Ok(txid)
     }
 
@@ -190,19 +249,27 @@ impl AlgoBingle {
     /// Calls set_allow_relay on-chain for the provided target address. The caller must be the
     /// app admin (enforced by the contract). The target address must be opted-in to the app.
     /// Returns the submitted transaction id on success.
-    pub fn set_allow_relay(&self, app_id: u64, target_address: &str, allow: bool) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    pub fn set_allow_relay(
+        &self,
+        app_id: u64,
+        target_address: &str,
+        allow: bool,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         // Use AlgoOps::call_app and pass target address as an ARC-4 address argument
         let pk = address_to_byte_key(target_address)
             .map_err(|e| anyhow!("invalid target address: {e}"))?;
-        let (txid, _logs) = self
-            .ops
-            .call_app(
-                app_id,
-                None,
-                Some("set_allow_relay(address,uint64)void"),
-                &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(if allow { 1 } else { 0 })],
-            )?;
+        let (txid, _logs) = self.ops.call_app(
+            app_id,
+            None,
+            Some("set_allow_relay(address,uint64)void"),
+            &[
+                AppArg::Bytes(pk.to_vec()),
+                AppArg::Uint(if allow { 1 } else { 0 }),
+            ],
+        )?;
         Ok(txid)
     }
 
@@ -215,16 +282,33 @@ impl AlgoBingle {
     /// Calls withdraw(address,uint64,uint64,uint64)void. Must be called by the app withdrawer.
     /// Pass amount=0 to skip Algo withdrawal; pass asset_amount=0 to skip ASA withdrawal.
     /// Returns the submitted transaction id on success.
-    pub fn withdraw(&self, app_id: u64, address: &str, amount: u64, asset_id: u64, asset_amount: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        let pk = address_to_byte_key(address)
-            .map_err(|e| anyhow!("invalid address: {e}"))?;
-        let foreign_asset = if asset_amount > 0 && asset_id > 0 { Some(asset_id) } else { None };
+    pub fn withdraw(
+        &self,
+        app_id: u64,
+        address: &str,
+        amount: u64,
+        asset_id: u64,
+        asset_amount: u64,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let pk = address_to_byte_key(address).map_err(|e| anyhow!("invalid address: {e}"))?;
+        let foreign_asset = if asset_amount > 0 && asset_id > 0 {
+            Some(asset_id)
+        } else {
+            None
+        };
         let (txid, _logs) = self.ops.call_app(
             app_id,
             foreign_asset,
             Some("withdraw(address,uint64,uint64,uint64)void"),
-            &[AppArg::Bytes(pk.to_vec()), AppArg::Uint(amount), AppArg::Uint(asset_id), AppArg::Uint(asset_amount)],
+            &[
+                AppArg::Bytes(pk.to_vec()),
+                AppArg::Uint(amount),
+                AppArg::Uint(asset_id),
+                AppArg::Uint(asset_amount),
+            ],
         )?;
         Ok(txid)
     }
@@ -234,8 +318,12 @@ impl AlgoBingle {
     /// Calls set_predecessor_app(uint64)void. Must be called by the app creator.
     /// Returns the submitted transaction id on success.
     pub fn set_predecessor_app(&self, app_id: u64, predecessor_app_id: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if predecessor_app_id == 0 { bail!("predecessor_app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if predecessor_app_id == 0 {
+            bail!("predecessor_app_id must be > 0");
+        }
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             predecessor_app_id,
@@ -251,9 +339,10 @@ impl AlgoBingle {
     /// Calls set_app_admin(address)void. Must be called by the app creator.
     /// Returns the submitted transaction id on success.
     pub fn set_app_admin(&self, app_id: u64, admin: &str) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        let pk = address_to_byte_key(admin)
-            .map_err(|e| anyhow!("invalid admin address: {e}"))?;
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let pk = address_to_byte_key(admin).map_err(|e| anyhow!("invalid admin address: {e}"))?;
         let (txid, _logs) = self.ops.call_app(
             app_id,
             None,
@@ -268,7 +357,9 @@ impl AlgoBingle {
     /// Calls set_app_withdrawer(address)void. Must be called by the app creator.
     /// Returns the submitted transaction id on success.
     pub fn set_app_withdrawer(&self, app_id: u64, withdrawer: &str) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let pk = address_to_byte_key(withdrawer)
             .map_err(|e| anyhow!("invalid withdrawer address: {e}"))?;
         let (txid, _logs) = self.ops.call_app(
@@ -285,8 +376,12 @@ impl AlgoBingle {
     /// Calls migrate_global(uint64)void. Must be called by the app creator.
     /// Returns the submitted transaction id on success.
     pub fn migrate_global(&self, app_id: u64, old_app_id: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if old_app_id == 0 { bail!("old_app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if old_app_id == 0 {
+            bail!("old_app_id must be > 0");
+        }
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             old_app_id,
@@ -303,8 +398,12 @@ impl AlgoBingle {
     /// Pass asset_id=0 to skip ASA migration.
     /// Returns the submitted transaction id on success.
     pub fn migrate_reserve(&self, app_id: u64, new_app_id: u64, asset_id: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if new_app_id == 0 { bail!("new_app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if new_app_id == 0 {
+            bail!("new_app_id must be > 0");
+        }
         let foreign_asset = if asset_id > 0 { Some(asset_id) } else { None };
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
@@ -322,8 +421,12 @@ impl AlgoBingle {
     /// old_app_id must match the predecessor app stored on-chain by the creator.
     /// Returns the submitted transaction id on success.
     pub fn migrate_local(&self, app_id: u64, old_app_id: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if old_app_id == 0 { bail!("old_app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if old_app_id == 0 {
+            bail!("old_app_id must be > 0");
+        }
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             old_app_id,
@@ -339,7 +442,9 @@ impl AlgoBingle {
     /// This queries the local state of the account for the provided app_id.
     /// Returns Ok(Some(true)) if allowed, Ok(Some(false)) if not allowed, Ok(None) if not opted-in, or Err if other error.
     pub fn check_allow_relay(&self, app_id: u64, address: &str) -> Result<Option<bool>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let kvs = self.ops.local_state_for_account(app_id, address)?;
         Ok(kvs.map(|entries| entries.iter().any(|(k, v)| k == "allow_relay" && v == "1")))
     }
@@ -348,8 +453,14 @@ impl AlgoBingle {
     /// Passing an empty string clears the local state key.
     /// Returns the submitted transaction id on success.
     // endpoint_advert_record_compact is now a compact AdvertRecord
-    pub fn register_endpoint(&self, app_id: u64, endpoint_advert_record_compact: &str) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    pub fn register_endpoint(
+        &self,
+        app_id: u64,
+        endpoint_advert_record_compact: &str,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         // Build ARC-4 arguments manually to ensure correct string encoding (2-byte length prefix)
         let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
@@ -357,7 +468,9 @@ impl AlgoBingle {
         let mut app_args: Vec<Vec<u8>> = Vec::new();
         app_args.push(AlgoOps::arc4_selector("register_endpoint(string)void").to_vec());
         let ep_bytes = endpoint_advert_record_compact.as_bytes();
-        if ep_bytes.len() > u16::MAX as usize { bail!("endpoint too long"); }
+        if ep_bytes.len() > u16::MAX as usize {
+            bail!("endpoint too long");
+        }
         let mut arg = Vec::with_capacity(2 + ep_bytes.len());
         arg.extend_from_slice(&(ep_bytes.len() as u16).to_be_bytes());
         arg.extend_from_slice(ep_bytes);
@@ -381,15 +494,29 @@ impl AlgoBingle {
     /// local state keys; the parts are concatenated.
     /// Returns Ok(None) if the account is not opted in or no record is present.
     pub fn get_static_endpoint(&self, app_id: u64, address: &str) -> Result<Option<String>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let kvs = match self.ops.local_state_for_account(app_id, address)? {
             Some(entries) => entries,
             None => return Ok(None),
         };
-        let ep = kvs.iter().find(|(k, _)| k == "static_endpoint").map(|(_, v)| v.as_str()).unwrap_or("");
-        let ep_x = kvs.iter().find(|(k, _)| k == "static_endpoint_x").map(|(_, v)| v.as_str()).unwrap_or("");
+        let ep = kvs
+            .iter()
+            .find(|(k, _)| k == "static_endpoint")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+        let ep_x = kvs
+            .iter()
+            .find(|(k, _)| k == "static_endpoint_x")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
         let full = format!("{}{}", ep, ep_x);
-        if full.is_empty() { Ok(None) } else { Ok(Some(full)) }
+        if full.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(full))
+        }
     }
 
     /// Decide whether shutdown should clear the on-chain static endpoint record.
@@ -401,7 +528,10 @@ impl AlgoBingle {
     /// `registered_record` is the compact record this process wrote at startup (None if
     /// registration never happened or failed); `current_record` is the record currently
     /// on-chain (None if absent).
-    pub fn should_clear_static_endpoint(registered_record: Option<&str>, current_record: Option<&str>) -> bool {
+    pub fn should_clear_static_endpoint(
+        registered_record: Option<&str>,
+        current_record: Option<&str>,
+    ) -> bool {
         match (registered_record, current_record) {
             (Some(ours), Some(current)) => ours == current,
             _ => false,
@@ -417,27 +547,46 @@ impl AlgoBingle {
     /// Use the Indexer API to list accounts that have a non-empty "static_endpoint" in local state for the given app_id.
     /// Returns Vec of (account_address, static_endpoint_value).
     pub fn list_static_endpoints_via_indexer(&self, app_id: u64) -> Result<Vec<(String, String)>> {
-        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] app_id={}", app_id);
+        algo_log!(
+            "[AlgoBingle::list_static_endpoints_via_indexer] app_id={}",
+            app_id
+        );
         if tokio::runtime::Handle::try_current().is_ok() {
-            algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] running in tokio runtime, spawning thread");
+            algo_log!(
+                "[AlgoBingle::list_static_endpoints_via_indexer] running in tokio runtime, spawning thread"
+            );
             let thread_result = std::thread::scope(|s| {
                 s.spawn(|| self.list_static_endpoints_via_indexer_sync(app_id))
                     .join()
                     .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
             });
-            algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] thread result={:?}", thread_result);
+            algo_log!(
+                "[AlgoBingle::list_static_endpoints_via_indexer] thread result={:?}",
+                thread_result
+            );
             return thread_result;
         }
 
-        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] not running in tokio runtime, calling sync");
+        algo_log!(
+            "[AlgoBingle::list_static_endpoints_via_indexer] not running in tokio runtime, calling sync"
+        );
         let sync_result = self.list_static_endpoints_via_indexer_sync(app_id);
-        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer] sync result={:?}", sync_result);
+        algo_log!(
+            "[AlgoBingle::list_static_endpoints_via_indexer] sync result={:?}",
+            sync_result
+        );
         sync_result
     }
 
-    pub fn list_static_endpoints_via_indexer_sync(&self, app_id: u64) -> Result<Vec<(String, String)>> {
+    pub fn list_static_endpoints_via_indexer_sync(
+        &self,
+        app_id: u64,
+    ) -> Result<Vec<(String, String)>> {
         // Debug: print the current ops.config for visibility in discovery
-        algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}", self.ops.config);
+        algo_log!(
+            "[AlgoBingle::list_static_endpoints_via_indexer_sync] ops.config={:?}",
+            self.ops.config
+        );
         let mut results: Vec<(String, String)> = Vec::new();
         let indexer_query_result = self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
             let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -463,11 +612,16 @@ impl AlgoBingle {
         });
 
         if let Err(e) = indexer_query_result {
-            tracing::error!("[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync failed: {}", e);
+            tracing::error!(
+                "[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync failed: {}",
+                e
+            );
             Err(e)
-        }
-        else {
-            algo_log!("[AlgoBingle::list_static_endpoints_via_indexer_sync] results={:?}", results);
+        } else {
+            algo_log!(
+                "[AlgoBingle::list_static_endpoints_via_indexer_sync] results={:?}",
+                results
+            );
             Ok(results)
         }
     }
@@ -491,11 +645,12 @@ impl AlgoBingle {
     ) {
         addresses.insert(txn.sender.clone());
         if let Some(app_txn) = &txn.application_transaction
-            && let Some(accounts) = &app_txn.accounts {
-                for addr in accounts {
-                    addresses.insert(addr.clone());
-                }
+            && let Some(accounts) = &app_txn.accounts
+        {
+            for addr in accounts {
+                addresses.insert(addr.clone());
             }
+        }
         if let Some(inner_txns) = &txn.inner_txns {
             for inner in inner_txns {
                 Self::collect_addresses(inner, addresses);
@@ -535,15 +690,16 @@ impl AlgoBingle {
             let mut effective_mode = mode;
             if mode == QueryMode::Refresh
                 && let Some(lifetime) = cache_lifetime_secs
-                    && now < cache.last_updated + lifetime {
-                        algo_log!(
-                            "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: cache is fresh ({} < {} + {}), falling back to CacheOnly",
-                            now,
-                            cache.last_updated,
-                            lifetime
-                        );
-                        effective_mode = QueryMode::CacheOnly;
-                    }
+                && now < cache.last_updated + lifetime
+            {
+                algo_log!(
+                    "[AlgoBingle][indexer_query_opted_in_accounts_sync] Refresh: cache is fresh ({} < {} + {}), falling back to CacheOnly",
+                    now,
+                    cache.last_updated,
+                    lifetime
+                );
+                effective_mode = QueryMode::CacheOnly;
+            }
 
             match effective_mode {
                 QueryMode::CacheOnly => {
@@ -564,21 +720,23 @@ impl AlgoBingle {
                         let mut current_round;
                         loop {
                             let next_ref = next.as_deref();
-                            let response = self.ops.algod_call(|| {
-                                indexer.search_for_accounts(
-                                    None,
-                                    Some(INDEXER_PAGE_SIZE),
-                                    next_ref,
-                                    None,
-                                    None,
-                                    indexer_excludes(),
-                                    None,
-                                    None,
-                                    None,
-                                    Some(AppId(app_id)),
-                                )
-                            })
-                            .map_err(|e| anyhow!("incremental indexer request failed: {e}"))?;
+                            let response = self
+                                .ops
+                                .algod_call(|| {
+                                    indexer.search_for_accounts(
+                                        None,
+                                        Some(INDEXER_PAGE_SIZE),
+                                        next_ref,
+                                        None,
+                                        None,
+                                        indexer_excludes(),
+                                        None,
+                                        None,
+                                        None,
+                                        Some(AppId(app_id)),
+                                    )
+                                })
+                                .map_err(|e| anyhow!("incremental indexer request failed: {e}"))?;
 
                             current_round = response.current_round;
                             for acct in response.accounts {
@@ -602,30 +760,34 @@ impl AlgoBingle {
 
                         loop {
                             let next_ref = next.as_deref();
-                            let response = self.ops.algod_call(|| {
-                                indexer.search_for_transactions(
-                                    Some(INDEXER_PAGE_SIZE),
-                                    next_ref,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    Some(min_round),
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    None,
-                                    Some(AppId(app_id)),
-                                )
-                            })
-                            .map_err(|e| anyhow!("indexer search_for_transactions failed: {e}"))?;
+                            let response = self
+                                .ops
+                                .algod_call(|| {
+                                    indexer.search_for_transactions(
+                                        Some(INDEXER_PAGE_SIZE),
+                                        next_ref,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        Some(min_round),
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        Some(AppId(app_id)),
+                                    )
+                                })
+                                .map_err(|e| {
+                                    anyhow!("indexer search_for_transactions failed: {e}")
+                                })?;
 
                             current_round = response.current_round;
                             for txn in response.transactions {
@@ -684,31 +846,40 @@ impl AlgoBingle {
         }
 
         // Legacy behavior without cache
-        algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] no cache available, performing full scan");
+        algo_log!(
+            "[AlgoBingle][indexer_query_opted_in_accounts_sync] no cache available, performing full scan"
+        );
         let indexer = self.ops.indexer_client()?;
         let mut next: Option<String> = None;
         loop {
             let next_ref = next.as_deref();
-            let response = self.ops.algod_call(|| indexer.search_for_accounts(
-                None,
-                Some(INDEXER_PAGE_SIZE),
-                next_ref,
-                None,
-                None,
-                indexer_excludes(),
-                None,
-                None,
-                None,
-                Some(AppId(app_id)),
-            )).map_err(|e| anyhow!("full indexer request failed: {e}"))?;
-            
+            let response = self
+                .ops
+                .algod_call(|| {
+                    indexer.search_for_accounts(
+                        None,
+                        Some(INDEXER_PAGE_SIZE),
+                        next_ref,
+                        None,
+                        None,
+                        indexer_excludes(),
+                        None,
+                        None,
+                        None,
+                        Some(AppId(app_id)),
+                    )
+                })
+                .map_err(|e| anyhow!("full indexer request failed: {e}"))?;
+
             for acct in response.accounts {
                 let v = serde_json::to_value(&acct)
                     .map_err(|e| anyhow!("failed to serialize account: {e}"))?;
                 f(&v)?;
             }
             next = response.next_token;
-            if next.is_none() { break; }
+            if next.is_none() {
+                break;
+            }
         }
 
         algo_log!("[AlgoBingle][indexer_query_opted_in_accounts_sync] done");
@@ -718,8 +889,13 @@ impl AlgoBingle {
     /// Lookup a Bingle handle on-chain using the Indexer.
     /// Returns the address of the oldest account that has this handle registered in its local state.
     pub fn handle_lookup(&self, handle: &str) -> Result<Option<String>> {
-        let app_id = if self.app_id != 0 { self.app_id } else {
-            self.ops.config.app_id.ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?
+        let app_id = if self.app_id != 0 {
+            self.app_id
+        } else {
+            self.ops
+                .config
+                .app_id
+                .ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?
         };
         if tokio::runtime::Handle::try_current().is_ok() {
             return std::thread::scope(|s| {
@@ -737,7 +913,11 @@ impl AlgoBingle {
             Self::extract_handle_match(acct, app_id, handle, &mut matches);
             Ok(())
         })?;
-        algo_log!("[handle_lookup_sync] handle={} matches={:?}", handle, matches);
+        algo_log!(
+            "[handle_lookup_sync] handle={} matches={:?}",
+            handle,
+            matches
+        );
         Ok(Self::pick_oldest_match(matches))
     }
 
@@ -751,24 +931,49 @@ impl AlgoBingle {
     }
 
     /// Extracted logic to find a handle match in an account's local state and append to matches list.
-    pub fn extract_handle_match(acct: &serde_json::Value, app_id: u64, handle: &str, matches: &mut Vec<(String, u64)>) {
-        let addr = acct.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    pub fn extract_handle_match(
+        acct: &serde_json::Value,
+        app_id: u64,
+        handle: &str,
+        matches: &mut Vec<(String, u64)>,
+    ) {
+        let addr = acct
+            .get("address")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         let normalised_handle = Self::normalize_handle(handle);
         // Find local state for this app id
-        if let Some(als) = acct.get("apps-local-state").or_else(|| acct.get("apps_local_state")).and_then(|x| x.as_array()) {
+        if let Some(als) = acct
+            .get("apps-local-state")
+            .or_else(|| acct.get("apps_local_state"))
+            .and_then(|x| x.as_array())
+        {
             for st in als {
                 let id = st.get("id").and_then(|x| x.as_u64());
                 if id == Some(app_id) {
-                    let keyvals = st.get("key-value").or_else(|| st.get("key_value")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                    let keyvals = st
+                        .get("key-value")
+                        .or_else(|| st.get("key_value"))
+                        .and_then(|x| x.as_array())
+                        .cloned()
+                        .unwrap_or_default();
                     let kvs = Self::decode_state_entries(&keyvals);
-                    algo_log!("[extract_handle_match] address={} decoded_state={:?}", addr, kvs);
+                    algo_log!(
+                        "[extract_handle_match] address={} decoded_state={:?}",
+                        addr,
+                        kvs
+                    );
                     if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle")
-                        && Self::normalize_handle(h) == normalised_handle {
-                            let time = kvs.iter().find(|(k, _)| k == "HandleTime")
-                                .and_then(|(_, v)| v.parse::<u64>().ok())
-                                .unwrap_or(0);
-                            matches.push((addr.clone(), time));
-                        }
+                        && Self::normalize_handle(h) == normalised_handle
+                    {
+                        let time = kvs
+                            .iter()
+                            .find(|(k, _)| k == "HandleTime")
+                            .and_then(|(_, v)| v.parse::<u64>().ok())
+                            .unwrap_or(0);
+                        matches.push((addr.clone(), time));
+                    }
                 }
             }
         }
@@ -793,7 +998,10 @@ impl AlgoBingle {
 
     fn sender_account(&self) -> Result<(Account, Address)> {
         let sk = self.ops.private_key_bytes()?;
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = Account::from_seed(seed);
         let addr_str = self
             .ops
@@ -804,11 +1012,9 @@ impl AlgoBingle {
         Ok((account, addr))
     }
 
-
     fn params(&self, client: &Algod) -> Result<SuggestedParams> {
         self.ops.algod_call(|| client.suggested_params())
     }
-
 
     fn app_address(&self, app_id: u64) -> Result<Address> {
         let addr_str = self.ops.contract_address(app_id)?;
@@ -818,10 +1024,15 @@ impl AlgoBingle {
     pub fn broadcast_group(&self, client: &Algod, signed_group: Vec<Vec<u8>>) -> Result<String> {
         // Concatenate msgpack-encoded signed transactions into one byte array as per Algod API.
         let mut bytes: Vec<u8> = Vec::new();
-        for s in signed_group { bytes.extend_from_slice(&s); }
+        for s in signed_group {
+            bytes.extend_from_slice(&s);
+        }
 
-        let txid = self.ops.algod_call(|| client.send_raw(&bytes))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let txid = self
+            .ops
+            .algod_call(|| client.send_raw(&bytes))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         // Wait for confirmation of the first tx id in the group.
         self.ops.wait_for_confirmation(&txid, 10)?;
         Ok(txid)
@@ -846,7 +1057,9 @@ impl AlgoBingle {
         // 1) Compute txids = sha512_256("TX" || msgpack(transaction_without_group)) for each txn
         let mut txids: Vec<[u8; 32]> = Vec::with_capacity(txns.len());
         for tx in txns.iter() {
-            let raw = tx.to_msg_pack().map_err(|e| anyhow!("failed to msgpack unsigned tx: {e}"))?;
+            let raw = tx
+                .to_msg_pack()
+                .map_err(|e| anyhow!("failed to msgpack unsigned tx: {e}"))?;
             let mut tv = Vec::with_capacity(2 + raw.len());
             tv.extend_from_slice(b"TX");
             tv.extend_from_slice(&raw);
@@ -859,8 +1072,12 @@ impl AlgoBingle {
         // msgpack map of 1 element => 0x81, key is a str of len 6 => 0xA6 'txlist'
         // array header: len N => 0x90 + N (assuming N<16)
         let n = txids.len();
-        if n == 0 { bail!("no transactions to group"); }
-        if n > 15 { bail!("too many txns in group (max 15 supported by minimal encoder)"); }
+        if n == 0 {
+            bail!("no transactions to group");
+        }
+        if n > 15 {
+            bail!("too many txns in group (max 15 supported by minimal encoder)");
+        }
         let mut group_mp: Vec<u8> = Vec::with_capacity(1 + 1 + 6 + 1 + n * 34);
         group_mp.push(0x81); // 1-key map
         group_mp.push(0xA6); // str len 6
@@ -892,8 +1109,12 @@ impl AlgoBingle {
     /// - asset_id: the ASA id for Bingle$
     /// - price_microalgos: the current price configured on-chain (microAlgos)
     pub fn buy_bingle(&self, app_id: u64, asset_id: u64, price_microalgos: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         // Ensure the caller (sender) is opted in to receive the asset from the app's inner tx
         let _ = self.opt_in_sender_to_asset(asset_id)?;
         let client = self.ops.algod_client()?;
@@ -911,17 +1132,25 @@ impl AlgoBingle {
         algo_log!("[buy_bingle] tx_pay: {:#?}", tx_pay);
 
         // 2) App call: buy_bingle()void with foreign asset, built via AlgoOps helper
-        let tx_app = self
-            .ops
-            .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
+        let tx_app =
+            self.ops
+                .build_call_app_tx(app_id, Some(asset_id), Some("buy_bingle()void"), &[])?;
         algo_log!("[buy_bingle] tx_app: {:#?}", tx_app);
 
         // Group, sign, and send
         let mut txs = vec![tx_pay, tx_app];
         Self::assign_group_id(&mut txs)?;
 
-        let s1 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign pay: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s2 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
+        let s1 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign pay: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed pay: {e}"))?;
+        let s2 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign app: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app: {e}"))?;
 
         self.broadcast_group(&client, vec![s1, s2])
     }
@@ -930,18 +1159,33 @@ impl AlgoBingle {
     /// - app_id, asset_id as above
     /// - amount: number of units to sell
     /// - price_microalgos: price of one unit, payout = price * amount
-    pub fn sell_bingle(&self, app_id: u64, asset_id: u64, amount: u64, price_microalgos: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
-        if amount == 0 { bail!("amount must be > 0"); }
+    pub fn sell_bingle(
+        &self,
+        app_id: u64,
+        asset_id: u64,
+        amount: u64,
+        price_microalgos: u64,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
+        if amount == 0 {
+            bail!("amount must be > 0");
+        }
         // Ensure the app account is opted-in to the ASA so it can receive transfers
-        self.ops.opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
+        self.ops
+            .opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
         let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
         let app_addr = self.app_address(app_id)?;
 
-        let payout = price_microalgos.checked_mul(amount).ok_or_else(|| anyhow!("payout overflow"))?;
+        let payout = price_microalgos
+            .checked_mul(amount)
+            .ok_or_else(|| anyhow!("payout overflow"))?;
 
         // 1) Asset xfer: sender -> app address of `amount`
         let tx_ax = TransferAsset::new(sender, AssetId(asset_id), amount, app_addr)
@@ -970,9 +1214,21 @@ impl AlgoBingle {
         let mut txs = vec![tx_ax, tx_pay, tx_app];
         Self::assign_group_id(&mut txs)?;
 
-        let s1 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign axfer: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s2 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign pay: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed pay: {e}"))?;
-        let s3 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
+        let s1 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign axfer: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed axfer: {e}"))?;
+        let s2 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign pay: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed pay: {e}"))?;
+        let s3 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign app: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app: {e}"))?;
 
         self.broadcast_group(&client, vec![s1, s2, s3])
     }
@@ -980,18 +1236,36 @@ impl AlgoBingle {
     /// Call register(handle). Requires:
     /// - app_id, asset_id as above
     /// - price_units: the fee in Bingle$ units (as configured on-chain price)
-    pub fn register(&self, app_id: u64, asset_id: u64, handle: &str, price_units: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
-        if handle.is_empty() { bail!("handle must not be empty"); }
+    pub fn register(
+        &self,
+        app_id: u64,
+        asset_id: u64,
+        handle: &str,
+        price_units: u64,
+    ) -> Result<String> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
+        if handle.is_empty() {
+            bail!("handle must not be empty");
+        }
 
-        let sender_str = self.ops.address.as_ref().ok_or_else(|| anyhow!("No sender address"))?.to_string();
+        let sender_str = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("No sender address"))?
+            .to_string();
 
         // 1. Pre-check: Handle uniqueness via indexer
         if let Some(existing_owner) = self.handle_lookup(handle)?
-            && existing_owner != sender_str {
-                bail!("Handle already in use by {}", existing_owner);
-            }
+            && existing_owner != sender_str
+        {
+            bail!("Handle already in use by {}", existing_owner);
+        }
 
         let tx_id = self.register_unchecked(app_id, asset_id, handle, price_units)?;
 
@@ -1003,14 +1277,21 @@ impl AlgoBingle {
 
     /// Internal method to perform the registration on-chain without uniqueness pre-checks.
     /// Used by `register` after pre-checks, or by tests to simulate "hacked" registrations.
-    pub fn register_unchecked(&self, app_id: u64, asset_id: u64, handle: &str, price_units: u64) -> Result<String> {
+    pub fn register_unchecked(
+        &self,
+        app_id: u64,
+        asset_id: u64,
+        handle: &str,
+        price_units: u64,
+    ) -> Result<String> {
         let client = self.ops.algod_client()?;
         let params = self.params(&client)?;
         let (account, sender) = self.sender_account()?;
 
         // Ensure the app account is opted-in to the ASA so it can receive the registration fee
-        self.ops.opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
-        
+        self.ops
+            .opt_in_app_to_asset(app_id, asset_id, "opt_in_to_bingle(uint64)void")?;
+
         // Ensure the caller (sender) is opted-in to the ASA so the axfer succeeds
         let _ = self.opt_in_sender_to_asset(asset_id)?;
         // Ensure the caller is opted-in to the application local state to avoid logic eval error
@@ -1031,7 +1312,9 @@ impl AlgoBingle {
         app_args.push(AlgoOps::arc4_selector("register(string)void").to_vec());
         let handle_bytes = handle.as_bytes();
         let len = handle_bytes.len();
-        if len > u16::MAX as usize { bail!("handle too long"); }
+        if len > u16::MAX as usize {
+            bail!("handle too long");
+        }
         let mut arg = Vec::with_capacity(2 + len);
         arg.extend_from_slice(&(len as u16).to_be_bytes());
         arg.extend_from_slice(handle_bytes);
@@ -1046,8 +1329,16 @@ impl AlgoBingle {
         let mut txs = vec![tx_ax, tx_app];
         Self::assign_group_id(&mut txs)?;
 
-        let s1 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign axfer: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed axfer: {e}"))?;
-        let s2 = account.sign(txs.remove(0)).map_err(|e| anyhow!("sign app: {e}"))?.to_msg_pack().map_err(|e| anyhow!("encode signed app: {e}"))?;
+        let s1 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign axfer: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed axfer: {e}"))?;
+        let s2 = account
+            .sign(txs.remove(0))
+            .map_err(|e| anyhow!("sign app: {e}"))?
+            .to_msg_pack()
+            .map_err(|e| anyhow!("encode signed app: {e}"))?;
 
         self.broadcast_group(&client, vec![s1, s2])
     }
@@ -1056,19 +1347,29 @@ impl AlgoBingle {
     pub fn verify_registration_winner(&self, handle: &str, expected_winner: &str) -> Result<()> {
         let mut winner_verified = false;
         for i in 0..15 {
-            if i > 0 { std::thread::sleep(std::time::Duration::from_secs(1)); }
+            if i > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
             if let Some(winner) = self.handle_lookup(handle)? {
                 if winner == expected_winner {
                     winner_verified = true;
                     break;
                 } else {
-                    bail!("Handle registration verification failed: handle '{}' was taken by {} (expected {})", handle, winner, expected_winner);
+                    bail!(
+                        "Handle registration verification failed: handle '{}' was taken by {} (expected {})",
+                        handle,
+                        winner,
+                        expected_winner
+                    );
                 }
             }
         }
 
         if !winner_verified {
-            algo_log!("Warning: handle registration verification timed out for handle '{}'. It may still be pending in indexer.", handle);
+            algo_log!(
+                "Warning: handle registration verification timed out for handle '{}'. It may still be pending in indexer.",
+                handle
+            );
         }
         Ok(())
     }
@@ -1118,10 +1419,20 @@ impl AlgoBingle {
         accounts: &HashMap<String, AlgoOps>,
     ) -> Result<(u64, u64)> {
         // All six named roles are required; all seven addresses must be distinct.
-        let required_roles = [ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE, ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_FREEZE];
+        let required_roles = [
+            ACCOUNT_APP_ADMIN,
+            ACCOUNT_APP_WITHDRAWER,
+            ACCOUNT_ASSET_CREATOR,
+            ACCOUNT_ASSET_RESERVE,
+            ACCOUNT_ASSET_MANAGER,
+            ACCOUNT_ASSET_FREEZE,
+        ];
         for role in required_roles {
             if !accounts.contains_key(role) {
-                return Err(anyhow!("deploy_app_and_asset: missing required account '{}'", role));
+                return Err(anyhow!(
+                    "deploy_app_and_asset: missing required account '{}'",
+                    role
+                ));
             }
         }
         let creator_addr = self.ops.address_str()?;
@@ -1130,15 +1441,19 @@ impl AlgoBingle {
         for role in required_roles {
             let addr = accounts[role].address_str()?;
             if !seen_addrs.insert(addr.clone()) {
-                return Err(anyhow!("deploy_app_and_asset: account '{}' address {} is not unique across roles", role, addr));
+                return Err(anyhow!(
+                    "deploy_app_and_asset: account '{}' address {} is not unique across roles",
+                    role,
+                    addr
+                ));
             }
         }
 
         // Resolve named accounts.
-        let admin_ops         = &accounts[ACCOUNT_APP_ADMIN];
-        let admin_addr        = admin_ops.address_str()?;
-        let withdrawer_ops    = &accounts[ACCOUNT_APP_WITHDRAWER];
-        let withdrawer_addr   = withdrawer_ops.address_str()?;
+        let admin_ops = &accounts[ACCOUNT_APP_ADMIN];
+        let admin_addr = admin_ops.address_str()?;
+        let withdrawer_ops = &accounts[ACCOUNT_APP_WITHDRAWER];
+        let withdrawer_addr = withdrawer_ops.address_str()?;
         let asset_creator_ops = &accounts[ACCOUNT_ASSET_CREATOR];
 
         // ── 1. Resolve effective app ──────────────────────────────────────────────
@@ -1146,18 +1461,31 @@ impl AlgoBingle {
         let effective_app_id = if need_new_app {
             let (approval_src, clear_src, arc56_json) = Self::read_teal_from_dir(app_path)?;
             let approval = self.ops.compile_teal(&approval_src)?;
-            let clear    = self.ops.compile_teal(&clear_src)?;
-            let admin_pk      = address_to_byte_key(&admin_addr)?;
+            let clear = self.ops.compile_teal(&clear_src)?;
+            let admin_pk = address_to_byte_key(&admin_addr)?;
             let withdrawer_pk = address_to_byte_key(&withdrawer_addr)?;
-            let id = self.ops.deploy_app(
-                &approval, &clear, None,
-                Some("create(address,address)void"),
-                &[AppArg::Bytes(admin_pk.to_vec()), AppArg::Bytes(withdrawer_pk.to_vec())],
-                "opt_in_to_bingle(uint64)void",
-                &arc56_json,
-            )?.ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
+            let id = self
+                .ops
+                .deploy_app(
+                    &approval,
+                    &clear,
+                    None,
+                    Some("create(address,address)void"),
+                    &[
+                        AppArg::Bytes(admin_pk.to_vec()),
+                        AppArg::Bytes(withdrawer_pk.to_vec()),
+                    ],
+                    "opt_in_to_bingle(uint64)void",
+                    &arc56_json,
+                )?
+                .ok_or_else(|| anyhow!("deploy_app returned no app_id"))?;
             // Default price of 1 so registration/buy flows work immediately.
-            admin_ops.call_app(id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])?;
+            admin_ops.call_app(
+                id,
+                None,
+                Some("set_bingle_price(uint64)void"),
+                &[AppArg::Uint(1)],
+            )?;
             tracing::info!("[deploy_app_and_asset] deployed new app_id={}", id);
             id
         } else {
@@ -1168,13 +1496,21 @@ impl AlgoBingle {
 
         // ── 2. Resolve effective asset ────────────────────────────────────────────
         let app_addr = self.ops.contract_address(effective_app_id)?;
-        let reserve_addr  = accounts[ACCOUNT_ASSET_RESERVE].address_str()?;
-        let manager_addr  = accounts[ACCOUNT_ASSET_MANAGER].address_str()?;
-        let freeze_addr   = accounts[ACCOUNT_ASSET_FREEZE].address_str()?;
+        let reserve_addr = accounts[ACCOUNT_ASSET_RESERVE].address_str()?;
+        let manager_addr = accounts[ACCOUNT_ASSET_MANAGER].address_str()?;
+        let freeze_addr = accounts[ACCOUNT_ASSET_FREEZE].address_str()?;
 
         let need_new_asset = new_asset || (asset_id.is_none() && self.asset_id == 0);
         let effective_asset_id = if need_new_asset {
-            let id = asset_creator_ops.create_asset_configured(asset_name, total_units, &manager_addr, &reserve_addr, &app_addr, &freeze_addr)?
+            let id = asset_creator_ops
+                .create_asset_configured(
+                    asset_name,
+                    total_units,
+                    &manager_addr,
+                    &reserve_addr,
+                    &app_addr,
+                    &freeze_addr,
+                )?
                 .ok_or_else(|| anyhow!("create_asset_configured returned no asset_id"))?;
             tracing::info!("[deploy_app_and_asset] created new asset_id={}", id);
             id
@@ -1182,31 +1518,49 @@ impl AlgoBingle {
             let id = asset_id.unwrap_or(self.asset_id);
             // Reconfigure clawback/reserve to point at the (possibly new) app.
             asset_creator_ops.set_asset_clawback_to_app(effective_app_id, id)?;
-            tracing::info!("[deploy_app_and_asset] using existing asset_id={} reconfigured to app_id={}", id, effective_app_id);
+            tracing::info!(
+                "[deploy_app_and_asset] using existing asset_id={} reconfigured to app_id={}",
+                id,
+                effective_app_id
+            );
             id
         };
 
         // ── 3. Opt new app into the ASA (admin-signed contract call) ─────────────
         let admin_ab = AlgoBingle::new(admin_ops.clone(), effective_app_id, effective_asset_id);
-        admin_ab.ops.opt_in_app_to_asset(effective_app_id, effective_asset_id, "opt_in_to_bingle(uint64)void")?;
+        admin_ab.ops.opt_in_app_to_asset(
+            effective_app_id,
+            effective_asset_id,
+            "opt_in_to_bingle(uint64)void",
+        )?;
 
         // Opt APP_WITHDRAWER into the ASA so they can receive ASA withdrawals.
-        let withdrawer_ab = AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);
+        let withdrawer_ab =
+            AlgoBingle::new(withdrawer_ops.clone(), effective_app_id, effective_asset_id);
         withdrawer_ab.opt_in_sender_to_asset(effective_asset_id)?;
 
         // Opt ASSET_RESERVE into the ASA if it is an external account (not the app address).
         let reserve_ops = &accounts[ACCOUNT_ASSET_RESERVE];
         let res_addr = reserve_ops.address_str()?;
         if res_addr != app_addr {
-            let reserve_ab = AlgoBingle::new(reserve_ops.clone(), effective_app_id, effective_asset_id);
+            let reserve_ab =
+                AlgoBingle::new(reserve_ops.clone(), effective_app_id, effective_asset_id);
             reserve_ab.opt_in_sender_to_asset(effective_asset_id)?;
         }
 
         // ── 3b. Seed the new app with initial_hot_bingle tokens (new asset only) ─────
         if need_new_asset && initial_hot_bingle > 0 {
-            asset_creator_ops.send_asset(effective_asset_id, initial_hot_bingle, &app_addr)
-                .map_err(|e| anyhow!("deploy_app_and_asset: failed to seed initial_hot_bingle: {e}"))?;
-            tracing::info!("[deploy_app_and_asset] seeded {} units of asset {} to app {}", initial_hot_bingle, effective_asset_id, effective_app_id);
+            asset_creator_ops
+                .send_asset(effective_asset_id, initial_hot_bingle, &app_addr)
+                .map_err(|e| {
+                    anyhow!("deploy_app_and_asset: failed to seed initial_hot_bingle: {e}")
+                })?;
+            tracing::info!(
+                "[deploy_app_and_asset] seeded {} units of asset {} to app {}",
+                initial_hot_bingle,
+                effective_asset_id,
+                effective_app_id
+            );
         }
 
         // ── 4. Transfer old-app balances to new app (only when app changed) ──────────
@@ -1215,7 +1569,12 @@ impl AlgoBingle {
             self.migrate_reserve(self.app_id, effective_app_id, 0)?;
             // ASA balance: clawback via asset manager when the asset is being reused.
             if !need_new_asset {
-                self.transfer_old_app_asset_balance(self.app_id, effective_app_id, effective_asset_id, asset_creator_ops)?;
+                self.transfer_old_app_asset_balance(
+                    self.app_id,
+                    effective_app_id,
+                    effective_asset_id,
+                    asset_creator_ops,
+                )?;
             }
         }
 
@@ -1230,17 +1589,20 @@ impl AlgoBingle {
             .filter_map(|e| e.ok())
             .collect();
 
-        let approval_path = entries.iter()
+        let approval_path = entries
+            .iter()
             .find(|e| e.file_name().to_string_lossy().ends_with(".approval.teal"))
             .map(|e| e.path())
             .ok_or_else(|| anyhow!("no *.approval.teal found in {:?}", dir))?;
 
-        let clear_path = entries.iter()
+        let clear_path = entries
+            .iter()
             .find(|e| e.file_name().to_string_lossy().ends_with(".clear.teal"))
             .map(|e| e.path())
             .ok_or_else(|| anyhow!("no *.clear.teal found in {:?}", dir))?;
 
-        let arc56_path = entries.iter()
+        let arc56_path = entries
+            .iter()
             .find(|e| e.file_name().to_string_lossy().ends_with(".arc56.json"))
             .map(|e| e.path())
             .ok_or_else(|| anyhow!("no *.arc56.json found in {:?}", dir))?;
@@ -1271,14 +1633,27 @@ impl AlgoBingle {
         let old_app_addr_str = self.ops.contract_address(old_app_id)?;
         let balance = self.ops.asset_holding(&old_app_addr_str, asset_id)?;
         if balance == 0 {
-            tracing::info!("[deploy_app_and_asset] old app {} has zero balance of asset {}, skipping transfer", old_app_id, asset_id);
+            tracing::info!(
+                "[deploy_app_and_asset] old app {} has zero balance of asset {}, skipping transfer",
+                old_app_id,
+                asset_id
+            );
             return Ok(());
         }
-        tracing::info!("[deploy_app_and_asset] clawbacking {} units of asset {} from old app {} to new app {}", balance, asset_id, old_app_id, new_app_id);
+        tracing::info!(
+            "[deploy_app_and_asset] clawbacking {} units of asset {} from old app {} to new app {}",
+            balance,
+            asset_id,
+            old_app_id,
+            new_app_id
+        );
 
         // Use the ASA manager's signing key for all asset config and clawback transactions.
         let sk = asset_manager.private_key_bytes()?;
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = Account::from_seed(seed);
         let caller_str = asset_manager.address_str()?;
         let caller = Address::from_str(&caller_str).map_err(|e| anyhow!("invalid address: {e}"))?;
@@ -1287,15 +1662,18 @@ impl AlgoBingle {
         let client = self.ops.algod_client()?;
 
         // Fetch current reserve so we don't accidentally clear it in the AssetConfig step.
-        let asset_info = self.ops.algod_call(|| client.asset(AssetId(asset_id)))
+        let asset_info = self
+            .ops
+            .algod_call(|| client.asset(AssetId(asset_id)))
             .map_err(|e| anyhow!("fetch asset info for balance transfer: {e}"))?;
-        let v = serde_json::to_value(&asset_info)
-            .map_err(|e| anyhow!("serialize asset info: {e}"))?;
-        let reserve_str = v.get("params")
+        let v =
+            serde_json::to_value(&asset_info).map_err(|e| anyhow!("serialize asset info: {e}"))?;
+        let reserve_str = v
+            .get("params")
             .and_then(|p| p.get("reserve").and_then(|x| x.as_str()))
             .unwrap_or(&old_app_addr_str);
-        let reserve_addr = Address::from_str(reserve_str)
-            .map_err(|e| anyhow!("parse reserve address: {e}"))?;
+        let reserve_addr =
+            Address::from_str(reserve_str).map_err(|e| anyhow!("parse reserve address: {e}"))?;
 
         // Step 1: set clawback to creator temporarily.
         let params = self.params(&client)?;
@@ -1306,43 +1684,68 @@ impl AlgoBingle {
             .note(AlgoOps::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("build AssetConfig (set clawback to creator): {e}"))?;
-        let signed_cfg = account.sign(tx_cfg)
-            .map_err(|e| anyhow!("sign AssetConfig: {e}"))?.to_msg_pack()
+        let signed_cfg = account
+            .sign(tx_cfg)
+            .map_err(|e| anyhow!("sign AssetConfig: {e}"))?
+            .to_msg_pack()
             .map_err(|e| anyhow!("encode AssetConfig: {e}"))?;
-        let tx_id = self.ops.algod_call(|| client.send_raw(&signed_cfg))
-            .map_err(|e| anyhow!("send AssetConfig: {e}"))?.tx_id;
+        let tx_id = self
+            .ops
+            .algod_call(|| client.send_raw(&signed_cfg))
+            .map_err(|e| anyhow!("send AssetConfig: {e}"))?
+            .tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
 
         // Step 2: clawback from old-app to new-app.
         let params2 = self.params(&client)?;
-        let tx_clawback = ClawbackAsset::new(caller, AssetId(asset_id), balance, old_app_addr, new_app_addr)
-            .note(AlgoOps::unique_note())
-            .build(&params2)
-            .map_err(|e| anyhow!("build ClawbackAsset: {e}"))?;
-        let signed_cb = account.sign(tx_clawback)
-            .map_err(|e| anyhow!("sign ClawbackAsset: {e}"))?.to_msg_pack()
+        let tx_clawback = ClawbackAsset::new(
+            caller,
+            AssetId(asset_id),
+            balance,
+            old_app_addr,
+            new_app_addr,
+        )
+        .note(AlgoOps::unique_note())
+        .build(&params2)
+        .map_err(|e| anyhow!("build ClawbackAsset: {e}"))?;
+        let signed_cb = account
+            .sign(tx_clawback)
+            .map_err(|e| anyhow!("sign ClawbackAsset: {e}"))?
+            .to_msg_pack()
             .map_err(|e| anyhow!("encode ClawbackAsset: {e}"))?;
-        let tx_id2 = self.ops.algod_call(|| client.send_raw(&signed_cb))
-            .map_err(|e| anyhow!("send ClawbackAsset: {e}"))?.tx_id;
+        let tx_id2 = self
+            .ops
+            .algod_call(|| client.send_raw(&signed_cb))
+            .map_err(|e| anyhow!("send ClawbackAsset: {e}"))?
+            .tx_id;
         self.ops.wait_for_confirmation(&tx_id2, 10)?;
 
         // Step 3: restore clawback + reserve to new app.
         asset_manager.set_asset_clawback_to_app(new_app_id, asset_id)?;
 
-        tracing::info!("[deploy_app_and_asset] balance transfer complete: {} units moved to new app {}", balance, new_app_id);
+        tracing::info!(
+            "[deploy_app_and_asset] balance transfer complete: {} units moved to new app {}",
+            balance,
+            new_app_id
+        );
         Ok(())
     }
 
     /// Ensure the sender account is opted-in to the given ASA. If already opted-in, returns Ok("").
     /// Otherwise, sends an asset transfer of 0 units from the sender to themselves to perform opt-in.
     pub fn opt_in_sender_to_asset(&self, asset_id: u64) -> Result<String> {
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         let sender_str = self
             .ops
             .address
             .as_ref()
             .ok_or_else(|| anyhow!("This operation needs an address"))?;
-        if self.ops.is_account_opted_in_to_asset(sender_str, asset_id)? {
+        if self
+            .ops
+            .is_account_opted_in_to_asset(sender_str, asset_id)?
+        {
             return Ok(String::new());
         }
         let client = self.ops.algod_client()?;
@@ -1358,8 +1761,11 @@ impl AlgoBingle {
             .map_err(|e| anyhow!("sign asset opt-in: {e}"))?
             .to_msg_pack()
             .map_err(|e| anyhow!("encode signed asset opt-in: {e}"))?;
-        let tx_id = self.ops.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .ops
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.ops.wait_for_confirmation(&tx_id, 10)?;
         Ok(tx_id)
     }

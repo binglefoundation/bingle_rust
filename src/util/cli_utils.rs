@@ -1,8 +1,8 @@
-use std::net::SocketAddr;
 use crate::api::bingle_api::StartOptions;
-use crate::util::logging::LogMode;
 use crate::blockchain::algo_ops::AlgoChainConfig;
 use crate::util::config_utils;
+use crate::util::logging::LogMode;
+use std::net::SocketAddr;
 
 /// Parse CLI arguments into StartOptions.
 ///
@@ -51,7 +51,9 @@ where
             }
             "--static-ip" => {
                 let v = it.next().ok_or("--static-ip requires an <ip:port> value")?;
-                let addr: SocketAddr = v.parse().map_err(|e| format!("Invalid --static-ip '{}': {}", v, e))?;
+                let addr: SocketAddr = v
+                    .parse()
+                    .map_err(|e| format!("Invalid --static-ip '{}': {}", v, e))?;
                 static_ip = Some(addr);
             }
             "--stun-servers" => {
@@ -60,7 +62,9 @@ where
                 stun_servers = Some(list);
             }
             "--stun-servers-file" => {
-                let v = it.next().ok_or("--stun-servers-file requires a <file> value")?;
+                let v = it
+                    .next()
+                    .ok_or("--stun-servers-file requires a <file> value")?;
                 let list = config_utils::parse_stun_file(&v)?;
                 stun_servers = Some(list);
             }
@@ -73,30 +77,49 @@ where
                 node_asset_id = nid_asset;
             }
             "--log-level" => {
-                let v = it.next().ok_or("--log-level requires a value (trace|debug|info|warn|error)")?;
+                let v = it
+                    .next()
+                    .ok_or("--log-level requires a value (trace|debug|info|warn|error)")?;
                 log_level = Some(v);
             }
             "--log-mode" => {
-                let v = it.next().ok_or("--log-mode requires a value (Plain|ANSI|AWS|JS)")?;
+                let v = it
+                    .next()
+                    .ok_or("--log-mode requires a value (Plain|ANSI|AWS|JS)")?;
                 log_mode = match v.to_ascii_lowercase().as_str() {
                     "plain" => LogMode::Plain,
                     "ansi" => LogMode::ANSI,
                     "aws" => LogMode::AWS,
                     "js" => LogMode::JS,
-                    _ => return Err(format!("Invalid --log-mode '{}': must be Plain|ANSI|AWS|JS", v)),
+                    _ => {
+                        return Err(format!(
+                            "Invalid --log-mode '{}': must be Plain|ANSI|AWS|JS",
+                            v
+                        ));
+                    }
                 };
             }
             "--app-id" => {
                 let v = it.next().ok_or("--app-id requires a value")?;
-                cli_app_id = Some(v.parse::<u64>().map_err(|e| format!("Invalid --app-id '{}': {}", v, e))?);
+                cli_app_id = Some(
+                    v.parse::<u64>()
+                        .map_err(|e| format!("Invalid --app-id '{}': {}", v, e))?,
+                );
             }
             "--asset-id" => {
                 let v = it.next().ok_or("--asset-id requires a value")?;
-                cli_asset_id = Some(v.parse::<u64>().map_err(|e| format!("Invalid --asset-id '{}': {}", v, e))?);
+                cli_asset_id = Some(
+                    v.parse::<u64>()
+                        .map_err(|e| format!("Invalid --asset-id '{}': {}", v, e))?,
+                );
             }
             "--handle-cache-expiry-secs" => {
-                let v = it.next().ok_or("--handle-cache-expiry-secs requires a <seconds> value")?;
-                let secs = v.parse::<u64>().map_err(|e| format!("Invalid --handle-cache-expiry-secs '{}': {}", v, e))?;
+                let v = it
+                    .next()
+                    .ok_or("--handle-cache-expiry-secs requires a <seconds> value")?;
+                let secs = v
+                    .parse::<u64>()
+                    .map_err(|e| format!("Invalid --handle-cache-expiry-secs '{}': {}", v, e))?;
                 handle_cache_expiry = Some(std::time::Duration::from_secs(secs));
             }
             "--debug" => {
@@ -117,10 +140,16 @@ where
         }
     }
 
-    let handle = handle.ok_or("Missing handle: provide --handle <handle> or a positional <handle>")?;
+    let handle =
+        handle.ok_or("Missing handle: provide --handle <handle> or a positional <handle>")?;
 
     // Try to resolve IDs; if none provided anywhere, leave as None to keep start flexible for tests.
-    let (app_id_opt, asset_id_opt) = match config_utils::resolve_app_asset_ids(node_app_id, node_asset_id, cli_app_id, cli_asset_id) {
+    let (app_id_opt, asset_id_opt) = match config_utils::resolve_app_asset_ids(
+        node_app_id,
+        node_asset_id,
+        cli_app_id,
+        cli_asset_id,
+    ) {
         Ok((a, b)) => (Some(a), Some(b)),
         Err(_) => (None, None),
     };

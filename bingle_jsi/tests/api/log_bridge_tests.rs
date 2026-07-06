@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use bingle_jsi::api::callback::LogCallback;
 use bingle_jsi::api::log_bridge::{install_log_bridge, set_global_log_callback};
@@ -24,13 +24,18 @@ fn log_bridge_forwards_to_callback() {
     let _ = install_log_bridge(tracing_subscriber::filter::LevelFilter::TRACE);
 
     let count = Arc::new(AtomicU32::new(0));
-    let cb = CountingLogCallback { count: count.clone() };
+    let cb = CountingLogCallback {
+        count: count.clone(),
+    };
     set_global_log_callback(Box::new(cb));
 
     tracing::info!("test log message");
 
     // The callback should have been invoked at least once
-    assert!(count.load(Ordering::SeqCst) >= 1, "log callback should have been called");
+    assert!(
+        count.load(Ordering::SeqCst) >= 1,
+        "log callback should have been called"
+    );
 }
 
 #[test]
@@ -43,19 +48,30 @@ fn log_bridge_no_callback_does_not_panic() {
 #[test]
 fn set_log_callback_global_installs_and_forwards() {
     let count = Arc::new(AtomicU32::new(0));
-    let cb = CountingLogCallback { count: count.clone() };
+    let cb = CountingLogCallback {
+        count: count.clone(),
+    };
     // The free function should install the bridge and set the callback
     bingle_jsi::set_log_callback_global(Box::new(cb), Some("trace".to_string()));
 
     tracing::info!("message via global free function");
 
-    assert!(count.load(Ordering::SeqCst) >= 1, "global log callback should have been called");
+    assert!(
+        count.load(Ordering::SeqCst) >= 1,
+        "global log callback should have been called"
+    );
 }
 
 #[test]
 fn get_version_returns_valid_info() {
     let info = bingle_jsi::get_version();
     assert!(!info.version.is_empty(), "version should not be empty");
-    assert!(!info.build_timestamp.is_empty(), "build_timestamp should not be empty");
-    assert!(!info.build_number.is_empty(), "build_number should not be empty");
+    assert!(
+        !info.build_timestamp.is_empty(),
+        "build_timestamp should not be empty"
+    );
+    assert!(
+        !info.build_number.is_empty(),
+        "build_number should not be empty"
+    );
 }

@@ -1,7 +1,7 @@
-use std::net::{SocketAddr, ToSocketAddrs};
+use rust_comms::api::network_endpoint::NetworkEndpoint;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use rust_comms::api::network_endpoint::NetworkEndpoint;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +12,10 @@ pub struct InetSocketAddress {
 
 impl InetSocketAddress {
     pub fn to_socket_addr(&self) -> Option<SocketAddr> {
-        format!("{}:{}", self.host, self.port).to_socket_addrs().ok()?.next()
+        format!("{}:{}", self.host, self.port)
+            .to_socket_addrs()
+            .ok()?
+            .next()
     }
 }
 

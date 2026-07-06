@@ -1,5 +1,3 @@
-
-
 use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::thread;
@@ -16,16 +14,24 @@ static SERVER_ECHOED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static CLIENT_ECHOED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 fn reset_test_state() {
-    if let Ok(mut g) = SERVER_ECHOED.lock() { *g = None; }
-    if let Ok(mut g) = CLIENT_ECHOED.lock() { *g = None; }
+    if let Ok(mut g) = SERVER_ECHOED.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = CLIENT_ECHOED.lock() {
+        *g = None;
+    }
 }
 
-fn client_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn client_handler(
+    _server: &dyn Dtls,
+    _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     if let Ok(mut g) = CLIENT_ECHOED.lock() {
         *g = Some(data.to_vec());
     }
 }
-
 
 #[ntest::timeout(30_000)]
 #[test]
@@ -45,7 +51,12 @@ pub fn dtls_openssl_end_to_end_loopback_echo() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Echo handler: save payload then send back to sender using the server instance.
-    fn echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+    fn echo_handler(
+        server: &dyn Dtls,
+        from: &rust_comms::api::bingle_api::NetworkEndpoint,
+        _issuer: &str,
+        data: &[u8],
+    ) {
         // Ignore DTLS record-layer datagrams (Handshake=22, Application=23) that may arrive
         // when the server is in plaintext fallback mode; we only want to record real app payload.
         if let Some(first) = data.first() {
@@ -85,7 +96,7 @@ pub fn dtls_openssl_end_to_end_loopback_echo() {
         .with_server_signing_cert(certs_b.server_crt.clone())
         .with_server_signing_private_key(certs_b.server_key.clone())
         .with_ca_cert(certs_b.ca_crt.clone())
-                .with_handle_peer_certificate(mock_peer_cert_handler);
+        .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start client mux and initialize client DTLS
     let cmux0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
@@ -97,7 +108,16 @@ pub fn dtls_openssl_end_to_end_loopback_echo() {
     // Retry a few times in case of transient handshake timing.
     let mut ok = false;
     for _ in 0..5 {
-        if client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload).is_ok() { ok = true; break; }
+        if client
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                payload,
+            )
+            .is_ok()
+        {
+            ok = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "client DTLS send failed");
@@ -107,16 +127,32 @@ pub fn dtls_openssl_end_to_end_loopback_echo() {
     while CLIENT_ECHOED.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(2) {
         thread::sleep(Duration::from_millis(10));
     }
-    let echoed = CLIENT_ECHOED.lock().unwrap().clone().expect("client did not capture echoed payload within timeout");
+    let echoed = CLIENT_ECHOED
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("client did not capture echoed payload within timeout");
     let mut expected = b"ECHOED: ".to_vec();
     expected.extend_from_slice(payload);
-    assert_eq!(echoed.as_slice(), expected.as_slice(), "client captured echoed payload mismatch with prefix");
+    assert_eq!(
+        echoed.as_slice(),
+        expected.as_slice(),
+        "client captured echoed payload mismatch with prefix"
+    );
 
     // Also ensure the server echo handler recorded the original payload.
     let start = Instant::now();
     while SERVER_ECHOED.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(2) {
         thread::sleep(Duration::from_millis(10));
     }
-    let server_echoed = SERVER_ECHOED.lock().unwrap().clone().expect("server did not record payload within timeout");
-    assert_eq!(server_echoed.as_slice(), payload, "server recorded payload mismatch");
+    let server_echoed = SERVER_ECHOED
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("server did not record payload within timeout");
+    assert_eq!(
+        server_echoed.as_slice(),
+        payload,
+        "server recorded payload mismatch"
+    );
 }

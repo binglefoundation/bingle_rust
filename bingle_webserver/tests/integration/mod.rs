@@ -1,13 +1,13 @@
-use axum::http::StatusCode;
-use bingle_webserver::{create_router, AppState};
-use tower::util::ServiceExt;
+use crate::common::MockBingleApi;
 use axum::body::Body;
 use axum::http::Request;
-use serde_json::json;
-use std::sync::{Arc, Mutex};
-use crate::common::MockBingleApi;
+use axum::http::StatusCode;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_webserver::{AppState, create_router};
+use serde_json::json;
+use std::sync::{Arc, Mutex};
+use tower::util::ServiceExt;
 
 fn setup_state() -> AppState {
     AppState {
@@ -36,7 +36,9 @@ async fn test_full_handle_lookup() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let id: String = serde_json::from_slice(&body).unwrap();
     assert_eq!(id, "mock-id-foo");
 }
@@ -68,10 +70,13 @@ async fn test_full_send_message_to_id() {
                 .method("POST")
                 .uri("/sendMessageToId")
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({
-                    "userId": "test-user",
-                    "message": "hello"
-                }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "userId": "test-user",
+                        "message": "hello"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -90,10 +95,13 @@ async fn test_full_send_message_to_handle() {
                 .method("POST")
                 .uri("/sendMessageToHandle")
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({
-                    "handle": "test-handle",
-                    "message": "hello"
-                }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "handle": "test-handle",
+                        "message": "hello"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -112,16 +120,19 @@ async fn test_full_send_message_to_network() {
                 .method("POST")
                 .uri("/sendMessageToNetwork")
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({
-                    "networkSourceKey": {
-                        "inetSocketAddress": {
-                            "host": "127.0.0.1",
-                            "port": 1234
-                        }
-                    },
-                    "userId": "test-user",
-                    "message": "hello"
-                }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "networkSourceKey": {
+                            "inetSocketAddress": {
+                                "host": "127.0.0.1",
+                                "port": 1234
+                            }
+                        },
+                        "userId": "test-user",
+                        "message": "hello"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -140,10 +151,13 @@ async fn test_full_send_message_to_id_with_response() {
                 .method("POST")
                 .uri("/sendMessageToIdWithResponse")
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({
-                    "userId": "test-user",
-                    "message": "hello"
-                }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "userId": "test-user",
+                        "message": "hello"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -162,10 +176,13 @@ async fn test_full_send_message_to_handle_with_response() {
                 .method("POST")
                 .uri("/sendMessageToHandleWithResponse")
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({
-                    "handle": "test-handle",
-                    "message": "hello"
-                }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "handle": "test-handle",
+                        "message": "hello"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -184,16 +201,19 @@ async fn test_full_send_message_to_network_with_response() {
                 .method("POST")
                 .uri("/sendMessageToNetworkWithResponse")
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({
-                    "networkSourceKey": {
-                        "inetSocketAddress": {
-                            "host": "127.0.0.1",
-                            "port": 1234
-                        }
-                    },
-                    "userId": "test-user",
-                    "message": "hello"
-                }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "networkSourceKey": {
+                            "inetSocketAddress": {
+                                "host": "127.0.0.1",
+                                "port": 1234
+                            }
+                        },
+                        "userId": "test-user",
+                        "message": "hello"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -242,7 +262,9 @@ async fn test_full_keypair_status_no_keypair() {
     let state = AppState {
         api: Arc::new(MockBingleApi),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
@@ -261,7 +283,9 @@ async fn test_full_keypair_status_no_keypair() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "None");
     assert!(json.get("id").is_none());
@@ -282,7 +306,9 @@ async fn test_full_get_nat_type_default() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["natType"], "Unknown");
 }
@@ -314,7 +340,9 @@ async fn test_cors_headers_on_local_keypair_status() {
     let state = AppState {
         api: Arc::new(MockBingleApi),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
@@ -335,7 +363,10 @@ async fn test_cors_headers_on_local_keypair_status() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let cors_header = response.headers().get("access-control-allow-origin");
-    assert!(cors_header.is_some(), "CORS header missing on /local/keypairStatus");
+    assert!(
+        cors_header.is_some(),
+        "CORS header missing on /local/keypairStatus"
+    );
     assert_eq!(cors_header.unwrap(), "*");
 }
 
@@ -358,6 +389,9 @@ async fn test_cors_preflight_on_local_route() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let cors_header = response.headers().get("access-control-allow-origin");
-    assert!(cors_header.is_some(), "CORS header missing on OPTIONS preflight for /local/generateKeypair");
+    assert!(
+        cors_header.is_some(),
+        "CORS header missing on OPTIONS preflight for /local/generateKeypair"
+    );
     assert_eq!(cors_header.unwrap(), "*");
 }

@@ -12,17 +12,28 @@ pub fn test_register_handle_uniqueness() {
     test_util::init_test_logging();
     test_util::assert_localnet_available();
     let cfg = test_util::localnet_config();
-    
-    // 1. Setup accounts
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE])
-        .expect("Failed to fund accounts");
 
-    let ops_a = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let ops_b = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+    // 1. Setup accounts
+    setup_localnet::ensure_localnet_accounts_funded(
+        &cfg,
+        &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE],
+    )
+    .expect("Failed to fund accounts");
+
+    let ops_a = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let ops_b = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_RECEIVE,
+        test_util::PASSPHRASE_RECEIVE,
+        cfg.clone(),
+    );
 
     // 2. Deploy app and asset
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1000000);
-    
+
     let handle = "unique_handle";
     let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
     let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
@@ -31,13 +42,21 @@ pub fn test_register_handle_uniqueness() {
     ab_a.buy_bingle(app_id, asset_id, 1).expect("A buy Bingle$");
 
     // 3. Register with A (should succeed)
-    ab_a.register(app_id, asset_id, handle, 1).expect("A register handle");
+    ab_a.register(app_id, asset_id, handle, 1)
+        .expect("A register handle");
 
     // 4. Try to register same handle with B (should fail pre-check before any ASA transfer)
     let res_b = ab_b.register(app_id, asset_id, handle, 1);
-    assert!(res_b.is_err(), "B should fail to register handle that is already in use");
+    assert!(
+        res_b.is_err(),
+        "B should fail to register handle that is already in use"
+    );
     let err_msg = res_b.err().unwrap().to_string();
-    assert!(err_msg.contains("already in use"), "Error message should mention 'already in use', got: {}", err_msg);
+    assert!(
+        err_msg.contains("already in use"),
+        "Error message should mention 'already in use', got: {}",
+        err_msg
+    );
 }
 
 #[test]
@@ -46,17 +65,28 @@ pub fn test_register_handle_race_condition() {
     test_util::init_test_logging();
     test_util::assert_localnet_available();
     let cfg = test_util::localnet_config();
-    
-    // 1. Setup accounts
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE])
-        .expect("Failed to fund accounts");
 
-    let ops_a = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let ops_b = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, cfg.clone());
+    // 1. Setup accounts
+    setup_localnet::ensure_localnet_accounts_funded(
+        &cfg,
+        &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE],
+    )
+    .expect("Failed to fund accounts");
+
+    let ops_a = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let ops_b = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_RECEIVE,
+        test_util::PASSPHRASE_RECEIVE,
+        cfg.clone(),
+    );
 
     // 2. Deploy app and asset
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1000000);
-    
+
     let handle = "race_handle";
 
     // Both A and B each need 1 unit to attempt registration
@@ -68,9 +98,7 @@ pub fn test_register_handle_race_condition() {
     let handle_str = handle.to_string();
     let handle_str_2 = handle.to_string();
 
-    let t1 = std::thread::spawn(move || {
-        ab_a.register(app_id, asset_id, &handle_str, 1)
-    });
+    let t1 = std::thread::spawn(move || ab_a.register(app_id, asset_id, &handle_str, 1));
 
     let t2 = std::thread::spawn(move || {
         // Sleep a tiny bit to increase chance of A being first
@@ -84,16 +112,34 @@ pub fn test_register_handle_race_condition() {
     // One should succeed, the other should fail either at pre-check or post-check.
     // In many cases, B will fail pre-check if A is fast enough.
     // If they both pass pre-check, one will fail post-check.
-    
-    assert!(res1.is_ok() || res2.is_ok(), "At least one registration should succeed");
-    assert!(res1.is_err() || res2.is_err(), "At least one registration should fail");
-    
+
+    assert!(
+        res1.is_ok() || res2.is_ok(),
+        "At least one registration should succeed"
+    );
+    assert!(
+        res1.is_err() || res2.is_err(),
+        "At least one registration should fail"
+    );
+
     if let Err(e) = res1 {
         let msg = e.to_string();
-        assert!(msg.contains("already in use") || msg.contains("post-check failed") || msg.contains("verification failed"), "Unexpected error: {}", msg);
+        assert!(
+            msg.contains("already in use")
+                || msg.contains("post-check failed")
+                || msg.contains("verification failed"),
+            "Unexpected error: {}",
+            msg
+        );
     }
     if let Err(e) = res2 {
         let msg = e.to_string();
-        assert!(msg.contains("already in use") || msg.contains("post-check failed") || msg.contains("verification failed"), "Unexpected error: {}", msg);
+        assert!(
+            msg.contains("already in use")
+                || msg.contains("post-check failed")
+                || msg.contains("verification failed"),
+            "Unexpected error: {}",
+            msg
+        );
     }
 }

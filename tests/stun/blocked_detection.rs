@@ -1,6 +1,6 @@
+use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
 
 #[test]
 pub fn test_stun_blocked_detection() {
@@ -28,5 +28,9 @@ pub fn test_stun_blocked_detection() {
     finder.tick_for_test();
 
     let seen = seen_states.lock().unwrap();
-    assert!(seen.contains(&StunState::Blocked), "Did not detect Blocked state after 3 intervals. Seen states: {:?}", *seen);
+    assert!(
+        seen.contains(&StunState::Blocked),
+        "Did not detect Blocked state after 3 intervals. Seen states: {:?}",
+        *seen
+    );
 }

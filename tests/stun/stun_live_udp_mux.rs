@@ -2,9 +2,9 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use crate::util::test_util::init_test_logging;
 use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
 use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
-use crate::util::test_util::init_test_logging;
 
 // Global holder of the endpoint finder so a plain function pointer handler can access it.
 static FINDER: OnceLock<Arc<Mutex<StunEndpointFinderImpl>>> = OnceLock::new();
@@ -25,20 +25,20 @@ fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
 #[cfg(not(target_os = "ios"))]
 fn live_stun_endpoint_finder_with_udp_mux() {
     init_test_logging();
-    
+
     // Choose three public STUN servers (widely used and generally responsive)
     let servers = [
         ("stun.l.google.com", 19302u16),
         ("stun.freeswitch.org", 3478u16),
-        ("stun.2talk.co.nz", 3478u16)
+        ("stun.2talk.co.nz", 3478u16),
     ];
 
-    let addrs: Vec<SocketAddr> = servers
-        .iter()
-        .filter_map(|(h, p)| resolve(h, *p))
-        .collect();
+    let addrs: Vec<SocketAddr> = servers.iter().filter_map(|(h, p)| resolve(h, *p)).collect();
 
-    assert!(addrs.len() >= 2, "expected to resolve at least two STUN servers");
+    assert!(
+        addrs.len() >= 2,
+        "expected to resolve at least two STUN servers"
+    );
 
     // Bind a UDP network mux and install the STUN handler that forwards to our finder
     let mux = Arc::new(
@@ -46,7 +46,8 @@ fn live_stun_endpoint_finder_with_udp_mux() {
             .expect("bind mux")
             .with_handle_stun(Arc::new(stun_handler)),
     );
-    mux.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    mux.set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
     mux.start().expect("start mux");
 
     // Prepare the endpoint finder and wire it to the mux for sending
@@ -65,10 +66,10 @@ fn live_stun_endpoint_finder_with_udp_mux() {
         f.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, data: &[u8]| {
             // Best-effort send; ignore error in test path
             if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-                            let addr = std::net::SocketAddr::new(ip, port);
-                            let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
-                            let _ = mux_for_send.write(&nsk, data);
-                        }
+                let addr = std::net::SocketAddr::new(ip, port);
+                let nsk = rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr);
+                let _ = mux_for_send.write(&nsk, data);
+            }
         })));
 
         f.set_state_change_handler(Some(Arc::new(move |st, ep| {
@@ -83,10 +84,16 @@ fn live_stun_endpoint_finder_with_udp_mux() {
     let start = Instant::now();
     let deadline = Duration::from_secs(10);
     let ok = loop {
-        if start.elapsed() > deadline { break false; }
+        if start.elapsed() > deadline {
+            break false;
+        }
         {
             let rec = seen.lock().unwrap();
-            if let Some((st, ep)) = rec.iter().rev().find(|(st, _)| *st == StunState::Consistent || *st == StunState::Inconsistent) {
+            if let Some((st, ep)) = rec
+                .iter()
+                .rev()
+                .find(|(st, _)| *st == StunState::Consistent || *st == StunState::Inconsistent)
+            {
                 // For CONSISTENT, we expect an endpoint Some(..)
                 if *st == StunState::Consistent {
                     assert!(ep.is_some(), "CONSISTENT should provide endpoint");

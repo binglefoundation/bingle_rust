@@ -29,7 +29,12 @@ pub struct RelayKeepAliveSender {
 }
 
 impl RelayKeepAliveSender {
-    pub fn new(api: BingleApiBothType, relay_id: String, relay_addr: SocketAddr, interval: Duration) -> Self {
+    pub fn new(
+        api: BingleApiBothType,
+        relay_id: String,
+        relay_addr: SocketAddr,
+        interval: Duration,
+    ) -> Self {
         Self {
             api,
             relay_id,
@@ -96,12 +101,21 @@ impl RelayKeepAliveSender {
                 match api.send_message_to_network(&nsk, &relay_id, to_json_value(&msg), None) {
                     Ok(_) => {
                         send_count.fetch_add(1, Ordering::SeqCst);
-                        tracing::info!("[RelayKeepAliveSender] sent KeepAlive to relay {} ({})", relay_id, relay_addr);
+                        tracing::info!(
+                            "[RelayKeepAliveSender] sent KeepAlive to relay {} ({})",
+                            relay_id,
+                            relay_addr
+                        );
                     }
                     Err(e) => {
                         // Keep looping: a transient failure should not stop refreshes,
                         // and dead-relay failover is handled elsewhere.
-                        tracing::warn!("[RelayKeepAliveSender] KeepAlive send to relay {} ({}) failed: {}", relay_id, relay_addr, e);
+                        tracing::warn!(
+                            "[RelayKeepAliveSender] KeepAlive send to relay {} ({}) failed: {}",
+                            relay_id,
+                            relay_addr,
+                            e
+                        );
                     }
                 }
             }

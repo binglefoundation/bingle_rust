@@ -1,5 +1,5 @@
-use rust_comms::blockchain::algo_ops::{AlgoOps, AlgoChainConfig};
 use crate::engine::ddb_upsert::test_util::init_test_logging;
+use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -18,11 +18,7 @@ pub fn test_node_unreachable() {
     };
 
     let (id, _passphrase) = AlgoOps::generate_keypair();
-    let ops = AlgoOps::new(
-        None,
-        Some(id),
-        Some(config),
-    );
+    let ops = AlgoOps::new(None, Some(id), Some(config));
 
     // account_balance makes a network call - with an unreachable address it should fail or return None
     let result = ops.account_balance();
@@ -34,7 +30,10 @@ pub fn test_node_unreachable() {
             assert!(!msg.is_empty(), "error message should not be empty");
         }
         Ok(balance) => {
-            assert!(balance.is_none(), "expected None balance for unreachable node");
+            assert!(
+                balance.is_none(),
+                "expected None balance for unreachable node"
+            );
         }
     }
 }

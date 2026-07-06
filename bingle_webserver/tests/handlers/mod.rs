@@ -1,18 +1,18 @@
 use axum::{
-    extract::{Query, Json, State},
-    response::IntoResponse,
+    extract::{Json, Query, State},
     http::StatusCode,
+    response::IntoResponse,
 };
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 
-use bingle_webserver::handlers::{handle_lookup, HandleQuery, send_message_to_id};
-use bingle_webserver::models::{SendMessageToIdRequest};
-use bingle_webserver::AppState;
-use crate::common::{MockBingleApi, HandleMockBingleApi};
-use bingle_webserver::handlers as web_handlers;
-use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use crate::common::{HandleMockBingleApi, MockBingleApi};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
+use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_webserver::AppState;
+use bingle_webserver::handlers as web_handlers;
+use bingle_webserver::handlers::{HandleQuery, handle_lookup, send_message_to_id};
+use bingle_webserver::models::SendMessageToIdRequest;
 
 fn setup_state() -> AppState {
     AppState {
@@ -29,11 +29,15 @@ fn setup_state() -> AppState {
 #[tokio::test]
 async fn test_handle_lookup_success() {
     let state = setup_state();
-    let query = Query(HandleQuery { handle: "foo".to_string() });
+    let query = Query(HandleQuery {
+        handle: "foo".to_string(),
+    });
     let response = handle_lookup(State(state), query).await.into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let id: String = serde_json::from_slice(&body).unwrap();
     assert_eq!(id, "mock-id-foo");
 }
@@ -41,7 +45,9 @@ async fn test_handle_lookup_success() {
 #[tokio::test]
 async fn test_handle_lookup_not_found() {
     let state = setup_state();
-    let query = Query(HandleQuery { handle: "notfound".to_string() });
+    let query = Query(HandleQuery {
+        handle: "notfound".to_string(),
+    });
     let response = handle_lookup(State(state), query).await.into_response();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -53,20 +59,26 @@ async fn test_send_message_to_id() {
         user_id: "test-user".to_string(),
         message: Value::String("hello".to_string()),
     });
-    let response = send_message_to_id(State(state), request).await.into_response();
+    let response = send_message_to_id(State(state), request)
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_handle_version() {
-    let response = bingle_webserver::handlers::handle_version().await.into_response();
+    let response = bingle_webserver::handlers::handle_version()
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_local_disabled_returns_405() {
     let state = setup_state();
-    let response = web_handlers::local_generate_keypair(State(state)).await.into_response();
+    let response = web_handlers::local_generate_keypair(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
 
@@ -80,7 +92,9 @@ async fn test_local_generate_keypair_saves_file() {
     let state = AppState {
         api: Arc::new(MockBingleApi),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: Some(file_path.clone()),
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
@@ -88,7 +102,9 @@ async fn test_local_generate_keypair_saves_file() {
     };
 
     // Call generateKeypair which should also save
-    let response = web_handlers::local_generate_keypair(State(state)).await.into_response();
+    let response = web_handlers::local_generate_keypair(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     // File should exist and be non-empty
@@ -100,7 +116,9 @@ async fn test_local_generate_keypair_saves_file() {
 #[tokio::test]
 async fn test_local_keypair_status_disabled_returns_405() {
     let state = setup_state();
-    let response = web_handlers::local_keypair_status(State(state)).await.into_response();
+    let response = web_handlers::local_keypair_status(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
 
@@ -110,17 +128,23 @@ async fn test_local_keypair_status_no_keypair() {
     let state = AppState {
         api: Arc::new(MockBingleApi),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
         nat_type: Arc::new(Mutex::new("Unknown".to_string())),
     };
 
-    let response = web_handlers::local_keypair_status(State(state)).await.into_response();
+    let response = web_handlers::local_keypair_status(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "None");
     assert!(json.get("id").is_none());
@@ -131,10 +155,14 @@ async fn test_local_keypair_status_no_keypair() {
 #[tokio::test]
 async fn test_get_nat_type_returns_unknown_by_default() {
     let state = setup_state();
-    let response = web_handlers::get_nat_type(State(state)).await.into_response();
+    let response = web_handlers::get_nat_type(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["natType"], "Unknown");
 }
@@ -147,10 +175,14 @@ async fn test_get_nat_type_reflects_updated_value() {
         let mut guard = state.nat_type.lock().unwrap();
         *guard = "FullCone".to_string();
     }
-    let response = web_handlers::get_nat_type(State(state)).await.into_response();
+    let response = web_handlers::get_nat_type(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["natType"], "FullCone");
 }
@@ -160,7 +192,9 @@ fn setup_state_with_local_api() -> AppState {
     AppState {
         api: Arc::new(MockBingleApi),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
@@ -192,16 +226,22 @@ async fn test_on_message_saves_to_local_api_get_messages() {
     }
 
     // Call local_get_messages endpoint and verify the message appears
-    let response = web_handlers::local_get_messages(State(state)).await.into_response();
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(messages.len(), 1);
     let msg = &messages[0];
     assert_eq!(msg["sender_handle"], "alice");
     assert_eq!(msg["text"], "hello from alice");
-    let recipients = msg["recipient_handles"].as_array().expect("recipient_handles should be array");
+    let recipients = msg["recipient_handles"]
+        .as_array()
+        .expect("recipient_handles should be array");
     assert_eq!(recipients.len(), 1);
     assert_eq!(recipients[0], "me");
 }
@@ -234,10 +274,14 @@ async fn test_on_message_multiple_messages_accessible_via_get_messages() {
             .expect("add_message 2");
     }
 
-    let response = web_handlers::local_get_messages(State(state)).await.into_response();
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0]["sender_handle"], "alice");
@@ -254,7 +298,9 @@ fn setup_state_with_handle_mock() -> AppState {
     AppState {
         api: Arc::new(mock),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
@@ -271,20 +317,28 @@ async fn test_send_message_to_id_saves_to_local_api() {
         user_id: "target-user-id".to_string(),
         message: serde_json::json!({ "text": "hello from sender" }),
     });
-    let response = send_message_to_id(State(state.clone()), request).await.into_response();
+    let response = send_message_to_id(State(state.clone()), request)
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify the sent message was saved into local API messages
-    let response = web_handlers::local_get_messages(State(state)).await.into_response();
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(messages.len(), 1);
     let msg = &messages[0];
     assert_eq!(msg["sender_handle"], "sender-handle");
     assert_eq!(msg["text"], "hello from sender");
-    let recipients = msg["recipient_handles"].as_array().expect("recipient_handles should be array");
+    let recipients = msg["recipient_handles"]
+        .as_array()
+        .expect("recipient_handles should be array");
     assert_eq!(recipients.len(), 1);
     assert_eq!(recipients[0], "target-handle");
 }
@@ -297,7 +351,9 @@ async fn test_send_message_to_id_without_local_api_does_not_fail() {
         user_id: "target-user-id".to_string(),
         message: serde_json::json!({ "text": "hello" }),
     });
-    let response = send_message_to_id(State(state), request).await.into_response();
+    let response = send_message_to_id(State(state), request)
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
@@ -309,14 +365,23 @@ async fn test_send_message_to_id_no_handle_does_not_save() {
         user_id: "target-user-id".to_string(),
         message: serde_json::json!({ "text": "hello" }),
     });
-    let response = send_message_to_id(State(state.clone()), request).await.into_response();
+    let response = send_message_to_id(State(state.clone()), request)
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify no messages were saved
-    let response = web_handlers::local_get_messages(State(state)).await.into_response();
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(messages.is_empty(), "message should not be saved when get_handle returns None");
+    assert!(
+        messages.is_empty(),
+        "message should not be saved when get_handle returns None"
+    );
 }
 
 #[tokio::test]
@@ -327,7 +392,9 @@ async fn test_send_message_to_id_no_recipient_handle_does_not_save() {
     let state = AppState {
         api: Arc::new(mock),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(impl_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(impl_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None,
         api_started: Arc::new(Mutex::new(true)),
@@ -337,24 +404,37 @@ async fn test_send_message_to_id_no_recipient_handle_does_not_save() {
         user_id: "unknown-user-id".to_string(),
         message: serde_json::json!({ "text": "hello" }),
     });
-    let response = send_message_to_id(State(state.clone()), request).await.into_response();
+    let response = send_message_to_id(State(state.clone()), request)
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify no messages were saved
-    let response = web_handlers::local_get_messages(State(state)).await.into_response();
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(messages.is_empty(), "message should not be saved when handle_lookup_by_id returns None");
+    assert!(
+        messages.is_empty(),
+        "message should not be saved when handle_lookup_by_id returns None"
+    );
 }
 
 #[tokio::test]
 async fn test_get_messages_empty_when_no_messages_received() {
     let state = setup_state_with_local_api();
 
-    let response = web_handlers::local_get_messages(State(state)).await.into_response();
+    let response = web_handlers::local_get_messages(State(state))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let messages: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(messages.is_empty());
 }

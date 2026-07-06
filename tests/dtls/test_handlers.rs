@@ -1,6 +1,6 @@
-use std::sync::OnceLock;
-use rust_comms::dtls::Dtls;
 use crate::util::test_util;
+use rust_comms::dtls::Dtls;
+use std::sync::OnceLock;
 
 pub static SERVER_HELLO: OnceLock<Vec<u8>> = OnceLock::new();
 pub static SERVER_CLIENT_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
@@ -16,7 +16,12 @@ pub fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Res
     Ok(test_util::ADDRESS_SPEND.to_string())
 }
 
-pub fn client_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+pub fn client_echo_handler(
+    server: &dyn Dtls,
+    from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     tracing::info!("client_echo_handler: {:?}", data);
     // Record that client received the Ping
     if data == b"Ping" {
@@ -28,7 +33,12 @@ pub fn client_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api
     let _ = server.send(from, &echoed);
 }
 
-pub fn server_capture_and_trigger_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+pub fn server_capture_and_trigger_handler(
+    server: &dyn Dtls,
+    from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     tracing::info!("server_capture_and_trigger_handler: {:?}", data);
     // Capture the initial Hello and immediately send Ping to the client
     if data == b"Hello" {

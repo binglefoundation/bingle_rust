@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use rust_comms::util::cli_utils::parse_start_options_from_args;
-use serial_test::serial;
 use rust_comms::util::config_utils::{parse_node_file_with_ids, resolve_app_asset_ids};
+use serial_test::serial;
 
 fn write_temp_nodefile(content: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
@@ -20,7 +20,8 @@ fn write_temp_nodefile(content: &str) -> PathBuf {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn parse_node_file_with_app_and_asset_ids() {
-    let file = write_temp_nodefile(r#"{
+    let file = write_temp_nodefile(
+        r#"{
         "network": "testnet",
         "client_api_url": "https://api.example",
         "client_api_port": 443,
@@ -30,9 +31,11 @@ pub fn parse_node_file_with_app_and_asset_ids() {
         "token_key": null,
         "app_id": 12345,
         "asset_id": 67890
-    }"#);
+    }"#,
+    );
 
-    let (net, cfg, app_id, asset_id) = parse_node_file_with_ids(&file.to_string_lossy()).expect("parse ok");
+    let (net, cfg, app_id, asset_id) =
+        parse_node_file_with_ids(&file.to_string_lossy()).expect("parse ok");
     assert_eq!(net.as_deref(), Some("testnet"));
     assert_eq!(cfg.client_api_url, "https://api.example");
     assert_eq!(cfg.indexer_api_url, "https://idx.example");
@@ -89,7 +92,8 @@ pub fn env_ids_used_when_no_node_or_cli() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn run_parse_accepts_node_file_flag() {
-    let file = write_temp_nodefile(r#"{
+    let file = write_temp_nodefile(
+        r#"{
         "network": "localnet",
         "client_api_url": "http://localhost",
         "client_api_port": 4001,
@@ -97,11 +101,14 @@ pub fn run_parse_accepts_node_file_flag() {
         "indexer_api_port": 8980,
         "token": null,
         "token_key": null
-    }"#);
+    }"#,
+    );
 
     let args = vec![
-        "--handle".into(), "tester".into(),
-        "--node-file".into(), file.to_string_lossy().to_string(),
+        "--handle".into(),
+        "tester".into(),
+        "--node-file".into(),
+        file.to_string_lossy().to_string(),
     ];
     let opts = parse_start_options_from_args(args).expect("should parse");
     assert_eq!(opts.handle, "tester");

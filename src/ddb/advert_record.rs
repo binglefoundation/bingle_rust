@@ -1,10 +1,10 @@
+use base64::{Engine as _, engine::general_purpose};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey, Signature};
-use base64::{engine::general_purpose, Engine as _};
-use std::net::SocketAddr;
-use std::fmt;
-use std::str::FromStr;
 use std::convert::TryFrom;
+use std::fmt;
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 /// InetSocketAddress as defined in BINGLE_SPEC.md
 /// Hostname/IP and UDP port number.
@@ -179,7 +179,11 @@ impl AdvertRecord {
     /// Order: endpoint, am_relay, relay_id, relay_sig, date, sig
     /// id is omitted as it is implied by the storage context.
     pub fn serialize_csv(&self) -> String {
-        let endpoint_str = self.endpoint.as_ref().map(|e| e.to_string()).unwrap_or_default();
+        let endpoint_str = self
+            .endpoint
+            .as_ref()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
         let am_relay_str = match self.am_relay {
             Some(true) => "T",
             _ => "F",
@@ -189,7 +193,10 @@ impl AdvertRecord {
         let date_str = &self.date;
         let sig_str = self.sig.as_deref().unwrap_or_default();
 
-        format!("{},{},{},{},{},{}", endpoint_str, am_relay_str, relay_id_str, relay_sig_str, date_str, sig_str)
+        format!(
+            "{},{},{},{},{},{}",
+            endpoint_str, am_relay_str, relay_id_str, relay_sig_str, date_str, sig_str
+        )
     }
 
     /// Deserialize from the compact CSV format.
@@ -212,10 +219,22 @@ impl AdvertRecord {
             _ => return None,
         };
 
-        let relay_id = if parts[2].is_empty() { None } else { Some(parts[2].to_string()) };
-        let relay_sig = if parts[3].is_empty() { None } else { Some(parts[3].to_string()) };
+        let relay_id = if parts[2].is_empty() {
+            None
+        } else {
+            Some(parts[2].to_string())
+        };
+        let relay_sig = if parts[3].is_empty() {
+            None
+        } else {
+            Some(parts[3].to_string())
+        };
         let date = parts[4].to_string();
-        let sig = if parts[5].is_empty() { None } else { Some(parts[5].to_string()) };
+        let sig = if parts[5].is_empty() {
+            None
+        } else {
+            Some(parts[5].to_string())
+        };
 
         Some(Self {
             id,

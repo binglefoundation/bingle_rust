@@ -19,10 +19,10 @@ pub fn test_extract_handle_match_found() {
             }
         ]
     });
-    
+
     let mut matches = Vec::new();
     AlgoBingle::extract_handle_match(&acct, app_id, handle, &mut matches);
-    
+
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].0, "ADDR1");
     assert_eq!(matches[0].1, 1000);
@@ -45,10 +45,10 @@ pub fn test_extract_handle_match_wrong_handle() {
             }
         ]
     });
-    
+
     let mut matches = Vec::new();
     AlgoBingle::extract_handle_match(&acct, app_id, handle, &mut matches);
-    
+
     assert!(matches.is_empty());
 }
 
@@ -60,7 +60,7 @@ pub fn test_pick_oldest_match() {
         ("ADDR1".to_string(), 1000),
         ("ADDR3".to_string(), 3000),
     ];
-    
+
     let result = AlgoBingle::pick_oldest_match(matches);
     assert_eq!(result, Some("ADDR1".to_string()));
 }
@@ -88,10 +88,10 @@ pub fn test_extract_handle_match_multiple_apps() {
             }
         ]
     });
-    
+
     let mut matches = Vec::new();
     AlgoBingle::extract_handle_match(&acct, app_id, handle, &mut matches);
-    
+
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].0, "ADDR1");
 }
@@ -169,22 +169,16 @@ pub fn test_extract_handle_match_with_dots_in_stored() {
 #[cfg(not(target_os = "ios"))]
 pub fn test_pick_oldest_match_collision() {
     // Two accounts register the same handle in the same block (same timestamp)
-    let matches = vec![
-        ("ADDR2".to_string(), 1000),
-        ("ADDR1".to_string(), 1000),
-    ];
-    
+    let matches = vec![("ADDR2".to_string(), 1000), ("ADDR1".to_string(), 1000)];
+
     let result = AlgoBingle::pick_oldest_match(matches.clone());
-    
+
     // Now pick_oldest_match tie-breaks by address if timestamps are equal.
     // "ADDR1" < "ADDR2", so "ADDR1" should be picked regardless of input order.
     assert_eq!(result, Some("ADDR1".to_string()));
-    
+
     // If the order was different:
-    let matches_rev = vec![
-        ("ADDR1".to_string(), 1000),
-        ("ADDR2".to_string(), 1000),
-    ];
+    let matches_rev = vec![("ADDR1".to_string(), 1000), ("ADDR2".to_string(), 1000)];
     let result_rev = AlgoBingle::pick_oldest_match(matches_rev);
     assert_eq!(result_rev, Some("ADDR1".to_string()));
 }

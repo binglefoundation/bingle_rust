@@ -117,4 +117,3 @@ pub mod only_from_relay_test;
 
 #[path = "messages/triangle_test1_handler_delay.rs"]
 pub mod triangle_test1_handler_delay;
-

@@ -1,12 +1,14 @@
+use crate::util::test_util::ADDRESS_RECEIVE;
 use openssl::asn1::Asn1Time;
 use openssl::bn::BigNum;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
 use openssl::nid::Nid;
 use openssl::pkey::{PKey, Private};
-use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier};
-use openssl::x509::{X509NameBuilder, X509};
-use crate::util::test_util::ADDRESS_RECEIVE;
+use openssl::x509::extension::{
+    AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier,
+};
+use openssl::x509::{X509, X509NameBuilder};
 
 #[allow(dead_code)]
 pub struct TestCerts {
@@ -20,28 +22,33 @@ pub struct TestCerts {
 }
 
 #[allow(dead_code)]
-pub fn
-generate_ed25519_test_certs() -> TestCerts {
+pub fn generate_ed25519_test_certs() -> TestCerts {
     generate_ed25519_test_certs_with_key(ADDRESS_RECEIVE.to_string().as_str())
 }
 
 #[allow(dead_code)]
 fn make_serial() -> BigNum {
     let mut serial = BigNum::new().expect("bignum");
-    serial.rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false).expect("rand");
+    serial
+        .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+        .expect("rand");
     serial
 }
 
 pub fn make_ca(key: &str) -> (X509, PKey<Private>) {
     let pkey = PKey::generate_ed25519().expect("ed25519 gen");
     let mut name = X509NameBuilder::new().expect("name builder");
-    name.append_entry_by_nid(Nid::COMMONNAME, "virtual.bingle.home.arpa").expect("cn");
-    name.append_entry_by_nid(Nid::ORGANIZATIONNAME, key).expect("o");
+    name.append_entry_by_nid(Nid::COMMONNAME, "virtual.bingle.home.arpa")
+        .expect("cn");
+    name.append_entry_by_nid(Nid::ORGANIZATIONNAME, key)
+        .expect("o");
     let name = name.build();
 
     let mut builder = X509::builder().expect("x509 builder");
     builder.set_version(2).expect("version");
-    builder.set_serial_number(&make_serial().to_asn1_integer().expect("asn1 serial")).expect("serial");
+    builder
+        .set_serial_number(&make_serial().to_asn1_integer().expect("asn1 serial"))
+        .expect("serial");
     builder.set_subject_name(&name).expect("subject");
     builder.set_issuer_name(&name).expect("issuer");
     builder.set_pubkey(&pkey).expect("pubkey");
@@ -80,9 +87,13 @@ pub fn make_ee(ca_cert: &X509, ca_key: &PKey<Private>, cn: &str) -> (X509, PKey<
 
     let mut builder = X509::builder().expect("x509 builder");
     builder.set_version(2).expect("version");
-    builder.set_serial_number(&make_serial().to_asn1_integer().expect("asn1 serial")).expect("serial");
+    builder
+        .set_serial_number(&make_serial().to_asn1_integer().expect("asn1 serial"))
+        .expect("serial");
     builder.set_subject_name(&name).expect("subject");
-    builder.set_issuer_name(ca_cert.subject_name()).expect("issuer");
+    builder
+        .set_issuer_name(ca_cert.subject_name())
+        .expect("issuer");
     builder.set_pubkey(&pkey).expect("pubkey");
 
     let not_before = Asn1Time::days_from_now(0).expect("not before");
@@ -129,8 +140,12 @@ pub fn generate_ed25519_test_certs_with_key(key: &str) -> TestCerts {
     TestCerts {
         ca_crt: ca_cert.to_pem().expect("ca pem"),
         server_crt: server_cert.to_pem().expect("server pem"),
-        server_key: server_key.private_key_to_pem_pkcs8().expect("server key pem"),
+        server_key: server_key
+            .private_key_to_pem_pkcs8()
+            .expect("server key pem"),
         client_crt: client_cert.to_pem().expect("client pem"),
-        client_key: client_key.private_key_to_pem_pkcs8().expect("client key pem"),
+        client_key: client_key
+            .private_key_to_pem_pkcs8()
+            .expect("client key pem"),
     }
 }

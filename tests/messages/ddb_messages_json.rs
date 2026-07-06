@@ -1,11 +1,18 @@
+use rust_comms::engine::RelayState;
 use rust_comms::messages::marshal;
 use rust_comms::messages::types::*;
-use rust_comms::engine::RelayState;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn ddb_upsert_serde_roundtrip() {
-    let rec = AdvertRecord::new_unsigned("ID".into(), None, Some(false), None, None, "2025-01-01T00:00:00Z".into());
+    let rec = AdvertRecord::new_unsigned(
+        "ID".into(),
+        None,
+        Some(false),
+        None,
+        None,
+        "2025-01-01T00:00:00Z".into(),
+    );
     let msg = Message::Ddb(DdbMessage::UpsertResolve(DdbUpsertResolve {
         app: "ddb".into(),
         start_id: "START".into(),
@@ -40,7 +47,14 @@ pub fn ddb_query_and_response_roundtrip() {
     let resp = Message::Ddb(DdbMessage::QueryResponse(DdbQueryResponse {
         app: "ddb".into(),
         found: true,
-        advert: Some(AdvertRecord::new_unsigned("ID123".into(), None, None, None, None, "2025-01-02T03:04:05Z".into())),
+        advert: Some(AdvertRecord::new_unsigned(
+            "ID123".into(),
+            None,
+            None,
+            None,
+            None,
+            "2025-01-02T03:04:05Z".into(),
+        )),
         tag: None,
         response_tag: Some("corr".into()),
         text: None,
@@ -54,7 +68,12 @@ pub fn ddb_query_and_response_roundtrip() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn ddb_update_and_delete_roundtrip() {
-    let upd = Message::Ddb(DdbMessage::UpdateResponse(DdbUpdateResponse { app: "ddb".into(), response_tag: None, text: None, data: None }));
+    let upd = Message::Ddb(DdbMessage::UpdateResponse(DdbUpdateResponse {
+        app: "ddb".into(),
+        response_tag: None,
+        text: None,
+        data: None,
+    }));
     let ju = marshal::to_json_string(&upd);
     let u2 = marshal::from_json_str(&ju).unwrap();
     assert_eq!(upd, u2);
@@ -88,7 +107,11 @@ pub fn ddb_signoff_roundtrip() {
         data: None,
     }));
     let js = marshal::to_json_string(&signoff);
-    assert!(js.contains("\"type\":\"signoff\""), "expected signoff type tag in {}", js);
+    assert!(
+        js.contains("\"type\":\"signoff\""),
+        "expected signoff type tag in {}",
+        js
+    );
     let s2 = marshal::from_json_str(&js).unwrap();
     assert_eq!(signoff, s2);
 
@@ -106,7 +129,6 @@ pub fn ddb_signoff_roundtrip() {
     let r2 = marshal::from_json_str(&jr).unwrap();
     assert_eq!(rippled, r2);
 }
-
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -157,7 +179,10 @@ pub fn ddb_get_relays_status_and_response_roundtrip() {
         epoch_id: 7,
         tree_order: 4,
         relay_ids: vec!["RID1".into(), "RID2".into()],
-        relay_endpoints: Some(vec![InetSocketAddress { host: "192.168.1.1".into(), port: 3456 }]),
+        relay_endpoints: Some(vec![InetSocketAddress {
+            host: "192.168.1.1".into(),
+            port: 3456,
+        }]),
         relay_states: vec![RelayState::Available, RelayState::Starting],
         response_tag: None,
         text: None,
@@ -193,11 +218,27 @@ pub fn ddb_init_and_dump_roundtrip() {
     let ir2 = marshal::from_json_str(&j2).unwrap();
     assert_eq!(init_resp, ir2);
 
-    let mut rec = AdvertRecord::new_unsigned("ID9".into(), Some(InetSocketAddress { host: "host".into(), port: 9999 }), Some(true), Some("RID".into()), None, "2025-01-03T00:00:00Z".into());
+    let mut rec = AdvertRecord::new_unsigned(
+        "ID9".into(),
+        Some(InetSocketAddress {
+            host: "host".into(),
+            port: 9999,
+        }),
+        Some(true),
+        Some("RID".into()),
+        None,
+        "2025-01-03T00:00:00Z".into(),
+    );
     rec.sig = Some("RSIG".into());
-    let dump = Message::Ddb(DdbMessage::DumpResolve(DdbDumpResolve { app: "ddb".into(), record: rec.clone(), tag: None, response_tag: None, text: None, data: None }));
+    let dump = Message::Ddb(DdbMessage::DumpResolve(DdbDumpResolve {
+        app: "ddb".into(),
+        record: rec.clone(),
+        tag: None,
+        response_tag: None,
+        text: None,
+        data: None,
+    }));
     let jd = marshal::to_json_string(&dump);
     let d2 = marshal::from_json_str(&jd).unwrap();
     assert_eq!(dump, d2);
-
 }

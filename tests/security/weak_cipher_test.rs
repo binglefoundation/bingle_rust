@@ -1,6 +1,6 @@
+use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
-use openssl::ssl::{SslMethod, SslConnector, SslVerifyMode, SslVersion};
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -23,7 +23,9 @@ impl std::io::Write for UdpStream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0.send(buf)
     }
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 #[test]
@@ -33,26 +35,30 @@ fn weak_cipher_3des_rejected() {
     // 1) Setup Bingle node as server
     let server_port = test_util::find_unused_loopback_port();
     let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-    
+
     let server_opts = StartOptions {
         handle: Handle::from("server_weak_cipher"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
-        dangerous_debug: false, 
+        dangerous_debug: false,
         ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
-    server_api.access_unsafe_for_tests(|a| a.start(&server_opts)).expect("start server api");
+    server_api
+        .access_unsafe_for_tests(|a| a.start(&server_opts))
+        .expect("start server api");
 
     std::thread::sleep(Duration::from_millis(100));
 
     // 2) Create a raw OpenSSL client configured for 3DES
     let mut connector_builder = SslConnector::builder(SslMethod::dtls()).unwrap();
-    connector_builder.set_min_proto_version(Some(SslVersion::DTLS1_2)).unwrap();
-    
+    connector_builder
+        .set_min_proto_version(Some(SslVersion::DTLS1_2))
+        .unwrap();
+
     // Lower security level to allow specifying weak ciphers in the client
     connector_builder.set_security_level(0);
-    
+
     // Try 3DES first, then RC4, then a CBC cipher (which Mozilla Intermediate v5 should reject)
     let ciphers = ["DES-CBC3-SHA", "RC4-SHA", "AES128-SHA"];
     let mut cipher_set = false;
@@ -69,22 +75,31 @@ fn weak_cipher_3des_rejected() {
         return;
     }
     connector_builder.set_verify(SslVerifyMode::NONE);
-    
+
     let connector = connector_builder.build();
-    
+
     // 3) Attempt handshake
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     socket.connect(server_addr).unwrap();
-    
+
     let stream = UdpStream(socket);
-    
+
     let res = connector.connect("localhost", stream);
-    
+
     // 4) Assert failure
-    assert!(res.is_err(), "Handshake should have failed for weak cipher DES-CBC3-SHA");
+    assert!(
+        res.is_err(),
+        "Handshake should have failed for weak cipher DES-CBC3-SHA"
+    );
     let err_msg = format!("{:?}", res.err());
-    assert!(err_msg.contains("handshake failure") || err_msg.contains("no shared cipher"), "Unexpected error: {}", err_msg);
+    assert!(
+        err_msg.contains("handshake failure") || err_msg.contains("no shared cipher"),
+        "Unexpected error: {}",
+        err_msg
+    );
     println!("Handshake failed as expected for DES-CBC3-SHA: {}", err_msg);
 }
 
@@ -95,7 +110,7 @@ fn null_cipher_rejected_by_default() {
     // 1) Setup Bingle node as server
     let server_port = test_util::find_unused_loopback_port();
     let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-    
+
     let server_opts = StartOptions {
         handle: Handle::from("server_no_enull"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
@@ -104,32 +119,45 @@ fn null_cipher_rejected_by_default() {
         ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
-    server_api.access_unsafe_for_tests(|a| a.start(&server_opts)).expect("start server api");
+    server_api
+        .access_unsafe_for_tests(|a| a.start(&server_opts))
+        .expect("start server api");
 
     std::thread::sleep(Duration::from_millis(100));
 
     // 2) Create a raw OpenSSL client configured for eNULL
     let mut connector_builder = SslConnector::builder(SslMethod::dtls()).unwrap();
-    connector_builder.set_min_proto_version(Some(SslVersion::DTLS1_2)).unwrap();
+    connector_builder
+        .set_min_proto_version(Some(SslVersion::DTLS1_2))
+        .unwrap();
     connector_builder.set_security_level(0);
     connector_builder.set_cipher_list("eNULL").unwrap();
     connector_builder.set_verify(SslVerifyMode::NONE);
-    
+
     let connector = connector_builder.build();
-    
+
     // 3) Attempt handshake
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     socket.connect(server_addr).unwrap();
-    
+
     let stream = UdpStream(socket);
-    
+
     let res = connector.connect("localhost", stream);
-    
+
     // 4) Assert failure
-    assert!(res.is_err(), "Handshake should have failed for eNULL when dangerous_debug is off");
+    assert!(
+        res.is_err(),
+        "Handshake should have failed for eNULL when dangerous_debug is off"
+    );
     let err_msg = format!("{:?}", res.err());
-    assert!(err_msg.contains("handshake failure") || err_msg.contains("no shared cipher"), "Unexpected error: {}", err_msg);
+    assert!(
+        err_msg.contains("handshake failure") || err_msg.contains("no shared cipher"),
+        "Unexpected error: {}",
+        err_msg
+    );
     println!("Handshake failed as expected for eNULL: {}", err_msg);
 }
 
@@ -140,35 +168,46 @@ fn null_cipher_accepted_when_dangerous_debug_is_on() {
     // 1) Setup Bingle node as server with dangerous_debug ON and null_encryption ON
     let server_port = test_util::find_unused_loopback_port();
     let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-    
+
     let server_opts = StartOptions {
         handle: Handle::from("server_enull_ok"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
         static_ip: Some(server_addr),
-        dangerous_debug: true, 
+        dangerous_debug: true,
         ..StartOptions::new("".into())
     };
     let server_api = BingleApiImpl::new(&server_opts);
-    server_api.access_unsafe_for_tests(|a| {
-        a.with_engine_mut(|e| {
-            e.with_dtls_mut(|dtls| {
-                dtls.set_null_encryption(true);
-                dtls.set_app_layer_only_verification(true);
+    server_api
+        .access_unsafe_for_tests(|a| {
+            a.with_engine_mut(|e| {
+                e.with_dtls_mut(|dtls| {
+                    dtls.set_null_encryption(true);
+                    dtls.set_app_layer_only_verification(true);
+                });
             });
-        });
-        a.start(&server_opts)
-    }).expect("start server api");
+            a.start(&server_opts)
+        })
+        .expect("start server api");
 
     std::thread::sleep(Duration::from_millis(100));
 
     // 2) Create a raw OpenSSL client configured for eNULL with certificates
-    let ops = test_util::ops_from_mnemonic(test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, test_util::localnet_config());
-    let (ca_pem, _srv_crt, _srv_key, cli_crt, cli_key) = rust_comms::api::pki::generate_pki_from_ops(&ops).unwrap();
+    let ops = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_RECEIVE,
+        test_util::PASSPHRASE_RECEIVE,
+        test_util::localnet_config(),
+    );
+    let (ca_pem, _srv_crt, _srv_key, cli_crt, cli_key) =
+        rust_comms::api::pki::generate_pki_from_ops(&ops).unwrap();
 
     let mut connector_builder = SslConnector::builder(SslMethod::dtls()).unwrap();
-    connector_builder.set_min_proto_version(Some(SslVersion::DTLS1_2)).unwrap();
+    connector_builder
+        .set_min_proto_version(Some(SslVersion::DTLS1_2))
+        .unwrap();
     connector_builder.set_security_level(0);
-    connector_builder.set_cipher_list("eNULL").expect("client should be able to set eNULL");
+    connector_builder
+        .set_cipher_list("eNULL")
+        .expect("client should be able to set eNULL");
     connector_builder.set_verify(SslVerifyMode::NONE);
 
     let client_x509 = openssl::x509::X509::from_pem(&cli_crt).unwrap();
@@ -178,26 +217,34 @@ fn null_cipher_accepted_when_dangerous_debug_is_on() {
 
     let ca_x509 = openssl::x509::X509::from_pem(&ca_pem).unwrap();
     connector_builder.add_extra_chain_cert(ca_x509).unwrap();
-    
+
     let connector = connector_builder.build();
-    
+
     // 3) Attempt handshake
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     socket.connect(server_addr).unwrap();
-    
+
     let stream = UdpStream(socket);
-    
+
     let res = connector.connect("localhost", stream);
-    
+
     // 4) Assert success (or at least no cipher error)
     match res {
         Ok(_) => println!("eNULL handshake succeeded as expected with dangerous_debug"),
         Err(e) => {
-             let err_msg = format!("{:?}", e);
-             assert!(!err_msg.contains("handshake failure") && !err_msg.contains("no shared cipher"), 
-                "eNULL handshake failed with cipher error even though dangerous_debug is on: {}", err_msg);
-             println!("eNULL handshake failed (likely due to other reasons like certs): {}", err_msg);
+            let err_msg = format!("{:?}", e);
+            assert!(
+                !err_msg.contains("handshake failure") && !err_msg.contains("no shared cipher"),
+                "eNULL handshake failed with cipher error even though dangerous_debug is on: {}",
+                err_msg
+            );
+            println!(
+                "eNULL handshake failed (likely due to other reasons like certs): {}",
+                err_msg
+            );
         }
     }
 }

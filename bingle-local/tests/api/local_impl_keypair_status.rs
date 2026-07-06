@@ -1,6 +1,6 @@
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{
-    keypair_status_from_facts, BingleApiLocalImpl, LocalApiConfig,
+    BingleApiLocalImpl, LocalApiConfig, keypair_status_from_facts,
 };
 
 #[test]
@@ -16,7 +16,9 @@ fn test_keypair_status_none_when_no_keypair() {
 #[test]
 fn test_keypair_status_has_id_after_generate() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let kp = api.generate_keypair().expect("generate_keypair should succeed");
+    let kp = api
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
 
     // With default config (no real blockchain), get_algo_ops will succeed but
     // balance/asset checks will fail. keypair_status should still return a status

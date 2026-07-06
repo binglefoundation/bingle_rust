@@ -1,19 +1,19 @@
 #[macro_use]
 pub mod util;
-pub mod blockchain;
-pub mod dtls;
 pub mod api;
+pub mod blockchain;
+pub mod ddb;
+pub mod distributed_mutex;
+pub mod dtls;
+pub mod engine;
+pub mod messages;
+pub mod module_version;
+pub mod packet_transport;
+pub mod protocol;
 pub mod relay;
 pub mod stun;
-pub mod messages;
-pub mod ddb;
-pub mod engine;
-pub mod protocol;
-pub mod packet_transport;
-pub mod turn;
-pub mod distributed_mutex;
 pub mod themes;
-pub mod module_version;
+pub mod turn;
 
 // Backward-compatible module re-exports
 pub use blockchain::algo_ops;

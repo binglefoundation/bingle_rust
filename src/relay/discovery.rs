@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::relay::relay_finder::RelayInfo;
 
+use crate::blockchain::algo_bingle::{AccountsCache, AlgoBingle};
 use crate::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
-use crate::blockchain::algo_bingle::{AlgoBingle, AccountsCache};
 use std::sync::Mutex;
 
 /// Build a reusable discovery closure that queries the Algorand Indexer for
@@ -25,20 +25,31 @@ pub fn indexer_discover_closure(
     };
 
     Arc::new(move || {
-        tracing::info!("[discovery] indexer_discover_closure - in closure app_id={}", app_id);
+        tracing::info!(
+            "[discovery] indexer_discover_closure - in closure app_id={}",
+            app_id
+        );
 
         // Use the synchronous indexer call to ensure we block until results are ready
-        let closure_result = match algo_bingle_indexer.list_static_endpoints_via_indexer_sync(app_id) {
+        let closure_result = match algo_bingle_indexer
+            .list_static_endpoints_via_indexer_sync(app_id)
+        {
             Ok(list) => {
-                tracing::info!("[discovery] indexer_discover_closure - indexer discovery returned list: {:?}", list);
+                tracing::info!(
+                    "[discovery] indexer_discover_closure - indexer discovery returned list: {:?}",
+                    list
+                );
                 let mut out: Vec<RelayInfo> = Vec::new();
                 for (id, ep) in list {
-                    if let Some(record) = crate::ddb::AdvertRecord::deserialize_csv(id.clone(), &ep) {
+                    if let Some(record) = crate::ddb::AdvertRecord::deserialize_csv(id.clone(), &ep)
+                    {
                         out.push(RelayInfo::root(record));
                     }
                 }
                 if out.is_empty() {
-                    tracing::warn!("[discovery] indexer discovery returned empty static endpoints list");
+                    tracing::warn!(
+                        "[discovery] indexer discovery returned empty static endpoints list"
+                    );
                 }
                 out
             }
@@ -47,7 +58,10 @@ pub fn indexer_discover_closure(
             }
         };
 
-        tracing::info!("[discovery] indexer_discover_closure - returning closure result: {:?}", closure_result);
+        tracing::info!(
+            "[discovery] indexer_discover_closure - returning closure result: {:?}",
+            closure_result
+        );
 
         closure_result
     })

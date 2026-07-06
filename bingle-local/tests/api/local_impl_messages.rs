@@ -23,9 +23,18 @@ fn add_and_get_single_message() {
 #[test]
 fn messages_preserve_insertion_order() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into(), None).unwrap();
-    api.add_message("carol".into(), vec!["dave".into(), "erin".into()], 2, "m2".into(), None).unwrap();
-    api.add_message("frank".into(), vec!["george".into()], 3, "m3".into(), None).unwrap();
+    api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into(), None)
+        .unwrap();
+    api.add_message(
+        "carol".into(),
+        vec!["dave".into(), "erin".into()],
+        2,
+        "m2".into(),
+        None,
+    )
+    .unwrap();
+    api.add_message("frank".into(), vec!["george".into()], 3, "m3".into(), None)
+        .unwrap();
     let msgs = api.get_messages().unwrap();
     let texts: Vec<String> = msgs.into_iter().map(|m| m.text).collect();
     assert_eq!(texts, vec!["m1", "m2", "m3"]);
@@ -35,19 +44,32 @@ fn messages_preserve_insertion_order() {
 fn add_message_rejects_empty_inputs() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     // empty sender
-    assert!(api.add_message("".into(), vec!["x".into()], 0, "t".into(), None).is_err());
+    assert!(
+        api.add_message("".into(), vec!["x".into()], 0, "t".into(), None)
+            .is_err()
+    );
     // empty recipients
-    assert!(api.add_message("s".into(), vec![], 0, "t".into(), None).is_err());
+    assert!(
+        api.add_message("s".into(), vec![], 0, "t".into(), None)
+            .is_err()
+    );
     // empty recipient in list
-    assert!(api.add_message("s".into(), vec!["".into()], 0, "t".into(), None).is_err());
+    assert!(
+        api.add_message("s".into(), vec!["".into()], 0, "t".into(), None)
+            .is_err()
+    );
     // empty text
-    assert!(api.add_message("s".into(), vec!["x".into()], 0, "".into(), None).is_err());
+    assert!(
+        api.add_message("s".into(), vec!["x".into()], 0, "".into(), None)
+            .is_err()
+    );
 }
 
 #[test]
 fn get_messages_returns_clone() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into(), None).unwrap();
+    api.add_message("alice".into(), vec!["bob".into()], 1, "m1".into(), None)
+        .unwrap();
     let mut msgs: Vec<Message> = api.get_messages().unwrap();
     // mutate the returned vector
     msgs.push(Message {

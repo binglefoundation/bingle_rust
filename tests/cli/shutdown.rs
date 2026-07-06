@@ -1,6 +1,6 @@
-use std::net::SocketAddr;
 use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::blockchain::algo_ops::AlgoChainConfig;
+use std::net::SocketAddr;
 
 /// Describes the action to take on shutdown regarding static endpoint unregistration.
 /// Mirrors the ShutdownAction enum in bingle_cli.rs for testability.
@@ -19,27 +19,22 @@ enum ShutdownAction {
 
 /// Mirrors resolve_shutdown_action from bingle_cli.rs.
 /// The app_id_env parameter allows injecting the APP_ID environment variable for testability.
-fn resolve_shutdown_action(
-    opts: &StartOptions,
-    app_id_env: Option<u64>,
-) -> ShutdownAction {
+fn resolve_shutdown_action(opts: &StartOptions, app_id_env: Option<u64>) -> ShutdownAction {
     if opts.static_ip.is_none() {
         return ShutdownAction::NoStaticIp;
     }
     let app_id_opt = opts.app_id.or(app_id_env);
     match app_id_opt {
         None => ShutdownAction::NoAppId,
-        Some(app_id) => {
-            match opts.algo_passphrase {
-                Some(ref passphrase) => ShutdownAction::Unregister {
-                    app_id,
-                    passphrase: passphrase.clone(),
-                    algo_provider_config: opts.algo_provider_config.clone(),
-                    asset_id: opts.asset_id,
-                },
-                None => ShutdownAction::NoPassphrase,
-            }
-        }
+        Some(app_id) => match opts.algo_passphrase {
+            Some(ref passphrase) => ShutdownAction::Unregister {
+                app_id,
+                passphrase: passphrase.clone(),
+                algo_provider_config: opts.algo_provider_config.clone(),
+                asset_id: opts.asset_id,
+            },
+            None => ShutdownAction::NoPassphrase,
+        },
     }
 }
 
@@ -89,12 +84,15 @@ pub fn static_ip_with_app_id_and_passphrase_returns_unregister() {
     opts.app_id = Some(757297220);
     opts.algo_passphrase = Some("test passphrase".to_string());
     let action = resolve_shutdown_action(&opts, None);
-    assert_eq!(action, ShutdownAction::Unregister {
-        app_id: 757297220,
-        passphrase: "test passphrase".to_string(),
-        algo_provider_config: None,
-        asset_id: None,
-    });
+    assert_eq!(
+        action,
+        ShutdownAction::Unregister {
+            app_id: 757297220,
+            passphrase: "test passphrase".to_string(),
+            algo_provider_config: None,
+            asset_id: None,
+        }
+    );
 }
 
 #[test]
@@ -104,12 +102,15 @@ pub fn env_app_id_used_when_opts_app_id_is_none() {
     opts.algo_passphrase = Some("my secret".to_string());
     // opts.app_id is None, but env provides it
     let action = resolve_shutdown_action(&opts, Some(42));
-    assert_eq!(action, ShutdownAction::Unregister {
-        app_id: 42,
-        passphrase: "my secret".to_string(),
-        algo_provider_config: None,
-        asset_id: None,
-    });
+    assert_eq!(
+        action,
+        ShutdownAction::Unregister {
+            app_id: 42,
+            passphrase: "my secret".to_string(),
+            algo_provider_config: None,
+            asset_id: None,
+        }
+    );
 }
 
 #[test]
@@ -119,12 +120,15 @@ pub fn opts_app_id_takes_precedence_over_env() {
     opts.app_id = Some(100);
     opts.algo_passphrase = Some("pw".to_string());
     let action = resolve_shutdown_action(&opts, Some(999));
-    assert_eq!(action, ShutdownAction::Unregister {
-        app_id: 100,
-        passphrase: "pw".to_string(),
-        algo_provider_config: None,
-        asset_id: None,
-    });
+    assert_eq!(
+        action,
+        ShutdownAction::Unregister {
+            app_id: 100,
+            passphrase: "pw".to_string(),
+            algo_provider_config: None,
+            asset_id: None,
+        }
+    );
 }
 
 #[test]
@@ -146,10 +150,13 @@ pub fn unregister_includes_provider_config_and_asset_id() {
     };
     opts.algo_provider_config = Some(config.clone());
     let action = resolve_shutdown_action(&opts, None);
-    assert_eq!(action, ShutdownAction::Unregister {
-        app_id: 100,
-        passphrase: "pw".to_string(),
-        algo_provider_config: Some(config),
-        asset_id: Some(200),
-    });
+    assert_eq!(
+        action,
+        ShutdownAction::Unregister {
+            app_id: 100,
+            passphrase: "pw".to_string(),
+            algo_provider_config: Some(config),
+            asset_id: Some(200),
+        }
+    );
 }

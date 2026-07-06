@@ -8,7 +8,7 @@ fn test_dangerous_debug_allowed_in_debug_build() {
     // so BingleApiImpl should NOT panic when dangerous_debug is true.
     let mut opts = StartOptions::new("test_handle".into());
     opts.dangerous_debug = true;
-    
+
     // Should not panic
     let _api = BingleApiImpl::new(&opts);
 }
@@ -18,7 +18,7 @@ fn test_dangerous_debug_allowed_in_debug_build() {
 fn test_dangerous_debug_false_always_allowed() {
     let mut opts = StartOptions::new("test_handle".into());
     opts.dangerous_debug = false;
-    
+
     // Should not panic regardless of build type
     let _api = BingleApiImpl::new(&opts);
 }

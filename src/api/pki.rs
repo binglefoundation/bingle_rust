@@ -5,16 +5,21 @@ use crate::protocol::ISSUER_SUFFIX;
 /// - CA certificate (PEM) signed by Ed25519 key derived from AlgoOps private key
 /// - Server certificate + private key (PEM), RSA 2048 signed by CA
 /// - Client certificate + private key (PEM), RSA 2048 signed by CA
-pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
+pub fn generate_pki_from_ops(
+    ops: &AlgoOps,
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
     use openssl::asn1::Asn1Time;
     use openssl::bn::BigNum;
     use openssl::hash::MessageDigest;
     use openssl::nid::Nid;
     use openssl::pkey::{Id, PKey};
     use openssl::x509::extension::{BasicConstraints, KeyUsage, SubjectKeyIdentifier};
-    use openssl::x509::{X509NameBuilder, X509};
+    use openssl::x509::{X509, X509NameBuilder};
 
-    tracing::info!("[generate_pki_from_ops] Generating {:?} from algo", ops.address);
+    tracing::info!(
+        "[generate_pki_from_ops] Generating {:?} from algo",
+        ops.address
+    );
 
     // 1) Build CA PKey from Algorand private key (ed25519 32 bytes)
     let sk = ops
@@ -50,7 +55,9 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
     let serial = serial
         .to_asn1_integer()
         .map_err(|e| format!("serial asn1: {}", e))?;
-    ca_builder.set_version(2).map_err(|e| format!("set version: {}", e))?;
+    ca_builder
+        .set_version(2)
+        .map_err(|e| format!("set version: {}", e))?;
     ca_builder
         .set_serial_number(&serial)
         .map_err(|e| format!("set serial: {}", e))?;
@@ -71,7 +78,11 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
     ca_builder
         .set_not_after(&na)
         .map_err(|e| format!("na set: {}", e))?;
-    let bc = BasicConstraints::new().critical().ca().build().map_err(|e| format!("bc: {}", e))?;
+    let bc = BasicConstraints::new()
+        .critical()
+        .ca()
+        .build()
+        .map_err(|e| format!("bc: {}", e))?;
     ca_builder
         .append_extension(bc)
         .map_err(|e| format!("append bc: {}", e))?;
@@ -109,10 +120,14 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
         use openssl::ec::{EcGroup, EcKey};
         use openssl::hash::MessageDigest;
         use openssl::nid::Nid;
-        use openssl::x509::extension::{AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier};
-        use openssl::x509::{X509NameBuilder, X509};
+        use openssl::x509::extension::{
+            AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage,
+            SubjectKeyIdentifier,
+        };
+        use openssl::x509::{X509, X509NameBuilder};
         // Generate EC (P-256) private key
-        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).map_err(|e| format!("ec group: {}", e))?;
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)
+            .map_err(|e| format!("ec group: {}", e))?;
         let ec_key = EcKey::generate(&group).map_err(|e| format!("ec key gen: {}", e))?;
         let pkey = PKey::from_ec_key(ec_key).map_err(|e| format!("pkey from ec: {}", e))?;
         // Subject name
@@ -129,35 +144,51 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
             .to_asn1_integer()
             .map_err(|e| format!("serial asn1: {}", e))?;
         b.set_version(2).map_err(|e| format!("set ver: {}", e))?;
-        b.set_serial_number(&s).map_err(|e| format!("set serial: {}", e))?;
-        b.set_subject_name(&subj).map_err(|e| format!("set subj: {}", e))?;
+        b.set_serial_number(&s)
+            .map_err(|e| format!("set serial: {}", e))?;
+        b.set_subject_name(&subj)
+            .map_err(|e| format!("set subj: {}", e))?;
         b.set_issuer_name(issuer_name)
             .map_err(|e| format!("set issuer: {}", e))?;
-        b.set_pubkey(&pkey).map_err(|e| format!("set pubkey: {}", e))?;
+        b.set_pubkey(&pkey)
+            .map_err(|e| format!("set pubkey: {}", e))?;
         let nb2 = Asn1Time::days_from_now(0).map_err(|e| format!("nb: {}", e))?;
-        b.set_not_before(&nb2).map_err(|e| format!("nb set: {}", e))?;
+        b.set_not_before(&nb2)
+            .map_err(|e| format!("nb set: {}", e))?;
         let na2 = Asn1Time::days_from_now(365).map_err(|e| format!("na: {}", e))?;
-        b.set_not_after(&na2).map_err(|e| format!("na set: {}", e))?;
-        let bc = BasicConstraints::new().critical().build().map_err(|e| format!("bc: {}", e))?;
-        b.append_extension(bc).map_err(|e| format!("append bc: {}", e))?;
-        let ku = KeyUsage::new().digital_signature().build().map_err(|e| format!("ku: {}", e))?;
-        b.append_extension(ku).map_err(|e| format!("append ku: {}", e))?;
+        b.set_not_after(&na2)
+            .map_err(|e| format!("na set: {}", e))?;
+        let bc = BasicConstraints::new()
+            .critical()
+            .build()
+            .map_err(|e| format!("bc: {}", e))?;
+        b.append_extension(bc)
+            .map_err(|e| format!("append bc: {}", e))?;
+        let ku = KeyUsage::new()
+            .digital_signature()
+            .build()
+            .map_err(|e| format!("ku: {}", e))?;
+        b.append_extension(ku)
+            .map_err(|e| format!("append ku: {}", e))?;
         let eku = ExtendedKeyUsage::new()
             .server_auth()
             .client_auth()
             .build()
             .map_err(|e| format!("eku: {}", e))?;
-        b.append_extension(eku).map_err(|e| format!("append eku: {}", e))?;
+        b.append_extension(eku)
+            .map_err(|e| format!("append eku: {}", e))?;
         let skid = SubjectKeyIdentifier::new()
             .build(&b.x509v3_context(Some(issuer_cert), None))
             .map_err(|e| format!("skid: {}", e))?;
-        b.append_extension(skid).map_err(|e| format!("append skid: {}", e))?;
+        b.append_extension(skid)
+            .map_err(|e| format!("append skid: {}", e))?;
         let akid = AuthorityKeyIdentifier::new()
             .keyid(true)
             .issuer(true)
             .build(&b.x509v3_context(Some(issuer_cert), None))
             .map_err(|e| format!("akid: {}", e))?;
-        b.append_extension(akid).map_err(|e| format!("append akid: {}", e))?;
+        b.append_extension(akid)
+            .map_err(|e| format!("append akid: {}", e))?;
         // Sign with CA key. If CA is Ed25519 (as in our tests), OpenSSL requires MessageDigest::null().
         b.sign(ca_pkey, MessageDigest::null())
             .map_err(|e| format!("sign child: {}", e))?;
@@ -165,9 +196,19 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
     }
 
     let issuer_name = ca_cert.subject_name();
-    let ee_cn = format!("{}{}", if issuer_address.len() > 64 { &issuer_address[..64] } else { issuer_address }, ISSUER_SUFFIX);
-    let (server_cert, server_pkey) = make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn.as_str())?;
-    let (client_cert, client_pkey) = make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn.as_str())?;
+    let ee_cn = format!(
+        "{}{}",
+        if issuer_address.len() > 64 {
+            &issuer_address[..64]
+        } else {
+            issuer_address
+        },
+        ISSUER_SUFFIX
+    );
+    let (server_cert, server_pkey) =
+        make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn.as_str())?;
+    let (client_cert, client_pkey) =
+        make_end_entity(issuer_name, &ca_pkey, &ca_cert, ee_cn.as_str())?;
 
     // PEM outputs
     let server_cert_pem = server_cert
@@ -191,4 +232,3 @@ pub fn generate_pki_from_ops(ops: &AlgoOps) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>
         client_key_pem,
     ))
 }
-

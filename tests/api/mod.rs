@@ -9,7 +9,6 @@ pub mod bingle_api_impl_unit;
 #[path = "pki_generate_pki_from_ops.rs"]
 pub mod pki_generate_pki_from_ops;
 
-
 #[path = "bingle_api_start_fail.rs"]
 pub mod bingle_api_start_fail;
 
@@ -25,8 +24,8 @@ pub mod start_options_display;
 #[path = "bingle_api_impl/list_all_relays.rs"]
 pub mod list_all_relays;
 
-pub mod dtls_via_relay_integration;
 pub mod bingle_api_relay_dtls;
+pub mod dtls_via_relay_integration;
 #[path = "on_listening_handler.rs"]
 pub mod on_listening_handler;
 

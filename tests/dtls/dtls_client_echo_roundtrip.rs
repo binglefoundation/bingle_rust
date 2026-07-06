@@ -1,16 +1,13 @@
-
-
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
-#[path = "../test_util.rs"]
-pub mod test_util;
 pub mod pki;
 pub mod test_handlers;
-use test_util::init_test_logging;
+#[path = "../test_util.rs"]
+pub mod test_util;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use test_handlers::*;
-
+use test_util::init_test_logging;
 
 #[ntest::timeout(30_000)]
 #[test]
@@ -72,7 +69,16 @@ pub fn dtls_client_echo_roundtrip() {
     // Step 1: Send initial "Hello" from client to server and validate reception
     let mut ok = false;
     for _ in 0..20 {
-        if client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), b"Hello").is_ok() { ok = true; break; }
+        if client
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                b"Hello",
+            )
+            .is_ok()
+        {
+            ok = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(100));
     }
     assert!(ok, "client DTLS send of 'Hello' failed");
@@ -81,15 +87,23 @@ pub fn dtls_client_echo_roundtrip() {
     while SERVER_HELLO.get().is_none() && start.elapsed() < Duration::from_secs(5) {
         thread::sleep(Duration::from_millis(10));
     }
-    let hello = SERVER_HELLO.get().expect("server did not receive 'Hello' within timeout");
-    assert_eq!(hello.as_slice(), b"Hello", "server did not capture initial 'Hello'");
+    let hello = SERVER_HELLO
+        .get()
+        .expect("server did not receive 'Hello' within timeout");
+    assert_eq!(
+        hello.as_slice(),
+        b"Hello",
+        "server did not capture initial 'Hello'"
+    );
 
     // Step 2: Validate that the client echo handler received the "Ping" (server sends Ping after Hello)
     let start = Instant::now();
     while CLIENT_PING_SEEN.get().is_none() && start.elapsed() < Duration::from_secs(3) {
         thread::sleep(Duration::from_millis(10));
     }
-    let ping = CLIENT_PING_SEEN.get().expect("client did not receive 'Ping' within timeout");
+    let ping = CLIENT_PING_SEEN
+        .get()
+        .expect("client did not receive 'Ping' within timeout");
     assert_eq!(ping.as_slice(), b"Ping", "client did not capture 'Ping'");
 
     // Step 3: Validate that the server received the client's echoed message
@@ -97,6 +111,12 @@ pub fn dtls_client_echo_roundtrip() {
     while SERVER_CLIENT_ECHOED.get().is_none() && start.elapsed() < Duration::from_secs(3) {
         thread::sleep(Duration::from_millis(10));
     }
-    let echoed = SERVER_CLIENT_ECHOED.get().expect("server did not receive client's echo within timeout");
-    assert_eq!(echoed.as_slice(), b"CLIENT ECHOED: Ping", "server did not receive 'CLIENT ECHOED: Ping'");
+    let echoed = SERVER_CLIENT_ECHOED
+        .get()
+        .expect("server did not receive client's echo within timeout");
+    assert_eq!(
+        echoed.as_slice(),
+        b"CLIENT ECHOED: Ping",
+        "server did not receive 'CLIENT ECHOED: Ping'"
+    );
 }

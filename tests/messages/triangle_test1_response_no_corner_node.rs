@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use rust_comms::engine::EngineState;
 use rust_comms::messages::marshal::{from_json_str, to_json_value};
-use rust_comms::messages::types::{Message, RelayMessage, RelayTriangleTest1Response, RelayTriangleTest3};
+use rust_comms::messages::types::{
+    Message, RelayMessage, RelayTriangleTest1Response, RelayTriangleTest3,
+};
 
 use crate::util::reusable_mock_api::{InnerBingleApiInternal, MockApiBoth};
 
@@ -22,14 +24,20 @@ impl MockInternal {
 impl InnerBingleApiInternal for MockInternal {
     fn set_state(&self, state: EngineState) {
         if let Ok(mut g) = self.state.lock() {
-            if matches!(*g, Some(EngineState::EndpointAvailable)) && state == EngineState::NATRestricted {
+            if matches!(*g, Some(EngineState::EndpointAvailable))
+                && state == EngineState::NATRestricted
+            {
                 return;
             }
             *g = Some(state);
         }
     }
     fn get_state(&self) -> EngineState {
-        self.state.lock().ok().and_then(|g| *g).unwrap_or(EngineState::StunIdentify)
+        self.state
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .unwrap_or(EngineState::StunIdentify)
     }
     fn set_nat_type(&self, nat_type: rust_comms::engine::NatType) {
         if let Ok(mut g) = self.nat_type.lock() {
@@ -42,22 +50,38 @@ impl InnerBingleApiInternal for MockInternal {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_false_serializes_as_false() {
-    let resp = RelayTriangleTest1Response { app: None, no_corner_node: false, response_tag: None };
+    let resp = RelayTriangleTest1Response {
+        app: None,
+        no_corner_node: false,
+        response_tag: None,
+    };
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(resp));
     let json = to_json_value(&msg);
     let json_str = serde_json::to_string(&json).expect("serialize");
-    assert!(json_str.contains("\"noCornerNode\":false"), "noCornerNode should be false: {}", json_str);
+    assert!(
+        json_str.contains("\"noCornerNode\":false"),
+        "noCornerNode should be false: {}",
+        json_str
+    );
 }
 
 /// Serialization: no_corner_node=true appears in JSON.
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn no_corner_node_true_serializes_with_field() {
-    let resp = RelayTriangleTest1Response { app: None, no_corner_node: true, response_tag: None };
+    let resp = RelayTriangleTest1Response {
+        app: None,
+        no_corner_node: true,
+        response_tag: None,
+    };
     let msg = Message::Relay(RelayMessage::TriangleTest1Response(resp));
     let json = to_json_value(&msg);
     let json_str = serde_json::to_string(&json).expect("serialize");
-    assert!(json_str.contains("\"noCornerNode\":true"), "noCornerNode should be true: {}", json_str);
+    assert!(
+        json_str.contains("\"noCornerNode\":true"),
+        "noCornerNode should be true: {}",
+        json_str
+    );
 }
 
 /// Deserialization: missing noCornerNode defaults to false.
@@ -68,7 +92,10 @@ pub fn no_corner_node_defaults_to_false_on_deserialize() {
     let msg = from_json_str(json).expect("decode");
     match msg {
         Message::Relay(RelayMessage::TriangleTest1Response(resp)) => {
-            assert!(!resp.no_corner_node, "no_corner_node should default to false");
+            assert!(
+                !resp.no_corner_node,
+                "no_corner_node should default to false"
+            );
         }
         other => panic!("expected TriangleTest1Response, got {:?}", other),
     }
@@ -99,11 +126,13 @@ pub fn no_corner_node_sets_nat_restricted_immediately() {
     ));
 
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;
-    let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response {
-        app: None,
-        no_corner_node: true,
-        response_tag: None
-    }));
+    let msg = Message::Relay(RelayMessage::TriangleTest1Response(
+        RelayTriangleTest1Response {
+            app: None,
+            no_corner_node: true,
+            response_tag: None,
+        },
+    ));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
     });
@@ -119,10 +148,18 @@ pub fn no_corner_node_sets_nat_restricted_immediately() {
     }
 
     let st = mock_internal.get_state();
-    assert_eq!(st, EngineState::NATRestricted, "state should be NATRestricted shortly after no_corner_node=true (no 10s delay)");
+    assert_eq!(
+        st,
+        EngineState::NATRestricted,
+        "state should be NATRestricted shortly after no_corner_node=true (no 10s delay)"
+    );
 
     let nt = mock_internal.nat_type.lock().unwrap();
-    assert_eq!(*nt, Some(rust_comms::engine::NatType::Restricted), "nat_type should be Restricted");
+    assert_eq!(
+        *nt,
+        Some(rust_comms::engine::NatType::Restricted),
+        "nat_type should be Restricted"
+    );
 }
 
 /// When no_corner_node=true but state is already EndpointAvailable, do not override.
@@ -137,22 +174,30 @@ pub fn no_corner_node_does_not_override_endpoint_available() {
 
     // First set EndpointAvailable via TriangleTest3
     let handler = rust_comms::messages::handlers::DefaultPrintingHandler;
-    let t3 = Message::Relay(RelayMessage::TriangleTest3(RelayTriangleTest3 { app: None }));
+    let t3 = Message::Relay(RelayMessage::TriangleTest3(RelayTriangleTest3 {
+        app: None,
+    }));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &t3, "FROMID");
     });
     assert_eq!(mock_internal.get_state(), EngineState::EndpointAvailable);
 
     // Now send no_corner_node=true — should NOT override EndpointAvailable
-    let msg = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response {
-        app: None,
-        no_corner_node: true,
-        response_tag: None
-    }));
+    let msg = Message::Relay(RelayMessage::TriangleTest1Response(
+        RelayTriangleTest1Response {
+            app: None,
+            no_corner_node: true,
+            response_tag: None,
+        },
+    ));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
     });
 
     let st = mock_internal.get_state();
-    assert_eq!(st, EngineState::EndpointAvailable, "EndpointAvailable should not be overridden");
+    assert_eq!(
+        st,
+        EngineState::EndpointAvailable,
+        "EndpointAvailable should not be overridden"
+    );
 }

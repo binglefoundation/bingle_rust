@@ -1,7 +1,9 @@
+use rust_comms::turn::turn_handler::{TurnClientHandler, TurnClientImpl, TurnHandler};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use rust_comms::turn::turn_handler::{TurnHandler, TurnClientImpl, TurnClientHandler};
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -54,7 +56,10 @@ pub fn unit_turn_client_handle_call_response_and_send() {
     // Now we can send to dest using the established channel
     let payload = b"world";
     let wrapped = client.send_turn_outgoing(&src, &dst, payload);
-    assert!(wrapped.is_some(), "expected wrapped outgoing after CallResponse");
+    assert!(
+        wrapped.is_some(),
+        "expected wrapped outgoing after CallResponse"
+    );
     let wrapped = wrapped.unwrap();
 
     // Verify header

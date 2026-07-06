@@ -46,7 +46,6 @@ pub trait Dtls {
      */
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()>;
 
-
     /**
      * Get a message handler function
      * @return the message handler function

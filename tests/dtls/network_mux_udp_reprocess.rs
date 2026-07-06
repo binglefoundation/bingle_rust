@@ -1,8 +1,8 @@
+use rust_comms::api::network_endpoint::NetworkEndpoint;
+use rust_comms::dtls::network_mux_trait::NetworkMux;
+use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
-use rust_comms::api::network_endpoint::NetworkEndpoint;
-use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
-use rust_comms::dtls::network_mux_trait::NetworkMux;
 
 // Global recorders for handler invocations
 static DTLS_REC: OnceLock<Mutex<Vec<(NetworkEndpoint, Vec<u8>)>>> = OnceLock::new();
@@ -23,9 +23,15 @@ fn turn_handler(_src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]) {
 }
 
 fn clear() {
-    if let Some(m) = DTLS_REC.get() { m.lock().unwrap().clear(); }
-    if let Some(m) = STUN_REC.get() { m.lock().unwrap().clear(); }
-    if let Some(m) = TURN_REC.get() { m.lock().unwrap().clear(); }
+    if let Some(m) = DTLS_REC.get() {
+        m.lock().unwrap().clear();
+    }
+    if let Some(m) = STUN_REC.get() {
+        m.lock().unwrap().clear();
+    }
+    if let Some(m) = TURN_REC.get() {
+        m.lock().unwrap().clear();
+    }
 }
 
 #[test]

@@ -1,12 +1,12 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use serde_json::{json, Value};
 use ed25519_dalek::SigningKey;
 use rand_core::OsRng;
+use serde_json::{Value, json};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint};
-use rust_comms::ddb::{DdbClient, DdbClientImpl, AdvertRecord, InetSocketAddress};
+use rust_comms::ddb::{AdvertRecord, DdbClient, DdbClientImpl, InetSocketAddress};
 
 const RELAY_ID: &str = "OO3BIFZDJPGMNXZ74NOVH5KZ5WBL3KCPLPELAF32P7HDCQGQIBID7PJC7A";
 
@@ -49,7 +49,10 @@ impl InnerBingleApi for MockApi {
                 "advert": self.advert_json
             }));
         }
-        Err(BingleError::Other(format!("Unexpected message type: {:?}", ty)))
+        Err(BingleError::Other(format!(
+            "Unexpected message type: {:?}",
+            ty
+        )))
     }
 }
 
@@ -64,7 +67,10 @@ fn ddb_client_lookup_rejects_ipv6() {
 
     let advert = AdvertRecord::new(
         address.clone(),
-        Some(InetSocketAddress { host: "::1".into(), port: 4433 }),
+        Some(InetSocketAddress {
+            host: "::1".into(),
+            port: 4433,
+        }),
         None,
         None,
         None,
@@ -73,20 +79,35 @@ fn ddb_client_lookup_rejects_ipv6() {
     );
     let advert_json = serde_json::to_value(&advert).unwrap();
 
-    let mock_api = Arc::new(MockApi { advert_json, address: address.clone() });
+    let mock_api = Arc::new(MockApi {
+        advert_json,
+        address: address.clone(),
+    });
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234);
-    let discover = Arc::new(move || vec![crate::util::test_util::signed_root_relay(RELAY_ID, relay_addr)]);
-    
+    let discover = Arc::new(move || {
+        vec![crate::util::test_util::signed_root_relay(
+            RELAY_ID, relay_addr,
+        )]
+    });
+
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),
-        discover
+        discover,
     );
 
     let res = cli.lookup(&address);
-    
-    assert!(res.is_err(), "DDB lookup should reject IPv6 addresses: {:?}", res);
+
+    assert!(
+        res.is_err(),
+        "DDB lookup should reject IPv6 addresses: {:?}",
+        res
+    );
     if let Err(BingleError::Other(e)) = res {
-        assert!(e.contains("IPv6") || e.contains("invalid host"), "Error message should mention IPv6 or invalid host: {}", e);
+        assert!(
+            e.contains("IPv6") || e.contains("invalid host"),
+            "Error message should mention IPv6 or invalid host: {}",
+            e
+        );
     }
 }
 
@@ -101,7 +122,10 @@ fn ddb_client_lookup_accepts_ipv4() {
 
     let advert = AdvertRecord::new(
         address.clone(),
-        Some(InetSocketAddress { host: "1.2.3.4".into(), port: 4433 }),
+        Some(InetSocketAddress {
+            host: "1.2.3.4".into(),
+            port: 4433,
+        }),
         None,
         None,
         None,
@@ -110,18 +134,31 @@ fn ddb_client_lookup_accepts_ipv4() {
     );
     let advert_json = serde_json::to_value(&advert).unwrap();
 
-    let mock_api = Arc::new(MockApi { advert_json, address: address.clone() });
+    let mock_api = Arc::new(MockApi {
+        advert_json,
+        address: address.clone(),
+    });
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234);
-    let discover = Arc::new(move || vec![crate::util::test_util::signed_root_relay(RELAY_ID, relay_addr)]);
-    
+    let discover = Arc::new(move || {
+        vec![crate::util::test_util::signed_root_relay(
+            RELAY_ID, relay_addr,
+        )]
+    });
+
     let cli = DdbClientImpl::with_discovery(
         to_weak_api_both(MockApiBoth::new_with_api_override(mock_api)),
-        discover
+        discover,
     );
 
     let res = cli.lookup(&address);
-    assert!(res.is_ok(), "DDB lookup should accept IPv4 addresses: {:?}", res);
+    assert!(
+        res.is_ok(),
+        "DDB lookup should accept IPv4 addresses: {:?}",
+        res
+    );
     let nsk = res.unwrap();
-    let addr = nsk.inet_socket_address().expect("should have direct address");
+    let addr = nsk
+        .inet_socket_address()
+        .expect("should have direct address");
     assert_eq!(addr, "1.2.3.4:4433".parse::<SocketAddr>().unwrap());
 }

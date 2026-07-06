@@ -1,4 +1,3 @@
-
 use rust_comms::engine::BingleAccessUnsafeForTests;
 
 use crate::util::reusable_mock_api::MockApiBoth;
@@ -10,11 +9,18 @@ use rust_comms::engine::Engine;
 #[cfg(not(target_os = "ios"))]
 pub fn engine_new_has_non_optional_ddb_client() {
     // Engine::new should construct a non-optional DDB client (NullDdbClient if no app_id)
-    let eng = Engine::new(&StartOptions::new("".into()), crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()));
+    let eng = Engine::new(
+        &StartOptions::new("".into()),
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
+    );
     let cli = eng.ddb_client();
     // lookup should return an error (NullDdbClient), not panic or require Option unwraps
     let res = cli.lookup("SOME_ID");
-    assert!(res.is_err(), "lookup should error on NullDdbClient, got: {:?}", res);
+    assert!(
+        res.is_err(),
+        "lookup should error on NullDdbClient, got: {:?}",
+        res
+    );
 }
 
 #[test]
@@ -23,6 +29,10 @@ pub fn bingle_api_impl_exposes_non_optional_engine_ddb_client() {
     // BingleApiImpl default (no app_id) should still expose a DDB client through engine helper
     let api = BingleApiImpl::new(&StartOptions::new("".into()));
     // The helper calls through to engine.ddb_client().lookup(); ensure it returns an Err, not panic
-    let res = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests("SOME_ID"));
-    assert!(res.is_err(), "engine_ddb_lookup_for_tests should return Err on missing app_id");
+    let res = api
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests("SOME_ID"));
+    assert!(
+        res.is_err(),
+        "engine_ddb_lookup_for_tests should return Err on missing app_id"
+    );
 }

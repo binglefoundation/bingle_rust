@@ -12,7 +12,10 @@ pub struct TestNetwork {
 
 impl TestNetwork {
     pub fn new() -> Self {
-        Self { nodes: Arc::new(Mutex::new(HashMap::new())), down: Arc::new(Mutex::new(vec![])) }
+        Self {
+            nodes: Arc::new(Mutex::new(HashMap::new())),
+            down: Arc::new(Mutex::new(vec![])),
+        }
     }
 
     #[allow(dead_code)]
@@ -28,10 +31,17 @@ impl TestNetwork {
 
     pub fn add_node(&self, id: &str) {
         let self_id = id.to_string();
-        self.nodes.lock().expect("nodes lock").insert(self_id.clone(), None);
+        self.nodes
+            .lock()
+            .expect("nodes lock")
+            .insert(self_id.clone(), None);
     }
 
-    pub fn create_mutex(&self, id: &str, with_ids: Vec<String>) -> Arc<ModifiedLamportDistributedMutex> {
+    pub fn create_mutex(
+        &self,
+        id: &str,
+        with_ids: Vec<String>,
+    ) -> Arc<ModifiedLamportDistributedMutex> {
         let self_id = id.to_string();
         let net_for_req = self.nodes.clone();
         let net_for_rep = self.nodes.clone();
@@ -44,16 +54,19 @@ impl TestNetwork {
         let send_request = move |dest_id: &str, req: &MutexRequest| {
             {
                 let down = down_ref.lock().expect("down");
-                if down.iter().any(|x| x == dest_id) { return; }
+                if down.iter().any(|x| x == dest_id) {
+                    return;
+                }
             }
             let dest_opt = {
                 let map = net_for_req.lock().expect("net");
-                map.get(dest_id).expect("Must have map entry in create_mutex").clone()
+                map.get(dest_id)
+                    .expect("Must have map entry in create_mutex")
+                    .clone()
             };
             if let Some(dest) = dest_opt {
                 dest.handle_request(&self_id_for_req, req);
-            }
-            else {
+            } else {
                 tracing::warn!("REQUEST: No node with id {} in network", dest_id);
             }
         };
@@ -62,16 +75,19 @@ impl TestNetwork {
         let send_reply = move |dest_id: &str, resp: &MutexResponse| {
             {
                 let down = down_ref2.lock().expect("down");
-                if down.iter().any(|x| x == dest_id) { return; }
+                if down.iter().any(|x| x == dest_id) {
+                    return;
+                }
             }
             let dest_opt = {
                 let map = net_for_rep.lock().expect("net");
-                map.get(dest_id).expect("Must have map entry in create_mutex").clone()
+                map.get(dest_id)
+                    .expect("Must have map entry in create_mutex")
+                    .clone()
             };
             if let Some(dest) = dest_opt {
                 dest.handle_reply(&self_id_for_rep, resp);
-            }
-            else {
+            } else {
                 tracing::warn!("REPLY: No node with id {} in network", dest_id);
             }
         };
@@ -80,22 +96,34 @@ impl TestNetwork {
         let send_release = move |dest_id: &str, rel: &MutexRelease| {
             {
                 let down = down_ref3.lock().expect("down");
-                if down.iter().any(|x| x == dest_id) { return; }
+                if down.iter().any(|x| x == dest_id) {
+                    return;
+                }
             }
             let dest_opt = {
                 let map = net_for_rel.lock().expect("net");
-                map.get(dest_id).expect("Must have map entry in create_mutex").clone()
+                map.get(dest_id)
+                    .expect("Must have map entry in create_mutex")
+                    .clone()
             };
             if let Some(dest) = dest_opt {
                 dest.handle_release(&self_id_for_rel, rel);
-            }
-            else {
+            } else {
                 tracing::warn!("RELEASE: No node with id {} in network", dest_id);
             }
         };
 
-        let mutex = Arc::new(ModifiedLamportDistributedMutex::new(id.to_string(), with_ids, send_request, send_reply, send_release));
-        self.nodes.lock().expect("nodes lock").insert(self_id, Some(mutex.clone()));
+        let mutex = Arc::new(ModifiedLamportDistributedMutex::new(
+            id.to_string(),
+            with_ids,
+            send_request,
+            send_reply,
+            send_release,
+        ));
+        self.nodes
+            .lock()
+            .expect("nodes lock")
+            .insert(self_id, Some(mutex.clone()));
         mutex
     }
 }

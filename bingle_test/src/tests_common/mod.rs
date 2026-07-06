@@ -41,23 +41,30 @@ pub trait TestAlgo: Sized {
 
 // ===== STUN Tests (generic) =====
 pub fn stun_tests() -> bool {
+    use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
     use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
-    use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
-    use rust_comms::stun::{StunEndpointFinder, StunState, StunEndpointFinderImpl};
 
     fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
         // Build a minimal STUN success with XOR-MAPPED-ADDRESS for IPv4
         let mut pkt = vec![0u8; 20];
         // Message Type: 0x0101 (Binding Success Response)
-        pkt[0] = 0x01; pkt[1] = 0x01;
+        pkt[0] = 0x01;
+        pkt[1] = 0x01;
         // We'll add one attribute of length 8
-        pkt[2] = 0x00; pkt[3] = 0x0c; // 12 bytes (type+len + value)
+        pkt[2] = 0x00;
+        pkt[3] = 0x0c; // 12 bytes (type+len + value)
         // Magic Cookie
-        pkt[4] = 0x21; pkt[5] = 0x12; pkt[6] = 0xA4; pkt[7] = 0x42;
+        pkt[4] = 0x21;
+        pkt[5] = 0x12;
+        pkt[6] = 0xA4;
+        pkt[7] = 0x42;
         // Transaction ID (12 bytes arbitrary)
-        for i in 0..12 { pkt[8 + i] = i as u8; }
+        for i in 0..12 {
+            pkt[8 + i] = i as u8;
+        }
         // Attribute: XOR-MAPPED-ADDRESS (0x0020), length 8
         pkt.extend_from_slice(&[0x00, 0x20, 0x00, 0x08]);
         // Value: 0x00 family(0x01), x-port, x-address
@@ -67,7 +74,9 @@ pub fn stun_tests() -> bool {
         pkt.extend_from_slice(&xport.to_be_bytes());
         let mut xaddr = ip;
         let cookie = [0x21u8, 0x12, 0xA4, 0x42];
-        for i in 0..4 { xaddr[i] ^= cookie[i]; }
+        for i in 0..4 {
+            xaddr[i] ^= cookie[i];
+        }
         pkt.extend_from_slice(&xaddr);
         pkt
     }
@@ -99,9 +108,15 @@ pub fn stun_tests() -> bool {
 
         // Verify callback recorded transitions
         let list = changes.lock().unwrap();
-        if !list.iter().any(|(st, _)| *st == StunState::Single) { return false; }
-        if !list.iter().any(|(st, _)| *st == StunState::Consistent) { return false; }
-        if !list.iter().any(|(st, _)| *st == StunState::Inconsistent) { return false; }
+        if !list.iter().any(|(st, _)| *st == StunState::Single) {
+            return false;
+        }
+        if !list.iter().any(|(st, _)| *st == StunState::Consistent) {
+            return false;
+        }
+        if !list.iter().any(|(st, _)| *st == StunState::Inconsistent) {
+            return false;
+        }
 
         finder.stop();
     }
@@ -127,7 +142,9 @@ pub fn stun_tests() -> bool {
         while Instant::now() < deadline && hits.load(AOrdering::SeqCst) < 1 {
             std::thread::sleep(Duration::from_millis(5));
         }
-        if hits.load(AOrdering::SeqCst) < 1 { return false; }
+        if hits.load(AOrdering::SeqCst) < 1 {
+            return false;
+        }
         finder.stop();
     }
 
@@ -138,7 +155,9 @@ pub fn stun_tests() -> bool {
         std::thread::sleep(Duration::from_millis(100));
         let start = Instant::now();
         finder.stop();
-        if start.elapsed() >= Duration::from_millis(500) { return false; }
+        if start.elapsed() >= Duration::from_millis(500) {
+            return false;
+        }
     }
 
     true

@@ -1,4 +1,6 @@
-use crate::dtls::dtls_trait::{Dtls, HandleMessage, HandleNewSession, HandlePeerCertificate, Result};
+use crate::dtls::dtls_trait::{
+    Dtls, HandleMessage, HandleNewSession, HandlePeerCertificate, Result,
+};
 
 pub mod openssl_impl {
     use super::*;
@@ -7,7 +9,10 @@ pub mod openssl_impl {
     use crate::dtls::network_mux_trait::NetworkMux;
     // OpenSSL DTLS imports used by handshake, context setup, and UDP stream adapters
     #[allow(unused_imports)]
-    use openssl::ssl::{HandshakeError, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode};
+    use openssl::ssl::{
+        HandshakeError, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder,
+        SslContext, SslContextBuilder, SslFiletype, SslMethod, SslOptions, SslVerifyMode,
+    };
     use std::collections::HashMap;
     use std::pin::Pin;
     use std::sync::mpsc;
@@ -28,9 +33,7 @@ pub mod openssl_impl {
         /// Sends payloads over an mpsc channel to a dedicated writer thread that owns
         /// the SSL stream write half.  Used after the handshake is complete so that
         /// the calling thread is never blocked waiting for I/O.
-        Channel {
-            tx: mpsc::Sender<Vec<u8>>,
-        },
+        Channel { tx: mpsc::Sender<Vec<u8>> },
     }
 
     #[derive(Clone)]
@@ -39,9 +42,15 @@ pub mod openssl_impl {
     }
 
     impl PeerWriter {
-        fn from_direct(runtime: Arc<tokio::runtime::Runtime>, stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>) -> Self {
+        fn from_direct(
+            runtime: Arc<tokio::runtime::Runtime>,
+            stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
+        ) -> Self {
             Self {
-                inner: Arc::new(Mutex::new(PeerWriterKind::Direct { runtime, stream_arc })),
+                inner: Arc::new(Mutex::new(PeerWriterKind::Direct {
+                    runtime,
+                    stream_arc,
+                })),
             }
         }
 
@@ -52,7 +61,10 @@ pub mod openssl_impl {
         }
 
         fn switch_to_channel(&self, tx: mpsc::Sender<Vec<u8>>) -> Result<()> {
-            let mut guard = self.inner.lock().map_err(|_| "peer writer lock poisoned".to_string())?;
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| "peer writer lock poisoned".to_string())?;
             *guard = PeerWriterKind::Channel { tx };
             Ok(())
         }
@@ -69,9 +81,15 @@ pub mod openssl_impl {
             }
 
             let send_path = {
-                let guard = self.inner.lock().map_err(|_| "peer writer lock poisoned".to_string())?;
+                let guard = self
+                    .inner
+                    .lock()
+                    .map_err(|_| "peer writer lock poisoned".to_string())?;
                 match &*guard {
-                    PeerWriterKind::Direct { runtime, stream_arc } => SendPath::Direct {
+                    PeerWriterKind::Direct {
+                        runtime,
+                        stream_arc,
+                    } => SendPath::Direct {
                         runtime: runtime.clone(),
                         stream_arc: stream_arc.clone(),
                     },
@@ -80,23 +98,36 @@ pub mod openssl_impl {
             };
 
             let res = match send_path {
-                SendPath::Direct { runtime, stream_arc } => {
-                    tracing::debug!("[DtlsOpenSsl:::PeerWriter][send] Direct {} bytes to peer", payload.len());
+                SendPath::Direct {
+                    runtime,
+                    stream_arc,
+                } => {
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::PeerWriter][send] Direct {} bytes to peer",
+                        payload.len()
+                    );
 
-                    let mut guard = stream_arc.lock().map_err(|_| "writer stream poisoned".to_string())?;
+                    let mut guard = stream_arc
+                        .lock()
+                        .map_err(|_| "writer stream poisoned".to_string())?;
                     runtime
                         .block_on(async { guard.write_all(payload).await })
                         .map_err(|e| format!("send writer stream dtls write failed: {}", e))
                 }
                 SendPath::Channel { tx } => {
-                    tracing::debug!("[DtlsOpenSsl:::PeerWriter][send] Channel {} bytes to peer", payload.len());
-                    tx
-                        .send(payload.to_vec())
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::PeerWriter][send] Channel {} bytes to peer",
+                        payload.len()
+                    );
+                    tx.send(payload.to_vec())
                         .map_err(|e| format!("peer writer channel send failed: {}", e))
-                },
+                }
             };
 
-            tracing::debug!("[DtlsOpenSsl:::PeerWriter][send] {} bytes done", payload.len());
+            tracing::debug!(
+                "[DtlsOpenSsl:::PeerWriter][send] {} bytes done",
+                payload.len()
+            );
             res
         }
     }
@@ -113,8 +144,13 @@ pub mod openssl_impl {
             .name(format!("dtls-writer-{}", peer_label))
             .spawn(move || {
                 while let Ok(payload) = rx.recv() {
-                    if let Err(e) = runtime.block_on(async { write_half.write_all(&payload).await }) {
-                        tracing::warn!("[DtlsOpenSsl:::writer] {} write failed: {}; stopping writer thread", peer_label, e);
+                    if let Err(e) = runtime.block_on(async { write_half.write_all(&payload).await })
+                    {
+                        tracing::warn!(
+                            "[DtlsOpenSsl:::writer] {} write failed: {}; stopping writer thread",
+                            peer_label,
+                            e
+                        );
                         break;
                     }
                 }
@@ -125,9 +161,9 @@ pub mod openssl_impl {
     #[allow(unused_imports)]
     use openssl::pkey::PKey;
     #[allow(unused_imports)]
-    use openssl::x509::store::X509StoreBuilder;
-    #[allow(unused_imports)]
     use openssl::x509::X509;
+    #[allow(unused_imports)]
+    use openssl::x509::store::X509StoreBuilder;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub enum PeerCmd {
@@ -140,10 +176,18 @@ pub mod openssl_impl {
             match self {
                 PeerCmd::Send(payload) => {
                     if let Ok(text) = std::str::from_utf8(payload)
-                        && text.chars().all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t') {
-                            return write!(f, "Send(\"{}\")", text);
-                        }
-                    let preview: String = payload.iter().take(8).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                        && text
+                            .chars()
+                            .all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t')
+                    {
+                        return write!(f, "Send(\"{}\")", text);
+                    }
+                    let preview: String = payload
+                        .iter()
+                        .take(8)
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     write!(f, "Send({} bytes, [{} ...])", payload.len(), preview)
                 }
                 PeerCmd::Stop => write!(f, "Stop"),
@@ -165,11 +209,17 @@ pub mod openssl_impl {
         }
 
         pub fn send(&self, cmd: PeerCmd) -> Result<()> {
-            self.tx.send(cmd).map_err(|e| format!("peer command send failed: {}", e))
+            self.tx
+                .send(cmd)
+                .map_err(|e| format!("peer command send failed: {}", e))
         }
     }
 
-    pub fn spawn_peer_worker<F>(peer_label: &str, handle: &str, mut on_command: F) -> Result<PeerHandle>
+    pub fn spawn_peer_worker<F>(
+        peer_label: &str,
+        handle: &str,
+        mut on_command: F,
+    ) -> Result<PeerHandle>
     where
         F: FnMut(PeerCmd) -> bool + Send + 'static,
     {
@@ -263,9 +313,10 @@ pub mod openssl_impl {
         if let Some(peer_handle) = peer_state.peer_handle {
             tracing::debug!("[DtlsOpenSsl][close_peer_state] send stop to peer_handle");
             let _ = peer_handle.send(PeerCmd::Stop);
-        }
-        else {
-            tracing::debug!("[DtlsOpenSsl][close_peer_state] peer_handle is None, skipping stop command");
+        } else {
+            tracing::debug!(
+                "[DtlsOpenSsl][close_peer_state] peer_handle is None, skipping stop command"
+            );
         }
         peer_state.async_queue.close();
     }
@@ -313,7 +364,9 @@ pub mod openssl_impl {
                     let pinned = Pin::new(&mut stream);
                     pinned.poll_do_handshake(cx)
                 }),
-            ).await {
+            )
+            .await
+            {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => Err(format!("DTLS accept handshake error: {}", e)),
                 Err(_) => Err("DTLS accept handshake timeout".to_string()),
@@ -321,7 +374,11 @@ pub mod openssl_impl {
         });
 
         if let Err(e) = hs_result {
-            tracing::warn!("[DtlsOpenSsl:::accept] handshake failed for {}: {}", from, e);
+            tracing::warn!(
+                "[DtlsOpenSsl:::accept] handshake failed for {}: {}",
+                from,
+                e
+            );
             if let Ok(mut m) = peers.lock() {
                 let key = from.get_key().expect("direct endpoint key");
                 if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key, owner_generation) {
@@ -336,9 +393,18 @@ pub mod openssl_impl {
         // Step 2: log selected cipher suite.
         {
             let ssl = stream.ssl();
-            let selected = ssl.current_cipher().map(|c| c.name().to_string()).unwrap_or_else(|| "none".to_string());
-            let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
-            tracing::info!("[DTLS][handshake {}] completed (accept). Selected: {}. Our available: {}", from, selected, our_ciphers);
+            let selected = ssl
+                .current_cipher()
+                .map(|c| c.name().to_string())
+                .unwrap_or_else(|| "none".to_string());
+            let our_ciphers =
+                "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
+            tracing::info!(
+                "[DTLS][handshake {}] completed (accept). Selected: {}. Our available: {}",
+                from,
+                selected,
+                our_ciphers
+            );
             if let Ok(mut m) = peers.lock() {
                 let key = from.get_key().expect("direct endpoint key");
                 if let Some(ps) = m.get_mut(&key) {
@@ -356,18 +422,28 @@ pub mod openssl_impl {
                         let ca_bytes_opt: Option<Vec<u8>> = {
                             if let Some(chain) = stream.ssl().peer_cert_chain() {
                                 let len = chain.len();
-                                if len >= 1 { chain.get(len - 1).and_then(|last| last.to_pem().ok()) } else { None }
-                            } else { None }
+                                if len >= 1 {
+                                    chain.get(len - 1).and_then(|last| last.to_pem().ok())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
                         };
                         if let Some(h) = peer_cert_handler {
                             if let Some(ca_vec) = ca_bytes_opt.as_ref() {
                                 tracing::debug!(
                                     "[DtlsOpenSsl:::accept][peer_cert_handler][post-handshake][{}] cert_len={} ca_len={}",
-                                    from, cert_pem.len(), ca_vec.len()
+                                    from,
+                                    cert_pem.len(),
+                                    ca_vec.len()
                                 );
                                 match h(&cert_pem, ca_vec) {
                                     Ok(mut s) if !s.is_empty() => {
-                                        s = s.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                                        s = s
+                                            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                                            .to_string();
                                         let key = from.get_key().expect("direct endpoint key");
                                         let _ = peers.lock().map(|mut m| {
                                             let ps = get_or_create_peer_state(&mut m, &key);
@@ -381,7 +457,11 @@ pub mod openssl_impl {
                                         );
                                         if let Ok(mut m) = peers.lock() {
                                             let key = from.get_key().expect("direct endpoint key");
-                                            if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key, owner_generation) {
+                                            if let Some(peer_state) = take_peer_state_if_owner(
+                                                &mut m,
+                                                &key,
+                                                owner_generation,
+                                            ) {
                                                 close_peer_state(peer_state);
                                             }
                                         }
@@ -395,7 +475,9 @@ pub mod openssl_impl {
                                 );
                                 if let Ok(mut m) = peers.lock() {
                                     let key = from.get_key().expect("direct endpoint key");
-                                    if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key, owner_generation) {
+                                    if let Some(peer_state) =
+                                        take_peer_state_if_owner(&mut m, &key, owner_generation)
+                                    {
                                         close_peer_state(peer_state);
                                     }
                                 }
@@ -412,7 +494,11 @@ pub mod openssl_impl {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("[DtlsOpenSsl:::accept][post-handshake][{}] cert.to_pem failed: {}", from, e);
+                        tracing::warn!(
+                            "[DtlsOpenSsl:::accept][post-handshake][{}] cert.to_pem failed: {}",
+                            from,
+                            e
+                        );
                     }
                 }
             }
@@ -431,10 +517,16 @@ pub mod openssl_impl {
         ) {
             Ok(tx) => tx,
             Err(e) => {
-                tracing::warn!("[DtlsOpenSsl:::accept] failed to spawn split writer for {}: {}", from, e);
+                tracing::warn!(
+                    "[DtlsOpenSsl:::accept] failed to spawn split writer for {}: {}",
+                    from,
+                    e
+                );
                 if let Ok(mut m) = peers.lock() {
                     let key = from.get_key().expect("direct endpoint key");
-                    if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key, owner_generation) {
+                    if let Some(peer_state) =
+                        take_peer_state_if_owner(&mut m, &key, owner_generation)
+                    {
                         close_peer_state(peer_state);
                     }
                 }
@@ -448,11 +540,16 @@ pub mod openssl_impl {
             if let Some(ps) = m.get_mut(&key) {
                 if ps.generation == owner_generation {
                     ps.writer = Some(PeerWriter::from_channel(writer_tx));
-                    tracing::debug!("[DtlsOpenSsl:::accept] installed real split writer for {}", from);
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] installed real split writer for {}",
+                        from
+                    );
                 } else {
                     tracing::warn!(
                         "[DtlsOpenSsl:::accept] generation mismatch after handshake for {} (expected {} got {}); closing",
-                        from, owner_generation, ps.generation
+                        from,
+                        owner_generation,
+                        ps.generation
                     );
                     return;
                 }
@@ -510,41 +607,74 @@ pub mod openssl_impl {
                 match tokio::time::timeout(
                     std::time::Duration::from_millis(20),
                     tokio::io::AsyncReadExt::read(&mut read_half, &mut buf),
-                ).await {
+                )
+                .await
+                {
                     Ok(res) => res.map_err(|e| e.to_string()),
                     Err(_) => Err("read timeout".to_string()),
                 }
             });
             let n = match read_res {
                 Ok(0) => {
-                    info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] EOF/peer closed", log_tag, from);
+                    info_theme!(
+                        themes::DTLS,
+                        "[DtlsOpenSsl:{}][read-loop {}] EOF/peer closed",
+                        log_tag,
+                        from
+                    );
                     break;
                 }
                 Ok(n) => {
                     logged_wouldblock = false;
                     n
                 }
-                Err(ref e) if e == "read timeout" || e.contains("would block") || e.contains("WouldBlock") => {
+                Err(ref e)
+                    if e == "read timeout"
+                        || e.contains("would block")
+                        || e.contains("WouldBlock") =>
+                {
                     if !logged_wouldblock {
-                        info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] WouldBlock/timeout (no datagram yet)", log_tag, from);
+                        info_theme!(
+                            themes::DTLS,
+                            "[DtlsOpenSsl:{}][read-loop {}] WouldBlock/timeout (no datagram yet)",
+                            log_tag,
+                            from
+                        );
                         logged_wouldblock = true;
                     }
                     continue;
                 }
                 Err(e) => {
-                    info_theme!(themes::DTLS, "[DtlsOpenSsl:{}][read-loop {}] read error: {}", log_tag, from, e);
+                    info_theme!(
+                        themes::DTLS,
+                        "[DtlsOpenSsl:{}][read-loop {}] read error: {}",
+                        log_tag,
+                        from,
+                        e
+                    );
                     break;
                 }
             };
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
 
             // Gate application delivery on issuer being set (only when peer_cert_handler is configured)
             let issuer_opt = get_issuer();
             if peer_cert_handler.is_some() && issuer_opt.as_deref().unwrap_or("").is_empty() {
-                tracing::warn!("[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated", log_tag, from);
+                tracing::warn!(
+                    "[DtlsOpenSsl:{}][read-loop from {}] dropping application data until peer certificate validated",
+                    log_tag,
+                    from
+                );
                 continue;
             }
-            tracing::debug!("[DtlsOpenSsl:{}][read-loop {}] application data {} bytes", log_tag, from, n);
+            tracing::debug!(
+                "[DtlsOpenSsl:{}][read-loop {}] application data {} bytes",
+                log_tag,
+                from,
+                n
+            );
             if let Some(h) = &handle_message {
                 let issuer = issuer_opt.unwrap_or_default();
                 let adapter = PeerAdapter(peers.clone());
@@ -554,7 +684,8 @@ pub mod openssl_impl {
         // Cleanup
         if let Ok(mut m) = peers.lock() {
             let current_generation = m.get(&key_from).map(|ps| ps.generation);
-            if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_from, owner_generation) {
+            if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_from, owner_generation)
+            {
                 tracing::info!(
                     "[DtlsOpenSsl:{}][read-loop {}] peer disconnected, owner generation matched ({}), call close_peer_state",
                     log_tag,
@@ -572,24 +703,38 @@ pub mod openssl_impl {
                 );
             }
         }
-        tracing::info!("[DtlsOpenSsl:{}][read-loop {}] exit and cleanup", log_tag, from);
+        tracing::info!(
+            "[DtlsOpenSsl:{}][read-loop {}] exit and cleanup",
+            log_tag,
+            from
+        );
     }
     #[inline]
     fn build_ca_store(ca_pem: &[u8]) -> Result<openssl::x509::store::X509Store> {
         let ca_x509 = X509::from_pem(ca_pem).map_err(|e| format!("CA PEM parse failed: {}", e))?;
-        let mut store_builder = X509StoreBuilder::new().map_err(|e| format!("build X509 store failed: {}", e))?;
-        store_builder.add_cert(ca_x509).map_err(|e| format!("add CA to store failed: {}", e))?;
+        let mut store_builder =
+            X509StoreBuilder::new().map_err(|e| format!("build X509 store failed: {}", e))?;
+        store_builder
+            .add_cert(ca_x509)
+            .map_err(|e| format!("add CA to store failed: {}", e))?;
         Ok(store_builder.build())
     }
 
     #[inline]
-    fn keylog_callback(role: &'static str, handle: String) -> impl Fn(&openssl::ssl::SslRef, &str) + 'static {
+    fn keylog_callback(
+        role: &'static str,
+        handle: String,
+    ) -> impl Fn(&openssl::ssl::SslRef, &str) + 'static {
         move |_ssl, line| {
             let _span = tracing::info_span!("BingleApi", handle = %handle);
             let _guard = _span.enter();
             let s = format!("[OpenSSL][keylog][{}] {}", role, line);
             tracing::info!("{}", s);
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("target/sslkeylog.log") {
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("target/sslkeylog.log")
+            {
                 use std::io::Write as _;
                 let _ = writeln!(f, "{}", line);
             }
@@ -598,14 +743,20 @@ pub mod openssl_impl {
 
     // trace at ERROR level when using these
     #[inline]
-    pub fn configure_dtls12_connector(builder: &mut SslConnectorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
+    pub fn configure_dtls12_connector(
+        builder: &mut SslConnectorBuilder,
+        handle: String,
+        dangerous_debug: bool,
+    ) -> Result<()> {
         if dangerous_debug {
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
             builder.set_keylog_callback(keylog_callback("client", handle));
             // Lower security level to avoid strict policy rejections in test envs
             builder.set_security_level(0);
         }
-        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION);
+        builder.set_options(
+            SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION,
+        );
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("client: set_min_proto_version failed: {}", e))?;
@@ -617,14 +768,20 @@ pub mod openssl_impl {
     }
 
     #[inline]
-    pub fn configure_dtls12_acceptor(builder: &mut SslAcceptorBuilder, handle: String, dangerous_debug: bool) -> Result<()> {
+    pub fn configure_dtls12_acceptor(
+        builder: &mut SslAcceptorBuilder,
+        handle: String,
+        dangerous_debug: bool,
+    ) -> Result<()> {
         if dangerous_debug {
             // Lower security level to avoid strict policy rejections in test envs
             builder.set_security_level(0);
             // Emit TLS secrets for external analyzers (e.g., Wireshark) using the NSS Key Log Format.
             builder.set_keylog_callback(keylog_callback("server", handle));
         }
-        builder.set_options(SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION);
+        builder.set_options(
+            SslOptions::NO_DTLSV1 | SslOptions::NO_COMPRESSION | SslOptions::NO_RENEGOTIATION,
+        );
         builder
             .set_min_proto_version(Some(openssl::ssl::SslVersion::DTLS1_2))
             .map_err(|e| format!("server: set_min_proto_version failed: {}", e))?;
@@ -815,16 +972,14 @@ pub mod openssl_impl {
                 return Err(Error::new(ErrorKind::BrokenPipe, "queue closed"));
             }
 
-            self.sender
-                .try_send(data)
-                .map_err(|err| match err {
-                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                        Error::new(ErrorKind::WouldBlock, "async peer queue full")
-                    }
-                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                        Error::new(ErrorKind::BrokenPipe, "async peer queue closed")
-                    }
-                })
+            self.sender.try_send(data).map_err(|err| match err {
+                tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                    Error::new(ErrorKind::WouldBlock, "async peer queue full")
+                }
+                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                    Error::new(ErrorKind::BrokenPipe, "async peer queue closed")
+                }
+            })
         }
 
         pub(crate) fn poll_recv(&self, cx: &mut Context<'_>) -> Poll<Option<Vec<u8>>> {
@@ -853,7 +1008,6 @@ pub mod openssl_impl {
         pub(crate) fn is_closed(&self) -> bool {
             self.closed.load(AtomicOrdering::SeqCst)
         }
-
     }
 
     // Shared NetworkMux-backed Read/Write adapter using the per-peer async queue provided by the DTLS layer.
@@ -866,7 +1020,10 @@ pub mod openssl_impl {
 
     impl std::io::Write for CommonNetworkMuxConn {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            tracing::debug!("[dtls muxconn][Write:write] legacy call {} bytes", buf.len());
+            tracing::debug!(
+                "[dtls muxconn][Write:write] legacy call {} bytes",
+                buf.len()
+            );
             // Prefer direct inet address for logging; otherwise, show relay target if available.
             let peer_str = if let Some(addr) = self.peer.inet_socket_address() {
                 addr.to_string()
@@ -877,25 +1034,43 @@ pub mod openssl_impl {
             };
             #[cfg(debug_assertions)]
             {
-                let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
+                let from_ip = self
+                    .mux
+                    .local_addr()
+                    .map(|a| a.to_string())
+                    .unwrap_or_else(|_| "?".to_string());
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
                     tracing::info!("[dtls muxconn][send][{} -> {}] {}", from_ip, peer_str, json);
                 } else {
-                    tracing::warn!("[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)", from_ip, peer_str, buf.len());
+                    tracing::warn!(
+                        "[dtls muxconn][send][{} -> {}] <parse error> ({} bytes)",
+                        from_ip,
+                        peer_str,
+                        buf.len()
+                    );
                 }
             }
             // Delegate addressing decision to the UDP mux: it will send direct or wrap as TURN depending on fields set.
             match self.mux.write(&self.peer, buf) {
                 Ok(()) => Ok(buf.len()),
                 Err(e) => {
-                    let from_ip = self.mux.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".to_string());
-                    tracing::warn!("[dtls muxconn][send][{} -> {}] mux write failed: {}", from_ip, peer_str, e);
+                    let from_ip = self
+                        .mux
+                        .local_addr()
+                        .map(|a| a.to_string())
+                        .unwrap_or_else(|_| "?".to_string());
+                    tracing::warn!(
+                        "[dtls muxconn][send][{} -> {}] mux write failed: {}",
+                        from_ip,
+                        peer_str,
+                        e
+                    );
                     Err(std::io::Error::other(format!("mux write failed: {}", e)))
                 }
             }
         }
         fn flush(&mut self) -> std::io::Result<()> {
-            tracing::debug!("[dtls muxconn][Write:flush]")   ;
+            tracing::debug!("[dtls muxconn][Write:flush]");
             Ok(())
         }
     }
@@ -951,7 +1126,10 @@ pub mod openssl_impl {
             Poll::Ready(std::io::Write::write(&mut *self, buf))
         }
 
-        fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
             tracing::debug!("[dtls muxconn][Poll_flush] poll_flush");
             Poll::Ready(std::io::Write::flush(&mut *self))
         }
@@ -968,50 +1146,100 @@ pub mod openssl_impl {
 
     // Do we need this, can we get a reference to API?
     impl Dtls for PeerAdapter {
-        fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
-        fn stop(&mut self) -> Result<()> { Ok(()) }
+        fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
+            Ok(())
+        }
+        fn stop(&mut self) -> Result<()> {
+            Ok(())
+        }
         fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-        fn with_app_layer_only_verification(self, _enabled: bool) -> Self { self }
+        fn with_app_layer_only_verification(self, _enabled: bool) -> Self {
+            self
+        }
         fn set_dangerous_debug(&mut self, _enabled: bool) {}
-        fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+        fn with_dangerous_debug(self, _enabled: bool) -> Self
+        where
+            Self: Sized,
+        {
+            self
+        }
         fn set_null_encryption(&mut self, _enabled: bool) {}
-        fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
+        fn with_null_encryption(self, _enabled: bool) -> Self
+        where
+            Self: Sized,
+        {
+            self
+        }
         fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()> {
             tracing::debug!("[Dtls for PeerAdapter][send] {}", to);
-            let key = to
-                .get_key()
-                .expect("PeerAdapter::send requires a NetworkEndpointKey (inet_socket_address or relay_id)");
+            let key = to.get_key().expect(
+                "PeerAdapter::send requires a NetworkEndpointKey (inet_socket_address or relay_id)",
+            );
             match self.0.lock() {
                 Ok(map) => {
                     if let Some(ps) = map.get(&key) {
-                        if let Some(w) = &ps.writer { w.send(data) } else { Err("no writer for peer".to_string()) }
-                    } else { Err("no writer for peer".to_string()) }
+                        if let Some(w) = &ps.writer {
+                            w.send(data)
+                        } else {
+                            Err("no writer for peer".to_string())
+                        }
+                    } else {
+                        Err("no writer for peer".to_string())
+                    }
                 }
                 Err(_) => Err("peers lock poisoned".to_string()),
             }
         }
-        fn get_handle_message(&self) -> Option<HandleMessage> { None }
+        fn get_handle_message(&self) -> Option<HandleMessage> {
+            None
+        }
         fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
-        fn with_handle_message(self, _handler: HandleMessage) -> Self { self }
+        fn with_handle_message(self, _handler: HandleMessage) -> Self {
+            self
+        }
         fn set_handle_new_session(&mut self, _handler: Option<HandleNewSession>) {}
-        fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+        fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+            None
+        }
         fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-        fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self { self }
-        fn get_ca_cert(&self) -> Option<&[u8]> { None }
+        fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self {
+            self
+        }
+        fn get_ca_cert(&self) -> Option<&[u8]> {
+            None
+        }
         fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-        fn with_ca_cert(self, _pem: Vec<u8>) -> Self { self }
-        fn get_client_cert(&self) -> Option<&[u8]> { None }
+        fn with_ca_cert(self, _pem: Vec<u8>) -> Self {
+            self
+        }
+        fn get_client_cert(&self) -> Option<&[u8]> {
+            None
+        }
         fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-        fn with_client_cert(self, _pem: Vec<u8>) -> Self { self }
-        fn get_client_private_key(&self) -> Option<&[u8]> { None }
+        fn with_client_cert(self, _pem: Vec<u8>) -> Self {
+            self
+        }
+        fn get_client_private_key(&self) -> Option<&[u8]> {
+            None
+        }
         fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-        fn with_client_private_key(self, _pem: Vec<u8>) -> Self { self }
-        fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+        fn with_client_private_key(self, _pem: Vec<u8>) -> Self {
+            self
+        }
+        fn get_server_signing_cert(&self) -> Option<&[u8]> {
+            None
+        }
         fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-        fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self { self }
-        fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+        fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self {
+            self
+        }
+        fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+            None
+        }
         fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-        fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self { self }
+        fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self {
+            self
+        }
         fn get_cipher_suite(&self, endpoint: &NetworkEndpoint) -> Option<String> {
             let key = endpoint.get_key()?;
             match self.0.lock() {
@@ -1038,8 +1266,8 @@ pub mod openssl_impl {
         pub(crate) handle_peer_certificate: Option<HandlePeerCertificate>,
 
         // Credentials
-        pub(crate) ca_cert: Option<Vec<u8>>,            // CA certificate (PEM)
-        pub(crate) client_cert: Option<Vec<u8>>,        // Client certificate (PEM)
+        pub(crate) ca_cert: Option<Vec<u8>>, // CA certificate (PEM)
+        pub(crate) client_cert: Option<Vec<u8>>, // Client certificate (PEM)
         pub(crate) client_private_key: Option<Vec<u8>>, // Client private key (PEM)
         pub(crate) server_signing_cert: Option<Vec<u8>>, // Server signing certificate (PEM)
         pub(crate) server_signing_private_key: Option<Vec<u8>>, // Server signing private key (PEM)
@@ -1109,7 +1337,9 @@ pub mod openssl_impl {
             if self.dangerous_debug {
                 self.null_encryption = true;
             } else {
-                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+                tracing::error!(
+                    "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
+                );
             }
             self
         }
@@ -1118,14 +1348,17 @@ pub mod openssl_impl {
             if self.dangerous_debug {
                 self.null_encryption = enabled;
             } else if enabled {
-                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+                tracing::error!(
+                    "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
+                );
             }
         }
 
         // Removed client/server role distinction; context builders are used by send() as-needed
         fn prepare_client_context(&self) -> Result<SslConnector> {
             // Build a DTLSv1.2 client connector and configure mutual auth + verification.
-            let mut builder = SslConnector::builder(SslMethod::dtls()).map_err(|e| format!("openssl: build dtls connector: {}", e))?;
+            let mut builder = SslConnector::builder(SslMethod::dtls())
+                .map_err(|e| format!("openssl: build dtls connector: {}", e))?;
 
             // Restrict to DTLSv1.2 and enable read_ahead.
             configure_dtls12_connector(&mut builder, self.handle.clone(), self.dangerous_debug)?;
@@ -1138,19 +1371,31 @@ pub mod openssl_impl {
 
             // Optionally load client cert and key if provided, and install a selection callback so the
             // client will always present its certificate even if the server's acceptable CA list is empty.
-            if let (Some(cert_pem), Some(key_pem)) = (self.client_cert.as_deref(), self.client_private_key.as_deref()) {
-                let client_x509 = X509::from_pem(cert_pem).map_err(|e| format!("client cert PEM parse failed: {}", e))?;
-                let client_key = PKey::private_key_from_pem(key_pem).map_err(|e| format!("client private key PEM parse failed: {}", e))?;
-                builder.set_certificate(&client_x509).map_err(|e| format!("set client certificate failed: {}", e))?;
-                builder.set_private_key(&client_key).map_err(|e| format!("set client private key failed: {}", e))?;
-                builder.check_private_key().map_err(|e| format!("client private key check failed: {}", e))?;
+            if let (Some(cert_pem), Some(key_pem)) = (
+                self.client_cert.as_deref(),
+                self.client_private_key.as_deref(),
+            ) {
+                let client_x509 = X509::from_pem(cert_pem)
+                    .map_err(|e| format!("client cert PEM parse failed: {}", e))?;
+                let client_key = PKey::private_key_from_pem(key_pem)
+                    .map_err(|e| format!("client private key PEM parse failed: {}", e))?;
+                builder
+                    .set_certificate(&client_x509)
+                    .map_err(|e| format!("set client certificate failed: {}", e))?;
+                builder
+                    .set_private_key(&client_key)
+                    .map_err(|e| format!("set client private key failed: {}", e))?;
+                builder
+                    .check_private_key()
+                    .map_err(|e| format!("client private key check failed: {}", e))?;
 
                 // Include our CA certificate in the client certificate chain so the server can extract it.
                 if let Some(ca_pem) = self.ca_cert.as_deref()
-                    && let Ok(ca_x509) = X509::from_pem(ca_pem) {
-                        // Best effort; ignore error to avoid panics
-                        let _ = builder.add_extra_chain_cert(ca_x509);
-                    }
+                    && let Ok(ca_x509) = X509::from_pem(ca_pem)
+                {
+                    // Best effort; ignore error to avoid panics
+                    let _ = builder.add_extra_chain_cert(ca_x509);
+                }
 
                 // Note: openssl crate version in this repo does not expose a client cert selection callback.
                 // We ensure the client certificate is always installed on the connection via the connector context
@@ -1164,7 +1409,9 @@ pub mod openssl_impl {
             } else {
                 // Enforce handshake-time verification via handler; require a handler to be set.
                 let ca = self.ca_cert.clone().unwrap_or_default();
-                let h = self.handle_peer_certificate.ok_or_else(|| "missing peer certificate handler for client handshake verification".to_string())?;
+                let h = self.handle_peer_certificate.ok_or_else(|| {
+                    "missing peer certificate handler for client handshake verification".to_string()
+                })?;
                 set_verify_with_handler_for_connector(&mut builder, h, ca, self.handle.clone());
             }
 
@@ -1172,25 +1419,42 @@ pub mod openssl_impl {
             Ok(builder.build())
         }
 
-
         fn prepare_server_acceptor(&mut self) -> Result<()> {
             // Build an SslAcceptor for DTLSv1.2. For tests we disable client authentication by default; a custom
             // verify callback can be supplied via handle_peer_certificate to enforce checks if desired.
             // Gate this on dangerous_debug option
-            let ca_pem = self.ca_cert.as_deref().ok_or_else(|| "missing ca_cert".to_string())?;
-            let server_cert_pem = self.server_signing_cert.as_deref().ok_or_else(|| "missing server_signing_cert".to_string())?;
-            let server_key_pem = self.server_signing_private_key.as_deref().ok_or_else(|| "missing server_signing_private_key".to_string())?;
+            let ca_pem = self
+                .ca_cert
+                .as_deref()
+                .ok_or_else(|| "missing ca_cert".to_string())?;
+            let server_cert_pem = self
+                .server_signing_cert
+                .as_deref()
+                .ok_or_else(|| "missing server_signing_cert".to_string())?;
+            let server_key_pem = self
+                .server_signing_private_key
+                .as_deref()
+                .ok_or_else(|| "missing server_signing_private_key".to_string())?;
 
-            let server_x509 = X509::from_pem(server_cert_pem).map_err(|e| format!("server: server cert PEM parse failed: {}", e))?;
-            let server_key = PKey::private_key_from_pem(server_key_pem).map_err(|e| format!("server: server private key PEM parse failed: {}", e))?;
+            let server_x509 = X509::from_pem(server_cert_pem)
+                .map_err(|e| format!("server: server cert PEM parse failed: {}", e))?;
+            let server_key = PKey::private_key_from_pem(server_key_pem)
+                .map_err(|e| format!("server: server private key PEM parse failed: {}", e))?;
 
             // Context builder for DTLS (we will constrain to DTLSv1.2)
-            let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::dtls()).map_err(|e| format!("server: build SslAcceptor failed: {}", e))?;
+            let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::dtls())
+                .map_err(|e| format!("server: build SslAcceptor failed: {}", e))?;
 
             // Load server certificate and private key
-            builder.set_certificate(&server_x509).map_err(|e| format!("server: set certificate failed: {}", e))?;
-            builder.set_private_key(&server_key).map_err(|e| format!("server: set private key failed: {}", e))?;
-            builder.check_private_key().map_err(|e| format!("server: private key check failed: {}", e))?;
+            builder
+                .set_certificate(&server_x509)
+                .map_err(|e| format!("server: set certificate failed: {}", e))?;
+            builder
+                .set_private_key(&server_key)
+                .map_err(|e| format!("server: set private key failed: {}", e))?;
+            builder
+                .check_private_key()
+                .map_err(|e| format!("server: private key check failed: {}", e))?;
 
             // Include our CA certificate in the server's certificate chain so clients can extract it
             if let Ok(ca_x509) = X509::from_pem(ca_pem) {
@@ -1223,7 +1487,12 @@ pub mod openssl_impl {
                 let ca = self.ca_cert.clone().unwrap_or_default();
                 if let Some(h) = self.handle_peer_certificate {
                     // Install verify callback that delegates to the handler and requires a client certificate
-                    set_verify_with_handler_for_acceptor(&mut builder, h, ca.clone(), self.handle.clone());
+                    set_verify_with_handler_for_acceptor(
+                        &mut builder,
+                        h,
+                        ca.clone(),
+                        self.handle.clone(),
+                    );
                 } else {
                     // No handler provided: do not enforce handshake-time verification on the server side.
                     builder.set_verify(SslVerifyMode::NONE);
@@ -1273,13 +1542,13 @@ pub mod openssl_impl {
         /// DTLS session lifecycles based on packet type and current peer state:
         ///
         /// ### Packet Type Handling
-        /// - **ClientHello**: 
+        /// - **ClientHello**:
         ///   - If an established stream already exists, it is dropped to allow a reconnect (Client Restart).
         ///   - If no stream exists, it triggers the creation of a new `SslStream` (unless suppressed).
-        /// - **Non-Handshake/Other**: 
+        /// - **Non-Handshake/Other**:
         ///   - These are enqueued for the existing `SslStream`.
         ///   - If no stream exists yet, they will still trigger stream creation, which is necessary
-        ///     to handle cases where the initial `ClientHello` might have been processed or 
+        ///     to handle cases where the initial `ClientHello` might have been processed or
         ///     retransmitted.
         ///
         /// ### State-Based Processing
@@ -1294,16 +1563,16 @@ pub mod openssl_impl {
         ///    - Implements **Simultaneous Connect Tie-Breaking** to avoid deadlocks where both
         ///      sides are trying to connect and neither is accepting.
         ///    - Compares local and remote socket addresses (port then IP).
-        ///    - The "lower" address is the designated client: it suppresses the inbound 
+        ///    - The "lower" address is the designated client: it suppresses the inbound
         ///      accept stream, waiting for its own outbound connect to succeed.
-        ///    - The "higher" address is the designated server: it aborts its outbound 
+        ///    - The "higher" address is the designated server: it aborts its outbound
         ///      connect and allows the inbound accept stream to proceed.
         ///
         /// 4. **Queue Management**: All inbound datagrams are pushed to the peer's `AsyncPeerQueue`,
         ///    which is read by the `CommonNetworkMuxConn` inside the `SslStream`.
         ///
-        /// 5. **Inbound Stream Lifecycle**: If a new stream is needed, it creates an `SslStream` in 
-        ///    `accept_state` and spawns a background `run_read_loop` to handle the handshake and 
+        /// 5. **Inbound Stream Lifecycle**: If a new stream is needed, it creates an `SslStream` in
+        ///    `accept_state` and spawns a background `run_read_loop` to handle the handshake and
         ///    subsequent application data.
         fn handle_dtls_accept_packet(
             mux: Arc<crate::dtls::UdpNetworkMux>,
@@ -1320,20 +1589,40 @@ pub mod openssl_impl {
             let tracing_span = tracing::info_span!("BingleApi", handle = %handle);
             let _tracing_span_guard = tracing_span.enter();
             // Check for looping back, verboten here
-            let my_ip = mux.local_addr().expect("We must have a local address when accepting inbound");
+            let my_ip = mux
+                .local_addr()
+                .expect("We must have a local address when accepting inbound");
             if !from.is_relay() && my_ip == from.inet_socket_address().unwrap() {
-                tracing::error!("[DtlsOpenSsl:::accept][inbound][{} -> {:?}] <loopback> ({} bytes), ignored", from, my_ip, data.len());
-                #[allow(unused)] {}
+                tracing::error!(
+                    "[DtlsOpenSsl:::accept][inbound][{} -> {:?}] <loopback> ({} bytes), ignored",
+                    from,
+                    my_ip,
+                    data.len()
+                );
+                #[allow(unused)]
+                {}
                 return;
             }
 
             // Debug log inbound DTLS packet at the DTLS layer
             if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                tracing::debug!("[DtlsOpenSsl:::accept][inbound][{} -> {:?}] {}", from, my_ip, json);
-                #[allow(unused)] {}
+                tracing::debug!(
+                    "[DtlsOpenSsl:::accept][inbound][{} -> {:?}] {}",
+                    from,
+                    my_ip,
+                    json
+                );
+                #[allow(unused)]
+                {}
             } else {
-                tracing::warn!("[DtlsOpenSsl:::accept][inbound][{} -> {:?}] <parse error> ({} bytes)", from, my_ip, data.len());
-                #[allow(unused)] {}
+                tracing::warn!(
+                    "[DtlsOpenSsl:::accept][inbound][{} -> {:?}] <parse error> ({} bytes)",
+                    from,
+                    my_ip,
+                    data.len()
+                );
+                #[allow(unused)]
+                {}
             }
             // Find or create the async queue and worker handle for this peer.
             let (async_q_arc, peer_handle) = {
@@ -1345,19 +1634,27 @@ pub mod openssl_impl {
                     && data[0] == 0x16       // Handshake
                     && data[3] == 0          // Epoch high byte
                     && data[4] == 0          // Epoch low byte
-                    && data[13] == 0x01;     // ClientHello
+                    && data[13] == 0x01; // ClientHello
 
                 if is_client_hello
-                    && pm.get(&key).map(|ps| !ps.is_connecting_peer && ps.writer.is_some()).unwrap_or(false)
-                        && let Some(ps) = pm.remove(&key) {
-                            let next_generation = next_peer_generation(ps.generation);
-                            tracing::info!("[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect, next_generation={}", from, next_generation);
-                            close_peer_state(ps);
-                            pm.insert(key.clone(), new_peer_state(next_generation));
-                            if let Some(handler) = handle_new_session.as_ref() {
-                                handler(from);
-                            }
-                        }
+                    && pm
+                        .get(&key)
+                        .map(|ps| !ps.is_connecting_peer && ps.writer.is_some())
+                        .unwrap_or(false)
+                    && let Some(ps) = pm.remove(&key)
+                {
+                    let next_generation = next_peer_generation(ps.generation);
+                    tracing::info!(
+                        "[DtlsOpenSsl:::accept] ClientHello on existing established peer for {} - dropping old peer state to allow reconnect, next_generation={}",
+                        from,
+                        next_generation
+                    );
+                    close_peer_state(ps);
+                    pm.insert(key.clone(), new_peer_state(next_generation));
+                    if let Some(handler) = handle_new_session.as_ref() {
+                        handler(from);
+                    }
+                }
 
                 let ps = get_or_create_peer_state(&mut pm, &key);
                 (ps.async_queue.clone(), ps.peer_handle.clone())
@@ -1394,17 +1691,29 @@ pub mod openssl_impl {
                 }).expect("accept peer worker should spawn");
 
                 if let Ok(mut map) = peers.lock()
-                    && let Some(ps) = map.get_mut(&key_for_worker) {
-                        ps.peer_handle = Some(new_peer_handle.clone());
-                    }
+                    && let Some(ps) = map.get_mut(&key_for_worker)
+                {
+                    ps.peer_handle = Some(new_peer_handle.clone());
+                }
             }
 
-            tracing::debug!("[DtlsOpenSsl:::accept] enqueue datagram via async queue [{} -> {:?}] ({} bytes)", from, my_ip, data.len());
-            #[allow(unused)] {}
+            tracing::debug!(
+                "[DtlsOpenSsl:::accept] enqueue datagram via async queue [{} -> {:?}] ({} bytes)",
+                from,
+                my_ip,
+                data.len()
+            );
+            #[allow(unused)]
+            {}
             if let Err(async_err) = async_q_arc.try_push(data.to_vec())
-                && async_err.kind() != std::io::ErrorKind::WouldBlock {
-                    tracing::warn!("[DtlsOpenSsl:::accept] async inbound enqueue failed for {}: {}", from, async_err);
-                }
+                && async_err.kind() != std::io::ErrorKind::WouldBlock
+            {
+                tracing::warn!(
+                    "[DtlsOpenSsl:::accept] async inbound enqueue failed for {}: {}",
+                    from,
+                    async_err
+                );
+            }
 
             let create_stream = {
                 let key = from.get_key().expect("direct endpoint key");
@@ -1413,8 +1722,13 @@ pub mod openssl_impl {
                 !have_writer // && !suppressed
             };
             if create_stream {
-                tracing::debug!("[DtlsOpenSsl:::accept] creating new SslStream (accept_state) for [{} -> {:?}]", from, my_ip);
-                #[allow(unused)] {}
+                tracing::debug!(
+                    "[DtlsOpenSsl:::accept] creating new SslStream (accept_state) for [{} -> {:?}]",
+                    from,
+                    my_ip
+                );
+                #[allow(unused)]
+                {}
                 let mut ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("ssl new");
                 ssl.set_accept_state();
                 let conn = CommonNetworkMuxConn {
@@ -1438,11 +1752,21 @@ pub mod openssl_impl {
                     let ps = get_or_create_peer_state(&mut m, &key);
                     accept_generation = next_peer_generation(ps.generation);
                     ps.generation = accept_generation;
-                    tracing::debug!("[DtlsOpenSsl:::accept] create_stream, is_connecting_peer={}", ps.is_connecting_peer);
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] create_stream, is_connecting_peer={}",
+                        ps.is_connecting_peer
+                    );
                     ps.writer = Some(placeholder_writer);
                     ps.handshake_logged = false;
-                    tracing::debug!("[DtlsOpenSsl:::accept] assigned generation {} for {}", accept_generation, from);
-                    tracing::debug!("[DtlsOpenSsl:::accept] installed placeholder writer for {}", from);
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] assigned generation {} for {}",
+                        accept_generation,
+                        from
+                    );
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::accept] installed placeholder writer for {}",
+                        from
+                    );
                 }
 
                 // Spawn a background thread that drives the DTLS accept handshake, extracts
@@ -1466,15 +1790,25 @@ pub mod openssl_impl {
             }
         }
 
-        pub fn start_accept_with_mux(&mut self, mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
+        pub fn start_accept_with_mux(
+            &mut self,
+            mux: Arc<crate::dtls::UdpNetworkMux>,
+        ) -> Result<()> {
             use std::sync::Arc;
             // Validate server creds
-            if self.server_signing_cert.is_none() || self.server_signing_private_key.is_none() || self.ca_cert.is_none() {
+            if self.server_signing_cert.is_none()
+                || self.server_signing_private_key.is_none()
+                || self.ca_cert.is_none()
+            {
                 return Err("missing server credentials or CA".to_string());
             }
             // Prepare and persist acceptor (validates PEMs, configures DTLSv1.2; server-side client verification
             self.prepare_server_acceptor()?;
-            let acceptor = Arc::new(self.acceptor.take().ok_or_else(|| "acceptor missing".to_string())?);
+            let acceptor = Arc::new(
+                self.acceptor
+                    .take()
+                    .ok_or_else(|| "acceptor missing".to_string())?,
+            );
 
             // Record the provided mux for later client send operations
             self.client_mux = Some(mux.clone());
@@ -1489,20 +1823,21 @@ pub mod openssl_impl {
             // Connecting peer suppression now tracked per-peer in PeerState.is_connecting_peer
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
-            mux.clone().set_handle_dtls_arc(Some(Arc::new(move |_source, from, data| {
-                Self::handle_dtls_accept_packet(
-                    mux.clone(),
-                    acceptor.clone(),
-                    peers.clone(),
-                    dtls_async_runtime.clone(),
-                    handle_message.clone(),
-                    handle_new_session.clone(),
-                    peer_cert_handler,
-                    from,
-                    data,
-                    handle.clone(),
-                );
-            })));
+            mux.clone()
+                .set_handle_dtls_arc(Some(Arc::new(move |_source, from, data| {
+                    Self::handle_dtls_accept_packet(
+                        mux.clone(),
+                        acceptor.clone(),
+                        peers.clone(),
+                        dtls_async_runtime.clone(),
+                        handle_message.clone(),
+                        handle_new_session.clone(),
+                        peer_cert_handler,
+                        from,
+                        data,
+                        handle.clone(),
+                    );
+                })));
 
             Ok(())
         }
@@ -1525,8 +1860,7 @@ pub mod openssl_impl {
             if let Some(flag) = self.stop_flag.take() {
                 use std::sync::atomic::Ordering;
                 flag.store(true, Ordering::SeqCst);
-            }
-            else {
+            } else {
                 tracing::warn!("[DtlsOpenSsl:::stop] already stopped");
             }
 
@@ -1542,8 +1876,7 @@ pub mod openssl_impl {
             // Stop any internally owned UDP mux
             if let Some(mux) = &self.owned_udp_mux {
                 mux.stop();
-            }
-            else {
+            } else {
                 tracing::warn!("[DtlsOpenSsl:::stop] no owned mux");
             }
             self.owned_udp_mux = None;
@@ -1554,16 +1887,30 @@ pub mod openssl_impl {
         fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()> {
             let _guard = self.span.enter();
             // We require a running UDP mux to perform client handshake and writes
-            let mux = self.client_mux.as_ref().ok_or_else(|| "client mux not started".to_string())?.clone();
+            let mux = self
+                .client_mux
+                .as_ref()
+                .ok_or_else(|| "client mux not started".to_string())?
+                .clone();
 
-            tracing::info!("[DtlsOpenSsl:::send] {:?} -> {} ({} bytes)", mux.local_addr(), to, data.len());
+            tracing::info!(
+                "[DtlsOpenSsl:::send] {:?} -> {} ({} bytes)",
+                mux.local_addr(),
+                to,
+                data.len()
+            );
             // Validate destination key: allow either direct inet address or relay channel+address
             let endpoint: &NetworkEndpoint = if to.inet_socket_address().is_some() {
                 to
-            } else if to.relay_channel().is_some() && to.relay_address().is_some() && to.relay_id().is_some() {
+            } else if to.relay_channel().is_some()
+                && to.relay_address().is_some()
+                && to.relay_id().is_some()
+            {
                 to
             } else {
-                panic!("DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address + relay_id)");
+                panic!(
+                    "DtlsOpenSsl::send: invalid NetworkSourceKey: need inet_socket_address or (relay_channel + relay_address + relay_id)"
+                );
             };
 
             let key_to = to.get_key().expect("direct endpoint key");
@@ -1587,7 +1934,11 @@ pub mod openssl_impl {
 
             if let Some(peer_handle) = peer_handle_to_use {
                 if peer_handle.is_healthy() {
-                    tracing::info!("[DtlsOpenSsl:::send] enqueueing send via existing peer worker for {} ({} bytes)", to, data.len());
+                    tracing::info!(
+                        "[DtlsOpenSsl:::send] enqueueing send via existing peer worker for {} ({} bytes)",
+                        to,
+                        data.len()
+                    );
                     if peer_handle.send(PeerCmd::Send(data.to_vec())).is_ok() {
                         return Ok(());
                     }
@@ -1599,23 +1950,32 @@ pub mod openssl_impl {
                     to
                 );
                 if let Ok(mut map) = self.peer_states.lock()
-                    && let Some(ps) = map.remove(&key_to) {
-                        close_peer_state(ps);
-                    }
+                    && let Some(ps) = map.remove(&key_to)
+                {
+                    close_peer_state(ps);
+                }
             }
 
             // 3) Otherwise, create a new outbound DTLS connection and persist it for reuse.
-            tracing::info!("[DtlsOpenSsl:::send] creating new outbound DTLS connection to {}", to);
+            tracing::info!(
+                "[DtlsOpenSsl:::send] creating new outbound DTLS connection to {}",
+                to
+            );
             // Build DTLSv1.2 client connector
             let connector = self.prepare_client_context()?;
-            let mut ssl = connector.configure().map_err(|e| e.to_string())?
-                .into_ssl("localhost").map_err(|e| e.to_string())?;
+            let mut ssl = connector
+                .configure()
+                .map_err(|e| e.to_string())?
+                .into_ssl("localhost")
+                .map_err(|e| e.to_string())?;
             ssl.set_connect_state();
 
             // Create SslStream and publish writer/worker in peer_states BEFORE the handshake.
             let (stream_arc, peer_handle, owner_generation) = {
                 let peers = &self.peer_states;
-                let mut map = peers.lock().map_err(|_| "peers lock poisoned".to_string())?;
+                let mut map = peers
+                    .lock()
+                    .map_err(|_| "peers lock poisoned".to_string())?;
 
                 let ps = get_or_create_peer_state(&mut map, &key_to);
                 let owner_generation = next_peer_generation(ps.generation);
@@ -1630,40 +1990,66 @@ pub mod openssl_impl {
                 };
                 let stream = TokioSslStream::new(ssl, conn).map_err(|e| e.to_string())?;
                 let s_arc = Arc::new(Mutex::new(stream));
-                let writer = PeerWriter::from_direct(self.dtls_async_runtime.clone(), s_arc.clone());
+                let writer =
+                    PeerWriter::from_direct(self.dtls_async_runtime.clone(), s_arc.clone());
                 let worker_writer = writer.clone();
                 let peer_label = format!("send-{}", key_to);
                 let key_to2 = key_to.clone();
-                let peer_handle = spawn_peer_worker(&peer_label, &self.handle, move |cmd| {
-                    match cmd {
+                let peer_handle = spawn_peer_worker(
+                    &peer_label,
+                    &self.handle,
+                    move |cmd| match cmd {
                         PeerCmd::Send(payload) => {
-                            tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: {} bytes, locking writer", key_to2, payload.len());
+                            tracing::debug!(
+                                "[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: {} bytes, locking writer",
+                                key_to2,
+                                payload.len()
+                            );
                             if let Err(err) = worker_writer.send(&payload) {
-                                tracing::warn!("[DtlsOpenSsl:::send] peer worker write failed: {}; stopping worker to trigger reconnect", err);
+                                tracing::warn!(
+                                    "[DtlsOpenSsl:::send] peer worker write failed: {}; stopping worker to trigger reconnect",
+                                    err
+                                );
                                 return false;
                             }
-                            tracing::debug!("[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: done", key_to2);
+                            tracing::debug!(
+                                "[DtlsOpenSsl:::send] PeerCmd::Send to worker for {}: done",
+                                key_to2
+                            );
                             true
                         }
                         PeerCmd::Stop => false,
-                    }
-                })?;
+                    },
+                )?;
 
-                tracing::debug!("[DtlsOpenSsl:::send] on {:?}, initialize/update peer state with stream and is_connecting_peer=true for {}", mux.local_addr(), to);
+                tracing::debug!(
+                    "[DtlsOpenSsl:::send] on {:?}, initialize/update peer state with stream and is_connecting_peer=true for {}",
+                    mux.local_addr(),
+                    to
+                );
                 ps.writer = Some(writer);
                 ps.issuer.clear();
                 ps.peer_handle = Some(peer_handle.clone());
                 ps.is_connecting_peer = true;
                 ps.is_announced_client_cert_peer = false;
                 ps.handshake_logged = false;
-                tracing::debug!("[DtlsOpenSsl:::send] assigned generation {} for {}", owner_generation, to);
+                tracing::debug!(
+                    "[DtlsOpenSsl:::send] assigned generation {} for {}",
+                    owner_generation,
+                    to
+                );
 
                 (s_arc, peer_handle, owner_generation)
             };
 
-            let mut stream = stream_arc.lock().map_err(|_| "newly created stream lock poisoned".to_string())?;
+            let mut stream = stream_arc
+                .lock()
+                .map_err(|_| "newly created stream lock poisoned".to_string())?;
 
-            tracing::info!("[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with 10s deadline", to);
+            tracing::info!(
+                "[DtlsOpenSsl:::send] starting DTLS connect/handshake to {} with 10s deadline",
+                to
+            );
             use std::time::Instant;
             let start = Instant::now();
             let runtime = self.dtls_async_runtime.clone();
@@ -1679,23 +2065,37 @@ pub mod openssl_impl {
                 Ok(Ok(())) => {
                     let ms = start.elapsed().as_millis();
                     let ssl = stream.ssl();
-                    let selected = ssl.current_cipher().map(|c| c.name().to_string()).unwrap_or_else(|| "none".to_string());
-                    let our_ciphers = "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
+                    let selected = ssl
+                        .current_cipher()
+                        .map(|c| c.name().to_string())
+                        .unwrap_or_else(|| "none".to_string());
+                    let our_ciphers =
+                        "DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!MD5:!SDK:!ADH:!DSS:!PSK:!SRP:!RC4";
                     if let Ok(mut m) = self.peer_states.lock()
-                        && let Some(ps) = m.get_mut(&key_to) {
-                            if ps.generation != owner_generation {
-                                tracing::debug!(
-                                    "[DtlsOpenSsl:::send] skip handshake_logged update for {} due to generation mismatch (owner={}, current={})",
-                                    to,
-                                    owner_generation,
-                                    ps.generation
-                                );
-                            } else {
-                                ps.handshake_logged = true;
-                            }
+                        && let Some(ps) = m.get_mut(&key_to)
+                    {
+                        if ps.generation != owner_generation {
+                            tracing::debug!(
+                                "[DtlsOpenSsl:::send] skip handshake_logged update for {} due to generation mismatch (owner={}, current={})",
+                                to,
+                                owner_generation,
+                                ps.generation
+                            );
+                        } else {
+                            ps.handshake_logged = true;
                         }
-                    tracing::info!("[DTLS][handshake {}] completed (client). Selected: {}. Our available: {}", to, selected, our_ciphers);
-                    tracing::info!("[DtlsOpenSsl:::send] first packet sent and handshake completed to {} in {}ms", to, ms);
+                    }
+                    tracing::info!(
+                        "[DTLS][handshake {}] completed (client). Selected: {}. Our available: {}",
+                        to,
+                        selected,
+                        our_ciphers
+                    );
+                    tracing::info!(
+                        "[DtlsOpenSsl:::send] first packet sent and handshake completed to {} in {}ms",
+                        to,
+                        ms
+                    );
                 }
                 Ok(Err(err)) => {
                     if let Ok(mut m) = self.peer_states.lock() {
@@ -1704,7 +2104,9 @@ pub mod openssl_impl {
                             to,
                             owner_generation
                         );
-                        if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_to, owner_generation) {
+                        if let Some(peer_state) =
+                            take_peer_state_if_owner(&mut m, &key_to, owner_generation)
+                        {
                             close_peer_state(peer_state);
                         } else {
                             tracing::debug!(
@@ -1713,7 +2115,11 @@ pub mod openssl_impl {
                             );
                         }
                     }
-                    tracing::warn!("[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}", to, err);
+                    tracing::warn!(
+                        "[DtlsOpenSsl:::send] connect/write FAILURE to {}: {}",
+                        to,
+                        err
+                    );
                     return Err(format!("dtls client write failed: {}", err));
                 }
                 Err(_) => {
@@ -1723,7 +2129,9 @@ pub mod openssl_impl {
                             to,
                             owner_generation
                         );
-                        if let Some(peer_state) = take_peer_state_if_owner(&mut m, &key_to, owner_generation) {
+                        if let Some(peer_state) =
+                            take_peer_state_if_owner(&mut m, &key_to, owner_generation)
+                        {
                             close_peer_state(peer_state);
                         } else {
                             tracing::debug!(
@@ -1732,13 +2140,18 @@ pub mod openssl_impl {
                             );
                         }
                     }
-                    tracing::warn!("[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms", to, start.elapsed().as_millis());
+                    tracing::warn!(
+                        "[DtlsOpenSsl:::send] connect/write timeout to {} after {}ms",
+                        to,
+                        start.elapsed().as_millis()
+                    );
                     return Err("dtls client connect timeout".to_string());
                 }
             }
             // Connected new DTLS stream
             tracing::info!("[DtlsOpenSsl:::send] connected new DTLS stream to {}", to);
-            #[allow(unused)] {}
+            #[allow(unused)]
+            {}
 
             // Immediately invoke peer certificate handler on the client side with the server's certificate
             // (while we still hold the `stream` guard, before splitting the stream).
@@ -1752,17 +2165,34 @@ pub mod openssl_impl {
                                 let len = chain.len();
                                 if len >= 1
                                     && let Some(last) = chain.get(len - 1)
-                                        && let Ok(pem) = last.to_pem() { peer_ca_pem = Some(pem); }
+                                    && let Ok(pem) = last.to_pem()
+                                {
+                                    peer_ca_pem = Some(pem);
+                                }
                             }
                             let ca_len = peer_ca_pem.as_ref().map(|v| v.len()).unwrap_or(0);
-                            tracing::debug!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{:?} -> {}] cert_len={} ca_len={} (from peer chain)", mux.local_addr(), to, cert_pem.len(), ca_len);
-                            #[allow(unused)] {}
+                            tracing::debug!(
+                                "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{:?} -> {}] cert_len={} ca_len={} (from peer chain)",
+                                mux.local_addr(),
+                                to,
+                                cert_pem.len(),
+                                ca_len
+                            );
+                            #[allow(unused)]
+                            {}
                             if let Some(ca) = peer_ca_pem.as_ref() {
                                 match h(&cert_pem, ca) {
                                     Ok(issuer) if !issuer.is_empty() => {
                                         // Convert issuer (subject CN) to id by trimming the trailing ISSUER_SUFFIX
-                                        let id = issuer.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-                                        tracing::debug!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] issuer={} id={}", to, issuer, id);
+                                        let id = issuer
+                                            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                                            .to_string();
+                                        tracing::debug!(
+                                            "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] issuer={} id={}",
+                                            to,
+                                            issuer,
+                                            id
+                                        );
                                         let peers = &self.peer_states;
                                         let _ = peers.lock().map(|mut m| {
                                             if let Some(ps) = m.get_mut(&key_to)
@@ -1773,27 +2203,49 @@ pub mod openssl_impl {
                                         });
                                     }
                                     Ok(_) => {
-                                        tracing::warn!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated", to);
-                                        #[allow(unused)] {}
+                                        tracing::warn!(
+                                            "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] empty issuer returned; will defer app data delivery until validated",
+                                            to
+                                        );
+                                        #[allow(unused)]
+                                        {}
                                     }
                                     Err(e) => {
-                                        tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] handler error: {}", to, e);
-                                        #[allow(unused)] {}
+                                        tracing::error!(
+                                            "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] handler error: {}",
+                                            to,
+                                            e
+                                        );
+                                        #[allow(unused)]
+                                        {}
                                     }
                                 }
                             } else {
-                                tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation", to);
-                                #[allow(unused)] {}
+                                tracing::error!(
+                                    "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no peer CA certificate in chain; skipping handler invocation",
+                                    to
+                                );
+                                #[allow(unused)]
+                                {}
                             }
                         }
                         Err(e) => {
-                            tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] to_pem failed: {}", to, e);
-                            #[allow(unused)] {}
+                            tracing::error!(
+                                "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] to_pem failed: {}",
+                                to,
+                                e
+                            );
+                            #[allow(unused)]
+                            {}
                         }
                     }
                 } else {
-                    tracing::error!("[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no server certificate available", to);
-                    #[allow(unused)] {}
+                    tracing::error!(
+                        "[DtlsOpenSsl::][peer_cert_handler][client/post-connect][{}] no server certificate available",
+                        to
+                    );
+                    #[allow(unused)]
+                    {}
                     return Err("no peer certificate presented".to_string());
                 }
             }
@@ -1806,22 +2258,33 @@ pub mod openssl_impl {
                     let peers = &self.peer_states;
                     let _ = peers.lock().map(|mut m| {
                         if let Some(ps) = m.get_mut(&key_to)
-                            && !ps.is_announced_client_cert_peer {
-                                ps.is_announced_client_cert_peer = true;
-                                should_send = true;
-                            }
+                            && !ps.is_announced_client_cert_peer
+                        {
+                            ps.is_announced_client_cert_peer = true;
+                            should_send = true;
+                        }
                     });
                 }
                 if should_send {
                     let ca_pem = self.ca_cert.as_deref().unwrap_or(&[]);
-                    let mut msg = Vec::with_capacity(CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len());
+                    let mut msg = Vec::with_capacity(
+                        CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len(),
+                    );
                     msg.extend_from_slice(CERT_ANNOUNCE_PREFIX);
                     msg.extend_from_slice(cert_pem);
                     // Separate with a newline if the cert block doesn't already end with one
-                    if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) { msg.push(b'\n'); }
+                    if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) {
+                        msg.push(b'\n');
+                    }
                     msg.extend_from_slice(ca_pem);
-                    tracing::debug!("[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})", to, cert_pem.len(), ca_pem.len());
-                    #[allow(unused)] {}
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})",
+                        to,
+                        cert_pem.len(),
+                        ca_pem.len()
+                    );
+                    #[allow(unused)]
+                    {}
                     let _ = stream.write_all(&msg);
                 }
             }
@@ -1834,14 +2297,18 @@ pub mod openssl_impl {
             drop(stream);
             if let Ok(m) = self.peer_states.lock()
                 && let Some(ps) = m.get(&key_to)
-                    && let Some(w) = &ps.writer {
-                        let (dead_tx, _dead_rx) = mpsc::channel::<Vec<u8>>();
-                        let _ = w.switch_to_channel(dead_tx);
-                    }
+                && let Some(w) = &ps.writer
+            {
+                let (dead_tx, _dead_rx) = mpsc::channel::<Vec<u8>>();
+                let _ = w.switch_to_channel(dead_tx);
+            }
 
             // Now the only remaining owner is `stream_arc` itself; unwrap and split.
             let inner_stream = Arc::try_unwrap(stream_arc)
-                .map_err(|_| "stream_arc still has other owners after clearing Direct variant; cannot split".to_string())?
+                .map_err(|_| {
+                    "stream_arc still has other owners after clearing Direct variant; cannot split"
+                        .to_string()
+                })?
                 .into_inner()
                 .map_err(|_| "stream mutex poisoned".to_string())?;
             let (read_half, write_half) = tokio::io::split(inner_stream);
@@ -1855,18 +2322,19 @@ pub mod openssl_impl {
 
             // Switch the PeerWriter to the real channel (replacing the temporary dead channel).
             if let Ok(mut m) = self.peer_states.lock()
-                && let Some(ps) = m.get_mut(&key_to) {
-                    if ps.generation != owner_generation {
-                        tracing::debug!(
-                            "[DtlsOpenSsl:::send] skip writer channel install for {} due to generation mismatch (owner={}, current={})",
-                            to,
-                            owner_generation,
-                            ps.generation
-                        );
-                    } else if let Some(w) = &ps.writer {
-                        let _ = w.switch_to_channel(writer_tx.clone());
-                    }
+                && let Some(ps) = m.get_mut(&key_to)
+            {
+                if ps.generation != owner_generation {
+                    tracing::debug!(
+                        "[DtlsOpenSsl:::send] skip writer channel install for {} due to generation mismatch (owner={}, current={})",
+                        to,
+                        owner_generation,
+                        ps.generation
+                    );
+                } else if let Some(w) = &ps.writer {
+                    let _ = w.switch_to_channel(writer_tx.clone());
                 }
+            }
 
             // Also install/update the writer for this peer in the unified peer_states map.
             {
@@ -1912,8 +2380,12 @@ pub mod openssl_impl {
             Ok(())
         }
 
-        fn get_handle_message(&self) -> Option<HandleMessage> { self.handle_message.clone() }
-        fn set_handle_message(&mut self, handler: Option<HandleMessage>) { self.handle_message = handler; }
+        fn get_handle_message(&self) -> Option<HandleMessage> {
+            self.handle_message.clone()
+        }
+        fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
+            self.handle_message = handler;
+        }
         fn with_handle_message(mut self, handler: HandleMessage) -> Self {
             self.handle_message = Some(handler);
             self
@@ -1923,43 +2395,67 @@ pub mod openssl_impl {
             self.handle_new_session = handler;
         }
 
-        fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { self.handle_peer_certificate }
-        fn set_handle_peer_certificate(&mut self, handler: Option<HandlePeerCertificate>) { self.handle_peer_certificate = handler; }
+        fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+            self.handle_peer_certificate
+        }
+        fn set_handle_peer_certificate(&mut self, handler: Option<HandlePeerCertificate>) {
+            self.handle_peer_certificate = handler;
+        }
         fn with_handle_peer_certificate(mut self, handler: HandlePeerCertificate) -> Self {
             self.handle_peer_certificate = Some(handler);
             self
         }
 
-        fn get_ca_cert(&self) -> Option<&[u8]> { self.ca_cert.as_deref() }
-        fn set_ca_cert(&mut self, pem: Option<Vec<u8>>) { self.ca_cert = pem; }
+        fn get_ca_cert(&self) -> Option<&[u8]> {
+            self.ca_cert.as_deref()
+        }
+        fn set_ca_cert(&mut self, pem: Option<Vec<u8>>) {
+            self.ca_cert = pem;
+        }
         fn with_ca_cert(mut self, pem: Vec<u8>) -> Self {
             self.ca_cert = Some(pem);
             self
         }
 
-        fn get_client_cert(&self) -> Option<&[u8]> { self.client_cert.as_deref() }
-        fn set_client_cert(&mut self, pem: Option<Vec<u8>>) { self.client_cert = pem; }
+        fn get_client_cert(&self) -> Option<&[u8]> {
+            self.client_cert.as_deref()
+        }
+        fn set_client_cert(&mut self, pem: Option<Vec<u8>>) {
+            self.client_cert = pem;
+        }
         fn with_client_cert(mut self, pem: Vec<u8>) -> Self {
             self.client_cert = Some(pem);
             self
         }
 
-        fn get_client_private_key(&self) -> Option<&[u8]> { self.client_private_key.as_deref() }
-        fn set_client_private_key(&mut self, pem: Option<Vec<u8>>) { self.client_private_key = pem; }
+        fn get_client_private_key(&self) -> Option<&[u8]> {
+            self.client_private_key.as_deref()
+        }
+        fn set_client_private_key(&mut self, pem: Option<Vec<u8>>) {
+            self.client_private_key = pem;
+        }
         fn with_client_private_key(mut self, pem: Vec<u8>) -> Self {
             self.client_private_key = Some(pem);
             self
         }
 
-        fn get_server_signing_cert(&self) -> Option<&[u8]> { self.server_signing_cert.as_deref() }
-        fn set_server_signing_cert(&mut self, pem: Option<Vec<u8>>) { self.server_signing_cert = pem; }
+        fn get_server_signing_cert(&self) -> Option<&[u8]> {
+            self.server_signing_cert.as_deref()
+        }
+        fn set_server_signing_cert(&mut self, pem: Option<Vec<u8>>) {
+            self.server_signing_cert = pem;
+        }
         fn with_server_signing_cert(mut self, pem: Vec<u8>) -> Self {
             self.server_signing_cert = Some(pem);
             self
         }
 
-        fn get_server_signing_private_key(&self) -> Option<&[u8]> { self.server_signing_private_key.as_deref() }
-        fn set_server_signing_private_key(&mut self, pem: Option<Vec<u8>>) { self.server_signing_private_key = pem; }
+        fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+            self.server_signing_private_key.as_deref()
+        }
+        fn set_server_signing_private_key(&mut self, pem: Option<Vec<u8>>) {
+            self.server_signing_private_key = pem;
+        }
         fn with_server_signing_private_key(mut self, pem: Vec<u8>) -> Self {
             self.server_signing_private_key = Some(pem);
             self
@@ -1970,7 +2466,9 @@ pub mod openssl_impl {
             if self.dangerous_debug {
                 self.app_layer_only_verification = enabled;
             } else if enabled {
-                tracing::error!("[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring");
+                tracing::error!(
+                    "[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring"
+                );
             }
         }
 
@@ -1978,21 +2476,27 @@ pub mod openssl_impl {
             if self.dangerous_debug {
                 self.app_layer_only_verification = enabled;
             } else if enabled {
-                tracing::error!("[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring");
+                tracing::error!(
+                    "[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring"
+                );
             }
             self
         }
 
         fn set_dangerous_debug(&mut self, enabled: bool) {
             if enabled {
-                tracing::error!("[DtlsOpenSsl][set_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
+                tracing::error!(
+                    "[DtlsOpenSsl][set_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED"
+                );
             }
             self.dangerous_debug = enabled;
         }
 
         fn with_dangerous_debug(mut self, enabled: bool) -> Self {
             if enabled {
-                tracing::error!("[DtlsOpenSsl][with_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED");
+                tracing::error!(
+                    "[DtlsOpenSsl][with_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED"
+                );
             }
             self.dangerous_debug = enabled;
             self
@@ -2002,7 +2506,9 @@ pub mod openssl_impl {
             if self.dangerous_debug {
                 self.null_encryption = enabled;
             } else if enabled {
-                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+                tracing::error!(
+                    "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
+                );
             }
         }
 
@@ -2010,7 +2516,9 @@ pub mod openssl_impl {
             if self.dangerous_debug {
                 self.null_encryption = enabled;
             } else if enabled {
-                tracing::error!("[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring");
+                tracing::error!(
+                    "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
+                );
             }
             self
         }
@@ -2034,6 +2542,3 @@ pub mod openssl_impl {
         }
     }
 }
-
-
-

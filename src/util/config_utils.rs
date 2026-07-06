@@ -1,7 +1,7 @@
+use crate::algo_ops::AlgoChainConfig;
+use serde::Deserialize;
 use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};
-use serde::Deserialize;
-use crate::algo_ops::AlgoChainConfig;
 
 /// Parse a decimal ALGOs string into microAlgos (u64).
 /// Accepts forms like "1", "0.5", "1.234567"; up to 6 fractional digits.
@@ -22,7 +22,10 @@ pub fn parse_algos_decimal_to_microalgos(s: &str) -> Result<u64, String> {
     let whole_str = parts[0];
     let frac_str = if parts.len() == 2 { parts[1] } else { "" };
     if frac_str.len() > 6 {
-        return Err(format!("invalid price '{}': more than 6 fractional digits", s));
+        return Err(format!(
+            "invalid price '{}': more than 6 fractional digits",
+            s
+        ));
     }
     // Parse digits only
     if !whole_str.chars().all(|c| c.is_ascii_digit()) {
@@ -31,11 +34,25 @@ pub fn parse_algos_decimal_to_microalgos(s: &str) -> Result<u64, String> {
     if !frac_str.chars().all(|c| c.is_ascii_digit()) {
         return Err(format!("invalid price '{}': non-digit characters", s));
     }
-    let whole: u128 = if whole_str.is_empty() { 0 } else { whole_str.parse().map_err(|e| format!("invalid price '{}': {}", s, e))? };
+    let whole: u128 = if whole_str.is_empty() {
+        0
+    } else {
+        whole_str
+            .parse()
+            .map_err(|e| format!("invalid price '{}': {}", s, e))?
+    };
     // Pad fractional to 6 digits
     let mut frac_padded = String::from(frac_str);
-    while frac_padded.len() < 6 { frac_padded.push('0'); }
-    let frac: u128 = if frac_padded.is_empty() { 0 } else { frac_padded[..6].parse().map_err(|e| format!("invalid price '{}': {}", s, e))? };
+    while frac_padded.len() < 6 {
+        frac_padded.push('0');
+    }
+    let frac: u128 = if frac_padded.is_empty() {
+        0
+    } else {
+        frac_padded[..6]
+            .parse()
+            .map_err(|e| format!("invalid price '{}': {}", s, e))?
+    };
     let micro: u128 = whole
         .checked_mul(1_000_000u128)
         .and_then(|v| v.checked_add(frac))
@@ -68,25 +85,27 @@ pub fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
     let mut addrs = Vec::new();
     for part in cleaned.split(|c: char| c == ',' || c.is_whitespace()) {
         let p = part.trim();
-        if p.is_empty() { continue; }
+        if p.is_empty() {
+            continue;
+        }
         // Try direct SocketAddr parse first, filtering for IPv4
         let direct_parsed = p.parse::<SocketAddr>().ok();
-        
+
         // If it parsed as IPv6 directly, we skip it (as requested: "only take the first IPV4 address")
         // NOTE: The requirement says "only take the first IPV4 address" for each entry.
         // If an entry is explicitly IPv6, we should ignore it rather than erroring
         // if we want to be robust, OR error if it's invalid.
         // Given the requirement "only take the first IPV4 address", if we find an IPv6 we should look for IPv4.
-        
+
         let parsed = direct_parsed
             .filter(|addr| addr.is_ipv4())
             // Fallback to DNS resolution via ToSocketAddrs for host:port strings
             .or_else(|| {
-                p.to_socket_addrs().ok().and_then(|it| {
-                    it.filter(|addr| addr.is_ipv4()).next()
-                })
+                p.to_socket_addrs()
+                    .ok()
+                    .and_then(|it| it.filter(|addr| addr.is_ipv4()).next())
             });
-            
+
         if let Some(addr) = parsed {
             addrs.push(addr);
         } else if direct_parsed.is_some() {
@@ -94,7 +113,10 @@ pub fn parse_stun_list(s: &str) -> Result<Vec<SocketAddr>, String> {
             tracing::warn!("Ignoring unsupported IPv6 STUN server entry '{}'", p);
             continue;
         } else {
-            return Err(format!("Invalid STUN server entry '{}': must be <host:port> or <ip:port>", p));
+            return Err(format!(
+                "Invalid STUN server entry '{}': must be <host:port> or <ip:port>",
+                p
+            ));
         }
     }
     if addrs.is_empty() {
@@ -124,7 +146,9 @@ struct NodeFile {
     asset_id: Option<u64>,
 }
 
-pub fn parse_node_file_with_ids(path: &str) -> Result<(Option<String>, AlgoChainConfig, Option<u64>, Option<u64>), String> {
+pub fn parse_node_file_with_ids(
+    path: &str,
+) -> Result<(Option<String>, AlgoChainConfig, Option<u64>, Option<u64>), String> {
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "<unknown>".to_string());
@@ -159,16 +183,27 @@ pub fn resolve_app_asset_ids(
         return Err("--app-id provided but node file also contains app_id; remove one".to_string());
     }
     if node_asset_id.is_some() && cli_asset_id.is_some() {
-        return Err("--asset-id provided but node file also contains asset_id; remove one".to_string());
+        return Err(
+            "--asset-id provided but node file also contains asset_id; remove one".to_string(),
+        );
     }
 
-    let env_app = std::env::var("APP_ID").ok().and_then(|s| s.parse::<u64>().ok());
-    let env_asset = std::env::var("ASSET_ID").ok().and_then(|s| s.parse::<u64>().ok());
+    let env_app = std::env::var("APP_ID")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok());
+    let env_asset = std::env::var("ASSET_ID")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok());
 
-    let final_app = node_app_id.or(cli_app_id).or(env_app)
-        .ok_or_else(|| "Missing app_id: provide in node file, via --app-id, or set APP_ID".to_string())?;
-    let final_asset = node_asset_id.or(cli_asset_id).or(env_asset)
-        .ok_or_else(|| "Missing asset_id: provide in node file, via --asset-id, or set ASSET_ID".to_string())?;
+    let final_app = node_app_id.or(cli_app_id).or(env_app).ok_or_else(|| {
+        "Missing app_id: provide in node file, via --app-id, or set APP_ID".to_string()
+    })?;
+    let final_asset = node_asset_id
+        .or(cli_asset_id)
+        .or(env_asset)
+        .ok_or_else(|| {
+            "Missing asset_id: provide in node file, via --asset-id, or set ASSET_ID".to_string()
+        })?;
 
     Ok((final_app, final_asset))
 }

@@ -5,14 +5,21 @@ use rust_comms::api::bingle_api::BingleApiBoth;
 /// Delegating trait: mirrors `rust_comms::api::bingle_api::BingleApi` but provides defaults,
 /// so test mocks can override only the methods they care about.
 pub trait InnerBingleApi {
-    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> { Vec::new() }
+    fn list_all_relays(
+        &self,
+        _include_self: bool,
+    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+        Vec::new()
+    }
     fn set_on_listening(
         &self,
         _handler: Option<std::sync::Arc<rust_comms::api::bingle_api::OnListeningHandler>>,
     ) {
     }
 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
+    fn get_algo_provider_config(
+        &self,
+    ) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
         None
     }
 
@@ -34,7 +41,10 @@ pub trait InnerBingleApi {
         None
     }
 
-    fn start(&self, _options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+    fn start(
+        &self,
+        _options: &rust_comms::api::bingle_api::StartOptions,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         Ok(())
     }
 
@@ -42,11 +52,18 @@ pub trait InnerBingleApi {
 
     fn network_change(&self) {}
 
-    fn handle_lookup(&self, _handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, rust_comms::api::bingle_api::BingleError> {
+    fn handle_lookup(
+        &self,
+        _handle: &rust_comms::api::bingle_api::Handle,
+    ) -> Result<Option<rust_comms::api::bingle_api::UserId>, rust_comms::api::bingle_api::BingleError>
+    {
         Ok(None)
     }
 
-    fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+    fn handle_lookup_by_id(
+        &self,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+    ) -> Option<rust_comms::api::bingle_api::Handle> {
         None
     }
 
@@ -106,9 +123,11 @@ pub trait InnerBingleApi {
         Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
-    fn set_on_message(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {
+    }
 
-    fn set_on_connect(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {
+    }
 
     fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
         None
@@ -135,9 +154,7 @@ impl MockApiBoth {
         }
     }
 
-    pub fn new_with_api_override(
-        inner_bingle_api: Arc<dyn InnerBingleApi + Send + Sync>,
-    ) -> Self {
+    pub fn new_with_api_override(inner_bingle_api: Arc<dyn InnerBingleApi + Send + Sync>) -> Self {
         struct DefaultInternal;
         impl InnerBingleApiInternal for DefaultInternal {}
 
@@ -171,7 +188,10 @@ impl MockApiBoth {
 }
 
 impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
-    fn list_all_relays(&self, include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    fn list_all_relays(
+        &self,
+        include_self: bool,
+    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
         self.inner_bingle_api.list_all_relays(include_self)
     }
     fn set_on_listening(
@@ -181,9 +201,10 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.set_on_listening(handler);
     }
 
-    fn get_algo_provider_config(&self) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
-        self.inner_bingle_api
-            .get_algo_provider_config()
+    fn get_algo_provider_config(
+        &self,
+    ) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
+        self.inner_bingle_api.get_algo_provider_config()
     }
 
     fn get_handle(&self) -> Option<String> {
@@ -206,7 +227,10 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.get_app_id()
     }
 
-    fn start(&mut self, options: &rust_comms::api::bingle_api::StartOptions) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+    fn start(
+        &mut self,
+        options: &rust_comms::api::bingle_api::StartOptions,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         self.inner_bingle_api.start(options)
     }
 
@@ -218,11 +242,18 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.network_change();
     }
 
-    fn handle_lookup(&self, handle: &rust_comms::api::bingle_api::Handle) -> Result<Option<rust_comms::api::bingle_api::UserId>, rust_comms::api::bingle_api::BingleError> {
+    fn handle_lookup(
+        &self,
+        handle: &rust_comms::api::bingle_api::Handle,
+    ) -> Result<Option<rust_comms::api::bingle_api::UserId>, rust_comms::api::bingle_api::BingleError>
+    {
         self.inner_bingle_api.handle_lookup(handle)
     }
 
-    fn handle_lookup_by_id(&self, user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+    fn handle_lookup_by_id(
+        &self,
+        user_id: &rust_comms::api::bingle_api::UserId,
+    ) -> Option<rust_comms::api::bingle_api::Handle> {
         self.inner_bingle_api.handle_lookup_by_id(user_id)
     }
 
@@ -232,7 +263,8 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
     ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api.send_message_to_id(user_id, message, progress)
+        self.inner_bingle_api
+            .send_message_to_id(user_id, message, progress)
     }
 
     fn send_message_to_handle(
@@ -241,7 +273,8 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
     ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api.send_message_to_handle(handle, message, progress)
+        self.inner_bingle_api
+            .send_message_to_handle(handle, message, progress)
     }
 
     fn send_message_to_network(
@@ -251,8 +284,12 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
     ) -> Result<bool, rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api
-            .send_message_to_network(network_source_key, user_id, message, progress)
+        self.inner_bingle_api.send_message_to_network(
+            network_source_key,
+            user_id,
+            message,
+            progress,
+        )
     }
 
     fn send_message_to_id_with_response(
@@ -282,15 +319,25 @@ impl rust_comms::api::bingle_api::BingleApi for MockApiBoth {
         message: serde_json::Value,
         progress: Option<Arc<rust_comms::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api
-            .send_message_to_network_with_response(network_source_key, user_id, message, progress)
+        self.inner_bingle_api.send_message_to_network_with_response(
+            network_source_key,
+            user_id,
+            message,
+            progress,
+        )
     }
 
-    fn set_on_message(&mut self, handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>) {
+    fn set_on_message(
+        &mut self,
+        handler: Option<Arc<rust_comms::api::bingle_api::OnMessageHandler>>,
+    ) {
         self.inner_bingle_api.set_on_message(handler);
     }
 
-    fn set_on_connect(&mut self, handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>) {
+    fn set_on_connect(
+        &mut self,
+        handler: Option<Arc<rust_comms::api::bingle_api::OnConnectHandler>>,
+    ) {
         self.inner_bingle_api.set_on_connect(handler);
     }
 }
@@ -316,19 +363,38 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.get_last_public_addr()
     }
 
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api_internal.ddb_register_ip(endpoint, am_relay)
+    fn ddb_register_ip(
+        &self,
+        endpoint: std::net::SocketAddr,
+        am_relay: bool,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        self.inner_bingle_api_internal
+            .ddb_register_ip(endpoint, am_relay)
     }
 
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api_internal.ddb_register_relay(relay_id, relay_sig)
+    fn ddb_register_relay(
+        &self,
+        relay_id: String,
+        relay_sig: Option<String>,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        self.inner_bingle_api_internal
+            .ddb_register_relay(relay_id, relay_sig)
     }
 
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), rust_comms::api::bingle_api::BingleError> {
-        self.inner_bingle_api_internal.update_turn_listener_relay(relay_id, relay_addr)
+    fn update_turn_listener_relay(
+        &self,
+        relay_id: String,
+        relay_addr: std::net::SocketAddr,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+        self.inner_bingle_api_internal
+            .update_turn_listener_relay(relay_id, relay_addr)
     }
 
-    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) {
+    fn turn_client_handle_listen_response(
+        &self,
+        relay_addr: std::net::SocketAddr,
+        relay_id: String,
+    ) {
         self.inner_bingle_api_internal
             .turn_client_handle_listen_response(relay_addr, relay_id);
     }
@@ -337,20 +403,35 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.turn_lookup_addr_by_id(id)
     }
 
-    fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 {
-        self.inner_bingle_api_internal.turn_handle_call(source_id, dest_id, source, dest)
+    fn turn_handle_call(
+        &self,
+        source_id: String,
+        dest_id: String,
+        source: std::net::SocketAddr,
+        dest: std::net::SocketAddr,
+    ) -> i32 {
+        self.inner_bingle_api_internal
+            .turn_handle_call(source_id, dest_id, source, dest)
     }
 
     fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
-        self.inner_bingle_api_internal.turn_handle_listen(id, source)
+        self.inner_bingle_api_internal
+            .turn_handle_listen(id, source)
     }
 
-    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) {
-        self.inner_bingle_api_internal.turn_handle_called(source, dest, channel);
+    fn turn_handle_called(
+        &self,
+        source: std::net::SocketAddr,
+        dest: std::net::SocketAddr,
+        channel: u16,
+    ) {
+        self.inner_bingle_api_internal
+            .turn_handle_called(source, dest, channel);
     }
 
     fn notify_listening(&self, listening: bool, nat_type: rust_comms::engine::NatType) {
-        self.inner_bingle_api_internal.notify_listening(listening, nat_type);
+        self.inner_bingle_api_internal
+            .notify_listening(listening, nat_type);
     }
 
     fn set_relay_state(&self, state: rust_comms::engine::RelayState) {
@@ -370,11 +451,13 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
     }
 
     fn relay_finder_remove_relay(&self, relay_id: &str) {
-        self.inner_bingle_api_internal.relay_finder_remove_relay(relay_id);
+        self.inner_bingle_api_internal
+            .relay_finder_remove_relay(relay_id);
     }
 
     fn relay_finder_clear_state_cache(&self) {
-        self.inner_bingle_api_internal.relay_finder_clear_state_cache();
+        self.inner_bingle_api_internal
+            .relay_finder_clear_state_cache();
     }
 
     fn ddb_backend_size(&self) -> usize {
@@ -397,12 +480,20 @@ impl rust_comms::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.reset_signon_complete();
     }
 
-    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn rust_comms::ddb::DdbBackend) {
-        self.inner_bingle_api_internal.ripple_message(message, originator_id, ddb_backend);
+    fn ripple_message(
+        &self,
+        message: serde_json::Value,
+        originator_id: String,
+        ddb_backend: &dyn rust_comms::ddb::DdbBackend,
+    ) {
+        self.inner_bingle_api_internal
+            .ripple_message(message, originator_id, ddb_backend);
     }
 
     fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
-        self.inner_bingle_api_internal.get_signing_key().or_else(|| self.inner_bingle_api.get_signing_key())
+        self.inner_bingle_api_internal
+            .get_signing_key()
+            .or_else(|| self.inner_bingle_api.get_signing_key())
     }
 }
 
@@ -425,25 +516,48 @@ pub trait InnerBingleApiInternal {
         None
     }
 
-    fn ddb_register_ip(&self, _endpoint: std::net::SocketAddr, _am_relay: bool) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+    fn ddb_register_ip(
+        &self,
+        _endpoint: std::net::SocketAddr,
+        _am_relay: bool,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
-    fn ddb_register_relay(&self, _relay_id: String, _relay_sig: Option<String>) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+    fn ddb_register_relay(
+        &self,
+        _relay_id: String,
+        _relay_sig: Option<String>,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
-    fn update_turn_listener_relay(&self, _relay_id: String, _relay_addr: std::net::SocketAddr) -> Result<(), rust_comms::api::bingle_api::BingleError> {
+    fn update_turn_listener_relay(
+        &self,
+        _relay_id: String,
+        _relay_addr: std::net::SocketAddr,
+    ) -> Result<(), rust_comms::api::bingle_api::BingleError> {
         Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
     }
 
-    fn turn_client_handle_listen_response(&self, _relay_addr: std::net::SocketAddr, _relay_id: String) {}
+    fn turn_client_handle_listen_response(
+        &self,
+        _relay_addr: std::net::SocketAddr,
+        _relay_id: String,
+    ) {
+    }
 
     fn turn_lookup_addr_by_id(&self, _id: String) -> Option<std::net::SocketAddr> {
         None
     }
 
-    fn turn_handle_call(&self, _source_id: String, _dest_id: String, _source: std::net::SocketAddr, _dest: std::net::SocketAddr) -> i32 {
+    fn turn_handle_call(
+        &self,
+        _source_id: String,
+        _dest_id: String,
+        _source: std::net::SocketAddr,
+        _dest: std::net::SocketAddr,
+    ) -> i32 {
         -1
     }
 
@@ -451,7 +565,13 @@ pub trait InnerBingleApiInternal {
         false
     }
 
-    fn turn_handle_called(&self, _source: std::net::SocketAddr, _dest: std::net::SocketAddr, _channel: u16) {}
+    fn turn_handle_called(
+        &self,
+        _source: std::net::SocketAddr,
+        _dest: std::net::SocketAddr,
+        _channel: u16,
+    ) {
+    }
 
     fn notify_listening(&self, _listening: bool, _nat_type: rust_comms::engine::NatType) {}
 
@@ -483,7 +603,13 @@ pub trait InnerBingleApiInternal {
 
     fn reset_signon_complete(&self) {}
 
-    fn ripple_message(&self, _message: serde_json::Value, _originator_id: String, _ddb_backend: &dyn rust_comms::ddb::DdbBackend) {}
+    fn ripple_message(
+        &self,
+        _message: serde_json::Value,
+        _originator_id: String,
+        _ddb_backend: &dyn rust_comms::ddb::DdbBackend,
+    ) {
+    }
 
     fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
         None
@@ -492,7 +618,9 @@ pub trait InnerBingleApiInternal {
 
 /// Test helper: wrap a concrete `BingleApiBoth` into a leaked `Arc<Mutex<dyn BingleApiBoth>>` and return a `Weak`.
 /// This mirrors the helper used elsewhere in tests, but is scoped under `crate::util::reusable_mock_api`.
-pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::bingle_api::BingleApiBothType {
+pub fn to_weak_api_both<T: BingleApiBoth + 'static>(
+    api: T,
+) -> rust_comms::api::bingle_api::BingleApiBothType {
     let arc: Arc<dyn BingleApiBoth> = Arc::new(api);
     let weak = Arc::downgrade(&arc);
 
@@ -502,6 +630,8 @@ pub fn to_weak_api_both<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::
     weak
 }
 
-pub fn to_weak<T: BingleApiBoth + 'static>(api: T) -> rust_comms::api::bingle_api::BingleApiBothType {
+pub fn to_weak<T: BingleApiBoth + 'static>(
+    api: T,
+) -> rust_comms::api::bingle_api::BingleApiBothType {
     to_weak_api_both(api)
 }

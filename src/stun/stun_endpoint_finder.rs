@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-
 /// States of the endpoint discovery across STUN servers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StunState {

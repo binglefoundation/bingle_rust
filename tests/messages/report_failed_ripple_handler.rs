@@ -32,29 +32,42 @@ struct TrackingApi {
 }
 
 impl InnerBingleApi for TrackingApi {
-    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    fn list_all_relays(
+        &self,
+        _include_self: bool,
+    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
         if self.known_relay_id.is_empty() {
             return Vec::new();
         }
         let addr: std::net::SocketAddr = "127.0.0.1:5000".parse().expect("valid addr");
-        vec![crate::util::test_util::signed_root_relay(&self.known_relay_id, addr)]
+        vec![crate::util::test_util::signed_root_relay(
+            &self.known_relay_id,
+            addr,
+        )]
     }
 }
 
 impl InnerBingleApiInternal for TrackingApi {
     fn ddb_delete_record(&self, id: &str) {
-        self.ddb_deleted.lock().expect("lock ddb_deleted").push(id.to_string());
+        self.ddb_deleted
+            .lock()
+            .expect("lock ddb_deleted")
+            .push(id.to_string());
     }
 
     fn relay_finder_remove_relay(&self, relay_id: &str) {
-        self.relay_cache_removed.lock().expect("lock relay_cache_removed").push(relay_id.to_string());
+        self.relay_cache_removed
+            .lock()
+            .expect("lock relay_cache_removed")
+            .push(relay_id.to_string());
     }
 }
 
 fn router_with_api(api: Arc<TrackingApi>) -> Arc<Router> {
-    let weak = crate::util::mock_bingle_api::to_weak(
-        MockApiBoth::new_with_both_overrides(api.clone(), api.clone()),
-    );
+    let weak = crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_both_overrides(
+        api.clone(),
+        api.clone(),
+    ));
     let router = Arc::new(Router::new(weak));
     router.set_am_relay(true);
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
@@ -77,7 +90,8 @@ pub fn report_failed_ripple_ignored_when_not_relay() {
     }
 
     let panic_arc = Arc::new(PanicOnDelete);
-    let weak = crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(panic_arc));
+    let weak =
+        crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(panic_arc));
     let router = Arc::new(Router::new(weak));
     router.set_am_relay(false);
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
@@ -114,9 +128,17 @@ pub fn report_failed_ripple_ignored_when_sender_not_relay() {
     });
 
     let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
-    assert!(deleted.is_empty(), "ddb_delete_record must not be called when sender is not a relay");
-    let removed = relay_cache_removed.lock().expect("lock relay_cache_removed");
-    assert!(removed.is_empty(), "relay_finder_remove_relay must not be called when sender is not a relay");
+    assert!(
+        deleted.is_empty(),
+        "ddb_delete_record must not be called when sender is not a relay"
+    );
+    let removed = relay_cache_removed
+        .lock()
+        .expect("lock relay_cache_removed");
+    assert!(
+        removed.is_empty(),
+        "relay_finder_remove_relay must not be called when sender is not a relay"
+    );
 }
 
 // Test: valid ripple from a known relay -> mark_relay_as_failed called for failed_relay_id
@@ -145,7 +167,9 @@ pub fn report_failed_ripple_marks_failed_when_sender_is_relay() {
         deleted.contains(&FAILED_RELAY.to_string()),
         "ddb_delete_record should have been called for the failed relay"
     );
-    let removed = relay_cache_removed.lock().expect("lock relay_cache_removed");
+    let removed = relay_cache_removed
+        .lock()
+        .expect("lock relay_cache_removed");
     assert!(
         removed.contains(&FAILED_RELAY.to_string()),
         "relay_finder_remove_relay should have been called for the failed relay"

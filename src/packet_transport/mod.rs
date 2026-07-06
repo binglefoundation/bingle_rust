@@ -20,7 +20,9 @@ type AckKey = (NetworkEndpointKey, SessionGeneration, u16);
 type DeliveredKey = (NetworkEndpointKey, SessionGeneration, u16);
 
 pub type PacketTransportHandleMessage = Arc<
-    dyn Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) -> Result<Option<Vec<u8>>, String> + Send + Sync,
+    dyn Fn(&dyn Dtls, &NetworkEndpoint, &str, &[u8]) -> Result<Option<Vec<u8>>, String>
+        + Send
+        + Sync,
 >;
 
 pub trait PacketTransport {
@@ -183,10 +185,16 @@ impl DtlsReliablePacketTransport {
         next
     }
 
-    fn endpoint_key(endpoint: &NetworkEndpoint, context: &str) -> Result<NetworkEndpointKey, String> {
-        endpoint
-            .get_key()
-            .ok_or_else(|| format!("[DtlsReliablePacketTransport::{}] endpoint key unavailable", context))
+    fn endpoint_key(
+        endpoint: &NetworkEndpoint,
+        context: &str,
+    ) -> Result<NetworkEndpointKey, String> {
+        endpoint.get_key().ok_or_else(|| {
+            format!(
+                "[DtlsReliablePacketTransport::{}] endpoint key unavailable",
+                context
+            )
+        })
     }
 
     fn current_session_generation(
@@ -295,11 +303,7 @@ impl DtlsReliablePacketTransport {
         }
     }
 
-    fn send_ack_complete(
-        dtls: &dyn Dtls,
-        to: &NetworkEndpoint,
-        tx_id: u16,
-    ) -> Result<(), String> {
+    fn send_ack_complete(dtls: &dyn Dtls, to: &NetworkEndpoint, tx_id: u16) -> Result<(), String> {
         let ack = Self::build_header(PACKET_TYPE_ACK_COMPLETE, tx_id);
         dtls.send(to, &ack)
     }
@@ -417,12 +421,16 @@ impl DtlsReliablePacketTransport {
         packet: &[u8],
     ) -> Result<Option<Vec<u8>>, String> {
         let from_key = Self::endpoint_key(from, "dispatch_inbound_packet")?;
-        let from_generation =
-            Self::current_session_generation(endpoint_sessions, &from_key, "dispatch_inbound_packet")?;
+        let from_generation = Self::current_session_generation(
+            endpoint_sessions,
+            &from_key,
+            "dispatch_inbound_packet",
+        )?;
 
         match Self::parse_packet(packet) {
             None => {
-                if let Some(handler) = Self::get_handler(handle_message, "dispatch_inbound_packet") {
+                if let Some(handler) = Self::get_handler(handle_message, "dispatch_inbound_packet")
+                {
                     handler(dtls, from, issuer, packet)
                 } else {
                     tracing::warn!(
@@ -469,7 +477,8 @@ impl DtlsReliablePacketTransport {
                     return Ok(None);
                 }
 
-                if let Some(handler) = Self::get_handler(handle_message, "dispatch_inbound_packet") {
+                if let Some(handler) = Self::get_handler(handle_message, "dispatch_inbound_packet")
+                {
                     handler(dtls, from, issuer, payload)
                 } else {
                     tracing::warn!(
@@ -527,16 +536,17 @@ impl PacketTransport for DtlsReliablePacketTransport {
                         attempt
                     );
                     if attempt + 1 < delays.len()
-                        && let Err(e) = self.dtls.send(to, &packet) {
-                            if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
-                                tracing::warn!(
-                                    "[DtlsReliablePacketTransport::send] failed to clear pending ACK after retry send error for tx_id={}: {}",
-                                    tx_id,
-                                    cleanup_err
-                                );
-                            }
-                            return Err(e);
+                        && let Err(e) = self.dtls.send(to, &packet)
+                    {
+                        if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {
+                            tracing::warn!(
+                                "[DtlsReliablePacketTransport::send] failed to clear pending ACK after retry send error for tx_id={}: {}",
+                                tx_id,
+                                cleanup_err
+                            );
                         }
+                        return Err(e);
+                    }
                 }
                 Err(e) => {
                     if let Err(cleanup_err) = self.clear_pending_ack(&ack_key) {

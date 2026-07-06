@@ -31,7 +31,12 @@ pub fn port_is_freed_after_stop() {
 
     // The port should now be free — rebind should succeed
     let rebind = UdpSocket::bind(addr);
-    assert!(rebind.is_ok(), "port {} should be free after stop, but rebind failed: {:?}", addr.port(), rebind.err());
+    assert!(
+        rebind.is_ok(),
+        "port {} should be free after stop, but rebind failed: {:?}",
+        addr.port(),
+        rebind.err()
+    );
 }
 
 /// After the socket is closed, write() should return an error.
@@ -50,7 +55,11 @@ pub fn write_fails_after_socket_closed() {
     let result = rust_comms::dtls::NetworkMux::write(mux.as_ref(), &nsk, b"hello");
     assert!(result.is_err(), "write should fail after socket is closed");
     let err_msg = result.unwrap_err();
-    assert!(err_msg.contains("closed"), "error should mention closed: {}", err_msg);
+    assert!(
+        err_msg.contains("closed"),
+        "error should mention closed: {}",
+        err_msg
+    );
 }
 
 /// local_addr() should return an error after the socket is closed.
@@ -59,13 +68,18 @@ pub fn write_fails_after_socket_closed() {
 #[cfg(not(target_os = "ios"))]
 pub fn local_addr_fails_after_socket_closed() {
     let mux = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind mux"));
-    let _ = mux.local_addr().expect("local_addr should succeed before start");
+    let _ = mux
+        .local_addr()
+        .expect("local_addr should succeed before start");
 
     mux.start().expect("start mux");
     mux.stop();
 
     let result = mux.local_addr();
-    assert!(result.is_err(), "local_addr should fail after socket closed");
+    assert!(
+        result.is_err(),
+        "local_addr should fail after socket closed"
+    );
 }
 
 /// is_closed() should return false for a freshly bound mux that was never started.

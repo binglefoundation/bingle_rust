@@ -1,18 +1,20 @@
 use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps, AppArg, address_to_byte_key};
 use rust_comms::api::bingle_api::{BingleApi, BingleApiInternal, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::blockchain::algo_bingle::{AlgoBingle, ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE, ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_FREEZE};
+use rust_comms::blockchain::algo_bingle::{
+    ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_FREEZE,
+    ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_RESERVE, AlgoBingle,
+};
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState};
+use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use std::collections::HashMap;
 use std::env;
+use std::fs;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Once};
+use std::time::{Duration, Instant};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
-use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
-use std::fs;
-use std::time::{Duration, Instant};
-
 
 // Localnet token from Algorand docs / Algokit localnet
 #[allow(dead_code)]
@@ -43,19 +45,23 @@ pub const ADDRESS_APP_ADMIN: &str = "TA2XNGWKWXXSWNHVVK23PW6A5JVYGC3WL2IFAILU4MO
 #[allow(dead_code)]
 pub const PASSPHRASE_APP_ADMIN: &str = "sunset fuel problem limit share same dilemma cool member real satoshi capable brush during body wool kiss parade smooth fan rude assume clever absorb across";
 #[allow(dead_code)]
-pub const ADDRESS_APP_WITHDRAWER: &str = "5FMPY3U5XCCDUOROVX34JYCRXHOZTPDSXDEZ576PXRHOTD4OSWNXXDEA74";
+pub const ADDRESS_APP_WITHDRAWER: &str =
+    "5FMPY3U5XCCDUOROVX34JYCRXHOZTPDSXDEZ576PXRHOTD4OSWNXXDEA74";
 #[allow(dead_code)]
 pub const PASSPHRASE_APP_WITHDRAWER: &str = "post all tuition hero axis erupt profit same dizzy stage like fly inquiry betray electric glue just space gentle jacket annual hello betray abstract way";
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_CREATOR: &str = "TETZ5CZVNJRMKBY63RFJGJKH6JNLTXX6TS5EHYAZTBY7TX76VWW6UXMAG4";
+pub const ADDRESS_ASSET_CREATOR: &str =
+    "TETZ5CZVNJRMKBY63RFJGJKH6JNLTXX6TS5EHYAZTBY7TX76VWW6UXMAG4";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_CREATOR: &str = "eyebrow bleak multiply material flush host panel column rubber maximum clean episode plate trim excess dignity barrel beyond minute rebuild cliff divert planet absent spray";
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_RESERVE: &str = "ZKPYCKDPCF75XTMJPCTJY5OG32BQDIPJUFFBRGAFATCYUUWPSYCDLXCQKA";
+pub const ADDRESS_ASSET_RESERVE: &str =
+    "ZKPYCKDPCF75XTMJPCTJY5OG32BQDIPJUFFBRGAFATCYUUWPSYCDLXCQKA";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_RESERVE: &str = "weasel open guide until scale stove pull keep truly push tongue anxiety throw acoustic hamster total rare door cost response promote grain adapt ability muffin";
 #[allow(dead_code)]
-pub const ADDRESS_ASSET_MANAGER: &str = "PPVIJ3JCZ34DUE3Q3CKTY2ZSKTJV5A32C35A62G7DX462WRPZBE45DOA5Q";
+pub const ADDRESS_ASSET_MANAGER: &str =
+    "PPVIJ3JCZ34DUE3Q3CKTY2ZSKTJV5A32C35A62G7DX462WRPZBE45DOA5Q";
 #[allow(dead_code)]
 pub const PASSPHRASE_ASSET_MANAGER: &str = "narrow tuition slot toddler slim copper pool permit subject elegant favorite cigar legal nurse muscle jewel rifle broom canoe eagle hint uncover unfair about similar";
 #[allow(dead_code)]
@@ -80,9 +86,19 @@ pub fn localnet_config() -> AlgoChainConfig {
 #[allow(dead_code)]
 pub fn assert_localnet_available() {
     let cfg = localnet_config();
-    let addr = format!("{}:{}", cfg.client_api_url.trim_start_matches("http://").trim_start_matches("https://"), cfg.client_api_port);
-    TcpStream::connect(&addr)
-        .unwrap_or_else(|e| panic!("Localnet is not available at {} - ensure algokit localnet is running: {}", addr, e));
+    let addr = format!(
+        "{}:{}",
+        cfg.client_api_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://"),
+        cfg.client_api_port
+    );
+    TcpStream::connect(&addr).unwrap_or_else(|e| {
+        panic!(
+            "Localnet is not available at {} - ensure algokit localnet is running: {}",
+            addr, e
+        )
+    });
 }
 
 #[allow(dead_code)]
@@ -95,12 +111,34 @@ pub fn ops_from_mnemonic(addr: &str, mnem: &str, cfg: AlgoChainConfig) -> AlgoOp
 #[allow(dead_code)]
 pub fn make_standard_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps> {
     let mut accounts = HashMap::new();
-    accounts.insert(ACCOUNT_APP_ADMIN.to_string(),     ops_from_mnemonic(ADDRESS_APP_ADMIN,     PASSPHRASE_APP_ADMIN,     cfg.clone()));
-    accounts.insert(ACCOUNT_APP_WITHDRAWER.to_string(), ops_from_mnemonic(ADDRESS_APP_WITHDRAWER, PASSPHRASE_APP_WITHDRAWER, cfg.clone()));
-    accounts.insert(ACCOUNT_ASSET_CREATOR.to_string(), ops_from_mnemonic(ADDRESS_ASSET_CREATOR, PASSPHRASE_ASSET_CREATOR, cfg.clone()));
-    accounts.insert(ACCOUNT_ASSET_RESERVE.to_string(),  ops_from_mnemonic(ADDRESS_ASSET_RESERVE,  PASSPHRASE_ASSET_RESERVE,  cfg.clone()));
-    accounts.insert(ACCOUNT_ASSET_MANAGER.to_string(),  ops_from_mnemonic(ADDRESS_ASSET_MANAGER,  PASSPHRASE_ASSET_MANAGER,  cfg.clone()));
-    accounts.insert(ACCOUNT_ASSET_FREEZE.to_string(),   ops_from_mnemonic(ADDRESS_ASSET_FREEZE,   PASSPHRASE_ASSET_FREEZE,   cfg.clone()));
+    accounts.insert(
+        ACCOUNT_APP_ADMIN.to_string(),
+        ops_from_mnemonic(ADDRESS_APP_ADMIN, PASSPHRASE_APP_ADMIN, cfg.clone()),
+    );
+    accounts.insert(
+        ACCOUNT_APP_WITHDRAWER.to_string(),
+        ops_from_mnemonic(
+            ADDRESS_APP_WITHDRAWER,
+            PASSPHRASE_APP_WITHDRAWER,
+            cfg.clone(),
+        ),
+    );
+    accounts.insert(
+        ACCOUNT_ASSET_CREATOR.to_string(),
+        ops_from_mnemonic(ADDRESS_ASSET_CREATOR, PASSPHRASE_ASSET_CREATOR, cfg.clone()),
+    );
+    accounts.insert(
+        ACCOUNT_ASSET_RESERVE.to_string(),
+        ops_from_mnemonic(ADDRESS_ASSET_RESERVE, PASSPHRASE_ASSET_RESERVE, cfg.clone()),
+    );
+    accounts.insert(
+        ACCOUNT_ASSET_MANAGER.to_string(),
+        ops_from_mnemonic(ADDRESS_ASSET_MANAGER, PASSPHRASE_ASSET_MANAGER, cfg.clone()),
+    );
+    accounts.insert(
+        ACCOUNT_ASSET_FREEZE.to_string(),
+        ops_from_mnemonic(ADDRESS_ASSET_FREEZE, PASSPHRASE_ASSET_FREEZE, cfg.clone()),
+    );
     accounts
 }
 
@@ -151,8 +189,8 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
             final_filter.push_str(",hyper=info,reqwest=info,rustls=info,h2=info");
         }
 
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new(final_filter));
+        let filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(final_filter));
 
         let log_mode = if let Ok(val) = env::var("BINGLE_LOG_MODE") {
             match val.to_ascii_lowercase().as_str() {
@@ -210,31 +248,50 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 /// Returns the `app_id` of the deployed contract.
 #[allow(dead_code)]
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
-    let approval_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
-    let clear_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
-    let arc56_path = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
+    let approval_path =
+        "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
+    let clear_path =
+        "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
+    let arc56_path =
+        "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
 
-    let approval_src = fs::read_to_string(approval_path).expect("read approval teal from artifacts");
+    let approval_src =
+        fs::read_to_string(approval_path).expect("read approval teal from artifacts");
     let clear_src = fs::read_to_string(clear_path).expect("read clear teal from artifacts");
     let arc56_json = fs::read_to_string(arc56_path).expect("read arc56 app spec from artifacts");
 
-    let approval_bytes = ops.compile_teal(&approval_src).expect("compile approval teal");
+    let approval_bytes = ops
+        .compile_teal(&approval_src)
+        .expect("compile approval teal");
     let clear_bytes = ops.compile_teal(&clear_src).expect("compile clear teal");
 
     // Set creator as initial admin and withdrawer via create(address,address)void.
     let creator_addr = ops.address_str().expect("creator address");
     let creator_pk = address_to_byte_key(&creator_addr).expect("creator pk");
-    let app_id = ops.deploy_app(
-        &approval_bytes, &clear_bytes, None,
-        Some("create(address,address)void"),
-        &[AppArg::Bytes(creator_pk.to_vec()), AppArg::Bytes(creator_pk.to_vec())],
-        "opt_in_to_bingle(uint64)void",
-        &arc56_json)
-     .expect("deploy app call")
-     .expect("failed to get app_id after deployment");
+    let app_id = ops
+        .deploy_app(
+            &approval_bytes,
+            &clear_bytes,
+            None,
+            Some("create(address,address)void"),
+            &[
+                AppArg::Bytes(creator_pk.to_vec()),
+                AppArg::Bytes(creator_pk.to_vec()),
+            ],
+            "opt_in_to_bingle(uint64)void",
+            &arc56_json,
+        )
+        .expect("deploy app call")
+        .expect("failed to get app_id after deployment");
 
     // Default: set Bingle price to 1 microAlgo; works because creator == initial admin.
-    let _ = ops.call_app(app_id, None, Some("set_bingle_price(uint64)void"), &[AppArg::Uint(1)])
+    let _ = ops
+        .call_app(
+            app_id,
+            None,
+            Some("set_bingle_price(uint64)void"),
+            &[AppArg::Uint(1)],
+        )
         .expect("set_bingle_price(1) call");
 
     app_id
@@ -247,18 +304,41 @@ pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
 ///
 /// Returns `(app_id, asset_id)`.
 #[allow(dead_code)]
-pub fn deploy_bingle_app_and_asset(ops: &AlgoOps, asset_name: &str, total_units: u64) -> (u64, u64) {
+pub fn deploy_bingle_app_and_asset(
+    ops: &AlgoOps,
+    asset_name: &str,
+    total_units: u64,
+) -> (u64, u64) {
     let cfg = ops.config.clone();
     crate::setup_localnet::ensure_localnet_accounts_funded(
         &cfg,
-        &[ADDRESS_APP_CREATOR, ADDRESS_APP_ADMIN, ADDRESS_APP_WITHDRAWER, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE, ADDRESS_ASSET_MANAGER, ADDRESS_ASSET_FREEZE],
-    ).expect("ensure standard accounts funded");
+        &[
+            ADDRESS_APP_CREATOR,
+            ADDRESS_APP_ADMIN,
+            ADDRESS_APP_WITHDRAWER,
+            ADDRESS_ASSET_CREATOR,
+            ADDRESS_ASSET_RESERVE,
+            ADDRESS_ASSET_MANAGER,
+            ADDRESS_ASSET_FREEZE,
+        ],
+    )
+    .expect("ensure standard accounts funded");
     let creator_ops = ops_from_mnemonic(ADDRESS_APP_CREATOR, PASSPHRASE_APP_CREATOR, cfg.clone());
     let accounts = make_standard_accounts(&cfg);
     let teal_dir = std::path::Path::new("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp");
     let ab = AlgoBingle::new(creator_ops, 0, 0);
-    ab.deploy_app_and_asset(teal_dir, true, true, None, None, asset_name, total_units, 10, &accounts)
-        .expect("deploy_bingle_app_and_asset: deploy failed")
+    ab.deploy_app_and_asset(
+        teal_dir,
+        true,
+        true,
+        None,
+        None,
+        asset_name,
+        total_units,
+        10,
+        &accounts,
+    )
+    .expect("deploy_bingle_app_and_asset: deploy failed")
 }
 
 #[allow(dead_code)]
@@ -292,15 +372,23 @@ pub fn register_client_on_blockchain(
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    assert!(ok, "{} Handle not visible in local state within timeout", handle);
+    assert!(
+        ok,
+        "{} Handle not visible in local state within timeout",
+        handle
+    );
 }
 
 #[allow(dead_code)]
 pub fn wait_for_registered(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if let Some(st) = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
-            if st == EngineState::Registered { return true; }
+        if let Some(st) =
+            api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+        {
+            if st == EngineState::Registered {
+                return true;
+            }
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -312,17 +400,23 @@ pub fn wait_for_relay_available(api: &Arc<BingleApiImpl>, timeout: Duration) -> 
     let start = Instant::now();
     while start.elapsed() < timeout {
         let st = api.get_relay_state();
-        if st == "available" { return true; }
+        if st == "available" {
+            return true;
+        }
         std::thread::sleep(Duration::from_millis(25));
     }
     false
 }
 
 #[allow(dead_code)]
-pub fn get_compact_advert_record(ops: &AlgoOps, addr: std::net::SocketAddr, am_relay: bool) -> String {
-    use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
-    use ed25519_dalek::SigningKey;
+pub fn get_compact_advert_record(
+    ops: &AlgoOps,
+    addr: std::net::SocketAddr,
+    am_relay: bool,
+) -> String {
     use chrono::Utc;
+    use ed25519_dalek::SigningKey;
+    use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
 
     let sk_bytes = ops.private_key_bytes().expect("private key bytes");
     let sk_arr: [u8; 32] = sk_bytes.try_into().expect("32 bytes sk");
@@ -341,10 +435,15 @@ pub fn get_compact_advert_record(ops: &AlgoOps, addr: std::net::SocketAddr, am_r
 }
 
 #[allow(dead_code)]
-pub fn get_signed_advert_record(id: &str, passphrase: &str, addr: std::net::SocketAddr, am_relay: bool) -> rust_comms::ddb::AdvertRecord {
-    use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
-    use ed25519_dalek::SigningKey;
+pub fn get_signed_advert_record(
+    id: &str,
+    passphrase: &str,
+    addr: std::net::SocketAddr,
+    am_relay: bool,
+) -> rust_comms::ddb::AdvertRecord {
     use chrono::Utc;
+    use ed25519_dalek::SigningKey;
+    use rust_comms::ddb::{AdvertRecord, InetSocketAddress};
 
     // Use a simple seed derivation if passphrase is not 32 bytes
     let mut seed = [0u8; 32];
@@ -365,19 +464,30 @@ pub fn get_signed_advert_record(id: &str, passphrase: &str, addr: std::net::Sock
 }
 
 #[allow(dead_code)]
-pub fn signed_root_relay(id: &str, addr: std::net::SocketAddr) -> rust_comms::relay::relay_finder::RelayInfo {
+pub fn signed_root_relay(
+    id: &str,
+    addr: std::net::SocketAddr,
+) -> rust_comms::relay::relay_finder::RelayInfo {
     use rust_comms::relay::relay_finder::RelayInfo;
     RelayInfo::root(get_signed_advert_record(id, "test_passphrase", addr, true))
 }
 
 #[allow(dead_code)]
-pub fn signed_non_root_relay(id: &str, addr: std::net::SocketAddr) -> rust_comms::relay::relay_finder::RelayInfo {
+pub fn signed_non_root_relay(
+    id: &str,
+    addr: std::net::SocketAddr,
+) -> rust_comms::relay::relay_finder::RelayInfo {
     use rust_comms::relay::relay_finder::RelayInfo;
     RelayInfo::non_root(get_signed_advert_record(id, "test_passphrase", addr, false))
 }
 
 #[allow(dead_code)]
-pub fn signed_root_relay_with(id: &str, addr: std::net::SocketAddr, state: Option<rust_comms::engine::RelayState>, ttl: Option<u64>) -> rust_comms::relay::relay_finder::RelayInfo {
+pub fn signed_root_relay_with(
+    id: &str,
+    addr: std::net::SocketAddr,
+    state: Option<rust_comms::engine::RelayState>,
+    ttl: Option<u64>,
+) -> rust_comms::relay::relay_finder::RelayInfo {
     let mut r = signed_root_relay(id, addr);
     r.state = state;
     r.ttl = ttl;
@@ -385,7 +495,12 @@ pub fn signed_root_relay_with(id: &str, addr: std::net::SocketAddr, state: Optio
 }
 
 #[allow(dead_code)]
-pub fn signed_non_root_relay_with(id: &str, addr: std::net::SocketAddr, state: Option<rust_comms::engine::RelayState>, ttl: Option<u64>) -> rust_comms::relay::relay_finder::RelayInfo {
+pub fn signed_non_root_relay_with(
+    id: &str,
+    addr: std::net::SocketAddr,
+    state: Option<rust_comms::engine::RelayState>,
+    ttl: Option<u64>,
+) -> rust_comms::relay::relay_finder::RelayInfo {
     let mut r = signed_non_root_relay(id, addr);
     r.state = state;
     r.ttl = ttl;
@@ -393,8 +508,19 @@ pub fn signed_non_root_relay_with(id: &str, addr: std::net::SocketAddr, state: O
 }
 
 // Helper: start a relay node at a fixed address
-pub fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: u64, cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig) -> Arc<BingleApiImpl> {
-    tracing::info!("[Test] start_root_relay name={} addr={} app_id={}", name, addr, app_id);
+pub fn start_root_relay(
+    name: &str,
+    addr: SocketAddr,
+    passphrase: &str,
+    app_id: u64,
+    cfg: rust_comms::blockchain::algo_ops::AlgoChainConfig,
+) -> Arc<BingleApiImpl> {
+    tracing::info!(
+        "[Test] start_root_relay name={} addr={} app_id={}",
+        name,
+        addr,
+        app_id
+    );
     let opts = StartOptions {
         handle: name.into(),
         algo_passphrase: Some(passphrase.parse().unwrap()),
@@ -407,10 +533,13 @@ pub fn start_root_relay(name: &str, addr: SocketAddr, passphrase: &str, app_id: 
         asset_id: None,
         log_level: None,
         handle_cache_expiry: None,
-        dangerous_debug: false, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        dangerous_debug: false,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
     let api = BingleApiImpl::new(&opts);
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("relay start");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
+        .expect("relay start");
     tracing::info!("[Test] root relay {} started, wait for registered", name);
 
     wait_for_registered(&api, Duration::from_secs(30));

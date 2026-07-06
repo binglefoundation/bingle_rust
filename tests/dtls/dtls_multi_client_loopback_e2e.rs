@@ -1,7 +1,5 @@
-
-
 use std::net::SocketAddr;
-use std::sync::{OnceLock, Mutex};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -17,11 +15,21 @@ static CLIENT1_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static CLIENT2_ECHOED: OnceLock<Vec<u8>> = OnceLock::new();
 static SERVER_SEEN: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn client1_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn client1_handler(
+    _server: &dyn Dtls,
+    _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     let _ = CLIENT1_ECHOED.set(data.to_vec());
 }
 
-fn client2_handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn client2_handler(
+    _server: &dyn Dtls,
+    _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     let _ = CLIENT2_ECHOED.set(data.to_vec());
 }
 
@@ -45,7 +53,12 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Echo handler: save payload (when it looks like application data) then send back with prefix using the server instance.
-    fn echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+    fn echo_handler(
+        server: &dyn Dtls,
+        from: &rust_comms::api::bingle_api::NetworkEndpoint,
+        _issuer: &str,
+        data: &[u8],
+    ) {
         if let Some(first) = data.first() {
             // Ignore DTLS record-layer (Handshake=22, Application=23) ciphertext bytes
             if *first == 22 || *first == 23 {
@@ -53,7 +66,9 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
             }
         }
         let store = SERVER_SEEN.get_or_init(|| Mutex::new(Vec::new()));
-        if let Ok(mut v) = store.lock() { v.push(data.to_vec()); }
+        if let Ok(mut v) = store.lock() {
+            v.push(data.to_vec());
+        }
         let mut echoed = b"ECHOED: ".to_vec();
         echoed.extend_from_slice(data);
         let _ = server.send(from, &echoed);
@@ -96,12 +111,14 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start separate muxes for each client and initialize DTLS
-    let cmux1_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
+    let cmux1_0 =
+        rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
     let cmux1 = std::sync::Arc::new(cmux1_0);
     cmux1.start().expect("client1 mux start");
     client1.start(cmux1.clone()).expect("client1 start");
 
-    let cmux2_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client2 mux");
+    let cmux2_0 =
+        rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client2 mux");
     let cmux2 = std::sync::Arc::new(cmux2_0);
     cmux2.start().expect("client2 mux start");
     client2.start(cmux2.clone()).expect("client2 start");
@@ -112,7 +129,16 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
     // Send from client1 with small retry loop.
     let mut ok1 = false;
     for _ in 0..8 {
-        if client1.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload1).is_ok() { ok1 = true; break; }
+        if client1
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                payload1,
+            )
+            .is_ok()
+        {
+            ok1 = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok1, "client1 DTLS send failed");
@@ -129,7 +155,16 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
     // Now send from client2 with a larger retry window to allow server to cycle back.
     let mut ok2 = false;
     for _ in 0..20 {
-        if client2.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload2).is_ok() { ok2 = true; break; }
+        if client2
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                payload2,
+            )
+            .is_ok()
+        {
+            ok2 = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(100));
     }
     assert!(ok2, "client2 DTLS send failed");
@@ -141,16 +176,28 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
     }
 
     // Validate client1 echo
-    let echoed1 = CLIENT1_ECHOED.get().expect("client1 did not capture echoed payload within timeout");
+    let echoed1 = CLIENT1_ECHOED
+        .get()
+        .expect("client1 did not capture echoed payload within timeout");
     let mut expected1 = b"ECHOED: ".to_vec();
     expected1.extend_from_slice(payload1);
-    assert_eq!(echoed1.as_slice(), expected1.as_slice(), "client1 echoed payload mismatch with prefix");
+    assert_eq!(
+        echoed1.as_slice(),
+        expected1.as_slice(),
+        "client1 echoed payload mismatch with prefix"
+    );
 
     // Validate client2 echo
-    let echoed2 = CLIENT2_ECHOED.get().expect("client2 did not capture echoed payload within timeout");
+    let echoed2 = CLIENT2_ECHOED
+        .get()
+        .expect("client2 did not capture echoed payload within timeout");
     let mut expected2 = b"ECHOED: ".to_vec();
     expected2.extend_from_slice(payload2);
-    assert_eq!(echoed2.as_slice(), expected2.as_slice(), "client2 echoed payload mismatch with prefix");
+    assert_eq!(
+        echoed2.as_slice(),
+        expected2.as_slice(),
+        "client2 echoed payload mismatch with prefix"
+    );
 
     // Optionally, validate server observed both original payloads.
     if let Some(mtx) = SERVER_SEEN.get() {
@@ -158,7 +205,10 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
             // The order is not guaranteed; check set membership.
             let have1 = list.iter().any(|v| v.as_slice() == payload1);
             let have2 = list.iter().any(|v| v.as_slice() == payload2);
-            assert!(have1 && have2, "server did not observe both client payloads");
+            assert!(
+                have1 && have2,
+                "server did not observe both client payloads"
+            );
         }
     }
 }

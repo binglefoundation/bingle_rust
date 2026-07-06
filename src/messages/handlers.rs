@@ -1,10 +1,10 @@
-use crate::api::bingle_api::{BingleApi, BingleApiInternal, BingleApiBoth, BingleError};
-use crate::relay::relay_finder::RelayFinderTrait;
-use crate::engine::{BingleAccessUnsafeForTests, RelayState};
+use crate::api::bingle_api::{BingleApi, BingleApiBoth, BingleApiInternal, BingleError};
 use crate::ddb::DdbBackend;
+use crate::engine::{BingleAccessUnsafeForTests, RelayState};
 use crate::messages::types::*;
-use tracing::{error, warn};
+use crate::relay::relay_finder::RelayFinderTrait;
 use std::sync::{Arc, Mutex};
+use tracing::{error, warn};
 
 /// Delay before sending TriangleTest1Response when a corner node is available, to allow the
 /// triangle test to complete before the initiator processes the response.
@@ -24,20 +24,25 @@ pub fn send_triangle_test1_response(
     if !delay.is_zero() {
         std::thread::sleep(delay);
     }
-    let resp = Message::Relay(RelayMessage::TriangleTest1Response(RelayTriangleTest1Response {
-        app: None,
-        no_corner_node,
-        response_tag,
-    }));
+    let resp = Message::Relay(RelayMessage::TriangleTest1Response(
+        RelayTriangleTest1Response {
+            app: None,
+            no_corner_node,
+            response_tag,
+        },
+    ));
     let resp_json = crate::messages::marshal::to_json_value(&resp);
     if from_user_id.is_empty() {
         warn!("[handlers::send_triangle_test1_response] skipping: empty sender id");
     } else {
         let ok = api.send_message_to_network(from_nsk, &from_user_id.to_string(), resp_json, None);
-        tracing::info!("[handlers::send_triangle_test1_response] no_corner_node={} sent ok={:?}", no_corner_node, ok);
+        tracing::info!(
+            "[handlers::send_triangle_test1_response] no_corner_node={} sent ok={:?}",
+            no_corner_node,
+            ok
+        );
     }
 }
-
 
 #[derive(Clone)]
 pub struct FromStruct {
@@ -49,7 +54,11 @@ pub struct FromStruct {
 }
 
 impl FromStruct {
-    pub fn new(id: String, network_source_key: crate::api::bingle_api::NetworkEndpoint, router: Arc<crate::messages::router::Router>) -> Self {
+    pub fn new(
+        id: String,
+        network_source_key: crate::api::bingle_api::NetworkEndpoint,
+        router: Arc<crate::messages::router::Router>,
+    ) -> Self {
         Self {
             id,
             network_source_key,
@@ -65,7 +74,10 @@ impl FromStruct {
     }
 
     pub fn take_responses(&self) -> Vec<serde_json::Value> {
-        self.responses.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default()
+        self.responses
+            .lock()
+            .map(|mut g| g.drain(..).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -79,70 +91,254 @@ impl std::fmt::Debug for FromStruct {
 }
 
 // Adapter to allow passing the composite API where a plain BingleApi is required (e.g., RelayFinder)
-struct BothAsApi { inner: Arc<dyn BingleApiBoth> }
+struct BothAsApi {
+    inner: Arc<dyn BingleApiBoth>,
+}
 impl BingleApiInternal for BothAsApi {
-    fn mutex_handle_request(&self, from_id: String, req: MutexRequest) { self.inner.mutex_handle_request(from_id, req) }
-    fn mutex_handle_response(&self, from_id: String, resp: MutexResponse) { self.inner.mutex_handle_response(from_id, resp) }
-    fn mutex_handle_release(&self, from_id: String, rel: MutexRelease) { self.inner.mutex_handle_release(from_id, rel) }
-    fn get_relay_state(&self) -> String { self.inner.get_relay_state() }
-    fn set_state(&self, state: crate::engine::EngineState) { self.inner.set_state(state) }
-    fn get_state(&self) -> crate::engine::EngineState { self.inner.get_state() }
-    fn set_nat_type(&self, nat: crate::engine::NatType) { self.inner.set_nat_type(nat) }
-    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> { self.inner.get_last_public_addr() }
-    fn ddb_register_ip(&self, endpoint: std::net::SocketAddr, am_relay: bool) -> Result<(), BingleError> { self.inner.ddb_register_ip(endpoint, am_relay) }
-    fn ddb_register_relay(&self, relay_id: String, relay_sig: Option<String>) -> Result<(), BingleError> { self.inner.ddb_register_relay(relay_id, relay_sig) }
-    fn update_turn_listener_relay(&self, relay_id: String, relay_addr: std::net::SocketAddr) -> Result<(), BingleError> { self.inner.update_turn_listener_relay(relay_id, relay_addr) }
-    fn start_relay_keep_alive(&self, relay_id: String, relay_addr: std::net::SocketAddr) { self.inner.start_relay_keep_alive(relay_id, relay_addr) }
-    fn stop_relay_keep_alive(&self) { self.inner.stop_relay_keep_alive() }
-    fn turn_client_handle_listen_response(&self, relay_addr: std::net::SocketAddr, relay_id: String) { self.inner.turn_client_handle_listen_response(relay_addr, relay_id) }
-    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> { self.inner.turn_lookup_addr_by_id(id) }
-    fn turn_handle_call(&self, source_id: String, dest_id: String, source: std::net::SocketAddr, dest: std::net::SocketAddr) -> i32 { self.inner.turn_handle_call(source_id, dest_id, source, dest) }
-    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool { self.inner.turn_handle_listen(id, source) }
-    fn turn_handle_called(&self, source: std::net::SocketAddr, dest: std::net::SocketAddr, channel: u16) { self.inner.turn_handle_called(source, dest, channel) }
-    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) { self.inner.notify_listening(listening, nat_type) }
-    fn set_relay_state(&self, state: RelayState) { self.inner.set_relay_state(state) }
-    fn get_peer_ddb_target(&self) -> Option<usize> { self.inner.get_peer_ddb_target() }
-    fn ddb_upsert_record(&self, record: AdvertRecord) { self.inner.ddb_upsert_record(record) }
-    fn ddb_backend_size(&self) -> usize { self.inner.ddb_backend_size() }
-    fn initialize_relay(&self) { self.inner.initialize_relay() }
-    fn is_relay(&self) -> bool { self.inner.is_relay() }
-    fn signal_signon_complete(&self) { self.inner.signal_signon_complete() }
-    fn reset_signon_complete(&self) { self.inner.reset_signon_complete() }
-    fn ripple_message(&self, message: serde_json::Value, originator_id: String, ddb_backend: &dyn DdbBackend) { self.inner.ripple_message(message, originator_id, ddb_backend) }
+    fn mutex_handle_request(&self, from_id: String, req: MutexRequest) {
+        self.inner.mutex_handle_request(from_id, req)
+    }
+    fn mutex_handle_response(&self, from_id: String, resp: MutexResponse) {
+        self.inner.mutex_handle_response(from_id, resp)
+    }
+    fn mutex_handle_release(&self, from_id: String, rel: MutexRelease) {
+        self.inner.mutex_handle_release(from_id, rel)
+    }
+    fn get_relay_state(&self) -> String {
+        self.inner.get_relay_state()
+    }
+    fn set_state(&self, state: crate::engine::EngineState) {
+        self.inner.set_state(state)
+    }
+    fn get_state(&self) -> crate::engine::EngineState {
+        self.inner.get_state()
+    }
+    fn set_nat_type(&self, nat: crate::engine::NatType) {
+        self.inner.set_nat_type(nat)
+    }
+    fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
+        self.inner.get_last_public_addr()
+    }
+    fn ddb_register_ip(
+        &self,
+        endpoint: std::net::SocketAddr,
+        am_relay: bool,
+    ) -> Result<(), BingleError> {
+        self.inner.ddb_register_ip(endpoint, am_relay)
+    }
+    fn ddb_register_relay(
+        &self,
+        relay_id: String,
+        relay_sig: Option<String>,
+    ) -> Result<(), BingleError> {
+        self.inner.ddb_register_relay(relay_id, relay_sig)
+    }
+    fn update_turn_listener_relay(
+        &self,
+        relay_id: String,
+        relay_addr: std::net::SocketAddr,
+    ) -> Result<(), BingleError> {
+        self.inner.update_turn_listener_relay(relay_id, relay_addr)
+    }
+    fn start_relay_keep_alive(&self, relay_id: String, relay_addr: std::net::SocketAddr) {
+        self.inner.start_relay_keep_alive(relay_id, relay_addr)
+    }
+    fn stop_relay_keep_alive(&self) {
+        self.inner.stop_relay_keep_alive()
+    }
+    fn turn_client_handle_listen_response(
+        &self,
+        relay_addr: std::net::SocketAddr,
+        relay_id: String,
+    ) {
+        self.inner
+            .turn_client_handle_listen_response(relay_addr, relay_id)
+    }
+    fn turn_lookup_addr_by_id(&self, id: String) -> Option<std::net::SocketAddr> {
+        self.inner.turn_lookup_addr_by_id(id)
+    }
+    fn turn_handle_call(
+        &self,
+        source_id: String,
+        dest_id: String,
+        source: std::net::SocketAddr,
+        dest: std::net::SocketAddr,
+    ) -> i32 {
+        self.inner
+            .turn_handle_call(source_id, dest_id, source, dest)
+    }
+    fn turn_handle_listen(&self, id: String, source: std::net::SocketAddr) -> bool {
+        self.inner.turn_handle_listen(id, source)
+    }
+    fn turn_handle_called(
+        &self,
+        source: std::net::SocketAddr,
+        dest: std::net::SocketAddr,
+        channel: u16,
+    ) {
+        self.inner.turn_handle_called(source, dest, channel)
+    }
+    fn notify_listening(&self, listening: bool, nat_type: crate::engine::NatType) {
+        self.inner.notify_listening(listening, nat_type)
+    }
+    fn set_relay_state(&self, state: RelayState) {
+        self.inner.set_relay_state(state)
+    }
+    fn get_peer_ddb_target(&self) -> Option<usize> {
+        self.inner.get_peer_ddb_target()
+    }
+    fn ddb_upsert_record(&self, record: AdvertRecord) {
+        self.inner.ddb_upsert_record(record)
+    }
+    fn ddb_backend_size(&self) -> usize {
+        self.inner.ddb_backend_size()
+    }
+    fn initialize_relay(&self) {
+        self.inner.initialize_relay()
+    }
+    fn is_relay(&self) -> bool {
+        self.inner.is_relay()
+    }
+    fn signal_signon_complete(&self) {
+        self.inner.signal_signon_complete()
+    }
+    fn reset_signon_complete(&self) {
+        self.inner.reset_signon_complete()
+    }
+    fn ripple_message(
+        &self,
+        message: serde_json::Value,
+        originator_id: String,
+        ddb_backend: &dyn DdbBackend,
+    ) {
+        self.inner
+            .ripple_message(message, originator_id, ddb_backend)
+    }
 }
 impl BingleApi for BothAsApi {
-    fn debug_print_options(&self) { self.inner.debug_print_options() }
-    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> { self.inner.list_all_relays(include_self) }
-    fn get_my_id(&self) -> Option<String> { self.inner.get_my_id() }
-    fn get_user_id(&self) -> Option<String> { self.inner.get_user_id() }
-    fn get_handle(&self) -> Option<String> { self.inner.get_handle() }
-    fn get_app_id(&self) -> Option<u64> { self.inner.get_app_id() }
-    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> { self.inner.get_algo_provider_config() }
-    fn start(&mut self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> { self.inner.access_unsafe_for_tests(|a| a.start(options)) }
-    fn stop(&mut self) { self.inner.access_unsafe_for_tests(|a| a.stop()) }
-    fn network_change(&mut self) { self.inner.access_unsafe_for_tests(|a| a.network_change()) }
-    fn handle_lookup(&self, _handle: &crate::api::bingle_api::Handle) -> Result<Option<crate::api::bingle_api::UserId>, BingleError> { self.inner.handle_lookup(_handle) }
-    fn handle_lookup_by_id(&self, user_id: &crate::api::bingle_api::UserId) -> Option<crate::api::bingle_api::Handle> { self.inner.handle_lookup_by_id(user_id) }
-    fn send_message_to_id(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.inner.send_message_to_id(user_id, message, progress) }
-    fn send_message_to_handle(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.inner.send_message_to_handle(handle, message, progress) }
-    fn send_message_to_network(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<bool, BingleError> { self.inner.send_message_to_network(nsk, user_id, message, progress) }
-    fn send_message_to_id_with_response(&self, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.inner.send_message_to_id_with_response(user_id, message, progress) }
-    fn send_message_to_handle_with_response(&self, handle: &crate::api::bingle_api::Handle, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.inner.send_message_to_handle_with_response(handle, message, progress) }
-    fn send_message_to_network_with_response(&self, nsk: &crate::api::bingle_api::NetworkEndpoint, user_id: &crate::api::bingle_api::UserId, message: serde_json::Value, progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>) -> Result<serde_json::Value, BingleError> { self.inner.send_message_to_network_with_response(nsk, user_id, message, progress) }
-    fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) { }
-    fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) { }
-    fn set_on_listening(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) { }
+    fn debug_print_options(&self) {
+        self.inner.debug_print_options()
+    }
+    fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
+        self.inner.list_all_relays(include_self)
+    }
+    fn get_my_id(&self) -> Option<String> {
+        self.inner.get_my_id()
+    }
+    fn get_user_id(&self) -> Option<String> {
+        self.inner.get_user_id()
+    }
+    fn get_handle(&self) -> Option<String> {
+        self.inner.get_handle()
+    }
+    fn get_app_id(&self) -> Option<u64> {
+        self.inner.get_app_id()
+    }
+    fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
+        self.inner.get_algo_provider_config()
+    }
+    fn start(&mut self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> {
+        self.inner.access_unsafe_for_tests(|a| a.start(options))
+    }
+    fn stop(&mut self) {
+        self.inner.access_unsafe_for_tests(|a| a.stop())
+    }
+    fn network_change(&mut self) {
+        self.inner.access_unsafe_for_tests(|a| a.network_change())
+    }
+    fn handle_lookup(
+        &self,
+        _handle: &crate::api::bingle_api::Handle,
+    ) -> Result<Option<crate::api::bingle_api::UserId>, BingleError> {
+        self.inner.handle_lookup(_handle)
+    }
+    fn handle_lookup_by_id(
+        &self,
+        user_id: &crate::api::bingle_api::UserId,
+    ) -> Option<crate::api::bingle_api::Handle> {
+        self.inner.handle_lookup_by_id(user_id)
+    }
+    fn send_message_to_id(
+        &self,
+        user_id: &crate::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        self.inner.send_message_to_id(user_id, message, progress)
+    }
+    fn send_message_to_handle(
+        &self,
+        handle: &crate::api::bingle_api::Handle,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        self.inner.send_message_to_handle(handle, message, progress)
+    }
+    fn send_message_to_network(
+        &self,
+        nsk: &crate::api::bingle_api::NetworkEndpoint,
+        user_id: &crate::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+    ) -> Result<bool, BingleError> {
+        self.inner
+            .send_message_to_network(nsk, user_id, message, progress)
+    }
+    fn send_message_to_id_with_response(
+        &self,
+        user_id: &crate::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        self.inner
+            .send_message_to_id_with_response(user_id, message, progress)
+    }
+    fn send_message_to_handle_with_response(
+        &self,
+        handle: &crate::api::bingle_api::Handle,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        self.inner
+            .send_message_to_handle_with_response(handle, message, progress)
+    }
+    fn send_message_to_network_with_response(
+        &self,
+        nsk: &crate::api::bingle_api::NetworkEndpoint,
+        user_id: &crate::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        self.inner
+            .send_message_to_network_with_response(nsk, user_id, message, progress)
+    }
+    fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
+    fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
+    fn set_on_listening(
+        &mut self,
+        _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
+    ) {
+    }
 }
 
 pub trait MessageHandler {
     // Plain text
-    fn on_plain_text(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PlainTextMessage) {
+    fn on_plain_text(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &PlainTextMessage,
+    ) {
         // Build JSON for callback
-        let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
+        let json =
+            serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"text": msg.text}));
         // Delegate to API on_message via the per-API Router if installed
         if let Some(cb) = from.router.get_on_message() {
             // Normalize sender id: issuer without suffix
-            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let sender_id = from
+                .id
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string();
             // Look up the sender's handle by id via the API. If not found, log an error and abort.
             match api.handle_lookup_by_id(&sender_id) {
                 Some(sender_handle) => cb(sender_id, sender_handle, json),
@@ -156,7 +352,10 @@ pub trait MessageHandler {
             return;
         }
         // Fallback to logging if no on_message callback is installed
-        tracing::warn!("[MessageHandler::on_plain_text] No callback set up {}", serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::warn!(
+            "[MessageHandler::on_plain_text] No callback set up {}",
+            serde_json::to_string(&json).unwrap_or_else(|_| "<unprintable>".into())
+        );
     }
 
     // Ping messages
@@ -170,45 +369,62 @@ pub trait MessageHandler {
         }
         let sender = sender_opt.unwrap();
 
-            // Obtain our id (verifiedId)
-            let my_id = match api.get_my_id() {
-                Some(id) => id,
-                None => {
-                    warn!("[handlers::on_ping_ping] get_my_id returned None");
-                    return;
-                }
-            };
-
-            // Build response JSON following OpenAPI schema
-            let mut json_obj = serde_json::Map::new();
-            json_obj.insert("app".to_string(), serde_json::Value::String("ping".to_string()));
-            json_obj.insert("type".to_string(), serde_json::Value::String("response".to_string()));
-            json_obj.insert("verifiedId".to_string(), serde_json::Value::String(my_id));
-            // If responseTag was provided on request context, echo it
-            if let Some(tag) = from.router.get_last_response_tag() {
-                json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+        // Obtain our id (verifiedId)
+        let my_id = match api.get_my_id() {
+            Some(id) => id,
+            None => {
+                warn!("[handlers::on_ping_ping] get_my_id returned None");
+                return;
             }
-            let ack_text = format!("ACK: {}", msg.text.clone().unwrap_or_default());
-            json_obj.insert("text".to_string(), serde_json::Value::String(ack_text));
-            let json_val = serde_json::Value::Object(json_obj);
+        };
 
-            // Prepare destination (use from.id (issuer) as base32 algorand address without conversion)
-            let nsk = from.network_source_key.clone();
-            let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-            tracing::info!("[handlers::on_ping_ping] sending response {:?} to {:?}", json_val, nsk);
-            let ok = sender(&nsk, &user_id, json_val);
-            if !ok {
-                tracing::warn!("[handlers::on_ping_ping] sender returned false");
-            }
+        // Build response JSON following OpenAPI schema
+        let mut json_obj = serde_json::Map::new();
+        json_obj.insert(
+            "app".to_string(),
+            serde_json::Value::String("ping".to_string()),
+        );
+        json_obj.insert(
+            "type".to_string(),
+            serde_json::Value::String("response".to_string()),
+        );
+        json_obj.insert("verifiedId".to_string(), serde_json::Value::String(my_id));
+        // If responseTag was provided on request context, echo it
+        if let Some(tag) = from.router.get_last_response_tag() {
+            json_obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+        }
+        let ack_text = format!("ACK: {}", msg.text.clone().unwrap_or_default());
+        json_obj.insert("text".to_string(), serde_json::Value::String(ack_text));
+        let json_val = serde_json::Value::Object(json_obj);
+
+        // Prepare destination (use from.id (issuer) as base32 algorand address without conversion)
+        let nsk = from.network_source_key.clone();
+        let user_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
+        tracing::info!(
+            "[handlers::on_ping_ping] sending response {:?} to {:?}",
+            json_val,
+            nsk
+        );
+        let ok = sender(&nsk, &user_id, json_val);
+        if !ok {
+            tracing::warn!("[handlers::on_ping_ping] sender returned false");
+        }
     }
     fn on_ping_response(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &PingResponse) {
         if msg.response_tag.is_none() {
             // Build JSON for callback
-            let json = serde_json::to_value(msg).unwrap_or_else(|_| serde_json::json!({"verifiedId": msg.verified_id}));
+            let json = serde_json::to_value(msg)
+                .unwrap_or_else(|_| serde_json::json!({"verifiedId": msg.verified_id}));
             // Delegate to API on_message via the per-API Router if installed
             if let Some(cb) = from.router.get_on_message() {
                 // Normalize sender id: issuer without suffix
-                let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+                let sender_id = from
+                    .id
+                    .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                    .to_string();
                 // Look up the sender's handle by id via the API. If not found, log and abort.
                 match api.handle_lookup_by_id(&sender_id) {
                     Some(sender_handle) => cb(sender_id, sender_handle, json),
@@ -234,25 +450,48 @@ pub trait MessageHandler {
         }
         let src = match router.get_last_from() {
             Some(a) => a,
-            None => { warn!("[handlers::on_relay_call] No source address available"); return; }
+            None => {
+                warn!("[handlers::on_relay_call] No source address available");
+                return;
+            }
         };
         // Resolve destination address by id recorded via Listen using internal API
-        let called_id_raw = msg.called_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let called_id_raw = msg
+            .called_id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
         let dest = match api.turn_lookup_addr_by_id(called_id_raw.clone()) {
             Some(a) => a,
-            None => { warn!("[handlers::on_relay_call] called id not registered: {}", called_id_raw); return; }
+            None => {
+                warn!(
+                    "[handlers::on_relay_call] called id not registered: {}",
+                    called_id_raw
+                );
+                return;
+            }
         };
-        let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let source_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
         let ch = api.turn_handle_call(source_id, called_id_raw.clone(), src, dest);
-        if ch < 0 { warn!("[handlers::on_relay_call] turn_handle_call failed"); return; }
+        if ch < 0 {
+            warn!("[handlers::on_relay_call] turn_handle_call failed");
+            return;
+        }
 
         // Before setting the response, notify the called node with a RelayCalled message
         if let Some(sender) = router.get_sender() {
-            let msg = Message::Relay(RelayMessage::RelayCalled(RelayCalled { app: None, channel: ch as u16 }));
+            let msg = Message::Relay(RelayMessage::RelayCalled(RelayCalled {
+                app: None,
+                channel: ch as u16,
+            }));
             let json_val = crate::messages::marshal::to_json_value(&msg);
             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(dest);
             let ok = sender(&nsk, &called_id_raw, json_val);
-            if !ok { warn!("[handlers::on_relay_call] sender returned false when sending RelayCalled"); }
+            if !ok {
+                warn!("[handlers::on_relay_call] sender returned false when sending RelayCalled");
+            }
         } else {
             error!("[handlers::on_relay_call] No sender available to notify called node");
         }
@@ -260,16 +499,61 @@ pub trait MessageHandler {
         // Build RelayResponse { app: null, channel }
         let mut obj = serde_json::Map::new();
         obj.insert("app".to_string(), serde_json::Value::Null);
-        obj.insert("type".to_string(), serde_json::Value::String("RelayResponse".to_string()));
-        obj.insert("channel".to_string(), serde_json::Value::Number(serde_json::Number::from(ch as u64)));
-        if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
+        obj.insert(
+            "type".to_string(),
+            serde_json::Value::String("RelayResponse".to_string()),
+        );
+        obj.insert(
+            "channel".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(ch as u64)),
+        );
+        if let Some(tag) = router.get_last_response_tag() {
+            obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+        }
         from.push_response(serde_json::Value::Object(obj));
     }
-    fn on_relay_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone()))); }
-    fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone()))); }
-    fn on_triangle_test2(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest2) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone()))); }
-    fn on_triangle_test3(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone()))); }
-    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) { self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(_msg.clone()))); }
+    fn on_relay_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayResponse,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::RelayResponse(_msg.clone())));
+    }
+    fn on_triangle_test1(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest1,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1(_msg.clone())));
+    }
+    fn on_triangle_test2(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest2,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest2(_msg.clone())));
+    }
+    fn on_triangle_test3(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest3,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest3(_msg.clone())));
+    }
+    fn on_triangle_test1_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest1Response,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::TriangleTest1Response(
+            _msg.clone(),
+        )));
+    }
     fn on_relay_listen(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayListen) {
         // Only process on relay nodes
         let router = &from.router;
@@ -285,12 +569,18 @@ pub trait MessageHandler {
                 return;
             }
         };
-        let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let source_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
         let _ok = api.turn_handle_listen(source_id, src);
         // Build and stash a ListenResponse; include responseTag if present
         let mut obj = serde_json::Map::new();
         obj.insert("app".to_string(), serde_json::Value::Null);
-        obj.insert("type".to_string(), serde_json::Value::String("ListenResponse".to_string()));
+        obj.insert(
+            "type".to_string(),
+            serde_json::Value::String("ListenResponse".to_string()),
+        );
         if let Some(tag) = router.get_last_response_tag() {
             obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
         }
@@ -304,7 +594,12 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_check] No sender available");
             if let Some(router) = router_opt {
                 // Use typed Fail message per OpenAPI instead of building a raw map
-                let fail = Fail { app: None, typ: "fail".to_string(), response_tag: router.get_last_response_tag(), reason: "no sender available".to_string() };
+                let fail = Fail {
+                    app: None,
+                    typ: "fail".to_string(),
+                    response_tag: router.get_last_response_tag(),
+                    reason: "no sender available".to_string(),
+                };
                 let json = serde_json::to_value(fail).unwrap_or(serde_json::Value::Null);
                 from.push_response(json);
             }
@@ -314,7 +609,10 @@ pub trait MessageHandler {
         // Compose JSON manually to include responseTag if present
         let mut json_obj = serde_json::Map::new();
         json_obj.insert("app".to_string(), serde_json::Value::Null);
-        json_obj.insert("type".to_string(), serde_json::Value::String("CheckResponse".to_string()));
+        json_obj.insert(
+            "type".to_string(),
+            serde_json::Value::String("CheckResponse".to_string()),
+        );
         let state = api.get_relay_state();
         json_obj.insert("state".to_string(), serde_json::Value::String(state));
         if let Some(tag) = msg.tag.clone() {
@@ -323,14 +621,47 @@ pub trait MessageHandler {
         let json_val = serde_json::Value::Object(json_obj);
         let nsk = from.network_source_key.clone();
         // Convert from.id (issuer) to raw Algorand address (base32)
-        let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-        tracing::info!("[handlers::on_relay_check] Sending CheckResponse to {}: {}", user_id, json_val);
+        let user_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
+        tracing::info!(
+            "[handlers::on_relay_check] Sending CheckResponse to {}: {}",
+            user_id,
+            json_val
+        );
         let _ok = sender(&nsk, &user_id, json_val);
     }
-    fn on_relay_listen_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListenResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone()))); }
-    fn on_relay_check_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCheckResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone()))); }
-    fn on_relay_call_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCallResponse) { self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone()))); }
-    fn on_relay_keep_alive(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, _msg: &RelayKeepAlive) {
+    fn on_relay_listen_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayListenResponse,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::ListenResponse(_msg.clone())));
+    }
+    fn on_relay_check_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayCheckResponse,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone())));
+    }
+    fn on_relay_call_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayCallResponse,
+    ) {
+        self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone())));
+    }
+    fn on_relay_keep_alive(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        _msg: &RelayKeepAlive,
+    ) {
         // Fire-and-forget refresh of the client's TURN listener mapping; no response.
         let router = &from.router;
         if !router.get_am_relay() {
@@ -344,7 +675,10 @@ pub trait MessageHandler {
                 return;
             }
         };
-        let source_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let source_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
         // Re-registering also picks up a NAT rebind to a new public port.
         let _ok = api.turn_handle_listen(source_id, src);
     }
@@ -354,12 +688,20 @@ pub trait MessageHandler {
         // The UDP sender of this message should be the relay address
         let relay_addr = match from.router.get_last_from() {
             Some(a) => a,
-            None => { warn!("[handlers::on_relay_called] No relay address (last_from) available"); return; }
+            None => {
+                warn!("[handlers::on_relay_called] No relay address (last_from) available");
+                return;
+            }
         };
         // Our public address must be known (from STUN/static); use API to obtain
         let my_pub = match api.get_last_public_addr() {
             Some(a) => a,
-            None => { warn!("[handlers::on_relay_called] No public address available to register TURN mapping"); return; }
+            None => {
+                warn!(
+                    "[handlers::on_relay_called] No public address available to register TURN mapping"
+                );
+                return;
+            }
         };
         api.turn_handle_called(relay_addr, my_pub, msg.channel);
     }
@@ -368,7 +710,12 @@ pub trait MessageHandler {
     fn on_mutex_request(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexRequest) {
         api.mutex_handle_request(from.id.clone(), msg.clone());
     }
-    fn on_mutex_response(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexResponse) {
+    fn on_mutex_response(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &MutexResponse,
+    ) {
         api.mutex_handle_response(from.id.clone(), msg.clone());
     }
     fn on_mutex_release(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &MutexRelease) {
@@ -376,19 +723,84 @@ pub trait MessageHandler {
     }
 
     // DDB messages (default to unimplemented unless overridden)
-    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbUpsertResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone()))); }
-    fn on_ddb_delete_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDeleteResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DeleteResolve(msg.clone()))); }
-    fn on_ddb_signoff(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignoff) { self.on_unimplemented(&Message::Ddb(DdbMessage::Signoff(msg.clone()))); }
-    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbQueryResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone()))); }
-    fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbInitResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone()))); }
-    fn on_ddb_dump_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbDumpResolve) { self.on_unimplemented(&Message::Ddb(DdbMessage::DumpResolve(msg.clone()))); }
-    fn on_ddb_signon(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignon) { self.on_unimplemented(&Message::Ddb(DdbMessage::Signon(msg.clone()))); }
-    fn on_ddb_signon_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignonResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::SignonResponse(msg.clone()))); }
-    fn on_ddb_get_relays_status(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbGetRelaysStatus) { self.on_unimplemented(&Message::Ddb(DdbMessage::GetRelaysStatus(msg.clone()))); }
-    fn on_ddb_relays_status_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbRelaysStatusResponse) { self.on_unimplemented(&Message::Ddb(DdbMessage::RelaysStatusResponse(msg.clone()))); }
+    fn on_ddb_upsert_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbUpsertResolve,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::UpsertResolve(msg.clone())));
+    }
+    fn on_ddb_delete_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbDeleteResolve,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::DeleteResolve(msg.clone())));
+    }
+    fn on_ddb_signoff(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignoff) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::Signoff(msg.clone())));
+    }
+    fn on_ddb_query_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbQueryResolve,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::QueryResolve(msg.clone())));
+    }
+    fn on_ddb_init_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbInitResolve,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::InitResolve(msg.clone())));
+    }
+    fn on_ddb_dump_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbDumpResolve,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::DumpResolve(msg.clone())));
+    }
+    fn on_ddb_signon(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &DdbSignon) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::Signon(msg.clone())));
+    }
+    fn on_ddb_signon_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbSignonResponse,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::SignonResponse(msg.clone())));
+    }
+    fn on_ddb_get_relays_status(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbGetRelaysStatus,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::GetRelaysStatus(msg.clone())));
+    }
+    fn on_ddb_relays_status_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &DdbRelaysStatusResponse,
+    ) {
+        self.on_unimplemented(&Message::Ddb(DdbMessage::RelaysStatusResponse(msg.clone())));
+    }
 
     // ReportFail messages
-    fn on_report_fail(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &ReportFailMessage) {
+    fn on_report_fail(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &ReportFailMessage,
+    ) {
         self.on_unimplemented(&Message::ReportFail(msg.clone()));
     }
 
@@ -397,7 +809,10 @@ pub trait MessageHandler {
         // Delegate to API on_message via the per-API Router if installed
         if let Some(cb) = from.router.get_on_message() {
             // Normalize sender id: issuer without suffix
-            let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let sender_id = from
+                .id
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string();
             // Look up the sender's handle by id via the API.
             match api.handle_lookup_by_id(&sender_id) {
                 Some(sender_handle) => cb(sender_id, sender_handle, raw.clone()),
@@ -415,14 +830,23 @@ pub trait MessageHandler {
 
     // Default unimplemented handler: prints the message JSON
     fn on_unimplemented(&self, msg: &Message) {
-        tracing::warn!("[on_unimplemented] {}", serde_json::to_string(&crate::messages::marshal::to_json_value(msg)).unwrap_or_else(|_| "<unprintable>".into()));
+        tracing::warn!(
+            "[on_unimplemented] {}",
+            serde_json::to_string(&crate::messages::marshal::to_json_value(msg))
+                .unwrap_or_else(|_| "<unprintable>".into())
+        );
     }
 }
 
 pub struct DefaultPrintingHandler;
 
 impl MessageHandler for DefaultPrintingHandler {
-    fn on_ddb_get_relays_status(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbGetRelaysStatus) {
+    fn on_ddb_get_relays_status(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &DdbGetRelaysStatus,
+    ) {
         let msg_tag = msg.tag.clone();
         let router = &from.router;
         // Only relays in Available state may serve getRelaysStatus
@@ -430,8 +854,13 @@ impl MessageHandler for DefaultPrintingHandler {
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-            obj.insert("text".to_string(), serde_json::Value::String("not a relay".into()));
+            if let Some(tag) = router.get_last_response_tag() {
+                obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+            }
+            obj.insert(
+                "text".to_string(),
+                serde_json::Value::String("not a relay".into()),
+            );
             from.push_response(serde_json::Value::Object(obj));
             return;
         }
@@ -449,8 +878,13 @@ impl MessageHandler for DefaultPrintingHandler {
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-            if let Some(tag) = msg_tag { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-            obj.insert("text".to_string(), serde_json::Value::String("relay not available".into()));
+            if let Some(tag) = msg_tag {
+                obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+            }
+            obj.insert(
+                "text".to_string(),
+                serde_json::Value::String("relay not available".into()),
+            );
             from.push_response(serde_json::Value::Object(obj));
             return;
         }
@@ -471,79 +905,128 @@ impl MessageHandler for DefaultPrintingHandler {
                     text: None,
                     data: None,
                 };
-                let resp = Message::Ddb(
-                    DdbMessage::RelaysStatusResponse(info)
-                );
+                let resp = Message::Ddb(DdbMessage::RelaysStatusResponse(info));
                 let json = crate::messages::marshal::to_json_value(&resp);
                 from.push_response(json);
             } else {
                 let mut obj = serde_json::Map::new();
                 obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
                 obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-                if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-                obj.insert("text".to_string(), serde_json::Value::String("ddb backend unavailable".into()));
+                if let Some(tag) = router.get_last_response_tag() {
+                    obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+                }
+                obj.insert(
+                    "text".to_string(),
+                    serde_json::Value::String("ddb backend unavailable".into()),
+                );
                 from.push_response(serde_json::Value::Object(obj));
             }
         } else {
             let mut obj = serde_json::Map::new();
             obj.insert("app".to_string(), serde_json::Value::String("ddb".into()));
             obj.insert("type".to_string(), serde_json::Value::String("fail".into()));
-            if let Some(tag) = router.get_last_response_tag() { obj.insert("responseTag".to_string(), serde_json::Value::String(tag)); }
-            obj.insert("text".to_string(), serde_json::Value::String("no ddb backend".into()));
+            if let Some(tag) = router.get_last_response_tag() {
+                obj.insert("responseTag".to_string(), serde_json::Value::String(tag));
+            }
+            obj.insert(
+                "text".to_string(),
+                serde_json::Value::String("no ddb backend".into()),
+            );
             from.push_response(serde_json::Value::Object(obj));
         }
     }
 
-    fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbInitResolve) {
+    fn on_ddb_init_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &DdbInitResolve,
+    ) {
         let router = &from.router;
-        if !router.get_am_relay() { return; }
+        if !router.get_am_relay() {
+            return;
+        }
         let sender_opt = router.get_sender();
-        if sender_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No sender available"); return; }
+        if sender_opt.is_none() {
+            warn!("[handlers::on_ddb_init_resolve] No sender available");
+            return;
+        }
         let sender = sender_opt.unwrap();
 
         // Get backend
         let backend_opt = router.get_ddb_backend();
-        if backend_opt.is_none() { warn!("[handlers::on_ddb_init_resolve] No DDB backend available"); return; }
+        if backend_opt.is_none() {
+            warn!("[handlers::on_ddb_init_resolve] No DDB backend available");
+            return;
+        }
         let backend_arc = backend_opt.unwrap();
         let guard = backend_arc.lock();
-        if guard.is_err() { warn!("[handlers::on_ddb_init_resolve] Backend lock poisoned"); return; }
+        if guard.is_err() {
+            warn!("[handlers::on_ddb_init_resolve] Backend lock poisoned");
+            return;
+        }
         let backend = guard.unwrap();
 
         // Prepare destination from FromStruct
         let nsk = from.network_source_key.clone();
-        let user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let user_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
 
         // Invoke backend handle_init: snapshot and send InitResponse + DumpResolve per record.
         let response_tag = msg.tag.clone();
-        backend.handle_init(&nsk, &user_id, response_tag, &|nsk2, uid2, val| sender(nsk2, &uid2.to_string(), val));
+        backend.handle_init(&nsk, &user_id, response_tag, &|nsk2, uid2, val| {
+            sender(nsk2, &uid2.to_string(), val)
+        });
     }
 
-    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, up: &DdbUpsertResolve) {
+    fn on_ddb_upsert_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        up: &DdbUpsertResolve,
+    ) {
         let router = &from.router;
-        if !router.get_am_relay() { return; }
+        if !router.get_am_relay() {
+            return;
+        }
         // Validate sender id
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
-        if up.record.id != up.start_id { return; }
-        if !up.rippled && up.record.id != sender_id { return; }
+        if up.record.id != up.start_id {
+            return;
+        }
+        if !up.rippled && up.record.id != sender_id {
+            return;
+        }
         if up.tag.is_none() {
-            tracing::error!("[handlers::on_ddb_upsert_resolve] No responseTag in DdbUpsertResolve {:?}", up);
+            tracing::error!(
+                "[handlers::on_ddb_upsert_resolve] No responseTag in DdbUpsertResolve {:?}",
+                up
+            );
             return;
         }
         // Upsert to backend
         if let Some(backend) = router.get_ddb_backend() {
-            if let Ok(mut b) = backend.lock()
-            {
+            if let Ok(mut b) = backend.lock() {
                 if !up.record.verify() {
-                    tracing::warn!("[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}", up.record.id);
+                    tracing::warn!(
+                        "[handlers::on_ddb_upsert_resolve] signature verification failed for record id={}",
+                        up.record.id
+                    );
                     return;
                 }
-                tracing::info!("[handlers::on_ddb_upsert_resolve] Upserting record: {:?}", up.record);
-                b.upsert(up.record.clone()); }
-            else {
-                tracing::error!("[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert");
+                tracing::info!(
+                    "[handlers::on_ddb_upsert_resolve] Upserting record: {:?}",
+                    up.record
+                );
+                b.upsert(up.record.clone());
+            } else {
+                tracing::error!(
+                    "[handlers::on_ddb_upsert_resolve] Could not lock DDB backend for upsert"
+                );
             }
-        }
-        else {
+        } else {
             tracing::error!("[handlers::on_ddb_upsert_resolve] No DDB backend available");
         }
 
@@ -553,53 +1036,74 @@ impl MessageHandler for DefaultPrintingHandler {
             let ripple_msg = Message::Ddb(DdbMessage::UpsertResolve(rippled_up));
             let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
             if let Some(backend) = router.get_ddb_backend()
-                && let Ok(b) = backend.lock() {
-                    _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
-                }
+                && let Ok(b) = backend.lock()
+            {
+                _api.ripple_message(ripple_json, up.start_id.clone(), &*b);
+            }
 
             // Prepare response JSON and stash on router for Engine/DTLS layer to send.
             let response_tag = up.tag.clone();
 
-            let resp = Message::Ddb(
-                DdbMessage::UpdateResponse(
-                    DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
-                )
-            );
+            let resp = Message::Ddb(DdbMessage::UpdateResponse(DdbUpdateResponse {
+                app: "ddb".to_string(),
+                response_tag,
+                text: None,
+                data: None,
+            }));
             let json = crate::messages::marshal::to_json_value(&resp);
             from.push_response(json);
         }
     }
 
-    fn on_ddb_delete_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDeleteResolve) {
+    fn on_ddb_delete_resolve(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &DdbDeleteResolve,
+    ) {
         let router = &from.router;
-        if !router.get_am_relay() { return; }
+        if !router.get_am_relay() {
+            return;
+        }
         // Validate sender id from transport against message startId
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if !msg.rippled && msg.start_id != sender_id {
-            tracing::warn!("[handlers::on_ddb_delete_resolve] Unauthorized delete attempt: sender={} target={}", sender_id, msg.start_id);
+            tracing::warn!(
+                "[handlers::on_ddb_delete_resolve] Unauthorized delete attempt: sender={} target={}",
+                sender_id,
+                msg.start_id
+            );
             return;
         }
 
         // Delete from backend
         if let Some(backend) = router.get_ddb_backend()
-            && let Ok(mut b) = backend.lock() {
-                // Validate that the existing record matches the sender if not rippled
-                // FUTURE: delete messages will also be signed by id
-                if let Some(record) = b.lookup(&msg.start_id)
-                    && !msg.rippled && record.id != sender_id {
-                        tracing::warn!("[handlers::on_ddb_delete_resolve] Record ID mismatch for delete: record.id={} sender_id={}", record.id, sender_id);
-                        return;
-                    }
-                b.delete(&msg.start_id);
+            && let Ok(mut b) = backend.lock()
+        {
+            // Validate that the existing record matches the sender if not rippled
+            // FUTURE: delete messages will also be signed by id
+            if let Some(record) = b.lookup(&msg.start_id)
+                && !msg.rippled
+                && record.id != sender_id
+            {
+                tracing::warn!(
+                    "[handlers::on_ddb_delete_resolve] Record ID mismatch for delete: record.id={} sender_id={}",
+                    record.id,
+                    sender_id
+                );
+                return;
             }
+            b.delete(&msg.start_id);
+        }
 
         // Prepare response JSON and stash on router for Engine/DTLS layer to send.
         let response_tag = msg.tag.clone();
-        let resp = Message::Ddb(
-            DdbMessage::UpdateResponse(
-                DdbUpdateResponse { app: "ddb".to_string(), response_tag, text: None, data: None }
-            )
-        );
+        let resp = Message::Ddb(DdbMessage::UpdateResponse(DdbUpdateResponse {
+            app: "ddb".to_string(),
+            response_tag,
+            text: None,
+            data: None,
+        }));
         let json = crate::messages::marshal::to_json_value(&resp);
         from.push_response(json);
 
@@ -609,44 +1113,65 @@ impl MessageHandler for DefaultPrintingHandler {
             let ripple_msg = Message::Ddb(DdbMessage::DeleteResolve(rippled_msg));
             let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
             if let Some(backend) = router.get_ddb_backend()
-                && let Ok(b) = backend.lock() {
-                    api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
-                }
+                && let Ok(b) = backend.lock()
+            {
+                api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
+            }
         }
     }
 
     fn on_ddb_signoff(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignoff) {
         let router = &from.router;
-        if !router.get_am_relay() { return; }
+        if !router.get_am_relay() {
+            return;
+        }
         // Validate sender id from transport against message startId
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if !msg.rippled && msg.start_id != sender_id {
-            tracing::warn!("[handlers::on_ddb_signoff] Unauthorized signoff attempt: sender={} target={}", sender_id, msg.start_id);
+            tracing::warn!(
+                "[handlers::on_ddb_signoff] Unauthorized signoff attempt: sender={} target={}",
+                sender_id,
+                msg.start_id
+            );
             return;
         }
 
         // Endpoint the signoff arrived from, for validation against the registered record.
-        let sender_ep = from.network_source_key.inet_socket_address().map(InetSocketAddress::from);
+        let sender_ep = from
+            .network_source_key
+            .inet_socket_address()
+            .map(InetSocketAddress::from);
 
         // Delete from backend
         if let Some(backend) = router.get_ddb_backend()
-            && let Ok(mut b) = backend.lock() {
-                if let Some(record) = b.lookup(&msg.start_id)
-                    && !msg.rippled {
-                        // Validate the record belongs to the sender.
-                        if record.id != sender_id {
-                            tracing::warn!("[handlers::on_ddb_signoff] Record ID mismatch for signoff: record.id={} sender_id={}", record.id, sender_id);
-                            return;
-                        }
-                        // Validate the signoff comes from the endpoint registered for the node.
-                        if let Some(reg_ep) = &record.endpoint
-                            && sender_ep.as_ref() != Some(reg_ep) {
-                                tracing::warn!("[handlers::on_ddb_signoff] Endpoint mismatch for signoff: registered={} sender={:?}", reg_ep, sender_ep);
-                                return;
-                            }
-                    }
-                b.delete(&msg.start_id);
+            && let Ok(mut b) = backend.lock()
+        {
+            if let Some(record) = b.lookup(&msg.start_id)
+                && !msg.rippled
+            {
+                // Validate the record belongs to the sender.
+                if record.id != sender_id {
+                    tracing::warn!(
+                        "[handlers::on_ddb_signoff] Record ID mismatch for signoff: record.id={} sender_id={}",
+                        record.id,
+                        sender_id
+                    );
+                    return;
+                }
+                // Validate the signoff comes from the endpoint registered for the node.
+                if let Some(reg_ep) = &record.endpoint
+                    && sender_ep.as_ref() != Some(reg_ep)
+                {
+                    tracing::warn!(
+                        "[handlers::on_ddb_signoff] Endpoint mismatch for signoff: registered={} sender={:?}",
+                        reg_ep,
+                        sender_ep
+                    );
+                    return;
+                }
             }
+            b.delete(&msg.start_id);
+        }
 
         // Drop the node from the relay pool so it is no longer offered as a relay.
         api.relay_finder_clear_state_cache();
@@ -659,98 +1184,147 @@ impl MessageHandler for DefaultPrintingHandler {
             let ripple_msg = Message::Ddb(DdbMessage::Signoff(rippled_msg));
             let ripple_json = crate::messages::marshal::to_json_value(&ripple_msg);
             if let Some(backend) = router.get_ddb_backend()
-                && let Ok(b) = backend.lock() {
-                    api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
-                }
+                && let Ok(b) = backend.lock()
+            {
+                api.ripple_message(ripple_json, msg.start_id.clone(), &*b);
+            }
         }
     }
 
-    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, from: &FromStruct, q: &DdbQueryResolve) {
+    fn on_ddb_query_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        q: &DdbQueryResolve,
+    ) {
         let router = &from.router;
-        if !router.get_am_relay() { return; }
+        if !router.get_am_relay() {
+            return;
+        }
         // Lookup
         let (found, advert_opt) = if let Some(backend) = router.get_ddb_backend() {
-            if let Ok(b) = backend.lock() { let r = b.lookup(&q.id); (r.is_some(), r) } else { (false, None) }
-        } else { (false, None) };
+            if let Ok(b) = backend.lock() {
+                let r = b.lookup(&q.id);
+                (r.is_some(), r)
+            } else {
+                (false, None)
+            }
+        } else {
+            (false, None)
+        };
         let response_tag = q.tag.clone();
-        let resp = Message::Ddb(
-            DdbMessage::QueryResponse(
-                DdbQueryResponse { app: "ddb".to_string(), found, advert: advert_opt, tag: None, response_tag, text: None, data: None }
-            )
-        );
+        let resp = Message::Ddb(DdbMessage::QueryResponse(DdbQueryResponse {
+            app: "ddb".to_string(),
+            found,
+            advert: advert_opt,
+            tag: None,
+            response_tag,
+            text: None,
+            data: None,
+        }));
         let json = crate::messages::marshal::to_json_value(&resp);
         from.push_response(json);
     }
 
-    fn on_ddb_dump_resolve(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbDumpResolve) {
+    fn on_ddb_dump_resolve(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &DdbDumpResolve,
+    ) {
         tracing::info!("[handlers::on_ddb_dump_resolve] upserting from {:?}", msg);
         api.ddb_upsert_record(msg.record.clone());
         if let Some(target) = api.get_peer_ddb_target()
-            && target == api.ddb_backend_size() {
-                tracing::info!("[handlers::on_ddb_dump_resolve] DDB sync complete (all {} records received). Sending DdbSignon.", target);
-                let my_id = match api.get_my_id() {
-                    Some(id) => id,
-                    None => {
-                        tracing::warn!("[handlers::on_ddb_dump_resolve] get_my_id returned None; cannot send Signon");
-                        return;
-                    }
-                };
+            && target == api.ddb_backend_size()
+        {
+            tracing::info!(
+                "[handlers::on_ddb_dump_resolve] DDB sync complete (all {} records received). Sending DdbSignon.",
+                target
+            );
+            let my_id = match api.get_my_id() {
+                Some(id) => id,
+                None => {
+                    tracing::warn!(
+                        "[handlers::on_ddb_dump_resolve] get_my_id returned None; cannot send Signon"
+                    );
+                    return;
+                }
+            };
 
-                let signon = DdbSignon {
-                    app: "ddb".to_string(),
-                    start_id: my_id,
-                    original_signature: None,
-                    rippled: Some(false),
-                    tag: None,
-                    response_tag: None,
-                    text: None,
-                    data: None,
-                };
-                let msg_out = Message::Ddb(DdbMessage::Signon(signon));
-                let json = crate::messages::marshal::to_json_value(&msg_out);
+            let signon = DdbSignon {
+                app: "ddb".to_string(),
+                start_id: my_id,
+                original_signature: None,
+                rippled: Some(false),
+                tag: None,
+                response_tag: None,
+                text: None,
+                data: None,
+            };
+            let msg_out = Message::Ddb(DdbMessage::Signon(signon));
+            let json = crate::messages::marshal::to_json_value(&msg_out);
 
-                let nsk = from.network_source_key.clone();
-                let peer_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+            let nsk = from.network_source_key.clone();
+            let peer_id = from
+                .id
+                .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+                .to_string();
 
-                let api_for_thread = api.clone();
-                std::thread::spawn(move || {
-                    tracing::info!("[on_ddb_dump_resolve] sending DdbSignon to {} via {}", peer_id, nsk);
-                    let ok = api_for_thread.send_message_to_network(&nsk, &peer_id, json, None);
-                    tracing::info!("[on_ddb_dump_resolve] DdbSignon sent ok={:?}", ok);
-                });
-            }
+            let api_for_thread = api.clone();
+            std::thread::spawn(move || {
+                tracing::info!(
+                    "[on_ddb_dump_resolve] sending DdbSignon to {} via {}",
+                    peer_id,
+                    nsk
+                );
+                let ok = api_for_thread.send_message_to_network(&nsk, &peer_id, json, None);
+                tracing::info!("[on_ddb_dump_resolve] DdbSignon sent ok={:?}", ok);
+            });
+        }
     }
 
-    fn on_ddb_signon_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbSignonResponse) {
+    fn on_ddb_signon_response(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbSignonResponse,
+    ) {
         tracing::info!("[on_ddb_signon_response] received SignonResponse, signaling completion");
         api.signal_signon_complete();
     }
 
     fn on_ddb_signon(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &DdbSignon) {
         let router = &from.router;
-        if !router.get_am_relay() { return; }
+        if !router.get_am_relay() {
+            return;
+        }
         tracing::info!("[on_ddb_signon] received Signon from {}", msg.start_id);
 
         let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         if msg.rippled != Some(true) && msg.start_id != sender_id {
-            tracing::warn!("[on_ddb_signon] start_id mismatch: msg={} sender={}", msg.start_id, sender_id);
+            tracing::warn!(
+                "[on_ddb_signon] start_id mismatch: msg={} sender={}",
+                msg.start_id,
+                sender_id
+            );
             return;
         }
 
         // Create and insert relay record for the new peer
-        let _endpoint = from.network_source_key.inet_socket_address().map(|addr| {
-            InetSocketAddress {
-                host: match addr.ip() {
-                    std::net::IpAddr::V4(v4) => v4.to_string(),
-                    std::net::IpAddr::V6(v6) => v6.to_string(),
-                },
-                port: addr.port(),
-            }
-        });
+        let _endpoint =
+            from.network_source_key
+                .inet_socket_address()
+                .map(|addr| InetSocketAddress {
+                    host: match addr.ip() {
+                        std::net::IpAddr::V4(v4) => v4.to_string(),
+                        std::net::IpAddr::V6(v6) => v6.to_string(),
+                    },
+                    port: addr.port(),
+                });
 
         // We have the relay entry in the local DDB already from its initial register
         // It will shortly send us another upsert which sets the am_relay state
-        
+
         // Queue SignonResponse FIRST — the new relay needs to receive this and
         // transition to Available before other relays learn about it and try
         // getRelaysStatus on it.
@@ -777,24 +1351,39 @@ impl MessageHandler for DefaultPrintingHandler {
             let router_clone = from.router.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(3));
-                tracing::info!("[on_ddb_signon] rippling signon for {} after delay", start_id);
+                tracing::info!(
+                    "[on_ddb_signon] rippling signon for {} after delay",
+                    start_id
+                );
                 if let Some(backend) = router_clone.get_ddb_backend()
-                    && let Ok(b) = backend.lock() {
-                        api_clone.ripple_message(ripple_json, start_id, &*b);
-                    }
+                    && let Ok(b) = backend.lock()
+                {
+                    api_clone.ripple_message(ripple_json, start_id, &*b);
+                }
             });
         }
     }
 
-    fn on_triangle_test1(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &RelayTriangleTest1) {
+    fn on_triangle_test1(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &RelayTriangleTest1,
+    ) {
         // Print options via API for debugging
         api.debug_print_options();
-        tracing::info!("[handlers::on_triangle_test1] received {:?} from {}", msg, from.id);
+        tracing::info!(
+            "[handlers::on_triangle_test1] received {:?} from {}",
+            msg,
+            from.id
+        );
 
         let msg_tag = msg.tag.clone();
         // Run in a thread per requirements
         let checking = msg.checking_endpoint.clone();
-        let exclusions: Vec<std::net::SocketAddr> = msg.do_not_use_endpoints.iter()
+        let exclusions: Vec<std::net::SocketAddr> = msg
+            .do_not_use_endpoints
+            .iter()
             .cloned()
             .map(|ie| ie.try_into().expect("valid doNotUseEndpoints"))
             .collect();
@@ -802,45 +1391,76 @@ impl MessageHandler for DefaultPrintingHandler {
         // Clone sender context needed inside the spawned thread (avoid borrowing 'from')
         let from_nsk = from.network_source_key.clone();
         // Convert issuer-form id to raw Algorand address (base32) for network send
-        let from_user_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let from_user_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
         let msg2 = msg.clone();
         std::thread::spawn(move || {
             // Proceed to construct a RelayFinder like in stun_consistent_process, using Indexer-based discovery when available.
             use crate::relay::relay_finder::{RelayFinder, RelayInfo};
-            tracing::info!("[handlers::on_triangle_test1] in thread for triangle test1: {:?}", msg2);
+            tracing::info!(
+                "[handlers::on_triangle_test1] in thread for triangle test1: {:?}",
+                msg2
+            );
             let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
                 // Prefer app_id from API options; fallback to env var for legacy
-                let app_id_opt = api_for_thread
-                    .get_app_id()
-                    .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
-                let app_id = app_id_opt.expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
+                let app_id_opt = api_for_thread.get_app_id().or_else(|| {
+                    std::env::var("BINGLE_APP_ID")
+                        .ok()
+                        .and_then(|s| s.parse::<u64>().ok())
+                });
+                let app_id = app_id_opt
+                    .expect("on_triangle_test1: app_id is required (options.api or BINGLE_APP_ID)");
                 let cfg = api_for_thread.get_algo_provider_config();
                 let cache = api_for_thread.get_accounts_cache();
                 crate::relay::discovery::indexer_discover_closure(app_id, cfg, cache)
             };
             // Use the BingleApi instance passed to the handler (wrap combined API as plain BingleApiBoth)
-            let api_plain: Arc<dyn BingleApiBoth> = Arc::new(BothAsApi { inner: api_for_thread.clone() });
+            let api_plain: Arc<dyn BingleApiBoth> = Arc::new(BothAsApi {
+                inner: api_for_thread.clone(),
+            });
             let finder = RelayFinder::new(Arc::downgrade(&api_plain), discover);
 
             // Obtain our id from API (derived from engine issuer)
             let my_id = match api_for_thread.get_my_id() {
                 Some(id) => id,
-                None => { warn!("[handlers::on_triangle_test1] get_my_id returned None"); return; }
+                None => {
+                    warn!("[handlers::on_triangle_test1] get_my_id returned None");
+                    return;
+                }
             };
-            tracing::info!("[handlers::on_triangle_test1] call find_relay_excluding my_id = {}", my_id);
+            tracing::info!(
+                "[handlers::on_triangle_test1] call find_relay_excluding my_id = {}",
+                my_id
+            );
             let associated_relay = match finder.find_relay_excluding(&my_id, &exclusions) {
                 Ok(info) => info,
                 Err(e) => {
                     warn!("[handlers::on_triangle_test1] find_relay failed: {}", e);
                     // No corner node — respond immediately; can't validate full NAT config
-                    send_triangle_test1_response(&api_for_thread, &from_nsk, &from_user_id, msg_tag, true, std::time::Duration::ZERO);
+                    send_triangle_test1_response(
+                        &api_for_thread,
+                        &from_nsk,
+                        &from_user_id,
+                        msg_tag,
+                        true,
+                        std::time::Duration::ZERO,
+                    );
                     return;
                 }
             };
-            tracing::info!("[handlers::on_triangle_test1] found relay: {:?}", associated_relay);
+            tracing::info!(
+                "[handlers::on_triangle_test1] found relay: {:?}",
+                associated_relay
+            );
 
             // Build TriangleTest2 with checking_endpoint from TriangleTest1 and checking_id as our id (no issuer suffix)
-            let t2 = RelayTriangleTest2 { app: None, checking_id: my_id.clone(), checking_endpoint: checking };
+            let t2 = RelayTriangleTest2 {
+                app: None,
+                checking_id: my_id.clone(),
+                checking_endpoint: checking,
+            };
             let msg_out = Message::Relay(RelayMessage::TriangleTest2(t2));
             let json_val = crate::messages::marshal::to_json_value(&msg_out);
 
@@ -850,31 +1470,63 @@ impl MessageHandler for DefaultPrintingHandler {
             let user_id = associated_relay.id().to_string();
             // Use the provided API for sending
             let ok = api_for_thread.send_message_to_network(&nsk, &user_id, json_val, None);
-            tracing::info!("[handlers::on_triangle_test1] TriangleTest2 -> {} ok={:?}", associated_relay.address(), ok);
+            tracing::info!(
+                "[handlers::on_triangle_test1] TriangleTest2 -> {} ok={:?}",
+                associated_relay.address(),
+                ok
+            );
 
             // Delay before responding to allow the triangle test to complete, then send TriangleTest1Response
-            send_triangle_test1_response(&api_for_thread, &from_nsk, &from_user_id, msg_tag, false, TRIANGLE_TEST_1_DELAY);
+            send_triangle_test1_response(
+                &api_for_thread,
+                &from_nsk,
+                &from_user_id,
+                msg_tag,
+                false,
+                TRIANGLE_TEST_1_DELAY,
+            );
 
             tracing::info!("[handlers::on_triangle_test1] done for {:?}", msg2);
         });
     }
 
-    fn on_triangle_test2(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayTriangleTest2) {
+    fn on_triangle_test2(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &RelayTriangleTest2,
+    ) {
         // On T2: send T3 to checking_endpoint (acts as peer relay behavior).
         use crate::api::bingle_api::NetworkEndpoint;
         use std::convert::TryInto;
-        let endpoint: std::net::SocketAddr = msg.checking_endpoint.clone().try_into().expect("valid checkingEndpoint");
+        let endpoint: std::net::SocketAddr = msg
+            .checking_endpoint
+            .clone()
+            .try_into()
+            .expect("valid checkingEndpoint");
         let t3 = RelayTriangleTest3 { app: None };
         let out = Message::Relay(RelayMessage::TriangleTest3(t3));
         let json_val = crate::messages::marshal::to_json_value(&out);
         let nsk = NetworkEndpoint::new_direct(endpoint);
         // Convert checking_id (issuer) to raw address by trimming issuer suffix (base32 Algorand address)
-        let user_id = msg.checking_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
+        let user_id = msg
+            .checking_id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
         let ok = api.send_message_to_network(&nsk, &user_id, json_val, None);
-        tracing::info!("[handlers::on_triangle_test2] TriangleTest3 -> {} ok={:?}", endpoint, ok);
+        tracing::info!(
+            "[handlers::on_triangle_test2] TriangleTest3 -> {} ok={:?}",
+            endpoint,
+            ok
+        );
     }
 
-    fn on_triangle_test3(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
+    fn on_triangle_test3(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest3,
+    ) {
         // Use the combined API (BingleApi + BingleApiInternal) instead of Router::get_bingle_api_internal
         api.set_state(crate::engine::EngineState::EndpointAvailable);
         api.set_nat_type(crate::engine::NatType::FullCone);
@@ -886,41 +1538,73 @@ impl MessageHandler for DefaultPrintingHandler {
                 // Register the IP as not relay first
                 match api_for_thread.ddb_register_ip(addr, false) {
                     Ok(()) => {
-                        tracing::info!("[handlers::on_triangle_test3] initial DDB registration successful: {}", addr);
+                        tracing::info!(
+                            "[handlers::on_triangle_test3] initial DDB registration successful: {}",
+                            addr
+                        );
                         if api_for_thread.is_relay() {
                             // We should have a relay_finder here, created in stun_consistent_process
                             api_for_thread.initialize_relay();
                             if let Err(e) = api_for_thread.ddb_register_ip(addr, true) {
-                                tracing::warn!("[handlers::on_triangle_test3] second ddb_register_ip(true) failed: {}", e);
+                                tracing::warn!(
+                                    "[handlers::on_triangle_test3] second ddb_register_ip(true) failed: {}",
+                                    e
+                                );
                             } else {
-                                tracing::info!("[handlers::on_triangle_test3] relay DDB registration successful: {}", addr);
+                                tracing::info!(
+                                    "[handlers::on_triangle_test3] relay DDB registration successful: {}",
+                                    addr
+                                );
                             }
                         }
                         // Mark engine state as Registered and print id/handle for debugging
-                        let uid = api_for_thread.get_user_id().unwrap_or_else(|| "<unknown>".to_string());
-                        let handle = api_for_thread.get_handle().unwrap_or_else(|| "<unknown>".to_string());
-                        tracing::info!("[handlers::on_triangle_test3] registration process completed (user_id={}, handle={})", uid, handle);
+                        let uid = api_for_thread
+                            .get_user_id()
+                            .unwrap_or_else(|| "<unknown>".to_string());
+                        let handle = api_for_thread
+                            .get_handle()
+                            .unwrap_or_else(|| "<unknown>".to_string());
+                        tracing::info!(
+                            "[handlers::on_triangle_test3] registration process completed (user_id={}, handle={})",
+                            uid,
+                            handle
+                        );
                         api_for_thread.set_state(crate::engine::EngineState::Registered);
                         // Notify that we are listening now
                         api_for_thread.notify_listening(true, crate::engine::NatType::FullCone);
                     }
                     Err(e) => {
-                        tracing::warn!("[handlers::on_triangle_test3] initial ddb_register_ip failed: {}", e);
+                        tracing::warn!(
+                            "[handlers::on_triangle_test3] initial ddb_register_ip failed: {}",
+                            e
+                        );
                     }
                 }
             } else {
-                tracing::warn!("[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register");
+                tracing::warn!(
+                    "[handlers::on_triangle_test3] get_last_public_addr returned None; skipping DDB register"
+                );
             }
         });
     }
 
-    fn on_triangle_test1_response(&self, api: Arc<dyn BingleApiBoth>, _from: &FromStruct, msg: &RelayTriangleTest1Response) {
-        tracing::info!("[DefaultPrintingHandler] TriangleTest1Response received (no_corner_node={})", msg.no_corner_node);
+    fn on_triangle_test1_response(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        msg: &RelayTriangleTest1Response,
+    ) {
+        tracing::info!(
+            "[DefaultPrintingHandler] TriangleTest1Response received (no_corner_node={})",
+            msg.no_corner_node
+        );
 
         if msg.no_corner_node {
             // No corner node available — immediately set NATRestricted if appropriate, then
             // run the same post-triangle logic that the delayed thread would execute.
-            warn!("[DefaultPrintingHandler][on_triangle_test1_response] no corner node available for triangle test");
+            warn!(
+                "[DefaultPrintingHandler][on_triangle_test1_response] no corner node available for triangle test"
+            );
 
             // Execute the post-triangle relay registration logic immediately in a thread (no delay)
             let api_for_thread = api.clone();
@@ -937,12 +1621,19 @@ impl MessageHandler for DefaultPrintingHandler {
         }
     }
 
-    fn on_report_fail(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, msg: &ReportFailMessage) {
+    fn on_report_fail(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        msg: &ReportFailMessage,
+    ) {
         let router = &from.router;
 
         // Only relays should handle ReportFail messages
         if !router.get_am_relay() {
-            warn!("[handlers::on_report_fail] received ReportFail but we are not a relay, ignoring");
+            warn!(
+                "[handlers::on_report_fail] received ReportFail but we are not a relay, ignoring"
+            );
             return;
         }
 
@@ -958,24 +1649,32 @@ impl MessageHandler for DefaultPrintingHandler {
             }
         }
     }
-
 }
 
 impl DefaultPrintingHandler {
-    fn on_relay_report_failed(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, relay_report_failed: &RelayReportFailed) {
+    fn on_relay_report_failed(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        relay_report_failed: &RelayReportFailed,
+    ) {
         let router = &from.router;
 
         let failed_relay_id = &relay_report_failed.failed_relay_id;
 
         // Find the failed relay's address via list_all_relays
-        let relay_addr_opt = api.list_all_relays(true)
+        let relay_addr_opt = api
+            .list_all_relays(true)
             .into_iter()
             .find(|r| r.id() == failed_relay_id)
             .map(|r| r.address());
 
         let mark_failed = match relay_addr_opt {
             None => {
-                warn!("[handlers::on_report_fail] could not find address for failed relay {}", failed_relay_id);
+                warn!(
+                    "[handlers::on_report_fail] could not find address for failed relay {}",
+                    failed_relay_id
+                );
                 true
             }
             Some(relay_addr) => {
@@ -989,11 +1688,19 @@ impl DefaultPrintingHandler {
                 }));
                 let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_addr);
                 let request_json = crate::messages::marshal::to_json_value(&request);
-                let send_result = api.send_message_to_network_with_response(&nsk, failed_relay_id, request_json, None);
+                let send_result = api.send_message_to_network_with_response(
+                    &nsk,
+                    failed_relay_id,
+                    request_json,
+                    None,
+                );
 
                 match send_result {
                     Err(e) => {
-                        warn!("[handlers::on_report_fail] failed to send DdbGetRelaysStatus to {}: {}", failed_relay_id, e);
+                        warn!(
+                            "[handlers::on_report_fail] failed to send DdbGetRelaysStatus to {}: {}",
+                            failed_relay_id, e
+                        );
                         true
                     }
                     Ok(response_json) => {
@@ -1001,15 +1708,24 @@ impl DefaultPrintingHandler {
                         match parsed {
                             Ok(Message::Ddb(DdbMessage::RelaysStatusResponse(status))) => {
                                 if status.responder_state != RelayState::Available {
-                                    warn!("[handlers::on_report_fail] relay {} responded but state is {:?}, marking failed", failed_relay_id, status.responder_state);
+                                    warn!(
+                                        "[handlers::on_report_fail] relay {} responded but state is {:?}, marking failed",
+                                        failed_relay_id, status.responder_state
+                                    );
                                     true
                                 } else {
-                                    warn!("[handlers::on_report_fail] relay {} responded as Available, ignoring report", failed_relay_id);
+                                    warn!(
+                                        "[handlers::on_report_fail] relay {} responded as Available, ignoring report",
+                                        failed_relay_id
+                                    );
                                     false
                                 }
                             }
                             _ => {
-                                warn!("[handlers::on_report_fail] unexpected response from relay {}, marking failed", failed_relay_id);
+                                warn!(
+                                    "[handlers::on_report_fail] unexpected response from relay {}, marking failed",
+                                    failed_relay_id
+                                );
                                 true
                             }
                         }
@@ -1037,7 +1753,11 @@ impl DefaultPrintingHandler {
 
             if let Some(backend) = router.get_ddb_backend() {
                 if let Ok(b) = backend.lock() {
-                    api.ripple_message(ripple_json, relay_report_failed.failed_relay_id.clone(), &*b);
+                    api.ripple_message(
+                        ripple_json,
+                        relay_report_failed.failed_relay_id.clone(),
+                        &*b,
+                    );
                 } else {
                     warn!("[handlers::on_report_fail] could not lock ddb backend for ripple");
                 }
@@ -1047,21 +1767,32 @@ impl DefaultPrintingHandler {
         }
     }
 
-    fn on_report_failed_ripple(&self, api: Arc<dyn BingleApiBoth>, from: &FromStruct, ripple: &ReportFailedRipple) {
+    fn on_report_failed_ripple(
+        &self,
+        api: Arc<dyn BingleApiBoth>,
+        from: &FromStruct,
+        ripple: &ReportFailedRipple,
+    ) {
         // Validate sender is a relay
-        let sender_id = from.id.trim_end_matches(crate::protocol::ISSUER_SUFFIX).to_string();
-        let sender_is_relay = api.list_all_relays(true)
+        let sender_id = from
+            .id
+            .trim_end_matches(crate::protocol::ISSUER_SUFFIX)
+            .to_string();
+        let sender_is_relay = api
+            .list_all_relays(true)
             .into_iter()
             .any(|r| r.id() == sender_id);
         if !sender_is_relay {
-            warn!("[handlers::on_report_failed_ripple] received ReportFailedRipple from non-relay {}, ignoring", sender_id);
+            warn!(
+                "[handlers::on_report_failed_ripple] received ReportFailedRipple from non-relay {}, ignoring",
+                sender_id
+            );
             return;
         }
 
         Self::mark_relay_as_failed(api, &ripple.failed_relay_id);
         // no response returned (temporary implementation)
     }
-
 }
 
 impl DefaultPrintingHandler {
@@ -1070,7 +1801,10 @@ impl DefaultPrintingHandler {
     fn mark_relay_as_failed(api: Arc<dyn BingleApiBoth>, relay_id: &str) {
         api.ddb_delete_record(relay_id);
         api.relay_finder_remove_relay(relay_id);
-        warn!("[handlers::mark_relay_as_failed] removed relay {} from local DDB and relay finder cache", relay_id);
+        warn!(
+            "[handlers::mark_relay_as_failed] removed relay {} from local DDB and relay finder cache",
+            relay_id
+        );
     }
 }
 
@@ -1081,7 +1815,9 @@ impl DefaultPrintingHandler {
     /// then contacts the associated relay to start TURN Listen and registers in the DDB.
     fn post_triangle_relay_register(api_for_thread: Arc<dyn BingleApiBoth>) {
         let cur = api_for_thread.get_state();
-        if cur != crate::engine::EngineState::EndpointAvailable && cur != crate::engine::EngineState::Registered {
+        if cur != crate::engine::EngineState::EndpointAvailable
+            && cur != crate::engine::EngineState::Registered
+        {
             api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
             api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
 
@@ -1090,12 +1826,17 @@ impl DefaultPrintingHandler {
 
             // Build discovery closure similar to on_triangle_test1
             let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                let app_id_opt = api_for_thread
-                    .get_app_id()
-                    .or_else(|| std::env::var("BINGLE_APP_ID").ok().and_then(|s| s.parse::<u64>().ok()));
+                let app_id_opt = api_for_thread.get_app_id().or_else(|| {
+                    std::env::var("BINGLE_APP_ID")
+                        .ok()
+                        .and_then(|s| s.parse::<u64>().ok())
+                });
                 let app_id = match app_id_opt {
                     Some(v) => v,
-                    None => { warn!("[on_triangle_test1_response] app_id missing; cannot discover relay"); return; }
+                    None => {
+                        warn!("[on_triangle_test1_response] app_id missing; cannot discover relay");
+                        return;
+                    }
                 };
                 let cfg = api_for_thread.get_algo_provider_config();
                 let cache = api_for_thread.get_accounts_cache();
@@ -1103,19 +1844,30 @@ impl DefaultPrintingHandler {
             };
 
             // Wrap combined API as plain BingleApiBoth for RelayFinder
-            let api_plain: Arc<dyn BingleApiBoth> = Arc::new(BothAsApi { inner: api_for_thread.clone() });
+            let api_plain: Arc<dyn BingleApiBoth> = Arc::new(BothAsApi {
+                inner: api_for_thread.clone(),
+            });
             let finder = RelayFinder::new(Arc::downgrade(&api_plain), discover);
             let my_id = match api_for_thread.get_my_id() {
                 Some(id) => id,
-                None => { warn!("[on_triangle_test1_response] get_my_id returned None"); return; }
+                None => {
+                    warn!("[on_triangle_test1_response] get_my_id returned None");
+                    return;
+                }
             };
             let relay_info = match finder.find_relay(&my_id) {
                 Ok(info) => info,
-                Err(e) => { warn!("[on_triangle_test1_response] find_relay failed: {}", e); return; }
+                Err(e) => {
+                    warn!("[on_triangle_test1_response] find_relay failed: {}", e);
+                    return;
+                }
             };
 
             // Send Relay::Listen and expect Relay::ListenResponse
-            let listen = RelayListen { app: None, tag: None };
+            let listen = RelayListen {
+                app: None,
+                tag: None,
+            };
             let msg = Message::Relay(RelayMessage::Listen(listen));
             let json = crate::messages::marshal::to_json_value(&msg);
             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address());
@@ -1123,29 +1875,54 @@ impl DefaultPrintingHandler {
             match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
                 Ok(resp) => {
                     let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                    if !ty_ok { warn!("[on_triangle_test1_response] unexpected response to Listen: {}", resp); return; }
+                    if !ty_ok {
+                        warn!(
+                            "[on_triangle_test1_response] unexpected response to Listen: {}",
+                            resp
+                        );
+                        return;
+                    }
 
                     // Register the relay listener mapping via the internal API (engine turn_handler)
-                    tracing::info!("[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener", resp);
-                    api_for_thread.turn_client_handle_listen_response(relay_info.address(), relay_info.id().to_string());
+                    tracing::info!(
+                        "[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener",
+                        resp
+                    );
+                    api_for_thread.turn_client_handle_listen_response(
+                        relay_info.address(),
+                        relay_info.id().to_string(),
+                    );
                 }
-                Err(e) => { warn!("[on_triangle_test1_response] Listen request failed: {}", e); return; }
+                Err(e) => {
+                    warn!("[on_triangle_test1_response] Listen request failed: {}", e);
+                    return;
+                }
             }
 
             // Register relay association in DDB and mark registered
             if let Err(e) = api_for_thread.ddb_register_relay(relay_info.id().to_string(), None) {
-                warn!("[on_triangle_test1_response] ddb_register_relay failed: {}", e);
+                warn!(
+                    "[on_triangle_test1_response] ddb_register_relay failed: {}",
+                    e
+                );
             } else {
-                tracing::info!("[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}", relay_info.id());
+                tracing::info!(
+                    "[on_triangle_test1_response] ddb_register_relay succeeded for relay_id={}",
+                    relay_info.id()
+                );
                 api_for_thread.set_state(crate::engine::EngineState::Registered);
                 // Notify that we are listening now
                 api_for_thread.notify_listening(true, crate::engine::NatType::Restricted);
                 // Keep the NAT mapping towards this relay alive so inbound relayed data
                 // is deliverable even after long idle periods.
-                api_for_thread.start_relay_keep_alive(relay_info.id().to_string(), relay_info.address());
+                api_for_thread
+                    .start_relay_keep_alive(relay_info.id().to_string(), relay_info.address());
             }
         } else {
-            tracing::info!("[on_triangle_test1_response] ignoring due to state={:?}", cur);
+            tracing::info!(
+                "[on_triangle_test1_response] ignoring due to state={:?}",
+                cur
+            );
         }
     }
 }

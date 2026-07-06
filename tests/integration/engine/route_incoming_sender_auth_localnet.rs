@@ -17,22 +17,20 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{
-    BingleApiBoth, NetworkEndpoint, StartOptions,
-};
+use rust_comms::api::bingle_api::{BingleApiBoth, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use rust_comms::engine::Engine;
 use rust_comms::messages::handlers::{FromStruct, MessageHandler};
 use rust_comms::messages::router::Router;
 use rust_comms::messages::types::{
-    DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve,
-    DdbQueryResolve, DdbRelaysStatusResponse, DdbSignon, DdbSignonResponse,
-    DdbUpsertResolve, Message, PingPing, PingResponse, PlainTextMessage,
-    RelayCall, RelayCallResponse, RelayCalled, RelayCheck, RelayCheckResponse, RelayKeepAlive,
-    RelayListen, RelayListenResponse, RelayResponse, RelayTriangleTest1,
-    RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3, ReportFailMessage,
+    DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve, DdbQueryResolve,
+    DdbRelaysStatusResponse, DdbSignon, DdbSignonResponse, DdbUpsertResolve, Message, PingPing,
+    PingResponse, PlainTextMessage, RelayCall, RelayCallResponse, RelayCalled, RelayCheck,
+    RelayCheckResponse, RelayKeepAlive, RelayListen, RelayListenResponse, RelayResponse,
+    RelayTriangleTest1, RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3,
+    ReportFailMessage,
 };
 use rust_comms::protocol::ISSUER_SUFFIX;
 use serial_test::serial;
@@ -50,50 +48,124 @@ struct FakeDtls {
 
 impl FakeDtls {
     fn new() -> Self {
-        Self { handler: Mutex::new(None) }
+        Self {
+            handler: Mutex::new(None),
+        }
     }
 }
 
 impl Dtls for FakeDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { Ok(()) }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
     fn get_handle_message(&self) -> Option<HandleMessage> {
         self.handler.lock().expect("handler lock").clone()
     }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
         *self.handler.lock().expect("handler lock") = handler;
     }
-    fn with_handle_message(self, handler: HandleMessage) -> Self where Self: Sized {
+    fn with_handle_message(self, handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
         *self.handler.lock().expect("handler lock") = Some(handler);
         self
     }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
+        None
+    }
     fn forget_peers(&self) {}
 }
 
@@ -106,85 +178,200 @@ struct CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_plain_text(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &PlainTextMessage) {
+    fn on_plain_text(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &PlainTextMessage,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
     fn on_ping_ping(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &PingPing) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ping_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &PingResponse) {
+    fn on_ping_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &PingResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
     fn on_relay_call(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCall) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayResponse) {
+    fn on_relay_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_triangle_test1(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1) {
+    fn on_triangle_test1(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest1,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_triangle_test2(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest2) {
+    fn on_triangle_test2(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest2,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_triangle_test3(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest3) {
+    fn on_triangle_test3(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest3,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_triangle_test1_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayTriangleTest1Response) {
+    fn on_triangle_test1_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayTriangleTest1Response,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_listen(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListen) {
+    fn on_relay_listen(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayListen,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
     fn on_relay_check(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCheck) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_listen_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayListenResponse) {
+    fn on_relay_listen_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayListenResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_check_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCheckResponse) {
+    fn on_relay_check_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayCheckResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_call_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCallResponse) {
+    fn on_relay_call_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayCallResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_keep_alive(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayKeepAlive) {
+    fn on_relay_keep_alive(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayKeepAlive,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_relay_called(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &RelayCalled) {
+    fn on_relay_called(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &RelayCalled,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_upsert_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbUpsertResolve) {
+    fn on_ddb_upsert_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbUpsertResolve,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_delete_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbDeleteResolve) {
+    fn on_ddb_delete_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbDeleteResolve,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_query_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbQueryResolve) {
+    fn on_ddb_query_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbQueryResolve,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_init_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbInitResolve) {
+    fn on_ddb_init_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbInitResolve,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_dump_resolve(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbDumpResolve) {
+    fn on_ddb_dump_resolve(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbDumpResolve,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
     fn on_ddb_signon(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbSignon) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_signon_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbSignonResponse) {
+    fn on_ddb_signon_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbSignonResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_get_relays_status(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbGetRelaysStatus) {
+    fn on_ddb_get_relays_status(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbGetRelaysStatus,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_ddb_relays_status_response(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &DdbRelaysStatusResponse) {
+    fn on_ddb_relays_status_response(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &DdbRelaysStatusResponse,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_report_fail(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _msg: &ReportFailMessage) {
+    fn on_report_fail(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _msg: &ReportFailMessage,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
-    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _from: &FromStruct, _raw: &serde_json::Value) {
+    fn on_unknown(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &FromStruct,
+        _raw: &serde_json::Value,
+    ) {
         self.called.store(true, Ordering::SeqCst);
     }
     fn on_unimplemented(&self, _msg: &Message) {
@@ -218,9 +405,18 @@ fn make_opts(app_id: u64) -> StartOptions {
 
 /// Build a `BingleApiImpl` backed by a fake DTLS, set up a capturing handler on its
 /// engine, install the DTLS handler, and return `(installed_callback, called_flag, router)`.
-fn build_api_and_handler(app_id: u64) -> (Arc<BingleApiImpl>, HandleMessage, Arc<AtomicBool>, Arc<Router>) {
+fn build_api_and_handler(
+    app_id: u64,
+) -> (
+    Arc<BingleApiImpl>,
+    HandleMessage,
+    Arc<AtomicBool>,
+    Arc<Router>,
+) {
     let called = Arc::new(AtomicBool::new(false));
-    let capturing = Arc::new(CapturingHandler { called: called.clone() });
+    let capturing = Arc::new(CapturingHandler {
+        called: called.clone(),
+    });
 
     let opts = make_opts(app_id);
     let api = BingleApiImpl::new_with_dtls_and_options(Box::new(FakeDtls::new()), opts.clone());
@@ -230,13 +426,17 @@ fn build_api_and_handler(app_id: u64) -> (Arc<BingleApiImpl>, HandleMessage, Arc
         let r = Arc::new(Router::new(weak));
         engine.set_router(r.clone());
         engine.set_custom_message_handler(capturing);
-        engine.install_dtls_handler_for_tests().expect("install_dtls_handler_for_tests");
+        engine
+            .install_dtls_handler_for_tests()
+            .expect("install_dtls_handler_for_tests");
         r
     });
 
     let handler = api.with_engine_mut(|engine: &mut Engine| {
         let mut h: Option<HandleMessage> = None;
-        engine.with_dtls_mut(|dtls| { h = dtls.get_handle_message(); });
+        engine.with_dtls_mut(|dtls| {
+            h = dtls.get_handle_message();
+        });
         h.expect("DTLS handler must be installed")
     });
 
@@ -248,7 +448,12 @@ fn build_api_and_handler(app_id: u64) -> (Arc<BingleApiImpl>, HandleMessage, Arc
 fn fire_plain_text(handler: &HandleMessage, router: Arc<Router>, issuer: &str) {
     let dtls = FakeDtls::new();
     let from_ep = NetworkEndpoint::new_direct("127.0.0.1:9001".parse::<SocketAddr>().unwrap());
-    let msg = PlainTextMessage { text: "hello from localnet integration".into(), app: None, r#type: None, cipher_suite: None };
+    let msg = PlainTextMessage {
+        text: "hello from localnet integration".into(),
+        app: None,
+        r#type: None,
+        cipher_suite: None,
+    };
     let bytes = serde_json::to_vec(&Message::PlainText(msg)).expect("serialize PlainTextMessage");
     Router::with_current_router(router, || {
         handler(&dtls as &dyn Dtls, &from_ep, issuer, &bytes);
@@ -274,10 +479,12 @@ pub fn registered_sender_message_is_routed() {
     )
     .expect("fund test accounts");
 
-    let creator =
-        test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
-    let (app_id, asset_id) =
-        test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
     // Register ADDRESS_RECEIVE on-chain so handle_lookup_by_id returns Some.
     test_util::register_client_on_blockchain(
@@ -311,14 +518,14 @@ pub fn unregistered_sender_message_is_dropped() {
     test_util::assert_localnet_available();
 
     let cfg = test_util::localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(
-        &cfg,
-        &[test_util::ADDRESS_SPEND],
-    )
-    .expect("fund test accounts");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND])
+        .expect("fund test accounts");
 
-    let creator =
-        test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
     // Deploy a fresh app — ADDRESS_RECEIVE has never registered against it.
     let (app_id, _asset_id) =
         test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);

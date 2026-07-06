@@ -17,7 +17,7 @@ pub fn get_version_info() -> VersionInfo {
     // BINGLE_BUILD_NUMBER is provided by our build.rs
     let cargo_version = env!("CARGO_PKG_VERSION");
     let build_number = env!("BINGLE_BUILD_NUMBER");
-    
+
     // Combining them to match the request: 0.1.0.x
     let full_version = format!("{}.{}", cargo_version, build_number);
 
@@ -35,10 +35,18 @@ pub fn get_version_info() -> VersionInfo {
 macro_rules! get_module_version {
     () => {
         $crate::util::version::VersionInfo {
-            version: format!("{}.{}", env!("CARGO_PKG_VERSION"), option_env!("BINGLE_BUILD_NUMBER").unwrap_or("0")),
+            version: format!(
+                "{}.{}",
+                env!("CARGO_PKG_VERSION"),
+                option_env!("BINGLE_BUILD_NUMBER").unwrap_or("0")
+            ),
             git_sha: option_env!("VERGEN_GIT_SHA").map(String::from),
-            build_timestamp: option_env!("VERGEN_BUILD_TIMESTAMP").unwrap_or("unknown").to_string(),
-            build_number: option_env!("BINGLE_BUILD_NUMBER").unwrap_or("0").to_string(),
+            build_timestamp: option_env!("VERGEN_BUILD_TIMESTAMP")
+                .unwrap_or("unknown")
+                .to_string(),
+            build_number: option_env!("BINGLE_BUILD_NUMBER")
+                .unwrap_or("0")
+                .to_string(),
         }
     };
 }

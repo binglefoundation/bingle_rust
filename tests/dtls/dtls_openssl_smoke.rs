@@ -1,12 +1,10 @@
-
-
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 use crate::engine::ddb_upsert::test_util::init_test_logging;
+use rust_comms::dtls::{Dtls, DtlsOpenSsl};
 
 pub mod pki;
 #[path = "../test_util.rs"]
@@ -22,7 +20,12 @@ fn reset_test_state() {
     MESSAGE_SEEN.store(false, Ordering::Relaxed);
 }
 
-fn handler(_server: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn handler(
+    _server: &dyn Dtls,
+    _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     // Record that the server received application data.
     if !data.is_empty() {
         MESSAGE_SEEN.store(true, Ordering::Relaxed);
@@ -90,7 +93,15 @@ pub fn dtls_openssl_udp_listener_invokes_handler() {
     client.start(cmux.clone()).expect("client start");
 
     let payload = b"hello-dtls";
-    assert!(client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload).is_ok(), "client DTLS send failed");
+    assert!(
+        client
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                payload
+            )
+            .is_ok(),
+        "client DTLS send failed"
+    );
 
     // Spin-wait up to ~1 second for the handler to observe the message.
     let start = Instant::now();

@@ -12,10 +12,15 @@ pub fn deploy_call_validate_and_delete_teal_app() {
     test_util::assert_localnet_available();
     let cfg = test_util::localnet_config();
     // Ensure creator account funded
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND])
-        .expect("Failed to ensure localnet test accounts funded; install algokit and start localnet");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND]).expect(
+        "Failed to ensure localnet test accounts funded; install algokit and start localnet",
+    );
 
-    let ops = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let ops = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
 
     // Read TEAL sources (both sets present; no fallback needed)
     // Print current working directory to help diagnose path issues
@@ -24,19 +29,32 @@ pub fn deploy_call_validate_and_delete_teal_app() {
         Err(e) => eprintln!("Failed to get current working directory: {}", e),
     }
 
-    let approval_src = fs::read_to_string("tests/dapp/mini_approval.teal").expect("read approval teal");
-    let clear_src = fs::read_to_string("tests/dapp/mini_clear_state.teal").expect("read clear teal");
+    let approval_src =
+        fs::read_to_string("tests/dapp/mini_approval.teal").expect("read approval teal");
+    let clear_src =
+        fs::read_to_string("tests/dapp/mini_clear_state.teal").expect("read clear teal");
 
     // Compile via algod developer API
-    let approval_prog = ops.compile_teal(&approval_src).expect("compile approval teal");
+    let approval_prog = ops
+        .compile_teal(&approval_src)
+        .expect("compile approval teal");
     let clear_prog = ops.compile_teal(&clear_src).expect("compile clear teal");
 
     // The mini contract holds no application state; supply a minimal ARC-56 spec to match.
-    let arc56_json = r#"{"state":{"schema":{"global":{"ints":0,"bytes":0},"local":{"ints":0,"bytes":0}}}}"#;
+    let arc56_json =
+        r#"{"state":{"schema":{"global":{"ints":0,"bytes":0},"local":{"ints":0,"bytes":0}}}}"#;
 
     // Deploy
     let app_id = ops
-        .deploy_app(&approval_prog, &clear_prog, None, None, &[], "opt_in_to_bingle(uint64)void", arc56_json)
+        .deploy_app(
+            &approval_prog,
+            &clear_prog,
+            None,
+            None,
+            &[],
+            "opt_in_to_bingle(uint64)void",
+            arc56_json,
+        )
         .expect("deploy app call")
         .expect("created app id");
 
@@ -56,26 +74,40 @@ pub fn deploy_call_validate_and_delete_teal_app() {
     assert_eq!(ret, expected, "unexpected return value from fn");
 
     // Update the app to the mini2 implementation (x*3 - 20)
-    let approval2_src = fs::read_to_string("tests/dapp/mini2_approval.teal").expect("read mini2 approval teal");
-    let clear2_src = fs::read_to_string("tests/dapp/mini2_clear_state.teal").expect("read mini2 clear teal");
-    let approval2_prog = ops.compile_teal(&approval2_src).expect("compile mini2 approval");
+    let approval2_src =
+        fs::read_to_string("tests/dapp/mini2_approval.teal").expect("read mini2 approval teal");
+    let clear2_src =
+        fs::read_to_string("tests/dapp/mini2_clear_state.teal").expect("read mini2 clear teal");
+    let approval2_prog = ops
+        .compile_teal(&approval2_src)
+        .expect("compile mini2 approval");
     let clear2_prog = ops.compile_teal(&clear2_src).expect("compile mini2 clear");
 
-    ops.update_app(app_id, &approval2_prog, &clear2_prog, None).expect("update app");
+    ops.update_app(app_id, &approval2_prog, &clear2_prog, None)
+        .expect("update app");
 
     // Call again and validate the new behavior using AlgoOps::call_app
     let (_tx2, logs2) = ops
         .call_app(app_id, None, Some("fn(uint64)uint64"), &[AppArg::Uint(x)])
         .expect("call app after update");
-    assert!(!logs2.is_empty(), "app call after update should emit at least one log");
+    assert!(
+        !logs2.is_empty(),
+        "app call after update should emit at least one log"
+    );
     let log_bytes2 = &logs2[0];
-    assert!(log_bytes2.len() >= 12, "expected selector(4)+u64(8) in log after update");
+    assert!(
+        log_bytes2.len() >= 12,
+        "expected selector(4)+u64(8) in log after update"
+    );
     let ret_bytes2 = &log_bytes2[4..12];
     let mut eight2 = [0u8; 8];
     eight2.copy_from_slice(ret_bytes2);
     let ret2 = u64::from_be_bytes(eight2);
     let expected2 = 3u64 * x - 20u64;
-    assert_eq!(ret2, expected2, "unexpected return value from fn after update");
+    assert_eq!(
+        ret2, expected2,
+        "unexpected return value from fn after update"
+    );
 
     // Delete app: approval allows creator to delete; require success
     ops.delete_app(app_id).expect("delete app");

@@ -1,9 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId, BingleError};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 use crate::ddb::ddb_client_lookup::test_util::init_test_logging;
+use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -30,8 +30,17 @@ impl MockApi {
 }
 
 impl InnerBingleApi for MockApi {
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, BingleError> {
-        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+    fn send_message_to_network_with_response(
+        &self,
+        nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        let ty = message
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
         if ty == "Check" {
             let mut count = self.check_calls.lock().unwrap();
             *count += 1;
@@ -81,8 +90,10 @@ pub fn test_unavailable_relays_no_retry() {
     };
 
     let finder = RelayFinder::new(
-        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        discover
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
+            api_inner,
+        )),
+        discover,
     );
 
     // find_relay uses relay_select_and_query which calls getRelaysStatus (not relay_check/Check).
@@ -90,7 +101,11 @@ pub fn test_unavailable_relays_no_retry() {
     let _ = finder.find_relay("MYID");
 
     // getRelaysStatus is called once per candidate attempt via relay_select_and_query.
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Should only have called getRelaysStatus once");
+    assert_eq!(
+        *get_relays_status_calls.lock().unwrap(),
+        1,
+        "Should only have called getRelaysStatus once"
+    );
 }
 
 #[test]
@@ -108,8 +123,10 @@ pub fn test_unavailable_relays_reset_on_entry() {
     };
 
     let finder = RelayFinder::new(
-        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        discover
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
+            api_inner,
+        )),
+        discover,
     );
 
     // First call: relay_select_and_query queries r1 via getRelaysStatus
@@ -136,8 +153,10 @@ pub fn test_unavailable_relays_reset_on_find_relay() {
     };
 
     let finder = RelayFinder::new(
-        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        discover
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
+            api_inner,
+        )),
+        discover,
     );
 
     let _ = finder.find_relay("MYID");
@@ -158,7 +177,7 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     *api_inner.get_relays_status_fail_for.lock().unwrap() = Some(addr1);
     let check_calls = api_inner.check_calls.clone();
     let get_relays_status_calls = api_inner.get_relays_status_calls.clone();
-    
+
     // R1 is the only root
     let discover = {
         let r1 = test_util::signed_root_relay(&id1, addr1);
@@ -166,19 +185,29 @@ pub fn test_find_relay_respects_ddb_failure_internal() {
     };
 
     let finder = RelayFinder::new(
-        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner)),
-        discover
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
+            api_inner,
+        )),
+        discover,
     );
 
     // Call find_relay. It should fail because R1 is the only relay and it will be marked unavailable.
     let res = finder.find_relay("MYID");
     assert!(res.is_err());
-    
-    assert_eq!(*get_relays_status_calls.lock().unwrap(), 1, "Should have attempted DDB query to R1");
+
+    assert_eq!(
+        *get_relays_status_calls.lock().unwrap(),
+        1,
+        "Should have attempted DDB query to R1"
+    );
     // Since R1 failed DDB query, it should be in unavailable list.
     // find_relay_internal calls relay_check(R1).
     // relay_check(R1) should see R1 is unavailable and skip network call.
-    assert_eq!(*check_calls.lock().unwrap(), 0, "Should have skipped Check for the relay that failed DDB query");
+    assert_eq!(
+        *check_calls.lock().unwrap(),
+        0,
+        "Should have skipped Check for the relay that failed DDB query"
+    );
 }
 
 #[test]
@@ -198,8 +227,10 @@ pub fn test_unavailable_relays_cleared_on_all_external_methods() {
     };
 
     let finder = RelayFinder::new(
-        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api_inner.clone())),
-        discover
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
+            api_inner.clone(),
+        )),
+        discover,
     );
 
     // find_relay calls relay_select_and_query which sends getRelaysStatus, then caches result

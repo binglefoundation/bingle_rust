@@ -3,7 +3,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::api::bingle_api::NetworkEndpoint;
 use rust_comms::api::network_endpoint::NetworkEndpointKey;
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -19,7 +21,9 @@ pub fn direct_endpoint_key_has_only_inet_addr() {
 #[cfg(not(target_os = "ios"))]
 pub fn relay_endpoint_key_contains_both_id_and_channel() {
     let ep = NetworkEndpoint::new_relay("RID123".to_string(), Some(addr(9000)), Some(0x4001));
-    let key = ep.get_key().expect("relay endpoint should produce a key when channel present");
+    let key = ep
+        .get_key()
+        .expect("relay endpoint should produce a key when channel present");
     assert_eq!(key.inet_socket_address, None);
     assert_eq!(key.relay_id.as_deref(), Some("RID123"));
     assert_eq!(key.relay_channel, Some(0x4001));

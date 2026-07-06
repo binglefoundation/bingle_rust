@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayInfo, RelayFinderTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
+use std::sync::Arc;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -11,12 +11,25 @@ struct GetRelaysMockApi {
 }
 
 impl InnerBingleApi for GetRelaysMockApi {
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
-        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
-        let app = message.get("app").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        let ty = message
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
+        let app = message
+            .get("app")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
 
         if ty == "getRelaysStatus" && app == "ddb" {
-            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             // Return two relays, different from the root.
             Ok(serde_json::json!({
                 "app": "ddb",
@@ -32,7 +45,9 @@ impl InnerBingleApi for GetRelaysMockApi {
                 "relayStates": ["available", "available"]
             }))
         } else {
-            Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
+            Err(rust_comms::api::bingle_api::BingleError::Other(
+                "unexpected message".into(),
+            ))
         }
     }
 }
@@ -41,7 +56,9 @@ impl InnerBingleApi for GetRelaysMockApi {
 #[cfg(not(target_os = "ios"))]
 pub fn list_all_relays_queries_root_even_if_only_one() {
     let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let api_inner = Arc::new(GetRelaysMockApi { call_count: call_count.clone() });
+    let api_inner = Arc::new(GetRelaysMockApi {
+        call_count: call_count.clone(),
+    });
     let api = to_weak_api_both(MockApiBoth::new_with_api_override(api_inner));
 
     // Valid 58-char base32 ID
@@ -62,7 +79,11 @@ pub fn list_all_relays_queries_root_even_if_only_one() {
     // If the bug is present, call_count will be 0 and relays will contain only the root.
     // If fixed, call_count will be 1 and relays will contain R-SUB-1 and R-SUB-2.
 
-    assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1, "Should have queried the single root relay");
+    assert_eq!(
+        call_count.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "Should have queried the single root relay"
+    );
     assert_eq!(relays.len(), 2);
     assert!(relays.iter().any(|r| r.id() == "R-SUB-1"));
     assert!(relays.iter().any(|r| r.id() == "R-SUB-2"));

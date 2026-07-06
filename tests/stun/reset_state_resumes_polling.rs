@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
-use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState, SimpleStunServer, SimpleStunStartOptions};
+use rust_comms::stun::{
+    SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,
+};
 
 fn find_unused_loopback_port() -> u16 {
     let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
@@ -24,19 +26,34 @@ pub fn reset_state_resumes_stun_polling() {
     let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
     let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
 
-    let s1 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a1, attach_to: None, broken_nat: false }).expect("start s1");
-    let s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false }).expect("start s2");
+    let s1 = SimpleStunServer::start(SimpleStunStartOptions {
+        bind_addr: a1,
+        attach_to: None,
+        broken_nat: false,
+    })
+    .expect("start s1");
+    let s2 = SimpleStunServer::start(SimpleStunStartOptions {
+        bind_addr: a2,
+        attach_to: None,
+        broken_nat: false,
+    })
+    .expect("start s2");
 
     let mux = Arc::new(UdpNetworkMux::bind(("0.0.0.0", 0)).expect("bind mux"));
-    mux.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    mux.set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
 
     let finder = Arc::new(Mutex::new(StunEndpointFinderImpl::new()));
     {
         let finder_clone = finder.clone();
-        let handler = Arc::new(move |src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]| {
-            let _ = src.as_any();
-            if let Ok(mut f) = finder_clone.lock() { f.process_packet(*from, data); }
-        });
+        let handler = Arc::new(
+            move |src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]| {
+                let _ = src.as_any();
+                if let Ok(mut f) = finder_clone.lock() {
+                    f.process_packet(*from, data);
+                }
+            },
+        );
         mux.set_handle_stun_arc(Some(handler));
     }
 
@@ -66,8 +83,12 @@ pub fn reset_state_resumes_stun_polling() {
     // Wait for first CONSISTENT
     let start = Instant::now();
     let reached_first = loop {
-        if start.elapsed() > Duration::from_secs(3) { break false; }
-        if *consistent_count.lock().unwrap() >= 1 { break true; }
+        if start.elapsed() > Duration::from_secs(3) {
+            break false;
+        }
+        if *consistent_count.lock().unwrap() >= 1 {
+            break true;
+        }
         std::thread::sleep(Duration::from_millis(25));
     };
     assert!(reached_first, "did not reach first CONSISTENT");
@@ -81,8 +102,12 @@ pub fn reset_state_resumes_stun_polling() {
     // After reset, the polling loop must re-poll servers and reach CONSISTENT again
     let start2 = Instant::now();
     let reached_second = loop {
-        if start2.elapsed() > Duration::from_secs(3) { break false; }
-        if *consistent_count.lock().unwrap() >= 2 { break true; }
+        if start2.elapsed() > Duration::from_secs(3) {
+            break false;
+        }
+        if *consistent_count.lock().unwrap() >= 2 {
+            break true;
+        }
         std::thread::sleep(Duration::from_millis(25));
     };
 
@@ -92,8 +117,13 @@ pub fn reset_state_resumes_stun_polling() {
         f.stop();
     }
     mux.stop();
-    let mut s1 = s1; let mut s2 = s2;
-    s1.stop(); s2.stop();
+    let mut s1 = s1;
+    let mut s2 = s2;
+    s1.stop();
+    s2.stop();
 
-    assert!(reached_second, "STUN polling did not resume after reset_state() - servers were not re-polled");
+    assert!(
+        reached_second,
+        "STUN polling did not resume after reset_state() - servers were not re-polled"
+    );
 }

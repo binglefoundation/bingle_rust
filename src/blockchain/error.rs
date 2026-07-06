@@ -16,7 +16,11 @@ pub struct AlgoError {
 
 impl std::fmt::Display for AlgoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AlgoError ({:?}): operation '{}' failed: {}", self.kind, self.operation, self.message)
+        write!(
+            f,
+            "AlgoError ({:?}): operation '{}' failed: {}",
+            self.kind, self.operation, self.message
+        )
     }
 }
 
@@ -41,16 +45,19 @@ impl AlgoError {
 
     pub fn is_host_unreachable(e: &anyhow::Error) -> bool {
         let s = e.to_string().to_lowercase();
-        s.contains("tcp connect error") || 
-        s.contains("connection refused") || 
-        s.contains("connection reset") ||
-        s.contains("timeout") || 
-        s.contains("dns error") ||
-        s.contains("host unreachable") ||
-        s.contains("error sending request")
+        s.contains("tcp connect error")
+            || s.contains("connection refused")
+            || s.contains("connection reset")
+            || s.contains("timeout")
+            || s.contains("dns error")
+            || s.contains("host unreachable")
+            || s.contains("error sending request")
     }
 
-    pub fn map_node_err<T, E: std::fmt::Display>(operation: &str, res: anyhow::Result<anyhow::Result<T, E>>) -> anyhow::Result<T> {
+    pub fn map_node_err<T, E: std::fmt::Display>(
+        operation: &str,
+        res: anyhow::Result<anyhow::Result<T, E>>,
+    ) -> anyhow::Result<T> {
         match res {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
@@ -71,7 +78,10 @@ impl AlgoError {
         }
     }
 
-    pub fn map_node_err_opt<T, E: std::fmt::Display>(operation: &str, res: anyhow::Result<anyhow::Result<T, E>>) -> anyhow::Result<Option<T>> {
+    pub fn map_node_err_opt<T, E: std::fmt::Display>(
+        operation: &str,
+        res: anyhow::Result<anyhow::Result<T, E>>,
+    ) -> anyhow::Result<Option<T>> {
         match res {
             Ok(Ok(v)) => Ok(Some(v)),
             Ok(Err(e)) => {

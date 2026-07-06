@@ -6,7 +6,10 @@ use rust_comms::ddb::InetSocketAddress;
 pub fn advert_record_serde_roundtrip() {
     let mut rec = AdvertRecord::new_unsigned(
         "SOMEALGOWALLETADDR".to_string(),
-        Some(InetSocketAddress { host: "1.2.3.4".to_string(), port: 4433 }),
+        Some(InetSocketAddress {
+            host: "1.2.3.4".to_string(),
+            port: 4433,
+        }),
         Some(true),
         Some("RELAYID".to_string()),
         Some("relsig".to_string()),

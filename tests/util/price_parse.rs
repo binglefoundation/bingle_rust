@@ -4,17 +4,35 @@ use rust_comms::util::config_utils::parse_algos_decimal_to_microalgos;
 #[cfg(not(target_os = "ios"))]
 pub fn parses_integer_algos_to_microalgos() {
     assert_eq!(parse_algos_decimal_to_microalgos("0").expect("ok"), 0);
-    assert_eq!(parse_algos_decimal_to_microalgos("1").expect("ok"), 1_000_000);
-    assert_eq!(parse_algos_decimal_to_microalgos("42").expect("ok"), 42_000_000);
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("1").expect("ok"),
+        1_000_000
+    );
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("42").expect("ok"),
+        42_000_000
+    );
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn parses_fractional_up_to_6dp() {
-    assert_eq!(parse_algos_decimal_to_microalgos("0.000001").expect("ok"), 1);
-    assert_eq!(parse_algos_decimal_to_microalgos("1.000001").expect("ok"), 1_000_001);
-    assert_eq!(parse_algos_decimal_to_microalgos("2.5").expect("ok"), 2_500_000);
-    assert_eq!(parse_algos_decimal_to_microalgos("10.250000").expect("ok"), 10_250_000);
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("0.000001").expect("ok"),
+        1
+    );
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("1.000001").expect("ok"),
+        1_000_001
+    );
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("2.5").expect("ok"),
+        2_500_000
+    );
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("10.250000").expect("ok"),
+        10_250_000
+    );
 }
 
 #[test]

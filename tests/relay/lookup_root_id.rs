@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
@@ -10,11 +10,21 @@ pub mod test_util;
 
 #[derive(Clone)]
 struct MockApi;
-impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, _message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> { Err(rust_comms::api::bingle_api::BingleError::Other("ni".into())) }
+impl InnerBingleApi for MockApi {
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        _message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        Err(rust_comms::api::bingle_api::BingleError::Other("ni".into()))
+    }
 }
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -28,15 +38,24 @@ pub fn lookup_known_root_returns_endpoint() {
     let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi);
 
     let discover = {
-        let roots = vec![test_util::signed_root_relay(&id1, a1), test_util::signed_root_relay(&id2, a2)];
+        let roots = vec![
+            test_util::signed_root_relay(&id1, a1),
+            test_util::signed_root_relay(&id2, a2),
+        ];
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
+    let finder = RelayFinder::new(
+        to_weak_api_both(MockApiBoth::new_with_api_override(api)),
+        discover,
+    );
 
     // Known id should resolve to Some(NetworkEndpoint::Direct(addr))
     let nsk_opt = finder.lookup_root_id(&id1);
-    assert!(nsk_opt.is_some(), "expected Some endpoint for known root id");
+    assert!(
+        nsk_opt.is_some(),
+        "expected Some endpoint for known root id"
+    );
     let nsk = nsk_opt.unwrap();
     let direct = nsk.inet_socket_address();
     assert!(direct.is_some(), "expected direct inet socket address");
@@ -56,7 +75,10 @@ pub fn lookup_unknown_root_returns_none() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
+    let finder = RelayFinder::new(
+        to_weak_api_both(MockApiBoth::new_with_api_override(api)),
+        discover,
+    );
 
     let nsk_opt = finder.lookup_root_id(&unknown);
     assert!(nsk_opt.is_none(), "expected None for unknown root id");

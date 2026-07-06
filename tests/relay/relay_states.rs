@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayFinderTestTrait};
+use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTestTrait, RelayFinderTrait};
 
 #[path = "../test_util.rs"]
 pub mod test_util;
@@ -25,13 +25,25 @@ impl MockApi {
             map.insert(a, s.to_string());
             v.push((id, a, s.to_string()));
         }
-        Self { entries: Arc::new(v), states: Arc::new(map) }
+        Self {
+            entries: Arc::new(v),
+            states: Arc::new(map),
+        }
     }
 }
 
-impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
-        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+impl InnerBingleApi for MockApi {
+    fn send_message_to_network_with_response(
+        &self,
+        nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        let ty = message
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
         match (message.get("app"), ty) {
             (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
                 // Return a DDB RelaysStatusResponse with relayIds and aligned relayEndpoints based on entries
@@ -40,7 +52,9 @@ impl InnerBingleApi for MockApi {
                 let mut states: Vec<serde_json::Value> = Vec::new();
                 for (id, addr, st) in self.entries.iter() {
                     ids.push(serde_json::Value::String(id.clone()));
-                    eps.push(serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}));
+                    eps.push(
+                        serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}),
+                    );
                     states.push(serde_json::Value::String(st.clone()));
                 }
                 Ok(serde_json::json!({
@@ -57,15 +71,23 @@ impl InnerBingleApi for MockApi {
             (app, "Check") if app.is_none() || app.unwrap().is_null() => {
                 // RelayCheck: reply with CheckResponse using configured state
                 let addr = nsk.inet_socket_address().expect("direct endpoint required");
-                let st = self.states.get(&addr).cloned().unwrap_or_else(|| "off".to_string());
+                let st = self
+                    .states
+                    .get(&addr)
+                    .cloned()
+                    .unwrap_or_else(|| "off".to_string());
                 Ok(serde_json::json!({ "app": null, "type": "CheckResponse", "state": st }))
             }
-            _ => Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
+            _ => Err(rust_comms::api::bingle_api::BingleError::Other(
+                "unexpected message".into(),
+            )),
         }
     }
 }
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -94,7 +116,10 @@ pub fn load_and_summarize_states() {
         Arc::new(move || ids.clone())
     };
 
-    let finder = RelayFinder::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
+    let finder = RelayFinder::new(
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(api)),
+        discover,
+    );
 
     // Trigger relay state population via find_relay (internally calls list_all_relays via DDB getRelaysStatus)
     let _ = finder.find_relay("MYID");

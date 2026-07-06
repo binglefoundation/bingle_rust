@@ -1,4 +1,4 @@
-use rust_comms::dtls::dtls_openssl::openssl_impl::{spawn_peer_worker, PeerCmd};
+use rust_comms::dtls::dtls_openssl::openssl_impl::{PeerCmd, spawn_peer_worker};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,7 +7,9 @@ fn peer_worker_receives_send_commands_in_order() {
     let seen = Arc::new(Mutex::new(Vec::<PeerCmd>::new()));
     let seen_for_worker = seen.clone();
     let peer = spawn_peer_worker("stage1-order", "test-handle-order", move |cmd| {
-        let mut guard = seen_for_worker.lock().expect("worker log mutex should lock");
+        let mut guard = seen_for_worker
+            .lock()
+            .expect("worker log mutex should lock");
         guard.push(cmd.clone());
         cmd != PeerCmd::Stop
     })
@@ -29,7 +31,10 @@ fn peer_worker_receives_send_commands_in_order() {
         if done {
             break;
         }
-        assert!(Instant::now() < deadline, "worker did not process commands in time");
+        assert!(
+            Instant::now() < deadline,
+            "worker did not process commands in time"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
 
@@ -49,7 +54,9 @@ fn peer_worker_stops_and_rejects_late_commands() {
     let seen = Arc::new(Mutex::new(0usize));
     let seen_for_worker = seen.clone();
     let peer = spawn_peer_worker("stage1-stop", "test-handle-stop", move |cmd| {
-        let mut guard = seen_for_worker.lock().expect("worker counter mutex should lock");
+        let mut guard = seen_for_worker
+            .lock()
+            .expect("worker counter mutex should lock");
         *guard += 1;
         cmd != PeerCmd::Stop
     })

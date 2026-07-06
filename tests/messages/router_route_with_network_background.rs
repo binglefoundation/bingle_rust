@@ -1,4 +1,4 @@
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use crate::util::reusable_mock_api::MockApiBoth;
@@ -26,7 +26,9 @@ impl MessageHandler for SlowPingHandler {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn route_with_network_runs_handler_on_background_thread() {
-    let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
+    let router = Arc::new(Router::new(
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
+    ));
     let (started_tx, started_rx) = mpsc::channel::<()>();
     let finished = Arc::new(Mutex::new(false));
 
@@ -50,7 +52,11 @@ pub fn route_with_network_runs_handler_on_background_thread() {
     });
     let elapsed = started.elapsed();
 
-    assert!(elapsed < Duration::from_millis(100), "route_with_network should return quickly, elapsed: {:?}", elapsed);
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "route_with_network should return quickly, elapsed: {:?}",
+        elapsed
+    );
 
     started_rx
         .recv_timeout(Duration::from_secs(2))

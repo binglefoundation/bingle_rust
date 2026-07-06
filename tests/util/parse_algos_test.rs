@@ -7,7 +7,10 @@ fn parses_integers_and_decimals() {
     assert_eq!(parse_algos_decimal_to_microalgos("0").unwrap(), 0);
     assert_eq!(parse_algos_decimal_to_microalgos("1").unwrap(), 1_000_000);
     assert_eq!(parse_algos_decimal_to_microalgos("0.5").unwrap(), 500_000);
-    assert_eq!(parse_algos_decimal_to_microalgos("1.234567").unwrap(), 1_234_567);
+    assert_eq!(
+        parse_algos_decimal_to_microalgos("1.234567").unwrap(),
+        1_234_567
+    );
 }
 
 #[test]

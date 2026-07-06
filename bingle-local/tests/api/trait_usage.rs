@@ -14,12 +14,17 @@ struct DummyLocal {
 
 impl BingleLocalApi for DummyLocal {
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
-        let kp = Keypair { id: "TEST_ID".into(), passphrase: "TEST_PASSPHRASE".into() };
+        let kp = Keypair {
+            id: "TEST_ID".into(),
+            passphrase: "TEST_PASSPHRASE".into(),
+        };
         self.keypair = Some(kp.clone());
         Ok(kp)
     }
 
-    fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> { Ok(true) }
+    fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> {
+        Ok(true)
+    }
 
     fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         let pass = self
@@ -30,8 +35,17 @@ impl BingleLocalApi for DummyLocal {
         Ok(AlgoOps::new(Some(pass), None, None))
     }
 
-    fn add_contact(&mut self, handle: String, id: String, _source: ContactSource) -> Result<(), BingleError> {
-        let c = Contact { handle, id, fields: HashMap::new() };
+    fn add_contact(
+        &mut self,
+        handle: String,
+        id: String,
+        _source: ContactSource,
+    ) -> Result<(), BingleError> {
+        let c = Contact {
+            handle,
+            id,
+            fields: HashMap::new(),
+        };
         self.contacts.push(c);
         Ok(())
     }
@@ -46,7 +60,9 @@ impl BingleLocalApi for DummyLocal {
         Ok(())
     }
 
-    fn is_blocked(&self, id: &str) -> Result<bool, BingleError> { Ok(self.blocked.contains(id)) }
+    fn is_blocked(&self, id: &str) -> Result<bool, BingleError> {
+        Ok(self.blocked.contains(id))
+    }
 
     fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
         let v = self
@@ -78,7 +94,11 @@ impl BingleLocalApi for DummyLocal {
         Ok(())
     }
 
-    fn queue_message(&mut self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleError> {
+    fn queue_message(
+        &mut self,
+        recipient_handles: Vec<String>,
+        text: String,
+    ) -> Result<(), BingleError> {
         let sender_handle = self.keypair_status()?.handle.unwrap_or_default();
         self.messages.push(Message {
             sender_handle,
@@ -92,7 +112,12 @@ impl BingleLocalApi for DummyLocal {
         Ok(())
     }
 
-    fn update_message_status(&mut self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleError> {
+    fn update_message_status(
+        &mut self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+    ) -> Result<(), BingleError> {
         if let Some(m) = self.messages.iter_mut().find(|m| m.timestamp == timestamp) {
             m.progress = Some(progress);
             m.failure_reason = failure_reason;
@@ -101,14 +126,25 @@ impl BingleLocalApi for DummyLocal {
     }
 
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
-        Ok(self.messages.iter().filter(|m| m.progress.map_or(false, |p| p < 1.0)).cloned().collect())
+        Ok(self
+            .messages
+            .iter()
+            .filter(|m| m.progress.map_or(false, |p| p < 1.0))
+            .cloned()
+            .collect())
     }
 
-    fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(self.messages.clone()) }
+    fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
+        Ok(self.messages.clone())
+    }
 
-    fn save(&self, _path: &str) -> Result<(), BingleError> { Ok(()) }
+    fn save(&self, _path: &str) -> Result<(), BingleError> {
+        Ok(())
+    }
 
-    fn load(&mut self, _path: &str) -> Result<(), BingleError> { Ok(()) }
+    fn load(&mut self, _path: &str) -> Result<(), BingleError> {
+        Ok(())
+    }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         match &self.keypair {
@@ -141,8 +177,10 @@ fn test_bingle_local_api_smoke() {
     assert_eq!(kp.id, "TEST_ID");
 
     // contacts
-    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual).unwrap();
-    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received).unwrap();
+    api.add_contact("alice".into(), "ID_ALICE".into(), ContactSource::Manual)
+        .unwrap();
+    api.add_contact("bob".into(), "ID_BOB".into(), ContactSource::Received)
+        .unwrap();
     api.block_contact("ID_BOB".into()).unwrap();
 
     let contacts = api.get_contacts().unwrap();
@@ -152,7 +190,14 @@ fn test_bingle_local_api_smoke() {
     assert!(api.is_blocked("ID_BOB").unwrap());
 
     // messages
-    api.add_message("alice".into(), vec!["bob".into()], 1_725_000_000_000, "hi".into(), None).unwrap();
+    api.add_message(
+        "alice".into(),
+        vec!["bob".into()],
+        1_725_000_000_000,
+        "hi".into(),
+        None,
+    )
+    .unwrap();
     let msgs = api.get_messages().unwrap();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].text, "hi");

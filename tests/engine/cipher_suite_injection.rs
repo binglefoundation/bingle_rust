@@ -4,8 +4,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use rust_comms::api::bingle_api::{BingleApiBoth, NetworkEndpoint, StartOptions};
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use rust_comms::engine::Engine;
 use rust_comms::messages::handlers::MessageHandler;
 use rust_comms::messages::router::Router;
@@ -20,49 +20,122 @@ struct CipherFakeDtls {
 
 impl CipherFakeDtls {
     fn new(cipher_suite: Option<String>) -> Self {
-        Self { handler: Mutex::new(None), cipher_suite }
+        Self {
+            handler: Mutex::new(None),
+            cipher_suite,
+        }
     }
 }
 
 impl Dtls for CipherFakeDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { Ok(()) }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
     fn get_handle_message(&self) -> Option<HandleMessage> {
         self.handler.lock().expect("handler lock").clone()
     }
     fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
         *self.handler.lock().expect("handler lock") = handler;
     }
-    fn with_handle_message(self, handler: HandleMessage) -> Self where Self: Sized {
+    fn with_handle_message(self, handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
         *self.handler.lock().expect("handler lock") = Some(handler);
         self
     }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
@@ -76,37 +149,111 @@ struct FakeServer {
 }
 
 impl Dtls for FakeServer {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn get_handle_message(&self) -> Option<HandleMessage> { None }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn get_handle_message(&self) -> Option<HandleMessage> {
+        None
+    }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
-    fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn with_handle_message(self, _handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
         self.cipher_suite.clone()
     }
@@ -119,15 +266,26 @@ struct CapturingHandler {
 }
 
 impl MessageHandler for CapturingHandler {
-    fn on_unknown(&self, _api: Arc<dyn BingleApiBoth>, _from: &rust_comms::messages::handlers::FromStruct, raw: &serde_json::Value) {
-        self.captured.lock().expect("captured lock").push(raw.clone());
+    fn on_unknown(
+        &self,
+        _api: Arc<dyn BingleApiBoth>,
+        _from: &rust_comms::messages::handlers::FromStruct,
+        raw: &serde_json::Value,
+    ) {
+        self.captured
+            .lock()
+            .expect("captured lock")
+            .push(raw.clone());
     }
 }
 
 /// A mock API that returns a known handle for any user id, allowing engine auth check to pass.
 struct AlwaysAuthApi;
 impl InnerBingleApi for AlwaysAuthApi {
-    fn handle_lookup_by_id(&self, _user_id: &rust_comms::api::bingle_api::UserId) -> Option<rust_comms::api::bingle_api::Handle> {
+    fn handle_lookup_by_id(
+        &self,
+        _user_id: &rust_comms::api::bingle_api::UserId,
+    ) -> Option<rust_comms::api::bingle_api::Handle> {
         Some("test_handle".to_string())
     }
 }
@@ -136,25 +294,37 @@ impl InnerBingleApi for AlwaysAuthApi {
 /// and return the installed DTLS callback together with the captured-messages buffer.
 fn build_engine_and_get_handler(
     cipher_suite: Option<String>,
-) -> (HandleMessage, Arc<Mutex<Vec<serde_json::Value>>>, Arc<Router>) {
+) -> (
+    HandleMessage,
+    Arc<Mutex<Vec<serde_json::Value>>>,
+    Arc<Router>,
+) {
     let captured: Arc<Mutex<Vec<serde_json::Value>>> = Arc::new(Mutex::new(Vec::new()));
-    let capturing_handler = Arc::new(CapturingHandler { captured: captured.clone() });
+    let capturing_handler = Arc::new(CapturingHandler {
+        captured: captured.clone(),
+    });
 
     let fake_dtls = CipherFakeDtls::new(cipher_suite);
-    let api = crate::util::reusable_mock_api::to_weak_api_both(
-        MockApiBoth::new_with_api_override(Arc::new(AlwaysAuthApi))
-    );
+    let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
+        Arc::new(AlwaysAuthApi),
+    ));
     let mut engine = Engine::new_with_dtls(&StartOptions::new("".into()), api, Box::new(fake_dtls));
 
-    let router = Arc::new(Router::new(crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new())));
+    let router = Arc::new(Router::new(
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
+    ));
     engine.set_router(router.clone());
     engine.set_custom_message_handler(capturing_handler);
 
-    engine.install_dtls_handler_for_tests().expect("install_dtls_handler_for_tests failed");
+    engine
+        .install_dtls_handler_for_tests()
+        .expect("install_dtls_handler_for_tests failed");
 
     let handler = {
         let mut h: Option<HandleMessage> = None;
-        engine.with_dtls_mut(|dtls| { h = dtls.get_handle_message(); });
+        engine.with_dtls_mut(|dtls| {
+            h = dtls.get_handle_message();
+        });
         h.expect("DTLS handler should be installed after install_dtls_handler_for_tests")
     };
     (handler, captured, router)
@@ -169,7 +339,9 @@ fn send_unknown_message(
     server_cipher_suite: Option<String>,
     msg_json: serde_json::Value,
 ) {
-    let server = FakeServer { cipher_suite: server_cipher_suite };
+    let server = FakeServer {
+        cipher_suite: server_cipher_suite,
+    };
     let from_ep = NetworkEndpoint::new_direct("127.0.0.1:9999".parse::<SocketAddr>().unwrap());
     let msg_bytes = serde_json::to_vec(&msg_json).expect("serialize test message");
 
@@ -191,9 +363,14 @@ pub fn cipher_suite_injected_into_routed_message() {
     send_unknown_message(&handler, router, Some(cipher.to_string()), msg_json);
 
     let msgs = captured.lock().expect("captured lock");
-    assert_eq!(msgs.len(), 1, "Expected exactly one captured unknown message");
+    assert_eq!(
+        msgs.len(),
+        1,
+        "Expected exactly one captured unknown message"
+    );
     let delivered = &msgs[0];
-    let cs = delivered.get("cipher_suite")
+    let cs = delivered
+        .get("cipher_suite")
         .expect("cipher_suite field should be present in message after engine injection");
     assert_eq!(
         cs.as_str().expect("cipher_suite should be a string"),
@@ -212,7 +389,11 @@ pub fn cipher_suite_absent_when_dtls_returns_none() {
     send_unknown_message(&handler, router, None, msg_json);
 
     let msgs = captured.lock().expect("captured lock");
-    assert_eq!(msgs.len(), 1, "Expected exactly one captured unknown message");
+    assert_eq!(
+        msgs.len(),
+        1,
+        "Expected exactly one captured unknown message"
+    );
     let delivered = &msgs[0];
     assert!(
         delivered.get("cipher_suite").is_none(),
@@ -229,17 +410,30 @@ pub fn different_cipher_suites_injected_correctly() {
     let cipher_a = "TLS_AES_256_GCM_SHA384";
     let cipher_b = "TLS_AES_128_GCM_SHA256";
 
-    let (handler_a, captured_a, router_a) = build_engine_and_get_handler(Some(cipher_a.to_string()));
-    let (handler_b, captured_b, router_b) = build_engine_and_get_handler(Some(cipher_b.to_string()));
+    let (handler_a, captured_a, router_a) =
+        build_engine_and_get_handler(Some(cipher_a.to_string()));
+    let (handler_b, captured_b, router_b) =
+        build_engine_and_get_handler(Some(cipher_b.to_string()));
 
     let msg = serde_json::json!({ "app": "test_app", "type": "test_type" });
-    send_unknown_message(&handler_a, router_a, Some(cipher_a.to_string()), msg.clone());
+    send_unknown_message(
+        &handler_a,
+        router_a,
+        Some(cipher_a.to_string()),
+        msg.clone(),
+    );
     send_unknown_message(&handler_b, router_b, Some(cipher_b.to_string()), msg);
 
     let msgs_a = captured_a.lock().expect("lock a");
     let msgs_b = captured_b.lock().expect("lock b");
     assert_eq!(msgs_a.len(), 1);
     assert_eq!(msgs_b.len(), 1);
-    assert_eq!(msgs_a[0].get("cipher_suite").and_then(|v| v.as_str()), Some(cipher_a));
-    assert_eq!(msgs_b[0].get("cipher_suite").and_then(|v| v.as_str()), Some(cipher_b));
+    assert_eq!(
+        msgs_a[0].get("cipher_suite").and_then(|v| v.as_str()),
+        Some(cipher_a)
+    );
+    assert_eq!(
+        msgs_b[0].get("cipher_suite").and_then(|v| v.as_str()),
+        Some(cipher_b)
+    );
 }

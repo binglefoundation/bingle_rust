@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use bingle_webserver::{AppState, try_start_api};
+use crate::common::{CapturingMockBingleApi, TrackingMockBingleApi};
 use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message,
 };
+use bingle_webserver::{AppState, try_start_api};
 use rust_comms::api::bingle_api::{BingleError, StartOptions};
 use rust_comms::blockchain::algo_ops::AlgoOps;
-use crate::common::{TrackingMockBingleApi, CapturingMockBingleApi};
 
 /// A test-only BingleLocalApi that lets us control keypair_status results.
 struct ControllableLocalApi {
@@ -25,22 +25,42 @@ impl ControllableLocalApi {
 
 impl BingleLocalApi for ControllableLocalApi {
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError> {
-        let kp = Keypair { id: "TEST_ID".into(), passphrase: "TEST_PASS".into() };
+        let kp = Keypair {
+            id: "TEST_ID".into(),
+            passphrase: "TEST_PASS".into(),
+        };
         self.keypair = Some(kp.clone());
         Ok(kp)
     }
 
-    fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> { Ok(true) }
+    fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> {
+        Ok(true)
+    }
 
     fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         Err(BingleError::Other("not configured".to_string()))
     }
 
-    fn add_contact(&mut self, _handle: String, _id: String, _source: ContactSource) -> Result<(), BingleError> { Ok(()) }
-    fn block_contact(&mut self, _id: String) -> Result<(), BingleError> { Ok(()) }
-    fn remove_contact(&mut self, _id: String) -> Result<(), BingleError> { Ok(()) }
-    fn is_blocked(&self, _id: &str) -> Result<bool, BingleError> { Ok(false) }
-    fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> { Ok(Vec::new()) }
+    fn add_contact(
+        &mut self,
+        _handle: String,
+        _id: String,
+        _source: ContactSource,
+    ) -> Result<(), BingleError> {
+        Ok(())
+    }
+    fn block_contact(&mut self, _id: String) -> Result<(), BingleError> {
+        Ok(())
+    }
+    fn remove_contact(&mut self, _id: String) -> Result<(), BingleError> {
+        Ok(())
+    }
+    fn is_blocked(&self, _id: &str) -> Result<bool, BingleError> {
+        Ok(false)
+    }
+    fn get_contacts(&self) -> Result<Vec<Contact>, BingleError> {
+        Ok(Vec::new())
+    }
 
     fn add_message(
         &mut self,
@@ -49,20 +69,47 @@ impl BingleLocalApi for ControllableLocalApi {
         _timestamp: i64,
         _text: String,
         _cipher_suite: Option<String>,
-    ) -> Result<(), BingleError> { Ok(()) }
+    ) -> Result<(), BingleError> {
+        Ok(())
+    }
 
-    fn queue_message(&mut self, _recipient_handles: Vec<String>, _text: String) -> Result<(), BingleError> { Ok(()) }
-    fn update_message_status(&mut self, _timestamp: i64, _progress: f32, _failure_reason: Option<String>) -> Result<(), BingleError> { Ok(()) }
-    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(Vec::new()) }
-    fn get_messages(&self) -> Result<Vec<Message>, BingleError> { Ok(Vec::new()) }
-    fn save(&self, _path: &str) -> Result<(), BingleError> { Ok(()) }
-    fn load(&mut self, _path: &str) -> Result<(), BingleError> { Ok(()) }
+    fn queue_message(
+        &mut self,
+        _recipient_handles: Vec<String>,
+        _text: String,
+    ) -> Result<(), BingleError> {
+        Ok(())
+    }
+    fn update_message_status(
+        &mut self,
+        _timestamp: i64,
+        _progress: f32,
+        _failure_reason: Option<String>,
+    ) -> Result<(), BingleError> {
+        Ok(())
+    }
+    fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
+        Ok(Vec::new())
+    }
+    fn get_messages(&self) -> Result<Vec<Message>, BingleError> {
+        Ok(Vec::new())
+    }
+    fn save(&self, _path: &str) -> Result<(), BingleError> {
+        Ok(())
+    }
+    fn load(&mut self, _path: &str) -> Result<(), BingleError> {
+        Ok(())
+    }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         Ok(KeypairStatus {
             status: self.status_override.clone(),
             id: self.keypair.as_ref().map(|k| k.id.clone()),
-            handle: if self.status_override == "ACTIVE" { Some("test_handle".to_string()) } else { None },
+            handle: if self.status_override == "ACTIVE" {
+                Some("test_handle".to_string())
+            } else {
+                None
+            },
             required_algo: None,
         })
     }
@@ -81,7 +128,9 @@ fn test_try_start_api_does_not_start_when_no_start_opts() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: None, // no deferred start configured
         api_started: Arc::new(Mutex::new(true)),
@@ -102,7 +151,9 @@ fn test_try_start_api_does_not_start_when_keypair_not_active() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
@@ -124,7 +175,9 @@ fn test_try_start_api_does_not_start_when_keypair_unfunded() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
@@ -145,7 +198,9 @@ fn test_try_start_api_does_not_start_when_keypair_funded() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
@@ -166,7 +221,9 @@ fn test_try_start_api_starts_when_keypair_active() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(false)),
@@ -188,7 +245,9 @@ fn test_try_start_api_does_not_start_twice() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: Some(StartOptions::new("".into())),
         api_started: Arc::new(Mutex::new(true)),
@@ -219,7 +278,9 @@ fn test_try_start_api_sets_handle_and_passphrase_from_local_api() {
     let state = AppState {
         api: Arc::new(api),
         messages: Arc::new(Mutex::new(Vec::new())),
-        local_api: Some(Arc::new(Mutex::new(Box::new(local_api) as Box<dyn BingleLocalApi>))),
+        local_api: Some(Arc::new(Mutex::new(
+            Box::new(local_api) as Box<dyn BingleLocalApi>
+        ))),
         local_file: None,
         start_opts: Some(base_opts),
         api_started: Arc::new(Mutex::new(false)),
@@ -233,7 +294,12 @@ fn test_try_start_api_sets_handle_and_passphrase_from_local_api() {
 
     // Verify the captured StartOptions have handle and passphrase from local API
     let opts = captured_opts.lock().unwrap();
-    let opts = opts.as_ref().expect("start() should have been called with options");
+    let opts = opts
+        .as_ref()
+        .expect("start() should have been called with options");
     assert_eq!(opts.handle, "test_handle");
-    assert_eq!(opts.algo_passphrase, Some("secret mnemonic phrase".to_string()));
+    assert_eq!(
+        opts.algo_passphrase,
+        Some("secret mnemonic phrase".to_string())
+    );
 }

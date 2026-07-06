@@ -9,7 +9,6 @@ pub mod asset_ops_test;
 #[path = "algo_change_reserve_unit.rs"]
 pub mod algo_change_reserve_unit;
 
-
 #[path = "algo_ops_more_test.rs"]
 pub mod algo_ops_more_test;
 
@@ -29,7 +28,6 @@ pub mod set_allow_relay_test;
 #[path = "algo_bingle/check_allow_relay_test.rs"]
 pub mod check_allow_relay_test;
 
-
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
 
@@ -40,10 +38,10 @@ pub mod algo_ops_address_derivation_test;
 pub mod algo_ops_reserve_helpers;
 
 // New unit covering keypair generation helper
-#[path = "generate_keypair.rs"]
-pub mod generate_keypair;
 #[path = "account_balance_test.rs"]
 pub mod account_balance_test;
+#[path = "generate_keypair.rs"]
+pub mod generate_keypair;
 
 #[path = "asset_holding_test.rs"]
 pub mod asset_holding_test;
@@ -59,4 +57,3 @@ pub mod test_retry_logic;
 
 #[path = "static_endpoint_guard.rs"]
 pub mod static_endpoint_guard;
-

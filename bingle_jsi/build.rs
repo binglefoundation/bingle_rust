@@ -23,12 +23,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("cargo:rustc-env=BINGLE_BUILD_NUMBER={}", build_num);
-    
+
     // Rerun if any source file changes
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    
+
     // DO NOT add .build_number to rerun-if-changed to avoid circular triggers
 
     Ok(())

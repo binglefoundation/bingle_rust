@@ -1,8 +1,10 @@
-
 use rust_comms::engine::BingleAccessUnsafeForTests;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use rust_comms::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
@@ -10,7 +12,6 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 
 #[path = "../test_util.rs"]
 pub mod test_util;
-
 
 #[ntest::timeout(30_000)]
 #[test]
@@ -35,13 +36,22 @@ pub fn engine_basic_bingle_dtls_layer() {
     // Install server handlers that print and signal when a message arrives
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_flag = delivered.clone();
-    server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.set_on_connect(Some(Arc::new(|sender, handle| {
-        tracing::info!("[server][on_connect] sender={} handle={}", sender, handle);
-    }))));
-    server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.set_on_message(Some(Arc::new(move |sender, handle, msg| {
-        tracing::info!("[server][on_message] sender={} handle={} msg={}", sender, handle, msg);
-        delivered_flag.store(true, Ordering::SeqCst);
-    }))));
+    server.access_unsafe_for_tests(|s: &mut BingleApiImpl| {
+        s.set_on_connect(Some(Arc::new(|sender, handle| {
+            tracing::info!("[server][on_connect] sender={} handle={}", sender, handle);
+        })))
+    });
+    server.access_unsafe_for_tests(|s: &mut BingleApiImpl| {
+        s.set_on_message(Some(Arc::new(move |sender, handle, msg| {
+            tracing::info!(
+                "[server][on_message] sender={} handle={} msg={}",
+                sender,
+                handle,
+                msg
+            );
+            delivered_flag.store(true, Ordering::SeqCst);
+        })))
+    });
 
     // Prepare options: static endpoints, no STUN.
     let server_opts = StartOptions {
@@ -54,7 +64,11 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
     let client_opts = StartOptions {
         handle: "client".into(),
@@ -66,14 +80,22 @@ pub fn engine_basic_bingle_dtls_layer() {
         algo_network: None,
         app_id: None,
         asset_id: None,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
 
     // Start both nodes
     tracing::info!("[test] starting server at {}", server_addr);
-    server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.start(&server_opts)).expect("server start() should succeed");
+    server
+        .access_unsafe_for_tests(|s: &mut BingleApiImpl| s.start(&server_opts))
+        .expect("server start() should succeed");
     tracing::info!("[test] starting client at {}", client_addr);
-    client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts)).expect("client start() should succeed");
+    client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts))
+        .expect("client start() should succeed");
 
     // Build direct network destination to server and send a simple plaintext JSON message.
     let dest = NetworkEndpoint::new_direct(server_addr);
@@ -86,8 +108,14 @@ pub fn engine_basic_bingle_dtls_layer() {
     });
 
     tracing::info!("[test] client sending message to {}", server_addr);
-    let uid = server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id()).expect("server id Some");
-    let ok = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.send_message_to_network(&dest, &uid, payload, Some(progress))).unwrap();
+    let uid = server
+        .access_unsafe_for_tests(|s: &mut BingleApiImpl| s.get_my_id())
+        .expect("server id Some");
+    let ok = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| {
+            c.send_message_to_network(&dest, &uid, payload, Some(progress))
+        })
+        .unwrap();
     assert!(ok, "client send_message_to_network should return true");
 
     // Wait for on_message to be called on the server
@@ -95,7 +123,10 @@ pub fn engine_basic_bingle_dtls_layer() {
     while !delivered.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(5) {
         std::thread::sleep(Duration::from_millis(25));
     }
-    assert!(delivered.load(Ordering::SeqCst), "server on_message handler was not invoked");
+    assert!(
+        delivered.load(Ordering::SeqCst),
+        "server on_message handler was not invoked"
+    );
 
     // Cleanup
     server.access_unsafe_for_tests(|s: &mut BingleApiImpl| s.stop());

@@ -10,18 +10,21 @@
 // To keep CI green in environments without testnet credentials, this test only
 // runs when BINGLE_RUN_TESTNET=1 is set in the environment. Otherwise it exits early.
 
-use tracing_subscriber::filter::LevelFilter;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions};
-use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::engine::{EngineState, NatType};
 use rust_comms::AlgoBingle;
 use rust_comms::AlgoOps;
-use std::time::{Duration, Instant};
+use rust_comms::api::bingle_api::{BingleApi, StartOptions};
+use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::{BingleAccess, BingleAccessUnsafeForTests};
+use rust_comms::engine::{EngineState, NatType};
 use rust_comms::util::config_utils::{parse_node_file_with_ids, parse_stun_file};
+use std::time::{Duration, Instant};
+use tracing_subscriber::filter::LevelFilter;
 
 fn env_var(name: &str) -> Option<String> {
-    std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    std::env::var(name)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 #[test]
@@ -59,12 +62,15 @@ pub fn testnet_user_reaches_endpoint_available() {
     let static_endpoints = ab
         .list_static_endpoints_via_indexer(app_id)
         .expect("indexer query for static endpoints");
-    assert!(static_endpoints.len() >= 2, "Expected at least two static endpoints on testnet, got {}", static_endpoints.len());
-
-
+    assert!(
+        static_endpoints.len() >= 2,
+        "Expected at least two static endpoints on testnet, got {}",
+        static_endpoints.len()
+    );
 
     // Load STUN servers from the repository root file and configure options accordingly.
-    let stun_servers = parse_stun_file("stunservers.txt").expect("failed to read/parse stunservers.txt");
+    let stun_servers =
+        parse_stun_file("stunservers.txt").expect("failed to read/parse stunservers.txt");
 
     let opts = StartOptions {
         handle: handle.clone(),
@@ -76,13 +82,18 @@ pub fn testnet_user_reaches_endpoint_available() {
         algo_network: network_name.clone(),
         app_id: Some(app_id),
         asset_id: node_asset_id,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     };
 
     // Start the user and wait for EndpointAvailable
     let api = BingleApiImpl::new(&opts);
 
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("start api");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
+        .expect("start api");
 
     // Before proceeding, ensure both static endpoints are reachable: send RelayCheck and await response.
     // Use a single 120s budget to validate availability of the first two endpoints returned by indexer.
@@ -122,14 +133,20 @@ pub fn testnet_user_reaches_endpoint_available() {
     let _expect_state = match env_var("EXPECT_FINAL_STATE").as_deref() {
         Some("EndpointAvailable") => EngineState::EndpointAvailable,
         Some("NATRestricted") => EngineState::NATRestricted,
-        Some(other) => panic!("Invalid EXPECT_FINAL_STATE='{}' (allowed: EndpointAvailable|NATRestricted)", other),
+        Some(other) => panic!(
+            "Invalid EXPECT_FINAL_STATE='{}' (allowed: EndpointAvailable|NATRestricted)",
+            other
+        ),
         None => {
             match env_var("NAT_MODE").as_deref() {
                 Some("Restricted") => EngineState::NATRestricted,
                 // Direct and Full both expect EndpointAvailable by requirement; default to EndpointAvailable
                 Some("Direct") | Some("Full") | None => EngineState::EndpointAvailable,
                 Some(other) => {
-                    eprintln!("[warn] Unknown NAT_MODE='{}'; defaulting expected state to EndpointAvailable", other);
+                    eprintln!(
+                        "[warn] Unknown NAT_MODE='{}'; defaulting expected state to EndpointAvailable",
+                        other
+                    );
                     EngineState::EndpointAvailable
                 }
             }
@@ -159,8 +176,12 @@ pub fn testnet_user_reaches_endpoint_available() {
     let start = Instant::now();
     let timeout = Duration::from_secs(120); // TODO: make handshakes faster
     let final_state = loop {
-        if let Some(st) = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
-            if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
+        if let Some(st) =
+            api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+        {
+            if st == EngineState::Registered || st == EngineState::NATRestricted {
+                break st;
+            }
         }
         if start.elapsed() > timeout {
             panic!(
@@ -172,15 +193,29 @@ pub fn testnet_user_reaches_endpoint_available() {
     };
 
     // Validate NAT type once final state is reached
-    let got_nat = api.access(|a| a.engine_nat_type_for_tests()).expect("nat type should be set");
+    let got_nat = api
+        .access(|a| a.engine_nat_type_for_tests())
+        .expect("nat type should be set");
     match final_state {
-        EngineState::Registered => assert_eq!(got_nat, NatType::FullCone, "Registered implies we reached EndpointAvailable with FullCone NAT"),
-        EngineState::NATRestricted => assert!(matches!(got_nat, NatType::Restricted | NatType::Symmetric), "NATRestricted should be Restricted or Symmetric (got {:?})", got_nat),
+        EngineState::Registered => assert_eq!(
+            got_nat,
+            NatType::FullCone,
+            "Registered implies we reached EndpointAvailable with FullCone NAT"
+        ),
+        EngineState::NATRestricted => assert!(
+            matches!(got_nat, NatType::Restricted | NatType::Symmetric),
+            "NATRestricted should be Restricted or Symmetric (got {:?})",
+            got_nat
+        ),
         _ => {}
     }
     // If EXPECT_NAT_TYPE was provided, assert exact match
     if env_var("EXPECT_NAT_TYPE").is_some() {
-        assert_eq!(got_nat, expect_nat, "expected NAT type {:?}, got {:?}", expect_nat, got_nat);
+        assert_eq!(
+            got_nat, expect_nat,
+            "expected NAT type {:?}, got {:?}",
+            expect_nat, got_nat
+        );
     }
 
     tracing::info!("Final state: {:?}, NAT type: {:?}", final_state, got_nat);
@@ -188,18 +223,36 @@ pub fn testnet_user_reaches_endpoint_available() {
 
     // If we are Registered, perform DDB lookup for our ID and verify address equals our discovered public endpoint
     if final_state == EngineState::Registered {
-        let my_id = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.get_my_id()).expect("api.get_my_id Some");
-        let nsk = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests(&my_id)).expect("ddb lookup should succeed when registered");
+        let my_id = api
+            .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.get_my_id())
+            .expect("api.get_my_id Some");
+        let nsk = api
+            .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_ddb_lookup_for_tests(&my_id))
+            .expect("ddb lookup should succeed when registered");
         if got_nat == NatType::FullCone {
-            let looked = nsk.inet_socket_address().expect("lookup should return a direct endpoint");
-            let ep = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_last_public_addr_for_tests()).expect("last public addr should be Some");
-            assert_eq!(looked, ep, "DDB lookup should return our discovered public endpoint");
-        }
-        else {
-            let looked = nsk.relay_address().expect("lookup should return relay address");
-            assert_eq!(looked.to_string(), static_endpoints[0].1, "DDB lookup should return our discovered public endpoint");
+            let looked = nsk
+                .inet_socket_address()
+                .expect("lookup should return a direct endpoint");
+            let ep = api
+                .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+                    a.engine_last_public_addr_for_tests()
+                })
+                .expect("last public addr should be Some");
+            assert_eq!(
+                looked, ep,
+                "DDB lookup should return our discovered public endpoint"
+            );
+        } else {
+            let looked = nsk
+                .relay_address()
+                .expect("lookup should return relay address");
+            assert_eq!(
+                looked.to_string(),
+                static_endpoints[0].1,
+                "DDB lookup should return our discovered public endpoint"
+            );
         }
     }
-    
+
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.stop());
 }

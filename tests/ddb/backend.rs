@@ -3,7 +3,10 @@ use rust_comms::ddb::{AdvertRecord, DdbBackend, InMemoryDdbBackend, InetSocketAd
 fn sample_record(id: &str) -> AdvertRecord {
     AdvertRecord::new_unsigned(
         id.to_string(),
-        Some(InetSocketAddress { host: "127.0.0.1".to_string(), port: 4433 }),
+        Some(InetSocketAddress {
+            host: "127.0.0.1".to_string(),
+            port: 4433,
+        }),
         Some(false),
         None,
         None,
@@ -18,7 +21,10 @@ pub fn upsert_then_lookup_returns_same_record() {
     let rec = sample_record("ID1");
     db.upsert(rec.clone());
     let roundtrip = db.lookup("ID1");
-    assert!(roundtrip.is_some(), "lookup should return Some after upsert");
+    assert!(
+        roundtrip.is_some(),
+        "lookup should return Some after upsert"
+    );
     assert_eq!(rec, roundtrip.unwrap());
 }
 
@@ -30,7 +36,10 @@ pub fn upsert_updates_existing() {
     db.upsert(rec.clone());
 
     // Update fields and upsert again
-    rec.endpoint = Some(InetSocketAddress { host: "host".into(), port: 5555 });
+    rec.endpoint = Some(InetSocketAddress {
+        host: "host".into(),
+        port: 5555,
+    });
     rec.am_relay = Some(true);
     db.upsert(rec.clone());
 
@@ -54,7 +63,10 @@ pub fn delete_then_lookup_none() {
 fn relay_record(id: &str, host: &str, port: u16) -> AdvertRecord {
     AdvertRecord::new_unsigned(
         id.to_string(),
-        Some(InetSocketAddress { host: host.to_string(), port }),
+        Some(InetSocketAddress {
+            host: host.to_string(),
+            port,
+        }),
         Some(true),
         None,
         None,

@@ -1,6 +1,6 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use rust_comms::api::bingle_api::StartOptions;
@@ -12,7 +12,10 @@ fn test_stun_blocked_sets_no_connection_nat_type() {
         handle: "test_blocked".to_string(),
         ..StartOptions::new("".into())
     };
-    let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
+    let engine = Arc::new(Engine::new(
+        &options,
+        crate::util::mock_bingle_api::mock_api_weak(),
+    ));
 
     engine.access_unsafe_for_tests(|e| {
         e.test_force_stun_blocked();
@@ -61,7 +64,10 @@ fn test_no_relay_target_sets_no_connection_nat_type() {
         handle: "test_no_relay_target".to_string(),
         ..StartOptions::new("".into())
     };
-    let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
+    let engine = Arc::new(Engine::new(
+        &options,
+        crate::util::mock_bingle_api::mock_api_weak(),
+    ));
 
     engine.access_unsafe_for_tests(|e| {
         e.test_stun_consistent_process_no_addr();

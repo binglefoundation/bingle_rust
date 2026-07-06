@@ -7,13 +7,13 @@
 
 use std::net::SocketAddr;
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use rust_comms::api::bingle_api::{NetworkEndpoint, StartOptions};
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use rust_comms::dtls::network_mux_udp::UdpNetworkMux;
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use rust_comms::engine::{Engine, NatType};
 use rust_comms::messages::router::Router;
 
@@ -29,43 +29,121 @@ struct TrackingDtls {
 
 impl TrackingDtls {
     fn new() -> Self {
-        Self { forget_count: Arc::new(AtomicUsize::new(0)) }
+        Self {
+            forget_count: Arc::new(AtomicUsize::new(0)),
+        }
     }
 }
 
 impl Dtls for TrackingDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn stop(&mut self) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> { Ok(()) }
-    fn get_handle_message(&self) -> Option<HandleMessage> { None }
+    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> rust_comms::dtls::Result<()> {
+        Ok(())
+    }
+    fn get_handle_message(&self) -> Option<HandleMessage> {
+        None
+    }
     fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
-    fn with_handle_message(self, _handler: HandleMessage) -> Self where Self: Sized { self }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
+    fn with_handle_message(self, _handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> { None }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_cipher_suite(&self, _endpoint: &NetworkEndpoint) -> Option<String> {
+        None
+    }
     fn forget_peers(&self) {
         self.forget_count.fetch_add(1, Ordering::SeqCst);
     }
@@ -76,7 +154,11 @@ impl Dtls for TrackingDtls {
 // ---------------------------------------------------------------------------
 fn build_engine(dtls: TrackingDtls) -> Engine {
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());
-    let mut eng = Engine::new_with_dtls(&StartOptions::new("test".into()), api.clone(), Box::new(dtls));
+    let mut eng = Engine::new_with_dtls(
+        &StartOptions::new("test".into()),
+        api.clone(),
+        Box::new(dtls),
+    );
     let router = Arc::new(Router::new(api));
     eng.set_router(router);
     eng
@@ -126,7 +208,9 @@ pub fn stun_same_address_does_not_reset_peers() {
     let listening_false_called = Arc::new(AtomicBool::new(false));
     let flag = listening_false_called.clone();
     eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
-        if !listening { flag.store(true, Ordering::SeqCst); }
+        if !listening {
+            flag.store(true, Ordering::SeqCst);
+        }
     })));
 
     eng.test_stun_consistent_process_no_addr();

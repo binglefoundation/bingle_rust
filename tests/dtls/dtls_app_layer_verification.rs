@@ -1,12 +1,13 @@
-
-
 use std::net::SocketAddr;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use std::time::Duration;
 
-use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
 use crate::util::test_util::init_test_logging;
+use rust_comms::dtls::{Dtls, DtlsOpenSsl, Result as DtlsResult};
 
 pub mod pki;
 
@@ -69,12 +70,24 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
     client.start(cmux.clone()).expect("client start");
 
     // Attempt to send a payload; handshake should succeed (Ok) even though the handler rejects later.
-    let ok = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(saddr), b"hello-app").is_ok();
-    assert!(ok, "handshake should succeed under app-layer-only verification");
+    let ok = client
+        .send(
+            &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(saddr),
+            b"hello-app",
+        )
+        .is_ok();
+    assert!(
+        ok,
+        "handshake should succeed under app-layer-only verification"
+    );
 
     // Give server some time; because the handler rejects the cert at app layer, delivery should be blocked.
     thread::sleep(Duration::from_millis(300));
-    assert_eq!(delivered.load(Ordering::SeqCst), false, "application data should be blocked when app-layer verification rejects");
+    assert_eq!(
+        delivered.load(Ordering::SeqCst),
+        false,
+        "application data should be blocked when app-layer verification rejects"
+    );
 }
 
 #[ntest::timeout(45_000)]
@@ -121,13 +134,26 @@ pub fn dtls_app_layer_verification_accept_all_delivers_application_data() {
     cmux.start().expect("client mux start");
     client.start(cmux.clone()).expect("client start");
 
-    let ok = client.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(saddr), b"hello-app").is_ok();
-    assert!(ok, "handshake should succeed under app-layer-only verification");
+    let ok = client
+        .send(
+            &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(saddr),
+            b"hello-app",
+        )
+        .is_ok();
+    assert!(
+        ok,
+        "handshake should succeed under app-layer-only verification"
+    );
 
     // Wait until delivered or timeout
     for _ in 0..40 {
-        if delivered.load(Ordering::SeqCst) { break; }
+        if delivered.load(Ordering::SeqCst) {
+            break;
+        }
         thread::sleep(Duration::from_millis(25));
     }
-    assert!(delivered.load(Ordering::SeqCst), "application data should be delivered when app-layer verification accepts");
+    assert!(
+        delivered.load(Ordering::SeqCst),
+        "application data should be delivered when app-layer verification accepts"
+    );
 }

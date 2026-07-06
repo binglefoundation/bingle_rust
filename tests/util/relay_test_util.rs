@@ -22,16 +22,22 @@ pub fn wait_for_relays_visible(
                 .into_iter()
                 .filter_map(|(id, advert_record_csv)| {
                     // Try parsing as compact AdvertRecord first
-                    if let Some(advert_record) = rust_comms::ddb::AdvertRecord::deserialize_csv(id.clone(), &advert_record_csv) {
+                    if let Some(advert_record) = rust_comms::ddb::AdvertRecord::deserialize_csv(
+                        id.clone(),
+                        &advert_record_csv,
+                    ) {
                         if let Some(ep) = advert_record.endpoint {
                             use std::convert::TryFrom;
                             if let Ok(addr) = std::net::SocketAddr::try_from(ep) {
                                 return Some((id, addr));
                             }
                         }
-                    }
-                    else {
-                        tracing::error!("Failed to parse AdvertRecord for id: {}, addr_str: {}", id, advert_record_csv);
+                    } else {
+                        tracing::error!(
+                            "Failed to parse AdvertRecord for id: {}, addr_str: {}",
+                            id,
+                            advert_record_csv
+                        );
                     }
                     return None;
                 })
@@ -39,7 +45,10 @@ pub fn wait_for_relays_visible(
             if parsed.len() == expected.len() {
                 let mut all_match = true;
                 for (exp_id, exp_addr) in expected {
-                    if !parsed.iter().any(|(fid, faddr)| fid == exp_id && faddr == exp_addr) {
+                    if !parsed
+                        .iter()
+                        .any(|(fid, faddr)| fid == exp_id && faddr == exp_addr)
+                    {
                         all_match = false;
                         tracing::info!(
                             "[Test] Relay {} not yet visible with address {} (found: {:?})",

@@ -6,7 +6,8 @@ use std::net::SocketAddr;
 pub fn parse_positional_handle_and_flags() {
     let args = vec![
         "myhandle".to_string(),
-        "--passphrase".to_string(), "secret words".to_string(),
+        "--passphrase".to_string(),
+        "secret words".to_string(),
         "--relay".to_string(),
     ];
     let opts = parse_start_options_from_args(args).expect("parse ok");
@@ -19,12 +20,17 @@ pub fn parse_positional_handle_and_flags() {
 #[cfg(not(target_os = "ios"))]
 pub fn parse_handle_flag_and_static_ip() {
     let args = vec![
-        "--handle".to_string(), "bob".to_string(),
-        "--static-ip".to_string(), "127.0.0.1:12345".to_string(),
+        "--handle".to_string(),
+        "bob".to_string(),
+        "--static-ip".to_string(),
+        "127.0.0.1:12345".to_string(),
     ];
     let opts = parse_start_options_from_args(args).expect("parse ok");
     assert_eq!(opts.handle, "bob");
-    assert_eq!(opts.static_ip, Some("127.0.0.1:12345".parse::<SocketAddr>().unwrap()));
+    assert_eq!(
+        opts.static_ip,
+        Some("127.0.0.1:12345".parse::<SocketAddr>().unwrap())
+    );
 }
 
 #[test]
@@ -32,7 +38,8 @@ pub fn parse_handle_flag_and_static_ip() {
 pub fn parse_stun_servers_list() {
     let args = vec![
         "alice".to_string(),
-        "--stun-servers".to_string(), "1.2.3.4:3478, 5.6.7.8:3478".to_string(),
+        "--stun-servers".to_string(),
+        "1.2.3.4:3478, 5.6.7.8:3478".to_string(),
     ];
     let opts = parse_start_options_from_args(args).expect("parse ok");
     let list = opts.stun_servers.expect("stun_servers present");
@@ -51,7 +58,8 @@ pub fn parse_stun_servers_file() {
 
     let args = vec![
         "charlie".to_string(),
-        "--stun-servers-file".to_string(), path,
+        "--stun-servers-file".to_string(),
+        path,
     ];
     let opts = parse_start_options_from_args(args).expect("parse ok");
     let list = opts.stun_servers.expect("stun_servers present");
@@ -73,7 +81,8 @@ pub fn error_on_missing_handle() {
 pub fn error_on_invalid_static_ip() {
     let args = vec![
         "dave".to_string(),
-        "--static-ip".to_string(), "bad".to_string(),
+        "--static-ip".to_string(),
+        "bad".to_string(),
     ];
     let err = parse_start_options_from_args(args).unwrap_err();
     assert!(err.contains("Invalid --static-ip"));

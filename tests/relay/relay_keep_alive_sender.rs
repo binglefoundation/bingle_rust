@@ -5,7 +5,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rust_comms::api::bingle_api::{BingleApiBoth, BingleError, NetworkEndpoint, ProgressCallback, UserId};
+use rust_comms::api::bingle_api::{
+    BingleApiBoth, BingleError, NetworkEndpoint, ProgressCallback, UserId,
+};
 use rust_comms::relay::relay_keep_alive::RelayKeepAliveSender;
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
@@ -34,7 +36,11 @@ impl InnerBingleApi for CapturingApi {
         _progress: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
         if let Ok(mut v) = self.sent.lock() {
-            v.push(SentMessage { nsk: nsk.clone(), user_id: user_id.clone(), message });
+            v.push(SentMessage {
+                nsk: nsk.clone(),
+                user_id: user_id.clone(),
+                message,
+            });
         }
         Ok(true)
     }
@@ -89,7 +95,10 @@ pub fn sends_keep_alive_periodically_with_correct_payload() {
     for m in messages.iter() {
         assert_eq!(m.nsk, NetworkEndpoint::new_direct(relay_addr));
         assert_eq!(m.user_id, "RELAY_ID_1");
-        assert_eq!(m.message.get("type").and_then(|v| v.as_str()), Some("KeepAlive"));
+        assert_eq!(
+            m.message.get("type").and_then(|v| v.as_str()),
+            Some("KeepAlive")
+        );
         assert_eq!(m.message.get("app"), Some(&serde_json::Value::Null));
     }
 }
@@ -109,7 +118,11 @@ pub fn does_not_send_before_first_interval() {
     // Registration just refreshed the mapping, so the first keep-alive must wait
     // a full interval; with a 600s interval nothing may be sent here.
     std::thread::sleep(Duration::from_millis(100));
-    assert_eq!(sent_count(&sent), 0, "keep-alive sent before the first interval elapsed");
+    assert_eq!(
+        sent_count(&sent),
+        0,
+        "keep-alive sent before the first interval elapsed"
+    );
     sender.stop();
 }
 
@@ -137,7 +150,11 @@ pub fn stop_halts_sends_and_returns_promptly() {
 
     let count_after_stop = sent_count(&sent);
     std::thread::sleep(interval * 3);
-    assert_eq!(sent_count(&sent), count_after_stop, "keep-alives sent after stop()");
+    assert_eq!(
+        sent_count(&sent),
+        count_after_stop,
+        "keep-alives sent after stop()"
+    );
 }
 
 #[test]
@@ -154,7 +171,11 @@ pub fn dropped_api_exits_loop_cleanly() {
     sender.start();
 
     std::thread::sleep(Duration::from_millis(100));
-    assert_eq!(sent_count(&sent), 0, "no sends possible once the api is gone");
+    assert_eq!(
+        sent_count(&sent),
+        0,
+        "no sends possible once the api is gone"
+    );
     // stop() joins the (already exited) thread and must not hang or panic
     sender.stop();
 }

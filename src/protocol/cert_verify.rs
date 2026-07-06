@@ -37,7 +37,9 @@ pub fn dump_ca_public_key_info(ca_pub: &openssl::pkey::PKey<openssl::pkey::Publi
                 // Optional offset label similar to OpenSSL style
                 let _ = i; // silence unused if format changes
                 for (j, b) in chunk.iter().enumerate() {
-                    if j > 0 { line.push(':'); }
+                    if j > 0 {
+                        line.push(':');
+                    }
                     line.push_str(&format!("{:02x}", b));
                 }
                 raw_hex_lines.push(line);
@@ -77,8 +79,12 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         use openssl::x509::X509;
 
         // Entry log
-        tracing::debug!("[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}", cert_pem.len(), ca_pem.len());
-        
+        tracing::debug!(
+            "[cert_verify] peer_certificate_handler called: cert_len={}, ca_len={}",
+            cert_pem.len(),
+            ca_pem.len()
+        );
+
         // Small helper to log a failure reason and return Err(msg) consistently.
         #[inline]
         fn log_fail<M: Into<String>>(msg: M) -> Result<String> {
@@ -86,7 +92,7 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             tracing::warn!("[cert_verify][fail] {}", s);
             Err(s)
         }
-        
+
         // Parse certificates with explicit error logging
         let cert = match X509::from_pem(cert_pem) {
             Ok(c) => c,
@@ -122,25 +128,45 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         // Validate certificate expiration
         let now = match openssl::asn1::Asn1Time::days_from_now(0) {
             Ok(t) => t,
-            Err(e) => return log_fail(format!("failed to get current time for expiration check: {}", e)),
+            Err(e) => {
+                return log_fail(format!(
+                    "failed to get current time for expiration check: {}",
+                    e
+                ));
+            }
         };
 
         if ca.not_before() > now {
-            return log_fail(format!("CA certificate not yet valid (not_before={})", ca.not_before()));
+            return log_fail(format!(
+                "CA certificate not yet valid (not_before={})",
+                ca.not_before()
+            ));
         }
         if ca.not_after() < now {
-            return log_fail(format!("CA certificate expired (not_after={})", ca.not_after()));
+            return log_fail(format!(
+                "CA certificate expired (not_after={})",
+                ca.not_after()
+            ));
         }
         if cert.not_before() > now {
-            return log_fail(format!("peer certificate not yet valid (not_before={})", cert.not_before()));
+            return log_fail(format!(
+                "peer certificate not yet valid (not_before={})",
+                cert.not_before()
+            ));
         }
         if cert.not_after() < now {
-            return log_fail(format!("peer certificate expired (not_after={})", cert.not_after()));
+            return log_fail(format!(
+                "peer certificate expired (not_after={})",
+                cert.not_after()
+            ));
         }
 
         // CA CN must be our virtual CA value
         if ca_cn != VIRTUAL_CA {
-            return log_fail(format!("unexpected CA CN: '{}' (expected '{}')", ca_cn, VIRTUAL_CA));
+            return log_fail(format!(
+                "unexpected CA CN: '{}' (expected '{}')",
+                ca_cn, VIRTUAL_CA
+            ));
         }
 
         // Validate the CA public key exists and is Ed25519, and CA is self-signed
@@ -151,7 +177,10 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             }
         };
         if ca_pub.id() != Id::ED25519 {
-            return log_fail(format!("CA public key is not Ed25519 (found {:?})", ca_pub.id()));
+            return log_fail(format!(
+                "CA public key is not Ed25519 (found {:?})",
+                ca_pub.id()
+            ));
         }
 
         // Human-readable dump of the CA public key for diagnostics
@@ -176,11 +205,11 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
         }
 
         if !is_cert_ca(&ca) {
-             return log_fail("CA certificate basic constraints: CA is false");
+            return log_fail("CA certificate basic constraints: CA is false");
         }
 
         if is_cert_ca(&cert) {
-             return log_fail("end-entity certificate basic constraints: CA is true");
+            return log_fail("end-entity certificate basic constraints: CA is true");
         }
 
         // Validate that end-entity certificate is issued by CA and signature verifies
@@ -197,7 +226,10 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             }
         };
         if ee_issuer_cn != VIRTUAL_CA {
-            return log_fail(format!("end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'", ee_issuer_cn, VIRTUAL_CA));
+            return log_fail(format!(
+                "end-entity issuer CN does not equal virtual CA: ee='{}', expected='{}'",
+                ee_issuer_cn, VIRTUAL_CA
+            ));
         }
         if !cert.verify(&ca_pub).unwrap_or(false) {
             tracing::warn!("[cert_verify][fail] verification failed with cert/PK/ca cert");
@@ -214,7 +246,10 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .map(|s| s.to_string())
         {
             if !ee_subj_cn.ends_with(ISSUER_SUFFIX) {
-                return log_fail(format!("end-entity CN missing issuer suffix: {}", ee_subj_cn));
+                return log_fail(format!(
+                    "end-entity CN missing issuer suffix: {}",
+                    ee_subj_cn
+                ));
             }
             ee_subj_cn
         } else {
@@ -231,16 +266,25 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
             .map(|s| s.to_string());
         if let Some(ca_org) = ca_org_opt {
             if ca_org != expected_addr {
-                return log_fail(format!("CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'", ca_org, expected_addr));
+                return log_fail(format!(
+                    "CA O (org) does not match EE subject CN without suffix: ca.O='{}' expected='{}'",
+                    ca_org, expected_addr
+                ));
             }
         } else {
             // Tolerate missing O for backward compatibility; log for diagnostics
-            tracing::info!("[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match");
+            tracing::info!(
+                "[cert_verify][warn] CA certificate has no OrganizationName (O); skipping address match"
+            );
         }
 
         // All checks passed: return the end-entity subject CN (ee_subj_cn), not the CA's CN
-        tracing::info!("[cert_verify][ok] peer_certificate_handler success: subjectCN={}", ee_subj_cn);
-        #[allow(unused)] {  }
+        tracing::info!(
+            "[cert_verify][ok] peer_certificate_handler success: subjectCN={}",
+            ee_subj_cn
+        );
+        #[allow(unused)]
+        {}
         Ok(ee_subj_cn)
     }
     handler
@@ -248,13 +292,16 @@ pub fn peer_certificate_handler() -> HandlePeerCertificate {
 
 pub fn peer_certificate_accept_all_handler() -> HandlePeerCertificate {
     fn handler(cert_pem: &[u8], _ca_pem: &[u8]) -> Result<String> {
-        tracing::debug!("[cert_verify] accept_all handler called: cert_len={}", cert_pem.len());
-        #[allow(unused)] {  }
+        tracing::debug!(
+            "[cert_verify] accept_all handler called: cert_len={}",
+            cert_pem.len()
+        );
+        #[allow(unused)]
+        {}
         Ok("accept-all".to_string())
     }
     handler
 }
-
 
 pub fn dump_cert_info(tag: &str, cert: &openssl::x509::X509, use_pem: bool) {
     use openssl::hash::MessageDigest;
@@ -267,7 +314,9 @@ pub fn dump_cert_info(tag: &str, cert: &openssl::x509::X509, use_pem: bool) {
     let der_len = cert.to_der().map(|v| v.len()).unwrap_or(0);
     tracing::debug!(
         "[cert_verify][dump][{}] sha256={} len={} bytes",
-        tag, cert_fp, der_len
+        tag,
+        cert_fp,
+        der_len
     );
 
     if use_pem {
@@ -284,7 +333,9 @@ pub fn dump_cert_info(tag: &str, cert: &openssl::x509::X509, use_pem: bool) {
             .unwrap_or_else(|_| "<x509 to_text failed>".to_string());
         tracing::debug!(
             "[cert_verify][dump][{}] BEGIN CERT\n{}\n[cert_verify][dump][{}] END CERT",
-            tag, cert_text, tag
+            tag,
+            cert_text,
+            tag
         );
     }
 }

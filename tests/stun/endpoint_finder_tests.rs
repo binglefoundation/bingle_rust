@@ -1,24 +1,31 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // Bring in the public trait and types from the crate under test
-use rust_comms::stun::{StunEndpointFinder, StunState, StunEndpointFinderImpl};
 use crate::util::test_util::init_test_logging;
+use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
 
 fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
     // Build a minimal STUN success with XOR-MAPPED-ADDRESS for IPv4
     let mut pkt = vec![0u8; 20];
     // Message Type: 0x0101 (Binding Success Response)
-    pkt[0] = 0x01; pkt[1] = 0x01;
+    pkt[0] = 0x01;
+    pkt[1] = 0x01;
     // We'll add one attribute of length 8
-    pkt[2] = 0x00; pkt[3] = 0x0c; // 12 bytes (type+len + value)
+    pkt[2] = 0x00;
+    pkt[3] = 0x0c; // 12 bytes (type+len + value)
     // Magic Cookie
-    pkt[4] = 0x21; pkt[5] = 0x12; pkt[6] = 0xA4; pkt[7] = 0x42;
+    pkt[4] = 0x21;
+    pkt[5] = 0x12;
+    pkt[6] = 0xA4;
+    pkt[7] = 0x42;
     // Transaction ID (12 bytes arbitrary)
-    for i in 0..12 { pkt[8 + i] = i as u8; }
+    for i in 0..12 {
+        pkt[8 + i] = i as u8;
+    }
     // Attribute: XOR-MAPPED-ADDRESS (0x0020), length 8
     pkt.extend_from_slice(&[0x00, 0x20, 0x00, 0x08]);
     // Value: 0x00 family(0x01), x-port, x-address
@@ -28,7 +35,9 @@ fn make_xor_mapped_response(ip: [u8; 4], port: u16) -> Vec<u8> {
     pkt.extend_from_slice(&xport.to_be_bytes());
     let mut xaddr = ip;
     let cookie = [0x21u8, 0x12, 0xA4, 0x42];
-    for i in 0..4 { xaddr[i] ^= cookie[i]; }
+    for i in 0..4 {
+        xaddr[i] ^= cookie[i];
+    }
     pkt.extend_from_slice(&xaddr);
     pkt
 }
@@ -53,13 +62,15 @@ pub fn single_response_triggers_single_and_callback_without_ip() {
 
     let list = seen.lock().unwrap();
     // Find the SINGLE callback and ensure endpoint is None
-    let single = list.iter().find(|(st, _)| *st == StunState::Single).cloned();
+    let single = list
+        .iter()
+        .find(|(st, _)| *st == StunState::Single)
+        .cloned();
     assert!(single.is_some());
     assert!(single.unwrap().1.is_none());
 
     finder.stop();
 }
-
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -80,7 +91,10 @@ pub fn two_inconsistent_responses_trigger_inconsistent_callback_without_ip() {
     let r2 = make_xor_mapped_response([203, 0, 113, 10], 55001);
     finder.process_packet(s2, &r2);
     let list = seen.lock().unwrap();
-    let incons = list.iter().rfind(|(st, _)| *st == StunState::Inconsistent).cloned();
+    let incons = list
+        .iter()
+        .rfind(|(st, _)| *st == StunState::Inconsistent)
+        .cloned();
     assert!(incons.is_some());
     assert!(incons.unwrap().1.is_none());
 
@@ -113,7 +127,10 @@ pub fn two_consistent_then_one_inconsistent_switches_to_inconsistent_and_callbac
     finder.process_packet(s3, &r3);
 
     let list = seen.lock().unwrap();
-    let incons = list.iter().rfind(|(st, _)| *st == StunState::Inconsistent).cloned();
+    let incons = list
+        .iter()
+        .rfind(|(st, _)| *st == StunState::Inconsistent)
+        .cloned();
     assert!(incons.is_some());
     assert!(incons.unwrap().1.is_none());
 
@@ -132,9 +149,11 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
 
     let search_ms = 500u64;
     let repeat_ms = 1500u64;
-    finder.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, _data: &[u8]| {
-        calls_clone.lock().unwrap().push((host.to_string(), port));
-    })));
+    finder.set_send_packet_handler(Some(Arc::new(
+        move |host: &str, port: u16, _data: &[u8]| {
+            calls_clone.lock().unwrap().push((host.to_string(), port));
+        },
+    )));
 
     finder.init(vec![s1, s2], search_ms, repeat_ms);
 
@@ -168,14 +187,23 @@ pub fn after_two_responses_polls_resume_on_repeat_interval() {
     finder.tick_for_test();
     {
         let rec = calls.lock().unwrap();
-        assert_eq!(rec.len(), 2, "should poll all servers after repeat interval");
+        assert_eq!(
+            rec.len(),
+            2,
+            "should poll all servers after repeat interval"
+        );
         let s1_key = (s1.ip().to_string(), s1.port());
         let s2_key = (s2.ip().to_string(), s2.port());
-        assert!(rec.iter().any(|(h, p)| *h == s1_key.0 && *p == s1_key.1), "expected repeat poll for s1");
-        assert!(rec.iter().any(|(h, p)| *h == s2_key.0 && *p == s2_key.1), "expected repeat poll for s2");
+        assert!(
+            rec.iter().any(|(h, p)| *h == s1_key.0 && *p == s1_key.1),
+            "expected repeat poll for s1"
+        );
+        assert!(
+            rec.iter().any(|(h, p)| *h == s2_key.0 && *p == s2_key.1),
+            "expected repeat poll for s2"
+        );
     }
 }
-
 
 // Integration test: when no STUN server responds within the timeout period,
 // the state should transition to Blocked.
@@ -203,10 +231,12 @@ pub fn blocked_when_no_servers_respond_within_timeout() {
     // no process_packet call ever arrives.
     let send_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let send_count_clone = Arc::clone(&send_count);
-    finder.set_send_packet_handler(Some(Arc::new(move |_host: &str, _port: u16, _data: &[u8]| {
-        *send_count_clone.lock().unwrap() += 1;
-        // Deliberately do nothing: no response is injected.
-    })));
+    finder.set_send_packet_handler(Some(Arc::new(
+        move |_host: &str, _port: u16, _data: &[u8]| {
+            *send_count_clone.lock().unwrap() += 1;
+            // Deliberately do nothing: no response is injected.
+        },
+    )));
 
     let changes: Arc<Mutex<Vec<(StunState, Option<SocketAddr>)>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -260,11 +290,13 @@ pub fn server_responds_once_then_stops_keeps_polling() {
     let counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
     let counts_clone = Arc::clone(&counts);
 
-    finder.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, _data: &[u8]| {
-        let key = format!("{}:{}", host, port);
-        let mut m = counts_clone.lock().unwrap();
-        *m.entry(key).or_insert(0) += 1;
-    })));
+    finder.set_send_packet_handler(Some(Arc::new(
+        move |host: &str, port: u16, _data: &[u8]| {
+            let key = format!("{}:{}", host, port);
+            let mut m = counts_clone.lock().unwrap();
+            *m.entry(key).or_insert(0) += 1;
+        },
+    )));
 
     // search=100ms: reach Blocked quickly (3 × 1 tick = 3 ticks after s1 stops responding).
     finder.init(vec![s1, s2], 100, 10_000);
@@ -288,14 +320,20 @@ pub fn server_responds_once_then_stops_keeps_polling() {
     let s2_count = counts.lock().unwrap().get(&s2_key).cloned().unwrap_or(0);
 
     // s2 should have been polled then removed after 3 failures (no ever_responded).
-    assert!(s2_count >= 3,
-        "expected s2 polled >=3 times before removal, got {}", s2_count);
+    assert!(
+        s2_count >= 3,
+        "expected s2 polled >=3 times before removal, got {}",
+        s2_count
+    );
 
     // s1 must have been polled more than once: initial poll + at least one Blocked-state poll.
     // (In Blocked state ALL servers are polled every interval regardless of responded flag.)
-    assert!(s1_count >= 2,
+    assert!(
+        s1_count >= 2,
         "s1 (responded once, ever_responded=true) should keep being polled \
-         after 3 failures (via Blocked state), but was only polled {} time(s)", s1_count);
+         after 3 failures (via Blocked state), but was only polled {} time(s)",
+        s1_count
+    );
 }
 
 // Test that when the finder is in Consistent state and then servers stop responding
@@ -338,16 +376,23 @@ pub fn consistent_reverts_to_none_after_no_response_timeout() {
         let list = changes.lock().unwrap();
         list.iter().any(|(st, _)| *st == StunState::Consistent)
     };
-    assert!(reached_consistent, "finder should have reached Consistent after two matching responses");
+    assert!(
+        reached_consistent,
+        "finder should have reached Consistent after two matching responses"
+    );
 
     // Manually tick past the no-response timeout (300ms = 3 ticks)
     // plus the repeat poll interval (1000ms = 10 ticks).
     finder.test_ticks(20);
 
     let list = changes.lock().unwrap();
-    let consistent_idx = list.iter().position(|(st, _)| *st == StunState::Consistent)
+    let consistent_idx = list
+        .iter()
+        .position(|(st, _)| *st == StunState::Consistent)
         .expect("expected Consistent state before None");
-    let none_after = list[consistent_idx..].iter().any(|(st, _)| *st == StunState::None);
+    let none_after = list[consistent_idx..]
+        .iter()
+        .any(|(st, _)| *st == StunState::None);
     assert!(
         none_after,
         "expected StunState::None after no-response timeout, but state changes were: {:?}",
@@ -370,7 +415,11 @@ pub fn stop_stops_promptly() {
     let elapsed = start.elapsed();
 
     // If it takes more than 1 second, it's definitely not prompt
-    assert!(elapsed < Duration::from_millis(500), "stop() took {:?}, which is too long", elapsed);
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "stop() took {:?}, which is too long",
+        elapsed
+    );
 }
 
 #[test]
@@ -459,7 +508,10 @@ pub fn two_consistent_responses_trigger_consistent_with_ip_in_callback() {
     let r2 = make_xor_mapped_response([203, 0, 113, 9], port);
     finder.process_packet(s2, &r2);
     let list = seen.lock().unwrap();
-    let consistent = list.iter().rfind(|(st, _)| *st == StunState::Consistent).cloned();
+    let consistent = list
+        .iter()
+        .rfind(|(st, _)| *st == StunState::Consistent)
+        .cloned();
     assert!(consistent.is_some());
     assert_eq!(consistent.unwrap().1, Some(SocketAddr::new(ip, port)));
 
@@ -478,9 +530,11 @@ pub fn consistent_endpoint_change_fires_callback() {
     // Track send calls so we know when the background thread starts a new round
     let send_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let send_count_clone = Arc::clone(&send_count);
-    finder.set_send_packet_handler(Some(Arc::new(move |_host: &str, _port: u16, _data: &[u8]| {
-        *send_count_clone.lock().unwrap() += 1;
-    })));
+    finder.set_send_packet_handler(Some(Arc::new(
+        move |_host: &str, _port: u16, _data: &[u8]| {
+            *send_count_clone.lock().unwrap() += 1;
+        },
+    )));
 
     // Short repeat so we can tick to a second round within the test
     finder.init(vec![s1, s2], 100, 100);
@@ -507,7 +561,10 @@ pub fn consistent_endpoint_change_fires_callback() {
             .rfind(|(st, _)| *st == StunState::Consistent)
             .cloned()
     };
-    assert!(first_consistent.is_some(), "expected Consistent callback after round 1");
+    assert!(
+        first_consistent.is_some(),
+        "expected Consistent callback after round 1"
+    );
     assert_eq!(
         first_consistent.unwrap().1.unwrap().port(),
         2447,
@@ -537,10 +594,7 @@ pub fn consistent_endpoint_change_fires_callback() {
     let consistent_64715 = list
         .iter()
         .skip(callbacks_before_round2)
-        .find(|(st, ep)| {
-            *st == StunState::Consistent
-                && ep.map(|e| e.port()) == Some(64715)
-        })
+        .find(|(st, ep)| *st == StunState::Consistent && ep.map(|e| e.port()) == Some(64715))
         .cloned();
     assert!(
         consistent_64715.is_some(),
@@ -563,11 +617,13 @@ pub fn consistent_servers_not_removed_when_no_repeat_response() {
     let counts_clone = Arc::clone(&counts);
 
     // search=100ms, repeat=100ms: once Consistent the repeat interval fires every tick.
-    finder.set_send_packet_handler(Some(Arc::new(move |host: &str, port: u16, _data: &[u8]| {
-        let key = format!("{}:{}", host, port);
-        let mut m = counts_clone.lock().unwrap();
-        *m.entry(key).or_insert(0) += 1;
-    })));
+    finder.set_send_packet_handler(Some(Arc::new(
+        move |host: &str, port: u16, _data: &[u8]| {
+            let key = format!("{}:{}", host, port);
+            let mut m = counts_clone.lock().unwrap();
+            *m.entry(key).or_insert(0) += 1;
+        },
+    )));
 
     finder.init(vec![s1, s2], 100, 100);
 
@@ -589,10 +645,16 @@ pub fn consistent_servers_not_removed_when_no_repeat_response() {
     let s2_before = counts.lock().unwrap().get(&s2_key).cloned().unwrap_or(0);
 
     // Both must have been polled at least 3 times to have accumulated 3+ failures.
-    assert!(s1_before >= 3,
-        "expected s1 polled >=3 times in repeat phase, got {}", s1_before);
-    assert!(s2_before >= 3,
-        "expected s2 polled >=3 times in repeat phase, got {}", s2_before);
+    assert!(
+        s1_before >= 3,
+        "expected s1 polled >=3 times in repeat phase, got {}",
+        s1_before
+    );
+    assert!(
+        s2_before >= 3,
+        "expected s2 polled >=3 times in repeat phase, got {}",
+        s2_before
+    );
 
     // Wait a further tick; both servers must still be polled (ever_responded keeps them).
     finder.tick_for_test();
@@ -602,10 +664,16 @@ pub fn consistent_servers_not_removed_when_no_repeat_response() {
 
     finder.stop();
 
-    assert!(s1_after > s1_before,
+    assert!(
+        s1_after > s1_before,
         "s1 (reached Consistent, ever_responded=true) should keep being polled \
-         after repeated failures, but poll count stalled at {}", s1_before);
-    assert!(s2_after > s2_before,
+         after repeated failures, but poll count stalled at {}",
+        s1_before
+    );
+    assert!(
+        s2_after > s2_before,
         "s2 (reached Consistent, ever_responded=true) should keep being polled \
-         after repeated failures, but poll count stalled at {}", s2_before);
+         after repeated failures, but poll count stalled at {}",
+        s2_before
+    );
 }

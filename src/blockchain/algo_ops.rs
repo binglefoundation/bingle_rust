@@ -1,10 +1,10 @@
-use anyhow::{anyhow, bail, Result};
 use crate::blockchain::error::AlgoError;
-use uuid::Uuid;
+use algonaut::core::ToMsgPack;
+use anyhow::{Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose};
 use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
-use base64::{engine::general_purpose, Engine as _};
-use algonaut::core::ToMsgPack;
+use uuid::Uuid;
 
 // Ensure the algonaut crate is referenced so this module is explicitly implemented with it.
 // We keep most calls abstracted for now and will progressively replace stubs with concrete calls.
@@ -32,7 +32,9 @@ impl Default for AlgoChainConfig {
             client_api_port: 4001,
             indexer_api_url: "http://localhost".to_string(),
             indexer_api_port: 8980,
-            token: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+            token: Some(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            ),
             token_key: Some("X-Algo-API-Token".to_string()),
             app_id: None,
             asset_id: None,
@@ -42,8 +44,12 @@ impl Default for AlgoChainConfig {
 
 /// Minimal key provider trait analogous to the Kotlin IKeyProvider interface.
 pub trait KeyProvider: Send + Sync {
-    fn get_id(&self) -> Option<String> { None }
-    fn get_private_key(&self) -> Option<String> { None }
+    fn get_id(&self) -> Option<String> {
+        None
+    }
+    fn get_private_key(&self) -> Option<String> {
+        None
+    }
     fn save_private_key_object(&self, _address: &str, _passphrase: &str) {}
 }
 
@@ -73,10 +79,12 @@ impl AlgoOps {
         let signing_key = SigningKey::from_bytes(&sk);
         let verifying_key = signing_key.verifying_key();
         let pk: [u8; 32] = verifying_key.to_bytes();
-        let id = byte_key_to_address(&pk).expect("failed to derive Algorand address from public key");
+        let id =
+            byte_key_to_address(&pk).expect("failed to derive Algorand address from public key");
 
         // Encode secret seed as 25-word mnemonic passphrase
-        let passphrase = algonaut::crypto::mnemonic::from_key(&sk).expect("failed to generate mnemonic");
+        let passphrase =
+            algonaut::crypto::mnemonic::from_key(&sk).expect("failed to generate mnemonic");
         (id, passphrase)
     }
 
@@ -84,7 +92,11 @@ impl AlgoOps {
         Self::new(None, None, config)
     }
 
-    pub fn new(passphrase: Option<String>, address: Option<String>, config: Option<AlgoChainConfig>) -> Self {
+    pub fn new(
+        passphrase: Option<String>,
+        address: Option<String>,
+        config: Option<AlgoChainConfig>,
+    ) -> Self {
         // Use explicit config if provided; else Default (localnet)
         let config = config.unwrap_or_default();
         let mut ops = Self {
@@ -95,36 +107,39 @@ impl AlgoOps {
 
         // If no address was provided but we have a passphrase, derive the address immediately
         if ops.address.is_none()
-            && let Some(ref pass) = ops.passphrase {
-                // Try Algorand mnemonic first
-                let maybe_seed = if !pass.is_empty() {
-                    match algonaut::crypto::mnemonic::to_key(pass) {
-                        Ok(k) if k.len() == 32 => Some(k.to_vec()),
-                        _ => None,
-                    }
-                } else { None };
+            && let Some(ref pass) = ops.passphrase
+        {
+            // Try Algorand mnemonic first
+            let maybe_seed = if !pass.is_empty() {
+                match algonaut::crypto::mnemonic::to_key(pass) {
+                    Ok(k) if k.len() == 32 => Some(k.to_vec()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
 
-                let seed32: Option<[u8; 32]> = if let Some(bytes) = maybe_seed {
-                    bytes.as_slice().try_into().ok()
-                } else if let Some(rest) = pass.strip_prefix("b64:") {
-                    match general_purpose::STANDARD.decode(rest) {
-                        Ok(b) => b.as_slice().try_into().ok(),
-                        Err(_) => None,
-                    }
-                } else {
-                    None
-                };
+            let seed32: Option<[u8; 32]> = if let Some(bytes) = maybe_seed {
+                bytes.as_slice().try_into().ok()
+            } else if let Some(rest) = pass.strip_prefix("b64:") {
+                match general_purpose::STANDARD.decode(rest) {
+                    Ok(b) => b.as_slice().try_into().ok(),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
 
-                if let Some(seed) = seed32 {
-                    use ed25519_dalek::SigningKey;
-                    let signing_key = SigningKey::from_bytes(&seed);
-                    let verifying_key = signing_key.verifying_key();
-                    let pk: [u8; 32] = verifying_key.to_bytes();
-                    if let Ok(addr) = byte_key_to_address(&pk) {
-                        ops.address = Some(addr);
-                    }
+            if let Some(seed) = seed32 {
+                use ed25519_dalek::SigningKey;
+                let signing_key = SigningKey::from_bytes(&seed);
+                let verifying_key = signing_key.verifying_key();
+                let pk: [u8; 32] = verifying_key.to_bytes();
+                if let Ok(addr) = byte_key_to_address(&pk) {
+                    ops.address = Some(addr);
                 }
             }
+        }
 
         ops
     }
@@ -138,7 +153,10 @@ impl AlgoOps {
 
     pub fn algod_client(&self) -> Result<algonaut::Algod> {
         // Build base URL including port, e.g., http://localhost:4001
-        let url = format!("{}:{}", self.config.client_api_url, self.config.client_api_port);
+        let url = format!(
+            "{}:{}",
+            self.config.client_api_url, self.config.client_api_port
+        );
         // Per requirement: default the token to empty string for Algod::new calls
         let token = self.config.token.clone().unwrap_or_default();
         algonaut::Algod::new(&url, &token)
@@ -146,7 +164,10 @@ impl AlgoOps {
     }
 
     pub fn indexer_client(&self) -> Result<algonaut::Indexer> {
-        let url = format!("{}:{}", self.config.indexer_api_url, self.config.indexer_api_port);
+        let url = format!(
+            "{}:{}",
+            self.config.indexer_api_url, self.config.indexer_api_port
+        );
         let token = self.config.token.clone().unwrap_or_default();
         algonaut::Indexer::new(&url, &token)
             .map_err(|e| anyhow!("failed to construct Indexer client: {e}"))
@@ -158,9 +179,10 @@ impl AlgoOps {
     // Returns true if the algonaut error is a retryable transient HTTP error.
     pub fn is_retryable(e: &algonaut::Error) -> bool {
         if let algonaut::Error::Request(req) = e
-            && let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details {
-                return Self::RETRYABLE_STATUS_CODES.contains(status);
-            }
+            && let algonaut::error::RequestErrorDetails::Http { status, .. } = &req.details
+        {
+            return Self::RETRYABLE_STATUS_CODES.contains(status);
+        }
         false
     }
 
@@ -201,11 +223,7 @@ impl AlgoOps {
                 }
                 Err(e) => {
                     if attempt >= MAX_RETRIES && Self::is_retryable(&e) {
-                        return Err(AlgoError::transient(
-                            "algod call",
-                            &e.to_string(),
-                        )
-                        .into());
+                        return Err(AlgoError::transient("algod call", &e.to_string()).into());
                     }
                     return Err(anyhow!("{e}"));
                 }
@@ -215,7 +233,7 @@ impl AlgoOps {
 
     // Helper: run an async future on a fresh current-thread Tokio runtime.
     fn rt_block_on<T: Send>(&self, fut: impl Future<Output = T> + Send) -> Result<T> {
-        // If we are already in a tokio runtime, we must avoid nested block_on and 
+        // If we are already in a tokio runtime, we must avoid nested block_on and
         // the "cannot drop runtime" panic during unwinding/drop.
         if tokio::runtime::Handle::try_current().is_ok() {
             return std::thread::scope(|s| {
@@ -226,7 +244,9 @@ impl AlgoOps {
                         .expect("failed to build temporary tokio runtime");
                     rt.block_on(fut)
                 });
-                handle.join().map_err(|_| anyhow!("rt_block_on thread panicked"))
+                handle
+                    .join()
+                    .map_err(|_| anyhow!("rt_block_on thread panicked"))
             });
         }
 
@@ -272,12 +292,18 @@ impl AlgoOps {
     fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
         let mut kvs: Vec<(String, String)> = Vec::new();
         for entry in entries {
-            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
             let key = match general_purpose::STANDARD.decode(key_b64) {
                 Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| key_b64.to_string()),
                 Err(_) => key_b64.to_string(),
             };
-            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) {
+                Some(o) => o,
+                None => continue,
+            };
             let vtype = val_obj.get("type").and_then(|x| x.as_u64()).unwrap_or(0);
             let val = if vtype == 1 {
                 // bytes can be an array of numbers or a base64 string
@@ -288,7 +314,10 @@ impl AlgoOps {
                         if let Some(u) = n.as_u64() {
                             buf.push((u & 0xFF) as u8);
                         } else if let Some(i) = n.as_i64()
-                            && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
+                            && i >= 0
+                        {
+                            buf.push(((i as u64) & 0xFF) as u8);
+                        }
                     }
                     Some(buf)
                 } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
@@ -303,7 +332,9 @@ impl AlgoOps {
                         Err(_) => {
                             // Fallback: hex string for non-UTF8 bytes
                             let mut hex = String::from("0x");
-                            for byte in bytes { hex.push_str(&format!("{:02x}", byte)); }
+                            for byte in bytes {
+                                hex.push_str(&format!("{:02x}", byte));
+                            }
                             hex
                         }
                     }
@@ -311,7 +342,11 @@ impl AlgoOps {
                     String::new()
                 }
             } else {
-                val_obj.get("uint").and_then(|x| x.as_u64()).map(|u| u.to_string()).unwrap_or_else(|| "0".to_string())
+                val_obj
+                    .get("uint")
+                    .and_then(|x| x.as_u64())
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| "0".to_string())
             };
             kvs.push((key, val));
         }
@@ -342,7 +377,10 @@ impl AlgoOps {
     }
 
     pub fn public_key_bytes(&self) -> Result<[u8; 32]> {
-        let addr = self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?;
+        let addr = self
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("This operation needs an address"))?;
         address_to_byte_key(addr)
     }
 
@@ -354,17 +392,20 @@ impl AlgoOps {
 
         // New behavior: expect ASCII mnemonic passphrase. Derive 32-byte key using Algorand mnemonic.
         if !pass.is_empty()
-            && let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass) {
-                if key32.len() == 32 {
-                    return Ok(key32.to_vec());
-                } else {
-                    bail!("Derived key must be 32 bytes, got {}", key32.len());
-                }
+            && let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass)
+        {
+            if key32.len() == 32 {
+                return Ok(key32.to_vec());
+            } else {
+                bail!("Derived key must be 32 bytes, got {}", key32.len());
             }
+        }
 
         // Backward compatibility: support legacy base64 format with "b64:" prefix
         if let Some(rest) = pass.strip_prefix("b64:") {
-            let sk = general_purpose::STANDARD.decode(rest).map_err(|e| anyhow!("Invalid base64 secret: {e}"))?;
+            let sk = general_purpose::STANDARD
+                .decode(rest)
+                .map_err(|e| anyhow!("Invalid base64 secret: {e}"))?;
             if sk.len() != 32 {
                 bail!("Secret key must be 32 bytes, got {}", sk.len());
             }
@@ -434,9 +475,15 @@ impl AlgoOps {
         let info = match self.algod_call(|| client.account(&address)) {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("[account_balance] Failed to fetch account information for {}: {}", address, e);
+                tracing::error!(
+                    "[account_balance] Failed to fetch account information for {}: {}",
+                    address,
+                    e
+                );
                 if AlgoError::is_host_unreachable(&e) {
-                    return Err(AlgoError::unreachable("account_information", &e.to_string()).into());
+                    return Err(
+                        AlgoError::unreachable("account_information", &e.to_string()).into(),
+                    );
                 }
                 return Err(e);
             }
@@ -445,16 +492,25 @@ impl AlgoOps {
         // algo_log!("[account_balance] Retrieved account info for address: {} => {:?}", address, info);
         // amount is in microalgos
         let micro: u64 = info.amount;
-        algo_log!("[account_balance] Balance for address {} is {} microalgos", address, micro);
+        algo_log!(
+            "[account_balance] Balance for address {} is {} microalgos",
+            address,
+            micro
+        );
         Ok(Some(micro as f64 / 1_000_000.0))
     }
 
-    pub fn global_state(&self, maybe_app_id: Option<u64>) -> Result<Option<Vec<(u64, Vec<(String, String)>)>>> {
+    pub fn global_state(
+        &self,
+        maybe_app_id: Option<u64>,
+    ) -> Result<Option<Vec<(u64, Vec<(String, String)>)>>> {
         let client = self.algod_client()?;
         let address = self.require_address()?;
         let info = match self.algod_call(|| client.account(&address)) {
             Ok(v) => v,
-            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => return Err(AlgoError::unreachable("account_information", &e.to_string()).into()),
+            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => {
+                return Err(AlgoError::unreachable("account_information", &e.to_string()).into());
+            }
             Err(_) => return Ok(None),
         };
 
@@ -462,32 +518,51 @@ impl AlgoOps {
         let v = serde_json::to_value(&info)
             .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
 
-        let created = match Self::json_get(&v, "created_apps", "created-apps").and_then(|x| x.as_array()) {
-            Some(a) => a,
-            None => return Ok(Some(vec![])),
-        };
+        let created =
+            match Self::json_get(&v, "created_apps", "created-apps").and_then(|x| x.as_array()) {
+                Some(a) => a,
+                None => return Ok(Some(vec![])),
+            };
 
         let mut out: Vec<(u64, Vec<(String, String)>)> = Vec::new();
         for app in created {
-            let id = match app.get("id").and_then(|x| x.as_u64()) { Some(i) => i, None => continue };
-            if let Some(filter) = maybe_app_id && filter != id { continue; }
-            let params = match app.get("params").and_then(|x| x.as_object()) { Some(p) => p, None => continue };
+            let id = match app.get("id").and_then(|x| x.as_u64()) {
+                Some(i) => i,
+                None => continue,
+            };
+            if let Some(filter) = maybe_app_id
+                && filter != id
+            {
+                continue;
+            }
+            let params = match app.get("params").and_then(|x| x.as_object()) {
+                Some(p) => p,
+                None => continue,
+            };
             let params_value = serde_json::Value::Object(params.clone());
-            let gs_vec: Vec<serde_json::Value> = Self::json_get(&params_value, "global_state", "global-state")
-                .and_then(|x| x.as_array()).cloned()
-                .unwrap_or_default();
+            let gs_vec: Vec<serde_json::Value> =
+                Self::json_get(&params_value, "global_state", "global-state")
+                    .and_then(|x| x.as_array())
+                    .cloned()
+                    .unwrap_or_default();
             let kvs = Self::decode_state_entries(&gs_vec);
             out.push((id, kvs));
         }
         Ok(Some(out))
     }
 
-    pub fn local_state_for_account(&self, app_id: u64, account_address: &str) -> Result<Option<Vec<(String, String)>>> {
+    pub fn local_state_for_account(
+        &self,
+        app_id: u64,
+        account_address: &str,
+    ) -> Result<Option<Vec<(String, String)>>> {
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
         let info = match self.algod_call(|| client.account(&address)) {
             Ok(v) => v,
-            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => return Err(AlgoError::unreachable("account_information", &e.to_string()).into()),
+            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => {
+                return Err(AlgoError::unreachable("account_information", &e.to_string()).into());
+            }
             Err(_) => return Ok(None),
         };
 
@@ -498,16 +573,20 @@ impl AlgoOps {
         let v = serde_json::to_value(&info)
             .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
 
-        let als = match Self::json_get(&v, "apps_local_state", "apps-local-state").and_then(|x| x.as_array()) {
+        let als = match Self::json_get(&v, "apps_local_state", "apps-local-state")
+            .and_then(|x| x.as_array())
+        {
             Some(a) => a,
             None => return Ok(None),
         };
         for st in als {
             let id = st.get("id").and_then(|x| x.as_u64());
             if id == Some(app_id) {
-                let keyvals_vec: Vec<serde_json::Value> = Self::json_get(st, "key_value", "key-value")
-                    .and_then(|x| x.as_array()).cloned()
-                    .unwrap_or_default();
+                let keyvals_vec: Vec<serde_json::Value> =
+                    Self::json_get(st, "key_value", "key-value")
+                        .and_then(|x| x.as_array())
+                        .cloned()
+                        .unwrap_or_default();
                 let out = Self::decode_state_entries(&keyvals_vec);
                 return Ok(Some(out));
             }
@@ -529,7 +608,8 @@ impl AlgoOps {
         let client = self.algod_client()?;
 
         // Fetch suggested params
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Build payment transaction
@@ -555,8 +635,10 @@ impl AlgoOps {
             .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
         // Submit raw transaction via algod
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
 
         // Wait for confirmation up to a default timeout (e.g., 10 rounds)
         self.wait_for_confirmation(&tx_id, 10)?;
@@ -565,8 +647,12 @@ impl AlgoOps {
 
     pub fn create_asset(&self, name: &str, units_in_issue: u64) -> Result<Option<u64>> {
         // Validate inputs
-        if name.trim().is_empty() { bail!("asset name must not be empty"); }
-        if units_in_issue == 0 { bail!("units_in_issue must be > 0"); }
+        if name.trim().is_empty() {
+            bail!("asset name must not be empty");
+        }
+        if units_in_issue == 0 {
+            bail!("units_in_issue must be > 0");
+        }
 
         // Require account access and issuer address
         let sk = self.private_key_bytes()?;
@@ -574,7 +660,8 @@ impl AlgoOps {
 
         // Algod client and suggested params
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Build CreateAsset transaction: minimal: total=units_in_issue, decimals=0
@@ -588,19 +675,29 @@ impl AlgoOps {
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
 
         // Sign
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset create transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign asset create transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
         // Submit and wait
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)?;
 
         // Retrieve created asset id from pending transaction info
         let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
-        let info = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+        let info = self
+            .algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info for asset id: {e}"))?;
         Ok(info.asset_index.or(Some(0)).filter(|id| *id != 0))
     }
@@ -609,9 +706,21 @@ impl AlgoOps {
     ///
     /// The caller (`self`) is the ASA manager (the only account that can later reconfigure it).
     /// `reserve_addr` and `clawback_addr` are Algorand address strings. decimals=0.
-    pub fn create_asset_configured(&self, name: &str, units_in_issue: u64, manager_addr: &str, reserve_addr: &str, clawback_addr: &str, freeze_addr: &str) -> Result<Option<u64>> {
-        if name.trim().is_empty() { bail!("asset name must not be empty"); }
-        if units_in_issue == 0 { bail!("units_in_issue must be > 0"); }
+    pub fn create_asset_configured(
+        &self,
+        name: &str,
+        units_in_issue: u64,
+        manager_addr: &str,
+        reserve_addr: &str,
+        clawback_addr: &str,
+        freeze_addr: &str,
+    ) -> Result<Option<u64>> {
+        if name.trim().is_empty() {
+            bail!("asset name must not be empty");
+        }
+        if units_in_issue == 0 {
+            bail!("units_in_issue must be > 0");
+        }
 
         let sk = self.private_key_bytes()?;
         let issuer = self.require_address()?;
@@ -621,7 +730,8 @@ impl AlgoOps {
         let freeze = Self::parse_address(freeze_addr)?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         let tx = algonaut::transaction::CreateAsset::new(issuer, units_in_issue, 0, false)
@@ -633,44 +743,86 @@ impl AlgoOps {
             .build(&params)
             .map_err(|e| anyhow!("failed to build asset create transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset create transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign asset create transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)?;
 
         let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
-        let info = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+        let info = self
+            .algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info for asset id: {e}"))?;
         Ok(info.asset_index.or(Some(0)).filter(|id| *id != 0))
     }
 
     /// Create an ASA with the reserve and clawback addresses both set to the application address for `app_id`.
     /// Manager remains the issuer for future reconfiguration; decimals=0.
-    pub fn create_asset_with_reserve_app(&self, name: &str, units_in_issue: u64, app_id: u64) -> Result<Option<u64>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    pub fn create_asset_with_reserve_app(
+        &self,
+        name: &str,
+        units_in_issue: u64,
+        app_id: u64,
+    ) -> Result<Option<u64>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let app_addr = self.contract_address(app_id)?;
         let issuer_addr = self.address_str()?;
-        self.create_asset_configured(name, units_in_issue, &issuer_addr, &app_addr, &app_addr, &issuer_addr)
+        self.create_asset_configured(
+            name,
+            units_in_issue,
+            &issuer_addr,
+            &app_addr,
+            &app_addr,
+            &issuer_addr,
+        )
     }
 
     /// Check whether `account_address` has opted-in to `asset_id`.
-    pub fn is_account_opted_in_to_asset(&self, account_address: &str, asset_id: u64) -> Result<bool> {
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+    pub fn is_account_opted_in_to_asset(
+        &self,
+        account_address: &str,
+        asset_id: u64,
+    ) -> Result<bool> {
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
         let info = match self.algod_call(|| client.account(&address)) {
             Ok(v) => v,
             Err(_) => return Ok(false),
         };
-        let v = serde_json::to_value(&info).map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
-        let assets_arr = v.get("assets").or_else(|| v.get("assets")).and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        let v = serde_json::to_value(&info)
+            .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
+        let assets_arr = v
+            .get("assets")
+            .or_else(|| v.get("assets"))
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
         for a in assets_arr {
-            let id = a.get("asset-id").and_then(|x| x.as_u64()).or_else(|| a.get("asset_id").and_then(|x| x.as_u64())).unwrap_or(0);
-            if id == asset_id { return Ok(true); }
+            let id = a
+                .get("asset-id")
+                .and_then(|x| x.as_u64())
+                .or_else(|| a.get("asset_id").and_then(|x| x.as_u64()))
+                .unwrap_or(0);
+            if id == asset_id {
+                return Ok(true);
+            }
         }
         Ok(false)
     }
@@ -679,9 +831,11 @@ impl AlgoOps {
     pub fn asset_holding(&self, account_address: &str, asset_id: u64) -> Result<u64> {
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
-        let info = self.algod_call(|| client.account(&address))
+        let info = self
+            .algod_call(|| client.account(&address))
             .map_err(|e| anyhow!("failed to fetch account information: {e}"))?;
-        let v = serde_json::to_value(&info).map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
+        let v = serde_json::to_value(&info)
+            .map_err(|e| anyhow!("failed to serialize account info: {e}"))?;
         Ok(Self::parse_holding_amount_from_account_value(&v, asset_id))
     }
 
@@ -689,15 +843,19 @@ impl AlgoOps {
     pub fn microalgos_at(&self, account_address: &str) -> Result<u64> {
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
-        let info = self.algod_call(|| client.account(&address))
-            .map_err(|e| anyhow!("failed to fetch account information for {account_address}: {e}"))?;
+        let info = self.algod_call(|| client.account(&address)).map_err(|e| {
+            anyhow!("failed to fetch account information for {account_address}: {e}")
+        })?;
         Ok(info.amount)
     }
 
-
     pub fn set_asset_clawback_to_app(&self, app_id: u64, asset_id: u64) -> Result<()> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
 
         let client = self.algod_client()?;
 
@@ -705,16 +863,22 @@ impl AlgoOps {
         let caller = self.require_address()?;
 
         // Authorization check: the caller must be the asset manager (on-chain authority for UpdateAsset).
-        let asset_info = self.algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
+        let asset_info = self
+            .algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
             .map_err(|e| anyhow!("failed to fetch asset information: {e}"))?;
         let v_asset = serde_json::to_value(&asset_info)
             .map_err(|e| anyhow!("failed to serialize asset info: {e}"))?;
         let asset_manager_str = v_asset
-            .get("params").and_then(|p| p.get("manager").and_then(|x| x.as_str()))
+            .get("params")
+            .and_then(|p| p.get("manager").and_then(|x| x.as_str()))
             .ok_or_else(|| anyhow!("asset {} info did not contain manager field", asset_id))?;
         let asset_manager = Self::parse_address(asset_manager_str)?;
         if caller != asset_manager {
-            bail!("Only the asset manager ({}) can set asset clawback, but called by {}", asset_manager_str, caller);
+            bail!(
+                "Only the asset manager ({}) can set asset clawback, but called by {}",
+                asset_manager_str,
+                caller
+            );
         }
 
         // Fetch application address
@@ -722,31 +886,48 @@ impl AlgoOps {
         let app_addr = Self::parse_address(&app_addr_str)?;
 
         // Fetch suggested params
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Manager must sign this transaction; use caller as it is verified to be the manager.
         // Build asset reconfiguration: explicitly keep manager as the caller; set clawback and reserve to app address.
-        let tx = algonaut::transaction::builder::UpdateAsset::new(caller, algonaut::core::AssetId(asset_id))
-            .manager(caller)
-            .reserve(app_addr)
-            .clawback(app_addr)
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
+        let tx = algonaut::transaction::builder::UpdateAsset::new(
+            caller,
+            algonaut::core::AssetId(asset_id),
+        )
+        .manager(caller)
+        .reserve(app_addr)
+        .clawback(app_addr)
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
 
         // Sign and submit
         let sk = self.private_key_bytes()?;
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset config transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign asset config transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
 
         self.wait_for_confirmation(&tx_id, 10)?;
-        algo_log!("Successfully set asset {} clawback and reserve to app address {}", asset_id, app_addr);
+        algo_log!(
+            "Successfully set asset {} clawback and reserve to app address {}",
+            asset_id,
+            app_addr
+        );
         Ok(())
     }
 
@@ -755,7 +936,9 @@ impl AlgoOps {
     /// Additionally, after updating the reserve address, transfer the caller's current
     /// holding of the asset to the new reserve address (if any balance is held).
     pub fn change_asset_reserve_address(&self, asset_id: u64, reserve_address: &str) -> Result<()> {
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         // Parse target reserve address early
         let new_reserve = Self::parse_address(reserve_address)
             .map_err(|e| anyhow!("invalid reserve address: {e}"))?;
@@ -766,59 +949,90 @@ impl AlgoOps {
 
         // Verify the caller is the asset creator by querying asset information
         let client = self.algod_client()?;
-        let asset_info = self.algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
+        let asset_info = self
+            .algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
             .map_err(|e| anyhow!("failed to fetch asset information: {e}"))?;
         let v = serde_json::to_value(&asset_info)
             .map_err(|e| anyhow!("failed to serialize asset info: {e}"))?;
         // Try to read creator from params or top-level
         let creator_str = v
-            .get("params").and_then(|p| p.get("creator").and_then(|x| x.as_str()))
+            .get("params")
+            .and_then(|p| p.get("creator").and_then(|x| x.as_str()))
             .or_else(|| v.get("creator").and_then(|x| x.as_str()))
-            .or_else(|| v.get("params").and_then(|p| p.get("creator-address").or_else(|| p.get("creator_address")).and_then(|x| x.as_str())))
+            .or_else(|| {
+                v.get("params").and_then(|p| {
+                    p.get("creator-address")
+                        .or_else(|| p.get("creator_address"))
+                        .and_then(|x| x.as_str())
+                })
+            })
             .ok_or_else(|| anyhow!("asset info did not contain creator field"))?;
         let caller_str = {
             use std::str::FromStr;
-            algonaut::core::Address::from_str(self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?)
-                .map_err(|e| anyhow!("invalid caller address: {e}"))?
-                .to_string()
+            algonaut::core::Address::from_str(
+                self.address
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("This operation needs an address"))?,
+            )
+            .map_err(|e| anyhow!("invalid caller address: {e}"))?
+            .to_string()
         };
         if creator_str != caller_str {
             bail!("caller must be the asset creator to change the reserve address");
         }
 
         // Suggested params
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Build UpdateAsset setting reserve and clawback to the same new address; keep manager unchanged (set to signer to be explicit)
-        let tx = algonaut::transaction::builder::UpdateAsset::new(signer_addr, algonaut::core::AssetId(asset_id))
-            .manager(signer_addr)
-            .reserve(new_reserve)
-            .clawback(new_reserve)
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
+        let tx = algonaut::transaction::builder::UpdateAsset::new(
+            signer_addr,
+            algonaut::core::AssetId(asset_id),
+        )
+        .manager(signer_addr)
+        .reserve(new_reserve)
+        .clawback(new_reserve)
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build asset config transaction: {e}"))?;
         algo_log!("[change_asset_reserve_address] tx: {:#?}", tx);
 
         // Sign and submit
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset config transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign asset config transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         // Wait for reconfiguration confirmation
         self.wait_for_confirmation(&tx_id, 10)?;
 
         // After reserve update, transfer creator's current holdings to the new reserve address
         // 1) Determine creator's balance of this asset
-        let acct_info = self.algod_call(|| client.account(&signer_addr))
+        let acct_info = self
+            .algod_call(|| client.account(&signer_addr))
             .map_err(|e| anyhow!("failed to fetch creator account information: {e}"))?;
-        let va = serde_json::to_value(&acct_info).map_err(|e| anyhow!("failed to serialize creator account info: {e}"))?;
+        let va = serde_json::to_value(&acct_info)
+            .map_err(|e| anyhow!("failed to serialize creator account info: {e}"))?;
         let mut creator_amount: u64 = 0;
         if let Some(arr) = va.get("assets").and_then(|x| x.as_array()) {
             for holding in arr {
-                let id = holding.get("asset-id").and_then(|x| x.as_u64()).or_else(|| holding.get("asset_id").and_then(|x| x.as_u64())).unwrap_or(0);
+                let id = holding
+                    .get("asset-id")
+                    .and_then(|x| x.as_u64())
+                    .or_else(|| holding.get("asset_id").and_then(|x| x.as_u64()))
+                    .unwrap_or(0);
                 if id == asset_id {
                     creator_amount = holding.get("amount").and_then(|x| x.as_u64()).unwrap_or(0);
                     break;
@@ -826,7 +1040,10 @@ impl AlgoOps {
             }
         }
         if creator_amount == 0 {
-            algo_log!("[change_asset_reserve_address] creator has no balance of asset {}", asset_id);
+            algo_log!(
+                "[change_asset_reserve_address] creator has no balance of asset {}",
+                asset_id
+            );
             return Ok(()); // nothing to move
         }
 
@@ -840,8 +1057,12 @@ impl AlgoOps {
     }
 
     pub fn send_asset(&self, asset_id: u64, amount: u64, to_address: &str) -> Result<()> {
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
-        if amount == 0 { bail!("amount must be > 0"); }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
+        if amount == 0 {
+            bail!("amount must be > 0");
+        }
 
         // Validate env and addresses
         let sk = self.private_key_bytes()?;
@@ -849,64 +1070,103 @@ impl AlgoOps {
         let to = Self::parse_address(to_address)?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Build asset transfer transaction
-        let tx = algonaut::transaction::TransferAsset::new(from, algonaut::core::AssetId(asset_id), amount, to)
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
+        let tx = algonaut::transaction::TransferAsset::new(
+            from,
+            algonaut::core::AssetId(asset_id),
+            amount,
+            to,
+        )
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build asset transfer transaction: {e}"))?;
 
         algo_log!("[send_asset] tx: {:#?}", tx);
 
         // Sign and submit
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset transfer transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign asset transfer transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
 
         self.wait_for_confirmation(&tx_id, 10)
     }
 
     pub fn opt_in_to_asset(&self, asset_id: u64) -> Result<()> {
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         // Ensure we have account access
         let sk = self.private_key_bytes()?;
         let addr = self.require_address()?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Opt-in is a zero-amount transfer from self to self
-        let tx = algonaut::transaction::TransferAsset::new(addr, algonaut::core::AssetId(asset_id), 0, addr)
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build asset opt-in transaction: {e}"))?;
+        let tx = algonaut::transaction::TransferAsset::new(
+            addr,
+            algonaut::core::AssetId(asset_id),
+            0,
+            addr,
+        )
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build asset opt-in transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign asset opt-in transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign asset opt-in transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
 
         self.wait_for_confirmation(&tx_id, 10)
     }
 
     /// Extract (creator, reserve) addresses from an asset_information JSON value. Returns None if fields missing.
-    pub fn parse_creator_reserve_from_asset_info_value(v: &serde_json::Value) -> Option<(String, String)> {
+    pub fn parse_creator_reserve_from_asset_info_value(
+        v: &serde_json::Value,
+    ) -> Option<(String, String)> {
         let params = v.get("params");
-        let creator = params.and_then(|p| p.get("creator").and_then(|x| x.as_str()))
+        let creator = params
+            .and_then(|p| p.get("creator").and_then(|x| x.as_str()))
             .or_else(|| v.get("creator").and_then(|x| x.as_str()))?;
-        let reserve = params
-            .and_then(|p| p.get("reserve").and_then(|x| x.as_str())
-                .or_else(|| p.get("reserve-address").or_else(|| p.get("reserve_address")).and_then(|x| x.as_str())))?;
+        let reserve = params.and_then(|p| {
+            p.get("reserve").and_then(|x| x.as_str()).or_else(|| {
+                p.get("reserve-address")
+                    .or_else(|| p.get("reserve_address"))
+                    .and_then(|x| x.as_str())
+            })
+        })?;
         Some((creator.to_string(), reserve.to_string()))
     }
 
@@ -914,7 +1174,9 @@ impl AlgoOps {
     pub fn parse_holding_amount_from_account_value(v: &serde_json::Value, asset_id: u64) -> u64 {
         if let Some(arr) = v.get("assets").and_then(|x| x.as_array()) {
             for holding in arr {
-                let id = holding.get("asset-id").and_then(|x| x.as_u64())
+                let id = holding
+                    .get("asset-id")
+                    .and_then(|x| x.as_u64())
                     .or_else(|| holding.get("asset_id").and_then(|x| x.as_u64()))
                     .unwrap_or(0);
                 if id == asset_id {
@@ -927,18 +1189,31 @@ impl AlgoOps {
 
     /// Transfer the entire reserve balance of an ASA to the creator. The caller must control the reserve address.
     pub fn recover_reserve_balance(&self, asset_id: u64) -> Result<()> {
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         let client = self.algod_client()?;
         // Fetch asset info
-        let asset_info = self.algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
+        let asset_info = self
+            .algod_call(|| client.asset(algonaut::core::AssetId(asset_id)))
             .map_err(|e| anyhow!("failed to fetch asset information: {e}"))?;
-        let v = serde_json::to_value(&asset_info).map_err(|e| anyhow!("failed to serialize asset info: {e}"))?;
-        let (creator_str, reserve_str) = match Self::parse_creator_reserve_from_asset_info_value(&v) {
+        let v = serde_json::to_value(&asset_info)
+            .map_err(|e| anyhow!("failed to serialize asset info: {e}"))?;
+        let (creator_str, reserve_str) = match Self::parse_creator_reserve_from_asset_info_value(&v)
+        {
             Some(t) => t,
-            None => return Err(anyhow!("asset information did not contain creator/reserve fields")),
+            None => {
+                return Err(anyhow!(
+                    "asset information did not contain creator/reserve fields"
+                ));
+            }
         };
         // Ensure we are the reserve account
-        let caller_addr = self.address.as_ref().ok_or_else(|| anyhow!("This operation needs an address"))?.clone();
+        let caller_addr = self
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("This operation needs an address"))?
+            .clone();
         if caller_addr != reserve_str {
             bail!("caller must be the current reserve address to recover the reserve balance");
         }
@@ -948,9 +1223,11 @@ impl AlgoOps {
         }
         // Get reserve account holdings
         let reserve_addr = Self::parse_address(&reserve_str)?;
-        let acct_info = self.algod_call(|| client.account(&reserve_addr))
+        let acct_info = self
+            .algod_call(|| client.account(&reserve_addr))
             .map_err(|e| anyhow!("failed to fetch reserve account information: {e}"))?;
-        let va = serde_json::to_value(&acct_info).map_err(|e| anyhow!("failed to serialize reserve account info: {e}"))?;
+        let va = serde_json::to_value(&acct_info)
+            .map_err(|e| anyhow!("failed to serialize reserve account info: {e}"))?;
         let amount = Self::parse_holding_amount_from_account_value(&va, asset_id);
         if amount == 0 {
             algo_log!("[recover_reserve_balance] reserve has zero balance for asset {asset_id}");
@@ -972,8 +1249,8 @@ impl AlgoOps {
             return Ok(bytes);
         }
         let client = self.algod_client()?;
-        let resp = self
-            .algod_call(|| client.teal_compile(source.as_bytes(), algonaut::SourceMap::Skip))?;
+        let resp =
+            self.algod_call(|| client.teal_compile(source.as_bytes(), algonaut::SourceMap::Skip))?;
         // The compiled bytes are in the tuple struct directly
         Ok(resp.0)
     }
@@ -988,7 +1265,10 @@ impl AlgoOps {
     }
 
     #[inline]
-    fn estimate_fee_for_programs(params: &algonaut::model::algod::SuggestedParams, sizes: &[usize]) -> algonaut::core::MicroAlgos {
+    fn estimate_fee_for_programs(
+        params: &algonaut::model::algod::SuggestedParams,
+        sizes: &[usize],
+    ) -> algonaut::core::MicroAlgos {
         let total_size: usize = sizes.iter().copied().sum();
         let per_byte = params.fee; // MicroAlgos per byte
         let min_fee = params.min_fee; // MicroAlgos
@@ -997,7 +1277,10 @@ impl AlgoOps {
     }
 
     #[inline]
-    fn estimate_fee_for_signed_size(params: &algonaut::model::algod::SuggestedParams, est_size: u64) -> algonaut::core::MicroAlgos {
+    fn estimate_fee_for_signed_size(
+        params: &algonaut::model::algod::SuggestedParams,
+        est_size: u64,
+    ) -> algonaut::core::MicroAlgos {
         let per_byte = params.fee; // MicroAlgos
         let min_fee = params.min_fee; // MicroAlgos
         let sized = per_byte * est_size;
@@ -1022,7 +1305,9 @@ impl AlgoOps {
                 .get(section)
                 .and_then(|v| v.get(field))
                 .and_then(|v| v.as_u64())
-                .ok_or_else(|| anyhow!("ARC-56 app spec missing state/schema/{}/{}", section, field))
+                .ok_or_else(|| {
+                    anyhow!("ARC-56 app spec missing state/schema/{}/{}", section, field)
+                })
         };
         let global = algonaut::transaction::transaction::StateSchema {
             number_ints: read("global", "ints")?,
@@ -1046,9 +1331,22 @@ impl AlgoOps {
     ///   Use `AppArg::Bytes(32-byte pk)` for `address` parameters.
     /// - `arc56_json`: text of the contract's ARC-56 app spec (the `*.arc56.json` that sits
     ///   alongside the TEAL). The global/local state schema is read from its `state/schema`.
-    pub fn deploy_app(&self, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>, method: Option<&str>, args: &[AppArg], opt_in_method_name: &str, arc56_json: &str) -> Result<Option<u64>> {
-        if approval_program.is_empty() { bail!("approval_program must not be empty"); }
-        if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
+    pub fn deploy_app(
+        &self,
+        approval_program: &[u8],
+        clear_state_program: &[u8],
+        asset_id: Option<u64>,
+        method: Option<&str>,
+        args: &[AppArg],
+        opt_in_method_name: &str,
+        arc56_json: &str,
+    ) -> Result<Option<u64>> {
+        if approval_program.is_empty() {
+            bail!("approval_program must not be empty");
+        }
+        if clear_state_program.is_empty() {
+            bail!("clear_state_program must not be empty");
+        }
         // Ensure we have account access
         let sk = self.private_key_bytes()?;
         let sender = self.require_address()?;
@@ -1060,7 +1358,8 @@ impl AlgoOps {
         let (gs, ls) = Self::state_schema_from_arc56(arc56_json)?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Before building/sending, estimate the cost of the CreateApplication and ensure we have funds
@@ -1077,7 +1376,8 @@ impl AlgoOps {
             let need_algos = est_fee_micro as f64 / 1_000_000.0;
             return Err(anyhow!(
                 "Insufficient funds to create application: balance {:.6} ALGO, estimated required fee {:.6} ALGO. Please fund the creator account and retry.",
-                balance_algos, need_algos
+                balance_algos,
+                need_algos
             ));
         }
 
@@ -1103,32 +1403,50 @@ impl AlgoOps {
         app_args.extend(args.iter().map(|a| a.to_bytes()));
 
         // Build create application transaction
-        let mut builder = algonaut::transaction::CreateApplication::new(sender, approval, clear, gs, ls);
-        if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
-        if !app_args.is_empty() { builder = builder.app_arguments(app_args); }
+        let mut builder =
+            algonaut::transaction::CreateApplication::new(sender, approval, clear, gs, ls);
+        if let Some(aid) = asset_id {
+            builder = builder.foreign_assets(vec![algonaut::core::AssetId(aid)]);
+        }
+        if !app_args.is_empty() {
+            builder = builder.app_arguments(app_args);
+        }
         let tx = builder
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build app create transaction: {e}"))?;
 
         // Sign and submit
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app create transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app create transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
 
         self.wait_for_confirmation(&tx_id, 10)?;
 
         // Retrieve created application id from pending tx info (robust JSON-based extraction)
         let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
-        let info = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+        let info = self
+            .algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info for app id: {e}"))?;
         {
-            let v = serde_json::to_value(&info).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
-            let app_id = v.get("application-index").and_then(|x| x.as_u64())
+            let v = serde_json::to_value(&info)
+                .map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
+            let app_id = v
+                .get("application-index")
+                .and_then(|x| x.as_u64())
                 .or_else(|| v.get("application_index").and_then(|x| x.as_u64()))
                 .unwrap_or(0);
 
@@ -1151,10 +1469,22 @@ impl AlgoOps {
         }
     }
 
-    pub fn update_app(&self, app_id: u64, approval_program: &[u8], clear_state_program: &[u8], asset_id: Option<u64>) -> Result<Option<u64>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if approval_program.is_empty() { bail!("approval_program must not be empty"); }
-        if clear_state_program.is_empty() { bail!("clear_state_program must not be empty"); }
+    pub fn update_app(
+        &self,
+        app_id: u64,
+        approval_program: &[u8],
+        clear_state_program: &[u8],
+        asset_id: Option<u64>,
+    ) -> Result<Option<u64>> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if approval_program.is_empty() {
+            bail!("approval_program must not be empty");
+        }
+        if clear_state_program.is_empty() {
+            bail!("clear_state_program must not be empty");
+        }
         let sk = self.private_key_bytes()?;
         let sender = self.require_address()?;
 
@@ -1162,7 +1492,8 @@ impl AlgoOps {
         let clear = algonaut::core::CompiledTeal(clear_state_program.to_vec());
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         // Estimate fee using helper and params
@@ -1183,91 +1514,204 @@ impl AlgoOps {
         // Do NOT attempt to change schemas in an update; only approval/clear programs (and other updatable
         // fields supported by the protocol) can be changed. Therefore, we build a plain UpdateApplication
         // with the new programs and do not set schemas here.
-        let mut builder = algonaut::transaction::builder::UpdateApplication::new(sender, algonaut::core::AppId(app_id), approval, clear);
-        if let Some(aid) = asset_id { builder = builder.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
+        let mut builder = algonaut::transaction::builder::UpdateApplication::new(
+            sender,
+            algonaut::core::AppId(app_id),
+            approval,
+            clear,
+        );
+        if let Some(aid) = asset_id {
+            builder = builder.foreign_assets(vec![algonaut::core::AssetId(aid)]);
+        }
         let tx = builder
             .note(Self::unique_note())
             .build(&params)
             .map_err(|e| anyhow!("failed to build app update transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app update transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app update transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
 
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)?;
         Ok(Some(app_id))
     }
 
-    pub fn call_app(&self, app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    pub fn call_app(
+        &self,
+        app_id: u64,
+        asset_id: Option<u64>,
+        method: Option<&str>,
+        args: &[AppArg],
+    ) -> Result<(String, Vec<Vec<u8>>)> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         // Build tx
         let tx = self.build_call_app_tx(app_id, asset_id, method, args)?;
-        algo_log!("[call_app] method={:?} app_id={} asset_id={:?} args_len={}", method, app_id, asset_id, args.len());
+        algo_log!(
+            "[call_app] method={:?} app_id={} asset_id={:?} args_len={}",
+            method,
+            app_id,
+            asset_id,
+            args.len()
+        );
         algo_log!("[call_app] tx={:?}", tx);
         let sk = self.private_key_bytes()?;
         let client = self.algod_client()?;
         // Sign, submit, wait
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)?;
         // Fetch logs
         let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
-        let p = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+        let p = self
+            .algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info: {e}"))?;
-        let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
-        let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        let v = serde_json::to_value(&p)
+            .map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
+        let logs_arr = v
+            .get("logs")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
         let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr { if let Some(s) = l.as_str() && let Ok(bytes) = general_purpose::STANDARD.decode(s) { logs.push(bytes); } }
+        for l in logs_arr {
+            if let Some(s) = l.as_str()
+                && let Ok(bytes) = general_purpose::STANDARD.decode(s)
+            {
+                logs.push(bytes);
+            }
+        }
         Ok((tx_id, logs))
     }
 
-    pub fn build_call_app_tx(&self, app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+    pub fn build_call_app_tx(
+        &self,
+        app_id: u64,
+        asset_id: Option<u64>,
+        method: Option<&str>,
+        args: &[AppArg],
+    ) -> Result<algonaut::transaction::transaction::Transaction> {
         self.build_call_app_tx_inner(app_id, asset_id, &[], method, args)
     }
 
-    pub fn build_call_app_tx_with_foreign_apps(&self, app_id: u64, asset_id: Option<u64>, foreign_app_ids: &[u64], method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
+    pub fn build_call_app_tx_with_foreign_apps(
+        &self,
+        app_id: u64,
+        asset_id: Option<u64>,
+        foreign_app_ids: &[u64],
+        method: Option<&str>,
+        args: &[AppArg],
+    ) -> Result<algonaut::transaction::transaction::Transaction> {
         self.build_call_app_tx_inner(app_id, asset_id, foreign_app_ids, method, args)
     }
 
-    pub fn call_app_with_foreign_app(&self, app_id: u64, foreign_app_id: u64, asset_id: Option<u64>, method: Option<&str>, args: &[AppArg]) -> Result<(String, Vec<Vec<u8>>)> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if foreign_app_id == 0 { bail!("foreign_app_id must be > 0"); }
+    pub fn call_app_with_foreign_app(
+        &self,
+        app_id: u64,
+        foreign_app_id: u64,
+        asset_id: Option<u64>,
+        method: Option<&str>,
+        args: &[AppArg],
+    ) -> Result<(String, Vec<Vec<u8>>)> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if foreign_app_id == 0 {
+            bail!("foreign_app_id must be > 0");
+        }
         let tx = self.build_call_app_tx_inner(app_id, asset_id, &[foreign_app_id], method, args)?;
-        algo_log!("[call_app_with_foreign_app] method={:?} app_id={} foreign_app_id={}", method, app_id, foreign_app_id);
+        algo_log!(
+            "[call_app_with_foreign_app] method={:?} app_id={} foreign_app_id={}",
+            method,
+            app_id,
+            foreign_app_id
+        );
         let sk = self.private_key_bytes()?;
         let client = self.algod_client()?;
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app call transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)?;
         let tx_id_obj = algonaut::core::TransactionId::from(tx_id.as_str());
-        let p = self.algod_call(|| client.pending_transaction(&tx_id_obj))
+        let p = self
+            .algod_call(|| client.pending_transaction(&tx_id_obj))
             .map_err(|e| anyhow!("failed to fetch pending transaction info: {e}"))?;
-        let v = serde_json::to_value(&p).map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
-        let logs_arr = v.get("logs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        let v = serde_json::to_value(&p)
+            .map_err(|e| anyhow!("failed to serialize pending tx info: {e}"))?;
+        let logs_arr = v
+            .get("logs")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
         let mut logs: Vec<Vec<u8>> = Vec::new();
-        for l in logs_arr { if let Some(s) = l.as_str() && let Ok(bytes) = general_purpose::STANDARD.decode(s) { logs.push(bytes); } }
+        for l in logs_arr {
+            if let Some(s) = l.as_str()
+                && let Ok(bytes) = general_purpose::STANDARD.decode(s)
+            {
+                logs.push(bytes);
+            }
+        }
         Ok((tx_id, logs))
     }
 
-    fn build_call_app_tx_inner(&self, app_id: u64, asset_id: Option<u64>, foreign_app_ids: &[u64], method: Option<&str>, args: &[AppArg]) -> Result<algonaut::transaction::transaction::Transaction> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+    fn build_call_app_tx_inner(
+        &self,
+        app_id: u64,
+        asset_id: Option<u64>,
+        foreign_app_ids: &[u64],
+        method: Option<&str>,
+        args: &[AppArg],
+    ) -> Result<algonaut::transaction::transaction::Transaction> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let client = self.algod_client()?;
-        let app_info = self.algod_call(|| client.app(algonaut::core::AppId(app_id)))
+        let app_info = self
+            .algod_call(|| client.app(algonaut::core::AppId(app_id)))
             .map_err(|e| anyhow!("failed to fetch application information: {e}"))?;
-        let app_info_v = serde_json::to_value(&app_info).map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
+        let app_info_v = serde_json::to_value(&app_info)
+            .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
         let creator_str = app_info_v
-            .get("params").and_then(|p| p.get("creator").and_then(|x| x.as_str()))
+            .get("params")
+            .and_then(|p| p.get("creator").and_then(|x| x.as_str()))
             .or_else(|| app_info_v.get("creator").and_then(|x| x.as_str()))
             .ok_or_else(|| anyhow!("application info did not contain creator field"))?;
         let creator = Self::parse_address(creator_str)?;
@@ -1279,30 +1723,44 @@ impl AlgoOps {
         }
         app_args.extend(args.iter().map(|a| a.to_bytes()));
 
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
         if let Some(sig) = method {
-            if (sig == "set_allow_static(address,uint64)void" || sig == "set_allow_relay(address,uint64)void")
+            if (sig == "set_allow_static(address,uint64)void"
+                || sig == "set_allow_relay(address,uint64)void")
                 && let Some(first) = args.first()
-                    && let AppArg::Bytes(b) = first
-                        && b.len() == 32 {
-                            let mut pk = [0u8; 32];
-                            pk.copy_from_slice(&b[..32]);
-                            if let Ok(addr_str) = byte_key_to_address(&pk)
-                                && let Ok(target) = Self::parse_address(&addr_str) {
-                                    accounts.insert(0, target);
-                                }
-                        }
+                && let AppArg::Bytes(b) = first
+                && b.len() == 32
+            {
+                let mut pk = [0u8; 32];
+                pk.copy_from_slice(&b[..32]);
+                if let Ok(addr_str) = byte_key_to_address(&pk)
+                    && let Ok(target) = Self::parse_address(&addr_str)
+                {
+                    accounts.insert(0, target);
+                }
+            }
         }
-        let fapps: Vec<algonaut::core::AppId> = foreign_app_ids.iter().map(|&id| algonaut::core::AppId(id)).collect();
+        let fapps: Vec<algonaut::core::AppId> = foreign_app_ids
+            .iter()
+            .map(|&id| algonaut::core::AppId(id))
+            .collect();
         let make_builder = || {
-            let mut b = algonaut::transaction::builder::CallApplication::new(sender, algonaut::core::AppId(app_id))
-                .accounts(accounts.clone())
-                .app_arguments(app_args.clone());
-            if let Some(aid) = asset_id { b = b.foreign_assets(vec![algonaut::core::AssetId(aid)]); }
-            if !fapps.is_empty() { b = b.foreign_apps(fapps.clone()); }
+            let mut b = algonaut::transaction::builder::CallApplication::new(
+                sender,
+                algonaut::core::AppId(app_id),
+            )
+            .accounts(accounts.clone())
+            .app_arguments(app_args.clone());
+            if let Some(aid) = asset_id {
+                b = b.foreign_assets(vec![algonaut::core::AssetId(aid)]);
+            }
+            if !fapps.is_empty() {
+                b = b.foreign_apps(fapps.clone());
+            }
             b
         };
         let tx_zero_fee = make_builder()
@@ -1323,7 +1781,9 @@ impl AlgoOps {
     }
 
     pub fn opt_in_app(&self, app_id: u64) -> Result<()> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         // If already opted-in to local state for this app, nothing to do.
         // Always validate that Option succeeds per guidelines.
         let addr_str = self
@@ -1338,89 +1798,147 @@ impl AlgoOps {
         let sk = self.private_key_bytes()?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        let tx = algonaut::transaction::builder::OptInApplication::new(sender, algonaut::core::AppId(app_id))
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build app opt-in transaction: {e}"))?;
+        let tx = algonaut::transaction::builder::OptInApplication::new(
+            sender,
+            algonaut::core::AppId(app_id),
+        )
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build app opt-in transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app opt-in transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app opt-in transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)
     }
 
     pub fn clear_state_app(&self, app_id: u64) -> Result<()> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let sender = self.require_address()?;
         let sk = self.private_key_bytes()?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        let tx = algonaut::transaction::builder::ClearApplication::new(sender, algonaut::core::AppId(app_id))
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build app clear transaction: {e}"))?;
+        let tx = algonaut::transaction::builder::ClearApplication::new(
+            sender,
+            algonaut::core::AppId(app_id),
+        )
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build app clear transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app clear transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app clear transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)
     }
 
     pub fn close_out_app(&self, app_id: u64) -> Result<()> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let sender = self.require_address()?;
         let sk = self.private_key_bytes()?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        let tx = algonaut::transaction::builder::CloseApplication::new(sender, algonaut::core::AppId(app_id))
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build app close-out transaction: {e}"))?;
+        let tx = algonaut::transaction::builder::CloseApplication::new(
+            sender,
+            algonaut::core::AppId(app_id),
+        )
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build app close-out transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app close-out transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app close-out transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)
     }
 
     pub fn delete_app(&self, app_id: u64) -> Result<()> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let sender = self.require_address()?;
         let sk = self.private_key_bytes()?;
 
         let client = self.algod_client()?;
-        let params = self.algod_call(|| client.suggested_params())
+        let params = self
+            .algod_call(|| client.suggested_params())
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
-        let tx = algonaut::transaction::builder::DeleteApplication::new(sender, algonaut::core::AppId(app_id))
-            .note(Self::unique_note())
-            .build(&params)
-            .map_err(|e| anyhow!("failed to build app delete transaction: {e}"))?;
+        let tx = algonaut::transaction::builder::DeleteApplication::new(
+            sender,
+            algonaut::core::AppId(app_id),
+        )
+        .note(Self::unique_note())
+        .build(&params)
+        .map_err(|e| anyhow!("failed to build app delete transaction: {e}"))?;
 
-        let seed: [u8; 32] = sk.as_slice().try_into().map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let seed: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let account = algonaut::transaction::account::Account::from_seed(seed);
-        let signed_tx = account.sign(tx).map_err(|e| anyhow!("failed to sign app delete transaction: {e}"))?;
-        let signed = signed_tx.to_msg_pack().map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
-        let tx_id = self.algod_call(|| client.send_raw(&signed))
-            .map_err(|e| anyhow!("send_raw failed: {e}"))?.tx_id;
+        let signed_tx = account
+            .sign(tx)
+            .map_err(|e| anyhow!("failed to sign app delete transaction: {e}"))?;
+        let signed = signed_tx
+            .to_msg_pack()
+            .map_err(|e| anyhow!("failed to encode signed transaction: {e}"))?;
+        let tx_id = self
+            .algod_call(|| client.send_raw(&signed))
+            .map_err(|e| anyhow!("send_raw failed: {e}"))?
+            .tx_id;
         self.wait_for_confirmation(&tx_id, 10)
     }
 
@@ -1429,15 +1947,31 @@ impl AlgoOps {
     /// Returns the transaction id of the app call when an opt-in was required; if the
     /// app was already opted in, returns Ok("") without making a call.
     /// opt_in_method_name must be a method on the creator like "opt_(app_id)" which opts the app in using Teal
-    pub fn opt_in_app_to_asset(&self, app_id: u64, asset_id: u64, opt_in_method_name: &str) -> Result<String> {
+    pub fn opt_in_app_to_asset(
+        &self,
+        app_id: u64,
+        asset_id: u64,
+        opt_in_method_name: &str,
+    ) -> Result<String> {
         tracing::info!("opt_in_app_to_asset: app_id={}", app_id);
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if asset_id == 0 { bail!("asset_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if asset_id == 0 {
+            bail!("asset_id must be > 0");
+        }
         // If the app address already holds the asset, nothing to do
         let app_addr_str = self.contract_address(app_id)?;
-        if self.is_account_opted_in_to_asset(&app_addr_str, asset_id)? { return Ok(String::new()); }
+        if self.is_account_opted_in_to_asset(&app_addr_str, asset_id)? {
+            return Ok(String::new());
+        }
         // Call the admin method on the contract; this must be signed by the creator
-        let (tx_id, _logs) = self.call_app(app_id, Some(asset_id), Some(opt_in_method_name), &[AppArg::Uint(asset_id)])?;
+        let (tx_id, _logs) = self.call_app(
+            app_id,
+            Some(asset_id),
+            Some(opt_in_method_name),
+            &[AppArg::Uint(asset_id)],
+        )?;
         // Return tx id to signal a call occurred; fetch from tuple index 0
         Ok(tx_id)
     }
@@ -1451,7 +1985,8 @@ impl AlgoOps {
         let client = self.algod_client()?;
 
         // Get starting round
-        let status = self.algod_call(|| client.status())
+        let status = self
+            .algod_call(|| client.status())
             .map_err(|e| anyhow!("failed to get node status: {e}"))?;
         let start_round = status.last_round.0 + 1;
         let end_round = start_round + timeout_rounds;
@@ -1463,16 +1998,19 @@ impl AlgoOps {
             match self.algod_call(|| client.pending_transaction(&tx_id_obj)) {
                 Ok(p) => {
                     if let Some(cr) = p.confirmed_round
-                        && cr > 0 {
-                            return Ok(());
-                        }
+                        && cr > 0
+                    {
+                        return Ok(());
+                    }
                     if !p.pool_error.is_empty() {
                         bail!("Transaction rejected with pool error: {}", p.pool_error);
                     }
                 }
                 Err(e) => {
                     if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) {
-                        return Err(AlgoError::unreachable("pending_transaction", &e.to_string()).into());
+                        return Err(
+                            AlgoError::unreachable("pending_transaction", &e.to_string()).into(),
+                        );
                     }
                     // If the node no longer remembers the tx or transient error, continue waiting until timeout
                 }
@@ -1483,7 +2021,10 @@ impl AlgoOps {
                 .map_err(|e| anyhow!("status_after_block failed: {e}"))?;
             current_round += 1;
         }
-        Err(anyhow!("Transaction not confirmed after {} rounds", timeout_rounds))
+        Err(anyhow!(
+            "Transaction not confirmed after {} rounds",
+            timeout_rounds
+        ))
     }
 }
 
@@ -1536,4 +2077,3 @@ pub fn byte_key_to_address(byte_public_key: &[u8; 32]) -> Result<String> {
     let addr = BASE32_NOPAD.encode(&addr_bytes);
     Ok(addr)
 }
-

@@ -9,27 +9,27 @@
 // Internet tests require live network access.
 
 // Unit tests (local, no external resources) — uses full util with test files
-#[path = "messages.rs"]
-pub mod messages;
 pub mod api;
 pub mod blockchain;
+pub mod cli;
 pub mod dtls;
 pub mod engine;
-pub mod protocol;
+#[path = "messages.rs"]
+pub mod messages;
 pub mod packet_transport;
+pub mod protocol;
 pub mod relay;
 pub mod stun;
-pub mod cli;
 #[macro_use]
 pub mod util;
 pub mod ddb;
-pub mod turn;
-pub mod distributed_mutex;
-pub mod setup_localnet;
-pub mod module_version;
-pub mod security;
 #[path = "dev_arc4_selector.rs"]
 pub mod dev_arc4_selector;
+pub mod distributed_mutex;
+pub mod module_version;
+pub mod security;
+pub mod setup_localnet;
+pub mod turn;
 
 // Integration tests (localnet + internet) — included via integration_tests submodule
 // Note: these share crate::util (above), crate::api, crate::relay, crate::ddb

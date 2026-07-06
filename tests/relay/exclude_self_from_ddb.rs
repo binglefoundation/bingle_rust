@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use crate::util::reusable_mock_api::{to_weak_api_both, InnerBingleApi, MockApiBoth};
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
 use rust_comms::api::bingle_api::{NetworkEndpoint, ProgressCallback, UserId};
 use rust_comms::relay::relay_finder::{RelayFinder, RelayFinderTrait};
 
@@ -16,13 +16,24 @@ struct MockApi {
 
 impl MockApi {
     fn new(entries: Vec<(String, SocketAddr)>) -> Self {
-        Self { entries: Arc::new(entries) }
+        Self {
+            entries: Arc::new(entries),
+        }
     }
 }
 
-impl InnerBingleApi for MockApi { 
-    fn send_message_to_network_with_response(&self, _nsk: &NetworkEndpoint, _user_id: &UserId, message: serde_json::Value, _progress: Option<Arc<ProgressCallback>>) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
-        let ty = message.get("type").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+impl InnerBingleApi for MockApi {
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, rust_comms::api::bingle_api::BingleError> {
+        let ty = message
+            .get("type")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
         match (message.get("app"), ty) {
             (Some(app), "getRelaysStatus") if app.as_str() == Some("ddb") => {
                 // Return aligned relayIds and relayEndpoints from entries
@@ -30,9 +41,13 @@ impl InnerBingleApi for MockApi {
                 let mut eps: Vec<serde_json::Value> = Vec::new();
                 for (id, addr) in self.entries.iter() {
                     ids.push(serde_json::Value::String(id.clone()));
-                    eps.push(serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}));
+                    eps.push(
+                        serde_json::json!({"host": addr.ip().to_string(), "port": addr.port()}),
+                    );
                 }
-                let states: Vec<serde_json::Value> = self.entries.iter()
+                let states: Vec<serde_json::Value> = self
+                    .entries
+                    .iter()
                     .map(|_| serde_json::Value::String("available".to_string()))
                     .collect();
                 Ok(serde_json::json!({
@@ -48,14 +63,20 @@ impl InnerBingleApi for MockApi {
             }
             (app, "Check") if app.is_none() || app.unwrap().is_null() => {
                 // Respond available for RelayCheck
-                Ok(serde_json::json!({ "app": null, "type": "CheckResponse", "state": "available" }))
+                Ok(
+                    serde_json::json!({ "app": null, "type": "CheckResponse", "state": "available" }),
+                )
             }
-                _ => Err(rust_comms::api::bingle_api::BingleError::Other("unexpected message".into()))
+            _ => Err(rust_comms::api::bingle_api::BingleError::Other(
+                "unexpected message".into(),
+            )),
         }
     }
 }
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -66,10 +87,8 @@ pub fn list_all_relays_excludes_self_from_ddb() {
     let a1 = addr(42001);
     let a2 = addr(42002);
 
-    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi::new(vec![
-        (my_id.clone(), a1),
-        (other.clone(), a2),
-    ]));
+    let api: Arc<dyn InnerBingleApi + Send + Sync> =
+        Arc::new(MockApi::new(vec![(my_id.clone(), a1), (other.clone(), a2)]));
 
     // Root discovery can return any roots; ensure deterministic order
     let discover = {
@@ -80,13 +99,19 @@ pub fn list_all_relays_excludes_self_from_ddb() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
+    let finder = RelayFinder::new(
+        to_weak_api_both(MockApiBoth::new_with_api_override(api)),
+        discover,
+    );
 
     // When include_self = false, our own id must not be present even if DDB provided it
     let list = finder.list_all_relays(&my_id, false);
     let ids: Vec<String> = list.iter().map(|r| r.id().to_string()).collect();
     assert!(ids.contains(&other), "should contain other relay from DDB");
-    assert!(!ids.contains(&my_id), "should NOT contain our own relay id in choices");
+    assert!(
+        !ids.contains(&my_id),
+        "should NOT contain our own relay id in choices"
+    );
 }
 
 #[test]
@@ -97,10 +122,8 @@ pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
     let a1 = addr(43001);
     let a2 = addr(43002);
 
-    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(MockApi::new(vec![
-        (my_id.clone(), a1),
-        (other.clone(), a2),
-    ]));
+    let api: Arc<dyn InnerBingleApi + Send + Sync> =
+        Arc::new(MockApi::new(vec![(my_id.clone(), a1), (other.clone(), a2)]));
 
     let discover = {
         let roots = vec![
@@ -110,7 +133,10 @@ pub fn find_relay_does_not_select_self_even_if_ddb_includes_self() {
         Arc::new(move || roots.clone())
     };
 
-    let finder = RelayFinder::new(to_weak_api_both(MockApiBoth::new_with_api_override(api)), discover);
+    let finder = RelayFinder::new(
+        to_weak_api_both(MockApiBoth::new_with_api_override(api)),
+        discover,
+    );
 
     let picked = finder.find_relay(&my_id).expect("should pick a relay");
     assert_ne!(picked.id(), my_id, "must not select self");

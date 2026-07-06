@@ -1,5 +1,5 @@
 use rust_comms::messages::marshal::{from_json_str, to_json_value};
-use rust_comms::messages::types::{Message, MutexMessage, MutexResponse, MutexRelease};
+use rust_comms::messages::types::{Message, MutexMessage, MutexRelease, MutexResponse};
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -31,7 +31,10 @@ pub fn unit_mutex_response_to_json() {
     assert_eq!(v.get("app").and_then(|x| x.as_str()), Some("mutex"));
     assert_eq!(v.get("type").and_then(|x| x.as_str()), Some("response"));
     assert!(v.get("known_ids").is_some());
-    let ids = v.get("known_ids").and_then(|x| x.as_array()).expect("array");
+    let ids = v
+        .get("known_ids")
+        .and_then(|x| x.as_array())
+        .expect("array");
     assert_eq!(ids.len(), 2);
     // Ensure forbidden fields are absent
     assert!(v.get("response_tag").is_none());
@@ -53,7 +56,11 @@ pub fn unit_mutex_response_to_json() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn unit_mutex_release_roundtrip() {
-    let rel = MutexRelease { app: "mutex".into(), tag: None, known_ids: None };
+    let rel = MutexRelease {
+        app: "mutex".into(),
+        tag: None,
+        known_ids: None,
+    };
     let msg = Message::Mutex(MutexMessage::Release(rel));
     let v = to_json_value(&msg);
     assert_eq!(v.get("type").and_then(|x| x.as_str()), Some("release"));

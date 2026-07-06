@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use crate::util::reusable_mock_api::{InnerBingleApi, InnerBingleApiInternal, MockApiBoth};
+use crate::util::test_util::signed_root_relay;
 use rust_comms::engine::RelayState;
 use rust_comms::messages::handlers::DefaultPrintingHandler;
 use rust_comms::messages::router::Router;
 use rust_comms::messages::types::*;
-use crate::util::test_util::signed_root_relay;
 
 fn make_relay_report_failed(failed_relay_id: &str) -> Message {
     Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
@@ -54,7 +54,10 @@ struct TrackingApi {
 }
 
 impl InnerBingleApi for TrackingApi {
-    fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    fn list_all_relays(
+        &self,
+        _include_self: bool,
+    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
         if self.relay_id.is_empty() {
             return Vec::new();
         }
@@ -85,23 +88,33 @@ impl InnerBingleApiInternal for TrackingApi {
     ) {
         let mut called = self.ripple_called.lock().expect("lock ripple_called");
         *called = true;
-        let mut orig = self.ripple_originator.lock().expect("lock ripple_originator");
+        let mut orig = self
+            .ripple_originator
+            .lock()
+            .expect("lock ripple_originator");
         *orig = Some(originator_id);
     }
 
     fn ddb_delete_record(&self, id: &str) {
-        self.ddb_deleted.lock().expect("lock ddb_deleted").push(id.to_string());
+        self.ddb_deleted
+            .lock()
+            .expect("lock ddb_deleted")
+            .push(id.to_string());
     }
 
     fn relay_finder_remove_relay(&self, relay_id: &str) {
-        self.relay_cache_removed.lock().expect("lock relay_cache_removed").push(relay_id.to_string());
+        self.relay_cache_removed
+            .lock()
+            .expect("lock relay_cache_removed")
+            .push(relay_id.to_string());
     }
 }
 
 fn router_with_api(api: Arc<TrackingApi>) -> Arc<Router> {
-    let weak = crate::util::mock_bingle_api::to_weak(
-        MockApiBoth::new_with_both_overrides(api.clone(), api.clone()),
-    );
+    let weak = crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_both_overrides(
+        api.clone(),
+        api.clone(),
+    ));
     let router = Arc::new(Router::new(weak));
     router.set_am_relay(true);
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
@@ -127,7 +140,8 @@ pub fn relay_report_failed_ignored_when_not_relay() {
     }
 
     let panic_arc = Arc::new(PanicRipple);
-    let weak = crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(panic_arc));
+    let weak =
+        crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_internal_override(panic_arc));
     let router = Arc::new(Router::new(weak));
     router.set_am_relay(false);
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));
@@ -168,13 +182,28 @@ pub fn relay_report_failed_ripples_on_send_failure() {
     });
 
     let called = ripple_called.lock().expect("lock ripple_called");
-    assert!(*called, "ripple_message should have been called when send fails");
+    assert!(
+        *called,
+        "ripple_message should have been called when send fails"
+    );
     let orig = ripple_originator.lock().expect("lock ripple_originator");
-    assert_eq!(orig.as_deref(), Some("RELAY_B"), "originator_id should be the failed relay id");
+    assert_eq!(
+        orig.as_deref(),
+        Some("RELAY_B"),
+        "originator_id should be the failed relay id"
+    );
     let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
-    assert!(deleted.contains(&"RELAY_B".to_string()), "ddb_delete_record should have been called for RELAY_B");
-    let removed = relay_cache_removed.lock().expect("lock relay_cache_removed");
-    assert!(removed.contains(&"RELAY_B".to_string()), "relay_finder_remove_relay should have been called for RELAY_B");
+    assert!(
+        deleted.contains(&"RELAY_B".to_string()),
+        "ddb_delete_record should have been called for RELAY_B"
+    );
+    let removed = relay_cache_removed
+        .lock()
+        .expect("lock relay_cache_removed");
+    assert!(
+        removed.contains(&"RELAY_B".to_string()),
+        "relay_finder_remove_relay should have been called for RELAY_B"
+    );
 }
 
 // Test: relay found, responds with non-Available state -> marks failed and ripples
@@ -204,13 +233,24 @@ pub fn relay_report_failed_ripples_on_non_available_response() {
     });
 
     let called = ripple_called.lock().expect("lock ripple_called");
-    assert!(*called, "ripple_message should have been called when relay responds with non-Available state");
+    assert!(
+        *called,
+        "ripple_message should have been called when relay responds with non-Available state"
+    );
     let orig = ripple_originator.lock().expect("lock ripple_originator");
     assert_eq!(orig.as_deref(), Some("RELAY_C"));
     let deleted = ddb_deleted.lock().expect("lock ddb_deleted");
-    assert!(deleted.contains(&"RELAY_C".to_string()), "ddb_delete_record should have been called for RELAY_C");
-    let removed = relay_cache_removed.lock().expect("lock relay_cache_removed");
-    assert!(removed.contains(&"RELAY_C".to_string()), "relay_finder_remove_relay should have been called for RELAY_C");
+    assert!(
+        deleted.contains(&"RELAY_C".to_string()),
+        "ddb_delete_record should have been called for RELAY_C"
+    );
+    let removed = relay_cache_removed
+        .lock()
+        .expect("lock relay_cache_removed");
+    assert!(
+        removed.contains(&"RELAY_C".to_string()),
+        "relay_finder_remove_relay should have been called for RELAY_C"
+    );
 }
 
 // Test: relay found, responds Available -> no ripple (just WARN)
@@ -220,7 +260,10 @@ pub fn relay_report_failed_no_ripple_when_available() {
     // PanicOnRipple verifies ripple_message is never called.
     struct PanicOnRipple;
     impl InnerBingleApi for PanicOnRipple {
-        fn list_all_relays(&self, _include_self: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+        fn list_all_relays(
+            &self,
+            _include_self: bool,
+        ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
             let addr: std::net::SocketAddr = "127.0.0.1:5003".parse().expect("valid addr");
             vec![signed_root_relay("RELAY_D", addr)]
         }
@@ -246,7 +289,10 @@ pub fn relay_report_failed_no_ripple_when_available() {
     }
 
     let panic_api = Arc::new(PanicOnRipple);
-    let weak = crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_both_overrides(panic_api.clone(), panic_api));
+    let weak = crate::util::mock_bingle_api::to_weak(MockApiBoth::new_with_both_overrides(
+        panic_api.clone(),
+        panic_api,
+    ));
     let router = Arc::new(Router::new(weak));
     router.set_am_relay(true);
     let backend = Arc::new(Mutex::new(rust_comms::ddb::InMemoryDdbBackend::new()));

@@ -1,11 +1,13 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex, Condvar};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 // Bring the public trait/types from our module
-use super::stun_endpoint_finder::{ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState};
+use super::stun_endpoint_finder::{
+    ErrorHandler, SendPacketHandler, StateChangeHandler, StunEndpointFinder, StunState,
+};
 
 // Explicitly reference the stun-rs crate (module path stun_rs). We keep usage minimal here
 // to avoid depending on specific message builder APIs while still ensuring the crate is
@@ -27,7 +29,14 @@ struct ServerStatus {
 
 impl ServerStatus {
     fn new(addr: SocketAddr) -> Self {
-        Self { addr, failures: 0, responded: false, ever_responded: false, endpoint: None, last_polled_tick: None }
+        Self {
+            addr,
+            failures: 0,
+            responded: false,
+            ever_responded: false,
+            endpoint: None,
+            last_polled_tick: None,
+        }
     }
 }
 
@@ -80,7 +89,8 @@ impl Inner {
             if silence_too_long {
                 tracing::info!(
                     "[STUN] no response for {} ticks; reverting {:?} → None",
-                    self.no_response_ticks, self.state
+                    self.no_response_ticks,
+                    self.state
                 );
                 self.last_response_tick = None;
                 self.last_request_tick = None;
@@ -101,13 +111,23 @@ impl Inner {
         // 2. Decide if it is time to poll based on the current state's interval
         let interval_ticks = self.choose_interval();
 
-        if self.last_poll_tick.is_none_or(|last| now.saturating_sub(last) >= interval_ticks) {
+        if self
+            .last_poll_tick
+            .is_none_or(|last| now.saturating_sub(last) >= interval_ticks)
+        {
             self.last_poll_tick = Some(now);
 
             // Determine servers to poll
             let to_poll: Vec<SocketAddr> = match self.state {
-                StunState::None | StunState::Single => self.servers.iter().filter(|s| !s.responded).map(|s| s.addr).collect(),
-                StunState::Blocked | StunState::Consistent | StunState::Inconsistent => self.servers.iter().map(|s| s.addr).collect(),
+                StunState::None | StunState::Single => self
+                    .servers
+                    .iter()
+                    .filter(|s| !s.responded)
+                    .map(|s| s.addr)
+                    .collect(),
+                StunState::Blocked | StunState::Consistent | StunState::Inconsistent => {
+                    self.servers.iter().map(|s| s.addr).collect()
+                }
             };
 
             if !to_poll.is_empty() {
@@ -138,20 +158,28 @@ impl Inner {
                 }
 
                 // 3. Blocked state check (using results of PREVIOUS interval)
-                if matches!(self.state, StunState::None | StunState::Single | StunState::Blocked) {
+                if matches!(
+                    self.state,
+                    StunState::None | StunState::Single | StunState::Blocked
+                ) {
                     self.intervals_without_two = self.intervals_without_two.saturating_add(1);
                     if self.intervals_without_two >= 3 {
                         let responders = self.servers.iter().filter(|s| s.responded).count();
                         if responders == 0 {
                             if self.state != StunState::Blocked {
-                                tracing::warn!("[STUN] UDP appears blocked (no responses from {} servers after 3 intervals)", self.servers.len());
+                                tracing::warn!(
+                                    "[STUN] UDP appears blocked (no responses from {} servers after 3 intervals)",
+                                    self.servers.len()
+                                );
                                 self.state = StunState::Blocked;
                                 self.endpoint = None;
                                 if let Some(cb) = &self.state_change {
                                     cb(self.state, None);
                                 }
                             } else {
-                                tracing::info!("[STUN] still blocked (UDP appears blocked) - continuing to poll for recovery");
+                                tracing::info!(
+                                    "[STUN] still blocked (UDP appears blocked) - continuing to poll for recovery"
+                                );
                             }
                         } else if responders < 2 && !self.error_reported {
                             if let Some(eh) = &self.error {
@@ -190,7 +218,9 @@ impl Inner {
         // Collect endpoints for all servers that have responded
         let mut endpoints = Vec::new();
         for s in &self.servers {
-            if let Some(ep) = s.endpoint { endpoints.push(ep); }
+            if let Some(ep) = s.endpoint {
+                endpoints.push(ep);
+            }
         }
         let new_state = match endpoints.len() {
             0 => StunState::None,
@@ -219,7 +249,11 @@ impl Inner {
         let endpoint_changed = new_state == StunState::Consistent && self.endpoint != old_endpoint;
         if new_state != self.state || endpoint_changed {
             self.state = new_state;
-            tracing::info!("[STUN] state change: {:?} endpoint={:?}", self.state, self.endpoint);
+            tracing::info!(
+                "[STUN] state change: {:?} endpoint={:?}",
+                self.state,
+                self.endpoint
+            );
             if let Some(cb) = &self.state_change {
                 cb(self.state, self.endpoint);
             }
@@ -262,15 +296,21 @@ impl StunEndpointFinderImpl {
             current_tick: 0,
             last_poll_tick: None,
         };
-        Self { inner: Arc::new(Mutex::new(inner)), running: Arc::new(AtomicBool::new(false)), thread: None, stop_cond: Arc::new(Condvar::new()), no_response_timeout_override: None }
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+            running: Arc::new(AtomicBool::new(false)),
+            thread: None,
+            stop_cond: Arc::new(Condvar::new()),
+            no_response_timeout_override: None,
+        }
     }
 
     /// Override the no-response timeout. Used in tests to avoid waiting 30s.
     pub fn set_no_response_timeout_for_tests(&mut self, timeout: Duration) {
         self.no_response_timeout_override = Some(timeout);
-        self.inner.lock().unwrap().no_response_ticks = (timeout.as_millis() as u64 / TICK_MS).max(1);
+        self.inner.lock().unwrap().no_response_ticks =
+            (timeout.as_millis() as u64 / TICK_MS).max(1);
     }
-
 
     // Build a minimal STUN Binding Request. Keeping a handcrafted packet for now keeps us
     // decoupled from stun-rs' specific builder API while still having it as a dependency for future use.
@@ -278,15 +318,20 @@ impl StunEndpointFinderImpl {
         // Simple STUN Binding Request with zero-length attributes.
         // Type: 0x0001, Length: 0x0000, Magic Cookie: 0x2112A442, Transaction ID: 12 bytes pseudo-random
         let mut pkt = [0u8; 20];
-        pkt[0] = 0x00; pkt[1] = 0x01; // Binding Request
-        pkt[2] = 0x00; pkt[3] = 0x00; // length
-        pkt[4] = 0x21; pkt[5] = 0x12; pkt[6] = 0xA4; pkt[7] = 0x42; // magic cookie
+        pkt[0] = 0x00;
+        pkt[1] = 0x01; // Binding Request
+        pkt[2] = 0x00;
+        pkt[3] = 0x00; // length
+        pkt[4] = 0x21;
+        pkt[5] = 0x12;
+        pkt[6] = 0xA4;
+        pkt[7] = 0x42; // magic cookie
         // Fill transaction ID deterministically from tick
         let mut seed = tick;
         for i in 0..3 {
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
             let bytes = seed.to_be_bytes();
-            pkt[8 + i * 4 .. 12 + i * 4].copy_from_slice(&bytes[0..4]);
+            pkt[8 + i * 4..12 + i * 4].copy_from_slice(&bytes[0..4]);
         }
         pkt
     }
@@ -310,9 +355,13 @@ impl StunEndpointFinderImpl {
     }
 
     fn parse_xor_mapped_address(data: &[u8]) -> Option<SocketAddr> {
-        if data.len() < 20 { return None; }
+        if data.len() < 20 {
+            return None;
+        }
         // Verify magic cookie
-        if data[4..8] != [0x21, 0x12, 0xA4, 0x42] { return None; }
+        if data[4..8] != [0x21, 0x12, 0xA4, 0x42] {
+            return None;
+        }
         let msg_len = u16::from_be_bytes([data[2], data[3]]) as usize;
         let mut idx = 20;
         let end = 20 + msg_len;
@@ -320,19 +369,31 @@ impl StunEndpointFinderImpl {
             let atype = u16::from_be_bytes([data[idx], data[idx + 1]]);
             let alen = u16::from_be_bytes([data[idx + 2], data[idx + 3]]) as usize;
             idx += 4;
-            if idx + alen > data.len() { break; }
-            if atype == 0x0020 /* XOR-MAPPED-ADDRESS */ || atype == 0x0001 /* MAPPED-ADDRESS */ {
-                if alen < 8 { return None; }
+            if idx + alen > data.len() {
+                break;
+            }
+            if atype == 0x0020 /* XOR-MAPPED-ADDRESS */ || atype == 0x0001
+            /* MAPPED-ADDRESS */
+            {
+                if alen < 8 {
+                    return None;
+                }
                 let family = data[idx + 1];
                 if family == 0x01 && alen >= 8 {
                     // IPv4
                     let xport = u16::from_be_bytes([data[idx + 2], data[idx + 3]]);
-                    let port = if atype == 0x0020 { xport ^ 0x2112 } else { xport };
+                    let port = if atype == 0x0020 {
+                        xport ^ 0x2112
+                    } else {
+                        xport
+                    };
                     let mut addr = [0u8; 4];
                     addr.copy_from_slice(&data[idx + 4..idx + 8]);
                     if atype == 0x0020 {
                         let cookie = [0x21u8, 0x12, 0xA4, 0x42];
-                        for i in 0..4 { addr[i] ^= cookie[i]; }
+                        for i in 0..4 {
+                            addr[i] ^= cookie[i];
+                        }
                     }
                     let ip = IpAddr::V4(Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3]));
                     return Some(SocketAddr::new(ip, port));
@@ -372,14 +433,18 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         self.init(servers, search_time_ms, repeat_time_ms);
 
         // Start background thread if not already running
-        if self.running.swap(true, Ordering::SeqCst) { return; }
+        if self.running.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let running = self.running.clone();
         let state = self.inner.clone();
         let stop_cond = self.stop_cond.clone();
         self.thread = Some(thread::spawn(move || {
             let tick_rate = Duration::from_millis(TICK_MS);
             loop {
-                if !running.load(Ordering::SeqCst) { break; }
+                if !running.load(Ordering::SeqCst) {
+                    break;
+                }
 
                 {
                     let mut inner = state.lock().unwrap();
@@ -398,14 +463,16 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
         if self.running.swap(false, Ordering::SeqCst) {
             self.stop_cond.notify_all();
             if let Some(h) = self.thread.take() {
-                tracing::info!("[StunEndpointFinder] join on background thread, waiting for it to finish...");
+                tracing::info!(
+                    "[StunEndpointFinder] join on background thread, waiting for it to finish..."
+                );
                 let _ = h.join();
+            } else {
+                tracing::warn!(
+                    "[StunEndpointFinder] background thread not running, nothing to stop"
+                );
             }
-            else {
-                tracing::warn!("[StunEndpointFinder] background thread not running, nothing to stop");
-            }
-        }
-        else {
+        } else {
             tracing::warn!("[StunEndpointFinder] stop called without start");
         }
         tracing::info!("[StunEndpointFinder] stopped background thread");
@@ -413,14 +480,20 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
 
     fn process_packet(&mut self, from: SocketAddr, data: &[u8]) {
         let endpoint = StunEndpointFinderImpl::parse_xor_mapped_address(data);
-        tracing::info!("[STUN] received response from {} mapped={:?}", from, endpoint);
+        tracing::info!(
+            "[STUN] received response from {} mapped={:?}",
+            from,
+            endpoint
+        );
         let mut inner = self.inner.lock().unwrap();
         // Find server by source address
         if let Some(s) = inner.servers.iter_mut().find(|s| s.addr == from) {
             s.responded = true;
             s.ever_responded = true;
             s.failures = 0; // reset on any response
-            if let Some(ep) = endpoint { s.endpoint = Some(ep); }
+            if let Some(ep) = endpoint {
+                s.endpoint = Some(ep);
+            }
         }
         // Track when the last response arrived so the poll loop can detect silence.
         inner.last_response_tick = Some(inner.current_tick);
@@ -448,7 +521,10 @@ impl StunEndpointFinder for StunEndpointFinderImpl {
 
     fn reset_state(&mut self) {
         let mut inner = self.inner.lock().unwrap();
-        tracing::info!("[STUN] reset_state: reverting state {:?} -> None", inner.state);
+        tracing::info!(
+            "[STUN] reset_state: reverting state {:?} -> None",
+            inner.state
+        );
         inner.state = StunState::None;
         inner.endpoint = None;
         // Reset interval counter and error flag so the polling loop does not immediately

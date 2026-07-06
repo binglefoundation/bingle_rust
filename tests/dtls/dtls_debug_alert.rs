@@ -1,5 +1,3 @@
-
-
 use rust_comms::dtls::dtls_debug::dtls_udp_to_json;
 
 // Helper to build a single DTLS record datagram with given content type and payload
@@ -32,16 +30,28 @@ pub fn dtls_debug_includes_alert_level_and_description() {
     // We validate that either trace JSON contains an `alert` object, or the debug summary
     // contains the alert L/D snippet.
     let txt = dtls_udp_to_json(&datagram).expect("parser should succeed");
-    assert!(!txt.is_empty(), "expected some output at or above debug level");
+    assert!(
+        !txt.is_empty(),
+        "expected some output at or above debug level"
+    );
 
     // Try JSON path first
     if txt.contains("\"records\"") {
         // Expect alert fields present with correct values
-        assert!(txt.contains("\"alert\""), "trace JSON should contain alert object");
+        assert!(
+            txt.contains("\"alert\""),
+            "trace JSON should contain alert object"
+        );
         assert!(txt.contains("\"level\": 2"), "alert.level should be 2");
-        assert!(txt.contains("\"description\": 40"), "alert.description should be 40");
+        assert!(
+            txt.contains("\"description\": 40"),
+            "alert.description should be 40"
+        );
     } else {
         // Debug summary path: contains "alert=L2/D40"
-        assert!(txt.contains("alert=L2/D40"), "debug summary should include alert snippet");
+        assert!(
+            txt.contains("alert=L2/D40"),
+            "debug summary should include alert snippet"
+        );
     }
 }

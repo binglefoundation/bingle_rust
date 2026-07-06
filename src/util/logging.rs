@@ -1,10 +1,13 @@
-use tracing_subscriber::fmt::{format, FormatEvent, FormatFields};
-use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::layer::{Layer, Context};
-use tracing::span::{Attributes, Id};
-use tracing::{Subscriber, field::{Visit, Field}};
 use std::fmt;
 use std::sync::OnceLock;
+use tracing::span::{Attributes, Id};
+use tracing::{
+    Subscriber,
+    field::{Field, Visit},
+};
+use tracing_subscriber::fmt::{FormatEvent, FormatFields, format};
+use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::registry::LookupSpan;
 
 static ALGO_DEBUG: OnceLock<bool> = OnceLock::new();
 
@@ -71,10 +74,9 @@ macro_rules! debug_theme {
     };
 }
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum LogMode {
     #[default]
     Plain,
@@ -82,7 +84,6 @@ pub enum LogMode {
     AWS,
     JS,
 }
-
 
 pub struct HandleExtension(pub String);
 
@@ -127,8 +128,7 @@ pub fn init_logging() {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .event_format(BingleFormatter::default());
+    let fmt_layer = tracing_subscriber::fmt::layer().event_format(BingleFormatter::default());
 
     let _ = tracing_subscriber::registry()
         .with(env_filter)
@@ -165,15 +165,14 @@ where
 
         // 1. Try to find handle in span extensions
         let mut handle_str = String::new();
-        if show_handle
-            && let Some(scope) = ctx.event_scope() {
-                for span in scope {
-                    if let Some(ext) = span.extensions().get::<HandleExtension>() {
-                        handle_str = ext.0.clone();
-                        break;
-                    }
+        if show_handle && let Some(scope) = ctx.event_scope() {
+            for span in scope {
+                if let Some(ext) = span.extensions().get::<HandleExtension>() {
+                    handle_str = ext.0.clone();
+                    break;
                 }
             }
+        }
 
         // 2. Format handle with color if present
         if !handle_str.is_empty() {
@@ -199,8 +198,8 @@ where
             let level_str = match level {
                 tracing::Level::TRACE => "\x1b[35mTRACE\x1b[0m",
                 tracing::Level::DEBUG => "\x1b[34mDEBUG\x1b[0m",
-                tracing::Level::INFO  => "\x1b[32m INFO\x1b[0m",
-                tracing::Level::WARN  => "\x1b[33m WARN\x1b[0m",
+                tracing::Level::INFO => "\x1b[32m INFO\x1b[0m",
+                tracing::Level::WARN => "\x1b[33m WARN\x1b[0m",
                 tracing::Level::ERROR => "\x1b[31mERROR\x1b[0m",
             };
             write!(writer, "{} ", level_str)?;

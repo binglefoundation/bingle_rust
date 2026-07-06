@@ -1,11 +1,11 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use crate::setup_localnet;
+use crate::util::test_util;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::blockchain::algo_bingle::AlgoBingle;
 use rust_comms::blockchain::algo_ops::AlgoOps;
-use crate::util::test_util;
-use crate::setup_localnet;
+use rust_comms::engine::BingleAccessUnsafeForTests;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -23,8 +23,13 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
         .expect("Failed to fund localnet accounts");
 
     let ops_creator = AlgoOps::new(Some(creator_pass.to_string()), None, Some(cfg.clone()));
-    let ops_admin = AlgoOps::new(Some(test_util::PASSPHRASE_APP_ADMIN.to_string()), None, Some(cfg.clone()));
-    let (app_id, _asset_id) = test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
+    let ops_admin = AlgoOps::new(
+        Some(test_util::PASSPHRASE_APP_ADMIN.to_string()),
+        None,
+        Some(cfg.clone()),
+    );
+    let (app_id, _asset_id) =
+        test_util::deploy_bingle_app_and_asset(&ops_creator, "BINGLE$", 1_000_000);
 
     let ops_relay = AlgoOps::new(Some(relay_pass.to_string()), None, Some(cfg.clone()));
     ops_relay.opt_in_app(app_id).expect("relay opt-in app");
@@ -51,14 +56,27 @@ pub fn test_relay_start_fails_if_not_allowed_on_chain() {
     let relay = BingleApiImpl::new(&r_opts);
     let res = relay.access_unsafe_for_tests(|api| api.start(&r_opts));
 
-    assert!(res.is_err(), "relay start should fail because allow_relay is not set");
+    assert!(
+        res.is_err(),
+        "relay start should fail because allow_relay is not set"
+    );
     let err_msg = res.unwrap_err().to_string();
-    assert!(err_msg.contains("not allowed to relay"), "expected 'not allowed to relay' error, got: {}", err_msg);
+    assert!(
+        err_msg.contains("not allowed to relay"),
+        "expected 'not allowed to relay' error, got: {}",
+        err_msg
+    );
 
     // Now set it and try again (admin signs the allow_relay call)
     let ab_admin = AlgoBingle::new(ops_admin, app_id, 0);
-    ab_admin.set_allow_relay(app_id, relay_addr_str, true).expect("set_allow_relay");
+    ab_admin
+        .set_allow_relay(app_id, relay_addr_str, true)
+        .expect("set_allow_relay");
 
     let res = relay.access_unsafe_for_tests(|api| api.start(&r_opts));
-    assert!(res.is_ok(), "relay start should succeed after allow_relay is set: {:?}", res.err());
+    assert!(
+        res.is_ok(),
+        "relay start should succeed after allow_relay is set: {:?}",
+        res.err()
+    );
 }

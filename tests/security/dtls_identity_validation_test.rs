@@ -1,7 +1,7 @@
+use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use serde_json::json;
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -24,10 +24,9 @@ fn setup_node(name: &str, port: u16, passphrase: &str) -> Arc<BingleApiImpl> {
         ..StartOptions::new("".into())
     };
     let api = BingleApiImpl::new(&opts);
-    
-    api.access_unsafe_for_tests(|a| {
-        a.start(&opts)
-    }).expect(&format!("start api for {}", name));
+
+    api.access_unsafe_for_tests(|a| a.start(&opts))
+        .expect(&format!("start api for {}", name));
     api
 }
 
@@ -41,7 +40,7 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
     let receiver_api = setup_node(
         "identity_receiver",
         receiver_port,
-        test_util::PASSPHRASE_RECEIVE
+        test_util::PASSPHRASE_RECEIVE,
     );
 
     // Track received messages on the receiver
@@ -55,17 +54,13 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
 
     // 2) Setup sender (client)
     let sender_port = test_util::find_unused_loopback_port();
-    let sender_api = setup_node(
-        "identity_sender",
-        sender_port,
-        test_util::PASSPHRASE_SPEND
-    );
+    let sender_api = setup_node("identity_sender", sender_port, test_util::PASSPHRASE_SPEND);
     let _sender_id = test_util::ADDRESS_SPEND.to_string();
 
     // 3) Initially, the receiver will accept the message (default behavior currently)
     // because it doesn't have a mock and will either hit real blockchain (fails/timeout) or it's currently not checking at all.
     // Wait, if it hits the real blockchain it might return None.
-    
+
     // Configure mock on receiver to REJECT the sender's ID
     receiver_api.set_id_to_handle_lookup_mock_for_tests(Box::new(move |id| {
         if id == &test_util::ADDRESS_SPEND.to_string() {
@@ -84,13 +79,20 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
         payload.clone(),
         None,
     );
-    assert!(ok.expect("send_message_to_network should succeed"), "Failed to send message");
+    assert!(
+        ok.expect("send_message_to_network should succeed"),
+        "Failed to send message"
+    );
 
     // 5) Verify message is NOT received
     std::thread::sleep(Duration::from_secs(2));
     {
         let msgs = received_messages.lock().unwrap();
-        assert_eq!(msgs.len(), 0, "Message should NOT have been received because identity was rejected by mock");
+        assert_eq!(
+            msgs.len(),
+            0,
+            "Message should NOT have been received because identity was rejected by mock"
+        );
     }
 
     // 6) Now configure mock to ACCEPT the sender's ID
@@ -110,13 +112,19 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
         payload,
         None,
     );
-    assert!(ok.expect("send_message_to_network should succeed"), "Failed to send second message");
+    assert!(
+        ok.expect("send_message_to_network should succeed"),
+        "Failed to send second message"
+    );
 
     // 8) Verify message IS received
     std::thread::sleep(Duration::from_secs(2));
     {
         let msgs = received_messages.lock().unwrap();
-        assert!(msgs.len() > 0, "Message SHOULD have been received because identity was accepted by mock");
+        assert!(
+            msgs.len() > 0,
+            "Message SHOULD have been received because identity was accepted by mock"
+        );
     }
 
     println!("DTLS identity validation test passed!");

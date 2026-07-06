@@ -10,9 +10,11 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
-use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState};
 use crate::api::ripple_message_unit::test_util::init_test_logging;
+use rust_comms::dtls::{NetworkMux, UdpNetworkMux};
+use rust_comms::stun::{
+    SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,
+};
 
 fn find_unused_loopback_port() -> u16 {
     let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
@@ -38,17 +40,20 @@ pub fn blocked_then_recovery_to_consistent() {
 
     // Mux for sending STUN packets
     let mux = Arc::new(UdpNetworkMux::bind(("0.0.0.0", 0)).expect("bind mux"));
-    mux.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    mux.set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
 
     let finder = Arc::new(Mutex::new(StunEndpointFinderImpl::new()));
     {
         let finder_clone = finder.clone();
-        let handler = Arc::new(move |src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]| {
-            let _ = src.as_any();
-            if let Ok(mut f) = finder_clone.lock() {
-                f.process_packet(*from, data);
-            }
-        });
+        let handler = Arc::new(
+            move |src: &dyn NetworkMux, from: &SocketAddr, data: &[u8]| {
+                let _ = src.as_any();
+                if let Ok(mut f) = finder_clone.lock() {
+                    f.process_packet(*from, data);
+                }
+            },
+        );
         mux.set_handle_stun_arc(Some(handler));
     }
 
@@ -124,7 +129,10 @@ pub fn blocked_then_recovery_to_consistent() {
             std::thread::sleep(Duration::from_millis(100));
         }
     };
-    assert!(collected, "did not observe 3 Blocked-state send rounds within 10 s");
+    assert!(
+        collected,
+        "did not observe 3 Blocked-state send rounds within 10 s"
+    );
 
     // Verify that consecutive send rounds are spaced ~2s apart (within ±50% tolerance).
     {
@@ -140,10 +148,18 @@ pub fn blocked_then_recovery_to_consistent() {
     }
 
     // Now start real STUN servers on the same addresses — finder should recover.
-    let mut s1 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a1, attach_to: None, broken_nat: false })
-        .expect("start s1");
-    let mut s2 = SimpleStunServer::start(SimpleStunStartOptions { bind_addr: a2, attach_to: None, broken_nat: false })
-        .expect("start s2");
+    let mut s1 = SimpleStunServer::start(SimpleStunStartOptions {
+        bind_addr: a1,
+        attach_to: None,
+        broken_nat: false,
+    })
+    .expect("start s1");
+    let mut s2 = SimpleStunServer::start(SimpleStunStartOptions {
+        bind_addr: a2,
+        attach_to: None,
+        broken_nat: false,
+    })
+    .expect("start s2");
 
     // Wait for Consistent state (up to 10 s: next 2s poll + response processing)
     let recovered = {
@@ -168,5 +184,8 @@ pub fn blocked_then_recovery_to_consistent() {
     s1.stop();
     s2.stop();
 
-    assert!(recovered, "finder did not recover to Consistent after STUN servers became available");
+    assert!(
+        recovered,
+        "finder did not recover to Consistent after STUN servers became available"
+    );
 }

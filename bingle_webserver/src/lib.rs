@@ -1,15 +1,15 @@
+use crate::models::BingleMessage;
 use axum::{
-    routing::{get, post},
     Router,
+    routing::{get, post},
 };
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use tower_http::cors::CorsLayer;
+use bingle_local::api::bingle_local_api::BingleLocalApi;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
 use rust_comms::engine::BingleAccessUnsafeForTests;
-use crate::models::BingleMessage;
+use std::net::SocketAddr;
 use std::path::PathBuf;
-use bingle_local::api::bingle_local_api::BingleLocalApi;
+use std::sync::{Arc, Mutex};
+use tower_http::cors::CorsLayer;
 
 pub mod handlers;
 pub mod models;
@@ -30,7 +30,9 @@ pub struct AppState {
 /// the local keypair status is "ACTIVE". Call this after any operation
 /// that might transition keypair_status to ACTIVE (e.g. register_keypair).
 pub fn try_start_api(state: &AppState) {
-    let Some(opts) = &state.start_opts else { return; };
+    let Some(opts) = &state.start_opts else {
+        return;
+    };
     let mut started = state.api_started.lock().unwrap();
     if *started {
         return;
@@ -68,18 +70,39 @@ pub fn create_router(state: AppState) -> Router {
     let router = Router::new()
         .route("/handleLookup", get(handlers::handle_lookup))
         .route("/sendMessageToId", post(handlers::send_message_to_id))
-        .route("/sendMessageToHandle", post(handlers::send_message_to_handle))
-        .route("/sendMessageToNetwork", post(handlers::send_message_to_network))
-        .route("/sendMessageToIdWithResponse", post(handlers::send_message_to_id_with_response))
-        .route("/sendMessageToHandleWithResponse", post(handlers::send_message_to_handle_with_response))
-        .route("/sendMessageToNetworkWithResponse", post(handlers::send_message_to_network_with_response))
+        .route(
+            "/sendMessageToHandle",
+            post(handlers::send_message_to_handle),
+        )
+        .route(
+            "/sendMessageToNetwork",
+            post(handlers::send_message_to_network),
+        )
+        .route(
+            "/sendMessageToIdWithResponse",
+            post(handlers::send_message_to_id_with_response),
+        )
+        .route(
+            "/sendMessageToHandleWithResponse",
+            post(handlers::send_message_to_handle_with_response),
+        )
+        .route(
+            "/sendMessageToNetworkWithResponse",
+            post(handlers::send_message_to_network_with_response),
+        )
         .route("/queued", get(handlers::get_queued))
         .route("/version", get(handlers::handle_version));
 
     // Always register local routes; handlers will return 405 if local API isn't enabled
     let router = router
-        .route("/local/generateKeypair", post(handlers::local_generate_keypair))
-        .route("/local/registerKeypair", post(handlers::local_register_keypair))
+        .route(
+            "/local/generateKeypair",
+            post(handlers::local_generate_keypair),
+        )
+        .route(
+            "/local/registerKeypair",
+            post(handlers::local_register_keypair),
+        )
         .route("/local/addContact", post(handlers::local_add_contact))
         .route("/local/blockContact", post(handlers::local_block_contact))
         .route("/local/removeContact", post(handlers::local_remove_contact))
@@ -91,8 +114,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/local/save", post(handlers::local_save))
         .route("/local/load", post(handlers::local_load));
 
-    let router = router
-        .route("/getNatType", get(handlers::get_nat_type));
+    let router = router.route("/getNatType", get(handlers::get_nat_type));
 
     // Apply CORS layer to ALL routes (must be after all routes are registered)
     router.layer(CorsLayer::permissive()).with_state(state)

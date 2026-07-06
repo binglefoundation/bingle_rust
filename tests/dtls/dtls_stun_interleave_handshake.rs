@@ -1,7 +1,8 @@
-
-
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex, OnceLock};
+use std::sync::{
+    Mutex, OnceLock,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,13 +17,23 @@ fn mock_peer_cert_handler(_cert: &[u8], _ca: &[u8]) -> rust_comms::dtls::Result<
 static CLIENT_ECHO_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CLIENT_ECHOS: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn client_handler(_client: &dyn Dtls, _from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn client_handler(
+    _client: &dyn Dtls,
+    _from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     let m = CLIENT_ECHOS.get_or_init(|| Mutex::new(Vec::new()));
     m.lock().unwrap().push(data.to_vec());
     CLIENT_ECHO_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
-fn server_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::NetworkEndpoint, _issuer: &str, data: &[u8]) {
+fn server_echo_handler(
+    server: &dyn Dtls,
+    from: &rust_comms::api::bingle_api::NetworkEndpoint,
+    _issuer: &str,
+    data: &[u8],
+) {
     let _ = server.send(from, data);
 }
 
@@ -32,7 +43,9 @@ fn server_echo_handler(server: &dyn Dtls, from: &rust_comms::api::bingle_api::Ne
 pub fn stun_response_does_not_interfere_with_dtls_flow() {
     // Reset global state
     CLIENT_ECHO_COUNT.store(0, Ordering::Relaxed);
-    if let Some(m) = CLIENT_ECHOS.get() { m.lock().unwrap().clear(); }
+    if let Some(m) = CLIENT_ECHOS.get() {
+        m.lock().unwrap().clear();
+    }
 
     // Generate test certs
     let certs = pki::generate_ed25519_test_certs();
@@ -80,12 +93,14 @@ pub fn stun_response_does_not_interfere_with_dtls_flow() {
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     // Start muxes and initialize both clients
-    let cmux1_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
+    let cmux1_0 =
+        rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client1 mux");
     let cmux1 = std::sync::Arc::new(cmux1_0);
     cmux1.start().expect("client1 mux start");
     client1.start(cmux1.clone()).expect("client1 start");
 
-    let cmux2_0 = rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client2 mux");
+    let cmux2_0 =
+        rust_comms::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client2 mux");
     let cmux2 = std::sync::Arc::new(cmux2_0);
     cmux2.start().expect("client2 mux start");
     client2.start(cmux2.clone()).expect("client2 start");
@@ -94,17 +109,31 @@ pub fn stun_response_does_not_interfere_with_dtls_flow() {
     let payload1 = b"hello-dtls-1";
     let mut ok = false;
     for _ in 0..5 {
-        if client1.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload1).is_ok() { ok = true; break; }
+        if client1
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                payload1,
+            )
+            .is_ok()
+        {
+            ok = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok, "first DTLS send failed");
 
     // Wait for echo #1
     let start = Instant::now();
-    while CLIENT_ECHO_COUNT.load(Ordering::Relaxed) < 1 && start.elapsed() < Duration::from_secs(2) {
+    while CLIENT_ECHO_COUNT.load(Ordering::Relaxed) < 1 && start.elapsed() < Duration::from_secs(2)
+    {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(CLIENT_ECHO_COUNT.load(Ordering::Relaxed), 1, "did not receive first echo");
+    assert_eq!(
+        CLIENT_ECHO_COUNT.load(Ordering::Relaxed),
+        1,
+        "did not receive first echo"
+    );
 
     // 2) Interleave a STUN response packet to the server (first byte in 0..=3 => STUN)
     let stun_socket = UdpSocket::bind(("127.0.0.1", 0)).expect("bind stun sender");
@@ -119,20 +148,38 @@ pub fn stun_response_does_not_interfere_with_dtls_flow() {
     let payload2 = b"hello-dtls-2";
     let mut ok2 = false;
     for _ in 0..5 {
-        if client2.send(&rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr), payload2).is_ok() { ok2 = true; break; }
+        if client2
+            .send(
+                &rust_comms::api::bingle_api::NetworkEndpoint::new_direct(addr),
+                payload2,
+            )
+            .is_ok()
+        {
+            ok2 = true;
+            break;
+        }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(ok2, "second DTLS send failed");
 
     // Wait for echo #2
     let start2 = Instant::now();
-    while CLIENT_ECHO_COUNT.load(Ordering::Relaxed) < 2 && start2.elapsed() < Duration::from_secs(2) {
+    while CLIENT_ECHO_COUNT.load(Ordering::Relaxed) < 2 && start2.elapsed() < Duration::from_secs(2)
+    {
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(CLIENT_ECHO_COUNT.load(Ordering::Relaxed), 2, "did not receive second echo");
+    assert_eq!(
+        CLIENT_ECHO_COUNT.load(Ordering::Relaxed),
+        2,
+        "did not receive second echo"
+    );
 
     // Verify echoes match the payloads in order
-    let echos = CLIENT_ECHOS.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap().clone();
+    let echos = CLIENT_ECHOS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .unwrap()
+        .clone();
     assert_eq!(echos.len(), 2);
     assert_eq!(echos[0], payload1);
     assert_eq!(echos[1], payload2);

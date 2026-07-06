@@ -1,7 +1,7 @@
 use rust_comms::api::bingle_api::{BingleApiInternal, NetworkEndpoint};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use rust_comms::ddb::{AdvertRecord, DdbBackend, InMemoryDdbBackend, InetSocketAddress};
+use rust_comms::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -24,50 +24,142 @@ impl MockDtls {
 }
 
 impl Dtls for MockDtls {
-    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> { Ok(()) }
-    fn stop(&mut self) -> Result<()> { Ok(()) }
+    fn start(&mut self, _mux: Arc<rust_comms::dtls::UdpNetworkMux>) -> Result<()> {
+        Ok(())
+    }
+    fn stop(&mut self) -> Result<()> {
+        Ok(())
+    }
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> Result<()> {
-        let addr = to.inet_socket_address().expect("MockDtls::send requires inet_socket_address");
+        let addr = to
+            .inet_socket_address()
+            .expect("MockDtls::send requires inet_socket_address");
         // Only record application data (DATA_SINGLE packets), not ACK responses
         if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
-            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(test_util::maybe_unwrap_data_single(data)) {
-                self.sends.lock().unwrap().push((addr, "unknown".to_string(), json));
+            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(
+                test_util::maybe_unwrap_data_single(data),
+            ) {
+                self.sends
+                    .lock()
+                    .unwrap()
+                    .push((addr, "unknown".to_string(), json));
             }
             if let Some(h) = self.handle_message.lock().unwrap().clone() {
-                h(self, to, "mock-auto-ack", &vec![0x14, 0x00, data[2], data[3]]);
+                h(
+                    self,
+                    to,
+                    "mock-auto-ack",
+                    &vec![0x14, 0x00, data[2], data[3]],
+                );
             }
         }
         Ok(())
     }
-    fn get_handle_message(&self) -> Option<HandleMessage> { self.handle_message.lock().unwrap().clone() }
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>) { *self.handle_message.lock().unwrap() = handler; }
-    fn set_handle_new_session(&mut self, _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>) {}
-    fn with_handle_message(mut self, handler: HandleMessage) -> Self where Self: Sized { self.set_handle_message(Some(handler)); self }
-    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> { None }
+    fn get_handle_message(&self) -> Option<HandleMessage> {
+        self.handle_message.lock().unwrap().clone()
+    }
+    fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
+        *self.handle_message.lock().unwrap() = handler;
+    }
+    fn set_handle_new_session(
+        &mut self,
+        _handler: Option<rust_comms::dtls::dtls_trait::HandleNewSession>,
+    ) {
+    }
+    fn with_handle_message(mut self, handler: HandleMessage) -> Self
+    where
+        Self: Sized,
+    {
+        self.set_handle_message(Some(handler));
+        self
+    }
+    fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
+        None
+    }
     fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
-    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self where Self: Sized { self }
-    fn get_ca_cert(&self) -> Option<&[u8]> { None }
+    fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_ca_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_ca_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_cert(&self) -> Option<&[u8]> { None }
+    fn with_ca_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_client_private_key(&self) -> Option<&[u8]> { None }
+    fn with_client_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_client_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_client_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_cert(&self) -> Option<&[u8]> { None }
+    fn with_client_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_cert(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
-    fn get_server_signing_private_key(&self) -> Option<&[u8]> { None }
+    fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_server_signing_private_key(&self) -> Option<&[u8]> {
+        None
+    }
     fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
-    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self where Self: Sized { self }
+    fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
-    fn with_app_layer_only_verification(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_app_layer_only_verification(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_dangerous_debug(&mut self, _enabled: bool) {}
-    fn with_dangerous_debug(self, _enabled: bool) -> Self where Self: Sized { self }
+    fn with_dangerous_debug(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
     fn set_null_encryption(&mut self, _enabled: bool) {}
-    fn with_null_encryption(self, _enabled: bool) -> Self where Self: Sized { self }
-    fn get_cipher_suite(&self, _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint) -> Option<String> { None }
+    fn with_null_encryption(self, _enabled: bool) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+    fn get_cipher_suite(
+        &self,
+        _endpoint: &rust_comms::api::bingle_api::NetworkEndpoint,
+    ) -> Option<String> {
+        None
+    }
     fn forget_peers(&self) {}
 }
 
@@ -84,7 +176,7 @@ pub fn ripple_message_reaches_relays_in_backend() {
 
     // Setup DDB backend with some relays
     let mut backend = InMemoryDdbBackend::new();
-    
+
     let relay1_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay1_addr: SocketAddr = "127.0.0.1:1111".parse().unwrap();
     backend.upsert(AdvertRecord::new_unsigned(
@@ -111,7 +203,7 @@ pub fn ripple_message_reaches_relays_in_backend() {
     // Wait, better use another constant from test_util if available.
     // Actually let's use originator_id from test_util if it has more.
     // Use Alice/Bob if they are valid.
-    
+
     let ripple_msg = serde_json::json!({"ripple": "data"});
 
     // Call ripple_message
@@ -120,13 +212,13 @@ pub fn ripple_message_reaches_relays_in_backend() {
     // Verify
     let sends = sent_vec.lock().unwrap();
     assert_eq!(sends.len(), 2, "Should have rippled to 2 relays");
-    
+
     let mut targets: Vec<SocketAddr> = sends.iter().map(|s| s.0).collect();
     targets.sort_by_key(|a| a.port());
-    
+
     assert_eq!(targets[0], relay1_addr);
     assert_eq!(targets[1], relay2_addr);
-    
+
     assert_eq!(sends[0].2, ripple_msg);
     assert_eq!(sends[1].2, ripple_msg);
 }
@@ -144,7 +236,7 @@ pub fn ripple_message_skips_originator_and_self() {
 
     // Setup DDB backend
     let mut backend = InMemoryDdbBackend::new();
-    
+
     // Relay 1 (Normal)
     let relay1_id = test_util::ADDRESS_RECEIVE.to_string();
     let relay1_addr: SocketAddr = "127.0.0.1:1111".parse().unwrap();
@@ -184,10 +276,18 @@ pub fn ripple_message_skips_originator_and_self() {
     let ripple_msg = serde_json::json!({"ripple": "data"});
 
     // Call ripple_message - originator is Relay 2
-    api.ripple_message(ripple_msg.clone(), test_util::ADDRESS_10MIL.to_string(), &backend);
+    api.ripple_message(
+        ripple_msg.clone(),
+        test_util::ADDRESS_10MIL.to_string(),
+        &backend,
+    );
 
     // Verify
     let sends = sent_vec.lock().unwrap();
-    assert_eq!(sends.len(), 1, "Should have rippled only to RELAY1 (RECEIVE)");
+    assert_eq!(
+        sends.len(),
+        1,
+        "Should have rippled only to RELAY1 (RECEIVE)"
+    );
     assert_eq!(sends[0].0, relay1_addr);
 }

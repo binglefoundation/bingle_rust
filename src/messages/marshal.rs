@@ -7,7 +7,9 @@ pub enum MarshalError {
 }
 
 impl From<serde_json::Error> for MarshalError {
-    fn from(e: serde_json::Error) -> Self { MarshalError::Json(e) }
+    fn from(e: serde_json::Error) -> Self {
+        MarshalError::Json(e)
+    }
 }
 
 pub fn from_json_str(input: &str) -> Result<Message, MarshalError> {
@@ -25,39 +27,54 @@ pub fn from_json_value(val: JsonValue) -> Result<Message, MarshalError> {
             // Try typed messages based on app first
             if let Some(JsonValue::String(app_str)) = map.get("app") {
                 if app_str == "ping" {
-                    if let Ok(ping) = serde_json::from_value::<PingMessage>(JsonValue::Object(map.clone())) {
+                    if let Ok(ping) =
+                        serde_json::from_value::<PingMessage>(JsonValue::Object(map.clone()))
+                    {
                         return Ok(Message::Ping(ping));
                     }
                 } else if app_str == "ddb" {
-                    if let Ok(ddb) = serde_json::from_value::<DdbMessage>(JsonValue::Object(map.clone())) {
+                    if let Ok(ddb) =
+                        serde_json::from_value::<DdbMessage>(JsonValue::Object(map.clone()))
+                    {
                         return Ok(Message::Ddb(ddb));
                     }
                 } else if app_str == "mutex" {
-                    if let Ok(mx) = serde_json::from_value::<MutexMessage>(JsonValue::Object(map.clone())) {
+                    if let Ok(mx) =
+                        serde_json::from_value::<MutexMessage>(JsonValue::Object(map.clone()))
+                    {
                         return Ok(Message::Mutex(mx));
                     }
                 } else if app_str == "reportFail"
-                    && let Ok(rf) = serde_json::from_value::<ReportFailMessage>(JsonValue::Object(map.clone())) {
-                        return Ok(Message::ReportFail(rf));
-                    }
+                    && let Ok(rf) =
+                        serde_json::from_value::<ReportFailMessage>(JsonValue::Object(map.clone()))
+                {
+                    return Ok(Message::ReportFail(rf));
+                }
             }
 
             // Try relay typed messages when type present and app is null (or missing)
             if has_type {
                 // We accept app missing or null for relay
-                if let Ok(relay) = serde_json::from_value::<RelayMessage>(JsonValue::Object(map.clone())) {
+                if let Ok(relay) =
+                    serde_json::from_value::<RelayMessage>(JsonValue::Object(map.clone()))
+                {
                     return Ok(Message::Relay(relay));
                 }
             }
 
             // Try PlainText
-            if !has_app && !has_type
-                && let Ok(pt) = serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone())) {
-                    return Ok(Message::PlainText(pt));
-                }
+            if !has_app
+                && !has_type
+                && let Ok(pt) =
+                    serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone()))
+            {
+                return Ok(Message::PlainText(pt));
+            }
 
             // As a last resort, try to infer PlainText with explicit nulls
-            if let Ok(pt) = serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone())) {
+            if let Ok(pt) =
+                serde_json::from_value::<PlainTextMessage>(JsonValue::Object(map.clone()))
+            {
                 return Ok(Message::PlainText(pt));
             }
 
@@ -82,4 +99,3 @@ pub fn to_json_value(msg: &Message) -> JsonValue {
 pub fn to_json_string(msg: &Message) -> String {
     to_json_value(msg).to_string()
 }
-

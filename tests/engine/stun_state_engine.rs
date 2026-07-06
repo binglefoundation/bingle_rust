@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use rust_comms::api::bingle_api::StartOptions;
 use rust_comms::engine::{Engine, EngineState, NatType};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[test]
 fn test_engine_handles_stun_inconsistent() {
@@ -13,15 +13,18 @@ fn test_engine_handles_stun_inconsistent() {
         handle: "test".to_string(),
         ..StartOptions::new("".into())
     };
-    
-    let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
-    
+
+    let engine = Arc::new(Engine::new(
+        &options,
+        crate::util::mock_bingle_api::mock_api_weak(),
+    ));
+
     use rust_comms::engine::BingleAccessUnsafeForTests;
-    
+
     engine.access_unsafe_for_tests(|e| {
         e.test_force_stun_inconsistent_sync();
     });
-    
+
     // Without app_id or relay finder, registration fails gracefully.
     // nat_type remains Unknown (not Symmetric — that was the old pre-relay-registration behavior).
     assert_eq!(engine.nat_type(), NatType::Unknown);
@@ -35,15 +38,18 @@ fn test_engine_handles_stun_blocked() {
         handle: "test".to_string(),
         ..StartOptions::new("".into())
     };
-    
-    let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
-    
+
+    let engine = Arc::new(Engine::new(
+        &options,
+        crate::util::mock_bingle_api::mock_api_weak(),
+    ));
+
     use rust_comms::engine::BingleAccessUnsafeForTests;
-    
+
     engine.access_unsafe_for_tests(|e| {
         e.test_force_stun_blocked();
     });
-    
+
     assert_eq!(engine.nat_type(), NatType::NoConnection);
     // Should stay in StunIdentify
     assert_eq!(engine.state(), EngineState::StunIdentify);
@@ -56,18 +62,24 @@ fn test_engine_handles_stun_none_sets_unknown_and_calls_on_listening_false() {
         ..StartOptions::new("".into())
     };
 
-    let engine = Arc::new(Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak()));
+    let engine = Arc::new(Engine::new(
+        &options,
+        crate::util::mock_bingle_api::mock_api_weak(),
+    ));
 
     let called_false = Arc::new(AtomicBool::new(false));
-    let called_true  = Arc::new(AtomicBool::new(false));
+    let called_true = Arc::new(AtomicBool::new(false));
     let flag_false = called_false.clone();
-    let flag_true  = called_true.clone();
+    let flag_true = called_true.clone();
 
     use rust_comms::engine::BingleAccessUnsafeForTests;
     engine.access_unsafe_for_tests(|e| {
         e.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
-            if listening { flag_true.store(true, Ordering::SeqCst); }
-            else { flag_false.store(true, Ordering::SeqCst); }
+            if listening {
+                flag_true.store(true, Ordering::SeqCst);
+            } else {
+                flag_false.store(true, Ordering::SeqCst);
+            }
         })));
     });
 
@@ -82,8 +94,22 @@ fn test_engine_handles_stun_none_sets_unknown_and_calls_on_listening_false() {
         e.test_force_stun_none();
     });
 
-    assert_eq!(engine.nat_type(), NatType::Unknown, "nat_type should be Unknown after on_stun_none");
-    assert_eq!(engine.state(), EngineState::StunIdentify, "state should be StunIdentify after on_stun_none");
-    assert!(called_false.load(Ordering::SeqCst), "on_listening(false) should have been called");
-    assert!(!called_true.load(Ordering::SeqCst), "on_listening(true) should NOT have been called");
+    assert_eq!(
+        engine.nat_type(),
+        NatType::Unknown,
+        "nat_type should be Unknown after on_stun_none"
+    );
+    assert_eq!(
+        engine.state(),
+        EngineState::StunIdentify,
+        "state should be StunIdentify after on_stun_none"
+    );
+    assert!(
+        called_false.load(Ordering::SeqCst),
+        "on_listening(false) should have been called"
+    );
+    assert!(
+        !called_true.load(Ordering::SeqCst),
+        "on_listening(true) should NOT have been called"
+    );
 }

@@ -1,5 +1,5 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use rust_comms::turn::turn_handler::{TurnHandler, TurnHandlerImpl, TurnRelayHandler};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 // Include additional TURN tests in this directory
 #[path = "handle_listen_validation.rs"]
@@ -17,7 +17,9 @@ pub mod relay_impl;
 #[path = "client_handler_impl.rs"]
 pub mod client_handler_impl;
 
-fn addr(port: u16) -> SocketAddr { SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) }
+fn addr(port: u16) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
 
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -28,7 +30,11 @@ pub fn unit_turn_handle_call_allocates_in_range_and_reuses() {
     let ch1 = TurnRelayHandler::handle_call(&handler, "PEER", "PEER", &peer, &peer);
     assert!(ch1 >= 0, "channel should be non-negative");
     let ch1u = ch1 as u16;
-    assert!(ch1u >= 0x4000 && ch1u <= 0x7FFE, "channel in TURN range: {:#X}", ch1u);
+    assert!(
+        ch1u >= 0x4000 && ch1u <= 0x7FFE,
+        "channel in TURN range: {:#X}",
+        ch1u
+    );
 
     let ch2 = TurnRelayHandler::handle_call(&handler, "PEER", "PEER", &peer, &peer);
     assert_eq!(ch1, ch2, "channel must be reused for same (source,dest)");
@@ -74,8 +80,16 @@ pub fn unit_turn_wraps_and_unwraps_channel_data_with_padding() {
 pub fn unit_turn_incoming_invalid_packets_return_none() {
     let handler = TurnHandlerImpl::new();
     // Too short
-    assert!(handler.handle_turn_incoming(Some(&addr(1)), Some(addr(2)), &[0x40]).is_none());
+    assert!(
+        handler
+            .handle_turn_incoming(Some(&addr(1)), Some(addr(2)), &[0x40])
+            .is_none()
+    );
     // Declared len longer than actual
     let bad = [0x40, 0x00, 0x00, 0x10];
-    assert!(handler.handle_turn_incoming(Some(&addr(1)), Some(addr(2)), &bad).is_none());
+    assert!(
+        handler
+            .handle_turn_incoming(Some(&addr(1)), Some(addr(2)), &bad)
+            .is_none()
+    );
 }

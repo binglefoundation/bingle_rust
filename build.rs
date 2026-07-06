@@ -23,13 +23,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("cargo:rustc-env=BINGLE_BUILD_NUMBER={}", build_num);
-    
+
     // Rerun if any source file changes
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=.git/HEAD"); 
-    
+    println!("cargo:rerun-if-changed=.git/HEAD");
+
     // DO NOT add .build_number to rerun-if-changed to avoid circular triggers
     // The build script itself increments it, and that's fine.
     // If the user wants to force a rebuild, they should touch src/lib.rs or Cargo.toml.

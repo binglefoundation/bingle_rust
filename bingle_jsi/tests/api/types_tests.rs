@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use bingle_jsi::api::types::{
-    BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair,
-    KeypairStatus, KeypairStatusResponse, Message, NatType, NatTypeResponse,
-    NetworkSourceKey, VersionInfo,
+    BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair, KeypairStatus,
+    KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 
 #[test]
@@ -44,7 +43,9 @@ fn network_source_key_with_values() {
         }),
         relay_id: Some("ALGO_ADDRESS".to_string()),
     };
-    let addr = nsk.inet_socket_address.expect("inet_socket_address should be Some");
+    let addr = nsk
+        .inet_socket_address
+        .expect("inet_socket_address should be Some");
     assert_eq!(addr.host, "10.0.0.1");
     assert_eq!(addr.port, 3478);
     let channel = nsk.relay_channel.expect("relay_channel should be Some");
@@ -145,7 +146,10 @@ fn contact_construction() {
     };
     assert_eq!(contact.handle, "alice");
     assert_eq!(contact.id, "ID123");
-    let email = contact.fields.get("email").expect("email field should exist");
+    let email = contact
+        .fields
+        .get("email")
+        .expect("email field should exist");
     assert_eq!(email, "test@example.com");
 }
 

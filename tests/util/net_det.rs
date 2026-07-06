@@ -21,7 +21,14 @@ pub fn depth_small_examples() {
     for (n, b, expected_min) in cases {
         let g = NetDetGraph::new(n, b);
         let d = g.required_depth();
-        assert!(d >= expected_min, "n={}, b={}, d={} < {}", n, b, d, expected_min);
+        assert!(
+            d >= expected_min,
+            "n={}, b={}, d={} < {}",
+            n,
+            b,
+            d,
+            expected_min
+        );
     }
 }
 
@@ -46,17 +53,31 @@ pub fn fill_and_flood_small_graph() {
     let root = g.root().expect("root present");
     // Validate that all node indices are within range and relations are consistent
     for i in 0..g.number_nodes {
-        if let Some(up) = g.get_up(i) { assert!(up < g.number_nodes); }
-        for d in g.get_down(i) { assert!(d < g.number_nodes); }
+        if let Some(up) = g.get_up(i) {
+            assert!(up < g.number_nodes);
+        }
+        for d in g.get_down(i) {
+            assert!(d < g.number_nodes);
+        }
     }
 
     // For any node, flood(start=start, forNode=start) should forward to its neighbors
     for i in 0..g.number_nodes {
         let res = g.flood(i, i);
         let mut exp = HashSet::new();
-        if let Some(u) = g.get_up(i) { exp.insert(u); }
-        for d in g.get_down(i) { exp.insert(d); }
-        assert!(set_eq(&res, &exp), "node {}: res={:?} exp={:?}", i, res, exp);
+        if let Some(u) = g.get_up(i) {
+            exp.insert(u);
+        }
+        for d in g.get_down(i) {
+            exp.insert(d);
+        }
+        assert!(
+            set_eq(&res, &exp),
+            "node {}: res={:?} exp={:?}",
+            i,
+            res,
+            exp
+        );
     }
 
     // Spot check flood propagation: starting at root, after one hop we should forward to all neighbors

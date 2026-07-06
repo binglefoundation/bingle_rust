@@ -1,12 +1,12 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[path = "../test_util.rs"]
-pub mod test_util;
 #[path = "pki.rs"]
 pub mod pki;
+#[path = "../test_util.rs"]
+pub mod test_util;
 
 use rust_comms::api::bingle_api::NetworkEndpoint;
 use rust_comms::dtls::{Dtls, DtlsOpenSsl, UdpNetworkMux};
@@ -57,7 +57,8 @@ fn second_send_should_queue_without_waiting_for_stream_lock() {
         });
 
         let wait_start = Instant::now();
-        while !first_started.load(Ordering::SeqCst) && wait_start.elapsed() < Duration::from_secs(2) {
+        while !first_started.load(Ordering::SeqCst) && wait_start.elapsed() < Duration::from_secs(2)
+        {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(
@@ -69,7 +70,11 @@ fn second_send_should_queue_without_waiting_for_stream_lock() {
         thread::sleep(Duration::from_millis(200));
 
         let mut elapsed_samples = Vec::new();
-        for payload in [b"second-payload".as_slice(), b"third-payload", b"fourth-payload"] {
+        for payload in [
+            b"second-payload".as_slice(),
+            b"third-payload",
+            b"fourth-payload",
+        ] {
             let send_start = Instant::now();
             let send_result = client.send(&endpoint, payload);
             let elapsed = send_start.elapsed();

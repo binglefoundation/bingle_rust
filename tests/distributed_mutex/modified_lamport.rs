@@ -1,11 +1,14 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, Barrier, atomic::{AtomicIsize, Ordering}};
+use std::sync::{
+    Arc, Barrier, Mutex,
+    atomic::{AtomicIsize, Ordering},
+};
 use std::thread;
 use std::time::Duration;
 
-use rust_comms::distributed_mutex::{DistributedMutex};
+use rust_comms::distributed_mutex::DistributedMutex;
 use rust_comms::distributed_mutex::ModifiedLamportDistributedMutex;
-use rust_comms::messages::types::{MutexRequest, MutexResponse, MutexRelease};
+use rust_comms::messages::types::{MutexRelease, MutexRequest, MutexResponse};
 
 struct TestNetwork {
     nodes: Arc<Mutex<HashMap<String, Arc<ModifiedLamportDistributedMutex>>>>,
@@ -14,7 +17,10 @@ struct TestNetwork {
 
 impl TestNetwork {
     fn new() -> Self {
-        Self { nodes: Arc::new(Mutex::new(HashMap::new())), down: Arc::new(Mutex::new(vec![])) }
+        Self {
+            nodes: Arc::new(Mutex::new(HashMap::new())),
+            down: Arc::new(Mutex::new(vec![])),
+        }
     }
 
     #[allow(dead_code)]
@@ -23,7 +29,9 @@ impl TestNetwork {
         d.iter().any(|x| x == id)
     }
 
-    fn drop_node(&self, id: &str) { self.down.lock().expect("down lock").push(id.to_string()); }
+    fn drop_node(&self, id: &str) {
+        self.down.lock().expect("down lock").push(id.to_string());
+    }
 
     fn add_node(&self, id: &str, all_ids: Vec<String>) -> Arc<ModifiedLamportDistributedMutex> {
         let _nodes_map = self.nodes.clone();
@@ -40,7 +48,9 @@ impl TestNetwork {
             // Check if destination is down, but do not hold the lock during handler call
             {
                 let down = down_ref.lock().expect("down");
-                if down.iter().any(|x| x == dest_id) { return; }
+                if down.iter().any(|x| x == dest_id) {
+                    return;
+                }
             }
             let dest_opt = {
                 let map = net_for_req.lock().expect("net");
@@ -56,7 +66,9 @@ impl TestNetwork {
             // Avoid holding any shared locks while delivering
             {
                 let down = down_ref2.lock().expect("down");
-                if down.iter().any(|x| x == dest_id) { return; }
+                if down.iter().any(|x| x == dest_id) {
+                    return;
+                }
             }
             let dest_opt = {
                 let map = net_for_rep.lock().expect("net");
@@ -72,7 +84,9 @@ impl TestNetwork {
             // Avoid holding any shared locks while delivering
             {
                 let down = down_ref3.lock().expect("down");
-                if down.iter().any(|x| x == dest_id) { return; }
+                if down.iter().any(|x| x == dest_id) {
+                    return;
+                }
             }
             let dest_opt = {
                 let map = net_for_rel.lock().expect("net");
@@ -83,7 +97,13 @@ impl TestNetwork {
             }
         };
 
-        let m = Arc::new(ModifiedLamportDistributedMutex::new(self_id.clone(), all_ids, send_request, send_reply, send_release));
+        let m = Arc::new(ModifiedLamportDistributedMutex::new(
+            self_id.clone(),
+            all_ids,
+            send_request,
+            send_reply,
+            send_release,
+        ));
         self.nodes.lock().expect("nodes").insert(self_id, m.clone());
         m
     }
@@ -109,7 +129,10 @@ pub fn modified_lamport_mutual_exclusion_3_nodes() {
         barrier1.wait();
         a.acquire(|| {
             let prev = in_cs1.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(prev, 0, "Two threads entered critical section concurrently (A)");
+            assert_eq!(
+                prev, 0,
+                "Two threads entered critical section concurrently (A)"
+            );
             // simulate work
             thread::sleep(Duration::from_millis(50));
             let prev2 = in_cs1.fetch_sub(1, Ordering::SeqCst);
@@ -124,7 +147,10 @@ pub fn modified_lamport_mutual_exclusion_3_nodes() {
         barrier2.wait();
         b.acquire(|| {
             let prev = in_cs2.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(prev, 0, "Two threads entered critical section concurrently (B)");
+            assert_eq!(
+                prev, 0,
+                "Two threads entered critical section concurrently (B)"
+            );
             thread::sleep(Duration::from_millis(50));
             let prev2 = in_cs2.fetch_sub(1, Ordering::SeqCst);
             assert_eq!(prev2, 1);

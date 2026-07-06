@@ -1,20 +1,28 @@
-use tracing_subscriber::filter::LevelFilter;
 use rust_comms::api::bingle_api::{BingleApi, StartOptions};
-use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
+use rust_comms::engine::BingleAccessUnsafeForTests;
 use rust_comms::engine::EngineState;
+use rust_comms::util::config_utils::{parse_node_file_with_ids, parse_stun_file};
 use rust_comms::{AlgoBingle, AlgoOps};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use rust_comms::util::config_utils::{parse_node_file_with_ids, parse_stun_file};
+use tracing_subscriber::filter::LevelFilter;
 
 pub fn env_var(name: &str) -> Option<String> {
-    std::env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    std::env::var(name)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Load testnet node config + ids from the standard bundled file.
-pub fn load_testnet_config() -> (Option<String>, rust_comms::blockchain::algo_ops::AlgoChainConfig, u64, Option<u64>) {
+pub fn load_testnet_config() -> (
+    Option<String>,
+    rust_comms::blockchain::algo_ops::AlgoChainConfig,
+    u64,
+    Option<u64>,
+) {
     let node_path = "nodely_testnet_node.json";
     let (network_name, provider_cfg, node_app_id, node_asset_id) =
         parse_node_file_with_ids(node_path).expect("parse testnet node file");
@@ -22,8 +30,15 @@ pub fn load_testnet_config() -> (Option<String>, rust_comms::blockchain::algo_op
     (network_name, provider_cfg, app_id, node_asset_id)
 }
 
-pub fn build_ops(passphrase: &str, provider_cfg: &rust_comms::blockchain::algo_ops::AlgoChainConfig) -> AlgoOps {
-    AlgoOps::new(Some(passphrase.to_string()), None, Some(provider_cfg.clone()))
+pub fn build_ops(
+    passphrase: &str,
+    provider_cfg: &rust_comms::blockchain::algo_ops::AlgoChainConfig,
+) -> AlgoOps {
+    AlgoOps::new(
+        Some(passphrase.to_string()),
+        None,
+        Some(provider_cfg.clone()),
+    )
 }
 
 /// Ensure there are at least two static endpoints via indexer
@@ -32,7 +47,11 @@ pub fn ensure_two_relays(app_id: u64, ops: &AlgoOps) {
     let list = ab
         .list_static_endpoints_via_indexer(app_id)
         .expect("indexer query for static endpoints");
-    assert!(list.len() >= 2, "Expected at least two static endpoints on testnet, got {}", list.len());
+    assert!(
+        list.len() >= 2,
+        "Expected at least two static endpoints on testnet, got {}",
+        list.len()
+    );
 }
 
 pub fn load_stun_servers() -> Vec<SocketAddr> {
@@ -55,10 +74,14 @@ pub fn make_start_options(
         am_relay: false,
         stun_servers: Some(stun_servers),
         algo_provider_config: Some(provider_cfg.clone()),
-        algo_network: network_name, 
+        algo_network: network_name,
         app_id: Some(app_id),
         asset_id,
-        log_level: None, handle_cache_expiry: None, dangerous_debug: true, log_mode: rust_comms::util::logging::LogMode::Plain, wait_response_timeout: None,
+        log_level: None,
+        handle_cache_expiry: None,
+        dangerous_debug: true,
+        log_mode: rust_comms::util::logging::LogMode::Plain,
+        wait_response_timeout: None,
     }
 }
 
@@ -68,14 +91,19 @@ pub fn start_api_and_wait(options: &StartOptions) -> (Arc<BingleApiImpl>, Engine
         .try_init();
 
     let api = BingleApiImpl::new(options);
-    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(options)).expect("start api");
+    api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(options))
+        .expect("start api");
 
     // Wait up to 120 seconds for final state: Registered OR NATRestricted
     let start = Instant::now();
     let timeout = Duration::from_secs(120);
     let final_state = loop {
-        if let Some(st) = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests()) {
-            if st == EngineState::Registered || st == EngineState::NATRestricted { break st; }
+        if let Some(st) =
+            api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests())
+        {
+            if st == EngineState::Registered || st == EngineState::NATRestricted {
+                break st;
+            }
         }
         if start.elapsed() > timeout {
             panic!(

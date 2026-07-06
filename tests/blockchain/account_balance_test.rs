@@ -1,4 +1,4 @@
-use rust_comms::algo_ops::{AlgoOps, AlgoChainConfig};
+use rust_comms::algo_ops::{AlgoChainConfig, AlgoOps};
 
 fn default_cfg() -> AlgoChainConfig {
     AlgoChainConfig::default()
@@ -8,7 +8,11 @@ fn default_cfg() -> AlgoChainConfig {
 #[cfg(not(target_os = "ios"))]
 pub fn account_balance_returns_error_with_invalid_address() {
     // AlgoOps with an explicit but invalid address should fail with a clear error
-    let ops = AlgoOps::new(None, Some("INVALID_ADDRESS".to_string()), Some(default_cfg()));
+    let ops = AlgoOps::new(
+        None,
+        Some("INVALID_ADDRESS".to_string()),
+        Some(default_cfg()),
+    );
     let result = ops.account_balance();
     assert!(result.is_err(), "expected error for invalid address");
     let err_msg = result.unwrap_err().to_string();
@@ -35,14 +39,14 @@ pub fn account_balance_returns_none_with_unreachable_provider() {
     let result = ops.account_balance();
     // The inner account_information call fails; error is logged and Ok(None) returned
     match result {
-        Ok(balance) => assert!(balance.is_none(), "expected None balance for unreachable provider"),
+        Ok(balance) => assert!(
+            balance.is_none(),
+            "expected None balance for unreachable provider"
+        ),
         Err(e) => {
             // Also acceptable: a transport-level error propagated as Err
             let msg = e.to_string();
-            assert!(
-                !msg.is_empty(),
-                "error message should not be empty"
-            );
+            assert!(!msg.is_empty(), "error message should not be empty");
         }
     }
 }

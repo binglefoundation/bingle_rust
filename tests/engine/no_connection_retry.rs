@@ -3,8 +3,8 @@
 /// transition to TrianglePing.
 use std::net::SocketAddr;
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
     Arc,
+    atomic::{AtomicU32, Ordering},
 };
 
 use rust_comms::api::bingle_api::StartOptions;

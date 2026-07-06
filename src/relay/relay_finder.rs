@@ -1,16 +1,16 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{ Instant};
+use std::time::Instant;
 
 use crate::themes;
 
 use crate::api::bingle_api::NetworkEndpoint;
-use crate::engine::{RelayState};
+use crate::engine::RelayState;
 use std::collections::{HashMap, HashSet};
 
+use crate::ddb::AdvertRecord;
 pub use crate::relay::relay_info_cache::RelayInfoCache;
 use crate::relay::relay_updater::RelayUpdater;
-use crate::ddb::AdvertRecord;
 
 #[derive(Debug, Clone)]
 pub struct RelayInfo {
@@ -80,7 +80,11 @@ impl RelayInfo {
 pub trait RelayFinderTrait: Send + Sync {
     fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo>;
     fn find_relay(&self, my_id: &str) -> Result<RelayInfo, String>;
-    fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String>;
+    fn find_relay_excluding(
+        &self,
+        my_id: &str,
+        exclude: &[SocketAddr],
+    ) -> Result<RelayInfo, String>;
     fn list_root_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo>;
     fn clear_state_cache(&self);
     fn lookup_root_id(&self, id: &str) -> Option<NetworkEndpoint>;
@@ -115,13 +119,21 @@ pub type RootRelayInfo = RelayInfo;
 
 impl RelayFinderTrait for RelayFinder {
     fn list_all_relays(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: my_id={} include_self={}", my_id, include_self);
+        debug_theme!(
+            themes::RELAY,
+            "[RelayFinder] list_all_relays: my_id={} include_self={}",
+            my_id,
+            include_self
+        );
 
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
 
         // 1) Ensure relay_updater is initialised and cache is populated/refreshed
         let updater = self.get_or_init_updater(my_id_norm);
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relay cache populated, querying relay status");
+        debug_theme!(
+            themes::RELAY,
+            "[RelayFinder] list_all_relays: relay cache populated, querying relay status"
+        );
 
         // 2) Select a root relay, query its status and update the cache with all relay details
         updater.relay_select_and_query(&[]);
@@ -130,13 +142,23 @@ impl RelayFinderTrait for RelayFinder {
             updater.init_from_blockchain();
         }
 
-        let mut relays: Vec<RelayInfo> = updater.relay_info_cache().list_all_relays(my_id_norm, true);
-        debug_theme!(themes::RELAY, "[RelayFinder] list_all_relays: relays from cache: {:?}", relays);
+        let mut relays: Vec<RelayInfo> =
+            updater.relay_info_cache().list_all_relays(my_id_norm, true);
+        debug_theme!(
+            themes::RELAY,
+            "[RelayFinder] list_all_relays: relays from cache: {:?}",
+            relays
+        );
 
         relays.sort_by(|a, b| a.id().cmp(b.id()));
 
-        if !include_self { relays.retain(|r| r.id() != my_id_norm); }
-        tracing::info!("[RelayFinder] list_all_relays: returning relay list: {:?}", relays);
+        if !include_self {
+            relays.retain(|r| r.id() != my_id_norm);
+        }
+        tracing::info!(
+            "[RelayFinder] list_all_relays: returning relay list: {:?}",
+            relays
+        );
         relays
     }
 
@@ -144,7 +166,11 @@ impl RelayFinderTrait for RelayFinder {
         self.find_relay_excluding_internal(my_id, &[])
     }
 
-    fn find_relay_excluding(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
+    fn find_relay_excluding(
+        &self,
+        my_id: &str,
+        exclude: &[SocketAddr],
+    ) -> Result<RelayInfo, String> {
         self.find_relay_excluding_internal(my_id, exclude)
     }
 
@@ -162,7 +188,8 @@ impl RelayFinderTrait for RelayFinder {
         let id_norm = id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         // Ensure root list is populated (include_self=true to avoid filtering out the queried id)
         let _ = self.list_root_relays_internal(id_norm, true);
-        self.relay_updater.get()
+        self.relay_updater
+            .get()
             .and_then(|u| u.relay_info_cache().lookup_root_id(id_norm))
     }
 
@@ -198,7 +225,9 @@ impl RelayFinderTestTrait for RelayFinder {
         self.clear_unavailable_relays_internal();
         let updater = self.get_or_init_updater(my_id);
         updater.init_from_blockchain();
-        Ok(updater.relay_select_and_query(&[]).expect("relay_select_and_query failed"))
+        Ok(updater
+            .relay_select_and_query(&[])
+            .expect("relay_select_and_query failed"))
     }
 }
 
@@ -219,7 +248,11 @@ impl RelayFinder {
     /// Calls `init_from_blockchain` when the cache is empty, otherwise `update_when_expired`.
     fn get_or_init_updater(&self, my_id: &str) -> &RelayUpdater {
         let updater = self.relay_updater.get_or_init(|| {
-            RelayUpdater::new_with_api(my_id.to_string(), self.api.clone(), self.discover_roots.clone())
+            RelayUpdater::new_with_api(
+                my_id.to_string(),
+                self.api.clone(),
+                self.discover_roots.clone(),
+            )
         });
         if updater.relay_info_cache().is_empty() {
             updater.init_from_blockchain();
@@ -232,8 +265,16 @@ impl RelayFinder {
     /// Find any relay suitable for us (root or non-root), excluding specific addresses.
     /// Uses RelayUpdater::relay_select_and_query with an address-based exclusion list.
     /// Does not use the single-relay cache if exclusions are provided.
-    fn find_relay_excluding_internal(&self, my_id: &str, exclude: &[SocketAddr]) -> Result<RelayInfo, String> {
-        tracing::info!("[RelayFinder] find_relay_excluding: my_id={} exclude={:?}", my_id, exclude);
+    fn find_relay_excluding_internal(
+        &self,
+        my_id: &str,
+        exclude: &[SocketAddr],
+    ) -> Result<RelayInfo, String> {
+        tracing::info!(
+            "[RelayFinder] find_relay_excluding: my_id={} exclude={:?}",
+            my_id,
+            exclude
+        );
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
 
         // 1) (self.cache removed)
@@ -257,9 +298,15 @@ impl RelayFinder {
         // 4) Delegate to relay_select_and_query with the exclusion list
         let relay = updater
             .relay_select_and_query(&exclude_ids)
-            .ok_or_else(|| "no available relay (all candidates failed or were excluded)".to_string())?;
+            .ok_or_else(|| {
+                "no available relay (all candidates failed or were excluded)".to_string()
+            })?;
 
-        tracing::info!("[RelayFinder] find_relay_excluding: selected relay: {} {}", relay.id(), relay.address());
+        tracing::info!(
+            "[RelayFinder] find_relay_excluding: selected relay: {} {}",
+            relay.id(),
+            relay.address()
+        );
 
         Ok(relay)
     }
@@ -267,32 +314,49 @@ impl RelayFinder {
     /// Return the list of root relays discovered via the blockchain (discover_roots), optionally including ourselves.
     /// Uses RelayUpdater: calls init_from_blockchain when cache is empty, otherwise update_when_expired.
     fn list_root_relays_internal(&self, my_id: &str, include_self: bool) -> Vec<RelayInfo> {
-        tracing::info!("[RelayFinder] list_root_relays: my_id={} include_self={}", my_id, include_self);
+        tracing::info!(
+            "[RelayFinder] list_root_relays: my_id={} include_self={}",
+            my_id,
+            include_self
+        );
         let my_id_norm = my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
 
         // 1) Lazy-initialise RelayUpdater and ensure cache is populated/refreshed
         let updater = self.get_or_init_updater(my_id_norm);
 
         // 2) Obtain relays from the updater's RelayInfoCache
-        let mut relays = updater.relay_info_cache().list_root_relays(my_id_norm, true);
+        let mut relays = updater
+            .relay_info_cache()
+            .list_root_relays(my_id_norm, true);
         relays.sort_by(|a, b| a.id().cmp(b.id()));
 
         if !include_self {
             relays.retain(|r| r.id() != my_id_norm);
         }
-        tracing::info!("[RelayFinder] list_root_relays: returning root relays: {:?}", relays);
+        tracing::info!(
+            "[RelayFinder] list_root_relays: returning root relays: {:?}",
+            relays
+        );
         relays
     }
 
     fn select_indices_internal(&self, relays: &[RelayInfo], my_id: &str) -> (usize, usize) {
         let n = relays.len();
-        if n == 1 { return (0usize, 0usize); }
+        if n == 1 {
+            return (0usize, 0usize);
+        }
         let bucket = self.id_bucket_u32(my_id);
         let span = u64::from(u32::MAX) + 1; // 2^32
         let part_size = span / (n as u64);
         let idx = ((bucket as u64) / part_size) as usize % n;
         let alt = (idx + 1) % n;
-        tracing::info!("[RelayFinder] select_indices: n={} id={} idx={} alt={}", n, my_id, idx, alt);
+        tracing::info!(
+            "[RelayFinder] select_indices: n={} id={} idx={} alt={}",
+            n,
+            my_id,
+            idx,
+            alt
+        );
         (idx, alt)
     }
 

@@ -1,6 +1,6 @@
 use crate::util::reusable_mock_api::MockApiBoth;
-use rust_comms::messages::*;
 use crate::util::test_util::init_test_logging;
+use rust_comms::messages::*;
 
 fn decode(input: &str) -> Message {
     from_json_str(input).expect("decode")
@@ -40,10 +40,14 @@ pub fn integration_decode_relay_response() {
 #[cfg(not(target_os = "ios"))]
 pub fn integration_decode_triangle_test1() {
     init_test_logging();
-    let msg = decode("{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":{\"host\":\"127.0.0.1\",\"port\":3456}}");
+    let msg = decode(
+        "{\"app\":null,\"type\":\"TriangleTest1\",\"checkingEndpoint\":{\"host\":\"127.0.0.1\",\"port\":3456}}",
+    );
     tracing::debug!("{:?}", msg);
     match msg {
-        Message::Relay(RelayMessage::TriangleTest1(m)) => assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456"),
+        Message::Relay(RelayMessage::TriangleTest1(m)) => {
+            assert_eq!(m.checking_endpoint.to_string(), "127.0.0.1:3456")
+        }
         _ => panic!("expected TriangleTest1"),
     }
 }
@@ -51,7 +55,9 @@ pub fn integration_decode_triangle_test1() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn integration_decode_triangle_test2() {
-    let msg = decode("{\"app\":null,\"type\":\"TriangleTest2\",\"checkingId\":\"id1\",\"checkingEndpoint\":{\"host\":\"10.0.0.1\",\"port\":1111}}");
+    let msg = decode(
+        "{\"app\":null,\"type\":\"TriangleTest2\",\"checkingId\":\"id1\",\"checkingEndpoint\":{\"host\":\"10.0.0.1\",\"port\":1111}}",
+    );
     match msg {
         Message::Relay(RelayMessage::TriangleTest2(m)) => {
             assert_eq!(m.checking_id, "id1");
@@ -137,13 +143,17 @@ pub fn integration_decode_keep_alive() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn integration_unimplemented_handler_prints_without_panic() {
-
     // Marshal to JSON and route using DefaultPrintingHandler; ensure no panic
-    let msg = Message::Relay(RelayMessage::Check(RelayCheck { app: None, tag: None }));
+    let msg = Message::Relay(RelayMessage::Check(RelayCheck {
+        app: None,
+        tag: None,
+    }));
     let _json = to_json_string(&msg);
     let handler = DefaultPrintingHandler;
     // Should simply print unimplemented message; we just ensure it runs
-    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(crate::util::reusable_mock_api::to_weak(MockApiBoth::new())));
+    let router = std::sync::Arc::new(rust_comms::messages::router::Router::new(
+        crate::util::reusable_mock_api::to_weak(MockApiBoth::new()),
+    ));
     rust_comms::messages::router::Router::with_current_router(router.clone(), || {
         router.route(&handler, &msg, "FROMID");
     });

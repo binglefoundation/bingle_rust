@@ -1,12 +1,15 @@
 use std::any::Any;
 use std::net::{ToSocketAddrs, UdpSocket};
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::network_mux_trait::{HandleDtls, HandleStun, HandleTurn, NetworkMux, Result};
-use std::sync::OnceLock;
 use crate::api::bingle_api::NetworkEndpoint;
+use std::sync::OnceLock;
 use tracing::{debug, info, warn};
 
 /// Mux classification types translated from the provided Kotlin function
@@ -65,7 +68,8 @@ impl UdpNetworkMux {
             crate::util::printing::enable_immediate_prints();
         }
         warn!("[UdpNetworkMux] bind {:?}", addr);
-        let socket = UdpSocket::bind(&addr).map_err(|e| std::io::Error::other(format!("udp bind to {:?} failed: {}", addr, e)))?;
+        let socket = UdpSocket::bind(&addr)
+            .map_err(|e| std::io::Error::other(format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
         Ok(Self {
@@ -81,8 +85,14 @@ impl UdpNetworkMux {
 
     /// Get the local socket address this mux is bound to
     pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
-        let guard = self.socket.lock().map_err(|_| std::io::Error::other("socket lock poisoned"))?;
-        guard.as_ref().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?.local_addr()
+        let guard = self
+            .socket
+            .lock()
+            .map_err(|_| std::io::Error::other("socket lock poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?
+            .local_addr()
     }
 
     /// Get only the bound IP address (for debug printing)
@@ -92,8 +102,15 @@ impl UdpNetworkMux {
 
     /// Set read timeout on the underlying socket
     pub fn set_read_timeout(&self, dur: Option<Duration>) -> std::io::Result<()> {
-        let guard = self.socket.lock().map_err(|_| std::io::Error::other("socket lock poisoned"))?;
-        if let Some(s) = guard.as_ref() { s.set_read_timeout(dur) } else { Ok(()) }
+        let guard = self
+            .socket
+            .lock()
+            .map_err(|_| std::io::Error::other("socket lock poisoned"))?;
+        if let Some(s) = guard.as_ref() {
+            s.set_read_timeout(dur)
+        } else {
+            Ok(())
+        }
     }
 
     /// Start the receive loop in a background thread.
@@ -104,8 +121,16 @@ impl UdpNetworkMux {
             return Ok(());
         }
         let socket = {
-            let guard = self.socket.lock().map_err(|_| std::io::Error::other("socket lock poisoned"))?;
-            guard.as_ref().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed"))?.try_clone()?
+            let guard = self
+                .socket
+                .lock()
+                .map_err(|_| std::io::Error::other("socket lock poisoned"))?;
+            guard
+                .as_ref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotConnected, "socket closed")
+                })?
+                .try_clone()?
         };
         let this = Arc::clone(self);
         let to = self.local_addr().unwrap();
@@ -119,18 +144,30 @@ impl UdpNetworkMux {
             while this.running.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
                     Ok((n, from)) => {
-                        if n == 0 { continue; }
+                        if n == 0 {
+                            continue;
+                        }
                         if from.is_ipv6() {
-                            warn!("[UdpNetworkMux][receive][loop on {:?}] rejecting IPv6 packet from {}", to, from);
+                            warn!(
+                                "[UdpNetworkMux][receive][loop on {:?}] rejecting IPv6 packet from {}",
+                                to, from
+                            );
                             continue;
                         }
                         let data = &buf[..n];
-                        tracing::trace!("[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes", to, from, n);
+                        tracing::trace!(
+                            "[UdpNetworkMux][receive][loop on {:?}] recv_from {}: {} bytes",
+                            to,
+                            from,
+                            n
+                        );
                         this.process_packet(&NetworkEndpoint::new_direct(from), data);
                     }
                     Err(e) => {
                         // Respect timeout for shutdown; ignore WouldBlock/TimedOut, break on other errors
-                        if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut {
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut
+                        {
                             continue;
                         } else {
                             // If socket error, stop running
@@ -147,10 +184,12 @@ impl UdpNetworkMux {
             if let Ok(mut guard) = this.socket.lock() {
                 let taken = guard.take();
                 drop(taken);
-                info!("[UdpNetworkMux][receive][loop on {:?}] socket closed, port freed", to);
+                info!(
+                    "[UdpNetworkMux][receive][loop on {:?}] socket closed, port freed",
+                    to
+                );
             }
             info!("[UdpNetworkMux][receive][loop on {:?}] done", to);
-
         });
         let mut slot = self.rx_thread.lock().unwrap();
         *slot = Some(handle);
@@ -167,12 +206,10 @@ impl UdpNetworkMux {
             if let Some(handle) = slot.take() {
                 tracing::debug!("[UdpNetworkMux::stop] joining rx_thread");
                 let _ = handle.join();
-            }
-            else {
+            } else {
                 tracing::warn!("[UdpNetworkMux::stop] rx_thread not running");
             }
-        }
-        else {
+        } else {
             tracing::warn!("[UdpNetworkMux::stop] rx_thread lock poisoned");
         }
         tracing::info!("[UdpNetworkMux::stop] done");
@@ -199,14 +236,21 @@ impl NetworkMux for UdpNetworkMux {
         // Support two paths:
         // - Relay: when relay_channel and relay_address are provided, wrap payload in TURN ChannelData and send to relay_address
         // - Direct: otherwise, require inet_socket_address and send raw payload
-        let socket_guard = self.socket.lock().map_err(|_| "socket lock poisoned".to_string())?;
-        let sock = socket_guard.as_ref().ok_or_else(|| "socket closed".to_string())?;
+        let socket_guard = self
+            .socket
+            .lock()
+            .map_err(|_| "socket lock poisoned".to_string())?;
+        let sock = socket_guard
+            .as_ref()
+            .ok_or_else(|| "socket closed".to_string())?;
         let from_addr = sock.local_addr().ok();
         if let (Some(ch), Some(relay_addr)) = (to.relay_channel(), to.relay_address()) {
             // Build TURN ChannelData
             let wrapped = match crate::turn::turn_handler::build_channel_data(ch, buf) {
                 Some(v) => v,
-                None => return Err("TURN build_channel_data failed (payload too large)".to_string()),
+                None => {
+                    return Err("TURN build_channel_data failed (payload too large)".to_string());
+                }
             };
             // Log as TURN send
             warn!(
@@ -230,16 +274,33 @@ impl NetworkMux for UdpNetworkMux {
         match mux_type_for(buf) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(buf) {
-                    debug!("[UdpNetworkMux][write DTLS][{:?} -> {}] {}", from_addr, to_addr, json);
-                    #[allow(unused)] {  }
+                    debug!(
+                        "[UdpNetworkMux][write DTLS][{:?} -> {}] {}",
+                        from_addr, to_addr, json
+                    );
+                    #[allow(unused)]
+                    {}
                 } else {
-                    warn!("[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)", from_addr, to_addr, buf.len());
-                    #[allow(unused)] {  }
+                    warn!(
+                        "[UdpNetworkMux][write DTLS][{:?} -> {}] <parse error> ({} bytes)",
+                        from_addr,
+                        to_addr,
+                        buf.len()
+                    );
+                    #[allow(unused)]
+                    {}
                 }
             }
             other => {
-                tracing::debug!("[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)", from_addr, to_addr, other, buf.len());
-                #[allow(unused)] {  }
+                tracing::debug!(
+                    "[UdpNetworkMux][write other][{:?} -> {}] {:?} ({} bytes)",
+                    from_addr,
+                    to_addr,
+                    other,
+                    buf.len()
+                );
+                #[allow(unused)]
+                {}
             }
         }
         match sock.send_to(buf, to_addr) {
@@ -248,43 +309,76 @@ impl NetworkMux for UdpNetworkMux {
         }
     }
 
-    fn get_handle_dtls(&self) -> Option<HandleDtls> { self.handle_dtls.lock().ok().and_then(|g| g.clone()) }
+    fn get_handle_dtls(&self) -> Option<HandleDtls> {
+        self.handle_dtls.lock().ok().and_then(|g| g.clone())
+    }
 
-    fn set_handle_dtls(&mut self, handler: Option<HandleDtls>) { if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; } }
+    fn set_handle_dtls(&mut self, handler: Option<HandleDtls>) {
+        if let Ok(mut g) = self.handle_dtls.lock() {
+            *g = handler;
+        }
+    }
 
-    fn with_handle_dtls(self, handler: HandleDtls) -> Self where Self: Sized {
-        if let Ok(mut g) = self.handle_dtls.lock() { *g = Some(handler); }
+    fn with_handle_dtls(self, handler: HandleDtls) -> Self
+    where
+        Self: Sized,
+    {
+        if let Ok(mut g) = self.handle_dtls.lock() {
+            *g = Some(handler);
+        }
         self
     }
 
-    fn get_handle_stun(&self) -> Option<HandleStun> { self.handle_stun.lock().ok().and_then(|g| g.clone()) }
+    fn get_handle_stun(&self) -> Option<HandleStun> {
+        self.handle_stun.lock().ok().and_then(|g| g.clone())
+    }
 
-    fn set_handle_stun(&mut self, handler: Option<HandleStun>) { if let Ok(mut g) = self.handle_stun.lock() { *g = handler; } }
+    fn set_handle_stun(&mut self, handler: Option<HandleStun>) {
+        if let Ok(mut g) = self.handle_stun.lock() {
+            *g = handler;
+        }
+    }
 
-    fn with_handle_stun(self, handler: HandleStun) -> Self where Self: Sized {
-        if let Ok(mut g) = self.handle_stun.lock() { *g = Some(handler); }
+    fn with_handle_stun(self, handler: HandleStun) -> Self
+    where
+        Self: Sized,
+    {
+        if let Ok(mut g) = self.handle_stun.lock() {
+            *g = Some(handler);
+        }
         self
     }
 
-    fn get_handle_turn(&self) -> Option<&HandleTurn> { self.handle_turn.get() }
-
-    fn set_handle_turn(&mut self, handler: Option<&HandleTurn>) { 
-        tracing::debug!("[UdpNetworkMux] set_handle_turn: handler={}", if handler.is_some() { "Some" } else { "None" });
-        if let Some(h) = handler { let _ = self.handle_turn.set(h.clone()); }
+    fn get_handle_turn(&self) -> Option<&HandleTurn> {
+        self.handle_turn.get()
     }
 
-    fn with_handle_turn(self, handler: HandleTurn) -> Self where Self: Sized {
+    fn set_handle_turn(&mut self, handler: Option<&HandleTurn>) {
+        tracing::debug!(
+            "[UdpNetworkMux] set_handle_turn: handler={}",
+            if handler.is_some() { "Some" } else { "None" }
+        );
+        if let Some(h) = handler {
+            let _ = self.handle_turn.set(h.clone());
+        }
+    }
+
+    fn with_handle_turn(self, handler: HandleTurn) -> Self
+    where
+        Self: Sized,
+    {
         let _ = self.handle_turn.set(handler);
         self
     }
 
-    fn as_any(&self) -> &dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
-
 
 #[cfg(test)]
 mod tests {
-    use super::{mux_type_for, MuxType};
+    use super::{MuxType, mux_type_for};
 
     #[test]
     fn mux_type_empty_is_unknown() {
@@ -332,31 +426,50 @@ mod tests {
     }
 }
 
-
 impl UdpNetworkMux {
     /// Arc-friendly setter for DTLS handler to allow installing from Arc<UdpNetworkMux>.
     pub fn set_handle_dtls_arc(self: &Arc<Self>, handler: Option<HandleDtls>) {
-        if let Ok(mut g) = self.handle_dtls.lock() { *g = handler; }
+        if let Ok(mut g) = self.handle_dtls.lock() {
+            *g = handler;
+        }
     }
 
     /// Arc-friendly setter for STUN handler to allow installing from Arc<UdpNetworkMux>.
     pub fn set_handle_stun_arc(self: &Arc<Self>, handler: Option<HandleStun>) {
-        if let Ok(mut g) = self.handle_stun.lock() { *g = handler; }
+        if let Ok(mut g) = self.handle_stun.lock() {
+            *g = handler;
+        }
     }
 
     /// Shared handler that processes a datagram as if received on the socket.
     /// Classifies, logs, enqueues DTLS payloads, and invokes installed handlers.
     pub fn process_packet(&self, from_endpoint: &NetworkEndpoint, data: &[u8]) {
-        if data.is_empty() { return; }
-        let to = self.local_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
+        if data.is_empty() {
+            return;
+        }
+        let to = self
+            .local_addr()
+            .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
         match mux_type_for(data) {
             MuxType::Dtls => {
                 if let Ok(json) = crate::dtls::dtls_debug::dtls_udp_to_json(data) {
-                    tracing::trace!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}", from_endpoint, to, json);
-                    #[allow(unused)] {  }
+                    tracing::trace!(
+                        "[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] {}",
+                        from_endpoint,
+                        to,
+                        json
+                    );
+                    #[allow(unused)]
+                    {}
                 } else {
-                    warn!("[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] <parse error> ({} bytes)", from_endpoint, to, data.len());
-                    #[allow(unused)] {  }
+                    warn!(
+                        "[UdpNetworkMux][process_packet][receive DTLS][{} -> {:?}] <parse error> ({} bytes)",
+                        from_endpoint,
+                        to,
+                        data.len()
+                    );
+                    #[allow(unused)]
+                    {}
                 }
                 // if let Ok(mut q) = self.dtls_queue.lock() {
                 //     q.push_back((from_endpoint.clone(), data.to_vec()));
@@ -367,9 +480,15 @@ impl UdpNetworkMux {
                     (h)(source, from_endpoint, data);
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        tracing::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}ms", elapsed.as_millis());
+                        tracing::trace!(
+                            "[UdpNetworkMux][process_packet][DTLS handler] took {}ms",
+                            elapsed.as_millis()
+                        );
                     } else if elapsed.as_micros() > 100 {
-                        tracing::trace!("[UdpNetworkMux][process_packet][DTLS handler] took {}μs", elapsed.as_micros());
+                        tracing::trace!(
+                            "[UdpNetworkMux][process_packet][DTLS handler] took {}μs",
+                            elapsed.as_micros()
+                        );
                     }
                 }
             }
@@ -377,26 +496,55 @@ impl UdpNetworkMux {
                 if let Some(h) = self.handle_stun.lock().ok().and_then(|g| g.clone()) {
                     let start = Instant::now();
                     let source: &dyn NetworkMux = self;
-                    (h)(source, &from_endpoint.inet_socket_address().expect("Stun messages must originate from an IP"), data);
+                    (h)(
+                        source,
+                        &from_endpoint
+                            .inet_socket_address()
+                            .expect("Stun messages must originate from an IP"),
+                        data,
+                    );
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        tracing::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}ms", elapsed.as_millis());
+                        tracing::trace!(
+                            "[UdpNetworkMux][process_packet][STUN handler] took {}ms",
+                            elapsed.as_millis()
+                        );
                     } else if elapsed.as_micros() > 100 {
-                        tracing::trace!("[UdpNetworkMux][process_packet][STUN handler] took {}μs", elapsed.as_micros());
+                        tracing::trace!(
+                            "[UdpNetworkMux][process_packet][STUN handler] took {}μs",
+                            elapsed.as_micros()
+                        );
                     }
                 }
             }
             MuxType::TurnChannelData => {
                 if let Some(h) = self.handle_turn.get() {
-                    tracing::info!("[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes", from_endpoint, to, data.len());
+                    tracing::info!(
+                        "[UdpNetworkMux][process_packet][receive TURN][{} -> {:?}] {} bytes",
+                        from_endpoint,
+                        to,
+                        data.len()
+                    );
                     let start = Instant::now();
                     let source: &dyn NetworkMux = self;
-                    (h)(source, &from_endpoint.inet_socket_address().expect("TURN messages must originate from an IP"), data);
+                    (h)(
+                        source,
+                        &from_endpoint
+                            .inet_socket_address()
+                            .expect("TURN messages must originate from an IP"),
+                        data,
+                    );
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > 0 {
-                        tracing::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}ms", elapsed.as_millis());
+                        tracing::trace!(
+                            "[UdpNetworkMux][process_packet][TURN handler] took {}ms",
+                            elapsed.as_millis()
+                        );
                     } else if elapsed.as_micros() > 100 {
-                        tracing::trace!("[UdpNetworkMux][process_packet][TURN handler] took {}μs", elapsed.as_micros());
+                        tracing::trace!(
+                            "[UdpNetworkMux][process_packet][TURN handler] took {}μs",
+                            elapsed.as_micros()
+                        );
                     }
                 }
             }
@@ -408,8 +556,10 @@ impl UdpNetworkMux {
     /// This mirrors the classification and handler invocation logic used in the receive loop
     /// and additionally enqueues DTLS packets into the internal queue for dtls_recv_* helpers.
     pub fn reprocess(&self, from: &NetworkEndpoint, buf: &[u8]) {
-        if buf.is_empty() { return; }
-        
+        if buf.is_empty() {
+            return;
+        }
+
         self.process_packet(from, buf);
     }
 }

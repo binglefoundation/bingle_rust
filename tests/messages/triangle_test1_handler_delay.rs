@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rust_comms::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, UserId};
-use rust_comms::messages::handlers::{send_triangle_test1_response, TRIANGLE_TEST_1_DELAY};
+use rust_comms::messages::handlers::{TRIANGLE_TEST_1_DELAY, send_triangle_test1_response};
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 
@@ -67,17 +67,35 @@ pub fn response_not_sent_before_delay_when_corner_node_found() {
     let api2 = api.clone();
     let nsk2 = nsk.clone();
     let handle = std::thread::spawn(move || {
-        send_triangle_test1_response(&api2, &nsk2, "USER123", Some("tag-abc".to_string()), false, TEST_DELAY);
+        send_triangle_test1_response(
+            &api2,
+            &nsk2,
+            "USER123",
+            Some("tag-abc".to_string()),
+            false,
+            TEST_DELAY,
+        );
     });
 
     // Poll for a window shorter than TEST_DELAY — response must not arrive yet.
     std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(tracking.sent_count(), 0, "TriangleTest1Response must not be sent before the delay expires");
+    assert_eq!(
+        tracking.sent_count(),
+        0,
+        "TriangleTest1Response must not be sent before the delay expires"
+    );
 
     handle.join().unwrap();
 
-    assert_eq!(tracking.sent_count(), 1, "TriangleTest1Response should be sent exactly once");
-    assert!(t0.elapsed() >= TEST_DELAY, "total elapsed time should be at least TEST_DELAY");
+    assert_eq!(
+        tracking.sent_count(),
+        1,
+        "TriangleTest1Response should be sent exactly once"
+    );
+    assert!(
+        t0.elapsed() >= TEST_DELAY,
+        "total elapsed time should be at least TEST_DELAY"
+    );
     assert_response_tag(&tracking.sent_message(0), Some("tag-abc"));
 }
 
@@ -90,10 +108,24 @@ pub fn response_sent_immediately_when_no_corner_node() {
     let nsk = NetworkEndpoint::new_direct("127.0.0.1:19002".parse().unwrap());
 
     let t0 = Instant::now();
-    send_triangle_test1_response(&api, &nsk, "USER123", Some("tag-xyz".to_string()), true, Duration::ZERO);
+    send_triangle_test1_response(
+        &api,
+        &nsk,
+        "USER123",
+        Some("tag-xyz".to_string()),
+        true,
+        Duration::ZERO,
+    );
 
-    assert!(t0.elapsed() < Duration::from_millis(100), "no-corner-node response should be immediate");
-    assert_eq!(tracking.sent_count(), 1, "response should be sent exactly once");
+    assert!(
+        t0.elapsed() < Duration::from_millis(100),
+        "no-corner-node response should be immediate"
+    );
+    assert_eq!(
+        tracking.sent_count(),
+        1,
+        "response should be sent exactly once"
+    );
     assert_response_tag(&tracking.sent_message(0), Some("tag-xyz"));
 }
 

@@ -2,12 +2,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::api::bingle_api::{BingleApiBothType, NetworkEndpoint};
+use crate::ddb::AdvertRecord;
 use crate::engine::RelayState;
 use crate::messages::marshal::{from_json_value, to_json_value};
-use crate::messages::types::{DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed, ReportFailMessage};
+use crate::messages::types::{
+    DdbGetRelaysStatus, DdbMessage, DdbRelaysStatusResponse, Message, RelayReportFailed,
+    ReportFailMessage,
+};
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
 use crate::relay::relay_info_cache::RelayInfoCache;
-use crate::ddb::AdvertRecord;
 
 const LONG_TTL_SECS: u64 = 30_000;
 const MEDIUM_TTL_SECS: u64 = 300;
@@ -21,7 +24,10 @@ pub struct RelayUpdater {
 }
 
 impl RelayUpdater {
-    pub fn new(my_id: String, discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>) -> Self {
+    pub fn new(
+        my_id: String,
+        discover_roots: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync>,
+    ) -> Self {
         Self {
             my_id,
             api: None,
@@ -56,8 +62,16 @@ impl RelayUpdater {
             .into_iter()
             .map(|mut relay| {
                 let is_own = relay.id() == my_id_norm;
-                relay.state = Some(if is_own { RelayState::Own } else { RelayState::Unknown });
-                relay.ttl = Some(if is_own { LONG_TTL_SECS } else { SHORT_TTL_SECS });
+                relay.state = Some(if is_own {
+                    RelayState::Own
+                } else {
+                    RelayState::Unknown
+                });
+                relay.ttl = Some(if is_own {
+                    LONG_TTL_SECS
+                } else {
+                    SHORT_TTL_SECS
+                });
                 relay.is_root = true;
                 relay
             })
@@ -81,8 +95,14 @@ impl RelayUpdater {
 
         let all_relays = self.relay_info_cache.list_all_relays(my_id_norm, true);
 
-        let root_expired = all_relays.iter().filter(|relay| relay.is_root).any(&is_expired);
-        let non_root_expired = all_relays.iter().filter(|relay| !relay.is_root).any(is_expired);
+        let root_expired = all_relays
+            .iter()
+            .filter(|relay| relay.is_root)
+            .any(&is_expired);
+        let non_root_expired = all_relays
+            .iter()
+            .filter(|relay| !relay.is_root)
+            .any(is_expired);
 
         if !root_expired && !non_root_expired {
             return;
@@ -168,18 +188,23 @@ impl RelayUpdater {
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let nsk = NetworkEndpoint::new_direct(selected_relay.address());
         for failed_id in failed_relay_ids {
-            let report = Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
-                app: "reportFail".to_string(),
-                tag: None,
-                response_tag: None,
-                failed_relay_id: failed_id.clone(),
-                fail_type: "send_rejected".to_string(),
-                timestamp: timestamp.clone(),
-            }));
+            let report =
+                Message::ReportFail(ReportFailMessage::RelayReportFailed(RelayReportFailed {
+                    app: "reportFail".to_string(),
+                    tag: None,
+                    response_tag: None,
+                    failed_relay_id: failed_id.clone(),
+                    fail_type: "send_rejected".to_string(),
+                    timestamp: timestamp.clone(),
+                }));
             if let Some(api_ref) = api.upgrade() {
-                let _ = api_ref.send_message_to_network(&nsk, &selected_relay.id().to_string(), to_json_value(&report), None);
-            }
-            else {
+                let _ = api_ref.send_message_to_network(
+                    &nsk,
+                    &selected_relay.id().to_string(),
+                    to_json_value(&report),
+                    None,
+                );
+            } else {
                 tracing::error!("[report_failed_relays] could not upgrade api to send message");
             }
         }
@@ -248,7 +273,12 @@ impl RelayUpdater {
             err
         })?;
         let response = api_ref
-            .send_message_to_network_with_response(&nsk, &relay.id().to_string(), to_json_value(&request), None)
+            .send_message_to_network_with_response(
+                &nsk,
+                &relay.id().to_string(),
+                to_json_value(&request),
+                None,
+            )
             .map_err(|err| err.to_string())?;
 
         let parsed = from_json_value(response).map_err(|err| format!("{err:?}"))?;
@@ -263,7 +293,9 @@ impl RelayUpdater {
             return false;
         };
 
-        if status.relay_ids.len() != status.relay_states.len() || status.relay_ids.len() != endpoints.len() {
+        if status.relay_ids.len() != status.relay_states.len()
+            || status.relay_ids.len() != endpoints.len()
+        {
             return false;
         }
 

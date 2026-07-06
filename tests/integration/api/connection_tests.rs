@@ -8,16 +8,19 @@ use rust_comms::api::bingle_api_impl::BingleApiImpl;
 use rust_comms::engine::{BingleAccessUnsafeForTests, EngineState, NatType};
 use rust_comms::stun::{SimpleStunServer, SimpleStunStartOptions};
 use serde_json::json;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
-use std::time::{Duration, Instant};
 use serial_test::serial;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::{Duration, Instant};
 // Re-use helpers from send_message_to_id_integration
 use super::relay_updater_localnet::test_util::start_root_relay;
 use crate::setup_localnet;
+use crate::util::relay_test_util::wait_for_relays_visible;
 use crate::util::test_util;
 use crate::util::test_util::register_client_on_blockchain;
-use crate::util::relay_test_util::wait_for_relays_visible;
 
 // Re-use helpers from send_message_to_id_integration
 use super::send_message_to_id_integration::register_relays;
@@ -31,7 +34,10 @@ fn wait_for_state_none(api: &Arc<BingleApiImpl>, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
         let st = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.engine_state_for_tests());
-        if st.expect("Engine state should not be None").eq(&EngineState::StunIdentify) {
+        if st
+            .expect("Engine state should not be None")
+            .eq(&EngineState::StunIdentify)
+        {
             return true;
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -62,9 +68,15 @@ fn setup_on_listening(
     let flag = listening_flag.clone();
     let nat = nat_type_guard.clone();
     let handler: Arc<OnListeningHandler> = Arc::new(move |is_listening, nt| {
-        tracing::info!("[Test][on_listening] listening={} nat_type={:?}", is_listening, nt);
+        tracing::info!(
+            "[Test][on_listening] listening={} nat_type={:?}",
+            is_listening,
+            nt
+        );
         flag.store(is_listening, Ordering::SeqCst);
-        if let Ok(mut g) = nat.lock() { *g = Some(nt); }
+        if let Ok(mut g) = nat.lock() {
+            *g = Some(nt);
+        }
     });
     api.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.set_on_listening(Some(handler)));
 }
@@ -72,7 +84,10 @@ fn setup_on_listening(
 /// Start two STUN servers that report a fixed external port (simulating a NAT mapping).
 /// `external_port` is the port that both servers will report back to the client.
 /// `broken_nat` controls whether the second server refuses to respond (simulating restricted cone NAT).
-fn start_stun_pair_with_external_port(external_port: u16, broken_nat: bool) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
+fn start_stun_pair_with_external_port(
+    external_port: u16,
+    broken_nat: bool,
+) -> (SimpleStunServer, SimpleStunServer, Vec<SocketAddr>) {
     let p1 = test_util::find_unused_loopback_port();
     let p2 = test_util::find_unused_loopback_port();
     let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
@@ -85,7 +100,8 @@ fn start_stun_pair_with_external_port(external_port: u16, broken_nat: bool) -> (
         bind_addr: a1,
         attach_to: Some(external_addr),
         broken_nat: false,
-    }).expect("start stun s1");
+    })
+    .expect("start stun s1");
 
     // Second server: if broken_nat=true it won't respond (simulates restricted cone NAT where
     // only one server sees the client).
@@ -93,7 +109,8 @@ fn start_stun_pair_with_external_port(external_port: u16, broken_nat: bool) -> (
         bind_addr: a2,
         attach_to: Some(external_addr),
         broken_nat,
-    }).expect("start stun s2");
+    })
+    .expect("start stun s2");
 
     (s1, s2, vec![a1, a2])
 }
@@ -123,7 +140,11 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
     let cfg = test_util::localnet_config();
     let _ = setup_localnet::ensure_localnet_accounts_funded(
         &cfg,
-        &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE, CLIENT_RESTRICTED_ADDR],
+        &[
+            test_util::ADDRESS_SPEND,
+            test_util::ADDRESS_RECEIVE,
+            CLIENT_RESTRICTED_ADDR,
+        ],
     );
 
     // Fixed relay endpoints on loopback
@@ -133,20 +154,38 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
     assert_ne!(r2_port, 0);
     let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
     let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
-    tracing::info!("[Test] relay1_addr={} relay2_addr={}", relay1_addr, relay2_addr);
+    tracing::info!(
+        "[Test] relay1_addr={} relay2_addr={}",
+        relay1_addr,
+        relay2_addr
+    );
 
     // Deploy app + asset
-    let creator = test_util::ops_from_mnemonic(test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, cfg.clone());
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
     let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
 
     // Register relay handles on blockchain
     register_client_on_blockchain(
-        test_util::ADDRESS_SPEND, test_util::PASSPHRASE_SPEND, "relay1",
-        app_id, asset_id, &creator, cfg.clone(),
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        "relay1",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
     );
     register_client_on_blockchain(
-        test_util::ADDRESS_RECEIVE, test_util::PASSPHRASE_RECEIVE, "relay2",
-        app_id, asset_id, &creator, cfg.clone(),
+        test_util::ADDRESS_RECEIVE,
+        test_util::PASSPHRASE_RECEIVE,
+        "relay2",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
     );
 
     register_relays(app_id, asset_id, relay1_addr, relay2_addr);
@@ -156,24 +195,45 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         (test_util::ADDRESS_SPEND.to_string(), relay1_addr),
         (test_util::ADDRESS_RECEIVE.to_string(), relay2_addr),
     ];
-    let ab_creator = rust_comms::blockchain::algo_bingle::AlgoBingle::new(creator.clone(), app_id, 0);
+    let ab_creator =
+        rust_comms::blockchain::algo_bingle::AlgoBingle::new(creator.clone(), app_id, 0);
     if !wait_for_relays_visible(&ab_creator, app_id, &roots, Duration::from_secs(60)) {
         panic!("Root relays did not become visible via indexer");
     }
 
     // Start two root relays
-    let relay1 = start_root_relay("relay1", relay1_addr, test_util::PASSPHRASE_SPEND, app_id, cfg.clone());
-    let relay2 = start_root_relay("relay2", relay2_addr, test_util::PASSPHRASE_RECEIVE, app_id, cfg.clone());
+    let relay1 = start_root_relay(
+        "relay1",
+        relay1_addr,
+        test_util::PASSPHRASE_SPEND,
+        app_id,
+        cfg.clone(),
+    );
+    let relay2 = start_root_relay(
+        "relay2",
+        relay2_addr,
+        test_util::PASSPHRASE_RECEIVE,
+        app_id,
+        cfg.clone(),
+    );
 
     // Register client on blockchain
     register_client_on_blockchain(
-        CLIENT_RESTRICTED_ADDR, CLIENT_RESTRICTED_PASS, "client_restricted",
-        app_id, asset_id, &creator, cfg.clone(),
+        CLIENT_RESTRICTED_ADDR,
+        CLIENT_RESTRICTED_PASS,
+        "client_restricted",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
     );
 
     // Phase 1: start STUN with PORT_1, broken_nat=true (restricted cone: only one server responds)
     let port_1 = test_util::find_unused_loopback_port();
-    tracing::info!("[Test] Phase 1: starting STUN with external PORT_1={}", port_1);
+    tracing::info!(
+        "[Test] Phase 1: starting STUN with external PORT_1={}",
+        port_1
+    );
     let (mut stun1_a, mut stun1_b, stun_list_1) = start_stun_pair_with_external_port(port_1, true);
 
     // Start the client
@@ -194,7 +254,9 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         wait_response_timeout: None,
     };
     let client = rust_comms::api::bingle_api_impl::BingleApiImpl::new(&opts);
-    client.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts)).expect("client start");
+    client
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
+        .expect("client start");
 
     // Install on_listening handler
     let listening_flag = Arc::new(AtomicBool::new(false));
@@ -213,29 +275,54 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
     {
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(10) {
-            if listening_flag.load(Ordering::SeqCst) { break; }
+            if listening_flag.load(Ordering::SeqCst) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(200));
         }
-        assert!(listening_flag.load(Ordering::SeqCst), "on_listening(true) was not called after registration");
-        let nt = nat_type_guard.lock().expect("lock nat_type_guard").expect("nat_type should be set");
-        assert_eq!(nt, NatType::Restricted, "expected NatType::Restricted for broken_nat client, got {:?}", nt);
+        assert!(
+            listening_flag.load(Ordering::SeqCst),
+            "on_listening(true) was not called after registration"
+        );
+        let nt = nat_type_guard
+            .lock()
+            .expect("lock nat_type_guard")
+            .expect("nat_type should be set");
+        assert_eq!(
+            nt,
+            NatType::Restricted,
+            "expected NatType::Restricted for broken_nat client, got {:?}",
+            nt
+        );
         tracing::info!("[Test] on_listening(true, {:?}) confirmed", nt);
     }
 
     // Validate client registered with a relay
-    let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
+    let client_id = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
         .expect("client id should be set");
-    let id_r1 = relay1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("relay1 id");
-    let id_r2 = relay2.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id()).expect("relay2 id");
-    let ep = relay1.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&client_id))
+    let id_r1 = relay1
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
+        .expect("relay1 id");
+    let id_r2 = relay2
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
+        .expect("relay2 id");
+    let ep = relay1
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.engine_ddb_lookup_for_tests(&client_id))
         .expect("relay1 should be able to look up client");
-    assert!(ep.is_relay(), "client should be registered as relay endpoint (restricted NAT)");
+    assert!(
+        ep.is_relay(),
+        "client should be registered as relay endpoint (restricted NAT)"
+    );
     let relay_id_for_client = ep.relay_id().expect("relay_id should be set");
     assert!(
         relay_id_for_client == id_r1 || relay_id_for_client == id_r2,
         "client should use one of the two relays"
     );
-    tracing::info!("[Test] client registered with relay {}", relay_id_for_client);
+    tracing::info!(
+        "[Test] client registered with relay {}",
+        relay_id_for_client
+    );
 
     // Phase 2: stop STUN servers — client should lose connectivity and call on_listening(false)
     tracing::info!("[Test] Phase 2: stopping STUN servers");
@@ -247,10 +334,15 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
     {
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(150) {
-            if !listening_flag.load(Ordering::SeqCst) { break; }
+            if !listening_flag.load(Ordering::SeqCst) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(500));
         }
-        assert!(!listening_flag.load(Ordering::SeqCst), "on_listening(false) was not called after STUN stopped");
+        assert!(
+            !listening_flag.load(Ordering::SeqCst),
+            "on_listening(false) was not called after STUN stopped"
+        );
         tracing::info!("[Test] on_listening(false) confirmed after STUN stopped");
     }
 
@@ -268,8 +360,14 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
     client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
 
     let port_2 = test_util::find_unused_loopback_port();
-    assert_ne!(port_1, port_2, "PORT_2 must differ from PORT_1 to simulate address change");
-    tracing::info!("[Test] Phase 3: restarting STUN with external PORT_2={}", port_2);
+    assert_ne!(
+        port_1, port_2,
+        "PORT_2 must differ from PORT_1 to simulate address change"
+    );
+    tracing::info!(
+        "[Test] Phase 3: restarting STUN with external PORT_2={}",
+        port_2
+    );
     let (mut stun2_a, mut stun2_b, stun_list_2) = start_stun_pair_with_external_port(port_2, true);
 
     // Restart the client with the new STUN list (new external port = new public address)
@@ -290,7 +388,9 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         wait_response_timeout: None,
     };
     let client = rust_comms::api::bingle_api_impl::BingleApiImpl::new(&opts2);
-    client.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts2)).expect("client restart");
+    client
+        .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts2))
+        .expect("client restart");
     tracing::info!("[Test] client restarted with PORT_2={}", port_2);
 
     // Re-install on_listening handler on the new client instance
@@ -309,15 +409,21 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
     {
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(10) {
-            if listening_flag.load(Ordering::SeqCst) { break; }
+            if listening_flag.load(Ordering::SeqCst) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(200));
         }
-        assert!(listening_flag.load(Ordering::SeqCst), "on_listening(true) was not called after re-registration");
+        assert!(
+            listening_flag.load(Ordering::SeqCst),
+            "on_listening(true) was not called after re-registration"
+        );
         tracing::info!("[Test] on_listening(true) confirmed after re-registration");
     }
 
     // Re-fetch client_id from the new instance (same identity, same id)
-    let client_id = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
+    let client_id = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.get_my_id())
         .expect("client id should be set after restart");
 
     // Phase 4: validate messaging — client sends to relay1
@@ -331,30 +437,49 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         let payload = payload_relay1.clone();
         let who = who_relay1.clone();
         let handler: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-            tracing::info!("[Test][relay1 on_message] sender={} handle={} msg={}", sender, sender_handle, message);
-            if let Ok(mut g) = payload.lock() { *g = Some(message); }
-            if let Ok(mut g) = who.lock() { *g = Some((sender.clone(), sender_handle.clone())); }
+            tracing::info!(
+                "[Test][relay1 on_message] sender={} handle={} msg={}",
+                sender,
+                sender_handle,
+                message
+            );
+            if let Ok(mut g) = payload.lock() {
+                *g = Some(message);
+            }
+            if let Ok(mut g) = who.lock() {
+                *g = Some((sender.clone(), sender_handle.clone()));
+            }
             flag.store(true, Ordering::SeqCst);
         });
         relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.set_on_message(Some(handler)));
     }
 
     let msg_to_relay = json!({ "text": "hello from restricted client" });
-    let sent = client.access_unsafe_for_tests(|c: &mut BingleApiImpl| {
-        c.send_message_to_id(&id_r1, msg_to_relay.clone(), None)
-    }).expect("send_message_to_id should not error");
+    let sent = client
+        .access_unsafe_for_tests(|c: &mut BingleApiImpl| {
+            c.send_message_to_id(&id_r1, msg_to_relay.clone(), None)
+        })
+        .expect("send_message_to_id should not error");
     assert!(sent, "send_message_to_id client→relay1 should return true");
 
     {
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(60) {
-            if received_relay1.load(Ordering::SeqCst) { break; }
+            if received_relay1.load(Ordering::SeqCst) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(200));
         }
-        assert!(received_relay1.load(Ordering::SeqCst), "relay1 did not receive message from client");
+        assert!(
+            received_relay1.load(Ordering::SeqCst),
+            "relay1 did not receive message from client"
+        );
         let guard = payload_relay1.lock().expect("lock payload_relay1");
         let p = guard.as_ref().expect("payload should be Some");
-        assert_eq!(p.get("text").and_then(|v| v.as_str()), Some("hello from restricted client"));
+        assert_eq!(
+            p.get("text").and_then(|v| v.as_str()),
+            Some("hello from restricted client")
+        );
         tracing::info!("[Test] relay1 received message from client");
     }
 
@@ -367,29 +492,49 @@ pub fn restricted_nat_client_reregisters_after_network_change() {
         let flag = received_client.clone();
         let payload = payload_client.clone();
         let handler: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
-            tracing::info!("[Test][client on_message] sender={} handle={} msg={}", sender, sender_handle, message);
-            if let Ok(mut g) = payload.lock() { *g = Some(message); }
+            tracing::info!(
+                "[Test][client on_message] sender={} handle={} msg={}",
+                sender,
+                sender_handle,
+                message
+            );
+            if let Ok(mut g) = payload.lock() {
+                *g = Some(message);
+            }
             flag.store(true, Ordering::SeqCst);
         });
         client.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.set_on_message(Some(handler)));
     }
 
     let msg_to_client = json!({ "text": "hello from relay1 to client" });
-    let sent_back = relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| {
-        r.send_message_to_id(&client_id, msg_to_client.clone(), None)
-    }).expect("send_message_to_id relay1→client should not error");
-    assert!(sent_back, "send_message_to_id relay1→client should return true");
+    let sent_back = relay1
+        .access_unsafe_for_tests(|r: &mut BingleApiImpl| {
+            r.send_message_to_id(&client_id, msg_to_client.clone(), None)
+        })
+        .expect("send_message_to_id relay1→client should not error");
+    assert!(
+        sent_back,
+        "send_message_to_id relay1→client should return true"
+    );
 
     {
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(60) {
-            if received_client.load(Ordering::SeqCst) { break; }
+            if received_client.load(Ordering::SeqCst) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(200));
         }
-        assert!(received_client.load(Ordering::SeqCst), "client did not receive message from relay1");
+        assert!(
+            received_client.load(Ordering::SeqCst),
+            "client did not receive message from relay1"
+        );
         let guard = payload_client.lock().expect("lock payload_client");
         let p = guard.as_ref().expect("payload should be Some");
-        assert_eq!(p.get("text").and_then(|v| v.as_str()), Some("hello from relay1 to client"));
+        assert_eq!(
+            p.get("text").and_then(|v| v.as_str()),
+            Some("hello from relay1 to client")
+        );
         tracing::info!("[Test] client received message from relay1");
     }
 

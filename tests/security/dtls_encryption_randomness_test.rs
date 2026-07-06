@@ -1,7 +1,7 @@
+use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use serde_json::json;
 
 use rust_comms::api::bingle_api::{BingleApi, Handle, NetworkEndpoint, StartOptions};
 use rust_comms::api::bingle_api_impl::BingleApiImpl;
@@ -42,7 +42,12 @@ fn calculate_entropy(data: &[u8]) -> f64 {
     entropy
 }
 
-fn setup_node(name: &str, port: u16, passphrase: &str, null_encryption: bool) -> Arc<BingleApiImpl> {
+fn setup_node(
+    name: &str,
+    port: u16,
+    passphrase: &str,
+    null_encryption: bool,
+) -> Arc<BingleApiImpl> {
     let node_addr = addr(port);
     let opts = StartOptions {
         handle: Handle::from(name),
@@ -52,7 +57,7 @@ fn setup_node(name: &str, port: u16, passphrase: &str, null_encryption: bool) ->
         ..StartOptions::new("".into())
     };
     let api = BingleApiImpl::new(&opts);
-    
+
     api.access_unsafe_for_tests(|a| {
         if null_encryption {
             a.with_engine_mut(|e| {
@@ -62,13 +67,17 @@ fn setup_node(name: &str, port: u16, passphrase: &str, null_encryption: bool) ->
             });
         }
         a.start(&opts)
-    }).expect(&format!("start api for {}", name));
+    })
+    .expect(&format!("start api for {}", name));
     api
 }
 
 fn run_entropy_test(null_encryption: bool, test_name: &str) {
     test_util::init_test_logging();
-    println!("Starting entropy test: {} (null_encryption={})", test_name, null_encryption);
+    println!(
+        "Starting entropy test: {} (null_encryption={})",
+        test_name, null_encryption
+    );
 
     // 1) Setup receiver
     let receiver_port = allocate_udp_port();
@@ -76,23 +85,28 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
         &format!("{}_receiver", test_name),
         receiver_port,
         test_util::PASSPHRASE_RECEIVE,
-        null_encryption
+        null_encryption,
     );
 
     // Intercept packets on the receiver's mux
     let captured_packets: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
     let captured_packets_clone = captured_packets.clone();
 
-    let mux = receiver_api.engine_mux_for_tests().expect("receiver mux should be available");
-    let original_handler = mux.get_handle_dtls().expect("original DTLS handler should be set");
-    
-    mux.clone().set_handle_dtls_arc(Some(Arc::new(move |source, from, data| {
-        // DTLS record type 23 is Application Data
-        if !data.is_empty() && data[0] == 23 {
-            captured_packets_clone.lock().unwrap().push(data.to_vec());
-        }
-        original_handler(source, from, data);
-    })));
+    let mux = receiver_api
+        .engine_mux_for_tests()
+        .expect("receiver mux should be available");
+    let original_handler = mux
+        .get_handle_dtls()
+        .expect("original DTLS handler should be set");
+
+    mux.clone()
+        .set_handle_dtls_arc(Some(Arc::new(move |source, from, data| {
+            // DTLS record type 23 is Application Data
+            if !data.is_empty() && data[0] == 23 {
+                captured_packets_clone.lock().unwrap().push(data.to_vec());
+            }
+            original_handler(source, from, data);
+        })));
 
     // 2) Setup sender
     let mut sender_port = allocate_udp_port();
@@ -103,7 +117,7 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
         &format!("{}_sender", test_name),
         sender_port,
         test_util::PASSPHRASE_SPEND,
-        null_encryption
+        null_encryption,
     );
 
     // 3) Send 15 messages with payload sized to fit current DATA_SINGLE transport capacity
@@ -122,7 +136,11 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
             msg,
             None,
         );
-        assert!(ok.expect("send_message_to_network should succeed"), "Failed to send message {}", i);
+        assert!(
+            ok.expect("send_message_to_network should succeed"),
+            "Failed to send message {}",
+            i
+        );
         // Small delay to allow processing
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -134,12 +152,22 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
     let all_packets = captured_packets.lock().unwrap().clone();
     // Filter for our messages based on size (1200 payload + JSON overhead + DTLS overhead).
     // Keep bounds narrow enough to exclude cert-announce DTLS application records.
-    let packets: Vec<Vec<u8>> = all_packets.into_iter()
+    let packets: Vec<Vec<u8>> = all_packets
+        .into_iter()
         .filter(|p| p.len() > 1200 && p.len() < 1500)
         .collect();
 
-    println!("Analyzed {}/{} DTLS application data packets", packets.len(), captured_packets.lock().unwrap().len());
-    assert!(packets.len() >= message_count, "Should have captured at least {} target packets, got {}", message_count, packets.len());
+    println!(
+        "Analyzed {}/{} DTLS application data packets",
+        packets.len(),
+        captured_packets.lock().unwrap().len()
+    );
+    assert!(
+        packets.len() >= message_count,
+        "Should have captured at least {} target packets, got {}",
+        message_count,
+        packets.len()
+    );
 
     let mut total_entropy = 0.0;
     let mut identical_payloads = 0;
@@ -149,21 +177,42 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
         let encrypted_payload = &p1[13..];
         let entropy = calculate_entropy(encrypted_payload);
         total_entropy += entropy;
-        
+
         if null_encryption {
             let payload_preview = String::from_utf8_lossy(encrypted_payload);
             let preview_chars: String = payload_preview.chars().take(100).collect();
-            println!("Packet {} ({} bytes): entropy = {:.4}, preview: {}", i, p1.len(), entropy, preview_chars);
+            println!(
+                "Packet {} ({} bytes): entropy = {:.4}, preview: {}",
+                i,
+                p1.len(),
+                entropy,
+                preview_chars
+            );
         } else {
-            println!("Packet {} ({} bytes): entropy = {:.4}", i, p1.len(), entropy);
+            println!(
+                "Packet {} ({} bytes): entropy = {:.4}",
+                i,
+                p1.len(),
+                entropy
+            );
         }
-        
+
         if null_encryption {
             // Null encryption should have very low entropy (all '@' signs)
-            assert!(entropy < 1.0, "Entropy too low for null encryption packet {}: {:.4}", i, entropy);
+            assert!(
+                entropy < 1.0,
+                "Entropy too low for null encryption packet {}: {:.4}",
+                i,
+                entropy
+            );
         } else {
             // Encrypted data should have high entropy (close to 8.0)
-            assert!(entropy > 7.5, "Entropy too low for packet {}: {:.4}", i, entropy);
+            assert!(
+                entropy > 7.5,
+                "Entropy too low for packet {}: {:.4}",
+                i,
+                entropy
+            );
         }
 
         // Compare with other packets (payload only, skipping DTLS header which has seq num)
@@ -176,13 +225,21 @@ fn run_entropy_test(null_encryption: bool, test_name: &str) {
 
     let avg_entropy = total_entropy / packets.len() as f64;
     println!("Average entropy: {:.4}", avg_entropy);
-    
+
     if null_encryption {
-        assert!(avg_entropy < 1.0, "Average entropy too high for null encryption: {:.4}", avg_entropy);
+        assert!(
+            avg_entropy < 1.0,
+            "Average entropy too high for null encryption: {:.4}",
+            avg_entropy
+        );
         // Note: identical_payloads might still be 0 if a sequence-dependent MAC is used even in null encryption.
         // We primarily rely on the low entropy check.
     } else {
-        assert!(avg_entropy > 7.8, "Average entropy too low: {:.4}", avg_entropy);
+        assert!(
+            avg_entropy > 7.8,
+            "Average entropy too low: {:.4}",
+            avg_entropy
+        );
         assert_eq!(identical_payloads, 0, "Found identical encrypted payloads!");
     }
 

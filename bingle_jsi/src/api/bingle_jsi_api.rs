@@ -1,8 +1,8 @@
 use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse,
-    Message, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse, Message,
+    NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 
 /// Primary Bingle API exposed over JSI / uniffi.
@@ -67,7 +67,9 @@ pub trait BingleJsiApi: Send + Sync {
     fn version(&self) -> Result<VersionInfo, BingleJsiError>;
 
     /// Get version information for all library modules.
-    fn get_versions(&self) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError>;
+    fn get_versions(
+        &self,
+    ) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError>;
 
     /// Get the current detected NAT type.
     fn get_nat_type(&self) -> Result<NatTypeResponse, BingleJsiError>;
@@ -114,10 +116,19 @@ pub trait BingleJsiApi: Send + Sync {
     fn get_messages(&self) -> Result<Vec<Message>, BingleJsiError>;
 
     /// Queue a message to be sent by the background processor.
-    fn queue_message(&self, recipient_handles: Vec<String>, text: String) -> Result<(), BingleJsiError>;
+    fn queue_message(
+        &self,
+        recipient_handles: Vec<String>,
+        text: String,
+    ) -> Result<(), BingleJsiError>;
 
     /// Update the status of a message.
-    fn update_message_status(&self, timestamp: i64, progress: f32, failure_reason: Option<String>) -> Result<(), BingleJsiError>;
+    fn update_message_status(
+        &self,
+        timestamp: i64,
+        progress: f32,
+        failure_reason: Option<String>,
+    ) -> Result<(), BingleJsiError>;
 
     /// Check the status of the local keypair.
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError>;

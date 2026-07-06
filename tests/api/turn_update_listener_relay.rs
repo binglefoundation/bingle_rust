@@ -13,7 +13,11 @@ pub fn turn_client_handle_listen_response_registers_client_mapping() {
     let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 54321);
 
     // Call the internal method to register the ListenResponse mapping on the client
-    <BingleApiImpl as BingleApiInternal>::turn_client_handle_listen_response(&api, relay_addr, relay_id.clone());
+    <BingleApiImpl as BingleApiInternal>::turn_client_handle_listen_response(
+        &api,
+        relay_addr,
+        relay_id.clone(),
+    );
 
     // Validate the client handler now resolves id <-> addr
     let th = api.engine_turn_client_handler_for_tests();
@@ -21,5 +25,9 @@ pub fn turn_client_handle_listen_response_registers_client_mapping() {
     assert_eq!(got_addr, Some(relay_addr), "id should map to address");
 
     let got_id = th.lookup_id_by_addr(&relay_addr);
-    assert_eq!(got_id.as_deref(), Some(relay_id.as_str()), "address should map back to id");
+    assert_eq!(
+        got_id.as_deref(),
+        Some(relay_id.as_str()),
+        "address should map back to id"
+    );
 }
