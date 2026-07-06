@@ -551,6 +551,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         KeypairStatus.UNFUNDED -> "Unfunded"
         KeypairStatus.FUNDED -> "Funded"
         KeypairStatus.ACTIVE -> "Active"
+        KeypairStatus.UPGRADE_REQUIRED -> "UpgradeRequired"
     }
 }
 

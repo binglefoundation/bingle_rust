@@ -572,6 +572,7 @@ class BingleJsiBridge: RCTEventEmitter {
         case .unfunded: return "Unfunded"
         case .funded: return "Funded"
         case .active: return "Active"
+        case .upgradeRequired: return "UpgradeRequired"
         }
     }
 }
