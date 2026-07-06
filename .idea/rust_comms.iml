@@ -16,12 +16,7 @@
       <sourceFolder url="file://$MODULE_DIR$/bingle_jsi/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/bingle_local/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/bingle_local/tests" isTestSource="true" />
-      <excludeFolder url="file://$MODULE_DIR$/TestResults.xcresult" />
       <excludeFolder url="file://$MODULE_DIR$/generated" />
-      <excludeFolder url="file://$MODULE_DIR$/ios/BingleTestFFI.xcframework" />
-      <excludeFolder url="file://$MODULE_DIR$/ios/TestResults.xcresult" />
-      <excludeFolder url="file://$MODULE_DIR$/ios/TestResults2.xcresult" />
-      <excludeFolder url="file://$MODULE_DIR$/ios/TestResults3.xcresult" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/tests/dapp/venv/bin" />
       <excludeFolder url="file://$MODULE_DIR$/tests/dapp/venv/include" />
@@ -33,7 +28,6 @@
       <excludeFolder url="file://$MODULE_DIR$/dapp_projects/.algokit/sources" />
       <excludeFolder url="file://$MODULE_DIR$/dapp_projects/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/dapp_projects/smart_contracts/artifacts/bingle_dapp" />
-      <excludeFolder url="file://$MODULE_DIR$/ios/.swiftpm/configuration" />
       <excludeFolder url="file://$MODULE_DIR$/tmp/sentinels" />
       <excludeFolder url="file://$MODULE_DIR$/tmp/test_out" />
       <excludeFolder url="file://$MODULE_DIR$/bingle_webserver/ts-client" />

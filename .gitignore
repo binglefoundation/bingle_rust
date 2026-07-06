@@ -2,22 +2,12 @@
 /tmp
 /.claude/worktrees/
 
-# Ignore Xcode test results
-**/TestResults.xcresult/
-**/TestResults*.xcresult/
-
-# Ignore generated iOS artifacts
-/ios/RustCommsFFI.xcframework/
-/ios/BingleTestFFI.xcframework/
-/ios/Package.swift
-
 # Ignore generated spec artifacts
 /generated/
 
 # Ignore generated DAPP artifcats
 /dapp_projects/smart_contracts/artifacts/
 
-/ios/
 .junie
 /bingle_webserver/ts-client/
 

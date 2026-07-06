@@ -7,7 +7,7 @@ autotests = false
 [lib]
 name = "rust_comms"
 path = "src/lib.rs"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 # Core deps kept iOS-friendly; heavy platform-specific deps remain gated below.
