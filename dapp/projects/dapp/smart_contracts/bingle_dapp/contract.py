@@ -1,5 +1,5 @@
 # pyright: reportMissingModuleSource=false
-from algopy import ARC4Contract, Application, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes, op
+from algopy import ARC4Contract, Application, String, UInt64, Global, Txn, GlobalState, gtxn, urange, LocalState, itxn, Account, Bytes, op, subroutine
 from algopy.arc4 import abimethod, baremethod
 
 
@@ -20,13 +20,28 @@ class BingleDapp(ARC4Contract):
         self.static_endpoint_x = LocalState(String, key="static_endpoint_x")
         # Local state flag: whether caller is allowed to relay (1 == true)
         self.allow_relay = LocalState(UInt64, key="allow_relay")
-        # id of the predecessor app; migrate_local validates this to prevent privilege forging
-        self.predecessor_app = GlobalState(UInt64, key="PredecessorApp")
+        # Accepted-ancestor lineage: a packed list of 8-byte big-endian app ids of every
+        # creator-blessed source app that migrate_local will copy from. Prevents privilege
+        # forging by only honouring ancestors the creator has explicitly blessed via
+        # set_predecessor_app. Bounded by the 128-byte global value limit (~15 ancestors),
+        # which is ample for the interim migration solution.
+        self.ancestor_apps = GlobalState(Bytes, key="AncestorApps")
 
     @abimethod(create="require")
     def create(self, app_admin: Account, app_withdrawer: Account) -> None:
         self.app_admin.value = app_admin
         self.app_withdrawer.value = app_withdrawer
+
+    @subroutine
+    def _lineage_contains(self, lineage: Bytes, app_id: UInt64) -> bool:
+        """True if app_id (as an 8-byte big-endian id) appears in the packed lineage."""
+        target = op.itob(app_id)
+        count = lineage.length // UInt64(8)
+        found = False
+        for i in urange(count):
+            if op.extract(lineage, i * UInt64(8), UInt64(8)) == target:
+                found = True
+        return found
 
     @baremethod(allow_actions=["UpdateApplication"])
     def update_application(self) -> None:
@@ -257,8 +272,37 @@ class BingleDapp(ARC4Contract):
 
     @abimethod()
     def set_predecessor_app(self, predecessor: Application) -> None:
+        """Bless `predecessor` (and its own ancestors) as migration sources for this app.
+
+        Creator-only. Records the accepted-ancestor lineage as a packed list of 8-byte app
+        ids: the immediate predecessor, plus the predecessor's own accumulated lineage
+        (AncestorApps), plus — to bridge apps deployed with the older single-predecessor
+        contract — the predecessor's legacy PredecessorApp pointer. migrate_local accepts any
+        app in this lineage, so a user several versions behind migrates directly in one hop.
+        `predecessor` must be included in the transaction's foreign apps array.
+        """
         assert Txn.sender == Global.creator_address
-        self.predecessor_app.value = predecessor.id
+
+        # Start the lineage with the immediate predecessor.
+        lineage = op.itob(predecessor.id)
+
+        # Carry forward the predecessor's own accumulated lineage (newer-contract apps),
+        # de-duplicated.
+        pred_anc, has_anc = op.AppGlobal.get_ex_bytes(predecessor, b"AncestorApps")
+        if has_anc:
+            anc_count = pred_anc.length // UInt64(8)
+            for i in urange(anc_count):
+                chunk = op.extract(pred_anc, i * UInt64(8), UInt64(8))
+                if not self._lineage_contains(lineage, op.btoi(chunk)):
+                    lineage += chunk
+
+        # Bridge from an app deployed with the older contract that recorded only a single
+        # PredecessorApp (uint64) rather than the AncestorApps lineage.
+        old_pred, has_old = op.AppGlobal.get_ex_uint64(predecessor, b"PredecessorApp")
+        if has_old and old_pred != UInt64(0) and not self._lineage_contains(lineage, old_pred):
+            lineage += op.itob(old_pred)
+
+        self.ancestor_apps.value = lineage
 
     @abimethod()
     def set_app_admin(self, admin: Account) -> None:
@@ -332,8 +376,8 @@ class BingleDapp(ARC4Contract):
     def migrate_local(self, old_app: Application) -> None:
         """Copy the caller's local state from old_app into this contract.
 
-        The old_app must match the stored predecessor_app_id (set by creator via
-        set_predecessor_app), preventing a user from supplying a fake app they
+        old_app must be one of the creator-blessed ancestor apps recorded in the AncestorApps
+        lineage (via set_predecessor_app), preventing a user from supplying a fake app they
         control to forge admin-granted permissions such as allow_static or allow_relay.
 
         handle/handle_time: first-write-wins (not overwritten if already registered here).
@@ -343,8 +387,8 @@ class BingleDapp(ARC4Contract):
         allow_static, allow_relay: copied as-is (they were admin-granted on the old app).
         static_endpoint / static_endpoint_x: only copied when allow_static == 1.
         """
-        predecessor_id, is_set = self.predecessor_app.maybe()
-        assert is_set and old_app.id == predecessor_id
+        lineage = self.ancestor_apps.get(default=Bytes())
+        assert self._lineage_contains(lineage, old_app.id)
 
         sender = Txn.sender
 

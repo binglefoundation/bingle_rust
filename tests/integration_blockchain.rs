@@ -33,6 +33,8 @@ pub mod asset_manager_creator_localnet;
 pub mod asset_clawback_creator_localnet;
 #[path = "integration/blockchain/unique_handle.rs"]
 pub mod unique_handle;
+#[path = "integration/blockchain/migrate_local_localnet.rs"]
+pub mod migrate_local_localnet;
 
 // API integration tests that need localnet
 #[path = "integration/api/send_message_to_id_integration.rs"]

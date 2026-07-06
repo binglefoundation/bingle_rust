@@ -408,7 +408,22 @@ impl BingleJsiApiImpl {
         if local_file.is_some() {
             if let Some(local_arc) = &local_api {
                 if let Ok(guard) = local_arc.lock() {
-                    if let Ok(status) = guard.keypair_status() {
+                    if let Ok(mut status) = guard.keypair_status() {
+                        // If not yet active on the configured app, attempt a one-time migration
+                        // of local state from a blessed predecessor app, then re-check. This
+                        // transparently upgrades a user whose registration lives on an older app
+                        // instead of prompting them to register again. Best-effort: failures do
+                        // not block start.
+                        if status.status != "ACTIVE" {
+                            match guard.ensure_local_migrated() {
+                                Ok(Some(tx)) => {
+                                    tracing::info!("Migrated local state from predecessor app (tx {})", tx);
+                                    if let Ok(s2) = guard.keypair_status() { status = s2; }
+                                }
+                                Ok(None) => {}
+                                Err(e) => tracing::warn!("Local-state migration check failed (continuing): {}", e),
+                            }
+                        }
                         if status.status == "ACTIVE" {
                             let api_clone = api.clone();
                             let mut opts_clone = opts.clone();

@@ -1,11 +1,13 @@
 import algosdk.logic
 import pytest
-from algopy import OnCompleteAction, UInt64
+from algopy import OnCompleteAction, UInt64, op
 from algopy_testing import AlgopyTestContext, algopy_testing_context
 
 from smart_contracts.bingle_dapp.contract import BingleDapp
 
 MIN_BALANCE = 100_000
+# migrate_reserve keeps one min_txn_fee back per potential inner txn so the app stays at min balance.
+MIN_TXN_FEE = 1_000
 
 
 @pytest.fixture()
@@ -170,7 +172,8 @@ def test_migrate_reserve_transfers_to_new_app(ctx: AlgopyTestContext) -> None:
     contract.migrate_reserve(new_app, UInt64(0))
     itxn = ctx.txn.last_group.last_itxn.payment
     assert itxn.receiver == Application(new_app.id).address
-    assert itxn.amount == UInt64(1_000_000 - MIN_BALANCE)
+    # one min_txn_fee is held back for the payment inner txn
+    assert itxn.amount == UInt64(1_000_000 - MIN_BALANCE - MIN_TXN_FEE)
 
 
 def test_migrate_reserve_by_non_creator_fails(ctx: AlgopyTestContext) -> None:
@@ -203,11 +206,48 @@ def test_migrate_reserve_transfers_asset(ctx: AlgopyTestContext) -> None:
 
 
 def test_set_predecessor_app_by_creator(ctx: AlgopyTestContext) -> None:
-    from algopy import Application
     contract, _, _ = _deploy(ctx)
     old_app = ctx.any.application()
     contract.set_predecessor_app(old_app)
-    assert contract.predecessor_app.value == old_app.id
+    # Lineage is the packed 8-byte id of the immediate predecessor.
+    assert contract.ancestor_apps.value == op.itob(old_app.id)
+
+
+def test_set_predecessor_app_accumulates_lineage(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    grandparent = ctx.any.application()
+    parent = ctx.any.application()
+    # parent (deployed with the new contract) already carries grandparent in its lineage
+    ctx.ledger.set_global_state(parent, b"AncestorApps", op.itob(grandparent.id))
+    contract.set_predecessor_app(parent)
+    assert contract.ancestor_apps.value == op.itob(parent.id) + op.itob(grandparent.id)
+
+
+def test_set_predecessor_app_bridges_legacy_predecessor(ctx: AlgopyTestContext) -> None:
+    contract, _, _ = _deploy(ctx)
+    legacy_parent = ctx.any.application()
+    legacy_grandparent = ctx.any.application()
+    # legacy_parent was deployed with the OLD contract: a single PredecessorApp pointer
+    ctx.ledger.set_global_state(legacy_parent, b"PredecessorApp", legacy_grandparent.id)
+    contract.set_predecessor_app(legacy_parent)
+    assert contract.ancestor_apps.value == op.itob(legacy_parent.id) + op.itob(legacy_grandparent.id)
+
+
+def test_migrate_local_accepts_non_immediate_ancestor(ctx: AlgopyTestContext) -> None:
+    from algopy import String
+    contract, _, _ = _deploy(ctx)
+    grandparent = ctx.any.application()
+    parent = ctx.any.application()
+    ctx.ledger.set_global_state(parent, b"AncestorApps", op.itob(grandparent.id))
+    contract.set_predecessor_app(parent)  # lineage = {parent, grandparent}
+    user = ctx.any.account()
+    # user's data lives two versions back, on the grandparent
+    ctx.ledger.set_local_state(grandparent, user, b"Handle", b"carol")
+    ctx.ledger.set_local_state(grandparent, user, b"HandleTime", 1000)
+    with ctx.txn.create_group(active_txn_overrides={"sender": user}):
+        contract.migrate_local(grandparent)
+    assert contract.handle[user] == String("carol")
+    assert contract.handle_time[user] == UInt64(1000)
 
 
 def test_set_predecessor_app_by_non_creator_fails(ctx: AlgopyTestContext) -> None:
