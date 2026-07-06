@@ -10,21 +10,11 @@ use std::sync::Mutex;
 
 /// Configuration for the local API implementation.
 /// Includes the blockchain provider configuration and required ids.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LocalApiConfig {
     pub algo_config: AlgoChainConfig,
     pub app_id: u64,
     pub asset_id: u64,
-}
-
-impl Default for LocalApiConfig {
-    fn default() -> Self {
-        Self {
-            algo_config: AlgoChainConfig::default(),
-            app_id: 0,
-            asset_id: 0,
-        }
-    }
 }
 
 /// Decide the keypair status from resolved on-chain facts.
@@ -529,7 +519,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
         Ok(guard
             .iter()
-            .filter(|m| m.progress.map_or(false, |p| p < 1.0))
+            .filter(|m| m.progress.is_some_and(|p| p < 1.0))
             .cloned()
             .collect())
     }
@@ -612,19 +602,19 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
 
         // Ensure parent directory exists
-        if let Some(parent) = std::path::Path::new(path).parent() {
-            if !parent.as_os_str().is_empty() && !parent.is_dir() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    let msg = format!(
-                        "Failed to create parent directory '{}' for '{}': {}",
-                        parent.display(),
-                        path,
-                        e
-                    );
-                    tracing::error!("[save] {}", msg);
-                    return Err(BingleError::Other(msg));
-                }
-            }
+        if let Some(parent) = std::path::Path::new(path).parent()
+            && !parent.as_os_str().is_empty()
+            && !parent.is_dir()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            let msg = format!(
+                "Failed to create parent directory '{}' for '{}': {}",
+                parent.display(),
+                path,
+                e
+            );
+            tracing::error!("[save] {}", msg);
+            return Err(BingleError::Other(msg));
         }
 
         let file = match std::fs::File::create(path) {

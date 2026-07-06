@@ -48,37 +48,37 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_event(&self, event: &tracing::Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
-        if let Ok(guard) = global_callback().lock() {
-            if let Some(ref cb) = *guard {
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
+        if let Ok(guard) = global_callback().lock()
+            && let Some(ref cb) = *guard
+        {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
 
-                let level = event.metadata().level().to_string();
+            let level = event.metadata().level().to_string();
 
-                let mut prefix = String::new();
-                if let Some(scope) = ctx.event_scope(event) {
-                    for span in scope {
-                        if span.name() == "BingleApi" {
-                            continue;
-                        }
-                        prefix.push_str(&format!("[{}]", span.name()));
+            let mut prefix = String::new();
+            if let Some(scope) = ctx.event_scope(event) {
+                for span in scope {
+                    if span.name() == "BingleApi" {
+                        continue;
                     }
+                    prefix.push_str(&format!("[{}]", span.name()));
                 }
-
-                let mut visitor = MessageVisitor {
-                    message: String::new(),
-                };
-                event.record(&mut visitor);
-
-                let iso_timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f");
-                cb.on_log(
-                    timestamp,
-                    level,
-                    format!("{} {}{}", iso_timestamp, prefix, visitor.message),
-                );
             }
+
+            let mut visitor = MessageVisitor {
+                message: String::new(),
+            };
+            event.record(&mut visitor);
+
+            let iso_timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f");
+            cb.on_log(
+                timestamp,
+                level,
+                format!("{} {}{}", iso_timestamp, prefix, visitor.message),
+            );
         }
     }
 }

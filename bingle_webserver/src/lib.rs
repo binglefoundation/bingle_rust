@@ -38,31 +38,29 @@ pub fn try_start_api(state: &AppState) {
         return;
     }
     // Check keypair status via local_api
-    if let Some(local_arc) = &state.local_api {
-        if let Ok(guard) = local_arc.lock() {
-            if let Ok(status) = guard.keypair_status() {
-                if status.status == "ACTIVE" {
-                    // Update handle and algo_passphrase from the local API's
-                    // generated keypair and registered handle before starting.
-                    let mut opts_clone = opts.clone();
-                    if let Some(handle) = &status.handle {
-                        opts_clone.handle = handle.clone();
-                    }
-                    if let Ok(Some(kp)) = guard.get_keypair() {
-                        opts_clone.algo_passphrase = Some(kp.passphrase);
-                    }
-                    let api_clone = state.api.clone();
-                    api_clone.access_unsafe_for_tests(|api_mut| {
-                        if let Err(e) = api_mut.start(&opts_clone) {
-                            tracing::error!("Failed to start Bingle API: {}", e);
-                        } else {
-                            tracing::info!("Bingle API started (keypair is ACTIVE)");
-                        }
-                    });
-                    *started = true;
-                }
-            }
+    if let Some(local_arc) = &state.local_api
+        && let Ok(guard) = local_arc.lock()
+        && let Ok(status) = guard.keypair_status()
+        && status.status == "ACTIVE"
+    {
+        // Update handle and algo_passphrase from the local API's
+        // generated keypair and registered handle before starting.
+        let mut opts_clone = opts.clone();
+        if let Some(handle) = &status.handle {
+            opts_clone.handle = handle.clone();
         }
+        if let Ok(Some(kp)) = guard.get_keypair() {
+            opts_clone.algo_passphrase = Some(kp.passphrase);
+        }
+        let api_clone = state.api.clone();
+        api_clone.access_unsafe_for_tests(|api_mut| {
+            if let Err(e) = api_mut.start(&opts_clone) {
+                tracing::error!("Failed to start Bingle API: {}", e);
+            } else {
+                tracing::info!("Bingle API started (keypair is ACTIVE)");
+            }
+        });
+        *started = true;
     }
 }
 

@@ -108,10 +108,10 @@ async fn main() -> anyhow::Result<()> {
             asset_id: opts.asset_id.unwrap_or(0),
         };
         let mut impl_api = BingleApiLocalImpl::new(cfg);
-        if path.exists() {
-            if let Err(e) = impl_api.load(path.to_string_lossy().as_ref()) {
-                tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
-            }
+        if path.exists()
+            && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
+        {
+            tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
         }
         local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
     }
@@ -201,34 +201,33 @@ async fn main() -> anyhow::Result<()> {
     let mut api_started = false;
     if local_file.is_some() {
         // When --local is active, only start if keypair_status is already ACTIVE
-        if let Some(local_arc) = &local_api {
-            if let Ok(guard) = local_arc.lock() {
-                if let Ok(status) = guard.keypair_status() {
-                    if status.status == "ACTIVE" {
-                        let api_clone = api.clone();
-                        let mut opts_clone = opts.clone();
-                        // Update handle and algo_passphrase from the local API's
-                        // generated keypair and registered handle before starting.
-                        if let Some(handle) = &status.handle {
-                            opts_clone.handle = handle.clone();
-                        }
-                        if let Ok(Some(kp)) = guard.get_keypair() {
-                            opts_clone.algo_passphrase = Some(kp.passphrase);
-                        }
-                        api_clone.access_unsafe_for_tests(|api_mut| {
-                            if let Err(e) = api_mut.start(&opts_clone) {
-                                tracing::error!("Failed to start Bingle API: {}", e);
-                            }
-                        });
-                        api_started = true;
-                        tracing::info!("Bingle API started (keypair is ACTIVE)");
-                    } else {
-                        tracing::info!(
-                            "Bingle API start deferred (keypair status: {})",
-                            status.status
-                        );
-                    }
+        if let Some(local_arc) = &local_api
+            && let Ok(guard) = local_arc.lock()
+            && let Ok(status) = guard.keypair_status()
+        {
+            if status.status == "ACTIVE" {
+                let api_clone = api.clone();
+                let mut opts_clone = opts.clone();
+                // Update handle and algo_passphrase from the local API's
+                // generated keypair and registered handle before starting.
+                if let Some(handle) = &status.handle {
+                    opts_clone.handle = handle.clone();
                 }
+                if let Ok(Some(kp)) = guard.get_keypair() {
+                    opts_clone.algo_passphrase = Some(kp.passphrase);
+                }
+                api_clone.access_unsafe_for_tests(|api_mut| {
+                    if let Err(e) = api_mut.start(&opts_clone) {
+                        tracing::error!("Failed to start Bingle API: {}", e);
+                    }
+                });
+                api_started = true;
+                tracing::info!("Bingle API started (keypair is ACTIVE)");
+            } else {
+                tracing::info!(
+                    "Bingle API start deferred (keypair status: {})",
+                    status.status
+                );
             }
         }
     } else {

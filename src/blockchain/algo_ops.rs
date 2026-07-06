@@ -1728,20 +1728,19 @@ impl AlgoOps {
             .map_err(|e| anyhow!("failed to fetch suggested params: {e}"))?;
 
         let mut accounts: Vec<algonaut::core::Address> = vec![creator];
-        if let Some(sig) = method {
-            if (sig == "set_allow_static(address,uint64)void"
+        if let Some(sig) = method
+            && (sig == "set_allow_static(address,uint64)void"
                 || sig == "set_allow_relay(address,uint64)void")
-                && let Some(first) = args.first()
-                && let AppArg::Bytes(b) = first
-                && b.len() == 32
+            && let Some(first) = args.first()
+            && let AppArg::Bytes(b) = first
+            && b.len() == 32
+        {
+            let mut pk = [0u8; 32];
+            pk.copy_from_slice(&b[..32]);
+            if let Ok(addr_str) = byte_key_to_address(&pk)
+                && let Ok(target) = Self::parse_address(&addr_str)
             {
-                let mut pk = [0u8; 32];
-                pk.copy_from_slice(&b[..32]);
-                if let Ok(addr_str) = byte_key_to_address(&pk)
-                    && let Ok(target) = Self::parse_address(&addr_str)
-                {
-                    accounts.insert(0, target);
-                }
+                accounts.insert(0, target);
             }
         }
         let fapps: Vec<algonaut::core::AppId> = foreign_app_ids

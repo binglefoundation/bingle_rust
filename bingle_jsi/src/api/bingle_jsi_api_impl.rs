@@ -43,15 +43,12 @@ pub struct BingleJsiApiImpl {
 /// Convert a JSI NetworkSourceKey to the internal NetworkEndpoint type.
 fn nsk_to_endpoint(nsk: &NetworkSourceKey) -> NetworkEndpoint {
     if let Some(relay_id) = &nsk.relay_id {
-        let relay_addr = nsk
-            .relay_address
-            .as_ref()
-            .and_then(|a| isa_to_socket_addr(a));
+        let relay_addr = nsk.relay_address.as_ref().and_then(isa_to_socket_addr);
         NetworkEndpoint::new_relay(relay_id.clone(), relay_addr, nsk.relay_channel)
     } else if let Some(addr) = nsk
         .inet_socket_address
         .as_ref()
-        .and_then(|a| isa_to_socket_addr(a))
+        .and_then(isa_to_socket_addr)
     {
         NetworkEndpoint::new_direct(addr)
     } else {
@@ -137,10 +134,10 @@ fn save_if_configured(
     local_api: &Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
     local_file: &Option<PathBuf>,
 ) {
-    if let (Some(local_arc), Some(path)) = (local_api, local_file) {
-        if let Ok(guard) = local_arc.lock() {
-            let _ = guard.save(path.to_string_lossy().as_ref());
-        }
+    if let (Some(local_arc), Some(path)) = (local_api, local_file)
+        && let Ok(guard) = local_arc.lock()
+    {
+        let _ = guard.save(path.to_string_lossy().as_ref());
     }
 }
 
@@ -302,10 +299,10 @@ impl BingleJsiApiImpl {
                 asset_id: opts.asset_id.unwrap_or(0),
             };
             let mut impl_api = BingleApiLocalImpl::new(cfg);
-            if path.exists() {
-                if let Err(e) = impl_api.load(path.to_string_lossy().as_ref()) {
-                    tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
-                }
+            if path.exists()
+                && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
+            {
+                tracing::warn!("Failed to load local state from {}: {}", path.display(), e);
             }
             local_api = Some(Arc::new(Mutex::new(Box::new(impl_api))));
         }
@@ -363,10 +360,10 @@ impl BingleJsiApiImpl {
                             *guard = type_str.clone();
                         }
                         // Invoke user listening callback if registered
-                        if let Ok(guard) = lcb.lock() {
-                            if let Some(ref callback) = *guard {
-                                callback.on_listening(listening_val, type_str);
-                            }
+                        if let Ok(guard) = lcb.lock()
+                            && let Some(ref callback) = *guard
+                        {
+                            callback.on_listening(listening_val, type_str);
                         }
                     },
                 );
@@ -416,8 +413,8 @@ impl BingleJsiApiImpl {
                         let mut m = msgs.lock().unwrap();
                         m.push(message.clone());
                         // Store message in local API if configured
-                        if let Some(local_arc) = &local_api_for_closure {
-                            if let Ok(mut guard) = local_arc.lock() {
+                        if let Some(local_arc) = &local_api_for_closure
+                            && let Ok(mut guard) = local_arc.lock() {
                                 let timestamp = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .map(|d| d.as_millis() as i64)
@@ -442,7 +439,6 @@ impl BingleJsiApiImpl {
                                     let _ = guard.save(path.to_string_lossy().as_ref());
                                 }
                             }
-                        }
                     });
                 api_mut.set_on_message(Some(on_message));
             });
@@ -451,32 +447,31 @@ impl BingleJsiApiImpl {
         // Determine whether to start the API immediately or defer
         let mut api_started = false;
         if local_file.is_some() {
-            if let Some(local_arc) = &local_api {
-                if let Ok(guard) = local_arc.lock() {
-                    if let Ok(status) = guard.keypair_status() {
-                        if status.status == "ACTIVE" {
-                            let api_clone = api.clone();
-                            let mut opts_clone = opts.clone();
-                            if let Some(handle) = &status.handle {
-                                opts_clone.handle = handle.clone();
-                            }
-                            if let Ok(Some(kp)) = guard.get_keypair() {
-                                opts_clone.algo_passphrase = Some(kp.passphrase);
-                            }
-                            api_clone.access_unsafe_for_tests(|api_mut| {
-                                if let Err(e) = api_mut.start(&opts_clone) {
-                                    tracing::error!("Failed to start Bingle API: {}", e);
-                                }
-                            });
-                            api_started = true;
-                            tracing::info!("Bingle API started (keypair is ACTIVE)");
-                        } else {
-                            tracing::info!(
-                                "Bingle API start deferred (keypair status: {})",
-                                status.status
-                            );
-                        }
+            if let Some(local_arc) = &local_api
+                && let Ok(guard) = local_arc.lock()
+                && let Ok(status) = guard.keypair_status()
+            {
+                if status.status == "ACTIVE" {
+                    let api_clone = api.clone();
+                    let mut opts_clone = opts.clone();
+                    if let Some(handle) = &status.handle {
+                        opts_clone.handle = handle.clone();
                     }
+                    if let Ok(Some(kp)) = guard.get_keypair() {
+                        opts_clone.algo_passphrase = Some(kp.passphrase);
+                    }
+                    api_clone.access_unsafe_for_tests(|api_mut| {
+                        if let Err(e) = api_mut.start(&opts_clone) {
+                            tracing::error!("Failed to start Bingle API: {}", e);
+                        }
+                    });
+                    api_started = true;
+                    tracing::info!("Bingle API started (keypair is ACTIVE)");
+                } else {
+                    tracing::info!(
+                        "Bingle API start deferred (keypair status: {})",
+                        status.status
+                    );
                 }
             }
         } else {
@@ -509,90 +504,88 @@ impl BingleJsiApiImpl {
     ) {
         tracing::info!("[BingleJsiApiImpl] Starting background processing loop");
         while *started.lock().unwrap_or_else(|e| e.into_inner()) {
-            if listening.load(Ordering::SeqCst) {
-                if let Some(ref local_arc) = local_api {
-                    let pending_message_list = match local_arc.lock() {
-                        Ok(guard) => guard.get_pending_messages(),
-                        Err(_) => {
-                            tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
-                            break;
-                        }
-                    };
+            if listening.load(Ordering::SeqCst)
+                && let Some(ref local_arc) = local_api
+            {
+                let pending_message_list = match local_arc.lock() {
+                    Ok(guard) => guard.get_pending_messages(),
+                    Err(_) => {
+                        tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
+                        break;
+                    }
+                };
 
-                    if let Ok(messages) = pending_message_list {
-                        for msg in messages {
+                if let Ok(messages) = pending_message_list {
+                    for msg in messages {
+                        tracing::info!(
+                            "[BingleJsiApiImpl] Processing pending message: {}",
+                            msg.timestamp
+                        );
+                        let api_clone = api.clone();
+                        let local_api_clone = local_arc.clone();
+                        let timestamp = msg.timestamp;
+
+                        let progress_callback =
+                            Arc::new(move |percent: u8, _status_msg: String| {
+                                // Note: progress messages don't come with a good failure reason
+                                // we could separate these through the API but TMWFN
+                                if let Ok(mut guard) = local_api_clone.lock() {
+                                    let _ = guard.update_message_status(
+                                        timestamp,
+                                        percent as f32 / 100.0,
+                                        None,
+                                    );
+                                }
+                            });
+
+                        let mut all_success = true;
+                        let mut last_error = None;
+
+                        for handle in &msg.recipient_handles {
+                            let payload = serde_json::json!({
+                                "text": msg.text,
+                            });
+
                             tracing::info!(
-                                "[BingleJsiApiImpl] Processing pending message: {}",
-                                msg.timestamp
+                                "BingleJsiApiImpl][send_message_to_handles] Sending message to handle: {:?}",
+                                handle
                             );
-                            let api_clone = api.clone();
-                            let local_api_clone = local_arc.clone();
-                            let timestamp = msg.timestamp;
 
-                            let progress_callback =
-                                Arc::new(move |percent: u8, _status_msg: String| {
-                                    // Note: progress messages don't come with a good failure reason
-                                    // we could separate these through the API but TMWFN
-                                    if let Ok(mut guard) = local_api_clone.lock() {
-                                        let _ = guard.update_message_status(
-                                            timestamp,
-                                            percent as f32 / 100.0,
-                                            None,
-                                        );
-                                    }
-                                });
-
-                            let mut all_success = true;
-                            let mut last_error = None;
-
-                            for handle in &msg.recipient_handles {
-                                let payload = serde_json::json!({
-                                    "text": msg.text,
-                                });
-
-                                tracing::info!(
-                                    "BingleJsiApiImpl][send_message_to_handles] Sending message to handle: {:?}",
-                                    handle
-                                );
-
-                                let res = api_clone.send_message_to_handle(
-                                    handle,
-                                    payload,
-                                    Some(progress_callback.clone()),
-                                );
-                                match res {
-                                    Ok(true) => {}
-                                    Ok(false) => {
-                                        all_success = false;
-                                        last_error = Some("Send returned false".to_string());
-                                    }
-                                    Err(BingleError::Retryable(e)) => {
-                                        all_success = false;
-                                        last_error = Some(format!("Retryable: {}", e));
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        all_success = false;
-                                        last_error = Some(e.to_string());
-                                    }
+                            let res = api_clone.send_message_to_handle(
+                                handle,
+                                payload,
+                                Some(progress_callback.clone()),
+                            );
+                            match res {
+                                Ok(true) => {}
+                                Ok(false) => {
+                                    all_success = false;
+                                    last_error = Some("Send returned false".to_string());
+                                }
+                                Err(BingleError::Retryable(e)) => {
+                                    all_success = false;
+                                    last_error = Some(format!("Retryable: {}", e));
+                                    break;
+                                }
+                                Err(e) => {
+                                    all_success = false;
+                                    last_error = Some(e.to_string());
                                 }
                             }
+                        }
 
-                            if all_success {
+                        if all_success {
+                            if let Ok(mut guard) = local_arc.lock() {
+                                let _ = guard.update_message_status(timestamp, 1.0, None);
+                            }
+                        } else if let Some(err) = last_error {
+                            if err.starts_with("Retryable:") {
                                 if let Ok(mut guard) = local_arc.lock() {
-                                    let _ = guard.update_message_status(timestamp, 1.0, None);
+                                    let _ = guard.update_message_status(timestamp, 0.0, Some(err));
                                 }
-                            } else if let Some(err) = last_error {
-                                if err.starts_with("Retryable:") {
-                                    if let Ok(mut guard) = local_arc.lock() {
-                                        let _ =
-                                            guard.update_message_status(timestamp, 0.0, Some(err));
-                                    }
-                                } else {
-                                    if let Ok(mut guard) = local_arc.lock() {
-                                        let _ =
-                                            guard.update_message_status(timestamp, 1.0, Some(err));
-                                    }
+                            } else {
+                                if let Ok(mut guard) = local_arc.lock() {
+                                    let _ = guard.update_message_status(timestamp, 1.0, Some(err));
                                 }
                             }
                         }
@@ -763,7 +756,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             .map_err(|_| BingleJsiError::InternalError {
                 reason: "Messages lock poisoned".to_string(),
             })?;
-        Ok(guard.iter().map(|v| json_to_message(v)).collect())
+        Ok(guard.iter().map(json_to_message).collect())
     }
 
     fn version(&self) -> Result<VersionInfo, BingleJsiError> {
@@ -1029,11 +1022,11 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
             // Check keypair status is FUNDED or ACTIVE (bypass in debug mode)
             let mut bypass_status = false;
-            if let Ok(opts) = self.opts.lock() {
-                if opts.dangerous_debug {
-                    tracing::info!("[BingleJsiApiImpl][start] Bypassing keypair status check");
-                    bypass_status = true;
-                }
+            if let Ok(opts) = self.opts.lock()
+                && opts.dangerous_debug
+            {
+                tracing::info!("[BingleJsiApiImpl][start] Bypassing keypair status check");
+                bypass_status = true;
             }
 
             let guard = local_api_guard(&self.local_api)?;

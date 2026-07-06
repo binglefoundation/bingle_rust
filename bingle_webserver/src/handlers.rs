@@ -62,9 +62,9 @@ pub async fn send_message_to_id(
     let user_id_clone = payload.user_id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let ok_res = api.send_message_to_id(&payload.user_id, payload.message, None);
-        if let Ok(true) = ok_res {
-            if let Some(local_arc) = &local_api_arc {
-                if let Ok(mut guard) = local_arc.lock() {
+        if let Ok(true) = ok_res
+            && let Some(local_arc) = &local_api_arc
+                && let Ok(mut guard) = local_arc.lock() {
                     let text = message_clone.get("text")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
@@ -100,8 +100,6 @@ pub async fn send_message_to_id(
                         let _ = guard.save(path.to_string_lossy().as_ref());
                     }
                 }
-            }
-        }
         ok_res
     }).await;
     match result {
