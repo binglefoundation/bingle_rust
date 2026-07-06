@@ -1,4 +1,4 @@
--- include-files.lua
+-- include_files.lua
 -- A lightweight implementation compatible with pandoc/lua-filters include-files.
 -- It expands lines of the form `!include path/to/file.md` that appear as
 -- standalone paragraphs by replacing them with the parsed blocks of the target file.

@@ -13,7 +13,7 @@ OPENAPI_YAML="spec/openapi.yaml"
 GEN_DIR="generated"
 MSG_REF_MD="$GEN_DIR/message_reference.md"
 OUTPUT_MD="$GEN_DIR/BINGLE_SPEC.md"
-LUA_FILTER="scripts/include-files.lua"
+LUA_FILTER="scripts/include_files.lua"
 
 # Check prerequisites
 if ! command -v pandoc >/dev/null 2>&1; then
