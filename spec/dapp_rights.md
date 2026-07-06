@@ -23,7 +23,13 @@ are held in global state and are reassignable by the creator.
 
 ## Global state keys
 
-`BinglePrice`, `LastHandleTime`, `AppAdmin`, `AppWithdrawer`, `PredecessorApp`.
+`BinglePrice`, `LastHandleTime`, `AppAdmin`, `AppWithdrawer`, `AncestorApps`.
+
+`AncestorApps` is a packed `Bytes` value: concatenated 8-byte big-endian app
+ids of every creator-blessed migration source. Bounded by the 128-byte global
+value limit (~15 ancestors). It replaces the older single `PredecessorApp`
+(uint64) pointer; `set_predecessor_app` still bridges apps that were deployed
+with the legacy contract by folding their `PredecessorApp` into the lineage.
 
 ## Local state keys (per opted-in account)
 
@@ -84,15 +90,23 @@ Notes:
 | `set_allow_relay(target, allow)` | **AppAdmin** | `sender == AppAdmin` | `target` in `accounts[0]` | target opted-in | `allow_relay[target]` |
 | `set_app_admin(admin)` | **Creator** | `sender == Global.creator_address` | — | — | `AppAdmin` |
 | `set_app_withdrawer(withdrawer)` | **Creator** | `sender == Global.creator_address` | — | — | `AppWithdrawer` |
-| `set_predecessor_app(predecessor)` | **Creator** | `sender == Global.creator_address` | app `predecessor` (foreign app) | — | `PredecessorApp` |
+| `set_predecessor_app(predecessor)` | **Creator** | `sender == Global.creator_address` | app `predecessor` (foreign app) | — | `AncestorApps` — writes the accumulated lineage: `predecessor.id` + predecessor's own `AncestorApps` + predecessor's legacy `PredecessorApp` (de-duplicated) |
 
 ## Migration methods
+
+Migration carries a user's per-account local state (and the app's global state
+and reserve) from an older deployment to a newer one. The creator blesses source
+apps via `set_predecessor_app`, which accumulates a **lineage** in `AncestorApps`
+rather than a single predecessor pointer — so a user any number of versions
+behind can migrate directly in one hop. `migrate_local` is **user-signed**
+(Algorand only lets an app write local state for accounts opted into *that* app,
+so there is no admin batch path).
 
 | Method | Signer | On-chain auth | Foreign refs | Preconditions | Effect |
 |---|---|---|---|---|---|
 | `migrate_global(old_app)` | **Creator** | `sender == Global.creator_address` | app `old_app` | — | reads old app's `BinglePrice`, `LastHandleTime`, `AppAdmin`, `AppWithdrawer` → writes same globals |
 | `migrate_reserve(new_app, asset_id)` | **Creator** | `sender == Global.creator_address` | app `new_app`; asset `asset_id` (skipped if 0) | — | Payment + axfer of full reserve (balance − min_balance − fee slots, and ASA holding) → `new_app.address` |
-| `migrate_local(old_app)` | User | none, but `old_app.id == PredecessorApp` (anti-forgery) | app `old_app` | caller **opted-in to both apps**; `PredecessorApp` must be set | copies caller's local `Handle`/`HandleTime`/`allow_static`/`allow_relay`/`static_endpoint(_x)`; handle first-write-wins; endpoints copied only when `allow_static == 1` |
+| `migrate_local(old_app)` | User | none, but `old_app.id` must be a member of the `AncestorApps` lineage (anti-forgery) | app `old_app` | caller **opted-in to both apps**; `AncestorApps` must include `old_app` | copies caller's local `Handle`/`HandleTime`/`allow_static`/`allow_relay`/`static_endpoint(_x)`; handle first-write-wins; endpoints copied only when `allow_static == 1` |
 
 ## Cross-cutting requirements
 
@@ -105,7 +119,15 @@ Notes:
   no payment args — the contract scans the atomic group
   (`urange(Global.group_size)`) for the required payment/axfer, so the client
   must bundle the sibling transactions (confirmed above).
+- **Client auto-migration:** on start the client calls
+  `AlgoBingle::ensure_local_migrated(new_app_id)` — it decodes the lineage
+  (`ancestor_apps`), finds the nearest ancestor holding the caller's data
+  (`find_migratable_ancestor`), and, if the caller has no `Handle` on the new
+  app yet, opts into the new app and calls `migrate_local(ancestor)` once. It is
+  idempotent (a `Handle` already present → no-op) and a no-op for fresh installs.
 
 ## See also
 
 - [dapp_endpoints.md](dapp_endpoints.md) — endpoint overview and asset accounts.
+- [migrate_local_storage.md](migrate_local_storage.md) — design of the
+  `AncestorApps` lineage and client auto-migration.
