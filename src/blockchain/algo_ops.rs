@@ -556,6 +556,52 @@ impl AlgoOps {
         app_id: u64,
         account_address: &str,
     ) -> Result<Option<Vec<(String, String)>>> {
+    /// Read a single byte-valued global state entry from an arbitrary application (any app id,
+    /// not limited to apps created by the sender) and return the raw bytes. Returns None if the
+    /// application or the key is absent. Unlike `global_state`, this does not lossily decode the
+    /// value to UTF-8, so it is safe for packed binary values.
+    pub fn app_global_bytes(&self, app_id: u64, key: &str) -> Result<Option<Vec<u8>>> {
+        if app_id == 0 { bail!("app_id must be > 0"); }
+        let client = self.algod_client()?;
+        let app_info = match self.algod_call(|| client.app(algonaut::core::AppId(app_id))) {
+            Ok(v) => v,
+            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => return Err(AlgoError::unreachable("app_information", &e.to_string()).into()),
+            Err(_) => return Ok(None),
+        };
+        let v = serde_json::to_value(&app_info).map_err(|e| anyhow!("failed to serialize app info: {e}"))?;
+        let params = match Self::json_get(&v, "params", "params").and_then(|x| x.as_object()) {
+            Some(p) => serde_json::Value::Object(p.clone()),
+            None => return Ok(None),
+        };
+        let gs: Vec<serde_json::Value> = Self::json_get(&params, "global_state", "global-state")
+            .and_then(|x| x.as_array()).cloned().unwrap_or_default();
+        for entry in &gs {
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+            let entry_key = match general_purpose::STANDARD.decode(key_b64) {
+                Ok(bytes) => match String::from_utf8(bytes) { Ok(s) => s, Err(_) => continue },
+                Err(_) => continue,
+            };
+            if entry_key != key { continue; }
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+            // Byte values (type == 1) may be a numeric array or a base64 string.
+            let bytes = if let Some(arr) = val_obj.get("bytes").and_then(|x| x.as_array()) {
+                let mut buf: Vec<u8> = Vec::with_capacity(arr.len());
+                for n in arr {
+                    if let Some(u) = n.as_u64() { buf.push((u & 0xFF) as u8); }
+                    else if let Some(i) = n.as_i64() && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
+                }
+                Some(buf)
+            } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
+                general_purpose::STANDARD.decode(b64).ok()
+            } else {
+                None
+            };
+            return Ok(bytes);
+        }
+        Ok(None)
+    }
+
+    pub fn local_state_for_account(&self, app_id: u64, account_address: &str) -> Result<Option<Vec<(String, String)>>> {
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
         let info = match self.algod_call(|| client.account(&address)) {

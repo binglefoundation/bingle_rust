@@ -26,6 +26,8 @@ impl BingleLocalApi for DummyLocal {
         Ok(true)
     }
 
+    fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> { Ok(None) }
+
     fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         let pass = self
             .keypair

@@ -241,6 +241,32 @@ The app will need to receive funding of the Bingle fee in Bingle$.
 
 Once this is done, any data signed with the `id` can be regarded as coming from the creator user (or anyone with their private key).
 
+## Local storage migration
+
+When the dapp is redeployed as a new application, each user's per-account local state
+(`Handle`/`HandleTime`, `allow_static`, `allow_relay`, `static_endpoint`/`static_endpoint_x`)
+is carried over from the old app to the new one. Because Algorand only lets an application write
+the local state of accounts that have opted into it, migration is **user-signed**: it runs from
+the user's own account, not an admin.
+
+On start, once the keypair is active but the account is not yet registered on the configured
+app, the node attempts a one-time migration before treating the account as a fresh install:
+
+- It reads the new app's accepted-ancestor lineage (the `AncestorApps` global, a creator-blessed
+  list of source app ids that the app's `migrate_local` will copy from).
+- It checks its own local state on each ancestor and, if it finds an app where it holds data,
+  opts into the new app and calls `migrate_local` against that ancestor — migrating directly in a
+  single hop even when the account is several versions behind the immediate predecessor.
+- The step is idempotent: it does nothing when the account already holds a `Handle` on the new
+  app, or when it has no data on any ancestor (a genuinely fresh install). Failures are
+  best-effort and do not block start.
+
+The creator builds the lineage with `set_predecessor_app`, which records the immediate
+predecessor plus that predecessor's own accumulated lineage (bridging apps deployed with the
+older single-predecessor contract via their legacy `PredecessorApp` pointer). See
+[dapp_endpoints.md](dapp_endpoints.md) for the on-chain methods and
+[migrate_local_storage.md](migrate_local_storage.md) for the full design.
+
 ## Network change detection
 
 A network change can be detected by continually verifying STUN responses and validating that either the responses are inconsistent or the IP address and port have changed.

@@ -437,6 +437,62 @@ impl AlgoBingle {
         Ok(txid)
     }
 
+    /// Read the accepted-ancestor lineage of `new_app_id` — the creator-blessed source apps
+    /// that `migrate_local` will copy from — decoded from the packed `AncestorApps` global.
+    /// Ordered nearest ancestor first; empty if the app has no configured lineage.
+    pub fn ancestor_apps(&self, new_app_id: u64) -> Result<Vec<u64>> {
+        if new_app_id == 0 { bail!("new_app_id must be > 0"); }
+        let raw = self.ops.app_global_bytes(new_app_id, "AncestorApps")?.unwrap_or_default();
+        let mut ids = Vec::with_capacity(raw.len() / 8);
+        for chunk in raw.chunks_exact(8) {
+            let mut b = [0u8; 8];
+            b.copy_from_slice(chunk);
+            ids.push(u64::from_be_bytes(b));
+        }
+        Ok(ids)
+    }
+
+    /// Find the nearest blessed ancestor of `new_app_id` on which `account` still holds local
+    /// state (i.e. has data to migrate). Returns None if the account has no data on any
+    /// ancestor (a fresh install).
+    pub fn find_migratable_ancestor(&self, new_app_id: u64, account: &str) -> Result<Option<u64>> {
+        for ancestor in self.ancestor_apps(new_app_id)? {
+            if self.ops.local_state_for_account(ancestor, account)?.is_some() {
+                return Ok(Some(ancestor));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Migrate this account's local state to `new_app_id` from a blessed ancestor, once.
+    ///
+    /// Returns the `migrate_local` txid if a migration was performed, or `Ok(None)` when there
+    /// is nothing to do: either the account is already registered on the new app (it holds a
+    /// `Handle` there) or it has no data on any ancestor (a fresh install). The migration is
+    /// user-signed: the caller opts into the new app (idempotent) and then copies from the
+    /// nearest ancestor that holds its data.
+    pub fn ensure_local_migrated(&self, new_app_id: u64) -> Result<Option<String>> {
+        if new_app_id == 0 { bail!("new_app_id must be > 0"); }
+        let me = self.ops.address.as_ref().ok_or_else(|| anyhow!("No sender address"))?.to_string();
+
+        // Idempotency: if we already hold a Handle on the new app, migration is done.
+        if let Some(kvs) = self.ops.local_state_for_account(new_app_id, &me)?
+            && kvs.iter().any(|(k, _)| k == "Handle") {
+                return Ok(None);
+            }
+
+        let ancestor = match self.find_migratable_ancestor(new_app_id, &me)? {
+            Some(a) => a,
+            None => return Ok(None), // fresh install: nothing to migrate
+        };
+
+        // Opt into the new app (idempotent) so the contract can write our local state, then
+        // migrate from the ancestor. Both transactions are signed by our own account.
+        self.ops.opt_in_app(new_app_id)?;
+        let txid = self.migrate_local(new_app_id, ancestor)?;
+        Ok(Some(txid))
+    }
+
     /// Check if a specific address is allowed to relay on-chain.
     ///
     /// This queries the local state of the account for the provided app_id.

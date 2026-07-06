@@ -74,6 +74,13 @@ pub trait BingleLocalApi: Send + Sync {
     /// - handle: the user's unique handle to register on-chain
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError>;
 
+    /// Migrate this account's local state to the configured (new) app from a blessed ancestor
+    /// app, if needed. Intended to be called once at activation, before deciding the account
+    /// needs a fresh registration. Returns Ok(Some(txid)) if a migration was performed,
+    /// Ok(None) if the account is already registered on the new app or there is nothing to
+    /// migrate (a genuinely fresh install). The migration is user-signed.
+    fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError>;
+
     /// Get an AlgoOps instance configured with the current keypair.
     fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, BingleError>;
 

@@ -8,3 +8,4 @@ pub mod asset_configured_creator_localnet;
 pub mod asset_manager_creator_localnet;
 pub mod blockchain_users;
 pub mod unique_handle;
+pub mod migrate_local_localnet;

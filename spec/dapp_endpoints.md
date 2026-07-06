@@ -43,3 +43,21 @@ See [dapp_rights.md](dapp_rights.md) for per-method signer, auth, foreign refs, 
 | `set_allow_static` | `@abimethod` | APP_ADMIN   | Sets `allow_static` local state flag on a target account. Clearing it also deletes `static_endpoint` / `static_endpoint_x`. |
 | `register_endpoint` | `@abimethod` | USER_STATIC | Caller must have `allow_static == 1`. Stores endpoint string split across `static_endpoint` (≤64 bytes) and `static_endpoint_x` (overflow). Passing `""` clears both. |
 | `set_bingle_price` | `@abimethod` | APP_ADMIN   | Sets global `BinglePrice`. Admin operation                                                                 |
+
+## Migration endpoints
+
+These move users and funds from an older dapp deployment to a newer one. `set_predecessor_app`
+records an **accepted-ancestor lineage** in the global `AncestorApps` value (a packed list of
+8-byte app ids): the immediate predecessor, the predecessor's own accumulated lineage, and — to
+bridge apps deployed with the older single-predecessor contract — the predecessor's legacy
+`PredecessorApp` pointer. `migrate_local` copies a caller's local state from **any** app in that
+lineage, so a user several versions behind migrates directly in one hop. Because only the creator
+extends the lineage, a user cannot supply a fake app they control to forge admin-granted
+permissions.
+
+| Endpoint | Method | Caller | Notes |
+|---|---|---|---|
+| `set_predecessor_app` | `@abimethod` | APP_CREATOR | Blesses `predecessor` (and its accumulated lineage) as migration sources; updates global `AncestorApps`. |
+| `migrate_local` | `@abimethod` | USER | Copies the caller's local state (`Handle`/`HandleTime`, `allow_relay`, `allow_static`, and `static_endpoint`/`static_endpoint_x` when `allow_static == 1`) from a blessed ancestor app into this app. Handle is first-write-wins; requires the caller opted in to this app. |
+| `migrate_global` | `@abimethod` | APP_CREATOR | Copies global state (`BinglePrice`, `LastHandleTime`, `AppAdmin`, `AppWithdrawer`) from an old app. |
+| `migrate_reserve` | `@abimethod` | APP_CREATOR | Transfers the app account's spendable Algo and Bingle$ ASA holdings to a new app. |
