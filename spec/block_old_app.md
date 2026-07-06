@@ -53,7 +53,7 @@ creator actions at replacement time.
 
 A new keypair status `UPGRADE_REQUIRED` is threaded through the status pipeline:
 
-- `bingle-local` `keypair_status`: before the funding/registration checks it reads
+- `bingle_local` `keypair_status`: before the funding/registration checks it reads
   `successor_app(config.app_id)`; if set, it short-circuits and returns `UPGRADE_REQUIRED` (the
   whole app is retired regardless of this account's funding or handle). Best-effort — a read
   error falls through to the normal status rather than blocking the user.

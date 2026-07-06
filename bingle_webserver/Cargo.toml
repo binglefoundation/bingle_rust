@@ -15,7 +15,7 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rust_comms = { path = ".." }
-bingle-local = { path = "../bingle-local" }
+bingle_local = { path = "../bingle_local" }
 
 [dev-dependencies]
 reqwest = { version = "0.11", features = ["json"] }

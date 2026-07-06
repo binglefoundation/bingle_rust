@@ -1,5 +1,5 @@
 [package]
-name = "bingle-local"
+name = "bingle_local"
 version = "0.0.1"
 edition = "2024"
 description = "Local API crate for storing messages and contacts for Bingle (placeholder)."

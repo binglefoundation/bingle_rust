@@ -1,4 +1,4 @@
-//! bingle-local
+//! bingle_local
 //!
 //! Local storage and contacts API for Bingle.
 

@@ -401,7 +401,7 @@ components:
         - $ref: '../../spec/openapi.yaml#/components/schemas/TypedMessage'
     Response:
       $ref: '#/components/schemas/BingleMessage'
-    # Local API schemas (mirror bingle-local types)
+    # Local API schemas (mirror bingle_local types)
     Keypair:
       type: object
       required: [id, passphrase]

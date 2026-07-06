@@ -97,7 +97,7 @@ tracing from `App.tsx` "Checking activation status" → JSI start → Rust.
   an old app, deploy a new app pointing at it, run `ensure_local_migrated`, assert the new
   app's local state matches; plus the fresh-install case (no ancestor data → no migration, no
   error) and the idempotency case (second call is a no-op).
-- Run the `unit` target and confirm `tests`, `bingle_jsi`, `bingle-local`, `bingle_webserver`
+- Run the `unit` target and confirm `tests`, `bingle_jsi`, `bingle_local`, `bingle_webserver`
   compile.
 
 ## Notes / limitations

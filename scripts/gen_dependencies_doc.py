@@ -8,13 +8,13 @@ import re
 import subprocess
 from collections import defaultdict
 
-CRATES = ["rust_comms", "bingle-local", "bingle_jsi", "bingle_webserver"]
-WORKSPACE = {"rust_comms", "bingle-local", "bingle_jsi", "bingle_webserver",
+CRATES = ["rust_comms", "bingle_local", "bingle_jsi", "bingle_webserver"]
+WORKSPACE = {"rust_comms", "bingle_local", "bingle_jsi", "bingle_webserver",
              "bingle_test"}
 
 WORKSPACE_DESCRIPTIONS = {
     "rust_comms": "Core Bingle comms library: P2P messaging engine (DTLS, STUN, Algorand integration).",
-    "bingle-local": "Local API crate for storing messages and contacts for Bingle.",
+    "bingle_local": "Local API crate for storing messages and contacts for Bingle.",
     "bingle_jsi": "React Native JSI bridge for Bingle using uniffi proc macros.",
     "bingle_webserver": "Axum-based web server exposing the Bingle engine over HTTP/WebSocket.",
 }
@@ -103,7 +103,7 @@ def main():
         "transitive dependency, the **Via** column lists the direct dependencies",
         "whose subtree pulls it in.",
         "",
-        "`bingle-local`, `bingle_jsi` and `bingle_webserver` all depend on",
+        "`bingle_local`, `bingle_jsi` and `bingle_webserver` all depend on",
         "`rust_comms`, so they inherit its entire tree. To avoid repeating ~200",
         "rows per crate, transitive dependencies reached *only* through workspace",
         "crates are summarised with a count; the tables list dependencies that a",

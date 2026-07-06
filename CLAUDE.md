@@ -22,4 +22,4 @@
 ## Before finishing a task
 
 1. Run the `unit` test target and verify all tests pass with no warnings.
-2. Ensure `tests`, `bingle_jsi`, `bingle-local`, and `bingle_webserver` trees all compile.
+2. Ensure `tests`, `bingle_jsi`, `bingle_local`, and `bingle_webserver` trees all compile.

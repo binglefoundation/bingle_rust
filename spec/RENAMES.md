@@ -1,9 +1,9 @@
 No '-' in filenames
 
-relay-express.yaml
-relay-stack.yaml
+~~relay-express.yaml~~
+~~relay-stack.yaml~~
 
-bingle-local
+~~bingle_local~~
 
 Can we move dapp up to dapp_projects ?
 

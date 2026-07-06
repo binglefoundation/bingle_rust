@@ -21,5 +21,5 @@ Do Not use Trump Case in Comments, etc.
 Before finishing a task:
 
 - run the "unit" test target and verify all tests pass, no warnings were reported
-- Ensure the tests, bingle_jsi, bingle-local and bingle_webserver trees compile
+- Ensure the tests, bingle_jsi, bingle_local and bingle_webserver trees compile
 - Ensure all tests are referenced in Cargo.toml

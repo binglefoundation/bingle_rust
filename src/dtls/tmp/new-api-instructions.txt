@@ -1,4 +1,4 @@
-- Generate a new (empty) API crate bingle-local
+- Generate a new (empty) API crate bingle_local
 (This provides a local API to store messages and contacts.
 This will have multiple implementations to support local memory as well as platform provided contacts and secure storage).
 
