@@ -1,0 +1,15 @@
+{
+  "approval_sha256": "ff1a19eb8223704a48710232630a108fb0cb479d31ef4e003768313834a9d5b3",
+  "clear_sha256": "7958c4b1766428230379b17c0baa4af9243a0bb133ead8632d3c80fc0f2a9dc4",
+  "contract": "BingleDapp",
+  "schema": {
+    "global": {
+      "bytes": 4,
+      "ints": 2
+    },
+    "local": {
+      "bytes": 3,
+      "ints": 3
+    }
+  }
+}

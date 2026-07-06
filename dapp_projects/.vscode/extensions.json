@@ -3,7 +3,6 @@
     "ms-python.python",
     "tamasfe.even-better-toml",
     "editorconfig.editorconfig",
-    "vsls-contrib.codetour",
     "algorandfoundation.algokit-avm-vscode-debugger"
   ]
 }

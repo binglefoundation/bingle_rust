@@ -11,15 +11,39 @@ This guide describes how to deploy the Bingle DAPP to the Algorand Testnet as a 
 
 ## 2. Compile Smart Contracts
 
-Before deploying, you must compile the Python smart contracts to TEAL.
+Before deploying, you must compile the Python smart contracts to TEAL. Use the
+build script from the project root — it verifies the Python 3.12+ / AlgoKit /
+Poetry toolchain, bootstraps the environment (safe on a clean checkout), builds,
+and then checks the schema against `master` (see below):
 
 ```bash
-cd dapp/projects/dapp
-algokit project run build
+scripts/build_dapp.sh
 ```
 
 The compiled TEAL files will be located in:
-`dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/`
+`dapp_projects/smart_contracts/artifacts/bingle_dapp/`
+
+(The lower-level `cd dapp_projects && algokit project run build` still works if you
+only want to compile without the environment and schema checks.)
+
+### Schema check: does this need a new app?
+
+The generated artifacts are not committed. Instead, `build_dapp.sh` maintains a
+small tracked baseline — `dapp_projects/smart_contracts/bingle_dapp/app_schema.json`
+— recording the app's **state schema** plus the approval/clear program hashes, and
+compares it against the copy committed on `master`. Its warning tells you which
+deploy path below to take:
+
+- **"app state schema differs"** — the state schema is fixed at app creation, so
+  the existing app cannot be updated. Use **§3** (or §4 "New App, Same Asset") to
+  deploy a **new** app.
+- **"approval/clear program differs"** — schema is unchanged; roll out the new
+  program with an in-place **§4 update** (same `app_id`).
+- **"matches master"** — nothing to deploy.
+- **"no schema baseline committed on master"** — treat as a fresh app (§3).
+
+After a successful deploy, commit the regenerated `app_schema.json` so `master`
+becomes the new baseline for the next comparison.
 
 ## 3. Initial Staging Deployment (New App & New Asset)
 
@@ -28,7 +52,7 @@ To deploy a brand new staging application and a new Bingle$ asset:
 (from project root)
 
 ```bash
-bingle_admin deploy dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp \
+bingle_admin deploy dapp_projects/smart_contracts/artifacts/bingle_dapp \
   --new-app \
   --new-asset \
   --node-file nodely_staging_testnet_node.json \
@@ -46,7 +70,7 @@ Once successful, the command will print the new `Application ID` and `Asset ID`.
 To update the existing application code while keeping the same application ID and asset:
 
 ```bash
-bingle_admin deploy dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp \
+bingle_admin deploy dapp_projects/smart_contracts/artifacts/bingle_dapp \
   --app-id <CURRENT_APP_ID> \
   --node-file nodely_staging_testnet_node.json
 ```
@@ -58,7 +82,7 @@ bingle_admin deploy dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp \
 To deploy a new application instance while reusing the existing Bingle$ asset:
 
 ```bash
-bingle_admin deploy dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp \
+bingle_admin deploy dapp_projects/smart_contracts/artifacts/bingle_dapp \
   --new-app \
   --node-file nodely_staging_testnet_node.json
 ```

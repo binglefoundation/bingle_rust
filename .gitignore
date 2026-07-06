@@ -15,7 +15,7 @@
 /generated/
 
 # Ignore generated DAPP artifcats
-/dapp/smart_contracts/artifacts/
+/dapp_projects/smart_contracts/artifacts/
 
 /ios/
 .junie
@@ -47,7 +47,6 @@
 **/react-native-bingle-jsi*.tgz
 
 **/.build_number
-/dapp/projects/dapp/smart_contracts/artifacts/
-dapp/projects/dapp/smart_contracts/bingle_dapp/smart_contracts/artifacts/bingle_dapp
+dapp_projects/smart_contracts/bingle_dapp/smart_contracts/artifacts/bingle_dapp
 
 /.idea/noctule.xml

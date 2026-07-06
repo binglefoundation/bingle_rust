@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use crate::util::test_util;
 use test_util::init_test_logging_with_filter;
 
-const TEAL_DIR: &str = "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp";
+const TEAL_DIR: &str = "dapp_projects/smart_contracts/artifacts/bingle_dapp";
 const MIN_FEE: u64 = 1_000; // µAlgos per transaction on localnet
 const APP_FUND: u64 = 3_210_000; // µAlgos sent from APP_CREATOR to new app account on deploy
 const MIN_BALANCE_WITH_ASA: u64 = 200_000; // minimum balance for an account opted in to 1 ASA

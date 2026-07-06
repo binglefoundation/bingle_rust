@@ -249,11 +249,11 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 #[allow(dead_code)]
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     let approval_path =
-        "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
+        "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
     let clear_path =
-        "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
+        "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
     let arc56_path =
-        "dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
+        "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
 
     let approval_src =
         fs::read_to_string(approval_path).expect("read approval teal from artifacts");
@@ -325,7 +325,7 @@ pub fn deploy_bingle_app_and_asset(
     .expect("ensure standard accounts funded");
     let creator_ops = ops_from_mnemonic(ADDRESS_APP_CREATOR, PASSPHRASE_APP_CREATOR, cfg.clone());
     let accounts = make_standard_accounts(&cfg);
-    let teal_dir = std::path::Path::new("dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp");
+    let teal_dir = std::path::Path::new("dapp_projects/smart_contracts/artifacts/bingle_dapp");
     let ab = AlgoBingle::new(creator_ops, 0, 0);
     ab.deploy_app_and_asset(
         teal_dir,

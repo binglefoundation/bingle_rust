@@ -5,7 +5,7 @@ check, foreign references, transaction group the client assembles, and state
 read/written.
 
 Sources:
-- Contract: `dapp/projects/dapp/smart_contracts/bingle_dapp/contract.py`
+- Contract: `dapp_projects/smart_contracts/bingle_dapp/contract.py`
 - Rust client: `src/blockchain/algo_bingle.rs`, `src/blockchain/algo_ops.rs`
 
 ## Roles

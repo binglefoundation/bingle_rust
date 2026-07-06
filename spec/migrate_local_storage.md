@@ -35,7 +35,7 @@ user any number of versions behind migrates directly in one hop.
 
 Everything is user-signed, so the opt-in write constraint is satisfied. There is no admin path.
 
-## Part A — Contract (`dapp/projects/dapp/smart_contracts/bingle_dapp/contract.py`)
+## Part A — Contract (`dapp_projects/smart_contracts/bingle_dapp/contract.py`)
 
 - Replace `self.predecessor_app = GlobalState(UInt64, key="PredecessorApp")` with a packed
   ancestor list held in a single global `Bytes` value (key `AncestorApps`): concatenated

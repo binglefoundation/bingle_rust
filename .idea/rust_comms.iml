@@ -30,16 +30,16 @@
       <excludeFolder url="file://$MODULE_DIR$/old_dapp/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/old_dapp/debug_traces" />
       <excludeFolder url="file://$MODULE_DIR$/old_dapp/smart_contracts/artifacts" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/projects/dapp/.algokit/sources" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/projects/dapp/.venv" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/projects/dapp/smart_contracts/artifacts/bingle_dapp" />
+      <excludeFolder url="file://$MODULE_DIR$/dapp_projects/.algokit/sources" />
+      <excludeFolder url="file://$MODULE_DIR$/dapp_projects/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/dapp_projects/smart_contracts/artifacts/bingle_dapp" />
       <excludeFolder url="file://$MODULE_DIR$/ios/.swiftpm/configuration" />
       <excludeFolder url="file://$MODULE_DIR$/tmp/sentinels" />
       <excludeFolder url="file://$MODULE_DIR$/tmp/test_out" />
       <excludeFolder url="file://$MODULE_DIR$/bingle_webserver/ts-client" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/projects/dapp/smart_contracts/artifacts" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/projects/dapp/smart_contracts/bingle_dapp/smart_contracts/artifacts/bingle_dapp" />
-      <excludeFolder url="file://$MODULE_DIR$/dapp/projects/dapp/target" />
+      <excludeFolder url="file://$MODULE_DIR$/dapp_projects/smart_contracts/artifacts" />
+      <excludeFolder url="file://$MODULE_DIR$/dapp_projects/smart_contracts/bingle_dapp/smart_contracts/artifacts/bingle_dapp" />
+      <excludeFolder url="file://$MODULE_DIR$/dapp_projects/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

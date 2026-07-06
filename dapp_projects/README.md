@@ -9,8 +9,6 @@ This project has been generated using AlgoKit. See below for default getting sta
 - [Python 3.12](https://www.python.org/downloads/) or later
 - [Docker](https://www.docker.com/) (only required for LocalNet)
 
-> For interactive tour over the codebase, download [vsls-contrib.codetour](https://marketplace.visualstudio.com/items?itemName=vsls-contrib.codetour) extension for VS Code, then open the [`.codetour.json`](./.tours/getting-started-with-your-algokit-project.tour) file in code tour extension.
-
 If python3 is not the default python version, then in bash use `alias python='python3'`
 
 ### Initial Setup
@@ -25,17 +23,17 @@ Ensure the following pre-requisites are installed and properly configured:
 - **AlgoKit CLI**: Essential for project setup and operations. Install the latest version from [AlgoKit CLI Installation Guide](https://github.com/algorandfoundation/algokit-cli#install). Verify installation with `algokit --version`, expecting `2.0.0` or later.
 
 #### 3. Bootstrap Your Local Environment
-Run the following commands within the project folder (dapp/projects/dapp):
+Run the following commands within the project folder (dapp_projects):
 
 - **Install Poetry**: Required for Python dependency management. [Installation Guide](https://python-poetry.org/docs/#installation). Verify with `poetry -V` to see version `1.2`+.
 - **Setup Project**: Execute `algokit project bootstrap all` to install dependencies and setup a Python virtual environment in `.venv`.
-- **Configure environment**: Execute `algokit generate env-file -a target_network localnet` to create a `.env.localnet` file with default configuration for `localnet`.
+- **Configure environment**: Create a `.env.localnet` file with the `algod`/`indexer` configuration for `localnet` (deploy also falls back to sensible localnet defaults if no `.env` is present).
 - **Start LocalNet**: Use `algokit localnet start` to initiate a local Algorand network.
 
 ### Development Workflow
 
 #### Terminal
-Directly manage and interact with your project using AlgoKit commands in dapp/projects/dapp:
+Directly manage and interact with your project using AlgoKit commands in dapp_projects:
 
 1. **Build Contracts**: `algokit project run build` compiles all smart contracts. You can also specify a specific contract by passing the name of the contract folder as an extra argument.
    (this will create the teal files under `smart_contracts/bingle_dapp/teal`)
@@ -64,27 +62,7 @@ While primarily optimized for VS Code, JetBrains IDEs are supported:
 ## AlgoKit Workspaces and Project Management
 This project supports both standalone and monorepo setups through AlgoKit workspaces. Leverage [`algokit project run`](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/features/project/run.md) commands for efficient monorepo project orchestration and management across multiple projects within a workspace.
 
-## AlgoKit Generators
-
-This template provides a set of [algokit generators](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/features/generate.md) that allow you to further modify the project instantiated from the template to fit your needs, as well as giving you a base to build your own extensions to invoke via the `algokit generate` command.
-
-### Generate Smart Contract 
-
-By default the template creates a single `HelloWorld` contract under bingle_dapp folder in the `smart_contracts` directory. To add a new contract:
-
-1. From the root of the project (`../`) execute `algokit generate smart-contract`. This will create a new starter smart contract and deployment configuration file under `{your_contract_name}` subfolder in the `smart_contracts` directory.
-2. Each contract potentially has different creation parameters and deployment steps. Hence, you need to define your deployment logic in `deploy_config.py`file.
-3. `config.py` file will automatically build all contracts in the `smart_contracts` directory. If you want to build specific contracts manually, modify the default code provided by the template in `config.py` file.
-
-> Please note, above is just a suggested convention tailored for the base configuration and structure of this template. The default code supplied by the template in `config.py` and `index.ts` (if using ts clients) files are tailored for the suggested convention. You are free to modify the structure and naming conventions as you see fit.
-
-### Generate '.env' files
-
-By default the template instance does not contain any env files. Using [`algokit project deploy`](https://github.com/algorandfoundation/algokit-cli/blob/main/docs/features/project/deploy.md) against `localnet` | `testnet` | `mainnet` will use default values for `algod` and `indexer` unless overwritten via `.env` or `.env.{target_network}`. 
-
-To generate a new `.env` or `.env.{target_network}` file, run `algokit generate env-file`
-
-### Debugging Smart Contracts
+## Debugging Smart Contracts
 
 This project is optimized to work with AlgoKit AVM Debugger extension. To activate it:
 Refer to the commented header in the `__main__.py` file in the `smart_contracts` folder.
