@@ -133,7 +133,7 @@ if [[ $REDEPLOY_ONLY -eq 1 ]]; then
   aws ecs update-service --cluster "$CLUSTER_NAME" --service "$SERVICE_NAME" --force-new-deployment --region "$REGION"
 else
   if [[ $EXPRESS -eq 1 ]]; then
-    TEMPLATE_FILE="aws/relay-express.yaml"
+    TEMPLATE_FILE="aws/relay_express.yaml"
     echo "[deploy] Deploying CloudFormation stack '$STACK_NAME' (EXPRESS MODE)..."
     aws cloudformation deploy \
       --stack-name "$STACK_NAME" \
@@ -149,7 +149,7 @@ else
         NodeFile="$NODE_FILE" \
         CostTag="$COST_TAG"
   else
-    TEMPLATE_FILE="aws/relay-stack.yaml"
+    TEMPLATE_FILE="aws/relay_stack.yaml"
     echo "[deploy] Deploying CloudFormation stack '$STACK_NAME'..."
     aws cloudformation deploy \
       --stack-name "$STACK_NAME" \
