@@ -13,7 +13,7 @@ UX:
 - ~~lookup handle match~~
 - ~~UX to offline credentials~~
 - ~~UX to restart~~
-- upgrade required ux
+- ~~upgrade required ux~~
 
 security:
 - ensure protocol is built as documented, changes as follows:

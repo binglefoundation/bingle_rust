@@ -11,7 +11,7 @@ To automate the resolution of merge conflicts in `.build_number` files, you must
 
 ```bash
 git config merge.build-number-merge.name "Maximize build number merge driver"
-git config merge.build-number-merge.driver "./scripts/merge-build-number-driver.sh %O %A %B"
+git config merge.build-number-merge.driver "./scripts/merge_build_number_driver.sh %O %A %B"
 ```
 
 ## Repository layout
