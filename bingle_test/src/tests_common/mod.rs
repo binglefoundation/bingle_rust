@@ -403,7 +403,7 @@ pub fn asset_ops<T: TestAlgo>(passphrase: &str) -> bool {
 
     let mut pk2 = [1u8; 32];
     for i in 0..32 {
-        pk2[i] = (255 - i as u8);
+        pk2[i] = 255 - i as u8;
     }
     let addr2 = match T::addr_from_pk(&pk2) {
         Ok(a) => a,

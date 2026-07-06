@@ -1,10 +1,10 @@
+use anyhow::{anyhow, bail, Result};
 use crate::blockchain::error::AlgoError;
-use algonaut::core::ToMsgPack;
-use anyhow::{Result, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose};
+use uuid::Uuid;
 use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use base64::{engine::general_purpose, Engine as _};
+use algonaut::core::ToMsgPack;
 
 // Ensure the algonaut crate is referenced so this module is explicitly implemented with it.
 // We keep most calls abstracted for now and will progressively replace stubs with concrete calls.
@@ -292,18 +292,12 @@ impl AlgoOps {
     fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
         let mut kvs: Vec<(String, String)> = Vec::new();
         for entry in entries {
-            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) {
-                Some(s) => s,
-                None => continue,
-            };
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
             let key = match general_purpose::STANDARD.decode(key_b64) {
                 Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| key_b64.to_string()),
                 Err(_) => key_b64.to_string(),
             };
-            let val_obj = match entry.get("value").and_then(|x| x.as_object()) {
-                Some(o) => o,
-                None => continue,
-            };
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
             let vtype = val_obj.get("type").and_then(|x| x.as_u64()).unwrap_or(0);
             let val = if vtype == 1 {
                 // bytes can be an array of numbers or a base64 string
@@ -551,11 +545,6 @@ impl AlgoOps {
         Ok(Some(out))
     }
 
-    pub fn local_state_for_account(
-        &self,
-        app_id: u64,
-        account_address: &str,
-    ) -> Result<Option<Vec<(String, String)>>> {
     /// Read a single byte-valued global state entry from an arbitrary application (any app id,
     /// not limited to apps created by the sender) and return the raw bytes. Returns None if the
     /// application or the key is absent. Unlike `global_state`, this does not lossily decode the
