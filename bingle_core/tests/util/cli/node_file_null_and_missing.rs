@@ -1,17 +1,10 @@
-use bingle_core::util::cli_utils::parse_start_options_from_args;
-use std::fs;
 use std::path::PathBuf;
 
+use crate::util::test_util::write_project_tmp_file;
+use bingle_core::util::cli_utils::parse_start_options_from_args;
+
 fn write_temp_nodefile(content: &str, suffix: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let pid = std::process::id();
-    p.push(format!("nodefile-{}-{}.{}", pid, now, suffix));
-    fs::write(&p, content).expect("failed to write temp node file");
-    p
+    write_project_tmp_file("nodefile", &format!(".{}", suffix), content)
 }
 
 #[test]

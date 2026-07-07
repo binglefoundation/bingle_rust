@@ -55,8 +55,10 @@ pub trait InnerBingleApi {
     fn handle_lookup(
         &self,
         _handle: &bingle_core::api::bingle_api::Handle,
-    ) -> Result<Option<bingle_core::api::bingle_api::UserId>, bingle_core::api::bingle_api::BingleError>
-    {
+    ) -> Result<
+        Option<bingle_core::api::bingle_api::UserId>,
+        bingle_core::api::bingle_api::BingleError,
+    > {
         Ok(None)
     }
 
@@ -101,7 +103,9 @@ pub trait InnerBingleApi {
         _message: serde_json::Value,
         _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 
     fn send_message_to_handle_with_response(
@@ -110,7 +114,9 @@ pub trait InnerBingleApi {
         _message: serde_json::Value,
         _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 
     fn send_message_to_network_with_response(
@@ -120,13 +126,21 @@ pub trait InnerBingleApi {
         _message: serde_json::Value,
         _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 
-    fn set_on_message(&self, _handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>) {
+    fn set_on_message(
+        &self,
+        _handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>,
+    ) {
     }
 
-    fn set_on_connect(&self, _handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>) {
+    fn set_on_connect(
+        &self,
+        _handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>,
+    ) {
     }
 
     fn get_signing_key(&self) -> Option<ed25519_dalek::SigningKey> {
@@ -245,8 +259,10 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
     fn handle_lookup(
         &self,
         handle: &bingle_core::api::bingle_api::Handle,
-    ) -> Result<Option<bingle_core::api::bingle_api::UserId>, bingle_core::api::bingle_api::BingleError>
-    {
+    ) -> Result<
+        Option<bingle_core::api::bingle_api::UserId>,
+        bingle_core::api::bingle_api::BingleError,
+    > {
         self.inner_bingle_api.handle_lookup(handle)
     }
 
@@ -521,7 +537,9 @@ pub trait InnerBingleApiInternal {
         _endpoint: std::net::SocketAddr,
         _am_relay: bool,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 
     fn ddb_register_relay(
@@ -529,7 +547,9 @@ pub trait InnerBingleApiInternal {
         _relay_id: String,
         _relay_sig: Option<String>,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 
     fn update_turn_listener_relay(
@@ -537,7 +557,9 @@ pub trait InnerBingleApiInternal {
         _relay_id: String,
         _relay_addr: std::net::SocketAddr,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 
     fn turn_client_handle_listen_response(

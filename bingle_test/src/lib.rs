@@ -1,4 +1,5 @@
 pub mod tests_common;
+pub mod temp_file_helpers;
 
 extern crate self as bingle_test;
 

@@ -4,6 +4,7 @@ use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::util::test_util::project_tmp_dir_path;
 use bingle_core::api::bingle_api::{BingleApi, OnListeningHandler, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
@@ -133,9 +134,8 @@ impl Dtls for MockDtls {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_static_ip_triggers_on_listening_handler() {
-    // Prepare a temp sentinel path
-    let dir = tempfile::tempdir().expect("tempdir");
-    let sentinel_path = dir.path().join("engine_listening.sentinel");
+    let dir = project_tmp_dir_path("engine-listening-sentinel");
+    let sentinel_path = dir.join("engine_listening.sentinel");
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Build API with mock DTLS and install sentinel creator handler

@@ -14,9 +14,9 @@ use crate::models::{
     SendMessageToHandleRequest, SendMessageToIdRequest, SendMessageToNetworkRequest,
 };
 use crate::try_start_api;
-use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::error::AlgoErrorKind;
+use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 
 fn handle_bingle_error(e: BingleError) -> AxumResponse {
     match e {

@@ -138,7 +138,9 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let mut server = DtlsOpenSsl::new("server".to_string())
         .with_dangerous_debug(true)
         .with_null_encryption()
-        .with_handle_peer_certificate(bingle_core::protocol::cert_verify::peer_certificate_handler())
+        .with_handle_peer_certificate(
+            bingle_core::protocol::cert_verify::peer_certificate_handler(),
+        )
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
@@ -161,7 +163,9 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let mut client = DtlsOpenSsl::new("client".to_string())
         .with_dangerous_debug(true)
         .with_null_encryption()
-        .with_handle_peer_certificate(bingle_core::protocol::cert_verify::peer_certificate_handler())
+        .with_handle_peer_certificate(
+            bingle_core::protocol::cert_verify::peer_certificate_handler(),
+        )
         .with_client_cert(client_cert_pem.clone())
         .with_client_private_key(client_key_pem.clone())
         .with_server_signing_cert(server_cert_pem.clone())

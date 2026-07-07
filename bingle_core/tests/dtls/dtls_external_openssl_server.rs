@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::util::test_util::project_tmp_dir_path;
 use bingle_core::dtls::{Dtls, DtlsOpenSsl};
 pub mod pki;
 
@@ -35,11 +36,10 @@ pub fn dtls_openssl_external_s_server_client_send() {
     // Generate server cert and key (and CA, though we won't require mutual auth)
     let certs = pki::generate_ed25519_test_certs();
 
-    // Write server cert and key to temporary files for s_server
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let server_crt_path = tmp.path().join("server.crt");
-    let ca_crt_path = tmp.path().join("ca.crt");
-    let server_key_path = tmp.path().join("server.key");
+    let tmp = project_tmp_dir_path("openssl-server-certs");
+    let server_crt_path = tmp.join("server.crt");
+    let ca_crt_path = tmp.join("ca.crt");
+    let server_key_path = tmp.join("server.key");
     std::fs::write(&server_crt_path, &certs.server_crt).expect("write server cert");
     std::fs::write(&ca_crt_path, &certs.ca_crt).expect("write ca cert");
     std::fs::write(&server_key_path, &certs.server_key).expect("write server key");

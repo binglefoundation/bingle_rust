@@ -272,7 +272,9 @@ pub fn test_relay_ping_handler_honors_exclusions() {
             _m: serde_json::Value,
             _p: Option<Arc<ProgressCallback>>,
         ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-            Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+            Err(bingle_core::api::bingle_api::BingleError::Other(
+                "ni".into(),
+            ))
         }
         fn send_message_to_handle_with_response(
             &self,
@@ -280,7 +282,9 @@ pub fn test_relay_ping_handler_honors_exclusions() {
             _m: serde_json::Value,
             _p: Option<Arc<ProgressCallback>>,
         ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-            Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+            Err(bingle_core::api::bingle_api::BingleError::Other(
+                "ni".into(),
+            ))
         }
         fn send_message_to_network_with_response(
             &self,
@@ -289,7 +293,9 @@ pub fn test_relay_ping_handler_honors_exclusions() {
             _m: serde_json::Value,
             _p: Option<Arc<ProgressCallback>>,
         ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-            Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+            Err(bingle_core::api::bingle_api::BingleError::Other(
+                "ni".into(),
+            ))
         }
         fn set_on_message(&mut self, _h: Option<Arc<OnMessageHandler>>) {}
         fn set_on_connect(&mut self, _h: Option<Arc<OnConnectHandler>>) {}

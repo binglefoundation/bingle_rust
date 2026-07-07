@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use crate::common::{HandleMockBingleApi, MockBingleApi};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_test::temp_file_helpers::project_tmp_dir_path;
 use bingle_webserver::AppState;
 use bingle_webserver::handlers as web_handlers;
 use bingle_webserver::handlers::{HandleQuery, handle_lookup, send_message_to_id};
@@ -84,8 +85,8 @@ async fn test_local_disabled_returns_405() {
 
 #[tokio::test]
 async fn test_local_generate_keypair_saves_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let file_path = tmp.path().join("state.json");
+    let tmp = project_tmp_dir_path("webserver-local-generate-keypair");
+    let file_path = tmp.join("state.json");
 
     // Prepare local API
     let impl_api = BingleApiLocalImpl::new(LocalApiConfig::default());

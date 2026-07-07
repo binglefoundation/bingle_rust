@@ -76,7 +76,10 @@ impl Dtls for FakeDtls {
         _handler: Option<bingle_core::dtls::HandlePeerCertificate>,
     ) {
     }
-    fn with_handle_peer_certificate(self, _handler: bingle_core::dtls::HandlePeerCertificate) -> Self
+    fn with_handle_peer_certificate(
+        self,
+        _handler: bingle_core::dtls::HandlePeerCertificate,
+    ) -> Self
     where
         Self: Sized,
     {

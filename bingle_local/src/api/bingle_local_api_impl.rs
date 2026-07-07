@@ -188,21 +188,34 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
     fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> {
         let app_id = self.config.app_id;
-        if app_id == 0 { return Err(BingleError::Other("app_id not set in config".to_string())); }
+        if app_id == 0 {
+            return Err(BingleError::Other("app_id not set in config".to_string()));
+        }
         let ops = self.get_algo_ops()?;
         let asset_id = self.config.asset_id;
         let bgl = AlgoBingle::new(ops, app_id, asset_id);
         match bgl.ensure_local_migrated(app_id) {
             Ok(Some(txid)) => {
-                tracing::info!("[BingleLocalApi] migrated local state to app {} (tx {})", app_id, txid);
+                tracing::info!(
+                    "[BingleLocalApi] migrated local state to app {} (tx {})",
+                    app_id,
+                    txid
+                );
                 Ok(Some(txid))
             }
             Ok(None) => {
-                tracing::info!("[BingleLocalApi] no local-state migration needed for app {}", app_id);
+                tracing::info!(
+                    "[BingleLocalApi] no local-state migration needed for app {}",
+                    app_id
+                );
                 Ok(None)
             }
             Err(e) => {
-                tracing::error!("[BingleLocalApi] local-state migration failed for app {}: {}", app_id, e);
+                tracing::error!(
+                    "[BingleLocalApi] local-state migration failed for app {}: {}",
+                    app_id,
+                    e
+                );
                 Err(BingleError::from_anyhow(e))
             }
         }
@@ -771,7 +784,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
                     let bgl = AlgoBingle::new(ops, configured_app_id, self.config.asset_id);
                     match bgl.successor_app(configured_app_id) {
                         Ok(Some(successor)) => {
-                            tracing::info!("[BingleLocalApi][keypair_status] app {} superseded by {}; UPGRADE_REQUIRED", configured_app_id, successor);
+                            tracing::info!(
+                                "[BingleLocalApi][keypair_status] app {} superseded by {}; UPGRADE_REQUIRED",
+                                configured_app_id,
+                                successor
+                            );
                             return Ok(KeypairStatus {
                                 status: "UPGRADE_REQUIRED".to_string(),
                                 id: Some(algorand_id),
@@ -780,10 +797,16 @@ impl BingleLocalApi for BingleApiLocalImpl {
                             });
                         }
                         Ok(None) => {}
-                        Err(e) => tracing::warn!("[BingleLocalApi][keypair_status] successor check failed (continuing): {}", e),
+                        Err(e) => tracing::warn!(
+                            "[BingleLocalApi][keypair_status] successor check failed (continuing): {}",
+                            e
+                        ),
                     }
                 }
-                Err(e) => tracing::warn!("[BingleLocalApi][keypair_status] get_algo_ops for successor check failed (continuing): {}", e),
+                Err(e) => tracing::warn!(
+                    "[BingleLocalApi][keypair_status] get_algo_ops for successor check failed (continuing): {}",
+                    e
+                ),
             }
         }
 

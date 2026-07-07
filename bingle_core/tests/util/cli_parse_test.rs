@@ -1,6 +1,8 @@
 use bingle_core::util::cli_utils::parse_start_options_from_args;
 use std::net::SocketAddr;
 
+use crate::util::test_util::write_project_tmp_file;
+
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn parse_positional_handle_and_flags() {
@@ -51,10 +53,9 @@ pub fn parse_stun_servers_list() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn parse_stun_servers_file() {
-    let mut tf = tempfile::NamedTempFile::new().expect("tempfile");
-    use std::io::Write;
-    writeln!(tf, "10.0.0.1:3478\n10.0.0.2:3478").unwrap();
-    let path = tf.path().to_string_lossy().to_string();
+    let path = write_project_tmp_file("stun", ".txt", "10.0.0.1:3478\n10.0.0.2:3478")
+        .to_string_lossy()
+        .to_string();
 
     let args = vec![
         "charlie".to_string(),

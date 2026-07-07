@@ -32,9 +32,9 @@ pub fn relay_keep_alive_refreshes_mapping_without_response() {
     // Arrange: a Router configured as a relay with a TURN handler
     let turn = std::sync::Arc::new(bingle_core::turn::turn_handler::TurnHandlerImpl::new());
     let internal = Arc::new(MockInternal { turn: turn.clone() });
-    let router = std::sync::Arc::new(bingle_core::messages::router::Router::new(to_weak_api_both(
-        MockApiBoth::new_with_internal_override(internal),
-    )));
+    let router = std::sync::Arc::new(bingle_core::messages::router::Router::new(
+        to_weak_api_both(MockApiBoth::new_with_internal_override(internal)),
+    ));
     router.set_am_relay(true);
     // Simulate a NAT rebind: the keep-alive arrives from a new source port
     let source = addr(9101);
@@ -62,9 +62,9 @@ pub fn relay_keep_alive_refreshes_mapping_without_response() {
 pub fn relay_keep_alive_ignored_when_not_a_relay() {
     let turn = std::sync::Arc::new(bingle_core::turn::turn_handler::TurnHandlerImpl::new());
     let internal = Arc::new(MockInternal { turn: turn.clone() });
-    let router = std::sync::Arc::new(bingle_core::messages::router::Router::new(to_weak_api_both(
-        MockApiBoth::new_with_internal_override(internal),
-    )));
+    let router = std::sync::Arc::new(bingle_core::messages::router::Router::new(
+        to_weak_api_both(MockApiBoth::new_with_internal_override(internal)),
+    ));
     router.set_am_relay(false);
     let source = addr(9102);
     router.set_last_from(Some(source));

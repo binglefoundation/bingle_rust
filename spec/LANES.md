@@ -111,10 +111,7 @@ tokenomics:
 - develop tokenomics model
 - implement pricing accordingly
 
-android:
-- support NDK in library
-- support Android for react native UX
-- build APK
+
 
 deploy:
 - Rewrite README.md with description and instructions to get started with iOS app
@@ -140,3 +137,8 @@ Bugs:
 Deferred (to create bugs):
 - cache DDB locally with timeout / cancel
 - (protocol review) ensure fails result in a fail message which gets handled
+
+- -android:
+- support NDK in library
+- support Android for react native UX
+- build APK

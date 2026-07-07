@@ -18,7 +18,9 @@ impl InnerBingleApi for MockApi {
         _message: serde_json::Value,
         _progress: Option<Arc<ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
 }
 

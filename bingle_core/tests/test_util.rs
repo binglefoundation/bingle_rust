@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
+pub use bingle_test::temp_file_helpers::{project_tmp_dir_path, write_project_tmp_file};
+
 // Localnet token from Algorand docs / Algokit localnet
 #[allow(dead_code)]
 pub const LOCALNET_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -250,10 +252,8 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
     let approval_path =
         "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
-    let clear_path =
-        "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
-    let arc56_path =
-        "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
+    let clear_path = "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
+    let arc56_path = "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
 
     let approval_src =
         fs::read_to_string(approval_path).expect("read approval teal from artifacts");
@@ -414,9 +414,9 @@ pub fn get_compact_advert_record(
     addr: std::net::SocketAddr,
     am_relay: bool,
 ) -> String {
+    use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
     use chrono::Utc;
     use ed25519_dalek::SigningKey;
-    use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 
     let sk_bytes = ops.private_key_bytes().expect("private key bytes");
     let sk_arr: [u8; 32] = sk_bytes.try_into().expect("32 bytes sk");
@@ -441,9 +441,9 @@ pub fn get_signed_advert_record(
     addr: std::net::SocketAddr,
     am_relay: bool,
 ) -> bingle_core::ddb::AdvertRecord {
+    use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
     use chrono::Utc;
     use ed25519_dalek::SigningKey;
-    use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 
     // Use a simple seed derivation if passphrase is not 32 bytes
     let mut seed = [0u8; 32];

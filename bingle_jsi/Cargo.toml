@@ -23,6 +23,7 @@ chrono = { version = "0.4", features = ["serde"] }
 [dev-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
 tempfile = "3"
+bingle_test = { path = "../bingle_test" }
 
 [build-dependencies]
 vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }

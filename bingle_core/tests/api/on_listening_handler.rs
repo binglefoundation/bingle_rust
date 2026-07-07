@@ -2,15 +2,17 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::fs;
 use std::sync::Arc;
 
-use bingle_core::api::bingle_api::{BingleApi, BingleApiInternal, OnListeningHandler, StartOptions};
+use crate::util::test_util::project_tmp_dir_path;
+use bingle_core::api::bingle_api::{
+    BingleApi, BingleApiInternal, OnListeningHandler, StartOptions,
+};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn on_listening_handler_creates_and_deletes_sentinel() {
-    // Create a temporary directory for the sentinel file
-    let dir = tempfile::tempdir().expect("tempdir");
-    let sentinel_path = dir.path().join("listening.sentinel");
+    let dir = project_tmp_dir_path("listening-sentinel");
+    let sentinel_path = dir.join("listening.sentinel");
     let sentinel_str = sentinel_path.to_string_lossy().to_string();
 
     // Set up API and install an OnListeningHandler that mirrors CLI behavior

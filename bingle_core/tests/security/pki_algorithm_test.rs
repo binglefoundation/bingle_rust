@@ -1,6 +1,6 @@
+use bingle_core::api::pki::generate_pki_from_ops;
 use openssl::pkey::Id;
 use openssl::x509::X509;
-use bingle_core::api::pki::generate_pki_from_ops;
 
 #[path = "../test_util.rs"]
 pub mod test_util;

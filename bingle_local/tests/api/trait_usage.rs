@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_ops::AlgoOps;
+use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
 
 #[derive(Default)]
 struct DummyLocal {
@@ -26,7 +26,9 @@ impl BingleLocalApi for DummyLocal {
         Ok(true)
     }
 
-    fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> { Ok(None) }
+    fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> {
+        Ok(None)
+    }
 
     fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         let pass = self

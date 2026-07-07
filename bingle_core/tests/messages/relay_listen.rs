@@ -48,9 +48,9 @@ pub fn relay_listen_registers_and_responds() {
         }
     }
     let internal = Arc::new(MockInternal { turn: turn.clone() });
-    let router = std::sync::Arc::new(bingle_core::messages::router::Router::new(to_weak_api_both(
-        MockApiBoth::new_with_internal_override(internal),
-    )));
+    let router = std::sync::Arc::new(bingle_core::messages::router::Router::new(
+        to_weak_api_both(MockApiBoth::new_with_internal_override(internal)),
+    ));
     router.set_am_relay(true);
     let source = addr(9001);
     router.set_last_from(Some(source));

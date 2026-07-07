@@ -7,6 +7,7 @@ use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType,
 };
+use bingle_test::temp_file_helpers::project_tmp_file_path;
 
 /// Helper: build a minimal config with only `handle` set.
 fn config_with_handle(handle: &str) -> BingleJsiConfig {
@@ -94,7 +95,7 @@ fn create_bingle_api_returns_trait_object() {
 
 #[test]
 fn init_with_local_and_no_handle_succeeds() {
-    let tmp = std::env::temp_dir().join("bingle_jsi_test_init_local.json");
+    let tmp = project_tmp_file_path("bingle-jsi-test-init-local", ".json");
     let api = BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()));
     assert!(
         api.is_ok(),
@@ -172,13 +173,7 @@ fn local_methods_fail_without_local_flag() {
 // ── local API tests (with local) ─────────────────────────────────────
 
 fn init_with_local_helper() -> std::sync::Arc<BingleJsiApiImpl> {
-    let tmp = std::env::temp_dir().join(format!(
-        "bingle_jsi_test_{}.json",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let tmp = project_tmp_file_path("bingle-jsi-test", ".json");
     BingleJsiApiImpl::init(config_with_local(&tmp.to_string_lossy()))
         .expect("init with local should succeed")
 }
@@ -301,13 +296,7 @@ fn add_and_get_messages() {
 
 #[test]
 fn save_and_load_round_trip() {
-    let tmp_save = std::env::temp_dir().join(format!(
-        "bingle_jsi_save_test_{}.json",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let tmp_save = project_tmp_file_path("bingle-jsi-save-test", ".json");
     let api = init_with_local_helper();
     api.add_contact(
         "dave".to_string(),

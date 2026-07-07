@@ -1,5 +1,5 @@
-use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 use bingle_core::api::bingle_api::BingleError;
+use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 
 #[test]
 fn test_queue_message_fails_without_handle() {

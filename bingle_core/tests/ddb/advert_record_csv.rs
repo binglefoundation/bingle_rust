@@ -1,6 +1,6 @@
+use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use ed25519_dalek::SigningKey;
 use rand_core::OsRng;
-use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 
 #[test]
 fn test_advert_record_csv_roundtrip() {

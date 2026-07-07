@@ -14,8 +14,6 @@ use crate::api::types::{
     KeypairStatus, KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey,
     VersionInfo,
 };
-use bingle_local::api::bingle_local_api::BingleLocalApi;
-use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_core::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
@@ -24,6 +22,8 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 use bingle_core::util::config_utils::{
     parse_node_file_with_ids, parse_stun_file, parse_stun_list, resolve_app_asset_ids,
 };
+use bingle_local::api::bingle_local_api::BingleLocalApi;
+use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
 /// Concrete implementation of BingleJsiApi backed by BingleApiImpl and BingleApiLocalImpl.
 pub struct BingleJsiApiImpl {
@@ -455,7 +455,9 @@ impl BingleJsiApiImpl {
                         // the client must be upgraded. The UPGRADE_REQUIRED status is surfaced to
                         // the UI to prompt the user to update the app.
                         if status.status == "UPGRADE_REQUIRED" {
-                            tracing::warn!("Bingle API start blocked: configured app is superseded, upgrade required");
+                            tracing::warn!(
+                                "Bingle API start blocked: configured app is superseded, upgrade required"
+                            );
                         } else {
                             // If not yet active on the configured app, attempt a one-time migration
                             // of local state from a blessed predecessor app, then re-check. This
@@ -465,11 +467,19 @@ impl BingleJsiApiImpl {
                             if status.status != "ACTIVE" {
                                 match guard.ensure_local_migrated() {
                                     Ok(Some(tx)) => {
-                                        tracing::info!("Migrated local state from predecessor app (tx {})", tx);
-                                        if let Ok(s2) = guard.keypair_status() { status = s2; }
+                                        tracing::info!(
+                                            "Migrated local state from predecessor app (tx {})",
+                                            tx
+                                        );
+                                        if let Ok(s2) = guard.keypair_status() {
+                                            status = s2;
+                                        }
                                     }
                                     Ok(None) => {}
-                                    Err(e) => tracing::warn!("Local-state migration check failed (continuing): {}", e),
+                                    Err(e) => tracing::warn!(
+                                        "Local-state migration check failed (continuing): {}",
+                                        e
+                                    ),
                                 }
                             }
                             if status.status == "ACTIVE" {
@@ -1041,6 +1051,9 @@ impl BingleJsiApi for BingleJsiApiImpl {
             tracing::info!(
                 "[BingleJsiApiImpl][start] Engine already started, skipping engine start"
             );
+            return Err(BingleJsiError::InvalidRequest {
+                reason: "Bingle engine is already started".to_string(),
+            });
         } else {
             tracing::info!("[BingleJsiApiImpl][start] Starting engine");
 

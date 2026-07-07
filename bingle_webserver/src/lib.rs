@@ -3,9 +3,9 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_local::api::bingle_local_api::BingleLocalApi;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

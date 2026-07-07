@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use crate::common::{CapturingMockBingleApi, TrackingMockBingleApi};
+use bingle_core::api::bingle_api::{BingleError, StartOptions};
+use bingle_core::blockchain::algo_ops::AlgoOps;
 use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message,
 };
 use bingle_webserver::{AppState, try_start_api};
-use bingle_core::api::bingle_api::{BingleError, StartOptions};
-use bingle_core::blockchain::algo_ops::AlgoOps;
 
 /// A test-only BingleLocalApi that lets us control keypair_status results.
 struct ControllableLocalApi {

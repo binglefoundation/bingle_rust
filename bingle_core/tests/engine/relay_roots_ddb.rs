@@ -169,8 +169,10 @@ impl BingleApi for MockApi {
     fn handle_lookup(
         &self,
         _handle: &bingle_core::api::bingle_api::Handle,
-    ) -> Result<Option<bingle_core::api::bingle_api::UserId>, bingle_core::api::bingle_api::BingleError>
-    {
+    ) -> Result<
+        Option<bingle_core::api::bingle_api::UserId>,
+        bingle_core::api::bingle_api::BingleError,
+    > {
         Ok(None)
     }
     fn handle_lookup_by_id(
@@ -210,7 +212,9 @@ impl BingleApi for MockApi {
         _message: serde_json::Value,
         _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
     fn send_message_to_handle_with_response(
         &self,
@@ -218,7 +222,9 @@ impl BingleApi for MockApi {
         _message: serde_json::Value,
         _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
     fn send_message_to_network_with_response(
         &self,
@@ -227,7 +233,9 @@ impl BingleApi for MockApi {
         _message: serde_json::Value,
         _progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
     ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
-        Err(bingle_core::api::bingle_api::BingleError::Other("ni".into()))
+        Err(bingle_core::api::bingle_api::BingleError::Other(
+            "ni".into(),
+        ))
     }
     fn set_on_message(
         &mut self,

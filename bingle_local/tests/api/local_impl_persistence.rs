@@ -1,4 +1,5 @@
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, ContactSource, LocalApiConfig};
+use bingle_test::temp_file_helpers::{project_tmp_dir_path, project_tmp_file_path};
 use std::fs;
 
 #[test]
@@ -20,9 +21,11 @@ fn persistence_roundtrip_preserves_state() {
     api.add_message("bob".into(), vec!["alice".into()], 2, "m2".into(), None)
         .expect("add m2");
 
-    // Save to a temporary file
-    let tf = tempfile::NamedTempFile::new().expect("tempfile");
-    let path = tf.path().to_str().unwrap().to_string();
+    let file_path = project_tmp_file_path("bingle-local-persistence", ".json");
+    let path = file_path
+        .to_str()
+        .expect("project tmp path should be valid utf-8")
+        .to_string();
     api.save(&path).expect("save ok");
 
     // Load into a fresh instance
@@ -50,14 +53,11 @@ fn persistence_roundtrip_preserves_state() {
 #[test]
 fn load_missing_file_errors() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let missing = format!(
-        "/tmp/bingle_local_missing_{}_{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
+    let missing = project_tmp_file_path("bingle-local-missing", ".json");
+    let missing = missing
+        .to_str()
+        .expect("project tmp path should be valid utf-8")
+        .to_string();
     let res = api.load(&missing);
     assert!(res.is_err());
 }
@@ -65,9 +65,12 @@ fn load_missing_file_errors() {
 #[test]
 fn load_empty_json_object_yields_empty_state() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
-    let tf = tempfile::NamedTempFile::new().expect("tempfile");
-    fs::write(tf.path(), "{}").expect("write empty json");
-    let path = tf.path().to_str().unwrap().to_string();
+    let file_path = project_tmp_file_path("bingle-local-empty", ".json");
+    fs::write(&file_path, "{}").expect("write empty json");
+    let path = file_path
+        .to_str()
+        .expect("project tmp path should be valid utf-8")
+        .to_string();
 
     api.load(&path).expect("load empty {} ok");
 
@@ -83,9 +86,12 @@ fn load_empty_json_object_yields_empty_state() {
 fn save_creates_parent_directories() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     let _kp = api.generate_keypair().expect("keypair");
-    let base = tempfile::tempdir().expect("tempdir");
-    let nested = base.path().join("nested/sub/dir/state.json");
-    let path = nested.to_str().unwrap().to_string();
+    let base = project_tmp_dir_path("bingle-local-parent-dirs");
+    let nested = base.join("nested/sub/dir/state.json");
+    let path = nested
+        .to_str()
+        .expect("project tmp path should be valid utf-8")
+        .to_string();
     api.save(&path).expect("save ok");
     let meta = fs::metadata(&nested).expect("file exists");
     assert!(meta.is_file());
@@ -95,9 +101,12 @@ fn save_creates_parent_directories() {
 fn save_succeeds_when_parent_directory_already_exists() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     let _kp = api.generate_keypair().expect("keypair");
-    let base = tempfile::tempdir().expect("tempdir");
-    let file_path = base.path().join("state.json");
-    let path = file_path.to_str().unwrap().to_string();
+    let base = project_tmp_dir_path("bingle-local-existing-parent");
+    let file_path = base.join("state.json");
+    let path = file_path
+        .to_str()
+        .expect("project tmp path should be valid utf-8")
+        .to_string();
 
     // First save creates the file
     api.save(&path).expect("first save ok");

@@ -506,6 +506,7 @@ version = "0.1.1"
 dependencies = [
  "bingle_core",
  "bingle_local",
+ "bingle_test",
  "chrono",
  "serde_json",
  "tempfile",
@@ -521,6 +522,7 @@ name = "bingle_local"
 version = "0.0.1"
 dependencies = [
  "bingle_core",
+ "bingle_test",
  "serde",
  "serde_json",
  "tempfile",
@@ -547,6 +549,7 @@ dependencies = [
  "axum",
  "bingle_core",
  "bingle_local",
+ "bingle_test",
  "ntest",
  "reqwest 0.11.27",
  "serde",

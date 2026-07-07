@@ -29,14 +29,14 @@ pub mod algo_ops_integration_localnet;
 pub mod asset_clawback_creator_localnet;
 #[path = "integration/blockchain/asset_manager_creator_localnet.rs"]
 pub mod asset_manager_creator_localnet;
-#[path = "integration/blockchain/deploy_app_and_asset_localnet.rs"]
-pub mod deploy_app_and_asset_localnet;
-#[path = "integration/blockchain/unique_handle.rs"]
-pub mod unique_handle;
-#[path = "integration/blockchain/migrate_local_localnet.rs"]
-pub mod migrate_local_localnet;
 #[path = "integration/blockchain/block_old_app_localnet.rs"]
 pub mod block_old_app_localnet;
+#[path = "integration/blockchain/deploy_app_and_asset_localnet.rs"]
+pub mod deploy_app_and_asset_localnet;
+#[path = "integration/blockchain/migrate_local_localnet.rs"]
+pub mod migrate_local_localnet;
+#[path = "integration/blockchain/unique_handle.rs"]
+pub mod unique_handle;
 
 // API integration tests that need localnet
 #[path = "integration/api/connection_tests.rs"]

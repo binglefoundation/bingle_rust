@@ -14,22 +14,31 @@ use serial_test::serial;
 use crate::setup_localnet;
 use crate::util::test_util;
 use test_util::{
-    deploy_bingle_app, deploy_bingle_app_and_asset, localnet_config, ops_from_mnemonic,
-    register_client_on_blockchain, ADDRESS_APP_CREATOR, ADDRESS_RECEIVE, ADDRESS_SPEND,
-    PASSPHRASE_APP_CREATOR, PASSPHRASE_RECEIVE, PASSPHRASE_SPEND,
+    ADDRESS_APP_CREATOR, ADDRESS_RECEIVE, ADDRESS_SPEND, PASSPHRASE_APP_CREATOR,
+    PASSPHRASE_RECEIVE, PASSPHRASE_SPEND, deploy_bingle_app, deploy_bingle_app_and_asset,
+    localnet_config, ops_from_mnemonic, register_client_on_blockchain,
 };
 
 /// Poll the account's local state on `app_id` until it holds `Handle == handle`, or panic.
-fn wait_for_handle(ops: &bingle_core::blockchain::algo_ops::AlgoOps, app_id: u64, account: &str, handle: &str) {
+fn wait_for_handle(
+    ops: &bingle_core::blockchain::algo_ops::AlgoOps,
+    app_id: u64,
+    account: &str,
+    handle: &str,
+) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(30) {
         if let Ok(Some(entries)) = ops.local_state_for_account(app_id, account)
-            && entries.iter().any(|(k, v)| k == "Handle" && v == handle) {
-                return;
-            }
+            && entries.iter().any(|(k, v)| k == "Handle" && v == handle)
+        {
+            return;
+        }
         std::thread::sleep(Duration::from_millis(500));
     }
-    panic!("Handle '{}' not visible in local state of app {} for {} within timeout", handle, app_id, account);
+    panic!(
+        "Handle '{}' not visible in local state of app {} for {} within timeout",
+        handle, app_id, account
+    );
 }
 
 #[test]
@@ -46,32 +55,53 @@ pub fn migrate_local_from_predecessor_localnet() {
     // Old app (with the Bingle$ ASA) — the client registers here.
     let (old_app, asset_id) = deploy_bingle_app_and_asset(&creator_ops, "MIGOLD", 1_000_000);
     let handle = "migrant_one";
-    register_client_on_blockchain(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, handle, old_app, asset_id, &creator_ops, cfg.clone());
+    register_client_on_blockchain(
+        ADDRESS_RECEIVE,
+        PASSPHRASE_RECEIVE,
+        handle,
+        old_app,
+        asset_id,
+        &creator_ops,
+        cfg.clone(),
+    );
 
     // New app (same creator) blesses the old app as a migration source.
     let new_app = deploy_bingle_app(&creator_ops);
     let creator_bgl = AlgoBingle::new(creator_ops.clone(), new_app, 0);
-    creator_bgl.set_predecessor_app(new_app, old_app).expect("set_predecessor_app");
+    creator_bgl
+        .set_predecessor_app(new_app, old_app)
+        .expect("set_predecessor_app");
 
     // A genuinely fresh account (no data on any ancestor) must be a no-op.
     let fresh_ops = ops_from_mnemonic(ADDRESS_SPEND, PASSPHRASE_SPEND, cfg.clone());
     let fresh_bgl = AlgoBingle::new(fresh_ops, new_app, asset_id);
     assert!(
-        fresh_bgl.ensure_local_migrated(new_app).expect("fresh ensure_local_migrated").is_none(),
+        fresh_bgl
+            .ensure_local_migrated(new_app)
+            .expect("fresh ensure_local_migrated")
+            .is_none(),
         "a fresh install with no ancestor data must not migrate"
     );
 
     // The registered client migrates its local state to the new app.
     let client_ops = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
     let client_bgl = AlgoBingle::new(client_ops.clone(), new_app, asset_id);
-    let tx = client_bgl.ensure_local_migrated(new_app).expect("ensure_local_migrated");
-    assert!(tx.is_some(), "expected a migration transaction for the registered client");
+    let tx = client_bgl
+        .ensure_local_migrated(new_app)
+        .expect("ensure_local_migrated");
+    assert!(
+        tx.is_some(),
+        "expected a migration transaction for the registered client"
+    );
 
     wait_for_handle(&client_ops, new_app, ADDRESS_RECEIVE, handle);
 
     // Idempotency: a second call is a no-op now that the handle exists on the new app.
     assert!(
-        client_bgl.ensure_local_migrated(new_app).expect("second ensure_local_migrated").is_none(),
+        client_bgl
+            .ensure_local_migrated(new_app)
+            .expect("second ensure_local_migrated")
+            .is_none(),
         "migration must be idempotent once the account is registered on the new app"
     );
 }
@@ -90,7 +120,15 @@ pub fn migrate_local_two_versions_back_localnet() {
     // app_a (with the ASA): the client registers here — this is two versions back from app_c.
     let (app_a, asset_id) = deploy_bingle_app_and_asset(&creator_ops, "MIGA", 1_000_000);
     let handle = "migrant_two";
-    register_client_on_blockchain(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, handle, app_a, asset_id, &creator_ops, cfg.clone());
+    register_client_on_blockchain(
+        ADDRESS_RECEIVE,
+        PASSPHRASE_RECEIVE,
+        handle,
+        app_a,
+        asset_id,
+        &creator_ops,
+        cfg.clone(),
+    );
 
     // app_b -> predecessor app_a; app_c -> predecessor app_b. app_c's lineage accumulates to
     // {app_b, app_a}, so a client whose data lives on app_a can migrate directly to app_c.
@@ -108,13 +146,23 @@ pub fn migrate_local_two_versions_back_localnet() {
     let lineage = AlgoBingle::new(creator_ops.clone(), app_c, 0)
         .ancestor_apps(app_c)
         .expect("ancestor_apps(app_c)");
-    assert!(lineage.contains(&app_a), "app_c lineage {:?} should contain app_a {}", lineage, app_a);
+    assert!(
+        lineage.contains(&app_a),
+        "app_c lineage {:?} should contain app_a {}",
+        lineage,
+        app_a
+    );
 
     // The client migrates directly from app_a (its data source) to app_c in one hop.
     let client_ops = ops_from_mnemonic(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, cfg.clone());
     let client_bgl = AlgoBingle::new(client_ops.clone(), app_c, asset_id);
-    let tx = client_bgl.ensure_local_migrated(app_c).expect("ensure_local_migrated to app_c");
-    assert!(tx.is_some(), "expected a migration transaction from two versions back");
+    let tx = client_bgl
+        .ensure_local_migrated(app_c)
+        .expect("ensure_local_migrated to app_c");
+    assert!(
+        tx.is_some(),
+        "expected a migration transaction from two versions back"
+    );
 
     wait_for_handle(&client_ops, app_c, ADDRESS_RECEIVE, handle);
 }

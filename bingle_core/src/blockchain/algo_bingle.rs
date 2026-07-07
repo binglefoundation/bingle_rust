@@ -341,8 +341,12 @@ impl AlgoBingle {
     /// old app hard-rejects user transactions and clients report UPGRADE_REQUIRED.
     /// Returns the submitted transaction id on success.
     pub fn set_successor_app(&self, app_id: u64, successor_app_id: u64) -> Result<String> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        if successor_app_id == 0 { bail!("successor_app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        if successor_app_id == 0 {
+            bail!("successor_app_id must be > 0");
+        }
         let (txid, _logs) = self.ops.call_app_with_foreign_app(
             app_id,
             successor_app_id,
@@ -460,8 +464,13 @@ impl AlgoBingle {
     /// that `migrate_local` will copy from — decoded from the packed `AncestorApps` global.
     /// Ordered nearest ancestor first; empty if the app has no configured lineage.
     pub fn ancestor_apps(&self, new_app_id: u64) -> Result<Vec<u64>> {
-        if new_app_id == 0 { bail!("new_app_id must be > 0"); }
-        let raw = self.ops.app_global_bytes(new_app_id, "AncestorApps")?.unwrap_or_default();
+        if new_app_id == 0 {
+            bail!("new_app_id must be > 0");
+        }
+        let raw = self
+            .ops
+            .app_global_bytes(new_app_id, "AncestorApps")?
+            .unwrap_or_default();
         let mut ids = Vec::with_capacity(raw.len() / 8);
         for chunk in raw.chunks_exact(8) {
             let mut b = [0u8; 8];
@@ -475,8 +484,13 @@ impl AlgoBingle {
     /// decoded from the 8-byte big-endian `SuccessorApp` global. Returns `None` when the app
     /// is not superseded (global absent or empty).
     pub fn successor_app(&self, app_id: u64) -> Result<Option<u64>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
-        let raw = self.ops.app_global_bytes(app_id, "SuccessorApp")?.unwrap_or_default();
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let raw = self
+            .ops
+            .app_global_bytes(app_id, "SuccessorApp")?
+            .unwrap_or_default();
         if raw.len() != 8 {
             return Ok(None);
         }
@@ -491,7 +505,11 @@ impl AlgoBingle {
     /// ancestor (a fresh install).
     pub fn find_migratable_ancestor(&self, new_app_id: u64, account: &str) -> Result<Option<u64>> {
         for ancestor in self.ancestor_apps(new_app_id)? {
-            if self.ops.local_state_for_account(ancestor, account)?.is_some() {
+            if self
+                .ops
+                .local_state_for_account(ancestor, account)?
+                .is_some()
+            {
                 return Ok(Some(ancestor));
             }
         }
@@ -506,14 +524,22 @@ impl AlgoBingle {
     /// user-signed: the caller opts into the new app (idempotent) and then copies from the
     /// nearest ancestor that holds its data.
     pub fn ensure_local_migrated(&self, new_app_id: u64) -> Result<Option<String>> {
-        if new_app_id == 0 { bail!("new_app_id must be > 0"); }
-        let me = self.ops.address.as_ref().ok_or_else(|| anyhow!("No sender address"))?.to_string();
+        if new_app_id == 0 {
+            bail!("new_app_id must be > 0");
+        }
+        let me = self
+            .ops
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow!("No sender address"))?
+            .to_string();
 
         // Idempotency: if we already hold a Handle on the new app, migration is done.
         if let Some(kvs) = self.ops.local_state_for_account(new_app_id, &me)?
-            && kvs.iter().any(|(k, _)| k == "Handle") {
-                return Ok(None);
-            }
+            && kvs.iter().any(|(k, _)| k == "Handle")
+        {
+            return Ok(None);
+        }
 
         let ancestor = match self.find_migratable_ancestor(new_app_id, &me)? {
             Some(a) => a,

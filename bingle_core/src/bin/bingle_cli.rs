@@ -3,8 +3,6 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};
 
-use chrono::Utc;
-use ed25519_dalek::SigningKey;
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiInternal, BingleError, OnConnectHandler, OnListeningHandler,
     OnMessageHandler,
@@ -21,6 +19,8 @@ use bingle_core::util::config_utils::{
 };
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use bingle_core::util::version::VersionsMap;
+use chrono::Utc;
+use ed25519_dalek::SigningKey;
 use tracing::warn;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
@@ -147,7 +147,10 @@ fn main() {
         "Base".to_string(),
         bingle_core::module_version::get_version(),
     );
-    versions.insert("CLI".to_string(), bingle_core::module_version::get_version());
+    versions.insert(
+        "CLI".to_string(),
+        bingle_core::module_version::get_version(),
+    );
     tracing::info!("Bingle CLI starting. Versions: {:?}", versions);
 
     if args.is_empty() {

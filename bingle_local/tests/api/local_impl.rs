@@ -7,8 +7,8 @@ fn test_generate_keypair_works() {
     assert!(!kp.id.is_empty(), "id should not be empty");
     assert!(!kp.passphrase.is_empty(), "passphrase should not be empty");
     assert!(
-        kp.passphrase.starts_with("b64:"),
-        "passphrase should be base64 with b64: prefix"
+        kp.passphrase.split_whitespace().count() == 25,
+        "passphrase should be a 25-word Algorand mnemonic"
     );
 }
 

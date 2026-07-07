@@ -14,22 +14,31 @@ use serial_test::serial;
 use crate::setup_localnet;
 use crate::util::test_util;
 use test_util::{
+    ADDRESS_APP_CREATOR, ADDRESS_RECEIVE, PASSPHRASE_APP_CREATOR, PASSPHRASE_RECEIVE,
     deploy_bingle_app, deploy_bingle_app_and_asset, localnet_config, ops_from_mnemonic,
-    register_client_on_blockchain, ADDRESS_APP_CREATOR, ADDRESS_RECEIVE,
-    PASSPHRASE_APP_CREATOR, PASSPHRASE_RECEIVE,
+    register_client_on_blockchain,
 };
 
 /// Poll the account's local state on `app_id` until it holds `Handle == handle`, or panic.
-fn wait_for_handle(ops: &bingle_core::blockchain::algo_ops::AlgoOps, app_id: u64, account: &str, handle: &str) {
+fn wait_for_handle(
+    ops: &bingle_core::blockchain::algo_ops::AlgoOps,
+    app_id: u64,
+    account: &str,
+    handle: &str,
+) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(30) {
         if let Ok(Some(entries)) = ops.local_state_for_account(app_id, account)
-            && entries.iter().any(|(k, v)| k == "Handle" && v == handle) {
-                return;
-            }
+            && entries.iter().any(|(k, v)| k == "Handle" && v == handle)
+        {
+            return;
+        }
         std::thread::sleep(Duration::from_millis(500));
     }
-    panic!("Handle '{}' not visible in local state of app {} for {} within timeout", handle, app_id, account);
+    panic!(
+        "Handle '{}' not visible in local state of app {} for {} within timeout",
+        handle, app_id, account
+    );
 }
 
 #[test]
@@ -46,21 +55,36 @@ pub fn set_successor_blocks_old_app_localnet() {
     // Old app (with the Bingle$ ASA): a client registers here before it is superseded.
     let (old_app, asset_id) = deploy_bingle_app_and_asset(&creator_ops, "BLKOLD", 1_000_000);
     let handle = "blocked_one";
-    register_client_on_blockchain(ADDRESS_RECEIVE, PASSPHRASE_RECEIVE, handle, old_app, asset_id, &creator_ops, cfg.clone());
+    register_client_on_blockchain(
+        ADDRESS_RECEIVE,
+        PASSPHRASE_RECEIVE,
+        handle,
+        old_app,
+        asset_id,
+        &creator_ops,
+        cfg.clone(),
+    );
 
     // The successor pointer starts empty.
     let creator_bgl = AlgoBingle::new(creator_ops.clone(), old_app, asset_id);
     assert!(
-        creator_bgl.successor_app(old_app).expect("successor_app before").is_none(),
+        creator_bgl
+            .successor_app(old_app)
+            .expect("successor_app before")
+            .is_none(),
         "a freshly deployed app must not be superseded"
     );
 
     // Deploy the replacement and mark the old app superseded by it.
     let new_app = deploy_bingle_app(&creator_ops);
-    creator_bgl.set_successor_app(old_app, new_app).expect("set_successor_app");
+    creator_bgl
+        .set_successor_app(old_app, new_app)
+        .expect("set_successor_app");
 
     assert_eq!(
-        creator_bgl.successor_app(old_app).expect("successor_app after"),
+        creator_bgl
+            .successor_app(old_app)
+            .expect("successor_app after"),
         Some(new_app),
         "successor_app must read back the app the old one was superseded by"
     );
@@ -82,14 +106,22 @@ pub fn set_successor_blocks_old_app_localnet() {
         .expect("set_predecessor_app(new_app, old_app)");
 
     let client_new_bgl = AlgoBingle::new(client_ops.clone(), new_app, asset_id);
-    let tx = client_new_bgl.ensure_local_migrated(new_app).expect("ensure_local_migrated from superseded old app");
-    assert!(tx.is_some(), "expected a migration transaction out of the superseded old app");
+    let tx = client_new_bgl
+        .ensure_local_migrated(new_app)
+        .expect("ensure_local_migrated from superseded old app");
+    assert!(
+        tx.is_some(),
+        "expected a migration transaction out of the superseded old app"
+    );
 
     wait_for_handle(&client_ops, new_app, ADDRESS_RECEIVE, handle);
 
     // The successor app itself is not superseded, so it reports no successor.
     assert!(
-        client_new_bgl.successor_app(new_app).expect("successor_app(new_app)").is_none(),
+        client_new_bgl
+            .successor_app(new_app)
+            .expect("successor_app(new_app)")
+            .is_none(),
         "the successor app must not itself be marked superseded"
     );
 }

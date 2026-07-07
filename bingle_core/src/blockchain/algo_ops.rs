@@ -1,10 +1,10 @@
-use anyhow::{anyhow, bail, Result};
 use crate::blockchain::error::AlgoError;
-use uuid::Uuid;
+use algonaut::core::ToMsgPack;
+use anyhow::{Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose};
 use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
-use base64::{engine::general_purpose, Engine as _};
-use algonaut::core::ToMsgPack;
+use uuid::Uuid;
 
 // Ensure the algonaut crate is referenced so this module is explicitly implemented with it.
 // We keep most calls abstracted for now and will progressively replace stubs with concrete calls.
@@ -292,12 +292,18 @@ impl AlgoOps {
     fn decode_state_entries(entries: &[serde_json::Value]) -> Vec<(String, String)> {
         let mut kvs: Vec<(String, String)> = Vec::new();
         for entry in entries {
-            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
             let key = match general_purpose::STANDARD.decode(key_b64) {
                 Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| key_b64.to_string()),
                 Err(_) => key_b64.to_string(),
             };
-            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) {
+                Some(o) => o,
+                None => continue,
+            };
             let vtype = val_obj.get("type").and_then(|x| x.as_u64()).unwrap_or(0);
             let val = if vtype == 1 {
                 // bytes can be an array of numbers or a base64 string
@@ -550,34 +556,57 @@ impl AlgoOps {
     /// application or the key is absent. Unlike `global_state`, this does not lossily decode the
     /// value to UTF-8, so it is safe for packed binary values.
     pub fn app_global_bytes(&self, app_id: u64, key: &str) -> Result<Option<Vec<u8>>> {
-        if app_id == 0 { bail!("app_id must be > 0"); }
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
         let client = self.algod_client()?;
         let app_info = match self.algod_call(|| client.app(algonaut::core::AppId(app_id))) {
             Ok(v) => v,
-            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => return Err(AlgoError::unreachable("app_information", &e.to_string()).into()),
+            Err(e) if AlgoError::is_host_unreachable(&anyhow!(e.to_string())) => {
+                return Err(AlgoError::unreachable("app_information", &e.to_string()).into());
+            }
             Err(_) => return Ok(None),
         };
-        let v = serde_json::to_value(&app_info).map_err(|e| anyhow!("failed to serialize app info: {e}"))?;
+        let v = serde_json::to_value(&app_info)
+            .map_err(|e| anyhow!("failed to serialize app info: {e}"))?;
         let params = match Self::json_get(&v, "params", "params").and_then(|x| x.as_object()) {
             Some(p) => serde_json::Value::Object(p.clone()),
             None => return Ok(None),
         };
         let gs: Vec<serde_json::Value> = Self::json_get(&params, "global_state", "global-state")
-            .and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
         for entry in &gs {
-            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) { Some(s) => s, None => continue };
+            let key_b64 = match entry.get("key").and_then(|x| x.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
             let entry_key = match general_purpose::STANDARD.decode(key_b64) {
-                Ok(bytes) => match String::from_utf8(bytes) { Ok(s) => s, Err(_) => continue },
+                Ok(bytes) => match String::from_utf8(bytes) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                },
                 Err(_) => continue,
             };
-            if entry_key != key { continue; }
-            let val_obj = match entry.get("value").and_then(|x| x.as_object()) { Some(o) => o, None => continue };
+            if entry_key != key {
+                continue;
+            }
+            let val_obj = match entry.get("value").and_then(|x| x.as_object()) {
+                Some(o) => o,
+                None => continue,
+            };
             // Byte values (type == 1) may be a numeric array or a base64 string.
             let bytes = if let Some(arr) = val_obj.get("bytes").and_then(|x| x.as_array()) {
                 let mut buf: Vec<u8> = Vec::with_capacity(arr.len());
                 for n in arr {
-                    if let Some(u) = n.as_u64() { buf.push((u & 0xFF) as u8); }
-                    else if let Some(i) = n.as_i64() && i >= 0 { buf.push(((i as u64) & 0xFF) as u8); }
+                    if let Some(u) = n.as_u64() {
+                        buf.push((u & 0xFF) as u8);
+                    } else if let Some(i) = n.as_i64()
+                        && i >= 0
+                    {
+                        buf.push(((i as u64) & 0xFF) as u8);
+                    }
                 }
                 Some(buf)
             } else if let Some(b64) = val_obj.get("bytes").and_then(|x| x.as_str()) {
@@ -590,7 +619,11 @@ impl AlgoOps {
         Ok(None)
     }
 
-    pub fn local_state_for_account(&self, app_id: u64, account_address: &str) -> Result<Option<Vec<(String, String)>>> {
+    pub fn local_state_for_account(
+        &self,
+        app_id: u64,
+        account_address: &str,
+    ) -> Result<Option<Vec<(String, String)>>> {
         let client = self.algod_client()?;
         let address = Self::parse_address(account_address)?;
         let info = match self.algod_call(|| client.account(&address)) {
