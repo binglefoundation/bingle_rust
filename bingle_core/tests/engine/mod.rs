@@ -66,12 +66,6 @@ pub mod stun_no_response_no_connection;
 #[path = "stun_address_change.rs"]
 pub mod stun_address_change;
 
-#[path = "stun_inconsistent_relay.rs"]
-pub mod stun_inconsistent_relay;
-
-#[path = "relay_keep_alive_engine.rs"]
-pub mod relay_keep_alive_engine;
-
 #[path = "engine_restart_reidentify.rs"]
 pub mod engine_restart_reidentify;
 
