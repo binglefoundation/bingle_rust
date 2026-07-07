@@ -27,7 +27,7 @@ Tests are organised into named Cargo test targets. All targets are defined in `C
 
 | Target | Command | Description |
 |---|---|---|
-| `unit` | `cargo test --test unit` | All unit tests — no external resources required. ~425 tests. |
+| `unit` | `cargo test --test unit` | All unit tests — no external resources required, including `bingle_core`, `bingle_jsi`, `bingle_local`, and `bingle_webserver`. |
 | `integration` | `cargo test --test integration` | Tests requiring localnet or internet access. |
 | `flaky` | `cargo test --test flaky` | Tests that are inherently timing-sensitive. Always run; target-driven. |
 | `all` | `cargo test --test all` | All 451 tests combined (unit + integration + flaky). |
@@ -45,6 +45,12 @@ cargo test --test unit
 
 ```bash
 cargo test --test all
+```
+
+To run all unit tests crate-by-crate and print a summary at the end, use:
+
+```bash
+bash scripts/run_unit_tests.sh
 ```
 
 Localnet tests will **fail** (not skip) if algokit localnet is not running. Internet tests require live network access.
@@ -317,7 +323,7 @@ NativeModules.BingleJsi.initialize(config)
   - Centralized client context preparation; tests pass locally.
 
 2026-03-16
-- Added `scripts/run_all_tests.sh` to provide a single command for running all tests in the workspace and `tests/` folder.
+- Added `scripts/run_unit_tests.sh` to provide a single command for running unit tests crate-by-crate with a summary.
 - Fixed several orphaned test files in the `tests/` tree that were not being executed by standard `cargo test`.
 - Consolidated all integration tests into the `all` test target.
 

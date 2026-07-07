@@ -28,6 +28,7 @@ bingle_test = { path = "../bingle_test" }
 [build-dependencies]
 vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }
 
+# Unit tests: all bingle_jsi tests are local unit-style tests.
 [[test]]
-name = "bingle_jsi_tests"
+name = "unit"
 path = "tests/all.rs"

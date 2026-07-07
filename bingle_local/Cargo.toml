@@ -17,7 +17,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [[test]]
-name = "bingle_local_tests"
+# Unit tests: all bingle_local tests are local unit-style tests.
+name = "unit"
 path = "tests/api.rs"
 
 [dev-dependencies]
