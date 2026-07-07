@@ -25,7 +25,6 @@ pub mod start_options_display;
 pub mod list_all_relays;
 
 pub mod bingle_api_relay_dtls;
-pub mod dtls_via_relay_integration;
 #[path = "on_listening_handler.rs"]
 pub mod on_listening_handler;
 

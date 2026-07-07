@@ -1,7 +1,7 @@
 use openssl::dh::Dh;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use openssl::ssl::{SslAcceptor, SslConnector, SslMethod, SslVerifyMode, SslVersion};
+use openssl::ssl::{SslAcceptor, SslMethod};
 use openssl::x509::X509;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
@@ -93,72 +93,8 @@ fn make_ee_rsa(
     (builder.build(), pkey)
 }
 
-#[test]
-fn rsa_1024_client_cert_rejected() {
-    test_util::init_test_logging();
-
-    // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
-    let server_opts = StartOptions {
-        handle: Handle::from("server_rsa_rejection"),
-        algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
-        dangerous_debug: false,
-        ..StartOptions::new("".into())
-    };
-    let server_api = BingleApiImpl::new(&server_opts);
-    server_api
-        .access_unsafe_for_tests(|a| a.start(&server_opts))
-        .expect("start server api");
-
-    std::thread::sleep(Duration::from_millis(100));
-
-    // 2) Generate RSA 1024 client certificate
-    let (ca_cert, ca_key) = pki::make_ca(test_util::ADDRESS_RECEIVE);
-    let (cli_cert, cli_key) = make_ee_rsa(
-        &ca_cert,
-        &ca_key,
-        &format!("{}.", test_util::ADDRESS_RECEIVE),
-        1024,
-    );
-
-    // 3) Create a raw OpenSSL client using RSA 1024 cert
-    let mut connector_builder = SslConnector::builder(SslMethod::dtls()).unwrap();
-    connector_builder
-        .set_min_proto_version(Some(SslVersion::DTLS1_2))
-        .unwrap();
-
-    // We must lower security level on client to even USE 1024-bit key
-    connector_builder.set_security_level(0);
-
-    connector_builder.set_certificate(&cli_cert).unwrap();
-    connector_builder.set_private_key(&cli_key).unwrap();
-    connector_builder.set_verify(SslVerifyMode::NONE);
-
-    let connector = connector_builder.build();
-
-    // 4) Attempt handshake
-    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    socket.connect(server_addr).unwrap();
-
-    let stream = UdpStream(socket);
-
-    let res = connector.connect("localhost", stream);
-
-    // 5) Assert failure
-    assert!(
-        res.is_err(),
-        "Handshake should have failed for 1024-bit RSA client certificate"
-    );
-    let err_msg = format!("{:?}", res.err());
-    println!("Handshake failed as expected for RSA 1024: {}", err_msg);
-}
-
+// Note: rsa_1024_client_cert_rejected was flagged leaky under load and moved to
+// tests/flaky/weak_key_exchange_rsa_client.rs. The two tests below stay in unit.
 #[test]
 fn dh_1024_rejected() {
     test_util::init_test_logging();

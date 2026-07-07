@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::relay::relay_states::test_util::init_test_logging;
+use crate::util::test_util::init_test_logging;
 use crate::util::test_util::{ADDRESS_10MIL, ADDRESS_RECEIVE, ADDRESS_SPEND};
 use bingle_core::api::bingle_api::{BingleApi, BingleError, Handle, NetworkEndpoint, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
