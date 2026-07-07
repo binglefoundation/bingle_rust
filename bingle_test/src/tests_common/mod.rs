@@ -41,7 +41,7 @@ pub trait TestAlgo: Sized {
 
 // ===== STUN Tests (generic) =====
 pub fn stun_tests() -> bool {
-    use rust_comms::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
+    use bingle_core::stun::{StunEndpointFinder, StunEndpointFinderImpl, StunState};
     use std::net::SocketAddr;
     use std::sync::atomic::{AtomicUsize, Ordering as AOrdering};
     use std::sync::{Arc, Mutex};

@@ -5,8 +5,8 @@ use bingle_local::api::bingle_local_api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message,
 };
 use bingle_webserver::{AppState, try_start_api};
-use rust_comms::api::bingle_api::{BingleError, StartOptions};
-use rust_comms::blockchain::algo_ops::AlgoOps;
+use bingle_core::api::bingle_api::{BingleError, StartOptions};
+use bingle_core::blockchain::algo_ops::AlgoOps;
 
 /// A test-only BingleLocalApi that lets us control keypair_status results.
 struct ControllableLocalApi {
@@ -99,6 +99,9 @@ impl BingleLocalApi for ControllableLocalApi {
     }
     fn load(&mut self, _path: &str) -> Result<(), BingleError> {
         Ok(())
+    }
+    fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> {
+        Ok(None)
     }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {

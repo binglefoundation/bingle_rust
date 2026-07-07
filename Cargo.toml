@@ -1,94 +1,9 @@
-[package]
-name = "rust_comms"
-version = "0.1.0"
-edition = "2024"
-autotests = false
-
-[lib]
-name = "rust_comms"
-path = "src/lib.rs"
-crate-type = ["rlib"]
-
-[dependencies]
-# Core deps kept iOS-friendly; heavy platform-specific deps remain gated below.
-algonaut = "0.8.0"
-anyhow = "1"
-thiserror = "1"
-base64 = "0.21"
-data-encoding = "2"
-sha2 = "0.10"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-rand_core = "0.6"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
-tokio-openssl = "0.6"
-stun-rs = "0.1.11"
-uuid = { version = "1", features = ["v4"] }
-libc = "0.2"
-ctrlc = { version = "3", features = ["termination"] }
-tracing = "0.1"
-# tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Moving to dev-deps if only used there, or keep here if needed for lib
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-chrono = { version = "0.4", features = ["serde"] }
-openssl = { version = "0.10.81", features = ["vendored"] }
-openssl-sys = { version = "0.9.117" }
-
 [workspace]
+resolver = "3"
 members = [
-    ".",
+    "bingle_core",
     "bingle_test",
     "bingle_webserver",
     "bingle_local",
     "bingle_jsi",
 ]
-
-[dev-dependencies]
-# env_logger removed in favor of tracing-subscriber
-bingle_test = { path = "bingle_test" }
-tempfile = "3"
-ntest = "0.9"
-serial_test = "3"
-
-[build-dependencies]
-vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }
-
-# Unit tests: local tests with no external resource requirements
-[[test]]
-name = "unit"
-path = "tests/unit_all.rs"
-
-# Integration tests: require algokit localnet or live internet access
-[[test]]
-name = "integration"
-path = "tests/integration_all.rs"
-
-# Blockchain integration tests: require algokit localnet
-[[test]]
-name = "integration_blockchain"
-path = "tests/integration_blockchain.rs"
-
-# All tests combined: unit + integration + flaky
-[[test]]
-name = "all"
-path = "tests/all_all.rs"
-
-# Dedicated DTLS stage-1 worker test target to make RustRover run/debug directly.
-[[test]]
-name = "dtls_peer_worker_stage1"
-path = "tests/dtls/dtls_peer_worker_stage1.rs"
-
-# Keep endpoint_available as its own test target for Docker-based testnet runs
-[[test]]
-name = "endpoint_available"
-path = "tests/e2e/testnet/endpoint_available.rs"
-
-# E2E: ping a registered node on testnet (Docker-based)
-[[test]]
-name = "ping_registered_node"
-path = "tests/e2e/testnet/ping_registered_node.rs"
-
-# Flaky or currently broken tests — known to be unreliable or needing investigation
-[[test]]
-name = "flaky"
-path = "tests/flaky_all.rs"

@@ -1,9 +1,9 @@
 use crate::api::{
     BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, REQUIRED_ALGO,
 };
-use rust_comms::api::bingle_api::BingleError;
-use rust_comms::blockchain::algo_bingle::AlgoBingle;
-use rust_comms::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use bingle_core::api::bingle_api::BingleError;
+use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;

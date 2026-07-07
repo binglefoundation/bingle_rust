@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use rust_comms::api::bingle_api::BingleError;
+use bingle_core::api::bingle_api::BingleError;
 
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,7 +82,7 @@ pub trait BingleLocalApi: Send + Sync {
     fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError>;
 
     /// Get an AlgoOps instance configured with the current keypair.
-    fn get_algo_ops(&self) -> Result<rust_comms::blockchain::algo_ops::AlgoOps, BingleError>;
+    fn get_algo_ops(&self) -> Result<bingle_core::blockchain::algo_ops::AlgoOps, BingleError>;
 
     /// Add a contact to the local store.
     fn add_contact(

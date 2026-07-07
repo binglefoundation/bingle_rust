@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use rust_comms::api::network_endpoint::NetworkEndpoint;
+use bingle_core::api::network_endpoint::NetworkEndpoint;
 use serde::Deserialize;
 
 use crate::AppState;
@@ -15,8 +15,8 @@ use crate::models::{
 };
 use crate::try_start_api;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
-use rust_comms::api::bingle_api::BingleError;
-use rust_comms::blockchain::error::AlgoErrorKind;
+use bingle_core::api::bingle_api::BingleError;
+use bingle_core::blockchain::error::AlgoErrorKind;
 
 fn handle_bingle_error(e: BingleError) -> AxumResponse {
     match e {
@@ -221,7 +221,7 @@ pub async fn get_queued(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 pub async fn handle_version() -> impl IntoResponse {
-    let version_info = rust_comms::util::version::get_version_info();
+    let version_info = bingle_core::util::version::get_version_info();
     Json(version_info).into_response()
 }
 

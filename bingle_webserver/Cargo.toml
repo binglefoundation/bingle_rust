@@ -14,7 +14,7 @@ tower-http = { version = "0.5", features = ["cors"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-rust_comms = { path = ".." }
+bingle_core = { path = "../bingle_core" }
 bingle_local = { path = "../bingle_local" }
 
 [dev-dependencies]

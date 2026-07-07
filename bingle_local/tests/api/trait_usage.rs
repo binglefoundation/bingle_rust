@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use bingle_local::api::{BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message};
-use rust_comms::api::bingle_api::BingleError;
-use rust_comms::blockchain::algo_ops::AlgoOps;
+use bingle_core::api::bingle_api::BingleError;
+use bingle_core::blockchain::algo_ops::AlgoOps;
 
 #[derive(Default)]
 struct DummyLocal {

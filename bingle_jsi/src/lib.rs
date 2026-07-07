@@ -28,7 +28,7 @@ pub fn create_bingle_api(config: BingleJsiConfig) -> Result<Arc<dyn BingleJsiApi
 /// during app startup.
 #[uniffi::export]
 pub fn get_version() -> VersionInfo {
-    let info = rust_comms::util::version::get_version_info();
+    let info = bingle_core::util::version::get_version_info();
     VersionInfo {
         version: info.version,
         git_sha: info.git_sha,

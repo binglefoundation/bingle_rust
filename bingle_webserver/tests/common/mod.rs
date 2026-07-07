@@ -1,8 +1,8 @@
-use rust_comms::api::bingle_api::{
+use bingle_core::api::bingle_api::{
     BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnListeningHandler,
     OnMessageHandler, ProgressCallback, StartOptions, UserId,
 };
-use rust_comms::blockchain::algo_ops::AlgoChainConfig;
+use bingle_core::blockchain::algo_ops::AlgoChainConfig;
 use serde_json::{Value as JsonValue, json};
 use std::sync::{Arc, Mutex};
 
@@ -13,7 +13,7 @@ impl BingleApi for MockBingleApi {
     fn list_all_relays(
         &self,
         _include_self: bool,
-    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    ) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         Vec::new()
     }
     fn get_my_id(&self) -> Option<String> {
@@ -121,7 +121,7 @@ impl BingleApi for HandleMockBingleApi {
     fn list_all_relays(
         &self,
         _include_self: bool,
-    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    ) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         Vec::new()
     }
     fn get_my_id(&self) -> Option<String> {
@@ -234,7 +234,7 @@ impl BingleApi for CapturingMockBingleApi {
     fn list_all_relays(
         &self,
         _include_self: bool,
-    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    ) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         Vec::new()
     }
     fn get_my_id(&self) -> Option<String> {
@@ -333,7 +333,7 @@ impl BingleApi for TrackingMockBingleApi {
     fn list_all_relays(
         &self,
         _include_self: bool,
-    ) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    ) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         Vec::new()
     }
     fn get_my_id(&self) -> Option<String> {

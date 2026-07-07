@@ -1,0 +1,177 @@
+// tests/blockchain/algo_bingle/register_collision.rs
+use algonaut::core::{Address, AppId, AssetId, ToMsgPack};
+use algonaut::transaction::{TransferAsset, builder::CallApplication};
+use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_core::blockchain::algo_ops::AlgoOps;
+use std::str::FromStr;
+
+#[path = "../../setup_localnet.rs"]
+pub mod setup_localnet;
+#[path = "../../test_util.rs"]
+pub mod test_util;
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_register_collision_same_block() {
+    test_util::init_test_logging();
+    test_util::assert_localnet_available();
+    let cfg = test_util::localnet_config();
+
+    // 1. Setup accounts
+    setup_localnet::ensure_localnet_accounts_funded(
+        &cfg,
+        &[test_util::ADDRESS_SPEND, test_util::ADDRESS_RECEIVE],
+    )
+    .expect("Failed to fund accounts");
+
+    let ops_a = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let ops_b = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_RECEIVE,
+        test_util::PASSPHRASE_RECEIVE,
+        cfg.clone(),
+    );
+
+    // 2. Deploy app and asset
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&ops_a, "BINGLE", 1000000);
+
+    // 3. Give A and B each 1 unit for their registration fees (buy_bingle also opts into ASA)
+    let ab_b = AlgoBingle::new(ops_b.clone(), app_id, asset_id);
+    AlgoBingle::new(ops_a.clone(), app_id, asset_id)
+        .buy_bingle(app_id, asset_id, 1)
+        .expect("A buy Bingle$");
+    ab_b.buy_bingle(app_id, asset_id, 1).expect("B buy Bingle$");
+    // Manual register txns bypass opt-in helpers, so opt both into the app explicitly
+    ops_a.opt_in_app(app_id).expect("A opt-in app");
+    ops_b.opt_in_app(app_id).expect("B opt-in app");
+
+    // 4. Build group of 4 transactions
+    let client = ops_a.algod_client().expect("algod client");
+
+    // Use tokio runtime to get params
+    let params = {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(client.suggested_params())
+            .expect("suggested_params")
+    };
+
+    let addr_a = Address::from_str(test_util::ADDRESS_SPEND).unwrap();
+    let addr_b = Address::from_str(test_util::ADDRESS_RECEIVE).unwrap();
+    let app_addr = Address::from_str(&ops_a.contract_address(app_id).unwrap()).unwrap();
+
+    // A: AssetTransfer
+    let tx_ax_a = TransferAsset::new(addr_a, AssetId(asset_id), 1, app_addr)
+        .note(AlgoOps::unique_note())
+        .build(&params)
+        .unwrap();
+
+    // A: AppCall register("foo")
+    let mut args_a: Vec<Vec<u8>> = Vec::new();
+    args_a.push(AlgoOps::arc4_selector("register(string)void").to_vec());
+    let handle = "foo";
+    let handle_bytes = handle.as_bytes();
+    let h_len = handle_bytes.len();
+    let mut arg_a = Vec::with_capacity(2 + h_len);
+    arg_a.extend_from_slice(&(h_len as u16).to_be_bytes());
+    arg_a.extend_from_slice(handle_bytes);
+    args_a.push(arg_a);
+    let tx_app_a = CallApplication::new(addr_a, AppId(app_id))
+        .app_arguments(args_a)
+        .foreign_assets(vec![AssetId(asset_id)])
+        .note(AlgoOps::unique_note())
+        .build(&params)
+        .unwrap();
+
+    // B: AssetTransfer
+    let tx_ax_b = TransferAsset::new(addr_b, AssetId(asset_id), 1, app_addr)
+        .note(AlgoOps::unique_note())
+        .build(&params)
+        .unwrap();
+
+    // B: AppCall register("foo")
+    let mut args_b: Vec<Vec<u8>> = Vec::new();
+    args_b.push(AlgoOps::arc4_selector("register(string)void").to_vec());
+    let mut arg_b = Vec::with_capacity(2 + h_len);
+    arg_b.extend_from_slice(&(h_len as u16).to_be_bytes());
+    arg_b.extend_from_slice(handle_bytes);
+    args_b.push(arg_b);
+    let tx_app_b = CallApplication::new(addr_b, AppId(app_id))
+        .app_arguments(args_b)
+        .foreign_assets(vec![AssetId(asset_id)])
+        .note(AlgoOps::unique_note())
+        .build(&params)
+        .unwrap();
+
+    let mut txs = vec![tx_ax_a, tx_app_a, tx_ax_b, tx_app_b];
+    AlgoBingle::assign_group_id(&mut txs).expect("assign group id");
+
+    // 5. Sign
+    let sk_a = ops_a.private_key_bytes().unwrap();
+    let acc_a =
+        algonaut::transaction::account::Account::from_seed(sk_a.as_slice().try_into().unwrap());
+
+    let sk_b = ops_b.private_key_bytes().unwrap();
+    let acc_b =
+        algonaut::transaction::account::Account::from_seed(sk_b.as_slice().try_into().unwrap());
+
+    let s1 = acc_a.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+    let s2 = acc_a.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+    let s3 = acc_b.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+    let s4 = acc_b.sign(txs.remove(0)).unwrap().to_msg_pack().unwrap();
+
+    // 6. Broadcast
+    let ab_a = AlgoBingle::new(ops_a.clone(), app_id, asset_id);
+    ab_a.broadcast_group(&client, vec![s1, s2, s3, s4])
+        .expect("broadcast group");
+
+    // 7. Verify
+    // Wait for indexer to catch up
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    let winner = ab_a
+        .handle_lookup("foo")
+        .expect("handle lookup")
+        .expect("winner found");
+    assert_eq!(
+        winner,
+        test_util::ADDRESS_SPEND,
+        "Account A should be the winner as it was first in the group"
+    );
+
+    // Verify local state HandleTime
+    let state_a = ops_a
+        .local_state_for_account(app_id, test_util::ADDRESS_SPEND)
+        .unwrap()
+        .expect("A local state");
+    let state_b = ops_b
+        .local_state_for_account(app_id, test_util::ADDRESS_RECEIVE)
+        .unwrap()
+        .expect("B local state");
+
+    let time_a = state_a
+        .iter()
+        .find(|(k, _)| k == "HandleTime")
+        .map(|(_, v)| v.parse::<u64>().unwrap())
+        .expect("HandleTime A");
+    let time_b = state_b
+        .iter()
+        .find(|(k, _)| k == "HandleTime")
+        .map(|(_, v)| v.parse::<u64>().unwrap())
+        .expect("HandleTime B");
+
+    assert!(
+        time_b > time_a,
+        "Account B should have a later HandleTime than Account A even in the same block"
+    );
+    assert_eq!(
+        time_b,
+        time_a + 1,
+        "Account B should have HandleTime exactly time_a + 1 due to our fix"
+    );
+}

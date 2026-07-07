@@ -1,4 +1,4 @@
-use rust_comms::api::network_endpoint::NetworkEndpoint;
+use bingle_core::api::network_endpoint::NetworkEndpoint;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::{SocketAddr, ToSocketAddrs};

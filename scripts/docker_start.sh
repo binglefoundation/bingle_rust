@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script starts the rust_comms CLI with the expected arguments, taking
+# This script starts the bingle_core CLI with the expected arguments, taking
 # configuration from environment variables.
 # Required env vars:
 #   PASSPHRASE  - passphrase to unlock identity

@@ -2,11 +2,11 @@ use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::bingle_jsi_api_impl::BingleJsiApiImpl;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
-use rust_comms::api::bingle_api::{
+use bingle_core::api::bingle_api::{
     BingleApi, BingleApiInternal, BingleError, Handle, OnConnectHandler, OnListeningHandler,
     OnMessageHandler, ProgressCallback, StartOptions, UserId,
 };
-use rust_comms::api::network_endpoint::NetworkEndpoint;
+use bingle_core::api::network_endpoint::NetworkEndpoint;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ impl BingleApiInternal for MockBingleApi {
     fn get_relay_state(&self) -> String {
         "off".to_string()
     }
-    fn notify_listening(&self, listening: bool, nat_type: rust_comms::engine::NatType) {
+    fn notify_listening(&self, listening: bool, nat_type: bingle_core::engine::NatType) {
         if let Ok(guard) = self.on_listening.lock() {
             if let Some(handler) = guard.as_ref() {
                 handler(listening, nat_type);
@@ -44,7 +44,7 @@ impl BingleApi for MockBingleApi {
     }
     fn get_algo_provider_config(
         &self,
-    ) -> Option<rust_comms::blockchain::algo_ops::AlgoChainConfig> {
+    ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
         None
     }
     fn start(&mut self, _: &StartOptions) -> Result<(), BingleError> {
@@ -53,7 +53,7 @@ impl BingleApi for MockBingleApi {
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
 
-    fn list_all_relays(&self, _: bool) -> Vec<rust_comms::relay::relay_finder::RelayInfo> {
+    fn list_all_relays(&self, _: bool) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         vec![]
     }
     fn handle_lookup(&self, _: &Handle) -> Result<Option<UserId>, BingleError> {
@@ -164,7 +164,7 @@ fn test_message_queue_with_mock_progress() {
 
     // 3. Simulate listening state
     jsi.api_for_tests()
-        .notify_listening(true, rust_comms::engine::NatType::Restricted);
+        .notify_listening(true, bingle_core::engine::NatType::Restricted);
 
     // 4. Wait for processing loop. It sleeps for 5s, so we need some time.
     // We expect progress to go through 0.1, 0.5, 0.9 and finally 1.0.

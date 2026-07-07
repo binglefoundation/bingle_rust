@@ -16,12 +16,12 @@ use crate::api::types::{
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
-use rust_comms::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::api::network_endpoint::NetworkEndpoint;
-use rust_comms::blockchain::error::AlgoErrorKind;
-use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::util::config_utils::{
+use bingle_core::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
+use bingle_core::api::bingle_api_impl::BingleApiImpl;
+use bingle_core::api::network_endpoint::NetworkEndpoint;
+use bingle_core::blockchain::error::AlgoErrorKind;
+use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_core::util::config_utils::{
     parse_node_file_with_ids, parse_stun_file, parse_stun_list, resolve_app_asset_ids,
 };
 
@@ -271,7 +271,7 @@ impl BingleJsiApiImpl {
             log_level: config.log_level,
             handle_cache_expiry,
             dangerous_debug: false, // We don't want to enable dangerous debug DTLS features
-            log_mode: rust_comms::util::logging::LogMode::JS,
+            log_mode: bingle_core::util::logging::LogMode::JS,
             wait_response_timeout: None, // default to DEFAULT_WAIT_RESPONSE_TIMEOUT
         };
 
@@ -344,8 +344,8 @@ impl BingleJsiApiImpl {
             let lcb = listening_callback.clone();
             let listening_atomic = listening.clone();
             api.access_unsafe_for_tests(|api_mut| {
-                let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> = Arc::new(
-                    move |listening_val: bool, nt: rust_comms::engine::NatType| {
+                let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> = Arc::new(
+                    move |listening_val: bool, nt: bingle_core::engine::NatType| {
                         let type_str = if listening_val {
                             format!("{:?}", nt)
                         } else {
@@ -380,7 +380,7 @@ impl BingleJsiApiImpl {
             let api_for_handle = api.clone();
             let cb = message_callback.clone();
             api.access_unsafe_for_tests(|api_mut| {
-                let on_message: Arc<rust_comms::api::bingle_api::OnMessageHandler> =
+                let on_message: Arc<bingle_core::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
                         tracing::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
                         // Invoke user callback if registered
@@ -784,7 +784,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
     }
 
     fn version(&self) -> Result<VersionInfo, BingleJsiError> {
-        let info = rust_comms::util::version::get_version_info();
+        let info = bingle_core::util::version::get_version_info();
         Ok(VersionInfo {
             version: info.version,
             git_sha: info.git_sha,
@@ -798,7 +798,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
     ) -> Result<std::collections::HashMap<String, VersionInfo>, BingleJsiError> {
         let mut map = std::collections::HashMap::new();
 
-        let base_info = rust_comms::module_version::get_version();
+        let base_info = bingle_core::module_version::get_version();
         map.insert(
             "Base".to_string(),
             VersionInfo {

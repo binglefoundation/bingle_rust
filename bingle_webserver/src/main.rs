@@ -1,11 +1,11 @@
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 use bingle_webserver::{AppState, start_server};
-use rust_comms::api::bingle_api::{BingleApi, OnMessageHandler};
-use rust_comms::api::bingle_api_impl::BingleApiImpl;
-use rust_comms::engine::BingleAccessUnsafeForTests;
-use rust_comms::util::cli_utils::parse_start_options_from_args;
-use rust_comms::util::logging::{BingleFormatter, HandleLayer, LogMode};
+use bingle_core::api::bingle_api::{BingleApi, OnMessageHandler};
+use bingle_core::api::bingle_api_impl::BingleApiImpl;
+use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_core::util::cli_utils::parse_start_options_from_args;
+use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
     let fmt_layer =
         tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode: log_mode });
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,rust_comms=debug"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,bingle_core=debug"));
 
     tracing_subscriber::registry()
         .with(filter)
@@ -120,8 +120,8 @@ async fn main() -> anyhow::Result<()> {
     {
         let nat_type_for_closure = nat_type.clone();
         api.access_unsafe_for_tests(|api_mut| {
-            let on_listening: Arc<rust_comms::api::bingle_api::OnListeningHandler> =
-                Arc::new(move |listening: bool, nt: rust_comms::engine::NatType| {
+            let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> =
+                Arc::new(move |listening: bool, nt: bingle_core::engine::NatType| {
                     let type_str = if listening {
                         format!("{:?}", nt)
                     } else {

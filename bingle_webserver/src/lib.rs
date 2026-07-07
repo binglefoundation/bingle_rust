@@ -4,8 +4,8 @@ use axum::{
     routing::{get, post},
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
-use rust_comms::api::bingle_api::{BingleApi, StartOptions};
-use rust_comms::engine::BingleAccessUnsafeForTests;
+use bingle_core::api::bingle_api::{BingleApi, StartOptions};
+use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

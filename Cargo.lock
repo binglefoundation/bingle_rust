@@ -469,12 +469,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "bingle_core"
+version = "0.1.0"
+dependencies = [
+ "algonaut",
+ "anyhow",
+ "base64 0.21.7",
+ "bingle_test",
+ "chrono",
+ "ctrlc",
+ "data-encoding",
+ "ed25519-dalek",
+ "libc",
+ "ntest",
+ "openssl",
+ "openssl-sys",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.10.9",
+ "stun-rs",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-openssl",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "vergen",
+]
+
+[[package]]
 name = "bingle_jsi"
 version = "0.1.1"
 dependencies = [
+ "bingle_core",
  "bingle_local",
  "chrono",
- "rust_comms",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
@@ -488,7 +520,7 @@ dependencies = [
 name = "bingle_local"
 version = "0.0.1"
 dependencies = [
- "rust_comms",
+ "bingle_core",
  "serde",
  "serde_json",
  "tempfile",
@@ -501,9 +533,9 @@ name = "bingle_test"
 version = "0.1.0"
 dependencies = [
  "base64 0.21.7",
+ "bingle_core",
  "data-encoding",
  "ed25519-dalek",
- "rust_comms",
  "sha2 0.10.9",
 ]
 
@@ -513,10 +545,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "bingle_core",
  "bingle_local",
  "ntest",
  "reqwest 0.11.27",
- "rust_comms",
  "serde",
  "serde_json",
  "serial_test",
@@ -2740,38 +2772,6 @@ checksum = "72f81bee8c8ef9b577d1681a70ebbc962c232461e397b22c208c43c04b67a155"
 dependencies = [
  "rmp",
  "serde",
-]
-
-[[package]]
-name = "rust_comms"
-version = "0.1.0"
-dependencies = [
- "algonaut",
- "anyhow",
- "base64 0.21.7",
- "bingle_test",
- "chrono",
- "ctrlc",
- "data-encoding",
- "ed25519-dalek",
- "libc",
- "ntest",
- "openssl",
- "openssl-sys",
- "rand_core 0.6.4",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.10.9",
- "stun-rs",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-openssl",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "vergen",
 ]
 
 [[package]]

@@ -5,7 +5,7 @@ extern crate self as bingle_test;
 mod ffi_tests;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_comms_run_algo_ops_tests() -> u8 {
+pub extern "C" fn bingle_core_run_algo_ops_tests() -> u8 {
     if ffi_tests::run_algo_ops_tests() {
         1
     } else {
@@ -14,7 +14,7 @@ pub extern "C" fn rust_comms_run_algo_ops_tests() -> u8 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_comms_run_algo_ops_more_tests() -> u8 {
+pub extern "C" fn bingle_core_run_algo_ops_more_tests() -> u8 {
     if ffi_tests::run_algo_ops_more_tests() {
         1
     } else {
@@ -23,7 +23,7 @@ pub extern "C" fn rust_comms_run_algo_ops_more_tests() -> u8 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_comms_run_asset_ops_tests() -> u8 {
+pub extern "C" fn bingle_core_run_asset_ops_tests() -> u8 {
     if ffi_tests::run_asset_ops_tests() {
         1
     } else {
@@ -32,7 +32,7 @@ pub extern "C" fn rust_comms_run_asset_ops_tests() -> u8 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_comms_run_stun_tests() -> u8 {
+pub extern "C" fn bingle_core_run_stun_tests() -> u8 {
     if ffi_tests::run_stun_tests() { 1 } else { 0 }
 }
 
@@ -102,13 +102,13 @@ mod all_tests_ffi;
 
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_comms_run_all_unit_tests() -> u32 {
+pub extern "C" fn bingle_core_run_all_unit_tests() -> u32 {
     157
 }
 
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_comms_run_named_test(name: *const libc::c_char) -> u8 {
+pub extern "C" fn bingle_core_run_named_test(name: *const libc::c_char) -> u8 {
     use std::ffi::CStr;
     if name.is_null() {
         return 0;

@@ -1,4 +1,4 @@
-# rust_comms
+# bingle_core
 
 This repository contains a Rust library with Algorand helpers and the peer-to-peer comms engine. Mobile bindings are provided separately via the React Native JSI bridge in `bingle_jsi/`.
 
@@ -15,7 +15,7 @@ git config merge.build-number-merge.driver "./scripts/merge_build_number_driver.
 ```
 
 ## Repository layout
-- Active library root: `src/lib.rs` re-exports modules from `src/blockchain/` (e.g., `rust_comms::algo_ops`).
+- Active library root: `src/lib.rs` re-exports modules from `src/blockchain/` (e.g., `bingle_core::algo_ops`).
 - Rust tests live under `tests/`, organised by module (e.g. `tests/api/`, `tests/dtls/`, `tests/blockchain/`).
 - Test helpers shared across test targets are in `tests/test_util.rs` and `tests/setup_localnet.rs`.
 
