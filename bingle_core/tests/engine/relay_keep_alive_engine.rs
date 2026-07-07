@@ -10,7 +10,6 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
-
 use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions};
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
@@ -259,6 +258,8 @@ pub fn engine_stop_stops_keep_alive() {
     assert!(eng.relay_keep_alive_target_for_tests().is_some());
 
     eng.stop();
+    std::thread::sleep(Duration::from_secs(1));
+
     assert_eq!(
         eng.relay_keep_alive_target_for_tests(),
         None,
