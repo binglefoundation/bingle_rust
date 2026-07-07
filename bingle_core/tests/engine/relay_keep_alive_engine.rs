@@ -195,6 +195,7 @@ fn relay_info(id: &str, addr: SocketAddr) -> RelayInfo {
     crate::util::test_util::signed_non_root_relay(id, addr)
 }
 
+#[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn registration_starts_keep_alive_with_relay_target() {
@@ -212,6 +213,7 @@ pub fn registration_starts_keep_alive_with_relay_target() {
     eng.stop();
 }
 
+#[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn re_registration_replaces_keep_alive_target() {
@@ -230,6 +232,7 @@ pub fn re_registration_replaces_keep_alive_target() {
     eng.stop();
 }
 
+#[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stun_none_stops_keep_alive() {
@@ -248,6 +251,7 @@ pub fn stun_none_stops_keep_alive() {
     eng.stop();
 }
 
+#[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_stop_stops_keep_alive() {
@@ -280,6 +284,7 @@ pub fn engine_stop_stops_keep_alive() {
 // The fix: on an address change while registered, re-register with the remembered relay
 // (Engine::last_registered_relay) on the new mapping before that guard, which restarts the
 // keep-alive.
+#[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stun_port_change_after_register_reconnects_relay() {

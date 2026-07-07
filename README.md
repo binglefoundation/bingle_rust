@@ -53,6 +53,18 @@ To run all unit tests crate-by-crate and print a summary at the end, use:
 bash scripts/run_unit_tests.sh
 ```
 
+The runner fails an individual test after 20 seconds by default and runs timed tests in parallel. To use a different limit, set `UNIT_TEST_TIMEOUT_SECONDS`, for example:
+
+```bash
+UNIT_TEST_TIMEOUT_SECONDS=60 bash scripts/run_unit_tests.sh
+```
+
+The default is two parallel test jobs. To control the number of parallel test jobs, set `UNIT_TEST_JOBS`, for example:
+
+```bash
+UNIT_TEST_JOBS=4 bash scripts/run_unit_tests.sh
+```
+
 Localnet tests will **fail** (not skip) if algokit localnet is not running. Internet tests require live network access.
 
 ### Running localnet integration tests
