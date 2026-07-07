@@ -4,8 +4,8 @@ use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
 use bingle_jsi::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
-    BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse, Message,
-    NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
+    KeypairStatusResponse, Message, NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 
 /// Stub implementation where every method returns NotImplemented.
@@ -16,6 +16,15 @@ impl BingleJsiApi for StubApi {
     fn handle_lookup(&self, _handle: String) -> Result<String, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "handle_lookup".to_string(),
+        })
+    }
+
+    fn handle_lookup_partial(
+        &self,
+        _handle: String,
+    ) -> Result<HandleLookupPartialResult, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "handle_lookup_partial".to_string(),
         })
     }
 

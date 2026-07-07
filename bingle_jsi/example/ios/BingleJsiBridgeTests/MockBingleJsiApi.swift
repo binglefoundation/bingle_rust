@@ -30,6 +30,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     }
 
     var handleLookupCalls: [String] = []
+    var handleLookupPartialCalls: [String] = []
     var sendMessageToIdCalls: [SendMessageToIdCall] = []
     var sendMessageToHandleCalls: [SendMessageToHandleCall] = []
     var queueMessageCalls: [QueueMessageCall] = []
@@ -43,6 +44,9 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     // MARK: - Configurable return values
 
     var handleLookupResult: String = "mock-user-id"
+    var handleLookupPartialResult: HandleLookupPartialResult = HandleLookupPartialResult(
+        id: "mock-user-id", canonicalHandle: "Mock_Handle"
+    )
     var sendMessageToIdResult: Bool = true
     var sendMessageToHandleResult: Bool = true
     var isStartedResult: Bool = true
@@ -66,6 +70,7 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
     // MARK: - Error injection
 
     var handleLookupError: Error?
+    var handleLookupPartialError: Error?
     var sendMessageToIdError: Error?
     var sendMessageToHandleError: Error?
 
@@ -75,6 +80,12 @@ class MockBingleJsiApi: BingleJsiApiProtocol {
         handleLookupCalls.append(handle)
         if let error = handleLookupError { throw error }
         return handleLookupResult
+    }
+
+    func handleLookupPartial(handle: String) throws -> HandleLookupPartialResult {
+        handleLookupPartialCalls.append(handle)
+        if let error = handleLookupPartialError { throw error }
+        return handleLookupPartialResult
     }
 
     func sendMessageToId(userId: String, message: BingleMessage) throws -> Bool {

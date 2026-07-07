@@ -63,6 +63,12 @@ impl BingleApi for DummyApi {
     ) -> Result<Option<UserId>, bingle_core::api::bingle_api::BingleError> {
         Ok(None)
     }
+    fn handle_lookup_partial(
+        &self,
+        _handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, bingle_core::api::bingle_api::BingleError> {
+        Ok(None)
+    }
     fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
         None
     }

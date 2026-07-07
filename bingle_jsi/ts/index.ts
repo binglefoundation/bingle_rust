@@ -20,6 +20,7 @@ export type {
   VersionInfo,
   Keypair,
   Contact,
+  HandleLookupPartialResult,
   Message,
   KeypairStatusResponse,
   NatTypeResponse,
@@ -88,6 +89,9 @@ export async function initBingleJsi(config: BingleJsiConfig): Promise<void> {
 export const BingleJsi = BingleJsiNative as {
   initialize(config: BingleJsiConfig): Promise<boolean>;
   handleLookup(handle: string): Promise<string>;
+  handleLookupPartial(
+    handle: string
+  ): Promise<{ id: string; canonical_handle: string }>;
   sendMessageToId(userId: string, message: Record<string, unknown>): Promise<boolean>;
   sendMessageToHandle(handle: string, message: Record<string, unknown>): Promise<boolean>;
   version(): Promise<{

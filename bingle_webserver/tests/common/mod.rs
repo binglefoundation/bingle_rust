@@ -43,6 +43,16 @@ impl BingleApi for MockBingleApi {
             Ok(Some(format!("mock-id-{}", handle)))
         }
     }
+    fn handle_lookup_partial(
+        &self,
+        handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+        if handle == "notfound" {
+            Ok(None)
+        } else {
+            Ok(Some((format!("mock-id-{}", handle), handle.clone())))
+        }
+    }
     fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
         None
     }
@@ -149,6 +159,16 @@ impl BingleApi for HandleMockBingleApi {
             Ok(None)
         } else {
             Ok(Some(format!("mock-id-{}", handle)))
+        }
+    }
+    fn handle_lookup_partial(
+        &self,
+        handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+        if handle == "notfound" {
+            Ok(None)
+        } else {
+            Ok(Some((format!("mock-id-{}", handle), handle.clone())))
         }
     }
     fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
@@ -264,6 +284,12 @@ impl BingleApi for CapturingMockBingleApi {
     fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, BingleError> {
         Ok(None)
     }
+    fn handle_lookup_partial(
+        &self,
+        _handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+        Ok(None)
+    }
     fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
         None
     }
@@ -359,6 +385,12 @@ impl BingleApi for TrackingMockBingleApi {
     fn stop(&mut self) {}
     fn network_change(&mut self) {}
     fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, BingleError> {
+        Ok(None)
+    }
+    fn handle_lookup_partial(
+        &self,
+        _handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
         Ok(None)
     }
     fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
