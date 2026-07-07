@@ -16,6 +16,8 @@
       <sourceFolder url="file://$MODULE_DIR$/bingle_jsi/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/bingle_local/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/bingle_local/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/bingle_core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/bingle_core/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/generated" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/tests/dapp/venv/bin" />
