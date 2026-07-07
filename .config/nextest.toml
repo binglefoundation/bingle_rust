@@ -1,0 +1,27 @@
+# cargo-nextest configuration.
+# Install nextest with:  cargo binstall cargo-nextest   (or see https://nexte.st/docs/installation/)
+#
+# This replaces the hand-rolled per-test timeout logic in scripts/run_unit_tests.sh.
+# nextest already runs every test in its own process, so slow-timeout gives a real
+# per-test timeout with a hard kill of the whole process tree.
+
+[profile.default]
+# Global default: kill any single test that runs longer than 20s.
+# period      = the timeout unit.
+# terminate-after = number of periods before the test process tree is killed.
+#   period="20s" + terminate-after=1  => warn-and-kill at 20s (matches the old
+#   DEFAULT_UNIT_TEST_TIMEOUT_SECONDS=20 behaviour).
+slow-timeout = { period = "20s", terminate-after = 1 }
+
+# Default parallelism (old UNIT_TEST_JOBS default was 2). Override per-run with
+# `cargo nextest run --test-threads N` or the env var NEXTEST_TEST_THREADS.
+test-threads = 2
+
+# CI-friendly profile: same timeout, but emit JUnit XML for dashboards and retry
+# flaky tests once. Select with `cargo nextest run --profile ci`.
+[profile.ci]
+slow-timeout = { period = "20s", terminate-after = 1 }
+retries = 1
+
+[profile.ci.junit]
+path = "junit.xml"
