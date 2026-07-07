@@ -233,6 +233,54 @@ fn cmd_run(mut args: Vec<String>) {
         }
     };
 
+    // Verify the app we are being started with (resolved from --app-id, --node-file, or the
+    // APP_ID env) is still supported before doing anything on-chain. When the creator supersedes
+    // an app with a newer one, a stale client must upgrade rather than run against the dead app —
+    // its state-changing methods are hard-blocked on-chain anyway (see spec/block_old_app.md).
+    let app_id_for_check = opts.app_id.or_else(|| {
+        std::env::var("APP_ID")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+    });
+    if let Some(app_id) = app_id_for_check {
+        let ops = AlgoOps::new(None, None, opts.algo_provider_config.clone());
+        let asset_id_for_ctor = opts
+            .asset_id
+            .or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id))
+            .unwrap_or(0);
+        let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
+        // Read the successor pointer, retrying while the node is unreachable (mirrors the start
+        // loop); any other read error is treated as best-effort and lets start proceed.
+        let successor = loop {
+            match bingle.successor_app(app_id) {
+                Ok(s) => break s,
+                Err(e) => {
+                    if let Some(ae) = e.downcast_ref::<AlgoError>()
+                        && ae.kind == AlgoErrorKind::HostUnreachable
+                    {
+                        tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                        std::thread::sleep(Duration::from_secs(60));
+                        continue;
+                    }
+                    warn!(
+                        "Could not verify app {} is supported ({}); continuing to start",
+                        app_id, e
+                    );
+                    break None;
+                }
+            }
+        };
+        if let AppSupport::Superseded { app_id, successor } =
+            resolve_app_support(Some(app_id), successor)
+        {
+            warn!(
+                "App {} has been superseded by app {}; this client is out of date. Please upgrade to the latest Bingle. Refusing to start.",
+                app_id, successor
+            );
+            std::process::exit(1);
+        }
+    }
+
     // The compact record this process registered on-chain at startup; used on shutdown
     // to make sure we only clear our own registration (see resolve_shutdown_action).
     let mut registered_static_record: Option<String> = None;
@@ -1345,6 +1393,30 @@ fn parse_u64(v: String, name: &str) -> u64 {
 fn write_text_file(path: &str, content: &str) -> std::io::Result<()> {
     let mut f = fs::File::create(path)?;
     f.write_all(content.as_bytes())
+}
+
+/// Outcome of the pre-start check that the configured app is still supported (not superseded
+/// by a newer app). Kept as a pure decision so it can be unit-tested without a live node.
+#[derive(Debug, PartialEq, Eq)]
+enum AppSupport {
+    /// No app_id was configured; there is nothing to check.
+    NoAppId,
+    /// The app is current and clients may run against it.
+    Supported,
+    /// The app has been superseded by `successor`; the client must upgrade.
+    Superseded { app_id: u64, successor: u64 },
+}
+
+/// Decide whether the configured app is still supported, given the app_id (if any) and the
+/// successor pointer read from chain (`None` when the app is not superseded).
+fn resolve_app_support(app_id: Option<u64>, successor_app: Option<u64>) -> AppSupport {
+    match app_id {
+        None => AppSupport::NoAppId,
+        Some(app_id) => match successor_app {
+            Some(successor) => AppSupport::Superseded { app_id, successor },
+            None => AppSupport::Supported,
+        },
+    }
 }
 
 /// Describes the action to take on shutdown regarding static endpoint unregistration.
