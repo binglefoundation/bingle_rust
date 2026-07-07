@@ -1071,7 +1071,7 @@ impl AlgoBingle {
     ) -> Result<Option<(String, String)>> {
         let mut matches: Vec<(String, String, u64)> = Vec::new();
         self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
-            Self::extract_handle_prefix_match(acct, app_id, prefix, &mut matches);
+            Self::handle_prefix_match(acct, app_id, prefix, &mut matches);
             Ok(())
         })?;
         algo_log!(
@@ -1163,7 +1163,7 @@ impl AlgoBingle {
     /// normalised handle. On a match, appends `(address, canonical_handle, handle_time)`
     /// to `matches`, where `canonical_handle` is the handle as written in local state.
     /// An empty (post-normalisation) prefix never matches.
-    pub fn extract_handle_prefix_match(
+    pub fn handle_prefix_match(
         acct: &serde_json::Value,
         app_id: u64,
         prefix: &str,

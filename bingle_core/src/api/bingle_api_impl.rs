@@ -306,14 +306,8 @@ impl BingleApiImpl {
         let config = self
             .get_algo_provider_config()
             .ok_or_else(|| BingleError::Other("algo_provider_config not configured".to_string()))?;
-        let addr = self.get_my_id().or_else(|| {
-            Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ".to_string())
-        });
-        let ops = AlgoOps::new(
-            self.started_options.algo_passphrase.clone(),
-            addr,
-            Some(config),
-        );
+        // Handle lookups only issue public Indexer queries, so no account is needed.
+        let ops = AlgoOps::new_indexer(Some(config));
         Ok(crate::blockchain::algo_bingle::AlgoBingle::new_with_cache(
             ops,
             app_id,
