@@ -11,8 +11,8 @@ No '-' in filenames
 
 ~~include-files.lua (needed?)~~
 
-Project becomes just bingle (if available as public repo)
+Project becomes just bingle (if available as public repo) - TODO in release
 
-push down src into bingle_core
+~~push down src into bingle_core~~
 
 ~~merge-build-number-driver.sh~~
