@@ -130,6 +130,14 @@ impl BingleApi for LockingApiWrapper {
             .ok_or_else(|| BingleError::Other("API dropped".to_string()))
             .and_then(|a| a.handle_lookup(handle))
     }
+    fn handle_lookup_partial(
+        &self,
+        handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+        self.api("handle_lookup_partial")
+            .ok_or_else(|| BingleError::Other("API dropped".to_string()))
+            .and_then(|a| a.handle_lookup_partial(handle))
+    }
     fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
         self.api("handle_lookup_by_id")
             .and_then(|a| a.handle_lookup_by_id(user_id))

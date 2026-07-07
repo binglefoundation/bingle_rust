@@ -294,6 +294,28 @@ impl BingleApiImpl {
         }
     }
 
+    /// Build an AlgoBingle configured for public Indexer queries (handle lookups).
+    /// Indexer queries are public, so this uses the node's own id when available, or a
+    /// dummy address otherwise, purely to satisfy AlgoOps::new requirements.
+    fn build_indexer_algo_bingle(
+        &self,
+    ) -> Result<crate::blockchain::algo_bingle::AlgoBingle, BingleError> {
+        let app_id = self
+            .get_app_id()
+            .ok_or_else(|| BingleError::Other("app_id not configured".to_string()))?;
+        let config = self
+            .get_algo_provider_config()
+            .ok_or_else(|| BingleError::Other("algo_provider_config not configured".to_string()))?;
+        // Handle lookups only issue public Indexer queries, so no account is needed.
+        let ops = AlgoOps::new_indexer(Some(config));
+        Ok(crate::blockchain::algo_bingle::AlgoBingle::new_with_cache(
+            ops,
+            app_id,
+            0,
+            self.accounts_cache.clone(),
+        ))
+    }
+
     pub fn set_handle_lookup_mock_for_tests(
         &self,
         mock: Box<dyn Fn(&Handle) -> Result<Option<UserId>, String> + Send + Sync>,
@@ -789,28 +811,7 @@ impl BingleApi for BingleApiImpl {
             }
         }
 
-        let app_id = self
-            .get_app_id()
-            .ok_or_else(|| BingleError::Other("app_id not configured".to_string()))?;
-        let config = self
-            .get_algo_provider_config()
-            .ok_or_else(|| BingleError::Other("algo_provider_config not configured".to_string()))?;
-
-        // Indexer queries are public; use self id or a dummy if not available yet to satisfy AlgoOps::new requirements
-        let addr = self.get_my_id().or_else(|| {
-            Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ".to_string())
-        });
-        let ops = AlgoOps::new(
-            self.started_options.algo_passphrase.clone(),
-            addr,
-            Some(config),
-        );
-        let ab = crate::blockchain::algo_bingle::AlgoBingle::new_with_cache(
-            ops,
-            app_id,
-            0,
-            self.accounts_cache.clone(),
-        );
+        let ab = self.build_indexer_algo_bingle()?;
         let res = ab.handle_lookup(handle).map_err(BingleError::from_anyhow);
 
         // Update cache on success
@@ -829,6 +830,32 @@ impl BingleApi for BingleApiImpl {
         info_theme!(
             themes::API,
             "[BingleApiImpl::handle_lookup][exit] return={:?}",
+            res
+        );
+        res
+    }
+
+    fn handle_lookup_partial(
+        &self,
+        handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+        let span = self.span.clone();
+        let _guard = span.enter();
+        info_theme!(
+            themes::API,
+            "[BingleApiImpl::handle_lookup_partial][enter] handle={}",
+            handle
+        );
+
+        // Partial lookups are prefix matches, so the exact-handle cache does not apply.
+        let ab = self.build_indexer_algo_bingle()?;
+        let res = ab
+            .handle_lookup_partial(handle)
+            .map_err(BingleError::from_anyhow);
+
+        info_theme!(
+            themes::API,
+            "[BingleApiImpl::handle_lookup_partial][exit] return={:?}",
             res
         );
         res

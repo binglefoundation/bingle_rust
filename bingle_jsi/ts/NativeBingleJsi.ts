@@ -51,6 +51,13 @@ export interface Contact {
   fields: Record<string, string>;
 }
 
+export interface HandleLookupPartialResult {
+  /** Algorand address of the matching account. */
+  id: string;
+  /** The handle exactly as written in the account's blockchain local state. */
+  canonical_handle: string;
+}
+
 export interface Message {
   sender_handle: string;
   recipient_handles: string[];
@@ -134,6 +141,7 @@ export interface ListeningCallback {
 export interface BingleJsiApi {
   // Core messaging
   handleLookup(handle: string): string;
+  handleLookupPartial(handle: string): HandleLookupPartialResult;
   sendMessageToId(userId: string, message: BingleMessage): boolean;
   sendMessageToHandle(handle: string, message: BingleMessage): boolean;
   sendMessageToNetwork(

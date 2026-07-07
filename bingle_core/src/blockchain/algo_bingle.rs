@@ -1037,6 +1037,51 @@ impl AlgoBingle {
         Ok(Self::pick_oldest_match(matches))
     }
 
+    /// Partial (prefix) lookup of a Bingle handle on-chain using the Indexer.
+    ///
+    /// The `prefix` is normalised by the handle matching rules (lowercase, alphanumeric
+    /// only) and matched against the start of each registered handle's normalised form,
+    /// so `"abc"` matches a registered `"ab_cd"`. Returns the oldest matching account as a
+    /// tuple of `(id, canonical_handle)`, where `canonical_handle` is the handle exactly as
+    /// written in the account's local state on the blockchain. Returns `Ok(None)` if no
+    /// handle starts with the prefix.
+    pub fn handle_lookup_partial(&self, prefix: &str) -> Result<Option<(String, String)>> {
+        let app_id = if self.app_id != 0 {
+            self.app_id
+        } else {
+            self.ops
+                .config
+                .app_id
+                .ok_or_else(|| anyhow!("app_id not configured in AlgoOps config"))?
+        };
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return std::thread::scope(|s| {
+                s.spawn(|| self.handle_lookup_partial_sync(app_id, prefix))
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("indexer thread panicked")))
+            });
+        }
+        self.handle_lookup_partial_sync(app_id, prefix)
+    }
+
+    fn handle_lookup_partial_sync(
+        &self,
+        app_id: u64,
+        prefix: &str,
+    ) -> Result<Option<(String, String)>> {
+        let mut matches: Vec<(String, String, u64)> = Vec::new();
+        self.indexer_query_opted_in_accounts_sync(app_id, QueryMode::Refresh, Some(30), |acct| {
+            Self::handle_prefix_match(acct, app_id, prefix, &mut matches);
+            Ok(())
+        })?;
+        algo_log!(
+            "[handle_lookup_partial_sync] prefix={} matches={:?}",
+            prefix,
+            matches
+        );
+        Ok(Self::pick_oldest_prefix_match(matches))
+    }
+
     /// Normalises a handle for comparison: lowercase and alphanumeric characters only.
     pub fn normalize_handle(handle: &str) -> String {
         handle
@@ -1109,6 +1154,78 @@ impl AlgoBingle {
                 }
             });
             Some(matches[0].0.clone())
+        }
+    }
+
+    /// Extracted logic to find a handle prefix match in an account's local state.
+    ///
+    /// The `prefix` is normalised and compared against the start of the account's
+    /// normalised handle. On a match, appends `(address, canonical_handle, handle_time)`
+    /// to `matches`, where `canonical_handle` is the handle as written in local state.
+    /// An empty (post-normalisation) prefix never matches.
+    pub fn handle_prefix_match(
+        acct: &serde_json::Value,
+        app_id: u64,
+        prefix: &str,
+        matches: &mut Vec<(String, String, u64)>,
+    ) {
+        let normalised_prefix = Self::normalize_handle(prefix);
+        if normalised_prefix.is_empty() {
+            return;
+        }
+        let addr = acct
+            .get("address")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        // Find local state for this app id
+        if let Some(als) = acct
+            .get("apps-local-state")
+            .or_else(|| acct.get("apps_local_state"))
+            .and_then(|x| x.as_array())
+        {
+            for st in als {
+                let id = st.get("id").and_then(|x| x.as_u64());
+                if id == Some(app_id) {
+                    let keyvals = st
+                        .get("key-value")
+                        .or_else(|| st.get("key_value"))
+                        .and_then(|x| x.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let kvs = Self::decode_state_entries(&keyvals);
+                    if let Some((_, h)) = kvs.iter().find(|(k, _)| k == "Handle")
+                        && Self::normalize_handle(h).starts_with(&normalised_prefix)
+                    {
+                        let time = kvs
+                            .iter()
+                            .find(|(k, _)| k == "HandleTime")
+                            .and_then(|(_, v)| v.parse::<u64>().ok())
+                            .unwrap_or(0);
+                        matches.push((addr.clone(), h.clone(), time));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Picks the oldest account (smallest HandleTime) from a list of prefix matches,
+    /// returning `(address, canonical_handle)`. Ties are broken by address for determinism.
+    pub fn pick_oldest_prefix_match(
+        mut matches: Vec<(String, String, u64)>,
+    ) -> Option<(String, String)> {
+        if matches.is_empty() {
+            None
+        } else {
+            matches.sort_by(|a, b| {
+                let res = a.2.cmp(&b.2);
+                if res == std::cmp::Ordering::Equal {
+                    a.0.cmp(&b.0)
+                } else {
+                    res
+                }
+            });
+            Some((matches[0].0.clone(), matches[0].1.clone()))
         }
     }
 
@@ -1632,8 +1749,10 @@ impl AlgoBingle {
             id
         } else {
             let id = asset_id.unwrap_or(self.asset_id);
-            // Reconfigure clawback/reserve to point at the (possibly new) app.
-            asset_creator_ops.set_asset_clawback_to_app(effective_app_id, id)?;
+            // Reconfigure clawback/reserve to point at the (possibly new) app. This is an
+            // asset-config operation, so it must be signed by the asset manager (the asset
+            // was created with ACCOUNT_ASSET_MANAGER as its manager), not the creator.
+            accounts[ACCOUNT_ASSET_MANAGER].set_asset_clawback_to_app(effective_app_id, id)?;
             tracing::info!(
                 "[deploy_app_and_asset] using existing asset_id={} reconfigured to app_id={}",
                 id,
@@ -1689,7 +1808,7 @@ impl AlgoBingle {
                     self.app_id,
                     effective_app_id,
                     effective_asset_id,
-                    asset_creator_ops,
+                    &accounts[ACCOUNT_ASSET_MANAGER],
                 )?;
             }
         }

@@ -1,8 +1,8 @@
 use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleMessage, Contact, ContactSource, Keypair, KeypairStatusResponse, Message,
-    NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
+    KeypairStatusResponse, Message, NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 
 /// Primary Bingle API exposed over JSI / uniffi.
@@ -15,6 +15,18 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Lookup an id by handle.
     fn handle_lookup(&self, handle: String) -> Result<String, BingleJsiError>;
+
+    /// Partial (prefix) handle lookup.
+    ///
+    /// The handle is normalised by the handle matching rules and matched against the start
+    /// of registered handles, so "abc" matches a registered "ab_cd". Returns the first
+    /// (oldest) hit as an (id, canonical_handle) pair, where canonical_handle is the handle
+    /// exactly as written in the blockchain local state. Errors with NotFound if no handle
+    /// starts with the given prefix.
+    fn handle_lookup_partial(
+        &self,
+        handle: String,
+    ) -> Result<HandleLookupPartialResult, BingleJsiError>;
 
     /// Send a message to a user id.
     fn send_message_to_id(

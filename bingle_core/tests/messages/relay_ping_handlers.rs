@@ -184,6 +184,12 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
         ) -> Result<Option<UserId>, bingle_core::api::bingle_api::BingleError> {
             Ok(None)
         }
+        fn handle_lookup_partial(
+            &self,
+            _handle: &Handle,
+        ) -> Result<Option<(UserId, Handle)>, bingle_core::api::bingle_api::BingleError> {
+            Ok(None)
+        }
         fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
             None
         }
@@ -333,6 +339,12 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
             &self,
             _handle: &Handle,
         ) -> Result<Option<UserId>, bingle_core::api::bingle_api::BingleError> {
+            Ok(None)
+        }
+        fn handle_lookup_partial(
+            &self,
+            _handle: &Handle,
+        ) -> Result<Option<(UserId, Handle)>, bingle_core::api::bingle_api::BingleError> {
             Ok(None)
         }
         fn handle_lookup_by_id(&self, _user_id: &UserId) -> Option<Handle> {
