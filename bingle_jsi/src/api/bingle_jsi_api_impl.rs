@@ -476,7 +476,8 @@ impl BingleJsiApiImpl {
                                         }
                                     }
                                     Ok(None) => {}
-                                    Err(e) => tracing::warn!(
+                                    // Expect this on a first run with no keypair
+                                    Err(e) => tracing::info!(
                                         "Local-state migration check failed (continuing): {}",
                                         e
                                     ),

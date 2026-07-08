@@ -251,7 +251,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             match guard.as_ref().map(|k| k.passphrase.clone()) {
                 Some(p) => p,
                 None => {
-                    tracing::error!("[get_algo_ops] No keypair available");
+                    // Expected, not configured yet
+                    tracing::info!("[get_algo_ops] No keypair available");
                     return Err(BingleError::Other("no keypair".to_string()));
                 }
             }
