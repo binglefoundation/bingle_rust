@@ -255,6 +255,8 @@ pub fn stun_none_stops_keep_alive() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_stop_stops_keep_alive() {
+    crate::util::test_util::init_test_logging();
+
     let mut eng = build_engine();
 
     let addr: SocketAddr = "127.0.0.1:19915".parse().unwrap();
