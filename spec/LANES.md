@@ -95,10 +95,10 @@ robustness:
 + ~~Layer 2~~
 - ~~genericise AlgoOps~~
 - ~~fix bingle_admin deploy and upgrade~~
-- app replace migrate local data
-- reorganize naming
+- ~~app replace migrate local data~~
+- ~~reorganize naming~~
 - identify `unsafe` and fix
-- run code quality tools, fixup and ignore
+- run code quality tools, fixup and ignore (needs script)
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
@@ -130,9 +130,11 @@ deploy:
 
 Bugs:
 - ~~NAT timeout causes incoming relay data loss ([#5](https://github.com/bingle-foundation/bingle_rust/issues/5))~~
-- Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))
-- After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))
+~~- Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))~~
+~~- After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))~~
 - ~~STUN handler does not pick up a change to inconsistent ([#2](https://github.com/bingle-foundation/bingle_rust/issues/2))~~
+ - Algo balance shown incorrectly in app when we are semi-funded
+  #15
 
 Deferred (to create bugs):
 - cache DDB locally with timeout / cancel
