@@ -61,6 +61,26 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun handleLookupPartial(handle: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val result = api.handleLookupPartial(handle)
+                val map = Arguments.createMap()
+                map.putString("id", result.id)
+                map.putString("canonical_handle", result.canonicalHandle)
+                promise.resolve(map)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun sendMessageToId(userId: String, message: ReadableMap, promise: Promise) {
         val api = apiInstance
         if (api == null) {

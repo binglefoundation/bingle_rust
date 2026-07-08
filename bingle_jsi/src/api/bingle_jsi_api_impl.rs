@@ -10,9 +10,9 @@ use crate::api::bingle_jsi_api::BingleJsiApi;
 use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleJsiConfig, BingleMessage, Contact, ContactSource, InetSocketAddress, Keypair,
-    KeypairStatus, KeypairStatusResponse, Message, NatType, NatTypeResponse, NetworkSourceKey,
-    VersionInfo,
+    BingleJsiConfig, BingleMessage, Contact, ContactSource, HandleLookupPartialResult,
+    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, NatType,
+    NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 use bingle_core::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
@@ -696,6 +696,22 @@ impl BingleJsiApi for BingleJsiApiImpl {
             Ok(Some(id)) => Ok(id),
             Ok(None) => Err(BingleJsiError::NotFound {
                 reason: format!("Handle '{}' not found", handle),
+            }),
+            Err(e) => Err(bingle_error_to_jsi(e)),
+        }
+    }
+
+    fn handle_lookup_partial(
+        &self,
+        handle: String,
+    ) -> Result<HandleLookupPartialResult, BingleJsiError> {
+        match self.api.handle_lookup_partial(&handle) {
+            Ok(Some((id, canonical_handle))) => Ok(HandleLookupPartialResult {
+                id,
+                canonical_handle,
+            }),
+            Ok(None) => Err(BingleJsiError::NotFound {
+                reason: format!("No handle matching '{}' found", handle),
             }),
             Err(e) => Err(bingle_error_to_jsi(e)),
         }

@@ -11,6 +11,10 @@ RCT_EXTERN_METHOD(handleLookup:(NSString *)handle
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(handleLookupPartial:(NSString *)handle
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(sendMessageToId:(NSString *)userId
                   message:(NSDictionary *)message
                   resolver:(RCTPromiseResolveBlock)resolve

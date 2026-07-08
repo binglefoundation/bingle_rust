@@ -59,6 +59,12 @@ impl BingleApi for MockBingleApi {
     fn handle_lookup(&self, _: &Handle) -> Result<Option<UserId>, BingleError> {
         Ok(Some("test-id".to_string()))
     }
+    fn handle_lookup_partial(
+        &self,
+        _: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+        Ok(Some(("test-id".to_string(), "Test_User".to_string())))
+    }
     fn handle_lookup_by_id(&self, _: &UserId) -> Option<Handle> {
         Some("testuser".to_string())
     }
@@ -128,6 +134,25 @@ impl BingleApi for MockBingleApi {
             *guard = handler;
         }
     }
+}
+
+#[test]
+fn test_handle_lookup_partial_maps_canonical_handle() {
+    // Verifies the JSI layer forwards a partial lookup to the backing BingleApi and maps
+    // the (id, canonical_handle) tuple into a HandleLookupPartialResult record.
+    let mock_api = Arc::new(MockBingleApi {
+        progress_steps: vec![],
+        on_listening: Mutex::new(None),
+    });
+
+    let jsi = BingleJsiApiImpl::init_for_tests(mock_api, None);
+
+    let result = jsi
+        .handle_lookup_partial("test".to_string())
+        .expect("partial lookup should succeed");
+
+    assert_eq!(result.id, "test-id");
+    assert_eq!(result.canonical_handle, "Test_User");
 }
 
 #[test]

@@ -341,6 +341,18 @@ impl bingle_core::api::bingle_api::BingleApi for MockApi {
     ) -> Result<Option<bingle_core::api::bingle_api::UserId>, BingleError> {
         Ok(None)
     }
+    fn handle_lookup_partial(
+        &self,
+        _handle: &bingle_core::api::bingle_api::Handle,
+    ) -> Result<
+        Option<(
+            bingle_core::api::bingle_api::UserId,
+            bingle_core::api::bingle_api::Handle,
+        )>,
+        BingleError,
+    > {
+        Ok(None)
+    }
     fn handle_lookup_by_id(
         &self,
         _user_id: &bingle_core::api::bingle_api::UserId,

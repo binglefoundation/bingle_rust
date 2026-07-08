@@ -19,8 +19,8 @@
 ///   - ALGO balances decrease by exactly (tx_count × MIN_FEE) for each signing account
 use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::algo_bingle::{
-    ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_RESERVE,
-    AlgoBingle,
+    ACCOUNT_APP_ADMIN, ACCOUNT_APP_WITHDRAWER, ACCOUNT_ASSET_CREATOR, ACCOUNT_ASSET_FREEZE,
+    ACCOUNT_ASSET_MANAGER, ACCOUNT_ASSET_RESERVE, AlgoBingle,
 };
 use serial_test::serial;
 use std::collections::HashMap;
@@ -28,7 +28,6 @@ use std::collections::HashMap;
 use crate::util::test_util;
 use test_util::init_test_logging_with_filter;
 
-const TEAL_DIR: &str = "dapp_projects/smart_contracts/artifacts/bingle_dapp";
 const MIN_FEE: u64 = 1_000; // µAlgos per transaction on localnet
 const APP_FUND: u64 = 3_210_000; // µAlgos sent from APP_CREATOR to new app account on deploy
 const MIN_BALANCE_WITH_ASA: u64 = 200_000; // minimum balance for an account opted in to 1 ASA
@@ -49,9 +48,10 @@ fn setup() -> (AlgoChainConfig, AlgoOps, HashMap<String, AlgoOps>) {
 
 fn make_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps> {
     use crate::blockchain_users::{
-        ADDRESS_APP_ADMIN, ADDRESS_APP_WITHDRAWER, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_RESERVE,
-        PASSPHRASE_APP_ADMIN, PASSPHRASE_APP_WITHDRAWER, PASSPHRASE_ASSET_CREATOR,
-        PASSPHRASE_ASSET_RESERVE,
+        ADDRESS_APP_ADMIN, ADDRESS_APP_WITHDRAWER, ADDRESS_ASSET_CREATOR, ADDRESS_ASSET_FREEZE,
+        ADDRESS_ASSET_MANAGER, ADDRESS_ASSET_RESERVE, PASSPHRASE_APP_ADMIN,
+        PASSPHRASE_APP_WITHDRAWER, PASSPHRASE_ASSET_CREATOR, PASSPHRASE_ASSET_FREEZE,
+        PASSPHRASE_ASSET_MANAGER, PASSPHRASE_ASSET_RESERVE,
     };
     let mut accounts = HashMap::new();
     accounts.insert(
@@ -73,6 +73,14 @@ fn make_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps> {
     accounts.insert(
         ACCOUNT_ASSET_RESERVE.to_string(),
         test_util::ops_from_mnemonic(ADDRESS_ASSET_RESERVE, PASSPHRASE_ASSET_RESERVE, cfg.clone()),
+    );
+    accounts.insert(
+        ACCOUNT_ASSET_MANAGER.to_string(),
+        test_util::ops_from_mnemonic(ADDRESS_ASSET_MANAGER, PASSPHRASE_ASSET_MANAGER, cfg.clone()),
+    );
+    accounts.insert(
+        ACCOUNT_ASSET_FREEZE.to_string(),
+        test_util::ops_from_mnemonic(ADDRESS_ASSET_FREEZE, PASSPHRASE_ASSET_FREEZE, cfg.clone()),
     );
     accounts
 }
@@ -145,6 +153,7 @@ struct BalanceSnapshot {
     app_withdrawer: u64,
     asset_creator: u64,
     asset_reserve: u64,
+    asset_manager: u64,
 }
 
 fn snapshot(creator_ops: &AlgoOps, accounts: &HashMap<String, AlgoOps>) -> BalanceSnapshot {
@@ -154,6 +163,7 @@ fn snapshot(creator_ops: &AlgoOps, accounts: &HashMap<String, AlgoOps>) -> Balan
         app_withdrawer: microalgos(&accounts[ACCOUNT_APP_WITHDRAWER]),
         asset_creator: microalgos(&accounts[ACCOUNT_ASSET_CREATOR]),
         asset_reserve: microalgos(&accounts[ACCOUNT_ASSET_RESERVE]),
+        asset_manager: microalgos(&accounts[ACCOUNT_ASSET_MANAGER]),
     }
 }
 
@@ -176,7 +186,7 @@ fn deploy_initial(
 ) -> (u64, u64) {
     let ab = AlgoBingle::new(creator_ops.clone(), 0, 0);
     ab.deploy_app_and_asset(
-        std::path::Path::new(TEAL_DIR),
+        &test_util::bingle_dapp_artifacts_dir(),
         true,
         true,
         None,
@@ -206,7 +216,7 @@ pub fn deploy_app_and_asset_both_new() {
     let before = snapshot(&creator_ops, &accounts);
     let (app_id, asset_id) = ab
         .deploy_app_and_asset(
-            std::path::Path::new(TEAL_DIR),
+            &test_util::bingle_dapp_artifacts_dir(),
             true, // new_app
             true, // new_asset
             None,
@@ -306,7 +316,7 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
     let before = snapshot(&creator_ops, &accounts);
     let (new_app_id, same_asset_id) = ab
         .deploy_app_and_asset(
-            std::path::Path::new(TEAL_DIR),
+            &test_util::bingle_dapp_artifacts_dir(),
             true,  // new_app
             false, // reuse existing asset
             None,
@@ -329,8 +339,9 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
     verify_clawback_is_app(&creator_ops, new_app_id, asset_id);
     // APP_CREATOR:   create_app(1 fee) + send_algo to app(1 fee + APP_FUND) + migrate_reserve(1 fee)
     // APP_ADMIN:     set_bingle_price(1) + opt_in_app_to_asset(1) — new app not yet opted in
-    // ASSET_CREATOR: set_clawback(1) + transfer_old_balance[UpdateAsset(1)+Clawback(1)+set_clawback(1)]
-    // APP_WITHDRAWER, ASSET_RESERVE: already opted in by deploy_initial → 0 fees
+    // ASSET_MANAGER: set_clawback(1) + transfer_old_balance[UpdateAsset(1)+Clawback(1)+set_clawback(1)]
+    //                — all asset config/clawback is manager-signed
+    // ASSET_CREATOR, APP_WITHDRAWER, ASSET_RESERVE: already opted in by deploy_initial → 0 fees
     assert_algo_spent(
         "APP_CREATOR",
         before.app_creator,
@@ -339,10 +350,16 @@ pub fn deploy_app_and_asset_new_app_existing_asset() {
     );
     assert_algo_spent("APP_ADMIN", before.app_admin, after.app_admin, 2 * MIN_FEE);
     assert_algo_spent(
+        "ASSET_MANAGER",
+        before.asset_manager,
+        after.asset_manager,
+        4 * MIN_FEE,
+    );
+    assert_algo_spent(
         "ASSET_CREATOR",
         before.asset_creator,
         after.asset_creator,
-        4 * MIN_FEE,
+        0,
     );
     assert_algo_spent(
         "APP_WITHDRAWER",
@@ -418,7 +435,7 @@ pub fn deploy_app_and_asset_existing_app_new_asset() {
     const INITIAL_HOT_BINGLE: u64 = 250;
     let (same_app_id, new_asset_id) = ab
         .deploy_app_and_asset(
-            std::path::Path::new(TEAL_DIR),
+            &test_util::bingle_dapp_artifacts_dir(),
             false, // reuse existing app
             true,  // new_asset
             Some(app_id),
@@ -507,7 +524,7 @@ pub fn deploy_app_and_asset_both_existing() {
     let before = snapshot(&creator_ops, &accounts);
     let (same_app_id, same_asset_id) = ab
         .deploy_app_and_asset(
-            std::path::Path::new(TEAL_DIR),
+            &test_util::bingle_dapp_artifacts_dir(),
             false, // reuse existing app
             false, // reuse existing asset
             Some(app_id),
@@ -527,15 +544,21 @@ pub fn deploy_app_and_asset_both_existing() {
     verify_clawback_is_app(&creator_ops, app_id, asset_id);
     // APP_CREATOR:   nothing (existing app, no migrate)
     // APP_ADMIN:     opt_in_app_to_asset skipped (app already opted in → early return)
-    // ASSET_CREATOR: set_asset_clawback_to_app(1)
-    // APP_WITHDRAWER, ASSET_RESERVE: already opted in by deploy_initial → 0 fees
+    // ASSET_MANAGER: set_asset_clawback_to_app(1) — asset config is manager-signed
+    // ASSET_CREATOR, APP_WITHDRAWER, ASSET_RESERVE: already opted in by deploy_initial → 0 fees
     assert_algo_spent("APP_CREATOR", before.app_creator, after.app_creator, 0);
     assert_algo_spent("APP_ADMIN", before.app_admin, after.app_admin, 0);
+    assert_algo_spent(
+        "ASSET_MANAGER",
+        before.asset_manager,
+        after.asset_manager,
+        MIN_FEE,
+    );
     assert_algo_spent(
         "ASSET_CREATOR",
         before.asset_creator,
         after.asset_creator,
-        MIN_FEE,
+        0,
     );
     assert_algo_spent(
         "APP_WITHDRAWER",
@@ -580,7 +603,7 @@ pub fn deploy_app_and_asset_missing_required_account_fails() {
         partial.remove(missing);
         let ab = AlgoBingle::new(creator_ops.clone(), 0, 0);
         let result = ab.deploy_app_and_asset(
-            std::path::Path::new(TEAL_DIR),
+            &test_util::bingle_dapp_artifacts_dir(),
             true,
             true,
             None,
@@ -623,7 +646,7 @@ pub fn deploy_app_and_asset_duplicate_address_fails() {
 
     let ab = AlgoBingle::new(creator_ops, 0, 0);
     let result = ab.deploy_app_and_asset(
-        std::path::Path::new(TEAL_DIR),
+        &test_util::bingle_dapp_artifacts_dir(),
         true,
         true,
         None,

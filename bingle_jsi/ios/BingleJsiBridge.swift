@@ -69,6 +69,25 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     @objc
+    func handleLookupPartial(_ handle: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let result = try api.handleLookupPartial(handle: handle)
+                resolve([
+                    "id": result.id,
+                    "canonical_handle": result.canonicalHandle,
+                ])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
     func sendMessageToId(_ userId: String, message: NSDictionary, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)

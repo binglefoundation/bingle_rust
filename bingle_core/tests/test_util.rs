@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
 use tracing_subscriber::EnvFilter;
@@ -248,12 +249,26 @@ pub fn init_test_logging_with_filter(filter_str: &str) {
 ///    flows work out of the box in tests without a separate price setup step.
 ///
 /// Returns the `app_id` of the deployed contract.
+/// Absolute path to the built BingleDapp artifacts directory.
+///
+/// Resolved relative to the workspace root (the parent of this crate's manifest dir) so
+/// the artifacts are found regardless of the process working directory. In particular
+/// `cargo test` runs test binaries with the package directory (`bingle_core/`) as CWD,
+/// while the artifacts live at the workspace root under `dapp_projects/`.
+#[allow(dead_code)]
+pub fn bingle_dapp_artifacts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root is the parent of the crate manifest dir")
+        .join("dapp_projects/smart_contracts/artifacts/bingle_dapp")
+}
+
 #[allow(dead_code)]
 pub fn deploy_bingle_app(ops: &AlgoOps) -> u64 {
-    let approval_path =
-        "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.approval.teal";
-    let clear_path = "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.clear.teal";
-    let arc56_path = "dapp_projects/smart_contracts/artifacts/bingle_dapp/BingleDapp.arc56.json";
+    let artifacts_dir = bingle_dapp_artifacts_dir();
+    let approval_path = artifacts_dir.join("BingleDapp.approval.teal");
+    let clear_path = artifacts_dir.join("BingleDapp.clear.teal");
+    let arc56_path = artifacts_dir.join("BingleDapp.arc56.json");
 
     let approval_src =
         fs::read_to_string(approval_path).expect("read approval teal from artifacts");
@@ -325,10 +340,10 @@ pub fn deploy_bingle_app_and_asset(
     .expect("ensure standard accounts funded");
     let creator_ops = ops_from_mnemonic(ADDRESS_APP_CREATOR, PASSPHRASE_APP_CREATOR, cfg.clone());
     let accounts = make_standard_accounts(&cfg);
-    let teal_dir = std::path::Path::new("dapp_projects/smart_contracts/artifacts/bingle_dapp");
+    let teal_dir = bingle_dapp_artifacts_dir();
     let ab = AlgoBingle::new(creator_ops, 0, 0);
     ab.deploy_app_and_asset(
-        teal_dir,
+        &teal_dir,
         true,
         true,
         None,

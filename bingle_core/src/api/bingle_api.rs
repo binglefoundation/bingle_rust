@@ -492,6 +492,17 @@ pub trait BingleApi: Send + Sync {
     /// Returns Ok(Some(id)) if found, Ok(None) if not found, or Err on failure.
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError>;
 
+    /// Partial (prefix) handle lookup on the Algorand blockchain.
+    /// The handle is normalised by the handle matching rules and matched against the start
+    /// of registered handles, so "abc" matches a registered "ab_cd". Returns the oldest
+    /// matching account as Ok(Some((id, canonical_handle))), where canonical_handle is the
+    /// handle exactly as written in the account's blockchain local state. Returns Ok(None)
+    /// if no handle starts with the given prefix, or Err on failure.
+    fn handle_lookup_partial(
+        &self,
+        handle: &Handle,
+    ) -> Result<Option<(UserId, Handle)>, BingleError>;
+
     /// Reverse lookup: given a user id (Algorand address), obtain the corresponding handle if known.
     /// Implementations may consult an in-memory cache and/or blockchain local state.
     fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle>;

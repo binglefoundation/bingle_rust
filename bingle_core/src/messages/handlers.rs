@@ -252,6 +252,18 @@ impl BingleApi for BothAsApi {
     ) -> Result<Option<crate::api::bingle_api::UserId>, BingleError> {
         self.inner.handle_lookup(_handle)
     }
+    fn handle_lookup_partial(
+        &self,
+        handle: &crate::api::bingle_api::Handle,
+    ) -> Result<
+        Option<(
+            crate::api::bingle_api::UserId,
+            crate::api::bingle_api::Handle,
+        )>,
+        BingleError,
+    > {
+        self.inner.handle_lookup_partial(handle)
+    }
     fn handle_lookup_by_id(
         &self,
         user_id: &crate::api::bingle_api::UserId,

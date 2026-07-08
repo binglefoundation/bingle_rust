@@ -48,6 +48,16 @@ pub struct Keypair {
     pub passphrase: String,
 }
 
+/// Result of a partial (prefix) handle lookup.
+///
+/// `id` is the Algorand address of the matching account; `canonical_handle` is the
+/// handle exactly as written in that account's blockchain local state.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct HandleLookupPartialResult {
+    pub id: String,
+    pub canonical_handle: String,
+}
+
 /// How a contact was added.
 #[derive(uniffi::Enum, Debug, Clone, PartialEq)]
 pub enum ContactSource {
