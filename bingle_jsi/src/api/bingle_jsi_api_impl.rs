@@ -1051,9 +1051,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             tracing::info!(
                 "[BingleJsiApiImpl][start] Engine already started, skipping engine start"
             );
-            return Err(BingleJsiError::InvalidRequest {
-                reason: "Bingle engine is already started".to_string(),
-            });
+            // This is expectable, do not return here
         } else {
             tracing::info!("[BingleJsiApiImpl][start] Starting engine");
 
