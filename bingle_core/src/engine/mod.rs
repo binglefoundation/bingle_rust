@@ -1492,7 +1492,9 @@ impl Engine {
         // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
         let api_weak = self.bingle_api.clone();
         let my_id_for_send = my_id.clone();
-        let send_common = move |dest_id: &str, json_val: serde_json::Value| {
+        // Returns whether the message was delivered. The distributed mutex uses
+        // this: a failed delivery prunes the peer from its membership set.
+        let send_common = move |dest_id: &str, json_val: serde_json::Value| -> bool {
             let uid = dest_id.to_string();
 
             let ok = api_weak.access(|a| {
@@ -1507,32 +1509,33 @@ impl Engine {
                     json_val
                 );
             }
+            ok
         };
         let send_request = {
             let send_common = send_common.clone();
-            move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
+            move |dest_id: &str, req: &crate::messages::types::MutexRequest| -> bool {
                 let msg =
                     Message::Mutex(crate::messages::types::MutexMessage::Request(req.clone()));
                 let json_val = crate::messages::marshal::to_json_value(&msg);
-                send_common(dest_id, json_val);
+                send_common(dest_id, json_val)
             }
         };
         let send_reply = {
             let send_common = send_common.clone();
-            move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
+            move |dest_id: &str, resp: &crate::messages::types::MutexResponse| -> bool {
                 let msg =
                     Message::Mutex(crate::messages::types::MutexMessage::Response(resp.clone()));
                 let json_val = crate::messages::marshal::to_json_value(&msg);
-                send_common(dest_id, json_val);
+                send_common(dest_id, json_val)
             }
         };
         let send_release = {
             let send_common = send_common.clone();
-            move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
+            move |dest_id: &str, rel: &crate::messages::types::MutexRelease| -> bool {
                 let msg =
                     Message::Mutex(crate::messages::types::MutexMessage::Release(rel.clone()));
                 let json_val = crate::messages::marshal::to_json_value(&msg);
-                send_common(dest_id, json_val);
+                send_common(dest_id, json_val)
             }
         };
         tracing::info!("[Engine::initialize_relay] prepared distributed mutex messaging closures");
@@ -2325,6 +2328,7 @@ impl Engine {
         self.stop_relay_keep_alive();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
+        tracing::info!("[Engine::stop] stop dtls");
         self.packet_transport.dtls_mut().stop().unwrap_or_else(|_| {
             panic!(
                 "DTLS stop failed in Engine::stop {}:{}",
@@ -2335,6 +2339,8 @@ impl Engine {
             )
         });
 
+        tracing::info!("[Engine::stop] stopped dtls, stopping mux");
+
         if let Some(mux) = &self.mux {
             mux.stop();
         } else {
@@ -2344,6 +2350,9 @@ impl Engine {
                 last_addr
             );
         }
+
+        tracing::info!("[Engine::stop] stopped mux, stopping STUN finder");
+
         if let Some(stun_arc) = &self.stun {
             tracing::info!("[Engine::stop] locking STUN finder");
             if let Ok(mut finder) = stun_arc.lock() {

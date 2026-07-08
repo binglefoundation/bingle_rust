@@ -60,14 +60,31 @@ impl DistributedMutex for LocalDistributedMutex {
     }
 }
 
-// Modified Lamport with Lease-Based Safety implementation
+// Modified Lamport with Lease-Based Safety implementation.
+//
+// Acquisition rule: all-node acks. Because the Bingle transport now guarantees
+// delivery (a send fails only if the message genuinely was not delivered), a
+// node that is still in our membership set is reachable, so we can require a
+// grant from every known node rather than a bare majority. Combined with each
+// node granting at most one holder at a time (the lease/defer logic below),
+// this yields mutual exclusion directly: no single node grants two holders, so
+// no two requesters can each collect a grant from every node.
+//
+// A failed send is treated as a membership signal: the unreachable node is
+// pruned from the set so we never wait on it. Note this makes the algorithm AP
+// rather than CP — a true network partition lets each side prune the other and
+// proceed independently (split brain). The lease remains as a crash-recovery
+// backstop for a node that fails while holding the lock.
+//
+// The send closures return `true` when the message was delivered and `false`
+// when it was not, so the mutex can act on delivery failures.
 #[derive(Clone)]
 pub struct ModifiedLamportDistributedMutex {
     self_id: String,
     lease_duration: Duration,
-    send_request: Arc<dyn Fn(&str, &crate::messages::types::MutexRequest) + Send + Sync>,
-    send_reply: Arc<dyn Fn(&str, &crate::messages::types::MutexResponse) + Send + Sync>,
-    send_release: Arc<dyn Fn(&str, &crate::messages::types::MutexRelease) + Send + Sync>,
+    send_request: Arc<dyn Fn(&str, &crate::messages::types::MutexRequest) -> bool + Send + Sync>,
+    send_reply: Arc<dyn Fn(&str, &crate::messages::types::MutexResponse) -> bool + Send + Sync>,
+    send_release: Arc<dyn Fn(&str, &crate::messages::types::MutexRelease) -> bool + Send + Sync>,
     inner: Arc<Mutex<InnerState>>,
     cv: Arc<Condvar>,
 }
@@ -97,13 +114,10 @@ struct InnerState {
 
 impl InnerState {
     fn required_acks(&self) -> usize {
-        self.dynamic_node_ids.len() / 2 + 1
-        // self.dynamic_node_ids.len() / 2
-        //     + if self.dynamic_node_ids.len() > 2 {
-        //         1
-        //     } else {
-        //         0
-        //     }
+        // All-node acks: require a grant from every known (reachable) node,
+        // including ourselves. Unreachable nodes are pruned from the set on
+        // send failure, so this stays achievable.
+        self.dynamic_node_ids.len()
     }
 
     fn update_membership(
@@ -144,15 +158,20 @@ impl ModifiedLamportDistributedMutex {
         send_release: Rel,
     ) -> Self
     where
-        Req: Fn(&str, &crate::messages::types::MutexRequest) + Send + Sync + 'static,
-        Rep: Fn(&str, &crate::messages::types::MutexResponse) + Send + Sync + 'static,
-        Rel: Fn(&str, &crate::messages::types::MutexRelease) + Send + Sync + 'static,
+        Req: Fn(&str, &crate::messages::types::MutexRequest) -> bool + Send + Sync + 'static,
+        Rep: Fn(&str, &crate::messages::types::MutexResponse) -> bool + Send + Sync + 'static,
+        Rel: Fn(&str, &crate::messages::types::MutexRelease) -> bool + Send + Sync + 'static,
     {
         tracing::info!(
             "Creating ModifiedLamportDistributedMutex on {:?} with {:?}",
             self_id,
             node_ids
         );
+        // Ensure self is always part of the membership set so required_acks
+        // (all-node acks) counts our own self-ack against a denominator that
+        // includes us.
+        let mut dynamic_node_ids: HashSet<String> = node_ids.into_iter().collect();
+        dynamic_node_ids.insert(self_id.clone());
         let inner = InnerState {
             lamport: 0,
             current_request_ts: None,
@@ -160,7 +179,7 @@ impl ModifiedLamportDistributedMutex {
             deferred: BTreeSet::new(),
             last_holder: None,
             in_cs: false,
-            dynamic_node_ids: node_ids.into_iter().collect(),
+            dynamic_node_ids,
         };
         Self {
             self_id,
@@ -185,11 +204,50 @@ impl ModifiedLamportDistributedMutex {
             };
             (ids, msg)
         };
+        let mut unreachable: Vec<String> = Vec::new();
         for id in ids {
             if id == self.self_id {
                 continue;
             }
-            (self.send_request)(&id, &msg);
+            let delivered = (self.send_request)(&id, &msg);
+            if !delivered {
+                unreachable.push(id);
+            }
+        }
+        self.prune_unreachable(&unreachable);
+    }
+
+    /// Remove nodes we could not deliver to from the membership set. Because
+    /// delivery is guaranteed, a failed send means the node is genuinely gone,
+    /// so we stop requiring its ack. Waiters are woken to recompute
+    /// required_acks against the smaller set.
+    fn prune_unreachable(&self, unreachable: &[String]) {
+        if unreachable.is_empty() {
+            return;
+        }
+        let mut changed = false;
+        {
+            let mut st = self.inner.lock().expect("lock");
+            for id in unreachable {
+                if st.dynamic_node_ids.remove(id) {
+                    tracing::info!(
+                        "[mutex:{}] pruning unreachable node from membership: {}",
+                        self.self_id,
+                        id
+                    );
+                    changed = true;
+                }
+                // Drop any deferral we were holding for a node that is now gone.
+                st.deferred.retain(|(_, did)| did != id);
+                if let Some((holder, _, _)) = &st.last_holder
+                    && holder == id
+                {
+                    st.last_holder = None;
+                }
+            }
+        }
+        if changed {
+            self.cv.notify_all();
         }
     }
 
@@ -209,7 +267,7 @@ impl ModifiedLamportDistributedMutex {
             if id == self.self_id {
                 continue;
             }
-            (self.send_release)(&id, &msg);
+            let _ = (self.send_release)(&id, &msg);
         }
     }
 
@@ -233,7 +291,7 @@ impl ModifiedLamportDistributedMutex {
             if id == self.self_id {
                 continue;
             }
-            (self.send_reply)(&id, &msg);
+            let _ = (self.send_reply)(&id, &msg);
         }
     }
 
@@ -324,7 +382,7 @@ impl ModifiedLamportDistributedMutex {
                 self.self_id,
                 resp
             );
-            (self.send_reply)(from_id, &resp);
+            let _ = (self.send_reply)(from_id, &resp);
         }
     }
 
@@ -402,7 +460,7 @@ impl ModifiedLamportDistributedMutex {
                 self.self_id,
                 resp
             );
-            (self.send_reply)(&id, &resp);
+            let _ = (self.send_reply)(&id, &resp);
         }
     }
 }
@@ -598,7 +656,7 @@ impl DistributedMutex for ModifiedLamportDistributedMutex {
                 self.self_id,
                 resp
             );
-            (self.send_reply)(&id, &resp);
+            let _ = (self.send_reply)(&id, &resp);
         }
         debug!("[mutex:{}] Broadcasting RELEASE to peers", self.self_id);
         self.broadcast_release();
