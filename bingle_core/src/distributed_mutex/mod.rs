@@ -97,12 +97,13 @@ struct InnerState {
 
 impl InnerState {
     fn required_acks(&self) -> usize {
-        self.dynamic_node_ids.len() / 2
-            + if self.dynamic_node_ids.len() > 2 {
-                1
-            } else {
-                0
-            }
+        self.dynamic_node_ids.len() / 2 + 1
+        // self.dynamic_node_ids.len() / 2
+        //     + if self.dynamic_node_ids.len() > 2 {
+        //         1
+        //     } else {
+        //         0
+        //     }
     }
 
     fn update_membership(
@@ -219,7 +220,7 @@ impl ModifiedLamportDistributedMutex {
             let msg = crate::messages::types::MutexResponse {
                 app: "mutex".into(),
                 known_ids: Some(ids.clone().into_iter().collect()),
-                response_tag: None,
+                response_tag: Some("membership_only".to_string()),
             };
             (ids, msg)
         };
