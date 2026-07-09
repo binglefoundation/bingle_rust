@@ -17,7 +17,7 @@ use crate::blockchain::algo_bingle::AccountsCache;
 use crate::blockchain::algo_ops::AlgoOps;
 use crate::blockchain::error::{AlgoError, AlgoErrorKind};
 use crate::dtls::Dtls;
-use crate::engine::{BingleAccess, BingleAccessUnsafeForTests, Engine, EngineState, EngineType};
+use crate::engine::{BingleAccess, Engine, EngineState};
 use crate::protocol::ISSUER_SUFFIX;
 use crate::relay::relay_finder::RelayFinderTrait;
 use ed25519_dalek::SigningKey;
@@ -105,8 +105,9 @@ pub struct BingleApiImpl {
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
     // Optional on_listening handler
     on_listening: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
-    // Engine instance for endpoint identification and DTLS/mux lifecycle (1:1).
-    engine: EngineType,
+    // Engine instance for endpoint identification and DTLS/mux lifecycle. Owned 1:1 by this API;
+    // the Engine's background threads re-enter it via the shared Weak<dyn BingleApiBoth> handle.
+    engine: Engine,
 
     // Per-API router to avoid global cross-talk
     router: Option<Arc<crate::messages::router::Router>>,
@@ -135,12 +136,7 @@ impl BingleApiImpl {
         let initial_options = options.clone();
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
-            // Set weak_self on the by-value Engine before it is shared in the Arc — no unsafe.
-            let engine = Arc::new_cyclic(|weak_engine| {
-                let mut e = Engine::new(&initial_options, me_both.clone());
-                e.set_weak_self(weak_engine.clone());
-                e
-            });
+            let engine = Engine::new(&initial_options, me_both.clone());
             Self {
                 on_message: None,
                 on_connect: None,
@@ -161,12 +157,13 @@ impl BingleApiImpl {
 }
 
 impl BingleApiImpl {
-    /// Apply a closure to the Engine instance (test-only).
+    /// Apply a closure to the owned Engine instance (test-only). The Engine is fully `&self`, so a
+    /// shared reference is sufficient; the name is retained for existing call sites.
     pub fn with_engine_mut<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut Engine) -> R,
+        F: FnOnce(&Engine) -> R,
     {
-        self.engine.access_unsafe_for_tests(f)
+        f(&self.engine)
     }
 
     /// Test-oriented constructor to inject a custom DTLS implementation.
@@ -186,11 +183,7 @@ impl BingleApiImpl {
         Self::check_dangerous_debug(&options);
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
-            let engine = Arc::new_cyclic(|weak_engine| {
-                let mut e = Engine::new_with_dtls(&options, me_both.clone(), dtls);
-                e.set_weak_self(weak_engine.clone());
-                e
-            });
+            let engine = Engine::new_with_dtls(&options, me_both.clone(), dtls);
             Self {
                 on_message: None,
                 on_connect: None,
@@ -261,8 +254,7 @@ impl BingleApiImpl {
         self.engine.access(|e| e.mux_for_tests())
     }
     pub fn engine_receive_message_for_tests(&self, from_ep: &NetworkEndpoint, data: &[u8]) {
-        self.engine
-            .access_unsafe_for_tests(|e: &mut Engine| e.receive_message_for_tests(from_ep, data));
+        self.engine.receive_message_for_tests(from_ep, data);
     }
     pub fn engine_ddb_lookup_for_tests(&self, id: &str) -> Result<NetworkEndpoint, BingleError> {
         tracing::info!(
@@ -324,9 +316,9 @@ impl BingleApiImpl {
         *m = Some(mock);
     }
 
-    /// Test-only accessor to the Engine (for white-box integration tests)
-    pub fn engine_for_tests(&self) -> EngineType {
-        self.engine.clone()
+    /// Test-only accessor to the owned Engine (for white-box integration tests).
+    pub fn engine_for_tests(&self) -> &Engine {
+        &self.engine
     }
     pub fn engine_force_stun_consistent_for_tests(&mut self, addr: SocketAddr) {
         tracing::info!(
@@ -1617,6 +1609,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn initialize_relay(&self) {
         tracing::info!("[BingleApiImpl::initialize_relay]");
         self.engine.initialize_relay();
+    }
+    fn with_engine(&self, f: &mut dyn FnMut(&Engine)) {
+        f(&self.engine);
     }
     fn is_relay(&self) -> bool {
         self.started_options.am_relay

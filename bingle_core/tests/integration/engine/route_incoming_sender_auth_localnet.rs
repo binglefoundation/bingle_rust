@@ -421,7 +421,7 @@ fn build_api_and_handler(
     let opts = make_opts(app_id);
     let api = BingleApiImpl::new_with_dtls_and_options(Box::new(FakeDtls::new()), opts.clone());
 
-    let router = api.with_engine_mut(|engine: &mut Engine| {
+    let router = api.with_engine_mut(|engine: &Engine| {
         let weak = Arc::downgrade(&api) as std::sync::Weak<dyn BingleApiBoth>;
         let r = Arc::new(Router::new(weak));
         engine.set_router(r.clone());
@@ -432,7 +432,7 @@ fn build_api_and_handler(
         r
     });
 
-    let handler = api.with_engine_mut(|engine: &mut Engine| {
+    let handler = api.with_engine_mut(|engine: &Engine| {
         let mut h: Option<HandleMessage> = None;
         engine.with_dtls(|dtls| {
             h = dtls.get_handle_message();

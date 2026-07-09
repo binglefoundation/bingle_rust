@@ -292,7 +292,7 @@ pub fn bingle_api_send_via_relay() {
         .expect("api local bind addr");
     router.set_last_from(Some(a_addr));
     api.engine_for_tests()
-        .access_unsafe_for_tests(|e| e.set_last_public_addr(Some(a_addr)));
+        .set_last_public_addr(Some(a_addr));
     let call_msg = Message::Relay(RelayMessage::Call(RelayCall {
         app: None,
         called_id: b_id.to_string(),

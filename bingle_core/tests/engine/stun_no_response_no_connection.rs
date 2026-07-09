@@ -149,7 +149,19 @@ impl Dtls for NullDtls {
 // Minimal BingleApi stub — required by Router construction.
 // ---------------------------------------------------------------------------
 #[derive(Clone)]
-struct NullApi;
+struct NullApi {
+    // Settable back-reference to the Engine this mock hosts, so the Engine's STUN worker thread
+    // can re-enter it via with_engine() (mirrors how BingleApiImpl owns its Engine).
+    engine: Arc<std::sync::Mutex<std::sync::Weak<Engine>>>,
+}
+
+impl NullApi {
+    fn new() -> Self {
+        Self {
+            engine: Arc::new(std::sync::Mutex::new(std::sync::Weak::new())),
+        }
+    }
+}
 
 impl BingleApi for NullApi {
     fn list_all_relays(
@@ -272,6 +284,11 @@ impl bingle_core::api::bingle_api::BingleApiInternal for NullApi {
     fn get_relay_state(&self) -> String {
         "off".to_string()
     }
+    fn with_engine(&self, f: &mut dyn FnMut(&Engine)) {
+        if let Some(e) = self.engine.lock().unwrap().upgrade() {
+            f(&e);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -323,17 +340,18 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
     };
-    let null_api = NullApi;
-    let eng = Arc::new_cyclic(|weak_engine| {
-        let mut e = Engine::new_with_dtls(
-            &opts,
-            crate::util::mock_bingle_api::to_weak(null_api.clone()),
-            Box::new(NullDtls),
-        );
-        e.set_weak_self(weak_engine.clone());
-        e
-    });
-    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(null_api)));
+    let null_api = NullApi::new();
+    let engine_slot = null_api.engine.clone();
+    let eng = Arc::new(Engine::new_with_dtls(
+        &opts,
+        crate::util::mock_bingle_api::to_weak(null_api),
+        Box::new(NullDtls),
+    ));
+    // Point the mock API's engine slot at the real Engine so its STUN worker thread can re-enter it.
+    *engine_slot.lock().unwrap() = Arc::downgrade(&eng);
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(
+        NullApi::new(),
+    )));
     eng.set_router(router);
 
     // Track on_listening calls
@@ -342,20 +360,15 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
 
     let flag_false = called_false.clone();
     let flag_true = called_true.clone();
-    unsafe {
-        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
-        (*eng_ptr).set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
-            if listening {
-                flag_true.store(true, Ordering::SeqCst);
-            } else {
-                flag_false.store(true, Ordering::SeqCst);
-            }
-        })));
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+        if listening {
+            flag_true.store(true, Ordering::SeqCst);
+        } else {
+            flag_false.store(true, Ordering::SeqCst);
+        }
+    })));
 
-        (*eng_ptr)
-            .start(&opts)
-            .expect("engine.start should succeed");
-    }
+    eng.start(&opts).expect("engine.start should succeed");
 
     // Wait for the STUN finder to raise Blocked (3 × 2 s search intervals ≈ 6 s minimum).
     let timeout = Duration::from_secs(30);

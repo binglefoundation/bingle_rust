@@ -2,7 +2,6 @@ use bingle_core::api::bingle_api::{BingleApi, BingleError, NetworkEndpoint};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::ddb::DdbClient;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult};
-use bingle_core::engine::BingleAccess;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};

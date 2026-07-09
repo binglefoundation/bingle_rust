@@ -86,8 +86,6 @@ pub enum RelayState {
     Own = 6,
 }
 
-pub type EngineType = Arc<Engine>;
-
 pub trait BingleAccess<T: ?Sized> {
     fn access<F, R>(&self, f: F) -> R
     where
@@ -235,7 +233,6 @@ pub struct Engine {
     // (Mutex so it can be started/stopped through &self from the API wrappers)
     relay_keep_alive: Mutex<Option<crate::relay::relay_keep_alive::RelayKeepAliveSender>>,
     relay_keep_alive_interval: Mutex<std::time::Duration>,
-    weak_self: std::sync::Weak<Engine>,
 }
 
 impl Engine {
@@ -590,14 +587,19 @@ impl Engine {
             custom_message_handler: Mutex::new(None),
             relay_keep_alive: Mutex::new(None),
             relay_keep_alive_interval: Mutex::new(crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL),
-            weak_self: std::sync::Weak::new(),
         };
         eng.set_last_public_addr(options.static_ip);
         eng
     }
 
-    pub fn set_weak_self(&mut self, weak: std::sync::Weak<Engine>) {
-        self.weak_self = weak;
+    /// Apply a closure to this Engine. Mirrors the `BingleAccess` helper used when the Engine was
+    /// shared as `Arc<Engine>`; kept as an inherent method so existing `self.engine.access(..)`
+    /// call sites work now that the API owns the Engine by value.
+    pub fn access<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Engine) -> R,
+    {
+        f(self)
     }
 
     /// Read-guard accessor for the (interior-mutable) start options.
@@ -1797,46 +1799,36 @@ impl Engine {
 
         if self.opts().am_relay {
             if self.relay_finder.lock().unwrap().is_some() {
-                let weak_self = self.weak_self.clone();
                 let span = self.span();
                 let api_weak = self.bingle_api.clone();
                 std::thread::spawn(move || {
                     let _guard = span.enter();
-                    let Some(arc_self) = weak_self.upgrade() else {
+                    let Some(api) = api_weak.upgrade() else {
                         tracing::warn!(
-                            "[Engine::start_with_addr] self dropped, skipping background process"
+                            "[Engine::start_with_addr] api dropped, skipping background process"
                         );
                         return;
                     };
-                    arc_self.initialize_relay();
+                    api.with_engine(&mut |e| e.initialize_relay());
 
-                    match api_weak.upgrade() {
-                        Some(api) => {
-                            tracing::info!(
-                                "[Engine::start_with_addr] second ddb_register_ip {}, true",
-                                static_addr
-                            );
-                            if let Err(e) = api.ddb_register_ip(static_addr, true) {
-                                tracing::warn!(
-                                    "[Engine::start_with_addr] second ddb_register_ip({}, true) failed: {}",
-                                    static_addr,
-                                    e
-                                );
-                            } else {
-                                tracing::info!(
-                                    "[Engine::start_with_addr] relay DDB registration successful: {}",
-                                    static_addr
-                                );
-                            }
-                            api.set_state(EngineState::Registered);
-                            api.notify_listening(true, NatType::FullCone);
-                        }
-                        None => {
-                            tracing::error!(
-                                "[Engine::start_with_addr] bingle_api upgrade failed in background thread"
-                            );
-                        }
+                    tracing::info!(
+                        "[Engine::start_with_addr] second ddb_register_ip {}, true",
+                        static_addr
+                    );
+                    if let Err(e) = api.ddb_register_ip(static_addr, true) {
+                        tracing::warn!(
+                            "[Engine::start_with_addr] second ddb_register_ip({}, true) failed: {}",
+                            static_addr,
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "[Engine::start_with_addr] relay DDB registration successful: {}",
+                            static_addr
+                        );
                     }
+                    api.set_state(EngineState::Registered);
+                    api.notify_listening(true, NatType::FullCone);
                 });
             } else {
                 tracing::warn!(
@@ -1860,15 +1852,15 @@ impl Engine {
 
     fn on_stun_consistent(&self, public_addr: Option<SocketAddr>) {
         // Spawn a worker thread to process STUN-consistent follow-up to avoid blocking inbound packet path
-        let weak_self = self.weak_self.clone();
+        let api_weak = self.bingle_api.clone();
         let span = self.span();
         std::thread::spawn(move || {
             let _guard = span.enter();
-            let Some(arc_self) = weak_self.upgrade() else {
-                tracing::warn!("[Engine] on_stun_consistent: self dropped, skipping process");
+            let Some(api) = api_weak.upgrade() else {
+                tracing::warn!("[Engine] on_stun_consistent: api dropped, skipping process");
                 return;
             };
-            arc_self.stun_consistent_process(public_addr);
+            api.with_engine(&mut |e| e.stun_consistent_process(public_addr));
         });
     }
 
@@ -2070,15 +2062,15 @@ impl Engine {
 
     pub(crate) fn on_stun_inconsistent(&self) {
         // Spawn a worker thread so we don't block the STUN callback path.
-        let weak_self = self.weak_self.clone();
+        let api_weak = self.bingle_api.clone();
         let span = self.span();
         std::thread::spawn(move || {
             let _guard = span.enter();
-            let Some(arc_self) = weak_self.upgrade() else {
-                tracing::warn!("[Engine] on_stun_inconsistent: self dropped, skipping process");
+            let Some(api) = api_weak.upgrade() else {
+                tracing::warn!("[Engine] on_stun_inconsistent: api dropped, skipping process");
                 return;
             };
-            arc_self.stun_inconsistent_process();
+            api.with_engine(&mut |e| e.stun_inconsistent_process());
         });
     }
 
@@ -2291,8 +2283,8 @@ impl Engine {
         finder: &Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>,
         mux: &Arc<UdpNetworkMux>,
     ) -> Result<(), BingleError> {
-        // Create a weak self reference for callbacks invoked from STUN worker thread
-        let weak_self = self.weak_self.clone();
+        // Weak handle to the owning API for callbacks invoked from the STUN worker thread.
+        let api_weak = self.bingle_api.clone();
         if let Ok(mut f) = finder.lock() {
             // Route STUN outbound packets through the UDP mux
             let mux_clone = mux.clone();
@@ -2318,18 +2310,20 @@ impl Engine {
 
             // Wire STUN state changes into Engine handlers.
             f.set_state_change_handler(Some(Arc::new(move |st, ep| {
-                let Some(arc_self) = weak_self.upgrade() else {
+                let Some(api) = api_weak.upgrade() else {
                     return;
                 };
-                if st == crate::stun::stun_endpoint_finder::StunState::Consistent {
-                    arc_self.on_stun_consistent(ep);
-                } else if st == crate::stun::stun_endpoint_finder::StunState::Inconsistent {
-                    arc_self.on_stun_inconsistent();
-                } else if st == crate::stun::stun_endpoint_finder::StunState::Blocked {
-                    arc_self.on_stun_blocked();
-                } else if st == crate::stun::stun_endpoint_finder::StunState::None {
-                    arc_self.on_stun_none();
-                }
+                api.with_engine(&mut |e| {
+                    if st == crate::stun::stun_endpoint_finder::StunState::Consistent {
+                        e.on_stun_consistent(ep);
+                    } else if st == crate::stun::stun_endpoint_finder::StunState::Inconsistent {
+                        e.on_stun_inconsistent();
+                    } else if st == crate::stun::stun_endpoint_finder::StunState::Blocked {
+                        e.on_stun_blocked();
+                    } else if st == crate::stun::stun_endpoint_finder::StunState::None {
+                        e.on_stun_none();
+                    }
+                });
             })));
 
             // Kick off STUN polling using provided servers
