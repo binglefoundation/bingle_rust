@@ -287,8 +287,11 @@ pub fn engine_upserts_root_relays_into_backend() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
     };
-    let mut eng = Engine::new(&opts, crate::util::mock_bingle_api::mock_api_weak());
-    eng.set_dtls(Box::new(MockDtls));
+    let eng = Engine::new_with_dtls(
+        &opts,
+        crate::util::mock_bingle_api::mock_api_weak(),
+        Box::new(MockDtls),
+    );
     // Need a router to avoid nulls in start; use minimal MockApi
     let router = Arc::new(bingle_core::messages::router::Router::new(
         crate::util::mock_bingle_api::to_weak(MockApi),

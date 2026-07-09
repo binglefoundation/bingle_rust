@@ -37,7 +37,7 @@ fn test_stun_blocked_calls_on_listening_false() {
     let flag_false = called_with_false.clone();
     let flag_true = called_with_true.clone();
 
-    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
     eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat| {
         if listening {
             flag_true.store(true, Ordering::SeqCst);
@@ -93,7 +93,7 @@ fn test_no_relay_target_calls_on_listening_false() {
     let flag_false = called_with_false.clone();
     let flag_true = called_with_true.clone();
 
-    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
     eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat| {
         if listening {
             flag_true.store(true, Ordering::SeqCst);
@@ -120,7 +120,7 @@ fn test_stun_blocked_sets_stun_identify_state() {
         handle: "test_blocked_state".to_string(),
         ..StartOptions::new("".into())
     };
-    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
 
     eng.test_force_stun_blocked();
 
@@ -137,7 +137,7 @@ fn test_no_relay_target_sets_stun_identify_state() {
         handle: "test_no_relay_state".to_string(),
         ..StartOptions::new("".into())
     };
-    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
 
     eng.test_stun_consistent_process_no_addr();
 

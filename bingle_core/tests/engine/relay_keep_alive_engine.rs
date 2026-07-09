@@ -180,7 +180,7 @@ fn build_engine() -> Engine {
     let mock_api = MockApiBoth::new_with_both_overrides(inner_api, Arc::new(RegisteringInternal));
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(mock_api);
 
-    let mut eng = Engine::new_with_dtls(
+    let eng = Engine::new_with_dtls(
         &StartOptions::new("test_keep_alive".into()),
         api_weak.clone(),
         Box::new(NullDtls),
@@ -199,7 +199,7 @@ fn relay_info(id: &str, addr: SocketAddr) -> RelayInfo {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn registration_starts_keep_alive_with_relay_target() {
-    let mut eng = build_engine();
+    let eng = build_engine();
     assert_eq!(eng.relay_keep_alive_target_for_tests(), None);
 
     let addr: SocketAddr = "127.0.0.1:19911".parse().unwrap();
@@ -217,7 +217,7 @@ pub fn registration_starts_keep_alive_with_relay_target() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn re_registration_replaces_keep_alive_target() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr_a: SocketAddr = "127.0.0.1:19912".parse().unwrap();
     let addr_b: SocketAddr = "127.0.0.1:19913".parse().unwrap();
@@ -236,7 +236,7 @@ pub fn re_registration_replaces_keep_alive_target() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stun_none_stops_keep_alive() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr: SocketAddr = "127.0.0.1:19914".parse().unwrap();
     eng.test_register_with_relay_direct(relay_info("relay_a", addr));
@@ -257,7 +257,7 @@ pub fn stun_none_stops_keep_alive() {
 pub fn engine_stop_stops_keep_alive() {
     crate::util::test_util::init_test_logging();
 
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr: SocketAddr = "127.0.0.1:19915".parse().unwrap();
     eng.test_register_with_relay_direct(relay_info("relay_a", addr));
@@ -290,7 +290,7 @@ pub fn engine_stop_stops_keep_alive() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stun_port_change_after_register_reconnects_relay() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let port_p: SocketAddr = "203.0.113.7:1111".parse().unwrap();
     let port_q: SocketAddr = "203.0.113.7:2222".parse().unwrap();

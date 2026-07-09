@@ -223,7 +223,7 @@ impl Dtls for MockDtls {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn new_installs_dtls_handler_that_uses_transport_handler() {
-    let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
+    let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
 
     let calls: Arc<Mutex<Vec<(String, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
@@ -503,7 +503,7 @@ pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets(1492);
+    let (transport, sent_packets) = new_transport_with_sent_packets(1492);
 
     let delivered_payloads: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let delivered_payloads_clone = delivered_payloads.clone();
@@ -547,7 +547,7 @@ pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn ack_complete_is_consumed_and_not_forwarded_to_handler() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets(1492);
+    let (transport, sent_packets) = new_transport_with_sent_packets(1492);
 
     let calls: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();

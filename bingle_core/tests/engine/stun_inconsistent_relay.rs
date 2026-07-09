@@ -252,7 +252,7 @@ fn build_engine_with_relay(
     let mock_api = MockApiBoth::new_with_both_overrides(inner_api, inner_internal);
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(mock_api.clone());
 
-    let mut eng = Engine::new_with_dtls(
+    let eng = Engine::new_with_dtls(
         &StartOptions::new("test_inconsistent".into()),
         api_weak.clone(),
         Box::new(NullDtls),
@@ -284,7 +284,7 @@ pub fn on_stun_inconsistent_registers_with_relay() {
     let relay_id = "test_relay_id";
 
     let (
-        mut eng,
+        eng,
         relay_info,
         register_relay_count,
         listen_response_count,

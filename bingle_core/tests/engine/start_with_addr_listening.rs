@@ -291,11 +291,11 @@ pub fn start_with_addr_notifies_listening_true() {
     // Build Engine unbound and inject DTLS + Router with MockApi
     let flag = Arc::new(AtomicBool::new(false));
     let mock_api = MockApi;
-    let mut eng = Engine::new(
+    let eng = Engine::new_with_dtls(
         &opts,
         crate::util::mock_bingle_api::to_weak(mock_api.clone()),
+        Box::new(MockDtls),
     );
-    eng.set_dtls(Box::new(MockDtls));
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(mock_api)));
     eng.set_router(router);
 

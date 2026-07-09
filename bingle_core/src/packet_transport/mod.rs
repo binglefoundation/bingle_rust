@@ -30,7 +30,7 @@ pub trait PacketTransport {
 
     fn get_handle_message(&self) -> Option<PacketTransportHandleMessage>;
 
-    fn set_handle_message(&mut self, handler: Option<PacketTransportHandleMessage>);
+    fn set_handle_message(&self, handler: Option<PacketTransportHandleMessage>);
 
     fn with_handle_message(self, handler: PacketTransportHandleMessage) -> Self
     where
@@ -586,7 +586,7 @@ impl PacketTransport for DtlsReliablePacketTransport {
         }
     }
 
-    fn set_handle_message(&mut self, handler: Option<PacketTransportHandleMessage>) {
+    fn set_handle_message(&self, handler: Option<PacketTransportHandleMessage>) {
         match self.handle_message.lock() {
             Ok(mut g) => {
                 *g = handler;
@@ -600,7 +600,7 @@ impl PacketTransport for DtlsReliablePacketTransport {
         }
     }
 
-    fn with_handle_message(mut self, handler: PacketTransportHandleMessage) -> Self
+    fn with_handle_message(self, handler: PacketTransportHandleMessage) -> Self
     where
         Self: Sized,
     {

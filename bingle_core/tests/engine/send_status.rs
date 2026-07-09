@@ -25,7 +25,7 @@ fn build_engine_with_auth() -> (Engine, HandleMessage, Arc<Router>) {
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
         Arc::new(AlwaysAuthenticatedApi),
     ));
-    let mut engine = Engine::new_with_dtls(
+    let engine = Engine::new_with_dtls(
         &StartOptions::new("".into()),
         api.clone(),
         Box::new(SucceedingDtls::new()),
@@ -59,15 +59,22 @@ fn simulate_packet_arrival(
     });
 }
 
-/// A mock DTLS implementation that always succeeds and auto-acks FRPT DATA_SINGLE packets.
+/// A mock DTLS implementation that succeeds (and auto-acks FRPT DATA_SINGLE packets) until its
+/// shared `fail` flag is set, after which `send` returns an error. This replaces the old
+/// runtime `set_dtls` swap now that the DTLS instance is fixed at Engine construction.
 struct SucceedingDtls {
     handler: std::sync::Mutex<Option<HandleMessage>>,
+    fail: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SucceedingDtls {
     fn new() -> Self {
+        Self::with_fail_flag(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))
+    }
+    fn with_fail_flag(fail: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
         Self {
             handler: std::sync::Mutex::new(None),
+            fail,
         }
     }
 }
@@ -80,6 +87,9 @@ impl Dtls for SucceedingDtls {
         Ok(())
     }
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> bingle_core::dtls::Result<()> {
+        if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("simulated send failure".to_string());
+        }
         // Auto-ack FRPT DATA_SINGLE so that packet_transport::send completes immediately
         if data.len() >= 4 && (data[0] & 0x0F) == 0x01 {
             if let Some(h) = self.handler.lock().ok().and_then(|g| g.clone()) {
@@ -344,7 +354,7 @@ fn make_engine_with_succeeding_dtls() -> Engine {
 }
 
 fn make_engine_with_failing_dtls() -> Engine {
-    let mut engine = Engine::new_with_dtls(
+    let engine = Engine::new_with_dtls(
         &StartOptions::new("".into()),
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
         Box::new(FailingDtls::new()),
@@ -438,8 +448,16 @@ pub fn send_status_tracks_multiple_endpoints_independently() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_status_updates_from_success_to_failure_on_repeated_sends() {
-    // Start with a succeeding DTLS, then swap to a failing one via set_dtls.
-    let mut engine = make_engine_with_succeeding_dtls();
+    // Start with a succeeding DTLS whose failure is toggled via a shared flag (the DTLS instance
+    // is fixed at Engine construction, so we flip the flag instead of swapping the DTLS).
+    let fail = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let engine = Engine::new_with_dtls(
+        &StartOptions::new("".into()),
+        crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
+        Box::new(SucceedingDtls::with_fail_flag(fail.clone())),
+    );
+    // No retry-delay tweaks needed: the failing send returns an error at dtls.send() before the
+    // ACK-wait loop, and the succeeding send auto-acks synchronously.
 
     let addr: SocketAddr = "127.0.0.1:9005".parse().unwrap();
     let endpoint = NetworkEndpoint::new_direct(addr);
@@ -456,12 +474,8 @@ pub fn send_status_updates_from_success_to_failure_on_repeated_sends() {
             .is_working
     );
 
-    // Swap to a failing DTLS
-    let failing = FailingDtls::new();
-    // Copy any existing handler so the infrastructure stays consistent
-    failing.set_handle_message(engine.dtls().get_handle_message());
-    engine.set_dtls(Box::new(failing));
-    engine.set_retry_delays_for_packet_transport(vec![]);
+    // Flip the DTLS to failing.
+    fail.store(true, std::sync::atomic::Ordering::SeqCst);
 
     // Second send: fails
     let r2 = engine.send_to_peer(&endpoint, b"second");
@@ -619,7 +633,7 @@ pub fn no_packet_means_no_endpoint_status_entry() {
 pub fn unauthenticated_packet_does_not_set_endpoint_status() {
     // Use a plain MockApiBoth (handle_lookup_by_id returns None) — auth will fail.
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());
-    let mut engine = Engine::new_with_dtls(
+    let engine = Engine::new_with_dtls(
         &StartOptions::new("".into()),
         api.clone(),
         Box::new(SucceedingDtls::new()),

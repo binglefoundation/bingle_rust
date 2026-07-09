@@ -12,7 +12,7 @@ pub fn engine_set_last_public_addr_updates_both_fields() {
     let mut opts = StartOptions::new("".into());
     opts.am_relay = false;
 
-    let mut engine = Engine::new(&opts, api_weak);
+    let engine = Engine::new(&opts, api_weak);
 
     let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 1234);
 

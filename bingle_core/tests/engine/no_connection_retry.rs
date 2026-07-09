@@ -22,7 +22,7 @@ fn make_options(handle: &str) -> StartOptions {
 #[test]
 fn test_no_relay_then_relay_becomes_available() {
     let options = make_options("retry_client");
-    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
 
     let client_public_addr: SocketAddr = "203.0.113.10:4000".parse().expect("parse public addr");
 
@@ -63,7 +63,7 @@ fn test_no_relay_then_relay_on_listening_callback() {
     let count_false = listening_false_count.clone();
     let count_true = listening_true_count.clone();
 
-    let mut eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
+    let eng = Engine::new(&options, crate::util::mock_bingle_api::mock_api_weak());
     eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat| {
         if listening {
             count_true.fetch_add(1, Ordering::SeqCst);

@@ -443,7 +443,7 @@ fn build_engine<A: InnerBingleApi + Send + Sync + 'static>(
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
         Arc::new(inner_api),
     ));
-    let mut engine = Engine::new_with_dtls(
+    let engine = Engine::new_with_dtls(
         &StartOptions::new("".into()),
         api.clone(),
         Box::new(MinimalFakeDtls::new()),

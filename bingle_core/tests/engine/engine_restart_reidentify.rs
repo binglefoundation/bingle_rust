@@ -149,7 +149,7 @@ impl Dtls for NullDtls {
 
 fn build_engine() -> Engine {
     let api = to_weak_api_both(MockApiBoth::new());
-    let mut eng = Engine::new_with_dtls(
+    let eng = Engine::new_with_dtls(
         &StartOptions::new("restart_client".into()),
         api.clone(),
         Box::new(NullDtls),
@@ -161,7 +161,7 @@ fn build_engine() -> Engine {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_restart_reidentifies_after_stop() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr_p: SocketAddr = "206.83.102.41:21176".parse().unwrap();
     let relay_addr: SocketAddr = "34.224.38.163:12121".parse().unwrap();

@@ -135,11 +135,12 @@ impl BingleApiImpl {
         let initial_options = options.clone();
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
-            let engine = Arc::new(Engine::new(&initial_options, me_both.clone()));
-            unsafe {
-                let engine_ptr = Arc::as_ptr(&engine) as *mut Engine;
-                (*engine_ptr).set_weak_self(Arc::downgrade(&engine));
-            }
+            // Set weak_self on the by-value Engine before it is shared in the Arc — no unsafe.
+            let engine = Arc::new_cyclic(|weak_engine| {
+                let mut e = Engine::new(&initial_options, me_both.clone());
+                e.set_weak_self(weak_engine.clone());
+                e
+            });
             Self {
                 on_message: None,
                 on_connect: None,
@@ -185,11 +186,11 @@ impl BingleApiImpl {
         Self::check_dangerous_debug(&options);
         Arc::<Self>::new_cyclic(|me| {
             let me_both = me.clone();
-            let engine = Arc::new(Engine::new_with_dtls(&options, me_both.clone(), dtls));
-            unsafe {
-                let engine_ptr = Arc::as_ptr(&engine) as *mut Engine;
-                (*engine_ptr).set_weak_self(Arc::downgrade(&engine));
-            }
+            let engine = Arc::new_cyclic(|weak_engine| {
+                let mut e = Engine::new_with_dtls(&options, me_both.clone(), dtls);
+                e.set_weak_self(weak_engine.clone());
+                e
+            });
             Self {
                 on_message: None,
                 on_connect: None,
@@ -215,10 +216,7 @@ impl BingleApiImpl {
             "[BingleApiImpl::set_issuer_for_tests][enter] issuer_len={}",
             issuer.len()
         );
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_issuer(issuer);
-        }
+        self.engine.set_issuer(issuer);
         tracing::info!("[BingleApiImpl::set_issuer_for_tests][exit]");
     }
 
@@ -281,17 +279,11 @@ impl BingleApiImpl {
 
     pub fn engine_set_ddb_client_for_tests(&self, ddb: Arc<dyn crate::ddb::DdbClient>) {
         tracing::info!("[BingleApiImpl::engine_set_ddb_client_for_tests][enter]");
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_ddb_client_for_tests(ddb);
-        }
+        self.engine.set_ddb_client_for_tests(ddb);
     }
 
     pub fn engine_set_retry_delays_for_tests(&self, delays: Vec<Duration>) {
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_retry_delays_for_packet_transport(delays);
-        }
+        self.engine.set_retry_delays_for_packet_transport(delays);
     }
 
     /// Build an AlgoBingle configured for public Indexer queries (handle lookups).
@@ -341,10 +333,7 @@ impl BingleApiImpl {
             "[BingleApiImpl::engine_force_stun_consistent_for_tests][enter] addr={}",
             addr
         );
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).test_force_stun_consistent(addr);
-        }
+        self.engine.test_force_stun_consistent(addr);
         tracing::info!("[BingleApiImpl::engine_force_stun_consistent_for_tests][exit]");
     }
 
@@ -362,10 +351,7 @@ impl BingleApiImpl {
 
     /// Test-only: set the engine's last public address (for self-send guard tests).
     pub fn engine_set_public_addr_for_tests(&mut self, addr: Option<SocketAddr>) {
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_last_public_addr(addr);
-        }
+        self.engine.set_last_public_addr(addr);
     }
 
     /// Exposed for integration tests: whether a DTLS instance has been created.
@@ -583,10 +569,7 @@ impl BingleApi for BingleApiImpl {
             }
         }
 
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).span = self.span.clone();
-        }
+        self.engine.set_span(self.span.clone());
 
         info_theme!(
             themes::API,
@@ -617,17 +600,13 @@ impl BingleApi for BingleApiImpl {
                 }
             };
             let issuer = format!("{}{}", addr, ISSUER_SUFFIX);
-            unsafe {
-                let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-                (*engine_ptr).set_issuer(issuer.clone());
-            }
+            self.engine.set_issuer(issuer.clone());
 
             // Generate certificates: CA = Ed25519 self-signed using Algorand key; server/client = RSA-2048 signed by CA (SHA-512).
             match generate_pki_from_ops(&ops) {
                 Ok((ca_pem, server_cert_pem, server_key_pem, client_cert_pem, client_key_pem)) => {
-                    unsafe {
-                        let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-                        (*engine_ptr).with_dtls(|dtls: &(dyn Dtls + Send + Sync)| {
+                    {
+                        self.engine.with_dtls(|dtls: &(dyn Dtls + Send + Sync)| {
                             dtls.set_ca_cert(Some(ca_pem));
                             dtls.set_server_signing_cert(Some(server_cert_pem));
                             dtls.set_server_signing_private_key(Some(server_key_pem));
@@ -699,9 +678,8 @@ impl BingleApi for BingleApiImpl {
 
         // Install Engine callback to send via Bingle protocol using the delegating API handle
         let this_weak_for_engine = self.this.clone();
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
+        {
+            self.engine.set_send_via_bingle(Some(Arc::new(move |nsk, uid, msg| {
                 tracing::info!(
                     "[BingleApiImpl::start][engine set send] nsk={} uid={} msg={}",
                     nsk,
@@ -728,10 +706,10 @@ impl BingleApi for BingleApiImpl {
                 }
             })));
             // Provide the BingleApi handle to Engine for handlers and DDB client
-            (*engine_ptr).set_bingle_api(self.this.clone());
+            self.engine.set_bingle_api(self.this.clone());
             // Provide per-API router to the Engine for routing context
-            (*engine_ptr).set_router(router_arc.clone());
-            (*engine_ptr).start(options)?;
+            self.engine.set_router(router_arc.clone());
+            self.engine.start(options)?;
         }
 
         tracing::info!("[BingleApiImpl::start][exit] Ok(())");
@@ -749,10 +727,7 @@ impl BingleApi for BingleApiImpl {
             cb(false, crate::engine::NatType::Unknown);
         }
         // Stop Engine
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).stop();
-        }
+        self.engine.stop();
         tracing::info!(
             "[BingleApiImpl::stop][exit] {:?}:{:?}",
             self.engine.issuer(),
@@ -1355,10 +1330,7 @@ impl BingleApi for BingleApiImpl {
         // Store locally
         self.on_listening = handler.clone();
         // Propagate to Engine so internal notifications can reach the application
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_on_listening_handler(handler);
-        }
+        self.engine.set_on_listening_handler(handler);
         tracing::info!("[BingleApiImpl::set_on_listening][exit]");
     }
 }
@@ -1621,10 +1593,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn set_relay_state(&self, state: crate::engine::RelayState) {
         tracing::info!("[BingleApiImpl::set_relay_state] state={:?}", state);
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).set_relay_state(state, "set_relay_state from API internal");
-        }
+        self.engine.set_relay_state(state, "set_relay_state from API internal");
     }
     fn get_peer_ddb_target(&self) -> Option<usize> {
         self.engine.access(|e| e.peer_ddb_records())
@@ -1647,10 +1616,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn initialize_relay(&self) {
         tracing::info!("[BingleApiImpl::initialize_relay]");
-        unsafe {
-            let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-            (*engine_ptr).initialize_relay();
-        }
+        self.engine.initialize_relay();
     }
     fn is_relay(&self) -> bool {
         self.started_options.am_relay

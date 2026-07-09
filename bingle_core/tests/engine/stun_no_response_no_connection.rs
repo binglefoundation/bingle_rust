@@ -324,20 +324,17 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         wait_response_timeout: None,
     };
     let null_api = NullApi;
-    let eng = Arc::new(Engine::new(
-        &opts,
-        crate::util::mock_bingle_api::to_weak(null_api.clone()),
-    ));
-    unsafe {
-        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
-        (*eng_ptr).set_weak_self(Arc::downgrade(&eng));
-        (*eng_ptr).set_dtls(Box::new(NullDtls));
-    }
+    let eng = Arc::new_cyclic(|weak_engine| {
+        let mut e = Engine::new_with_dtls(
+            &opts,
+            crate::util::mock_bingle_api::to_weak(null_api.clone()),
+            Box::new(NullDtls),
+        );
+        e.set_weak_self(weak_engine.clone());
+        e
+    });
     let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(null_api)));
-    unsafe {
-        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
-        (*eng_ptr).set_router(router);
-    }
+    eng.set_router(router);
 
     // Track on_listening calls
     let called_false = Arc::new(AtomicBool::new(false));

@@ -154,7 +154,7 @@ impl Dtls for TrackingDtls {
 // ---------------------------------------------------------------------------
 fn build_engine(dtls: TrackingDtls) -> Engine {
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new());
-    let mut eng = Engine::new_with_dtls(
+    let eng = Engine::new_with_dtls(
         &StartOptions::new("test".into()),
         api.clone(),
         Box::new(dtls),
@@ -172,7 +172,7 @@ fn build_engine(dtls: TrackingDtls) -> Engine {
 pub fn stun_first_address_does_not_reset_peers() {
     let dtls = TrackingDtls::new();
     let forget_count = dtls.forget_count.clone();
-    let mut eng = build_engine(dtls);
+    let eng = build_engine(dtls);
 
     // No previous address set — call stun_consistent_process(None) which skips relay discovery.
     eng.test_stun_consistent_process_no_addr();
@@ -193,7 +193,7 @@ pub fn stun_first_address_does_not_reset_peers() {
 pub fn stun_same_address_does_not_reset_peers() {
     let dtls = TrackingDtls::new();
     let forget_count = dtls.forget_count.clone();
-    let mut eng = build_engine(dtls);
+    let eng = build_engine(dtls);
 
     let addr: SocketAddr = "1.2.3.4:5000".parse().unwrap();
 
@@ -234,7 +234,7 @@ pub fn stun_same_address_does_not_reset_peers() {
 pub fn stun_address_change_resets_peers_and_calls_on_listening_false() {
     let dtls = TrackingDtls::new();
     let forget_count = dtls.forget_count.clone();
-    let mut eng = build_engine(dtls);
+    let eng = build_engine(dtls);
 
     let addr1: SocketAddr = "1.2.3.4:5000".parse().unwrap();
 
