@@ -50,12 +50,15 @@ impl TestNetwork {
         let down_ref2 = self.down.clone();
         let down_ref3 = self.down.clone();
 
+        // The send closures return whether the message was delivered. A node
+        // that is marked down, or that has no live mutex yet, reports a failed
+        // delivery so the sender can prune it from its membership set.
         let self_id_for_req = self_id.clone();
-        let send_request = move |dest_id: &str, req: &MutexRequest| {
+        let send_request = move |dest_id: &str, req: &MutexRequest| -> bool {
             {
                 let down = down_ref.lock().expect("down");
                 if down.iter().any(|x| x == dest_id) {
-                    return;
+                    return false;
                 }
             }
             let dest_opt = {
@@ -66,17 +69,19 @@ impl TestNetwork {
             };
             if let Some(dest) = dest_opt {
                 dest.handle_request(&self_id_for_req, req);
+                true
             } else {
                 tracing::warn!("REQUEST: No node with id {} in network", dest_id);
+                false
             }
         };
 
         let self_id_for_rep = self_id.clone();
-        let send_reply = move |dest_id: &str, resp: &MutexResponse| {
+        let send_reply = move |dest_id: &str, resp: &MutexResponse| -> bool {
             {
                 let down = down_ref2.lock().expect("down");
                 if down.iter().any(|x| x == dest_id) {
-                    return;
+                    return false;
                 }
             }
             let dest_opt = {
@@ -87,17 +92,19 @@ impl TestNetwork {
             };
             if let Some(dest) = dest_opt {
                 dest.handle_reply(&self_id_for_rep, resp);
+                true
             } else {
                 tracing::warn!("REPLY: No node with id {} in network", dest_id);
+                false
             }
         };
 
         let self_id_for_rel = self_id.clone();
-        let send_release = move |dest_id: &str, rel: &MutexRelease| {
+        let send_release = move |dest_id: &str, rel: &MutexRelease| -> bool {
             {
                 let down = down_ref3.lock().expect("down");
                 if down.iter().any(|x| x == dest_id) {
-                    return;
+                    return false;
                 }
             }
             let dest_opt = {
@@ -108,8 +115,10 @@ impl TestNetwork {
             };
             if let Some(dest) = dest_opt {
                 dest.handle_release(&self_id_for_rel, rel);
+                true
             } else {
                 tracing::warn!("RELEASE: No node with id {} in network", dest_id);
+                false
             }
         };
 
