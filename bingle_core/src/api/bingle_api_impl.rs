@@ -627,7 +627,7 @@ impl BingleApi for BingleApiImpl {
                 Ok((ca_pem, server_cert_pem, server_key_pem, client_cert_pem, client_key_pem)) => {
                     unsafe {
                         let engine_ptr = Arc::as_ptr(&self.engine) as *mut Engine;
-                        (*engine_ptr).with_dtls_mut(|dtls: &mut (dyn Dtls + Send + Sync)| {
+                        (*engine_ptr).with_dtls(|dtls: &(dyn Dtls + Send + Sync)| {
                             dtls.set_ca_cert(Some(ca_pem));
                             dtls.set_server_signing_cert(Some(server_cert_pem));
                             dtls.set_server_signing_private_key(Some(server_key_pem));

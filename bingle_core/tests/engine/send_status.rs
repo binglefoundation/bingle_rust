@@ -37,7 +37,7 @@ fn build_engine_with_auth() -> (Engine, HandleMessage, Arc<Router>) {
         .expect("install_dtls_handler_for_tests failed");
     let handler = {
         let mut h: Option<HandleMessage> = None;
-        engine.with_dtls_mut(|dtls| {
+        engine.with_dtls(|dtls| {
             h = dtls.get_handle_message();
         });
         h.expect("DTLS handler should be installed")
@@ -73,10 +73,10 @@ impl SucceedingDtls {
 }
 
 impl Dtls for SucceedingDtls {
-    fn start(&mut self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
+    fn start(&self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
-    fn stop(&mut self) -> bingle_core::dtls::Result<()> {
+    fn stop(&self) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
     fn send(&self, to: &NetworkEndpoint, data: &[u8]) -> bingle_core::dtls::Result<()> {
@@ -91,11 +91,11 @@ impl Dtls for SucceedingDtls {
     fn get_handle_message(&self) -> Option<HandleMessage> {
         self.handler.lock().ok().and_then(|g| g.clone())
     }
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
+    fn set_handle_message(&self, handler: Option<HandleMessage>) {
         let _ = self.handler.lock().map(|mut g| *g = handler);
     }
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
@@ -110,7 +110,7 @@ impl Dtls for SucceedingDtls {
         None
     }
     fn set_handle_peer_certificate(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::HandlePeerCertificate>,
     ) {
     }
@@ -126,7 +126,7 @@ impl Dtls for SucceedingDtls {
     fn get_ca_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -136,7 +136,7 @@ impl Dtls for SucceedingDtls {
     fn get_client_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -146,7 +146,7 @@ impl Dtls for SucceedingDtls {
     fn get_client_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -156,7 +156,7 @@ impl Dtls for SucceedingDtls {
     fn get_server_signing_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -166,28 +166,28 @@ impl Dtls for SucceedingDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -214,10 +214,10 @@ impl FailingDtls {
 }
 
 impl Dtls for FailingDtls {
-    fn start(&mut self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
+    fn start(&self, _mux: std::sync::Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
-    fn stop(&mut self) -> bingle_core::dtls::Result<()> {
+    fn stop(&self) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
     fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> bingle_core::dtls::Result<()> {
@@ -226,11 +226,11 @@ impl Dtls for FailingDtls {
     fn get_handle_message(&self) -> Option<HandleMessage> {
         self.handler.lock().ok().and_then(|g| g.clone())
     }
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
+    fn set_handle_message(&self, handler: Option<HandleMessage>) {
         let _ = self.handler.lock().map(|mut g| *g = handler);
     }
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
@@ -245,7 +245,7 @@ impl Dtls for FailingDtls {
         None
     }
     fn set_handle_peer_certificate(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::HandlePeerCertificate>,
     ) {
     }
@@ -261,7 +261,7 @@ impl Dtls for FailingDtls {
     fn get_ca_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -271,7 +271,7 @@ impl Dtls for FailingDtls {
     fn get_client_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -281,7 +281,7 @@ impl Dtls for FailingDtls {
     fn get_client_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -291,7 +291,7 @@ impl Dtls for FailingDtls {
     fn get_server_signing_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -301,28 +301,28 @@ impl Dtls for FailingDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -457,7 +457,7 @@ pub fn send_status_updates_from_success_to_failure_on_repeated_sends() {
     );
 
     // Swap to a failing DTLS
-    let mut failing = FailingDtls::new();
+    let failing = FailingDtls::new();
     // Copy any existing handler so the infrastructure stays consistent
     failing.set_handle_message(engine.dtls().get_handle_message());
     engine.set_dtls(Box::new(failing));
@@ -631,7 +631,7 @@ pub fn unauthenticated_packet_does_not_set_endpoint_status() {
         .expect("install failed");
     let handler = {
         let mut h: Option<HandleMessage> = None;
-        engine.with_dtls_mut(|dtls| {
+        engine.with_dtls(|dtls| {
             h = dtls.get_handle_message();
         });
         h.expect("handler must be installed")

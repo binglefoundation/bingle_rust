@@ -30,12 +30,12 @@ pub trait Dtls {
      * Start the DTLS accept loop using the provided, already-bound UDP mux.
      * Implementations must not bind or start their own mux; a valid mux is required.
      */
-    fn start(&mut self, mux: Arc<UdpNetworkMux>) -> Result<()>;
+    fn start(&self, mux: Arc<UdpNetworkMux>) -> Result<()>;
 
     /**
      * Stop the DTLS accept loop, waiting for background tasks to exit.
      */
-    fn stop(&mut self) -> Result<()>;
+    fn stop(&self) -> Result<()>;
 
     /**
      * Send data to the peer
@@ -56,7 +56,7 @@ pub trait Dtls {
      * Set a message handler function
      * @param handler the message handler function
      */
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>);
+    fn set_handle_message(&self, handler: Option<HandleMessage>);
 
     /**
      * Fluently set a message handler function
@@ -71,7 +71,7 @@ pub trait Dtls {
      * Set a callback invoked when DTLS detects a new session for a peer endpoint.
      * @param handler callback invoked with the endpoint whose session rolled over
      */
-    fn set_handle_new_session(&mut self, handler: Option<HandleNewSession>);
+    fn set_handle_new_session(&self, handler: Option<HandleNewSession>);
 
     /**
      * Get the peer certificate handler function
@@ -81,7 +81,7 @@ pub trait Dtls {
     /**
      * Set the peer certificate handler function
      */
-    fn set_handle_peer_certificate(&mut self, handler: Option<HandlePeerCertificate>);
+    fn set_handle_peer_certificate(&self, handler: Option<HandlePeerCertificate>);
 
     /**
      * Fluently set the peer certificate handler function
@@ -92,41 +92,41 @@ pub trait Dtls {
 
     // PEM bytes accessors: CA certificate
     fn get_ca_cert(&self) -> Option<&[u8]>;
-    fn set_ca_cert(&mut self, pem: Option<Vec<u8>>);
+    fn set_ca_cert(&self, pem: Option<Vec<u8>>);
     fn with_ca_cert(self, pem: Vec<u8>) -> Self
     where
         Self: Sized;
 
     // PEM bytes accessors: client certificate
     fn get_client_cert(&self) -> Option<&[u8]>;
-    fn set_client_cert(&mut self, pem: Option<Vec<u8>>);
+    fn set_client_cert(&self, pem: Option<Vec<u8>>);
     fn with_client_cert(self, pem: Vec<u8>) -> Self
     where
         Self: Sized;
 
     // PEM bytes accessors: client private key
     fn get_client_private_key(&self) -> Option<&[u8]>;
-    fn set_client_private_key(&mut self, pem: Option<Vec<u8>>);
+    fn set_client_private_key(&self, pem: Option<Vec<u8>>);
     fn with_client_private_key(self, pem: Vec<u8>) -> Self
     where
         Self: Sized;
 
     // PEM bytes accessors: server signing certificate
     fn get_server_signing_cert(&self) -> Option<&[u8]>;
-    fn set_server_signing_cert(&mut self, pem: Option<Vec<u8>>);
+    fn set_server_signing_cert(&self, pem: Option<Vec<u8>>);
     fn with_server_signing_cert(self, pem: Vec<u8>) -> Self
     where
         Self: Sized;
 
     // PEM bytes accessors: server signing private key
     fn get_server_signing_private_key(&self) -> Option<&[u8]>;
-    fn set_server_signing_private_key(&mut self, pem: Option<Vec<u8>>);
+    fn set_server_signing_private_key(&self, pem: Option<Vec<u8>>);
     fn with_server_signing_private_key(self, pem: Vec<u8>) -> Self
     where
         Self: Sized;
 
     // Verification mode: if true, do not enforce TLS verification during handshake; validate at application layer only.
-    fn set_app_layer_only_verification(&mut self, enabled: bool);
+    fn set_app_layer_only_verification(&self, enabled: bool);
     fn with_app_layer_only_verification(self, enabled: bool) -> Self
     where
         Self: Sized;
@@ -135,7 +135,7 @@ pub trait Dtls {
      * Set the dangerous debug mode
      * This enables features that are insecure but useful for debugging, such as NULL encryption and keylogging.
      */
-    fn set_dangerous_debug(&mut self, enabled: bool);
+    fn set_dangerous_debug(&self, enabled: bool);
 
     /**
      * Fluently set the dangerous debug mode
@@ -149,7 +149,7 @@ pub trait Dtls {
      * This enables NULL cipher suites for DTLS handshakes (no encryption).
      * Only effective if dangerous_debug is also enabled.
      */
-    fn set_null_encryption(&mut self, enabled: bool);
+    fn set_null_encryption(&self, enabled: bool);
 
     /**
      * Fluently set the null encryption mode

@@ -658,9 +658,10 @@ impl Engine {
             .route_with_network(DefaultPrintingHandler, &msg, issuer, from_ep);
     }
 
-    /// Apply a closure to the DTLS instance.
-    pub fn with_dtls_mut<F: FnOnce(&mut (dyn Dtls + Send + Sync))>(&mut self, f: F) {
-        f(self.packet_transport.dtls_mut())
+    /// Apply a closure to the DTLS instance. The DTLS trait is now entirely `&self`
+    /// (interior mutability), so shared access is sufficient for configuration too.
+    pub fn with_dtls<F: FnOnce(&(dyn Dtls + Send + Sync))>(&self, f: F) {
+        f(self.packet_transport.dtls())
     }
 
     /// Test helper: install the DTLS message handler without starting the network stack.
@@ -686,7 +687,7 @@ impl Engine {
         );
         self.install_dtls_handler()?;
         self.packet_transport
-            .dtls_mut()
+            .dtls()
             .start(mux)
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
         Ok(())
@@ -1401,7 +1402,7 @@ impl Engine {
 
         // Start DTLS with mux so that we can send/receive triangle messages over DTLS if needed later
         self.packet_transport
-            .dtls_mut()
+            .dtls()
             .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
@@ -1717,7 +1718,7 @@ impl Engine {
 
         // Start DTLS accept loop with the mux
         self.packet_transport
-            .dtls_mut()
+            .dtls()
             .start(mux.clone())
             .map_err(|e| BingleError::Other(format!("Failed to start DTLS: {}", e)))?;
 
@@ -2337,7 +2338,7 @@ impl Engine {
         self.stop_relay_keep_alive();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
-        self.packet_transport.dtls_mut().stop().unwrap_or_else(|_| {
+        self.packet_transport.dtls().stop().unwrap_or_else(|_| {
             panic!(
                 "DTLS stop failed in Engine::stop {}:{}",
                 self.issuer.as_ref().map(|s| s.as_str()).unwrap_or("None"),

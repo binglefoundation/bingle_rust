@@ -89,7 +89,7 @@ pub fn bingle_api_send_via_relay() {
     let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
     let rec_clone = received.clone();
 
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone())

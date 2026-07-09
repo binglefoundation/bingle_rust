@@ -59,7 +59,7 @@ pub fn dtls_openssl_udp_listener_invokes_handler() {
     let _addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
 
     // Build and configure the server instance.
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_handle_message(std::sync::Arc::new(handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
@@ -78,7 +78,7 @@ pub fn dtls_openssl_udp_listener_invokes_handler() {
 
     // DTLS client: build and send a payload. Provide server creds as this instance starts an accept loop too.
     let certs_b = pki::generate_ed25519_test_certs();
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_client_cert(certs_b.client_crt.clone())
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())

@@ -40,7 +40,9 @@ pub trait PacketTransport {
 pub struct DtlsReliablePacketTransport {
     dtls: Box<dyn Dtls + Send + Sync>,
     mtu: usize,
-    retry_delays: Vec<Duration>,
+    // Interior-mutable so set_retry_delays can be &self (the owning API shares the transport's
+    // Engine via Arc). Only read briefly to clone the schedule at the start of send().
+    retry_delays: Mutex<Vec<Duration>>,
     handle_message: Arc<Mutex<Option<PacketTransportHandleMessage>>>,
     next_tx_id: Arc<Mutex<u16>>,
     endpoint_sessions: Arc<Mutex<HashMap<NetworkEndpointKey, SessionGeneration>>>,
@@ -56,10 +58,10 @@ enum ParsedPacket<'a> {
 
 impl DtlsReliablePacketTransport {
     pub fn new(dtls: Box<dyn Dtls + Send + Sync>, mtu: usize) -> Self {
-        let mut transport = Self {
+        let transport = Self {
             dtls,
             mtu,
-            retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
+            retry_delays: Mutex::new(DEFAULT_RETRY_DELAYS.to_vec()),
             handle_message: Arc::new(Mutex::new(None)),
             next_tx_id: Arc::new(Mutex::new(0)),
             endpoint_sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -117,16 +119,12 @@ impl DtlsReliablePacketTransport {
         self.dtls.as_ref()
     }
 
-    pub fn dtls_mut(&mut self) -> &mut (dyn Dtls + Send + Sync) {
-        self.dtls.as_mut()
-    }
-
     pub fn set_mtu(&mut self, mtu: usize) {
         self.mtu = mtu;
     }
 
-    pub fn set_retry_delays(&mut self, delays: Vec<Duration>) {
-        self.retry_delays = delays;
+    pub fn set_retry_delays(&self, delays: Vec<Duration>) {
+        *self.retry_delays.lock().unwrap() = delays;
     }
 
     pub fn mtu(&self) -> usize {
@@ -524,7 +522,7 @@ impl PacketTransport for DtlsReliablePacketTransport {
 
         // Wait for ACK with retry backoff: try each delay in sequence, re-sending on timeout.
         // After all delays are exhausted without an ACK, fail with an error.
-        let delays = self.retry_delays.clone();
+        let delays = self.retry_delays.lock().unwrap().clone();
         for (attempt, delay) in delays.iter().enumerate() {
             match Self::wait_for_ack_complete_with_timeout(tx_id, &waiter, *delay) {
                 Ok(true) => return Ok(()),

@@ -50,7 +50,7 @@ pub fn dtls_reconnect_after_worker_channel_close() {
 
     let hello_count = Arc::new(Mutex::new(0u32));
 
-    let mut server = DtlsOpenSsl::new("srv".to_string())
+    let server = DtlsOpenSsl::new("srv".to_string())
         .with_handle_message(Arc::new(make_counting_server_handler(Arc::clone(
             &hello_count,
         ))))
@@ -69,7 +69,7 @@ pub fn dtls_reconnect_after_worker_channel_close() {
     let client_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), client_port);
 
     let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client mux 1"));
-    let mut client1 = DtlsOpenSsl::new("cli1".to_string())
+    let client1 = DtlsOpenSsl::new("cli1".to_string())
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
         .with_server_signing_cert(certs.server_crt.clone())
@@ -107,7 +107,7 @@ pub fn dtls_reconnect_after_worker_channel_close() {
 
     // --- client 2: reconnect on same port (simulates changed outbound IP/port mapping) ---
     let mux_cli2 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client mux 2"));
-    let mut client2 = DtlsOpenSsl::new("cli2".to_string())
+    let client2 = DtlsOpenSsl::new("cli2".to_string())
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
         .with_server_signing_cert(certs.server_crt.clone())

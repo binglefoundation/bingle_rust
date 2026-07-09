@@ -72,7 +72,7 @@ pub fn issuer_mapping_basic_send_and_reply() {
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Build server
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_handle_peer_certificate(server_peer_cert_return_cn)
         .with_handle_message(Arc::new(server_assert_and_reply))
         .with_server_signing_cert(server_cert_pem.clone())
@@ -89,7 +89,7 @@ pub fn issuer_mapping_basic_send_and_reply() {
     thread::sleep(Duration::from_millis(200));
 
     // Client uses provided client cert
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_handle_message(Arc::new(client_capture))
         .with_client_cert(certs.client_crt.clone())
@@ -181,7 +181,7 @@ pub fn multiple_clients_to_server_have_correct_issuers() {
         .expect("server key pem");
 
     // Server
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_handle_peer_certificate(server_peer_cert_return_cn)
         .with_handle_message(Arc::new(server_collect_issuers))
         .with_server_signing_cert(server_cert_pem.clone())
@@ -211,21 +211,21 @@ pub fn multiple_clients_to_server_have_correct_issuers() {
     let c_key = c_key_obj.private_key_to_pem_pkcs8().expect("c key pem");
 
     // Clients
-    let mut client_a = DtlsOpenSsl::new("client_a".to_string())
+    let client_a = DtlsOpenSsl::new("client_a".to_string())
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_client_cert(a_crt.clone())
         .with_client_private_key(a_key.clone())
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
-    let mut client_b = DtlsOpenSsl::new("client_b".to_string())
+    let client_b = DtlsOpenSsl::new("client_b".to_string())
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_client_cert(b_crt.clone())
         .with_client_private_key(b_key.clone())
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
         .with_ca_cert(ca_pem.clone());
-    let mut client_c = DtlsOpenSsl::new("client_c".to_string())
+    let client_c = DtlsOpenSsl::new("client_c".to_string())
         .with_handle_peer_certificate(client_peer_cert_return_cn)
         .with_client_cert(c_crt.clone())
         .with_client_private_key(c_key.clone())

@@ -1146,24 +1146,24 @@ pub mod openssl_impl {
 
     // Do we need this, can we get a reference to API?
     impl Dtls for PeerAdapter {
-        fn start(&mut self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
+        fn start(&self, _mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
             Ok(())
         }
-        fn stop(&mut self) -> Result<()> {
+        fn stop(&self) -> Result<()> {
             Ok(())
         }
-        fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+        fn set_app_layer_only_verification(&self, _enabled: bool) {}
         fn with_app_layer_only_verification(self, _enabled: bool) -> Self {
             self
         }
-        fn set_dangerous_debug(&mut self, _enabled: bool) {}
+        fn set_dangerous_debug(&self, _enabled: bool) {}
         fn with_dangerous_debug(self, _enabled: bool) -> Self
         where
             Self: Sized,
         {
             self
         }
-        fn set_null_encryption(&mut self, _enabled: bool) {}
+        fn set_null_encryption(&self, _enabled: bool) {}
         fn with_null_encryption(self, _enabled: bool) -> Self
         where
             Self: Sized,
@@ -1193,50 +1193,50 @@ pub mod openssl_impl {
         fn get_handle_message(&self) -> Option<HandleMessage> {
             None
         }
-        fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+        fn set_handle_message(&self, _handler: Option<HandleMessage>) {}
         fn with_handle_message(self, _handler: HandleMessage) -> Self {
             self
         }
-        fn set_handle_new_session(&mut self, _handler: Option<HandleNewSession>) {}
+        fn set_handle_new_session(&self, _handler: Option<HandleNewSession>) {}
         fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
             None
         }
-        fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+        fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
         fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self {
             self
         }
         fn get_ca_cert(&self) -> Option<&[u8]> {
             None
         }
-        fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+        fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
         fn with_ca_cert(self, _pem: Vec<u8>) -> Self {
             self
         }
         fn get_client_cert(&self) -> Option<&[u8]> {
             None
         }
-        fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+        fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
         fn with_client_cert(self, _pem: Vec<u8>) -> Self {
             self
         }
         fn get_client_private_key(&self) -> Option<&[u8]> {
             None
         }
-        fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+        fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
         fn with_client_private_key(self, _pem: Vec<u8>) -> Self {
             self
         }
         fn get_server_signing_cert(&self) -> Option<&[u8]> {
             None
         }
-        fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+        fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
         fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self {
             self
         }
         fn get_server_signing_private_key(&self) -> Option<&[u8]> {
             None
         }
-        fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+        fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
         fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self {
             self
         }
@@ -1252,38 +1252,57 @@ pub mod openssl_impl {
 
     /// OpenSSL-backed DTLS implementation (non-iOS).
 
+    /// Store a PEM credential into a set-once slot. Credentials are configured exactly once
+    /// during startup, so a re-set or a clear (None) is unexpected and logged rather than applied.
+    fn set_once_cert(slot: &std::sync::OnceLock<Vec<u8>>, pem: Option<Vec<u8>>, name: &str) {
+        match pem {
+            Some(bytes) => {
+                if slot.set(bytes).is_err() {
+                    tracing::warn!("[DtlsOpenSsl] {} already set; ignoring re-set", name);
+                }
+            }
+            None => {
+                tracing::warn!(
+                    "[DtlsOpenSsl] {} cannot be cleared (set-once); ignoring",
+                    name
+                );
+            }
+        }
+    }
+
     pub struct DtlsOpenSsl {
         // Optional NetworkMux used for STUN/TURN or raw UDP writes
         #[allow(dead_code)]
         pub(crate) network_mux: Option<Arc<dyn NetworkMux + Send + Sync>>,
-        // If we created a UDP mux internally on start(None), keep a typed handle to manage its lifecycle
-        pub(crate) owned_udp_mux: Option<Arc<crate::dtls::UdpNetworkMux>>,
+        // If we created a UDP mux internally on start(None), keep a typed handle to manage its lifecycle.
+        // Interior-mutable so the whole trait can be &self (owning API shares DtlsOpenSsl via Arc).
+        pub(crate) owned_udp_mux: Mutex<Option<Arc<crate::dtls::UdpNetworkMux>>>,
         // Client/General send path requires a started mux; store it when start() is called
-        pub(crate) client_mux: Option<Arc<crate::dtls::UdpNetworkMux>>,
+        pub(crate) client_mux: Mutex<Option<Arc<crate::dtls::UdpNetworkMux>>>,
         // Handlers
-        pub(crate) handle_message: Option<HandleMessage>,
-        pub(crate) handle_new_session: Option<HandleNewSession>,
-        pub(crate) handle_peer_certificate: Option<HandlePeerCertificate>,
+        pub(crate) handle_message: Mutex<Option<HandleMessage>>,
+        pub(crate) handle_new_session: Mutex<Option<HandleNewSession>>,
+        pub(crate) handle_peer_certificate: Mutex<Option<HandlePeerCertificate>>,
 
-        // Credentials
-        pub(crate) ca_cert: Option<Vec<u8>>, // CA certificate (PEM)
-        pub(crate) client_cert: Option<Vec<u8>>, // Client certificate (PEM)
-        pub(crate) client_private_key: Option<Vec<u8>>, // Client private key (PEM)
-        pub(crate) server_signing_cert: Option<Vec<u8>>, // Server signing certificate (PEM)
-        pub(crate) server_signing_private_key: Option<Vec<u8>>, // Server signing private key (PEM)
+        // Credentials. Set exactly once during startup, read many times during runtime -> OnceLock.
+        pub(crate) ca_cert: std::sync::OnceLock<Vec<u8>>, // CA certificate (PEM)
+        pub(crate) client_cert: std::sync::OnceLock<Vec<u8>>, // Client certificate (PEM)
+        pub(crate) client_private_key: std::sync::OnceLock<Vec<u8>>, // Client private key (PEM)
+        pub(crate) server_signing_cert: std::sync::OnceLock<Vec<u8>>, // Server signing certificate (PEM)
+        pub(crate) server_signing_private_key: std::sync::OnceLock<Vec<u8>>, // Server signing private key (PEM)
         // Debug: if true, configure OpenSSL to use NULL (eNULL) cipher suites for no-encryption handshakes.
-        pub(crate) null_encryption: bool,
-        pub(crate) app_layer_only_verification: bool,
-        pub(crate) dangerous_debug: bool,
+        pub(crate) null_encryption: AtomicBool,
+        pub(crate) app_layer_only_verification: AtomicBool,
+        pub(crate) dangerous_debug: AtomicBool,
 
         // State placeholders
         // Prepared DTLS server acceptor (DTLSv1.2), built on start()
-        pub(crate) acceptor: Option<SslAcceptor>,
+        pub(crate) acceptor: Mutex<Option<SslAcceptor>>,
         // Combined peer state map: writer and issuer per endpoint
         peer_states: PeerStates,
         // Lifecycle control for accept loop or background tasks
-        pub(crate) stop_flag: Option<Arc<AtomicBool>>,
-        pub(crate) server_thread: Option<std::thread::JoinHandle<()>>,
+        pub(crate) stop_flag: Mutex<Option<Arc<AtomicBool>>>,
+        pub(crate) server_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
         pub(crate) dtls_async_runtime: Arc<tokio::runtime::Runtime>,
         pub(crate) handle: String,
         pub(crate) span: tracing::Span,
@@ -1309,33 +1328,46 @@ pub mod openssl_impl {
             // Build struct with explicit defaults
             Self {
                 network_mux: None,
-                owned_udp_mux: None,
-                client_mux: None,
-                handle_message: None,
-                handle_new_session: None,
-                handle_peer_certificate: None,
-                ca_cert: None,
-                client_cert: None,
-                client_private_key: None,
-                server_signing_cert: None,
-                server_signing_private_key: None,
-                null_encryption: false,
-                app_layer_only_verification: false,
-                dangerous_debug: false,
-                acceptor: None,
+                owned_udp_mux: Mutex::new(None),
+                client_mux: Mutex::new(None),
+                handle_message: Mutex::new(None),
+                handle_new_session: Mutex::new(None),
+                handle_peer_certificate: Mutex::new(None),
+                ca_cert: std::sync::OnceLock::new(),
+                client_cert: std::sync::OnceLock::new(),
+                client_private_key: std::sync::OnceLock::new(),
+                server_signing_cert: std::sync::OnceLock::new(),
+                server_signing_private_key: std::sync::OnceLock::new(),
+                null_encryption: AtomicBool::new(false),
+                app_layer_only_verification: AtomicBool::new(false),
+                dangerous_debug: AtomicBool::new(false),
+                acceptor: Mutex::new(None),
                 peer_states: peers,
-                stop_flag: None,
-                server_thread: None,
+                stop_flag: Mutex::new(None),
+                server_thread: Mutex::new(None),
                 dtls_async_runtime,
                 handle,
                 span,
             }
         }
 
+        // &self accessors for the interior-mutable debug flags.
+        fn dangerous_debug(&self) -> bool {
+            self.dangerous_debug.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn null_encryption(&self) -> bool {
+            self.null_encryption.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn app_layer_only_verification(&self) -> bool {
+            self.app_layer_only_verification
+                .load(std::sync::atomic::Ordering::SeqCst)
+        }
+
         /// Enable NULL (no-encryption) ciphers for debugging. Strongly discouraged for production use.
-        pub fn with_null_encryption(mut self) -> Self {
-            if self.dangerous_debug {
-                self.null_encryption = true;
+        pub fn with_null_encryption(self) -> Self {
+            if self.dangerous_debug() {
+                self.null_encryption
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
             } else {
                 tracing::error!(
                     "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
@@ -1345,8 +1377,9 @@ pub mod openssl_impl {
         }
         /// Set NULL (no-encryption) ciphers on/off for debugging.
         pub fn set_null_encryption(&mut self, enabled: bool) {
-            if self.dangerous_debug {
-                self.null_encryption = enabled;
+            if self.dangerous_debug() {
+                self.null_encryption
+                    .store(enabled, std::sync::atomic::Ordering::SeqCst);
             } else if enabled {
                 tracing::error!(
                     "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
@@ -1361,10 +1394,10 @@ pub mod openssl_impl {
                 .map_err(|e| format!("openssl: build dtls connector: {}", e))?;
 
             // Restrict to DTLSv1.2 and enable read_ahead.
-            configure_dtls12_connector(&mut builder, self.handle.clone(), self.dangerous_debug)?;
+            configure_dtls12_connector(&mut builder, self.handle.clone(), self.dangerous_debug())?;
 
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
-            if self.null_encryption && self.dangerous_debug {
+            if self.null_encryption() && self.dangerous_debug() {
                 // OpenSSL 3 defaults to security level >=1 which forbids NULL; drop to 0.
                 enable_null_encryption_for_connector(&mut builder)?;
             }
@@ -1372,8 +1405,8 @@ pub mod openssl_impl {
             // Optionally load client cert and key if provided, and install a selection callback so the
             // client will always present its certificate even if the server's acceptable CA list is empty.
             if let (Some(cert_pem), Some(key_pem)) = (
-                self.client_cert.as_deref(),
-                self.client_private_key.as_deref(),
+                self.client_cert.get().map(|v| v.as_slice()),
+                self.client_private_key.get().map(|v| v.as_slice()),
             ) {
                 let client_x509 = X509::from_pem(cert_pem)
                     .map_err(|e| format!("client cert PEM parse failed: {}", e))?;
@@ -1390,7 +1423,7 @@ pub mod openssl_impl {
                     .map_err(|e| format!("client private key check failed: {}", e))?;
 
                 // Include our CA certificate in the client certificate chain so the server can extract it.
-                if let Some(ca_pem) = self.ca_cert.as_deref()
+                if let Some(ca_pem) = self.ca_cert.get().map(|v| v.as_slice())
                     && let Ok(ca_x509) = X509::from_pem(ca_pem)
                 {
                     // Best effort; ignore error to avoid panics
@@ -1403,13 +1436,13 @@ pub mod openssl_impl {
             }
 
             // Configure verification per mode
-            if self.app_layer_only_verification {
+            if self.app_layer_only_verification() {
                 // Disable built-in certificate verification; validate at application layer instead.
                 builder.set_verify(SslVerifyMode::NONE);
             } else {
                 // Enforce handshake-time verification via handler; require a handler to be set.
-                let ca = self.ca_cert.clone().unwrap_or_default();
-                let h = self.handle_peer_certificate.ok_or_else(|| {
+                let ca = self.ca_cert.get().cloned().unwrap_or_default();
+                let h = (*self.handle_peer_certificate.lock().unwrap()).ok_or_else(|| {
                     "missing peer certificate handler for client handshake verification".to_string()
                 })?;
                 set_verify_with_handler_for_connector(&mut builder, h, ca, self.handle.clone());
@@ -1419,21 +1452,24 @@ pub mod openssl_impl {
             Ok(builder.build())
         }
 
-        fn prepare_server_acceptor(&mut self) -> Result<()> {
+        fn prepare_server_acceptor(&self) -> Result<()> {
             // Build an SslAcceptor for DTLSv1.2. For tests we disable client authentication by default; a custom
             // verify callback can be supplied via handle_peer_certificate to enforce checks if desired.
             // Gate this on dangerous_debug option
             let ca_pem = self
                 .ca_cert
-                .as_deref()
+                .get()
+                .map(|v| v.as_slice())
                 .ok_or_else(|| "missing ca_cert".to_string())?;
             let server_cert_pem = self
                 .server_signing_cert
-                .as_deref()
+                .get()
+                .map(|v| v.as_slice())
                 .ok_or_else(|| "missing server_signing_cert".to_string())?;
             let server_key_pem = self
                 .server_signing_private_key
-                .as_deref()
+                .get()
+                .map(|v| v.as_slice())
                 .ok_or_else(|| "missing server_signing_private_key".to_string())?;
 
             let server_x509 = X509::from_pem(server_cert_pem)
@@ -1472,20 +1508,20 @@ pub mod openssl_impl {
             let _ = ca_pem; // suppress unused warning
 
             // Constrain to DTLSv1.2 only
-            configure_dtls12_acceptor(&mut builder, self.handle.clone(), self.dangerous_debug)?;
+            configure_dtls12_acceptor(&mut builder, self.handle.clone(), self.dangerous_debug())?;
 
             // Debug option: allow NULL encryption by lowering security level and selecting eNULL ciphers.
-            if self.null_encryption && self.dangerous_debug {
+            if self.null_encryption() && self.dangerous_debug() {
                 enable_null_encryption_for_acceptor(&mut builder)?;
             }
 
-            if self.app_layer_only_verification && self.dangerous_debug {
+            if self.app_layer_only_verification() && self.dangerous_debug() {
                 // Disable built-in certificate verification; validate at application layer instead.
                 builder.set_verify(SslVerifyMode::NONE);
             } else {
                 // Prefer handshake-time verification via handler when provided; otherwise, do not require it.
-                let ca = self.ca_cert.clone().unwrap_or_default();
-                if let Some(h) = self.handle_peer_certificate {
+                let ca = self.ca_cert.get().cloned().unwrap_or_default();
+                if let Some(h) = *self.handle_peer_certificate.lock().unwrap() {
                     // Install verify callback that delegates to the handler and requires a client certificate
                     set_verify_with_handler_for_acceptor(
                         &mut builder,
@@ -1532,7 +1568,7 @@ pub mod openssl_impl {
 
             // Persist the acceptor for use in the DTLS handshake loop.
             let acceptor = builder.build();
-            self.acceptor = Some(acceptor);
+            *self.acceptor.lock().unwrap() = Some(acceptor);
             Ok(())
         }
 
@@ -1791,14 +1827,14 @@ pub mod openssl_impl {
         }
 
         pub fn start_accept_with_mux(
-            &mut self,
+            &self,
             mux: Arc<crate::dtls::UdpNetworkMux>,
         ) -> Result<()> {
             use std::sync::Arc;
             // Validate server creds
-            if self.server_signing_cert.is_none()
-                || self.server_signing_private_key.is_none()
-                || self.ca_cert.is_none()
+            if self.server_signing_cert.get().is_none()
+                || self.server_signing_private_key.get().is_none()
+                || self.ca_cert.get().is_none()
             {
                 return Err("missing server credentials or CA".to_string());
             }
@@ -1806,19 +1842,21 @@ pub mod openssl_impl {
             self.prepare_server_acceptor()?;
             let acceptor = Arc::new(
                 self.acceptor
+                    .lock()
+                    .unwrap()
                     .take()
                     .ok_or_else(|| "acceptor missing".to_string())?,
             );
 
             // Record the provided mux for later client send operations
-            self.client_mux = Some(mux.clone());
+            *self.client_mux.lock().unwrap() = Some(mux.clone());
 
             // Shared state maps
             let peers: PeerStates = self.peer_states.clone();
             let dtls_async_runtime = self.dtls_async_runtime.clone();
-            let handle_message = self.handle_message.clone();
-            let handle_new_session = self.handle_new_session.clone();
-            let peer_cert_handler = self.handle_peer_certificate;
+            let handle_message = self.handle_message.lock().unwrap().clone();
+            let handle_new_session = self.handle_new_session.lock().unwrap().clone();
+            let peer_cert_handler = *self.handle_peer_certificate.lock().unwrap();
             let handle = self.handle.clone();
             // Connecting peer suppression now tracked per-peer in PeerState.is_connecting_peer
 
@@ -1850,14 +1888,14 @@ pub mod openssl_impl {
     }
 
     impl Dtls for DtlsOpenSsl {
-        fn start(&mut self, mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
+        fn start(&self, mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
             self.start_accept_with_mux(mux)
         }
 
-        fn stop(&mut self) -> Result<()> {
+        fn stop(&self) -> Result<()> {
             let _guard = self.span.enter();
             tracing::debug!("[DtlsOpenSsl:::stop]");
-            if let Some(flag) = self.stop_flag.take() {
+            if let Some(flag) = self.stop_flag.lock().unwrap().take() {
                 use std::sync::atomic::Ordering;
                 flag.store(true, Ordering::SeqCst);
             } else {
@@ -1872,14 +1910,13 @@ pub mod openssl_impl {
                 }
             }
 
-            let _ = self.server_thread.take();
+            let _ = self.server_thread.lock().unwrap().take();
             // Stop any internally owned UDP mux
-            if let Some(mux) = &self.owned_udp_mux {
+            if let Some(mux) = self.owned_udp_mux.lock().unwrap().take() {
                 mux.stop();
             } else {
                 tracing::warn!("[DtlsOpenSsl:::stop] no owned mux");
             }
-            self.owned_udp_mux = None;
             tracing::debug!("[DtlsOpenSsl:::stop] done");
             Ok(())
         }
@@ -1889,9 +1926,10 @@ pub mod openssl_impl {
             // We require a running UDP mux to perform client handshake and writes
             let mux = self
                 .client_mux
-                .as_ref()
-                .ok_or_else(|| "client mux not started".to_string())?
-                .clone();
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or_else(|| "client mux not started".to_string())?;
 
             tracing::info!(
                 "[DtlsOpenSsl:::send] {:?} -> {} ({} bytes)",
@@ -2155,7 +2193,7 @@ pub mod openssl_impl {
 
             // Immediately invoke peer certificate handler on the client side with the server's certificate
             // (while we still hold the `stream` guard, before splitting the stream).
-            if let Some(h) = self.handle_peer_certificate {
+            if let Some(h) = *self.handle_peer_certificate.lock().unwrap() {
                 if let Some(cert) = stream.ssl().peer_certificate() {
                     match cert.to_pem() {
                         Ok(cert_pem) => {
@@ -2252,7 +2290,7 @@ pub mod openssl_impl {
 
             // Announce client certificate to the server while we still hold the stream guard.
             // This must happen before we split the stream, so that the guard is the only writer.
-            if let Some(cert_pem) = self.client_cert.as_ref() {
+            if let Some(cert_pem) = self.client_cert.get() {
                 let mut should_send = false;
                 {
                     let peers = &self.peer_states;
@@ -2266,7 +2304,7 @@ pub mod openssl_impl {
                     });
                 }
                 if should_send {
-                    let ca_pem = self.ca_cert.as_deref().unwrap_or(&[]);
+                    let ca_pem = self.ca_cert.get().map(|v| v.as_slice()).unwrap_or(&[]);
                     let mut msg = Vec::with_capacity(
                         CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len(),
                     );
@@ -2360,8 +2398,8 @@ pub mod openssl_impl {
 
             // Spawn a background reader loop owning the read half exclusively — no mutex contention.
             {
-                let handle_message2 = self.handle_message.clone();
-                let peer_cert_handler2 = self.handle_peer_certificate;
+                let handle_message2 = self.handle_message.lock().unwrap().clone();
+                let peer_cert_handler2 = *self.handle_peer_certificate.lock().unwrap();
                 let from2: NetworkEndpoint = endpoint.clone();
                 let peers2: PeerStates = self.peer_states.clone();
                 std::thread::spawn(move || {
@@ -2381,90 +2419,95 @@ pub mod openssl_impl {
         }
 
         fn get_handle_message(&self) -> Option<HandleMessage> {
-            self.handle_message.clone()
+            self.handle_message.lock().unwrap().clone()
         }
-        fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
-            self.handle_message = handler;
+        fn set_handle_message(&self, handler: Option<HandleMessage>) {
+            *self.handle_message.lock().unwrap() = handler;
         }
-        fn with_handle_message(mut self, handler: HandleMessage) -> Self {
-            self.handle_message = Some(handler);
+        fn with_handle_message(self, handler: HandleMessage) -> Self {
+            *self.handle_message.lock().unwrap() = Some(handler);
             self
         }
 
-        fn set_handle_new_session(&mut self, handler: Option<HandleNewSession>) {
-            self.handle_new_session = handler;
+        fn set_handle_new_session(&self, handler: Option<HandleNewSession>) {
+            *self.handle_new_session.lock().unwrap() = handler;
         }
 
         fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
-            self.handle_peer_certificate
+            *self.handle_peer_certificate.lock().unwrap()
         }
-        fn set_handle_peer_certificate(&mut self, handler: Option<HandlePeerCertificate>) {
-            self.handle_peer_certificate = handler;
+        fn set_handle_peer_certificate(&self, handler: Option<HandlePeerCertificate>) {
+            *self.handle_peer_certificate.lock().unwrap() = handler;
         }
-        fn with_handle_peer_certificate(mut self, handler: HandlePeerCertificate) -> Self {
-            self.handle_peer_certificate = Some(handler);
+        fn with_handle_peer_certificate(self, handler: HandlePeerCertificate) -> Self {
+            *self.handle_peer_certificate.lock().unwrap() = Some(handler);
             self
         }
 
         fn get_ca_cert(&self) -> Option<&[u8]> {
-            self.ca_cert.as_deref()
+            self.ca_cert.get().map(|v| v.as_slice())
         }
-        fn set_ca_cert(&mut self, pem: Option<Vec<u8>>) {
-            self.ca_cert = pem;
+        fn set_ca_cert(&self, pem: Option<Vec<u8>>) {
+            set_once_cert(&self.ca_cert, pem, "ca_cert");
         }
-        fn with_ca_cert(mut self, pem: Vec<u8>) -> Self {
-            self.ca_cert = Some(pem);
+        fn with_ca_cert(self, pem: Vec<u8>) -> Self {
+            let _ = self.ca_cert.set(pem);
             self
         }
 
         fn get_client_cert(&self) -> Option<&[u8]> {
-            self.client_cert.as_deref()
+            self.client_cert.get().map(|v| v.as_slice())
         }
-        fn set_client_cert(&mut self, pem: Option<Vec<u8>>) {
-            self.client_cert = pem;
+        fn set_client_cert(&self, pem: Option<Vec<u8>>) {
+            set_once_cert(&self.client_cert, pem, "client_cert");
         }
-        fn with_client_cert(mut self, pem: Vec<u8>) -> Self {
-            self.client_cert = Some(pem);
+        fn with_client_cert(self, pem: Vec<u8>) -> Self {
+            let _ = self.client_cert.set(pem);
             self
         }
 
         fn get_client_private_key(&self) -> Option<&[u8]> {
-            self.client_private_key.as_deref()
+            self.client_private_key.get().map(|v| v.as_slice())
         }
-        fn set_client_private_key(&mut self, pem: Option<Vec<u8>>) {
-            self.client_private_key = pem;
+        fn set_client_private_key(&self, pem: Option<Vec<u8>>) {
+            set_once_cert(&self.client_private_key, pem, "client_private_key");
         }
-        fn with_client_private_key(mut self, pem: Vec<u8>) -> Self {
-            self.client_private_key = Some(pem);
+        fn with_client_private_key(self, pem: Vec<u8>) -> Self {
+            let _ = self.client_private_key.set(pem);
             self
         }
 
         fn get_server_signing_cert(&self) -> Option<&[u8]> {
-            self.server_signing_cert.as_deref()
+            self.server_signing_cert.get().map(|v| v.as_slice())
         }
-        fn set_server_signing_cert(&mut self, pem: Option<Vec<u8>>) {
-            self.server_signing_cert = pem;
+        fn set_server_signing_cert(&self, pem: Option<Vec<u8>>) {
+            set_once_cert(&self.server_signing_cert, pem, "server_signing_cert");
         }
-        fn with_server_signing_cert(mut self, pem: Vec<u8>) -> Self {
-            self.server_signing_cert = Some(pem);
+        fn with_server_signing_cert(self, pem: Vec<u8>) -> Self {
+            let _ = self.server_signing_cert.set(pem);
             self
         }
 
         fn get_server_signing_private_key(&self) -> Option<&[u8]> {
-            self.server_signing_private_key.as_deref()
+            self.server_signing_private_key.get().map(|v| v.as_slice())
         }
-        fn set_server_signing_private_key(&mut self, pem: Option<Vec<u8>>) {
-            self.server_signing_private_key = pem;
+        fn set_server_signing_private_key(&self, pem: Option<Vec<u8>>) {
+            set_once_cert(
+                &self.server_signing_private_key,
+                pem,
+                "server_signing_private_key",
+            );
         }
-        fn with_server_signing_private_key(mut self, pem: Vec<u8>) -> Self {
-            self.server_signing_private_key = Some(pem);
+        fn with_server_signing_private_key(self, pem: Vec<u8>) -> Self {
+            let _ = self.server_signing_private_key.set(pem);
             self
         }
 
         // Toggle application-layer-only verification mode
-        fn set_app_layer_only_verification(&mut self, enabled: bool) {
-            if self.dangerous_debug {
-                self.app_layer_only_verification = enabled;
+        fn set_app_layer_only_verification(&self, enabled: bool) {
+            if self.dangerous_debug() {
+                self.app_layer_only_verification
+                    .store(enabled, std::sync::atomic::Ordering::SeqCst);
             } else if enabled {
                 tracing::error!(
                     "[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring"
@@ -2472,39 +2515,30 @@ pub mod openssl_impl {
             }
         }
 
-        fn with_app_layer_only_verification(mut self, enabled: bool) -> Self {
-            if self.dangerous_debug {
-                self.app_layer_only_verification = enabled;
-            } else if enabled {
-                tracing::error!(
-                    "[DtlsOpenSsl] Attempted to enable app-layer-only verification without dangerous_debug; ignoring"
-                );
-            }
+        fn with_app_layer_only_verification(self, enabled: bool) -> Self {
+            self.set_app_layer_only_verification(enabled);
             self
         }
 
-        fn set_dangerous_debug(&mut self, enabled: bool) {
+        fn set_dangerous_debug(&self, enabled: bool) {
             if enabled {
                 tracing::error!(
                     "[DtlsOpenSsl][set_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED"
                 );
             }
-            self.dangerous_debug = enabled;
+            self.dangerous_debug
+                .store(enabled, std::sync::atomic::Ordering::SeqCst);
         }
 
-        fn with_dangerous_debug(mut self, enabled: bool) -> Self {
-            if enabled {
-                tracing::error!(
-                    "[DtlsOpenSsl][with_dangerous_debug] DANGEROUS DEBUG MODE ENABLED - SECURITY IS COMPROMISED"
-                );
-            }
-            self.dangerous_debug = enabled;
+        fn with_dangerous_debug(self, enabled: bool) -> Self {
+            self.set_dangerous_debug(enabled);
             self
         }
 
-        fn set_null_encryption(&mut self, enabled: bool) {
-            if self.dangerous_debug {
-                self.null_encryption = enabled;
+        fn set_null_encryption(&self, enabled: bool) {
+            if self.dangerous_debug() {
+                self.null_encryption
+                    .store(enabled, std::sync::atomic::Ordering::SeqCst);
             } else if enabled {
                 tracing::error!(
                     "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
@@ -2512,14 +2546,8 @@ pub mod openssl_impl {
             }
         }
 
-        fn with_null_encryption(mut self, enabled: bool) -> Self {
-            if self.dangerous_debug {
-                self.null_encryption = enabled;
-            } else if enabled {
-                tracing::error!(
-                    "[DtlsOpenSsl] Attempted to enable null encryption without dangerous_debug; ignoring"
-                );
-            }
+        fn with_null_encryption(self, enabled: bool) -> Self {
+            self.set_null_encryption(enabled);
             self
         }
 

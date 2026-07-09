@@ -61,7 +61,7 @@ fn setup_node(
     api.access_unsafe_for_tests(|a| {
         if null_encryption {
             a.with_engine_mut(|e| {
-                e.with_dtls_mut(|dtls| {
+                e.with_dtls(|dtls| {
                     dtls.set_null_encryption(true);
                 });
             });

@@ -132,7 +132,7 @@ pub fn relay_check_end_to_end_on_message_receives_response() {
     }
 
     // Build and start the server
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_handle_message(Arc::new(server_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())

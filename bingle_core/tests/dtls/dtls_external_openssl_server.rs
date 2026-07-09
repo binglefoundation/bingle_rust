@@ -171,7 +171,7 @@ pub fn dtls_openssl_external_s_server_client_send() {
     let mut attempt_ok = false;
     while CLIENT_SEEN.get().is_none() && Instant::now() < deadline {
         let certs_b = pki::generate_ed25519_test_certs();
-        let mut client = DtlsOpenSsl::new("client".to_string())
+        let client = DtlsOpenSsl::new("client".to_string())
             .with_dangerous_debug(true)
             .with_null_encryption()
             .with_handle_message(std::sync::Arc::new(capture_handler))
