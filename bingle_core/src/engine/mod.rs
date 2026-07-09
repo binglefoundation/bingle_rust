@@ -482,6 +482,12 @@ impl Engine {
 // Per-connection state holding a DTLS adapter bound to a specific peer
 struct ConnectionEntry {
     last_seen: Instant,
+    // Id of the peer on this connection, learned from authenticated inbound
+    // messages. Lets us reply over the connection a peer is currently on
+    // instead of re-resolving its id through the relay DDB. Tied to the
+    // connection's lifetime, so it follows IP changes and is cleared when
+    // connections are forgotten.
+    peer_id: Option<String>,
 }
 
 /// Tracks the outcome of the most recent send attempt to a specific network endpoint.
@@ -1000,11 +1006,15 @@ impl Engine {
                     use std::collections::hash_map::Entry;
                     match m.entry(key) {
                         Entry::Occupied(mut e) => {
+                            // Refresh liveness; leave any peer_id learned from inbound.
                             e.get_mut().last_seen = Instant::now();
                         }
                         Entry::Vacant(v) => {
+                            // Outbound send: the peer id on this endpoint is not
+                            // known here; it is filled in from inbound messages.
                             v.insert(ConnectionEntry {
                                 last_seen: Instant::now(),
+                                peer_id: None,
                             });
                         }
                     }
@@ -1227,15 +1237,26 @@ impl Engine {
                         return Ok(None);
                     }
 
-                    // 1) Track connection last_seen using captured connections map
+                    // 1) Track connection last_seen and the peer id on this
+                    //    connection (this message is authenticated), so replies
+                    //    can go back over the same connection.
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
                         let key_from = from
                             .get_key()
                             .expect("direct endpoint key");
                         match m.entry(key_from) {
-                            Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
-                            Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+                            Entry::Occupied(mut e) => {
+                                let entry = e.get_mut();
+                                entry.last_seen = Instant::now();
+                                entry.peer_id = Some(sender_id.clone());
+                            }
+                            Entry::Vacant(v) => {
+                                v.insert(ConnectionEntry {
+                                    last_seen: Instant::now(),
+                                    peer_id: Some(sender_id.clone()),
+                                });
+                            }
                         }
                     }
 
@@ -1492,8 +1513,15 @@ impl Engine {
         );
 
         // Build the distributed mutex with its message-transport wiring (kept in
-        // the relay_init_mutex submodule to keep this method focused).
-        let mtx = relay_init_mutex::build(my_id.clone(), ids, self.bingle_api.clone());
+        // the relay_init_mutex submodule to keep this method focused). It replies
+        // over the live connection a peer is on (via the connections map) rather
+        // than re-resolving the id through the relay DDB.
+        let mtx = relay_init_mutex::build(
+            my_id.clone(),
+            ids,
+            self.bingle_api.clone(),
+            self.connections.clone(),
+        );
         self.relay_init_mutex = Some(Arc::new(mtx));
         tracing::info!("[Engine::initialize_relay] created distributed mutex");
 
