@@ -55,12 +55,13 @@ pub struct ResponseWait {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum EngineState {
-    StunIdentify,
-    TrianglePing,
-    EndpointAvailable,
-    Registered,
-    NATRestricted,
+    StunIdentify = 0,
+    TrianglePing = 1,
+    EndpointAvailable = 2,
+    Registered = 3,
+    NATRestricted = 4,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,14 +75,15 @@ pub enum NatType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[repr(u8)]
 pub enum RelayState {
-    Unknown,
-    Off,
-    Starting,
-    Loading,
-    Loaded,
-    Available,
-    Own,
+    Unknown = 0,
+    Off = 1,
+    Starting = 2,
+    Loading = 3,
+    Loaded = 4,
+    Available = 5,
+    Own = 6,
 }
 
 pub type EngineType = Arc<Engine>;
@@ -165,8 +167,13 @@ pub struct Engine {
     mux: Option<Arc<UdpNetworkMux>>, // concrete to access start/stop helpers
     // Packet transport layer (step 1: pass-through) that owns DTLS.
     packet_transport: DtlsReliablePacketTransport,
-    state: EngineState,
-    relay_state: RelayState,
+    // Early-lifecycle engine state (StunIdentify/TrianglePing). Held as an atomic so it can be
+    // read on the packet path while background threads (relay init, STUN follow-ups) update it
+    // without tearing. See state()/state_field(). Later states are derived from the
+    // endpoint_ready/registered/nat_restricted atomics.
+    state: std::sync::atomic::AtomicU8,
+    // Relay role state. Atomic for the same cross-thread reason as `state`.
+    relay_state: std::sync::atomic::AtomicU8,
     last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
     stun: Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>, // background STUN
     relay_finder: Option<Arc<RelayFinder>>, // used to locate peer relay
@@ -225,7 +232,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn relay_state_str(&self) -> String {
-        match self.relay_state {
+        match self.relay_state() {
             RelayState::Unknown => "unknown".to_string(),
             RelayState::Off => "off".to_string(),
             RelayState::Starting => "starting".to_string(),
@@ -251,7 +258,7 @@ impl Engine {
     pub(crate) fn set_relay_state(&mut self, new_state: RelayState, reason: &str) {
         let span = self.span.clone();
         let _guard = span.enter();
-        let prev = self.relay_state;
+        let prev = self.relay_state();
         let prev_str = Self::relay_state_to_str_static(prev);
         let new_str = Self::relay_state_to_str_static(new_state);
         if prev != new_state {
@@ -270,7 +277,8 @@ impl Engine {
                 reason
             );
         }
-        self.relay_state = new_state;
+        use std::sync::atomic::Ordering;
+        self.relay_state.store(new_state as u8, Ordering::SeqCst);
     }
 
     pub fn set_last_public_addr(&mut self, addr: Option<SocketAddr>) {
@@ -533,8 +541,8 @@ impl Engine {
             options: options.clone(),
             mux: None,
             packet_transport: DtlsReliablePacketTransport::new(dtls, MINIMUM_MTU),
-            state: EngineState::StunIdentify,
-            relay_state: RelayState::Off,
+            state: std::sync::atomic::AtomicU8::new(EngineState::StunIdentify as u8),
+            relay_state: std::sync::atomic::AtomicU8::new(RelayState::Off as u8),
             last_public_addr_shared: Arc::new(Mutex::new(None)),
             stun: None,
             relay_finder: None,
@@ -1346,7 +1354,7 @@ impl Engine {
         }
 
         // STUN path
-        self.state = EngineState::StunIdentify;
+        self.set_state_field(EngineState::StunIdentify);
 
         // Bind UDP on 0.0.0.0:0 and create mux (OS assigns an ephemeral port)
         let mut mux0 = UdpNetworkMux::bind("0.0.0.0:0")
@@ -1758,6 +1766,11 @@ impl Engine {
             }
         }
 
+        // Publish the mux before spawning the relay-init thread below. That thread reaches back
+        // into this Engine, so every plain-field write here must happen-before the spawn; assigning
+        // self.mux after the spawn would be a data race with the background thread.
+        self.mux = Some(mux);
+
         if self.options.am_relay {
             if self.relay_finder.is_some() {
                 let weak_self = self.weak_self.clone();
@@ -1819,7 +1832,6 @@ impl Engine {
             self.set_state_internal(EngineState::Registered);
         }
 
-        self.mux = Some(mux);
         tracing::info!("[Engine] start_with_addr: done");
         Ok(())
     }
@@ -1854,7 +1866,7 @@ impl Engine {
                 prev_addr,
                 public_addr
             );
-            self.state = EngineState::TrianglePing;
+            self.set_state_field(EngineState::TrianglePing);
             self.set_nat_type(NatType::Unknown);
             self.notify_listening(false);
             // Our relay registration is tied to the old public address; stop refreshing it.
@@ -1886,13 +1898,13 @@ impl Engine {
         }
 
         // Transition to TrianglePing and perform relay triangle test
-        if self.state == EngineState::TrianglePing {
+        if self.state_field() == EngineState::TrianglePing {
             tracing::info!("[Engine] already in TrianglePing");
             return;
         }
 
-        let prev = self.state;
-        self.state = EngineState::TrianglePing;
+        let prev = self.state_field();
+        self.set_state_field(EngineState::TrianglePing);
         tracing::info!("[Engine] state change: {:?} -> TrianglePing", prev);
         #[allow(unused)]
         {}
@@ -1967,7 +1979,7 @@ impl Engine {
             } else {
                 tracing::warn!("[Engine] no relay found; setting NoConnection");
                 self.set_nat_type(NatType::NoConnection);
-                self.state = EngineState::StunIdentify;
+                self.set_state_field(EngineState::StunIdentify);
                 self.notify_listening(false);
                 // Reset the STUN finder state to None so that future STUN responses can
                 // re-trigger the state change handler and retry relay discovery.
@@ -2025,7 +2037,7 @@ impl Engine {
                 "[Engine][WARN] TrianglePing path active but no destination to send TriangleTest1; setting NoConnection"
             );
             self.set_nat_type(NatType::NoConnection);
-            self.state = EngineState::StunIdentify;
+            self.set_state_field(EngineState::StunIdentify);
             self.notify_listening(false);
             // Reset the STUN finder state to None so that future STUN responses can
             // re-trigger the state change handler and retry relay discovery.
@@ -2233,7 +2245,7 @@ impl Engine {
     pub(crate) fn on_stun_blocked(&mut self) {
         self.stop_relay_keep_alive();
         self.set_nat_type(NatType::NoConnection);
-        self.state = EngineState::StunIdentify;
+        self.set_state_field(EngineState::StunIdentify);
         self.notify_listening(false);
     }
 
@@ -2252,7 +2264,7 @@ impl Engine {
         self.registered.store(false, Ordering::SeqCst);
         self.endpoint_ready.store(false, Ordering::SeqCst);
         self.nat_restricted.store(false, Ordering::SeqCst);
-        self.state = EngineState::StunIdentify;
+        self.set_state_field(EngineState::StunIdentify);
         self.notify_listening(false);
     }
 
@@ -2374,7 +2386,7 @@ impl Engine {
         // TrianglePing"), never re-sending TriangleTest1 and never re-registering. Clearing
         // last_public_addr too means the first STUN-consistent after restart is treated as a
         // fresh identification (addr_changed == false) rather than an address change.
-        self.state = EngineState::StunIdentify;
+        self.set_state_field(EngineState::StunIdentify);
         self.registered
             .store(false, std::sync::atomic::Ordering::SeqCst);
         self.endpoint_ready
@@ -2397,7 +2409,39 @@ impl Engine {
         } else if self.nat_restricted.load(Ordering::SeqCst) {
             EngineState::NATRestricted
         } else {
-            self.state
+            self.state_field()
+        }
+    }
+
+    /// Decode the early-lifecycle `state` atomic into an `EngineState`.
+    fn state_field(&self) -> EngineState {
+        use std::sync::atomic::Ordering;
+        match self.state.load(Ordering::SeqCst) {
+            1 => EngineState::TrianglePing,
+            2 => EngineState::EndpointAvailable,
+            3 => EngineState::Registered,
+            4 => EngineState::NATRestricted,
+            _ => EngineState::StunIdentify,
+        }
+    }
+
+    /// Store the early-lifecycle `state` atomic.
+    fn set_state_field(&self, s: EngineState) {
+        use std::sync::atomic::Ordering;
+        self.state.store(s as u8, Ordering::SeqCst);
+    }
+
+    /// Decode the `relay_state` atomic into a `RelayState`.
+    pub(crate) fn relay_state(&self) -> RelayState {
+        use std::sync::atomic::Ordering;
+        match self.relay_state.load(Ordering::SeqCst) {
+            1 => RelayState::Off,
+            2 => RelayState::Starting,
+            3 => RelayState::Loading,
+            4 => RelayState::Loaded,
+            5 => RelayState::Available,
+            6 => RelayState::Own,
+            _ => RelayState::Unknown,
         }
     }
     pub fn last_public_addr(&self) -> Option<SocketAddr> {
@@ -2612,8 +2656,8 @@ impl Engine {
             let finder = RelayFinder::new(api, discover);
             self.relay_finder = Some(Arc::new(finder));
             self.set_last_public_addr(Some(addr));
-            let prev = self.state;
-            self.state = EngineState::TrianglePing;
+            let prev = self.state_field();
+            self.set_state_field(EngineState::TrianglePing);
             tracing::info!("[Engine] test state change: {:?} -> TrianglePing", prev);
             self.notify_listening(true);
         } else {
@@ -2621,7 +2665,7 @@ impl Engine {
                 "[Engine::test_stun_consistent_process_with_relays] no relay found; setting NoConnection"
             );
             self.set_nat_type(NatType::NoConnection);
-            self.state = EngineState::StunIdentify;
+            self.set_state_field(EngineState::StunIdentify);
             self.notify_listening(false);
         }
     }
