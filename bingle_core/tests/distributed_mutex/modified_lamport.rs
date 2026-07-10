@@ -43,13 +43,15 @@ impl TestNetwork {
         let down_ref2 = self.down.clone();
         let down_ref3 = self.down.clone();
 
+        // The send closures return whether the message was delivered so the
+        // mutex can prune unreachable (down or unknown) nodes.
         let self_id_for_req = self_id.clone();
-        let send_request = move |dest_id: &str, req: &MutexRequest| {
+        let send_request = move |dest_id: &str, req: &MutexRequest| -> bool {
             // Check if destination is down, but do not hold the lock during handler call
             {
                 let down = down_ref.lock().expect("down");
                 if down.iter().any(|x| x == dest_id) {
-                    return;
+                    return false;
                 }
             }
             let dest_opt = {
@@ -58,16 +60,19 @@ impl TestNetwork {
             };
             if let Some(dest) = dest_opt {
                 dest.handle_request(&self_id_for_req, req);
+                true
+            } else {
+                false
             }
         };
 
         let self_id_for_rep = self_id.clone();
-        let send_reply = move |dest_id: &str, resp: &MutexResponse| {
+        let send_reply = move |dest_id: &str, resp: &MutexResponse| -> bool {
             // Avoid holding any shared locks while delivering
             {
                 let down = down_ref2.lock().expect("down");
                 if down.iter().any(|x| x == dest_id) {
-                    return;
+                    return false;
                 }
             }
             let dest_opt = {
@@ -76,16 +81,19 @@ impl TestNetwork {
             };
             if let Some(dest) = dest_opt {
                 dest.handle_reply(&self_id_for_rep, resp);
+                true
+            } else {
+                false
             }
         };
 
         let self_id_for_rel = self_id.clone();
-        let send_release = move |dest_id: &str, rel: &MutexRelease| {
+        let send_release = move |dest_id: &str, rel: &MutexRelease| -> bool {
             // Avoid holding any shared locks while delivering
             {
                 let down = down_ref3.lock().expect("down");
                 if down.iter().any(|x| x == dest_id) {
-                    return;
+                    return false;
                 }
             }
             let dest_opt = {
@@ -94,6 +102,9 @@ impl TestNetwork {
             };
             if let Some(dest) = dest_opt {
                 dest.handle_release(&self_id_for_rel, rel);
+                true
+            } else {
+                false
             }
         };
 

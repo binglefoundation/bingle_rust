@@ -14,6 +14,8 @@ use crate::dtls::{Dtls, DtlsOpenSsl, NetworkMux, UdpNetworkMux};
 use crate::messages::handlers::MessageHandler;
 use crate::messages::types::{Message, RelayMessage, RelayTriangleTest1};
 use crate::messages::{DefaultPrintingHandler, from_json_str};
+
+mod relay_init_mutex;
 use crate::packet_transport::{DtlsReliablePacketTransport, PacketTransport};
 use crate::relay::relay_finder::{RelayFinder, RelayFinderTrait, RelayInfo};
 use crate::stun::stun_endpoint_finder::StunEndpointFinder;
@@ -492,6 +494,12 @@ impl Engine {
 // Per-connection state holding a DTLS adapter bound to a specific peer
 struct ConnectionEntry {
     last_seen: Instant,
+    // Id of the peer on this connection, learned from authenticated inbound
+    // messages. Lets us reply over the connection a peer is currently on
+    // instead of re-resolving its id through the relay DDB. Tied to the
+    // connection's lifetime, so it follows IP changes and is cleared when
+    // connections are forgotten.
+    peer_id: Option<String>,
 }
 
 /// Tracks the outcome of the most recent send attempt to a specific network endpoint.
@@ -1032,11 +1040,15 @@ impl Engine {
                     use std::collections::hash_map::Entry;
                     match m.entry(key) {
                         Entry::Occupied(mut e) => {
+                            // Refresh liveness; leave any peer_id learned from inbound.
                             e.get_mut().last_seen = Instant::now();
                         }
                         Entry::Vacant(v) => {
+                            // Outbound send: the peer id on this endpoint is not
+                            // known here; it is filled in from inbound messages.
                             v.insert(ConnectionEntry {
                                 last_seen: Instant::now(),
+                                peer_id: None,
                             });
                         }
                     }
@@ -1259,15 +1271,26 @@ impl Engine {
                         return Ok(None);
                     }
 
-                    // 1) Track connection last_seen using captured connections map
+                    // 1) Track connection last_seen and the peer id on this
+                    //    connection (this message is authenticated), so replies
+                    //    can go back over the same connection.
                     if let Ok(mut m) = connections.lock() {
                         use std::collections::hash_map::Entry;
                         let key_from = from
                             .get_key()
                             .expect("direct endpoint key");
                         match m.entry(key_from) {
-                            Entry::Occupied(mut e) => { e.get_mut().last_seen = Instant::now(); }
-                            Entry::Vacant(v) => { v.insert(ConnectionEntry { last_seen: Instant::now() }); }
+                            Entry::Occupied(mut e) => {
+                                let entry = e.get_mut();
+                                entry.last_seen = Instant::now();
+                                entry.peer_id = Some(sender_id.clone());
+                            }
+                            Entry::Vacant(v) => {
+                                v.insert(ConnectionEntry {
+                                    last_seen: Instant::now(),
+                                    peer_id: Some(sender_id.clone()),
+                                });
+                            }
                         }
                     }
 
@@ -1523,61 +1546,15 @@ impl Engine {
             ids.len()
         );
 
-        // Prepare sender closures to transmit mutex messages to peers by id (API will resolve addresses)
-        let api_weak = self.bingle_api.clone();
-        let my_id_for_send = my_id.clone();
-        let send_common = move |dest_id: &str, json_val: serde_json::Value| {
-            let uid = dest_id.to_string();
-
-            let ok = api_weak.access(|a| {
-                a.send_message_to_id(&uid, json_val.clone(), None)
-                    .unwrap_or(false)
-            });
-            if !ok {
-                tracing::warn!(
-                    "[Engine::initialize_relay][mutex] send_message_to_id failed for {} my_id={} json_val={}",
-                    dest_id,
-                    my_id_for_send,
-                    json_val
-                );
-            }
-        };
-        let send_request = {
-            let send_common = send_common.clone();
-            move |dest_id: &str, req: &crate::messages::types::MutexRequest| {
-                let msg =
-                    Message::Mutex(crate::messages::types::MutexMessage::Request(req.clone()));
-                let json_val = crate::messages::marshal::to_json_value(&msg);
-                send_common(dest_id, json_val);
-            }
-        };
-        let send_reply = {
-            let send_common = send_common.clone();
-            move |dest_id: &str, resp: &crate::messages::types::MutexResponse| {
-                let msg =
-                    Message::Mutex(crate::messages::types::MutexMessage::Response(resp.clone()));
-                let json_val = crate::messages::marshal::to_json_value(&msg);
-                send_common(dest_id, json_val);
-            }
-        };
-        let send_release = {
-            let send_common = send_common.clone();
-            move |dest_id: &str, rel: &crate::messages::types::MutexRelease| {
-                let msg =
-                    Message::Mutex(crate::messages::types::MutexMessage::Release(rel.clone()));
-                let json_val = crate::messages::marshal::to_json_value(&msg);
-                send_common(dest_id, json_val);
-            }
-        };
-        tracing::info!("[Engine::initialize_relay] prepared distributed mutex messaging closures");
-
-        // Create and store the distributed mutex
-        let mtx = crate::distributed_mutex::ModifiedLamportDistributedMutex::new(
+        // Build the distributed mutex with its message-transport wiring (kept in
+        // the relay_init_mutex submodule to keep this method focused). It replies
+        // over the live connection a peer is on (via the connections map) rather
+        // than re-resolving the id through the relay DDB.
+        let mtx = relay_init_mutex::build(
             my_id.clone(),
             ids,
-            send_request,
-            send_reply,
-            send_release,
+            self.bingle_api.clone(),
+            self.connections.clone(),
         );
         *self.relay_init_mutex.lock().unwrap() = Some(Arc::new(mtx));
         tracing::info!("[Engine::initialize_relay] created distributed mutex");
@@ -2344,6 +2321,7 @@ impl Engine {
         self.stop_relay_keep_alive();
         // Clear any API pointers and global router callbacks to avoid dangling references across tests
         self.clear_api_bindings();
+        tracing::info!("[Engine::stop] stop dtls");
         self.packet_transport.dtls().stop().unwrap_or_else(|_| {
             panic!(
                 "DTLS stop failed in Engine::stop {}:{}",
@@ -2354,6 +2332,8 @@ impl Engine {
             )
         });
 
+        tracing::info!("[Engine::stop] stopped dtls, stopping mux");
+
         if let Some(mux) = self.mux.lock().unwrap().clone() {
             mux.stop();
         } else {
@@ -2363,6 +2343,8 @@ impl Engine {
                 last_addr
             );
         }
+        tracing::info!("[Engine::stop] stopped mux, stopping STUN finder");
+
         if let Some(stun_arc) = self.stun.lock().unwrap().clone() {
             tracing::info!("[Engine::stop] locking STUN finder");
             if let Ok(mut finder) = stun_arc.lock() {
