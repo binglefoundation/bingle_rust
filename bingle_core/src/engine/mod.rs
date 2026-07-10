@@ -1559,10 +1559,13 @@ impl Engine {
         *self.relay_init_mutex.lock().unwrap() = Some(Arc::new(mtx));
         tracing::info!("[Engine::initialize_relay] created distributed mutex");
 
-        // Use the mutex to serialize initialization of the DDB one node at a time
+        // Use the mutex to serialize initialization of the DDB one node at a time.
+        // NOTE: fetch the handle via distributed_mutex() so the relay_init_mutex field guard is
+        // NOT held across the blocking m.acquire() below — otherwise the inbound grant handler
+        // (mutex_handle_response), which needs the same field lock, deadlocks.
         let ddb_backend_arc = self.ddb_backend.clone();
         let roots_copy = all_relays.clone();
-        if let Some(m) = self.relay_init_mutex.lock().unwrap().clone() {
+        if let Some(m) = self.distributed_mutex() {
             let finder_arc_for_mtx = finder_arc.clone();
             let my_id_for_mtx = my_id.clone();
             m.acquire(|| {
@@ -2800,9 +2803,21 @@ impl Engine {
         );
     }
 
+    /// Clone the distributed-mutex handle out of its field lock.
+    ///
+    /// Callers MUST NOT hold the `relay_init_mutex` field guard across a call into the mutex:
+    /// `acquire()` blocks until grants arrive, and grants are delivered by `mutex_handle_response`
+    /// on another thread which also needs this field lock. Cloning the `Arc` out (dropping the
+    /// guard immediately) breaks that deadlock.
+    fn distributed_mutex(
+        &self,
+    ) -> Option<Arc<crate::distributed_mutex::ModifiedLamportDistributedMutex>> {
+        self.relay_init_mutex.lock().unwrap().clone()
+    }
+
     // Mutex message handlers - delegate to the distributed mutex instance if it exists
     pub fn mutex_handle_request(&self, from_id: &str, req: &crate::messages::types::MutexRequest) {
-        if let Some(m) = self.relay_init_mutex.lock().unwrap().clone() {
+        if let Some(m) = self.distributed_mutex() {
             m.handle_request(from_id, req);
         }
     }
@@ -2811,12 +2826,12 @@ impl Engine {
         from_id: &str,
         resp: &crate::messages::types::MutexResponse,
     ) {
-        if let Some(m) = self.relay_init_mutex.lock().unwrap().clone() {
+        if let Some(m) = self.distributed_mutex() {
             m.handle_reply(from_id, resp);
         }
     }
     pub fn mutex_handle_release(&self, from_id: &str, rel: &crate::messages::types::MutexRelease) {
-        if let Some(m) = self.relay_init_mutex.lock().unwrap().clone() {
+        if let Some(m) = self.distributed_mutex() {
             m.handle_release(from_id, rel);
         }
     }
