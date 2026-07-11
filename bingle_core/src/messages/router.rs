@@ -239,6 +239,11 @@ impl BingleApiInternal for LockingApiWrapper {
             a.set_state(state)
         }
     }
+    fn test_take_listen_drop(&self) -> bool {
+        self.api("test_take_listen_drop")
+            .map(|a| a.test_take_listen_drop())
+            .unwrap_or(false)
+    }
     fn get_state(&self) -> crate::engine::EngineState {
         self.api("get_state")
             .map(|a| a.get_state())

@@ -239,6 +239,9 @@ pub struct Engine {
     span: Mutex<tracing::Span>,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Mutex<Option<Arc<dyn MessageHandler + Send + Sync>>>,
+    // Test-only: number of incoming relay Listen requests to drop (ignore) before responding, used
+    // to deterministically force the client-side Listen retry. Always 0 in production.
+    test_listen_drops: std::sync::atomic::AtomicUsize,
     // Periodic keep-alive towards our registered relay, refreshing the NAT mapping
     // (Mutex so it can be started/stopped through &self from the API wrappers)
     relay_keep_alive: Mutex<Option<crate::relay::relay_keep_alive::RelayKeepAliveSender>>,
@@ -602,6 +605,7 @@ impl Engine {
             endpoint_status: Arc::new(Mutex::new(HashMap::new())),
             span: Mutex::new(tracing::Span::none()),
             custom_message_handler: Mutex::new(None),
+            test_listen_drops: std::sync::atomic::AtomicUsize::new(0),
             relay_keep_alive: Mutex::new(None),
             relay_keep_alive_interval: Mutex::new(crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL),
         };
@@ -663,6 +667,25 @@ impl Engine {
     /// during routing in `install_dtls_handler`.  Must be called before `install_dtls_handler`.
     pub fn set_custom_message_handler(&self, handler: Arc<dyn MessageHandler + Send + Sync>) {
         *self.custom_message_handler.lock().unwrap() = Some(handler);
+    }
+
+    /// Test helper: arm the relay to drop (ignore) the next `n` incoming Listen requests, forcing
+    /// the client-side Listen retry to be exercised.
+    pub fn arm_listen_drops(&self, n: usize) {
+        self.test_listen_drops
+            .store(n, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Test hook: if a Listen drop is armed, consume one and return true (caller should drop the
+    /// Listen without responding). Returns false in production (never armed).
+    pub fn test_take_listen_drop(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        // Decrement only while > 0, without underflowing.
+        self.test_listen_drops
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                if v > 0 { Some(v - 1) } else { None }
+            })
+            .is_ok()
     }
 
     /// Test helper: get the local UDP bind address of the mux, if started.
@@ -2180,37 +2203,62 @@ impl Engine {
             }
         };
 
-        // Send Relay::Listen and expect a ListenResponse.
-        let listen = crate::messages::types::RelayListen {
-            app: None,
-            tag: None,
-        };
-        let msg = Message::Relay(RelayMessage::Listen(listen));
-        let json = crate::messages::marshal::to_json_value(&msg);
+        // Send Relay::Listen and expect a ListenResponse. Retry a bounded number of times so a
+        // transient relay non-response doesn't strand us in NATRestricted (registration is
+        // otherwise one-shot). Mirrors the retry in handlers::post_triangle_relay_register.
         let nsk = NetworkEndpoint::new_direct(relay_info.address());
         let uid = relay_info.id().to_string();
-        match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
-            Ok(resp) => {
-                let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                if !ty_ok {
-                    tracing::warn!(
-                        "[Engine::register_with_relay] unexpected response to Listen: {}",
-                        resp
+        const LISTEN_ATTEMPTS: usize = 3;
+        let mut listen_ok = false;
+        for attempt in 1..=LISTEN_ATTEMPTS {
+            let listen = crate::messages::types::RelayListen {
+                app: None,
+                tag: None,
+            };
+            let json = crate::messages::marshal::to_json_value(&Message::Relay(
+                RelayMessage::Listen(listen),
+            ));
+            match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                Ok(resp) => {
+                    let ty_ok =
+                        resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                    if !ty_ok {
+                        tracing::warn!(
+                            "[Engine::register_with_relay] unexpected response to Listen: {}",
+                            resp
+                        );
+                        return;
+                    }
+                    tracing::info!(
+                        "[Engine::register_with_relay] Relay ListenResponse received (attempt {}); registering relay listener",
+                        attempt
                     );
-                    return;
+                    api.turn_client_handle_listen_response(
+                        relay_info.address(),
+                        relay_info.id().to_string(),
+                    );
+                    listen_ok = true;
+                    break;
                 }
-                tracing::info!(
-                    "[Engine::register_with_relay] Relay ListenResponse received; registering relay listener"
-                );
-                api.turn_client_handle_listen_response(
-                    relay_info.address(),
-                    relay_info.id().to_string(),
-                );
+                Err(e) => {
+                    tracing::warn!(
+                        "[Engine::register_with_relay] Listen attempt {}/{} failed: {}",
+                        attempt,
+                        LISTEN_ATTEMPTS,
+                        e
+                    );
+                    if attempt < LISTEN_ATTEMPTS {
+                        std::thread::sleep(Duration::from_secs(2));
+                    }
+                }
             }
-            Err(e) => {
-                tracing::warn!("[Engine::register_with_relay] Listen request failed: {}", e);
-                return;
-            }
+        }
+        if !listen_ok {
+            tracing::warn!(
+                "[Engine::register_with_relay] Listen failed after {} attempts",
+                LISTEN_ATTEMPTS
+            );
+            return;
         }
 
         // Register relay association in DDB and mark registered.

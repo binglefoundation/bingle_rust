@@ -573,6 +573,14 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_listen] Not a relay: ignoring Listen request");
             return;
         }
+        // Test hook: deterministically drop the first N Listens (no response) to exercise the
+        // client-side Listen retry. Always false in production.
+        if api.test_take_listen_drop() {
+            warn!(
+                "[handlers::on_relay_listen] test hook: dropping Listen (no response) to force client retry"
+            );
+            return;
+        }
         // Source address must be known from DTLS/mux layer
         let src = match router.get_last_from() {
             Some(a) => a,

@@ -1618,3 +1618,81 @@ pub fn worker_threads_drain_after_teardown_localnet() {
         peak
     );
 }
+
+// Deterministically drop the client's first relay Listen (via a test hook on the relay) and verify
+// the client still reaches Registered. Registration is otherwise one-shot, so reaching Registered
+// after a dropped Listen proves the bounded Listen retry recovered the transient relay non-response.
+#[serial(send_message_to_id)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+#[ntest::timeout(300_000)]
+pub fn client_recovers_from_dropped_listen_via_retry_localnet() {
+    test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
+    let cfg = test_util::localnet_config();
+
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
+    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+
+    let relay1 = test_util::start_root_relay(
+        "relay1",
+        relay1_addr,
+        test_util::PASSPHRASE_SPEND,
+        app_id,
+        cfg.clone(),
+    );
+    let relay2 = test_util::start_root_relay(
+        "relay2",
+        relay2_addr,
+        test_util::PASSPHRASE_RECEIVE,
+        app_id,
+        cfg.clone(),
+    );
+
+    // Arm each relay to drop the first incoming Listen (whichever relay the client picks). The
+    // client's first Listen will therefore get no response and it must retry to register.
+    relay1.engine_for_tests().arm_listen_drops(1);
+    relay2.engine_for_tests().arm_listen_drops(1);
+
+    // Broken NAT forces the client onto the relay-registration (Listen) path so the dropped Listen
+    // and the retry are actually exercised (a direct/consistent client would register without a Listen).
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(true);
+    register_client_on_blockchain(
+        test_util::ADDRESS_10MIL,
+        test_util::PASSPHRASE_10MIL,
+        "client_a",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
+    );
+    let client_a = start_client(
+        "client_a",
+        test_util::PASSPHRASE_10MIL,
+        stun_list.clone(),
+        app_id,
+        cfg.clone(),
+    );
+
+    // First Listen is dropped; the client must reach Registered via the retry (per-attempt timeout
+    // is the client's 20s wait_response_timeout, so recovery is well within this window).
+    assert!(
+        test_util::wait_for_registered(&client_a, Duration::from_secs(120)),
+        "client did not reach Registered after a dropped Listen — the Listen retry did not recover"
+    );
+
+    client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+    relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    s1.stop();
+    s2.stop();
+}
