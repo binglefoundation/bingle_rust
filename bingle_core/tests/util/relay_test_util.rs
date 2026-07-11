@@ -1,5 +1,6 @@
 // Common relay test helpers shared across integration test files.
 
+use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -70,6 +71,39 @@ pub fn wait_for_relays_visible(
             }
         }
         std::thread::sleep(Duration::from_millis(1000));
+    }
+    false
+}
+
+/// Wait until every `handle` in `handles` resolves to an id via the **Indexer**.
+///
+/// Reverse handle->id lookup (`handle_lookup`) scans opted-in accounts through the Indexer,
+/// which lags algod. On-chain registration (`register_client_on_blockchain`) only waits for
+/// algod local-state, so a node can be registered but not yet handle-discoverable. Call this
+/// after registering nodes and before any handle-based discovery/send to close that gap.
+///
+/// Returns `true` if all handles became resolvable within `timeout`.
+pub fn wait_for_handles_visible(
+    cfg: AlgoChainConfig,
+    app_id: u64,
+    handles: &[&str],
+    timeout: Duration,
+) -> bool {
+    let indexer = AlgoBingle::new(AlgoOps::new_indexer(Some(cfg)), app_id, 0);
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        let all_visible = handles
+            .iter()
+            .all(|h| matches!(indexer.handle_lookup(h), Ok(Some(_))));
+        if all_visible {
+            tracing::info!(
+                "[Test] All {} handles visible via indexer after {:?}",
+                handles.len(),
+                start.elapsed()
+            );
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(250));
     }
     false
 }

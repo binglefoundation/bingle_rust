@@ -2,7 +2,7 @@
 // cargo test --test all integration::api::send_message_to_id_integration -- --ignored
 
 use crate::setup_localnet;
-use crate::util::relay_test_util::wait_for_relays_visible;
+use crate::util::relay_test_util::{wait_for_handles_visible, wait_for_relays_visible};
 use crate::util::test_util;
 use crate::util::test_util::register_client_on_blockchain;
 use bingle_core::api::bingle_api::{BingleApi, OnMessageHandler, StartOptions};
@@ -135,7 +135,9 @@ fn start_client(
         handle_cache_expiry: None,
         dangerous_debug: false,
         log_mode: bingle_core::util::logging::LogMode::Plain,
-        wait_response_timeout: None,
+        // Short response timeout so a transient relay non-response fails fast and the bounded
+        // Listen retry in registration gets multiple attempts within the test's registration wait.
+        wait_response_timeout: Some(Duration::from_secs(20)),
     };
     let api = BingleApiImpl::new(&opts);
     api.access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&opts))
@@ -232,6 +234,14 @@ pub fn register_relays(
         panic!(
             "Relays did not become visible via list_static_endpoints_via_indexer_sync within 60s"
         );
+    }
+
+    // Also wait for the relay handles to be resolvable via the indexer. Reverse handle->id lookup
+    // is indexer-based (whereas register_client_on_blockchain only waits for algod), so without
+    // this a handle-based flow can race the indexer even though the endpoints are already visible.
+    if !wait_for_handles_visible(cfg.clone(), app_id, &["relay1", "relay2"], Duration::from_secs(60))
+    {
+        panic!("Relay handles did not become visible via indexer within 60s");
     }
 }
 
@@ -1505,4 +1515,105 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     client_a.access_unsafe_for_tests(|c| c.stop());
     s1.stop();
     s2.stop();
+}
+
+// Thread-leak validation: after tearing down every node, worker threads should drain back to the
+// pre-test baseline. Exercises the DTLS accept/peer threads (client<->relay), the UDP mux rx
+// thread, the STUN finder, relay keep-alive, and engine background threads. Detached threads (DTLS
+// server/peer threads, engine bg threads) are signalled but not joined, so a grace window is
+// allowed before comparing against baseline.
+#[serial(send_message_to_id)]
+#[test]
+#[cfg(not(target_os = "ios"))]
+#[ntest::timeout(300_000)]
+pub fn worker_threads_drain_after_teardown_localnet() {
+    test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
+    let cfg = test_util::localnet_config();
+
+    let baseline = test_util::process_thread_count();
+    tracing::info!("[Test][threads] baseline = {:?}", baseline);
+
+    let r1_port = test_util::find_unused_loopback_port();
+    let r2_port = test_util::find_unused_loopback_port();
+    let relay1_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r1_port);
+    let relay2_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r2_port);
+
+    let creator = test_util::ops_from_mnemonic(
+        test_util::ADDRESS_SPEND,
+        test_util::PASSPHRASE_SPEND,
+        cfg.clone(),
+    );
+    let (app_id, asset_id) = test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+    register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+
+    let relay1 = test_util::start_root_relay(
+        "relay1",
+        relay1_addr,
+        test_util::PASSPHRASE_SPEND,
+        app_id,
+        cfg.clone(),
+    );
+    let relay2 = test_util::start_root_relay(
+        "relay2",
+        relay2_addr,
+        test_util::PASSPHRASE_RECEIVE,
+        app_id,
+        cfg.clone(),
+    );
+
+    let (mut s1, mut s2, stun_list) = setup_stun_servers(false);
+    register_client_on_blockchain(
+        test_util::ADDRESS_10MIL,
+        test_util::PASSPHRASE_10MIL,
+        "client_a",
+        app_id,
+        asset_id,
+        &creator,
+        cfg.clone(),
+    );
+    let client_a = start_client(
+        "client_a",
+        test_util::PASSPHRASE_10MIL,
+        stun_list.clone(),
+        app_id,
+        cfg.clone(),
+    );
+    assert!(
+        test_util::wait_for_registered(&client_a, Duration::from_secs(120)),
+        "client A did not reach Registered"
+    );
+
+    let peak = test_util::process_thread_count();
+    tracing::info!("[Test][threads] peak (nodes up) = {:?}", peak);
+
+    // Tear everything down.
+    client_a.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+    relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+    s1.stop();
+    s2.stop();
+    drop(client_a);
+    drop(relay1);
+    drop(relay2);
+
+    let base = baseline.expect("process_thread_count unsupported on this platform");
+    // Teardown reclaims the joined threads (mux rx, STUN finder, relay keep-alive) quickly; a
+    // small residual from the untracked per-peer DTLS reader threads may linger briefly. Guard
+    // against a gross leak (accumulating worker threads) rather than asserting an exact count.
+    let tolerance = 8usize;
+    let final_count = test_util::wait_for_thread_drain(base, tolerance, Duration::from_secs(20));
+    tracing::info!(
+        "[Test][threads] final = {} baseline = {} peak = {:?} (tolerance {})",
+        final_count,
+        base,
+        peak,
+        tolerance
+    );
+    assert!(
+        final_count <= base + tolerance,
+        "worker thread leak after teardown: baseline={} final={} peak={:?}",
+        base,
+        final_count,
+        peak
+    );
 }
