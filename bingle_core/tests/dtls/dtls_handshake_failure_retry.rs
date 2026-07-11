@@ -24,7 +24,7 @@ fn dtls_handshake_failure_retry() {
     let mux_srv = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind server mux"));
     let addr_srv = mux_srv.local_addr().expect("server addr");
 
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_null_encryption()
         .with_handle_message(Arc::new(|_, _, _, _| {}))
         .with_server_signing_cert(certs.server_crt.clone())
@@ -34,7 +34,7 @@ fn dtls_handshake_failure_retry() {
 
     // 3. Setup Client
     let mux_cli = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux"));
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_null_encryption()
         .with_handle_message(Arc::new(|_, _, _, _| {}))
         .with_client_cert(certs.client_crt.clone())

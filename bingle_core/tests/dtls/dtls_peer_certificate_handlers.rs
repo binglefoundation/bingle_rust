@@ -124,7 +124,7 @@ pub fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     let addr: SocketAddr = mux.local_addr().expect("mux addr");
 
     // Start server with peer certificate handler and echo message handler
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_null_encryption()
         .with_handle_peer_certificate(server_peer_cert_handler)
         .with_handle_message(std::sync::Arc::new(echo_handler))
@@ -139,7 +139,7 @@ pub fn dtls_openssl_peer_certificate_handlers_are_invoked() {
     // Build client with peer certificate handler; also provide server credentials for its accept loop
     let certs_b = pki::generate_ed25519_test_certs();
     let client_ca_pem = certs_b.ca_crt.clone();
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_null_encryption()
         .with_handle_peer_certificate(client_peer_cert_handler)
         .with_handle_message(std::sync::Arc::new(client_handler))

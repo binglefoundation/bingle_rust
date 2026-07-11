@@ -28,10 +28,10 @@ impl CipherFakeDtls {
 }
 
 impl Dtls for CipherFakeDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
+    fn start(&self, _mux: Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
-    fn stop(&mut self) -> bingle_core::dtls::Result<()> {
+    fn stop(&self) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
     fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> bingle_core::dtls::Result<()> {
@@ -40,7 +40,7 @@ impl Dtls for CipherFakeDtls {
     fn get_handle_message(&self) -> Option<HandleMessage> {
         self.handler.lock().expect("handler lock").clone()
     }
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
+    fn set_handle_message(&self, handler: Option<HandleMessage>) {
         *self.handler.lock().expect("handler lock") = handler;
     }
     fn with_handle_message(self, handler: HandleMessage) -> Self
@@ -53,7 +53,7 @@ impl Dtls for CipherFakeDtls {
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
         None
     }
-    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
         Self: Sized,
@@ -63,7 +63,7 @@ impl Dtls for CipherFakeDtls {
     fn get_ca_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -73,7 +73,7 @@ impl Dtls for CipherFakeDtls {
     fn get_client_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -83,7 +83,7 @@ impl Dtls for CipherFakeDtls {
     fn get_client_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -93,7 +93,7 @@ impl Dtls for CipherFakeDtls {
     fn get_server_signing_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -103,21 +103,21 @@ impl Dtls for CipherFakeDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -125,11 +125,11 @@ impl Dtls for CipherFakeDtls {
         self
     }
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -149,10 +149,10 @@ struct FakeServer {
 }
 
 impl Dtls for FakeServer {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
+    fn start(&self, _mux: Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
-    fn stop(&mut self) -> bingle_core::dtls::Result<()> {
+    fn stop(&self) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
     fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> bingle_core::dtls::Result<()> {
@@ -161,7 +161,7 @@ impl Dtls for FakeServer {
     fn get_handle_message(&self) -> Option<HandleMessage> {
         None
     }
-    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn set_handle_message(&self, _handler: Option<HandleMessage>) {}
     fn with_handle_message(self, _handler: HandleMessage) -> Self
     where
         Self: Sized,
@@ -171,7 +171,7 @@ impl Dtls for FakeServer {
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
         None
     }
-    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
         Self: Sized,
@@ -181,7 +181,7 @@ impl Dtls for FakeServer {
     fn get_ca_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -191,7 +191,7 @@ impl Dtls for FakeServer {
     fn get_client_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -201,7 +201,7 @@ impl Dtls for FakeServer {
     fn get_client_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -211,7 +211,7 @@ impl Dtls for FakeServer {
     fn get_server_signing_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -221,21 +221,21 @@ impl Dtls for FakeServer {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -243,11 +243,11 @@ impl Dtls for FakeServer {
         self
     }
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -308,7 +308,7 @@ fn build_engine_and_get_handler(
     let api = crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new_with_api_override(
         Arc::new(AlwaysAuthApi),
     ));
-    let mut engine = Engine::new_with_dtls(&StartOptions::new("".into()), api, Box::new(fake_dtls));
+    let engine = Engine::new_with_dtls(&StartOptions::new("".into()), api, Box::new(fake_dtls));
 
     let router = Arc::new(Router::new(
         crate::util::reusable_mock_api::to_weak_api_both(MockApiBoth::new()),
@@ -322,7 +322,7 @@ fn build_engine_and_get_handler(
 
     let handler = {
         let mut h: Option<HandleMessage> = None;
-        engine.with_dtls_mut(|dtls| {
+        engine.with_dtls(|dtls| {
             h = dtls.get_handle_message();
         });
         h.expect("DTLS handler should be installed after install_dtls_handler_for_tests")

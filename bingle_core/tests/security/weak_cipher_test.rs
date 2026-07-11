@@ -180,7 +180,7 @@ fn null_cipher_accepted_when_dangerous_debug_is_on() {
     server_api
         .access_unsafe_for_tests(|a| {
             a.with_engine_mut(|e| {
-                e.with_dtls_mut(|dtls| {
+                e.with_dtls(|dtls| {
                     dtls.set_null_encryption(true);
                     dtls.set_app_layer_only_verification(true);
                 });

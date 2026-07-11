@@ -16,7 +16,7 @@ pub fn engine_turn_handler_fails_when_no_public_addr() {
     let mut opts = StartOptions::new("".into());
     opts.am_relay = true;
 
-    let mut engine = Engine::new(&opts, api_weak);
+    let engine = Engine::new(&opts, api_weak);
 
     let port = test_util::find_unused_loopback_port();
     let _addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);

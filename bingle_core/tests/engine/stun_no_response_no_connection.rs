@@ -34,10 +34,10 @@ use bingle_core::messages::router::Router;
 struct NullDtls;
 
 impl Dtls for NullDtls {
-    fn start(&mut self, _mux: Arc<bingle_core::dtls::UdpNetworkMux>) -> DtlsResult<()> {
+    fn start(&self, _mux: Arc<bingle_core::dtls::UdpNetworkMux>) -> DtlsResult<()> {
         Ok(())
     }
-    fn stop(&mut self) -> DtlsResult<()> {
+    fn stop(&self) -> DtlsResult<()> {
         Ok(())
     }
     fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> DtlsResult<()> {
@@ -46,9 +46,9 @@ impl Dtls for NullDtls {
     fn get_handle_message(&self) -> Option<HandleMessage> {
         None
     }
-    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn set_handle_message(&self, _handler: Option<HandleMessage>) {}
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
@@ -61,7 +61,7 @@ impl Dtls for NullDtls {
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
         None
     }
-    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
         Self: Sized,
@@ -71,7 +71,7 @@ impl Dtls for NullDtls {
     fn get_ca_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -81,7 +81,7 @@ impl Dtls for NullDtls {
     fn get_client_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -91,7 +91,7 @@ impl Dtls for NullDtls {
     fn get_client_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -101,7 +101,7 @@ impl Dtls for NullDtls {
     fn get_server_signing_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -111,28 +111,28 @@ impl Dtls for NullDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -149,7 +149,19 @@ impl Dtls for NullDtls {
 // Minimal BingleApi stub — required by Router construction.
 // ---------------------------------------------------------------------------
 #[derive(Clone)]
-struct NullApi;
+struct NullApi {
+    // Settable back-reference to the Engine this mock hosts, so the Engine's STUN worker thread
+    // can re-enter it via with_engine() (mirrors how BingleApiImpl owns its Engine).
+    engine: Arc<std::sync::Mutex<std::sync::Weak<Engine>>>,
+}
+
+impl NullApi {
+    fn new() -> Self {
+        Self {
+            engine: Arc::new(std::sync::Mutex::new(std::sync::Weak::new())),
+        }
+    }
+}
 
 impl BingleApi for NullApi {
     fn list_all_relays(
@@ -272,6 +284,11 @@ impl bingle_core::api::bingle_api::BingleApiInternal for NullApi {
     fn get_relay_state(&self) -> String {
         "off".to_string()
     }
+    fn with_engine(&self, f: &mut dyn FnMut(&Engine)) {
+        if let Some(e) = self.engine.lock().unwrap().upgrade() {
+            f(&e);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -323,21 +340,19 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
         log_mode: bingle_core::util::logging::LogMode::Plain,
         wait_response_timeout: None,
     };
-    let null_api = NullApi;
-    let eng = Arc::new(Engine::new(
+    let null_api = NullApi::new();
+    let engine_slot = null_api.engine.clone();
+    let eng = Arc::new(Engine::new_with_dtls(
         &opts,
-        crate::util::mock_bingle_api::to_weak(null_api.clone()),
+        crate::util::mock_bingle_api::to_weak(null_api),
+        Box::new(NullDtls),
     ));
-    unsafe {
-        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
-        (*eng_ptr).set_weak_self(Arc::downgrade(&eng));
-        (*eng_ptr).set_dtls(Box::new(NullDtls));
-    }
-    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(null_api)));
-    unsafe {
-        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
-        (*eng_ptr).set_router(router);
-    }
+    // Point the mock API's engine slot at the real Engine so its STUN worker thread can re-enter it.
+    *engine_slot.lock().unwrap() = Arc::downgrade(&eng);
+    let router = Arc::new(Router::new(crate::util::mock_bingle_api::to_weak(
+        NullApi::new(),
+    )));
+    eng.set_router(router);
 
     // Track on_listening calls
     let called_false = Arc::new(AtomicBool::new(false));
@@ -345,20 +360,15 @@ pub fn no_stun_responses_sets_no_connection_and_calls_on_listening_false() {
 
     let flag_false = called_false.clone();
     let flag_true = called_true.clone();
-    unsafe {
-        let eng_ptr = Arc::as_ptr(&eng) as *mut Engine;
-        (*eng_ptr).set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
-            if listening {
-                flag_true.store(true, Ordering::SeqCst);
-            } else {
-                flag_false.store(true, Ordering::SeqCst);
-            }
-        })));
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+        if listening {
+            flag_true.store(true, Ordering::SeqCst);
+        } else {
+            flag_false.store(true, Ordering::SeqCst);
+        }
+    })));
 
-        (*eng_ptr)
-            .start(&opts)
-            .expect("engine.start should succeed");
-    }
+    eng.start(&opts).expect("engine.start should succeed");
 
     // Wait for the STUN finder to raise Blocked (3 × 2 s search intervals ≈ 6 s minimum).
     let timeout = Duration::from_secs(30);

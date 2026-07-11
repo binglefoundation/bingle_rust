@@ -135,7 +135,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let (seen_flag, seen_issuer): (Arc<AtomicBool>, Arc<OnceLock<String>>) =
         (Arc::new(AtomicBool::new(false)), Arc::new(OnceLock::new()));
 
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_dangerous_debug(true)
         .with_null_encryption()
         .with_handle_peer_certificate(
@@ -160,7 +160,7 @@ pub fn dtls_peer_certificate_handler_issuer_is_trimmed_to_id() {
     let cmux0 = bingle_core::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind cmux");
     let cmux = std::sync::Arc::new(cmux0);
     cmux.start().expect("cmux start");
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_dangerous_debug(true)
         .with_null_encryption()
         .with_handle_peer_certificate(

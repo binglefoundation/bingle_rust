@@ -25,7 +25,7 @@ fn second_send_should_queue_without_waiting_for_stream_lock() {
     init_test_logging();
 
     let certs = pki::generate_ed25519_test_certs();
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())
         .with_server_signing_cert(certs.server_crt.clone())

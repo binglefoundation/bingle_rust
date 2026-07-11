@@ -75,7 +75,7 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
     }
 
     // Build and configure the server instance with echo_handler that echoes via server.send.
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_handle_message(std::sync::Arc::new(echo_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
@@ -91,7 +91,7 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
 
     // DTLS clients: build and send payloads to server.
     let certs_b = pki::generate_ed25519_test_certs();
-    let mut client1 = DtlsOpenSsl::new("client1".to_string())
+    let client1 = DtlsOpenSsl::new("client1".to_string())
         .with_handle_message(std::sync::Arc::new(client1_handler))
         .with_client_cert(certs_b.client_crt.clone())
         .with_client_private_key(certs_b.client_key.clone())
@@ -101,7 +101,7 @@ pub fn dtls_openssl_multi_client_loopback_echo() {
         .with_handle_peer_certificate(mock_peer_cert_handler);
 
     let certs_c = pki::generate_ed25519_test_certs();
-    let mut client2 = DtlsOpenSsl::new("client2".to_string())
+    let client2 = DtlsOpenSsl::new("client2".to_string())
         .with_handle_message(std::sync::Arc::new(client2_handler))
         .with_client_cert(certs_c.client_crt.clone())
         .with_client_private_key(certs_c.client_key.clone())

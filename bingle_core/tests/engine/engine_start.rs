@@ -138,7 +138,7 @@ impl bingle_core::api::bingle_api::BingleApiInternal for DummyApi {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_start_with_static_ip_localhost_ok() {
-    let mut engine = Engine::new(
+    let engine = Engine::new(
         &StartOptions::new("".into()),
         crate::util::mock_bingle_api::to_weak(DummyApi),
     );

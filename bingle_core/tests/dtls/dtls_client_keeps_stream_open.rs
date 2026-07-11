@@ -48,7 +48,7 @@ pub fn dtls_client_keeps_stream_open_across_sends() {
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
     // Start server DTLS with a live mux
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_handle_message(Arc::new(server_handler))
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
@@ -63,7 +63,7 @@ pub fn dtls_client_keeps_stream_open_across_sends() {
 
     // Start client DTLS with its own mux
     let certs_b = pki::generate_ed25519_test_certs();
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_client_cert(certs_b.client_crt.clone())
         .with_client_private_key(certs_b.client_key.clone())
         .with_server_signing_cert(certs_b.server_crt.clone())

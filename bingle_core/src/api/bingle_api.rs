@@ -168,6 +168,13 @@ pub trait BingleApiInternal: Send + Sync {
     /// Initialize relay state: discover peers, coordinate, and sync DDB.
     fn initialize_relay(&self) {}
 
+    /// Run a closure against the Engine bound to this API, if any (default no-op for mocks).
+    ///
+    /// The Engine is owned 1:1 by its `BingleApiImpl`; its own background threads re-enter the
+    /// Engine through this method via the shared `Weak<dyn BingleApiBoth>` handle, so no
+    /// self-referential `Weak<Engine>` is required.
+    fn with_engine(&self, _f: &mut dyn FnMut(&crate::engine::Engine)) {}
+
     /// Returns true if this node is configured as a relay.
     fn is_relay(&self) -> bool {
         false

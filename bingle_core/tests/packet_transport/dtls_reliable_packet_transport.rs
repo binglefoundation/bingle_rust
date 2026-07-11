@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 struct MockDtls {
-    handle_message: Option<HandleMessage>,
+    handle_message: Mutex<Option<HandleMessage>>,
     sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
     auto_ack_on_send: bool,
 }
@@ -23,7 +23,7 @@ impl MockDtls {
 
     fn new_with_auto_ack(auto_ack_on_send: bool) -> Self {
         Self {
-            handle_message: None,
+            handle_message: Mutex::new(None),
             sent_packets: Arc::new(Mutex::new(vec![])),
             auto_ack_on_send,
         }
@@ -48,7 +48,7 @@ fn new_transport_with_sent_packets_and_ack(
 ) {
     let sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let dtls = MockDtls {
-        handle_message: None,
+        handle_message: Mutex::new(None),
         sent_packets: sent_packets.clone(),
         auto_ack_on_send,
     };
@@ -59,11 +59,11 @@ fn new_transport_with_sent_packets_and_ack(
 }
 
 impl Dtls for MockDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> {
+    fn start(&self, _mux: Arc<UdpNetworkMux>) -> DtlsResult<()> {
         Ok(())
     }
 
-    fn stop(&mut self) -> DtlsResult<()> {
+    fn stop(&self) -> DtlsResult<()> {
         Ok(())
     }
 
@@ -79,7 +79,7 @@ impl Dtls for MockDtls {
         if self.auto_ack_on_send && data.len() >= 4 {
             let packet_type = data[0] & 0x0F;
             if packet_type == 0x01 {
-                if let Some(handler) = self.handle_message.clone() {
+                if let Some(handler) = self.handle_message.lock().unwrap().clone() {
                     let ack_complete_packet = vec![0x14, 0x00, data[2], data[3]];
                     handler(self, to, "mock-auto-ack", &ack_complete_packet);
                 }
@@ -90,24 +90,24 @@ impl Dtls for MockDtls {
     }
 
     fn get_handle_message(&self) -> Option<HandleMessage> {
-        self.handle_message.clone()
+        self.handle_message.lock().unwrap().clone()
     }
 
-    fn set_handle_message(&mut self, handler: Option<HandleMessage>) {
-        self.handle_message = handler;
+    fn set_handle_message(&self, handler: Option<HandleMessage>) {
+        *self.handle_message.lock().unwrap() = handler;
     }
 
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
 
-    fn with_handle_message(mut self, handler: HandleMessage) -> Self
+    fn with_handle_message(self, handler: HandleMessage) -> Self
     where
         Self: Sized,
     {
-        self.handle_message = Some(handler);
+        *self.handle_message.lock().unwrap() = Some(handler);
         self
     }
 
@@ -115,7 +115,7 @@ impl Dtls for MockDtls {
         None
     }
 
-    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
 
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
@@ -128,7 +128,7 @@ impl Dtls for MockDtls {
         None
     }
 
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
 
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
@@ -141,7 +141,7 @@ impl Dtls for MockDtls {
         None
     }
 
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
 
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
@@ -154,7 +154,7 @@ impl Dtls for MockDtls {
         None
     }
 
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
 
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
@@ -167,7 +167,7 @@ impl Dtls for MockDtls {
         None
     }
 
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
 
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
@@ -180,7 +180,7 @@ impl Dtls for MockDtls {
         None
     }
 
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
 
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
@@ -189,7 +189,7 @@ impl Dtls for MockDtls {
         self
     }
 
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
 
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
@@ -198,7 +198,7 @@ impl Dtls for MockDtls {
         self
     }
 
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
 
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
@@ -207,7 +207,7 @@ impl Dtls for MockDtls {
         self
     }
 
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -223,7 +223,7 @@ impl Dtls for MockDtls {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn new_installs_dtls_handler_that_uses_transport_handler() {
-    let mut transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
+    let transport = DtlsReliablePacketTransport::new(Box::new(MockDtls::new()), 1492);
 
     let calls: Arc<Mutex<Vec<(String, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();
@@ -342,7 +342,7 @@ pub fn send_rejects_payload_that_requires_fragmentation() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_waits_for_ack_complete_before_returning() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    let (transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_retry_delays(vec![
         Duration::from_millis(300),
         Duration::from_millis(600),
@@ -393,7 +393,7 @@ pub fn send_waits_for_ack_complete_before_returning() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_succeeds_when_ack_arrives_after_first_retry() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    let (transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_retry_delays(vec![
         Duration::from_millis(30),
         Duration::from_millis(300),
@@ -455,7 +455,7 @@ pub fn send_succeeds_when_ack_arrives_after_first_retry() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
+    let (transport, sent_packets) = new_transport_with_sent_packets_and_ack(1492, false);
     transport.set_retry_delays(vec![
         Duration::from_millis(20),
         Duration::from_millis(20),
@@ -503,7 +503,7 @@ pub fn send_fails_after_all_retries_exhausted_with_no_ack() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets(1492);
+    let (transport, sent_packets) = new_transport_with_sent_packets(1492);
 
     let delivered_payloads: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let delivered_payloads_clone = delivered_payloads.clone();
@@ -547,7 +547,7 @@ pub fn data_single_dispatch_acks_and_suppresses_duplicate_delivery() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn ack_complete_is_consumed_and_not_forwarded_to_handler() {
-    let (mut transport, sent_packets) = new_transport_with_sent_packets(1492);
+    let (transport, sent_packets) = new_transport_with_sent_packets(1492);
 
     let calls: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(vec![]));
     let calls_clone = calls.clone();

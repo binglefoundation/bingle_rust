@@ -26,10 +26,10 @@ use crate::util::reusable_mock_api::{InnerBingleApi, InnerBingleApiInternal, Moc
 struct NullDtls;
 
 impl Dtls for NullDtls {
-    fn start(&mut self, _mux: Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
+    fn start(&self, _mux: Arc<UdpNetworkMux>) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
-    fn stop(&mut self) -> bingle_core::dtls::Result<()> {
+    fn stop(&self) -> bingle_core::dtls::Result<()> {
         Ok(())
     }
     fn send(&self, _to: &NetworkEndpoint, _data: &[u8]) -> bingle_core::dtls::Result<()> {
@@ -38,9 +38,9 @@ impl Dtls for NullDtls {
     fn get_handle_message(&self) -> Option<HandleMessage> {
         None
     }
-    fn set_handle_message(&mut self, _handler: Option<HandleMessage>) {}
+    fn set_handle_message(&self, _handler: Option<HandleMessage>) {}
     fn set_handle_new_session(
-        &mut self,
+        &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
     }
@@ -53,7 +53,7 @@ impl Dtls for NullDtls {
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
         None
     }
-    fn set_handle_peer_certificate(&mut self, _handler: Option<HandlePeerCertificate>) {}
+    fn set_handle_peer_certificate(&self, _handler: Option<HandlePeerCertificate>) {}
     fn with_handle_peer_certificate(self, _handler: HandlePeerCertificate) -> Self
     where
         Self: Sized,
@@ -63,7 +63,7 @@ impl Dtls for NullDtls {
     fn get_ca_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_ca_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_ca_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_ca_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -73,7 +73,7 @@ impl Dtls for NullDtls {
     fn get_client_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -83,7 +83,7 @@ impl Dtls for NullDtls {
     fn get_client_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_client_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_client_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_client_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -93,7 +93,7 @@ impl Dtls for NullDtls {
     fn get_server_signing_cert(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_cert(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_cert(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_cert(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
@@ -103,28 +103,28 @@ impl Dtls for NullDtls {
     fn get_server_signing_private_key(&self) -> Option<&[u8]> {
         None
     }
-    fn set_server_signing_private_key(&mut self, _pem: Option<Vec<u8>>) {}
+    fn set_server_signing_private_key(&self, _pem: Option<Vec<u8>>) {}
     fn with_server_signing_private_key(self, _pem: Vec<u8>) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_app_layer_only_verification(&mut self, _enabled: bool) {}
+    fn set_app_layer_only_verification(&self, _enabled: bool) {}
     fn with_app_layer_only_verification(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_dangerous_debug(&mut self, _enabled: bool) {}
+    fn set_dangerous_debug(&self, _enabled: bool) {}
     fn with_dangerous_debug(self, _enabled: bool) -> Self
     where
         Self: Sized,
     {
         self
     }
-    fn set_null_encryption(&mut self, _enabled: bool) {}
+    fn set_null_encryption(&self, _enabled: bool) {}
     fn with_null_encryption(self, _enabled: bool) -> Self
     where
         Self: Sized,
@@ -180,7 +180,7 @@ fn build_engine() -> Engine {
     let mock_api = MockApiBoth::new_with_both_overrides(inner_api, Arc::new(RegisteringInternal));
     let api_weak = crate::util::reusable_mock_api::to_weak_api_both(mock_api);
 
-    let mut eng = Engine::new_with_dtls(
+    let eng = Engine::new_with_dtls(
         &StartOptions::new("test_keep_alive".into()),
         api_weak.clone(),
         Box::new(NullDtls),
@@ -199,7 +199,7 @@ fn relay_info(id: &str, addr: SocketAddr) -> RelayInfo {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn registration_starts_keep_alive_with_relay_target() {
-    let mut eng = build_engine();
+    let eng = build_engine();
     assert_eq!(eng.relay_keep_alive_target_for_tests(), None);
 
     let addr: SocketAddr = "127.0.0.1:19911".parse().unwrap();
@@ -217,7 +217,7 @@ pub fn registration_starts_keep_alive_with_relay_target() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn re_registration_replaces_keep_alive_target() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr_a: SocketAddr = "127.0.0.1:19912".parse().unwrap();
     let addr_b: SocketAddr = "127.0.0.1:19913".parse().unwrap();
@@ -236,7 +236,7 @@ pub fn re_registration_replaces_keep_alive_target() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stun_none_stops_keep_alive() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr: SocketAddr = "127.0.0.1:19914".parse().unwrap();
     eng.test_register_with_relay_direct(relay_info("relay_a", addr));
@@ -257,7 +257,7 @@ pub fn stun_none_stops_keep_alive() {
 pub fn engine_stop_stops_keep_alive() {
     crate::util::test_util::init_test_logging();
 
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let addr: SocketAddr = "127.0.0.1:19915".parse().unwrap();
     eng.test_register_with_relay_direct(relay_info("relay_a", addr));
@@ -290,7 +290,7 @@ pub fn engine_stop_stops_keep_alive() {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn stun_port_change_after_register_reconnects_relay() {
-    let mut eng = build_engine();
+    let eng = build_engine();
 
     let port_p: SocketAddr = "203.0.113.7:1111".parse().unwrap();
     let port_q: SocketAddr = "203.0.113.7:2222".parse().unwrap();

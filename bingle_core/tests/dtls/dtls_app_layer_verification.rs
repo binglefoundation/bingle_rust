@@ -38,7 +38,7 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_clone = delivered.clone();
 
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_dangerous_debug(true)
         .with_null_encryption()
         .with_server_signing_cert(certs.server_crt.clone())
@@ -56,7 +56,7 @@ pub fn dtls_app_layer_verification_reject_blocks_delivery_but_handshake_succeeds
     // Start client mux and DTLS with app-layer-only verification, configured with a client cert/key.
     let cmux0 = bingle_core::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
     let cmux = Arc::new(cmux0);
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_dangerous_debug(true)
         .with_null_encryption()
         .with_client_cert(certs.client_crt.clone())
@@ -104,7 +104,7 @@ pub fn dtls_app_layer_verification_accept_all_delivers_application_data() {
     let delivered = Arc::new(AtomicBool::new(false));
     let delivered_clone = delivered.clone();
 
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         .with_null_encryption()
         .with_server_signing_cert(certs.server_crt.clone())
         .with_server_signing_private_key(certs.server_key.clone())
@@ -121,7 +121,7 @@ pub fn dtls_app_layer_verification_accept_all_delivers_application_data() {
     // Start client
     let cmux0 = bingle_core::dtls::UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux");
     let cmux = Arc::new(cmux0);
-    let mut client = DtlsOpenSsl::new("client".to_string())
+    let client = DtlsOpenSsl::new("client".to_string())
         .with_null_encryption()
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())

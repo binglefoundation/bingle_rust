@@ -66,7 +66,7 @@ pub fn dtls_client_reconnect() {
     let mux_srv = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind server mux"));
     let addr_srv = mux_srv.local_addr().expect("server addr");
 
-    let mut server = DtlsOpenSsl::new("server".to_string())
+    let server = DtlsOpenSsl::new("server".to_string())
         // .with_null_encryption()
         .with_handle_message(Arc::new(server_handler_2))
         .with_server_signing_cert(certs.server_crt.clone())
@@ -90,7 +90,7 @@ pub fn dtls_client_reconnect() {
     );
 
     let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 1 mux"));
-    let mut client1 = DtlsOpenSsl::new("client1".to_string())
+    let client1 = DtlsOpenSsl::new("client1".to_string())
         //  .with_null_encryption()
         .with_handle_message(Arc::new(client_handler_2))
         .with_client_cert(certs.client_crt.clone())
@@ -127,7 +127,7 @@ pub fn dtls_client_reconnect() {
     }
 
     let mux_cli2 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 2 mux"));
-    let mut client2 = DtlsOpenSsl::new("client2".to_string())
+    let client2 = DtlsOpenSsl::new("client2".to_string())
         .with_null_encryption()
         .with_handle_message(Arc::new(client_handler_2))
         .with_client_cert(certs.client_crt.clone())

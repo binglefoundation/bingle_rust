@@ -44,7 +44,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
     let received_clone = received.clone();
 
-    let mut dtls_server = DtlsOpenSsl::new("server".to_string())
+    let dtls_server = DtlsOpenSsl::new("server".to_string())
         .with_dangerous_debug(true)
         .with_server_signing_cert(server_cert_pem.clone())
         .with_server_signing_private_key(server_key_pem.clone())
@@ -204,7 +204,7 @@ pub fn dtls_send_via_relay_end_to_end() {
     let captured_channel: Arc<Mutex<Option<u16>>> = Arc::new(Mutex::new(None));
     let captured_channel_clone = captured_channel.clone();
 
-    let mut dtls_client = DtlsOpenSsl::new("client".to_string())
+    let dtls_client = DtlsOpenSsl::new("client".to_string())
         .with_dangerous_debug(true)
         .with_server_signing_cert(server_cert_pem2.clone())
         .with_server_signing_private_key(server_key_pem2.clone())
