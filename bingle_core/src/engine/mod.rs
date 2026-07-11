@@ -28,6 +28,11 @@ use uuid::Uuid;
 pub const MINIMUM_MTU: usize = 1492;
 /// How long to suppress sends to a peer that recently failed.
 pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
+/// If relay registration is still pending (TrianglePing or NATRestricted) this long after the
+/// last attempt, a subsequent STUN-consistent event re-drives it (re-sends TriangleTest1, which
+/// leads to a fresh Listen). This lets a lost triangle/Listen packet self-heal instead of
+/// stranding the node — the registration path is otherwise one-shot with no retry.
+pub const REGISTER_WATCHDOG: Duration = Duration::from_secs(30);
 
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(finder: &dyn RelayFinderTrait, my_id: &str) -> (usize, usize) {
@@ -184,6 +189,9 @@ pub struct Engine {
     // mapping without a full re-discovery.
     last_registered_relay: Mutex<Option<RelayInfo>>,
     triangle_wait: Mutex<Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>>, // wait for TriangleTest3
+    // Timestamp of the most recent relay-registration attempt (entering TrianglePing). Consulted
+    // by the registration watchdog to re-drive a stuck attempt. See REGISTER_WATCHDOG.
+    register_attempt_at: Mutex<Option<Instant>>,
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Mutex<
         Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
@@ -560,6 +568,7 @@ impl Engine {
             relay_finder: Mutex::new(None),
             last_registered_relay: Mutex::new(None),
             triangle_wait: Mutex::new(None),
+            register_attempt_at: Mutex::new(None),
             send_via_bingle: Mutex::new(None),
             bingle_api: api.clone(),
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
@@ -1888,14 +1897,39 @@ impl Engine {
             return;
         }
 
-        // Transition to TrianglePing and perform relay triangle test
+        // Transition to TrianglePing and perform the relay triangle test.
+        //
+        // The triangle handshake is one-shot: if we've begun it (raw state TrianglePing) we
+        // normally don't re-run it. But if it's still genuinely pending (derived state is still
+        // TrianglePing — not progressed to NATRestricted/EndpointAvailable/Registered) and has been
+        // for longer than REGISTER_WATCHDOG, a subsequent STUN-consistent event re-drives it
+        // (re-sends TriangleTest1) so a relay that failed to answer the first TriangleTest1 can
+        // self-heal instead of leaving us stranded.
         if self.state_field() == EngineState::TrianglePing {
-            tracing::info!("[Engine] already in TrianglePing");
-            return;
+            let stuck = self.state() == EngineState::TrianglePing;
+            let stale = self
+                .register_attempt_at
+                .lock()
+                .unwrap()
+                .map(|t| t.elapsed() >= REGISTER_WATCHDOG)
+                .unwrap_or(false);
+            if !stuck || !stale {
+                tracing::info!(
+                    "[Engine] triangle test in progress (stuck={}, stale={}); not re-driving",
+                    stuck,
+                    stale
+                );
+                return;
+            }
+            tracing::warn!(
+                "[Engine] triangle test pending > {:?}; re-driving TriangleTest1",
+                REGISTER_WATCHDOG
+            );
         }
 
         let prev = self.state_field();
         self.set_state_field(EngineState::TrianglePing);
+        *self.register_attempt_at.lock().unwrap() = Some(Instant::now());
         tracing::info!("[Engine] state change: {:?} -> TrianglePing", prev);
         #[allow(unused)]
         {}
