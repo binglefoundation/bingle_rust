@@ -9,10 +9,9 @@
 
 # Ignore generated DAPP artifcats
 /dapp_projects/smart_contracts/artifacts/
-# Ignore generated DAPP artifacts anywhere under the dapp tree
-dapp/**/artifacts/
-# Ignore python byte-code caches under the dapp tree
-dapp/**/__pycache__/
+# Ignore the local algokit dapp workspace (stale duplicate of dapp_projects;
+# algokit may recreate it) so it never re-enters git
+/dapp/
 
 .junie
 /bingle_webserver/ts-client/
