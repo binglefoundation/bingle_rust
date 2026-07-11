@@ -1,5 +1,7 @@
 /target
 /tmp
+# Any nested tmp scratch dir (e.g. tests run with a subdir as the cwd)
+**/tmp/
 /.claude/worktrees/
 
 # Ignore generated spec artifacts
@@ -7,6 +9,10 @@
 
 # Ignore generated DAPP artifcats
 /dapp_projects/smart_contracts/artifacts/
+# Ignore generated DAPP artifacts anywhere under the dapp tree
+dapp/**/artifacts/
+# Ignore python byte-code caches under the dapp tree
+dapp/**/__pycache__/
 
 .junie
 /bingle_webserver/ts-client/
