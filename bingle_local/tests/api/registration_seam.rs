@@ -1,0 +1,163 @@
+//! Unit tests for the on-chain registration seam (issue #15, A4).
+//!
+//! These exercise `run_registration` against a recording mock — no localnet required —
+//! pinning the current call order and the short-circuit-on-failure behaviour. Later steps
+//! (A1 fail-fast pre-check, A2 idempotent opt-ins) extend these tests on the same seam.
+
+use std::cell::RefCell;
+
+use bingle_core::api::bingle_api::BingleError;
+use bingle_local::api::{RegistrationOps, run_registration};
+
+/// Which step, if any, the mock should fail at.
+#[derive(Clone, Copy, PartialEq)]
+enum FailAt {
+    None,
+    OptInApp,
+    OptInAsset,
+    Price,
+    Buy,
+    Register,
+}
+
+struct RecordingOps {
+    calls: RefCell<Vec<String>>,
+    handle_owner: Option<String>,
+    self_addr: String,
+    price: u64,
+    fail_at: FailAt,
+}
+
+impl RecordingOps {
+    fn new() -> Self {
+        RecordingOps {
+            calls: RefCell::new(Vec::new()),
+            handle_owner: None,
+            self_addr: "SELF_ADDR".to_string(),
+            price: 1000,
+            fail_at: FailAt::None,
+        }
+    }
+
+    fn failing_at(fail_at: FailAt) -> Self {
+        let mut ops = RecordingOps::new();
+        ops.fail_at = fail_at;
+        ops
+    }
+
+    fn record(&self, call: impl Into<String>) {
+        self.calls.borrow_mut().push(call.into());
+    }
+
+    fn err(step: &str) -> BingleError {
+        BingleError::Other(format!("{} failed", step))
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.borrow().clone()
+    }
+}
+
+impl RegistrationOps for RecordingOps {
+    fn self_address(&self) -> Result<String, BingleError> {
+        self.record("self_address");
+        Ok(self.self_addr.clone())
+    }
+
+    fn handle_lookup(&self, _handle: &str) -> Result<Option<String>, BingleError> {
+        self.record("handle_lookup");
+        Ok(self.handle_owner.clone())
+    }
+
+    fn opt_in_app(&self) -> Result<(), BingleError> {
+        self.record("opt_in_app");
+        if self.fail_at == FailAt::OptInApp {
+            return Err(Self::err("opt_in_app"));
+        }
+        Ok(())
+    }
+
+    fn opt_in_to_asset(&self) -> Result<(), BingleError> {
+        self.record("opt_in_to_asset");
+        if self.fail_at == FailAt::OptInAsset {
+            return Err(Self::err("opt_in_to_asset"));
+        }
+        Ok(())
+    }
+
+    fn get_bingle_price(&self) -> Result<u64, BingleError> {
+        self.record("get_bingle_price");
+        if self.fail_at == FailAt::Price {
+            return Err(Self::err("get_bingle_price"));
+        }
+        Ok(self.price)
+    }
+
+    fn buy_bingle(&self, price_microalgos: u64) -> Result<(), BingleError> {
+        self.record(format!("buy_bingle({})", price_microalgos));
+        if self.fail_at == FailAt::Buy {
+            return Err(Self::err("buy_bingle"));
+        }
+        Ok(())
+    }
+
+    fn register(&self, handle: &str) -> Result<(), BingleError> {
+        self.record(format!("register({})", handle));
+        if self.fail_at == FailAt::Register {
+            return Err(Self::err("register"));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn run_registration_drives_the_chain_in_order() {
+    let ops = RecordingOps::new();
+    run_registration(&ops, "alice").expect("registration should succeed");
+    assert_eq!(
+        ops.calls(),
+        vec![
+            "opt_in_app".to_string(),
+            "opt_in_to_asset".to_string(),
+            "get_bingle_price".to_string(),
+            "buy_bingle(1000)".to_string(),
+            "register(alice)".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn run_registration_stops_at_first_opt_in_failure() {
+    let ops = RecordingOps::failing_at(FailAt::OptInApp);
+    let err = run_registration(&ops, "alice").expect_err("should fail");
+    assert!(err.to_string().contains("opt_in_app"));
+    // Nothing after opt_in_app should have been attempted.
+    assert_eq!(ops.calls(), vec!["opt_in_app".to_string()]);
+}
+
+#[test]
+fn run_registration_stops_before_register_when_buy_fails() {
+    let ops = RecordingOps::failing_at(FailAt::Buy);
+    let err = run_registration(&ops, "alice").expect_err("should fail");
+    assert!(err.to_string().contains("buy_bingle"));
+    // register must never run once buy fails.
+    assert_eq!(
+        ops.calls(),
+        vec![
+            "opt_in_app".to_string(),
+            "opt_in_to_asset".to_string(),
+            "get_bingle_price".to_string(),
+            "buy_bingle(1000)".to_string(),
+        ]
+    );
+    assert!(!ops.calls().iter().any(|c| c.starts_with("register")));
+}
+
+#[test]
+fn run_registration_surfaces_register_failure() {
+    let ops = RecordingOps::failing_at(FailAt::Register);
+    let err = run_registration(&ops, "bob").expect_err("should fail");
+    assert!(err.to_string().contains("register"));
+    // The whole chain ran; register was reached and failed.
+    assert_eq!(ops.calls().last().map(String::as_str), Some("register(bob)"));
+}

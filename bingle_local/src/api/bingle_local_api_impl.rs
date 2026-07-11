@@ -1,5 +1,6 @@
 use crate::api::{
-    BingleLocalApi, Contact, ContactSource, Keypair, KeypairStatus, Message, REQUIRED_ALGO,
+    BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
+    REQUIRED_ALGO, run_registration,
 };
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
@@ -116,69 +117,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
-        // Execute on-chain steps
-        if let Err(e) = ops.opt_in_app(app_id) {
-            tracing::error!(
-                "[register_keypair] Failed to opt in to app {}: {}",
-                app_id,
-                e
-            );
-            return Err(BingleError::from_anyhow(e));
-        }
-        if let Err(e) = ops.opt_in_to_asset(asset_id) {
-            tracing::error!(
-                "[register_keypair] Failed to opt in to asset {}: {}",
-                asset_id,
-                e
-            );
-            return Err(BingleError::from_anyhow(e));
-        }
-
-        // Create AlgoBingle helper and perform buy + register
-        let bgl = AlgoBingle::new(ops.clone(), app_id, asset_id);
-        // Determine current price and buy 1 unit
-        let price = match bgl.get_bingle_price(app_id) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(
-                    "[register_keypair] Failed to get Bingle price for app {}: {}",
-                    app_id,
-                    e
-                );
-                return Err(BingleError::from_anyhow(e));
-            }
-        };
-        match bgl.buy_bingle(app_id, asset_id, price) {
-            Ok(tx) => {
-                let _ = tx;
-            }
-            Err(e) => {
-                tracing::error!(
-                    "[register_keypair] Failed to buy Bingle (app={}, asset={}, price={}): {}",
-                    app_id,
-                    asset_id,
-                    price,
-                    e
-                );
-                return Err(BingleError::from_anyhow(e));
-            }
-        }
-        match bgl.register(app_id, asset_id, &handle, 1) {
-            Ok(tx) => {
-                let _ = tx;
-            }
-            Err(e) => {
-                // This is a user action, they need to choose an unused handle probably
-                tracing::info!(
-                    "[register_keypair] Failed to register handle '{}' (app={}, asset={}): {}",
-                    handle,
-                    app_id,
-                    asset_id,
-                    e
-                );
-                return Err(BingleError::from_anyhow(e));
-            }
-        }
+        // Drive the on-chain steps through the registration seam so the sequence is
+        // unit-testable (issue #15, A4). Behaviour is unchanged from the previous inline
+        // opt-in/buy/register flow.
+        let chain_ops = ChainRegistrationOps::new(ops, app_id, asset_id);
+        run_registration(&chain_ops, &handle)?;
         tracing::info!(
             "[BingleLocalApi] Keypair registered successfully with handle: {}",
             handle
