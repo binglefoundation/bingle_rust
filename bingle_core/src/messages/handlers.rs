@@ -573,6 +573,14 @@ pub trait MessageHandler {
             warn!("[handlers::on_relay_listen] Not a relay: ignoring Listen request");
             return;
         }
+        // Test hook: deterministically drop the first N Listens (no response) to exercise the
+        // client-side Listen retry. Always false in production.
+        if api.test_take_listen_drop() {
+            warn!(
+                "[handlers::on_relay_listen] test hook: dropping Listen (no response) to force client retry"
+            );
+            return;
+        }
         // Source address must be known from DTLS/mux layer
         let src = match router.get_last_from() {
             Some(a) => a,
@@ -1875,40 +1883,63 @@ impl DefaultPrintingHandler {
                 }
             };
 
-            // Send Relay::Listen and expect Relay::ListenResponse
-            let listen = RelayListen {
-                app: None,
-                tag: None,
-            };
-            let msg = Message::Relay(RelayMessage::Listen(listen));
-            let json = crate::messages::marshal::to_json_value(&msg);
+            // Send Relay::Listen and expect Relay::ListenResponse. Retry a bounded number of times
+            // so a transient relay non-response (e.g. relay momentarily busy) doesn't permanently
+            // strand us in NATRestricted — the registration path is otherwise one-shot. The
+            // per-attempt timeout is the API's response timeout (short in tests via
+            // wait_response_timeout, generous in production).
             let nsk = crate::api::bingle_api::NetworkEndpoint::new_direct(relay_info.address());
             let uid = relay_info.id().to_string();
-            match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
-                Ok(resp) => {
-                    let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                    if !ty_ok {
-                        warn!(
-                            "[on_triangle_test1_response] unexpected response to Listen: {}",
-                            resp
-                        );
-                        return;
-                    }
+            const LISTEN_ATTEMPTS: usize = 3;
+            let mut listen_ok = false;
+            for attempt in 1..=LISTEN_ATTEMPTS {
+                let listen = RelayListen {
+                    app: None,
+                    tag: None,
+                };
+                let json =
+                    crate::messages::marshal::to_json_value(&Message::Relay(RelayMessage::Listen(
+                        listen,
+                    )));
+                match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                    Ok(resp) => {
+                        let ty_ok =
+                            resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                        if !ty_ok {
+                            warn!(
+                                "[on_triangle_test1_response] unexpected response to Listen: {}",
+                                resp
+                            );
+                            return;
+                        }
 
-                    // Register the relay listener mapping via the internal API (engine turn_handler)
-                    tracing::info!(
-                        "[on_triangle_test1_response] Relay ListenResponse {:?} received; registering relay listener",
-                        resp
-                    );
-                    api_for_thread.turn_client_handle_listen_response(
-                        relay_info.address(),
-                        relay_info.id().to_string(),
-                    );
+                        // Register the relay listener mapping via the internal API (engine turn_handler)
+                        tracing::info!(
+                            "[on_triangle_test1_response] Relay ListenResponse {:?} received (attempt {}); registering relay listener",
+                            resp,
+                            attempt
+                        );
+                        api_for_thread.turn_client_handle_listen_response(
+                            relay_info.address(),
+                            relay_info.id().to_string(),
+                        );
+                        listen_ok = true;
+                        break;
+                    }
+                    Err(e) => {
+                        warn!(
+                            "[on_triangle_test1_response] Listen attempt {}/{} failed: {}",
+                            attempt, LISTEN_ATTEMPTS, e
+                        );
+                        if attempt < LISTEN_ATTEMPTS {
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                        }
+                    }
                 }
-                Err(e) => {
-                    warn!("[on_triangle_test1_response] Listen request failed: {}", e);
-                    return;
-                }
+            }
+            if !listen_ok {
+                warn!("[on_triangle_test1_response] Listen failed after {LISTEN_ATTEMPTS} attempts");
+                return;
             }
 
             // Register relay association in DDB and mark registered

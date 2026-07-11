@@ -175,6 +175,12 @@ pub trait BingleApiInternal: Send + Sync {
     /// self-referential `Weak<Engine>` is required.
     fn with_engine(&self, _f: &mut dyn FnMut(&crate::engine::Engine)) {}
 
+    /// Test hook: if this relay has been armed to drop a Listen (see Engine::arm_listen_drops),
+    /// consume one and return true so the handler ignores it. Always false in production.
+    fn test_take_listen_drop(&self) -> bool {
+        false
+    }
+
     /// Returns true if this node is configured as a relay.
     fn is_relay(&self) -> bool {
         false

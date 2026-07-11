@@ -423,6 +423,57 @@ pub fn wait_for_relay_available(api: &Arc<BingleApiImpl>, timeout: Duration) -> 
     false
 }
 
+/// Best-effort count of live OS threads in the current test process.
+/// macOS: `proc_pidinfo(PROC_PIDTASKINFO).pti_threadnum`; Linux: `/proc/self/task` entries.
+/// Returns None on unsupported platforms.
+#[allow(dead_code)]
+pub fn process_thread_count() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        return std::fs::read_dir("/proc/self/task").ok().map(|d| d.count());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: proc_pidinfo fills a proc_taskinfo we own; we check the returned size.
+        unsafe {
+            let mut info: libc::proc_taskinfo = std::mem::zeroed();
+            let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
+            let got = libc::proc_pidinfo(
+                std::process::id() as libc::c_int,
+                libc::PROC_PIDTASKINFO,
+                0,
+                &mut info as *mut _ as *mut libc::c_void,
+                size,
+            );
+            if got == size {
+                return Some(info.pti_threadnum as usize);
+            }
+            return None;
+        }
+    }
+    #[allow(unreachable_code)]
+    {
+        None
+    }
+}
+
+/// Poll until the thread count falls back to `baseline + tolerance` or the deadline passes.
+/// Returns the final observed count. Used after node teardown to confirm worker threads exit
+/// rather than leaking across sequential tests.
+#[allow(dead_code)]
+pub fn wait_for_thread_drain(baseline: usize, tolerance: usize, timeout: Duration) -> usize {
+    let start = Instant::now();
+    let mut last = process_thread_count().unwrap_or(0);
+    while start.elapsed() < timeout {
+        last = process_thread_count().unwrap_or(last);
+        if last <= baseline + tolerance {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    last
+}
+
 #[allow(dead_code)]
 pub fn get_compact_advert_record(
     ops: &AlgoOps,

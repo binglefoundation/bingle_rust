@@ -28,6 +28,11 @@ use uuid::Uuid;
 pub const MINIMUM_MTU: usize = 1492;
 /// How long to suppress sends to a peer that recently failed.
 pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
+/// If relay registration is still pending (TrianglePing or NATRestricted) this long after the
+/// last attempt, a subsequent STUN-consistent event re-drives it (re-sends TriangleTest1, which
+/// leads to a fresh Listen). This lets a lost triangle/Listen packet self-heal instead of
+/// stranding the node — the registration path is otherwise one-shot with no retry.
+pub const REGISTER_WATCHDOG: Duration = Duration::from_secs(30);
 
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(finder: &dyn RelayFinderTrait, my_id: &str) -> (usize, usize) {
@@ -184,6 +189,9 @@ pub struct Engine {
     // mapping without a full re-discovery.
     last_registered_relay: Mutex<Option<RelayInfo>>,
     triangle_wait: Mutex<Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>>, // wait for TriangleTest3
+    // Timestamp of the most recent relay-registration attempt (entering TrianglePing). Consulted
+    // by the registration watchdog to re-drive a stuck attempt. See REGISTER_WATCHDOG.
+    register_attempt_at: Mutex<Option<Instant>>,
     // Callback to send messages via the Bingle protocol (API surface) instead of direct DTLS
     send_via_bingle: Mutex<
         Option<Arc<dyn Fn(&NetworkEndpoint, &UserId, serde_json::Value) -> bool + Send + Sync>>,
@@ -231,6 +239,9 @@ pub struct Engine {
     span: Mutex<tracing::Span>,
     // Optional custom message handler for tests: replaces DefaultPrintingHandler when set
     custom_message_handler: Mutex<Option<Arc<dyn MessageHandler + Send + Sync>>>,
+    // Test-only: number of incoming relay Listen requests to drop (ignore) before responding, used
+    // to deterministically force the client-side Listen retry. Always 0 in production.
+    test_listen_drops: std::sync::atomic::AtomicUsize,
     // Periodic keep-alive towards our registered relay, refreshing the NAT mapping
     // (Mutex so it can be started/stopped through &self from the API wrappers)
     relay_keep_alive: Mutex<Option<crate::relay::relay_keep_alive::RelayKeepAliveSender>>,
@@ -560,6 +571,7 @@ impl Engine {
             relay_finder: Mutex::new(None),
             last_registered_relay: Mutex::new(None),
             triangle_wait: Mutex::new(None),
+            register_attempt_at: Mutex::new(None),
             send_via_bingle: Mutex::new(None),
             bingle_api: api.clone(),
             endpoint_ready: std::sync::atomic::AtomicBool::new(false),
@@ -593,6 +605,7 @@ impl Engine {
             endpoint_status: Arc::new(Mutex::new(HashMap::new())),
             span: Mutex::new(tracing::Span::none()),
             custom_message_handler: Mutex::new(None),
+            test_listen_drops: std::sync::atomic::AtomicUsize::new(0),
             relay_keep_alive: Mutex::new(None),
             relay_keep_alive_interval: Mutex::new(crate::relay::relay_keep_alive::RELAY_KEEP_ALIVE_INTERVAL),
         };
@@ -654,6 +667,25 @@ impl Engine {
     /// during routing in `install_dtls_handler`.  Must be called before `install_dtls_handler`.
     pub fn set_custom_message_handler(&self, handler: Arc<dyn MessageHandler + Send + Sync>) {
         *self.custom_message_handler.lock().unwrap() = Some(handler);
+    }
+
+    /// Test helper: arm the relay to drop (ignore) the next `n` incoming Listen requests, forcing
+    /// the client-side Listen retry to be exercised.
+    pub fn arm_listen_drops(&self, n: usize) {
+        self.test_listen_drops
+            .store(n, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Test hook: if a Listen drop is armed, consume one and return true (caller should drop the
+    /// Listen without responding). Returns false in production (never armed).
+    pub fn test_take_listen_drop(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        // Decrement only while > 0, without underflowing.
+        self.test_listen_drops
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                if v > 0 { Some(v - 1) } else { None }
+            })
+            .is_ok()
     }
 
     /// Test helper: get the local UDP bind address of the mux, if started.
@@ -1888,14 +1920,39 @@ impl Engine {
             return;
         }
 
-        // Transition to TrianglePing and perform relay triangle test
+        // Transition to TrianglePing and perform the relay triangle test.
+        //
+        // The triangle handshake is one-shot: if we've begun it (raw state TrianglePing) we
+        // normally don't re-run it. But if it's still genuinely pending (derived state is still
+        // TrianglePing — not progressed to NATRestricted/EndpointAvailable/Registered) and has been
+        // for longer than REGISTER_WATCHDOG, a subsequent STUN-consistent event re-drives it
+        // (re-sends TriangleTest1) so a relay that failed to answer the first TriangleTest1 can
+        // self-heal instead of leaving us stranded.
         if self.state_field() == EngineState::TrianglePing {
-            tracing::info!("[Engine] already in TrianglePing");
-            return;
+            let stuck = self.state() == EngineState::TrianglePing;
+            let stale = self
+                .register_attempt_at
+                .lock()
+                .unwrap()
+                .map(|t| t.elapsed() >= REGISTER_WATCHDOG)
+                .unwrap_or(false);
+            if !stuck || !stale {
+                tracing::info!(
+                    "[Engine] triangle test in progress (stuck={}, stale={}); not re-driving",
+                    stuck,
+                    stale
+                );
+                return;
+            }
+            tracing::warn!(
+                "[Engine] triangle test pending > {:?}; re-driving TriangleTest1",
+                REGISTER_WATCHDOG
+            );
         }
 
         let prev = self.state_field();
         self.set_state_field(EngineState::TrianglePing);
+        *self.register_attempt_at.lock().unwrap() = Some(Instant::now());
         tracing::info!("[Engine] state change: {:?} -> TrianglePing", prev);
         #[allow(unused)]
         {}
@@ -2146,37 +2203,62 @@ impl Engine {
             }
         };
 
-        // Send Relay::Listen and expect a ListenResponse.
-        let listen = crate::messages::types::RelayListen {
-            app: None,
-            tag: None,
-        };
-        let msg = Message::Relay(RelayMessage::Listen(listen));
-        let json = crate::messages::marshal::to_json_value(&msg);
+        // Send Relay::Listen and expect a ListenResponse. Retry a bounded number of times so a
+        // transient relay non-response doesn't strand us in NATRestricted (registration is
+        // otherwise one-shot). Mirrors the retry in handlers::post_triangle_relay_register.
         let nsk = NetworkEndpoint::new_direct(relay_info.address());
         let uid = relay_info.id().to_string();
-        match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
-            Ok(resp) => {
-                let ty_ok = resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
-                if !ty_ok {
-                    tracing::warn!(
-                        "[Engine::register_with_relay] unexpected response to Listen: {}",
-                        resp
+        const LISTEN_ATTEMPTS: usize = 3;
+        let mut listen_ok = false;
+        for attempt in 1..=LISTEN_ATTEMPTS {
+            let listen = crate::messages::types::RelayListen {
+                app: None,
+                tag: None,
+            };
+            let json = crate::messages::marshal::to_json_value(&Message::Relay(
+                RelayMessage::Listen(listen),
+            ));
+            match api.send_message_to_network_with_response(&nsk, &uid, json, None) {
+                Ok(resp) => {
+                    let ty_ok =
+                        resp.get("type").and_then(|v| v.as_str()) == Some("ListenResponse");
+                    if !ty_ok {
+                        tracing::warn!(
+                            "[Engine::register_with_relay] unexpected response to Listen: {}",
+                            resp
+                        );
+                        return;
+                    }
+                    tracing::info!(
+                        "[Engine::register_with_relay] Relay ListenResponse received (attempt {}); registering relay listener",
+                        attempt
                     );
-                    return;
+                    api.turn_client_handle_listen_response(
+                        relay_info.address(),
+                        relay_info.id().to_string(),
+                    );
+                    listen_ok = true;
+                    break;
                 }
-                tracing::info!(
-                    "[Engine::register_with_relay] Relay ListenResponse received; registering relay listener"
-                );
-                api.turn_client_handle_listen_response(
-                    relay_info.address(),
-                    relay_info.id().to_string(),
-                );
+                Err(e) => {
+                    tracing::warn!(
+                        "[Engine::register_with_relay] Listen attempt {}/{} failed: {}",
+                        attempt,
+                        LISTEN_ATTEMPTS,
+                        e
+                    );
+                    if attempt < LISTEN_ATTEMPTS {
+                        std::thread::sleep(Duration::from_secs(2));
+                    }
+                }
             }
-            Err(e) => {
-                tracing::warn!("[Engine::register_with_relay] Listen request failed: {}", e);
-                return;
-            }
+        }
+        if !listen_ok {
+            tracing::warn!(
+                "[Engine::register_with_relay] Listen failed after {} attempts",
+                LISTEN_ATTEMPTS
+            );
+            return;
         }
 
         // Register relay association in DDB and mark registered.

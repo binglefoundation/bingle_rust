@@ -602,6 +602,25 @@ pub mod openssl_impl {
         let mut buf = [0u8; 2048];
         let mut logged_wouldblock = false;
 
+        // Reader ownership check: exit when our peer entry has been drained (Dtls::stop) or
+        // superseded by a newer session. Returns true while we should keep reading.
+        let still_owner = || -> bool {
+            match peers.lock() {
+                Ok(m) => m.get(&key_from).map(|ps| ps.generation) == Some(owner_generation),
+                Err(e) => {
+                    // Poisoned peer map (a holder panicked): unusable, so exit the reader rather
+                    // than spin. Logged so it isn't silently swallowed.
+                    tracing::error!(
+                        "[DtlsOpenSsl:{}][read-loop {}] peer_states lock poisoned ({}); exiting reader",
+                        log_tag,
+                        from,
+                        e
+                    );
+                    false
+                }
+            }
+        };
+
         loop {
             let read_res = dtls_async_runtime.block_on(async {
                 match tokio::time::timeout(
@@ -641,6 +660,19 @@ pub mod openssl_impl {
                             from
                         );
                         logged_wouldblock = true;
+                    }
+                    // Only checked on the idle path (no datagram this cycle), so it adds no
+                    // per-datagram overhead. stop() drains the peer map and data ceases, so the
+                    // reader reaches here within ~20ms and exits promptly (then stop() joins it).
+                    if !still_owner() {
+                        info_theme!(
+                            themes::DTLS,
+                            "[DtlsOpenSsl:{}][read-loop {}] peer entry gone/superseded (generation={}); exiting",
+                            log_tag,
+                            from,
+                            owner_generation
+                        );
+                        break;
                     }
                     continue;
                 }
@@ -1252,6 +1284,28 @@ pub mod openssl_impl {
 
     /// OpenSSL-backed DTLS implementation (non-iOS).
 
+    /// Track a per-peer reader thread handle so Dtls::stop can join it. Prunes handles that have
+    /// already finished so the tracking vec stays bounded on a long-lived connection.
+    fn register_reader_thread(
+        reader_threads: &Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
+        handle: std::thread::JoinHandle<()>,
+    ) {
+        match reader_threads.lock() {
+            Ok(mut v) => {
+                v.retain(|h| !h.is_finished());
+                v.push(handle);
+            }
+            Err(e) => {
+                // Non-fatal: the reader still self-terminates when its peer entry is drained; it
+                // just won't be joined by stop(). Log rather than swallow the poisoned lock.
+                tracing::error!(
+                    "[DtlsOpenSsl] reader_threads lock poisoned ({}); reader thread will not be tracked for join",
+                    e
+                );
+            }
+        }
+    }
+
     /// Store a PEM credential into a set-once slot. Credentials are configured exactly once
     /// during startup, so a re-set or a clear (None) is unexpected and logged rather than applied.
     fn set_once_cert(slot: &std::sync::OnceLock<Vec<u8>>, pem: Option<Vec<u8>>, name: &str) {
@@ -1300,6 +1354,10 @@ pub mod openssl_impl {
         pub(crate) acceptor: Mutex<Option<SslAcceptor>>,
         // Combined peer state map: writer and issuer per endpoint
         peer_states: PeerStates,
+        // Per-peer reader thread handles, tracked so stop() can join them (they self-terminate
+        // when their peer entry is drained/superseded — see run_read_loop_split). Shared as an Arc
+        // so the accept-packet handler can register the threads it spawns.
+        reader_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
         // Lifecycle control for accept loop or background tasks
         pub(crate) stop_flag: Mutex<Option<Arc<AtomicBool>>>,
         pub(crate) server_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -1343,6 +1401,7 @@ pub mod openssl_impl {
                 dangerous_debug: AtomicBool::new(false),
                 acceptor: Mutex::new(None),
                 peer_states: peers,
+                reader_threads: Arc::new(Mutex::new(Vec::new())),
                 stop_flag: Mutex::new(None),
                 server_thread: Mutex::new(None),
                 dtls_async_runtime,
@@ -1618,6 +1677,7 @@ pub mod openssl_impl {
             handle_message: Option<HandleMessage>,
             handle_new_session: Option<HandleNewSession>,
             peer_cert_handler: Option<HandlePeerCertificate>,
+            reader_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
             from: &NetworkEndpoint,
             data: &[u8],
             handle: String,
@@ -1811,7 +1871,7 @@ pub mod openssl_impl {
                 let handle_message2 = handle_message.clone();
                 let from2 = from.clone();
                 let handle2 = handle.clone();
-                std::thread::spawn(move || {
+                let accept_handle = std::thread::spawn(move || {
                     run_accept_stream(
                         ssl_stream,
                         dtls_async_runtime,
@@ -1823,6 +1883,7 @@ pub mod openssl_impl {
                         handle2,
                     );
                 });
+                register_reader_thread(&reader_threads, accept_handle);
             }
         }
 
@@ -1858,6 +1919,7 @@ pub mod openssl_impl {
             let handle_new_session = self.handle_new_session.lock().unwrap().clone();
             let peer_cert_handler = *self.handle_peer_certificate.lock().unwrap();
             let handle = self.handle.clone();
+            let reader_threads = self.reader_threads.clone();
             // Connecting peer suppression now tracked per-peer in PeerState.is_connecting_peer
 
             // Install a DTLS packet handler that queues datagrams and sets up per-peer SslStreams on first packet.
@@ -1871,6 +1933,7 @@ pub mod openssl_impl {
                         handle_message.clone(),
                         handle_new_session.clone(),
                         peer_cert_handler,
+                        reader_threads.clone(),
                         from,
                         data,
                         handle.clone(),
@@ -1908,6 +1971,23 @@ pub mod openssl_impl {
                     tracing::info!("[DtlsOpenSsl:::stop] close peer state");
                     close_peer_state(ps);
                 }
+            }
+
+            // Join the per-peer reader threads. Draining the peer map above makes each reader's
+            // ownership check fail on its next (<=20ms) iteration, so these joins are bounded and
+            // teardown is deterministic (no detached readers lingering across tests).
+            let handles: Vec<_> = {
+                match self.reader_threads.lock() {
+                    Ok(mut v) => v.drain(..).collect(),
+                    Err(_) => Vec::new(),
+                }
+            };
+            let joined = handles.len();
+            for h in handles {
+                let _ = h.join();
+            }
+            if joined > 0 {
+                tracing::debug!("[DtlsOpenSsl:::stop] joined {} reader thread(s)", joined);
             }
 
             let _ = self.server_thread.lock().unwrap().take();
@@ -2402,7 +2482,7 @@ pub mod openssl_impl {
                 let peer_cert_handler2 = *self.handle_peer_certificate.lock().unwrap();
                 let from2: NetworkEndpoint = endpoint.clone();
                 let peers2: PeerStates = self.peer_states.clone();
-                std::thread::spawn(move || {
+                let handle = std::thread::spawn(move || {
                     run_read_loop_split(
                         read_half,
                         runtime,
@@ -2414,6 +2494,7 @@ pub mod openssl_impl {
                         "::send",
                     );
                 });
+                register_reader_thread(&self.reader_threads, handle);
             }
             Ok(())
         }

@@ -1613,6 +1613,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     fn with_engine(&self, f: &mut dyn FnMut(&Engine)) {
         f(&self.engine);
     }
+    fn test_take_listen_drop(&self) -> bool {
+        self.engine.test_take_listen_drop()
+    }
     fn is_relay(&self) -> bool {
         self.started_options.am_relay
     }
