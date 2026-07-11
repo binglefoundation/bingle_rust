@@ -591,28 +591,37 @@ fn run_send_message_to_id_test(broken_nat: bool) {
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients.
 // Follows the pattern of bingle_api_endpoint_identify_via_forced_stun and extracts helpers to avoid duplication.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
 
 // Localnet-style integration test for send_message_to_id using two relays and two clients,
 // where both clients have broken NAT and must use relays.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
 
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
     test_util::assert_localnet_available();
@@ -841,10 +850,13 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 }
 
 // Localnet-style integration test: a relay sends a message to its own relay client using send_message_to_id.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
 
@@ -1084,10 +1096,13 @@ fn reset_message_state(
 ///
 /// This test validates that the DTLS connection is correctly reused
 /// after a client restart, once the old connection state has been cleaned up.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
 
@@ -1305,10 +1320,13 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 
 // Localnet-style integration test: relay1 sends a message to client_a who is registered with relay2.
 // This tests cross-relay delivery which is expected to fail currently.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
 
@@ -1522,10 +1540,13 @@ pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
 // thread, the STUN finder, relay keep-alive, and engine background threads. Detached threads (DTLS
 // server/peer threads, engine bg threads) are signalled but not joined, so a grace window is
 // allowed before comparing against baseline.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn worker_threads_drain_after_teardown_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
     let cfg = test_util::localnet_config();
@@ -1622,10 +1643,13 @@ pub fn worker_threads_drain_after_teardown_localnet() {
 // Deterministically drop the client's first relay Listen (via a test hook on the relay) and verify
 // the client still reaches Registered. Registration is otherwise one-shot, so reaching Registered
 // after a dropped Listen proves the bounded Listen retry recovered the transient relay non-response.
+// ntest::timeout must sit ABOVE serial so serial is the outer wrapper: the serial-lock
+// wait is then acquired before the timeout clock starts (not charged against the 300s),
+// and the guard lives on the main thread so a timeout-panic releases it (no lock cascade).
+#[ntest::timeout(300_000)]
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(300_000)]
 pub fn client_recovers_from_dropped_listen_via_retry_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
     let cfg = test_util::localnet_config();
