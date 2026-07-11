@@ -45,6 +45,12 @@ impl RecordingOps {
         ops
     }
 
+    fn with_handle_owner(owner: Option<&str>) -> Self {
+        let mut ops = RecordingOps::new();
+        ops.handle_owner = owner.map(str::to_string);
+        ops
+    }
+
     fn record(&self, call: impl Into<String>) {
         self.calls.borrow_mut().push(call.into());
     }
@@ -112,11 +118,14 @@ impl RegistrationOps for RecordingOps {
 
 #[test]
 fn run_registration_drives_the_chain_in_order() {
+    // Handle is free (handle_owner = None), so the pre-check passes and the full chain runs.
     let ops = RecordingOps::new();
     run_registration(&ops, "alice").expect("registration should succeed");
     assert_eq!(
         ops.calls(),
         vec![
+            "self_address".to_string(),
+            "handle_lookup".to_string(),
             "opt_in_app".to_string(),
             "opt_in_to_asset".to_string(),
             "get_bingle_price".to_string(),
@@ -132,7 +141,14 @@ fn run_registration_stops_at_first_opt_in_failure() {
     let err = run_registration(&ops, "alice").expect_err("should fail");
     assert!(err.to_string().contains("opt_in_app"));
     // Nothing after opt_in_app should have been attempted.
-    assert_eq!(ops.calls(), vec!["opt_in_app".to_string()]);
+    assert_eq!(
+        ops.calls(),
+        vec![
+            "self_address".to_string(),
+            "handle_lookup".to_string(),
+            "opt_in_app".to_string(),
+        ]
+    );
 }
 
 #[test]
@@ -144,6 +160,8 @@ fn run_registration_stops_before_register_when_buy_fails() {
     assert_eq!(
         ops.calls(),
         vec![
+            "self_address".to_string(),
+            "handle_lookup".to_string(),
             "opt_in_app".to_string(),
             "opt_in_to_asset".to_string(),
             "get_bingle_price".to_string(),
@@ -151,6 +169,51 @@ fn run_registration_stops_before_register_when_buy_fails() {
         ]
     );
     assert!(!ops.calls().iter().any(|c| c.starts_with("register")));
+}
+
+#[test]
+fn run_registration_fails_fast_when_handle_taken_by_other() {
+    // The handle is owned by a different account: the pre-check must reject before any
+    // opt-in / buy / register is attempted, so the balance is never touched (issue #15 A1).
+    let ops = RecordingOps::with_handle_owner(Some("OTHER_ACCOUNT"));
+    let err = run_registration(&ops, "alice").expect_err("should fail fast");
+
+    match err {
+        BingleError::HandleTaken(owner) => assert_eq!(owner, "OTHER_ACCOUNT"),
+        other => panic!("expected HandleTaken, got {:?}", other),
+    }
+
+    // Only the read-only pre-check ran — no spending calls at all.
+    assert_eq!(
+        ops.calls(),
+        vec!["self_address".to_string(), "handle_lookup".to_string()]
+    );
+    let spent = ["opt_in_app", "opt_in_to_asset", "buy_bingle", "register"];
+    assert!(
+        !ops.calls().iter().any(|c| spent.iter().any(|s| c.starts_with(s))),
+        "no on-chain spend should occur when the handle is taken: {:?}",
+        ops.calls()
+    );
+}
+
+#[test]
+fn run_registration_proceeds_when_handle_owned_by_self() {
+    // Re-registering our own handle is not a collision: the pre-check passes and the chain
+    // runs (self_addr matches the recorded owner).
+    let ops = RecordingOps::with_handle_owner(Some("SELF_ADDR"));
+    run_registration(&ops, "alice").expect("re-registering own handle should proceed");
+    assert_eq!(
+        ops.calls(),
+        vec![
+            "self_address".to_string(),
+            "handle_lookup".to_string(),
+            "opt_in_app".to_string(),
+            "opt_in_to_asset".to_string(),
+            "get_bingle_price".to_string(),
+            "buy_bingle(1000)".to_string(),
+            "register(alice)".to_string(),
+        ]
+    );
 }
 
 #[test]

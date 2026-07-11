@@ -18,4 +18,7 @@ pub enum BingleJsiError {
 
     #[error("Retryable error: {reason}")]
     Retryable { reason: String },
+
+    #[error("Handle already in use: {reason}")]
+    HandleTaken { reason: String },
 }

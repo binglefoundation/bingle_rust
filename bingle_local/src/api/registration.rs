@@ -43,10 +43,30 @@ pub trait RegistrationOps {
 
 /// Orchestrate the on-chain registration sequence.
 ///
-/// A4 preserves the historical order exactly: opt in to the app and asset, read the
-/// price, buy one unit, then register. Each step short-circuits on error so a later step
-/// never runs after an earlier one fails.
+/// Order: fail-fast handle pre-check, opt in to the app and asset, read the price, buy one
+/// unit, then register. Each step short-circuits on error so a later step never runs after
+/// an earlier one fails.
+///
+/// A1 (issue #15): the indexer handle-uniqueness check runs *before* any transaction, so a
+/// handle already owned by another account fails with [`BingleError::HandleTaken`] without
+/// spending anything. The uniqueness check inside `register` is retained as a backstop for
+/// the narrow race where someone else registers between our lookup and our own submit.
 pub fn run_registration(ops: &dyn RegistrationOps, handle: &str) -> Result<(), BingleError> {
+    let self_address = ops.self_address().inspect_err(|e| {
+        tracing::error!("[register] could not resolve own address: {}", e);
+    })?;
+    if let Some(owner) = ops.handle_lookup(handle).inspect_err(|e| {
+        tracing::error!("[register] handle_lookup for '{}' failed: {}", handle, e);
+    })? && owner != self_address
+    {
+        tracing::info!(
+            "[register] handle '{}' already in use by {}; not spending",
+            handle,
+            owner
+        );
+        return Err(BingleError::HandleTaken(owner));
+    }
+
     ops.opt_in_app().inspect_err(|e| {
         tracing::error!("[register] opt_in_app failed: {}", e);
     })?;
