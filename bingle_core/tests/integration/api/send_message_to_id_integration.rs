@@ -1597,10 +1597,11 @@ pub fn worker_threads_drain_after_teardown_localnet() {
     drop(relay2);
 
     let base = baseline.expect("process_thread_count unsupported on this platform");
-    // Teardown reclaims the joined threads (mux rx, STUN finder, relay keep-alive) quickly; a
-    // small residual from the untracked per-peer DTLS reader threads may linger briefly. Guard
-    // against a gross leak (accumulating worker threads) rather than asserting an exact count.
-    let tolerance = 8usize;
+    // stop() joins the mux rx thread, STUN finder, relay keep-alive, and the per-peer DTLS reader
+    // threads, so worker threads drain back toward baseline. A small residual of detached engine
+    // background threads (STUN/relay-init follow-ups) may still be winding down at measurement time;
+    // the tolerance covers that and guards against a gross, accumulating leak.
+    let tolerance = 5usize;
     let final_count = test_util::wait_for_thread_drain(base, tolerance, Duration::from_secs(20));
     tracing::info!(
         "[Test][threads] final = {} baseline = {} peak = {:?} (tolerance {})",
