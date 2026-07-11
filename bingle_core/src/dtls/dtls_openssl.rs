@@ -602,27 +602,26 @@ pub mod openssl_impl {
         let mut buf = [0u8; 2048];
         let mut logged_wouldblock = false;
 
-        loop {
-            // Exit promptly when our peer entry has been drained (Dtls::stop) or superseded by a
-            // newer session for this endpoint. Checked each ~20ms iteration so stop() (which drains
-            // the peer map) reliably terminates the reader instead of it lingering until network
-            // EOF. The owning Dtls then joins the thread.
-            {
-                let still_owner = match peers.lock() {
-                    Ok(m) => m.get(&key_from).map(|ps| ps.generation) == Some(owner_generation),
-                    Err(_) => false,
-                };
-                if !still_owner {
-                    info_theme!(
-                        themes::DTLS,
-                        "[DtlsOpenSsl:{}][read-loop {}] peer entry gone/superseded (generation={}); exiting",
+        // Reader ownership check: exit when our peer entry has been drained (Dtls::stop) or
+        // superseded by a newer session. Returns true while we should keep reading.
+        let still_owner = || -> bool {
+            match peers.lock() {
+                Ok(m) => m.get(&key_from).map(|ps| ps.generation) == Some(owner_generation),
+                Err(e) => {
+                    // Poisoned peer map (a holder panicked): unusable, so exit the reader rather
+                    // than spin. Logged so it isn't silently swallowed.
+                    tracing::error!(
+                        "[DtlsOpenSsl:{}][read-loop {}] peer_states lock poisoned ({}); exiting reader",
                         log_tag,
                         from,
-                        owner_generation
+                        e
                     );
-                    break;
+                    false
                 }
             }
+        };
+
+        loop {
             let read_res = dtls_async_runtime.block_on(async {
                 match tokio::time::timeout(
                     std::time::Duration::from_millis(20),
@@ -661,6 +660,19 @@ pub mod openssl_impl {
                             from
                         );
                         logged_wouldblock = true;
+                    }
+                    // Only checked on the idle path (no datagram this cycle), so it adds no
+                    // per-datagram overhead. stop() drains the peer map and data ceases, so the
+                    // reader reaches here within ~20ms and exits promptly (then stop() joins it).
+                    if !still_owner() {
+                        info_theme!(
+                            themes::DTLS,
+                            "[DtlsOpenSsl:{}][read-loop {}] peer entry gone/superseded (generation={}); exiting",
+                            log_tag,
+                            from,
+                            owner_generation
+                        );
+                        break;
                     }
                     continue;
                 }
@@ -1278,9 +1290,19 @@ pub mod openssl_impl {
         reader_threads: &Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
         handle: std::thread::JoinHandle<()>,
     ) {
-        if let Ok(mut v) = reader_threads.lock() {
-            v.retain(|h| !h.is_finished());
-            v.push(handle);
+        match reader_threads.lock() {
+            Ok(mut v) => {
+                v.retain(|h| !h.is_finished());
+                v.push(handle);
+            }
+            Err(e) => {
+                // Non-fatal: the reader still self-terminates when its peer entry is drained; it
+                // just won't be joined by stop(). Log rather than swallow the poisoned lock.
+                tracing::error!(
+                    "[DtlsOpenSsl] reader_threads lock poisoned ({}); reader thread will not be tracked for join",
+                    e
+                );
+            }
         }
     }
 
