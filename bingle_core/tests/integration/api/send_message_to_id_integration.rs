@@ -594,7 +594,7 @@ fn run_send_message_to_id_test(broken_nat: bool) {
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(1800_000)]
+#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_localnet() {
     run_send_message_to_id_test(false);
 }
@@ -604,7 +604,7 @@ pub fn bingle_api_send_message_to_id_localnet() {
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(1_800_000)]
+#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_relay_only_localnet() {
     run_send_message_to_id_test(true);
 }
@@ -612,7 +612,7 @@ pub fn bingle_api_send_message_to_id_relay_only_localnet() {
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(1_800_000)]
+#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
     test_util::assert_localnet_available();
@@ -844,7 +844,7 @@ pub fn bingle_api_send_message_to_id_non_root_relay_localnet() {
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(1_800_000)]
+#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_relay_to_relay_client_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
 
@@ -1087,7 +1087,7 @@ fn reset_message_state(
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(1_800_000)]
+#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_after_client_restart_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
 
@@ -1308,7 +1308,7 @@ pub fn bingle_api_send_message_after_client_restart_localnet() {
 #[serial(send_message_to_id)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-#[ntest::timeout(1_800_000)]
+#[ntest::timeout(300_000)]
 pub fn bingle_api_send_message_to_id_relay1_to_client_on_relay2_localnet() {
     test_util::init_test_logging_with_filter("info,bingle_core::dtls=info");
 
