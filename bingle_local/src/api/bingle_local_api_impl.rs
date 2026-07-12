@@ -24,6 +24,11 @@ pub struct LocalApiConfig {
 /// account holds the asset but has no handle, we fall through to the balance
 /// check (FUNDED / UNFUNDED). `balance_algos` is only consulted when the
 /// account is not ACTIVE.
+///
+/// For UNFUNDED, `required_algo` is the **top-up** needed to reach adequate
+/// funding (`REQUIRED_ALGO - balance_algos`), not the flat target — so a
+/// semi-funded account is only asked for the shortfall rather than the full
+/// amount again (issue #15, A3).
 pub fn keypair_status_from_facts(
     algorand_id: String,
     has_asset: bool,
@@ -45,11 +50,14 @@ pub fn keypair_status_from_facts(
             required_algo: None,
         }
     } else {
+        // Ask only for the shortfall to reach REQUIRED_ALGO. Clamped at 0 defensively; in
+        // this branch balance_algos < REQUIRED_ALGO so the difference is already positive.
+        let top_up = (REQUIRED_ALGO - balance_algos).max(0.0);
         KeypairStatus {
             status: "UNFUNDED".to_string(),
             id: Some(algorand_id),
             handle: None,
-            required_algo: Some(REQUIRED_ALGO),
+            required_algo: Some(top_up),
         }
     }
 }
