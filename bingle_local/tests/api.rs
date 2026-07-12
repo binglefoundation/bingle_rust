@@ -21,5 +21,8 @@ mod local_impl_queue;
 #[path = "api/registration_seam.rs"]
 mod registration_seam;
 
+#[path = "api/offline_send_resilience.rs"]
+mod offline_send_resilience;
+
 #[path = "module_version.rs"]
 mod module_version;

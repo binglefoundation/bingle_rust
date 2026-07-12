@@ -5,6 +5,7 @@ use crate::api::{
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -73,6 +74,13 @@ pub struct BingleApiLocalImpl {
     contacts: Mutex<HashMap<String, (String, ContactSource, bool)>>,
     // Messages storage: append-only log of messages
     messages: Mutex<Vec<Message>>,
+    // Cache of the account's registered handle, set whenever a status resolves one. Lets
+    // offline operations (queue_message) obtain the sender handle without a live blockchain
+    // read once the account is registered (issue #18, A1).
+    own_handle: Mutex<Option<String>>,
+    // Last successfully computed status, returned when a later read finds the blockchain
+    // unreachable so an already-known account stays usable during an outage (issue #18, A2).
+    last_status: Mutex<Option<KeypairStatus>>,
 }
 
 impl BingleApiLocalImpl {
@@ -83,8 +91,93 @@ impl BingleApiLocalImpl {
             config,
             contacts: Mutex::new(HashMap::new()),
             messages: Mutex::new(Vec::new()),
+            own_handle: Mutex::new(None),
+            last_status: Mutex::new(None),
         }
     }
+
+    /// On a blockchain-unreachable error, return the last-known status so an already-known
+    /// account stays usable during a transient outage (issue #18, A2); otherwise propagate the
+    /// error (e.g. a genuine first run with no cache still reports NoBlockchain upstream).
+    fn fallback_status(&self, err: BingleError) -> Result<KeypairStatus, BingleError> {
+        let cached = self.last_status.lock().ok().and_then(|g| g.clone());
+        match status_or_last_known(err, cached) {
+            // Ok is only produced by the fallback (unreachable + a cached status present).
+            Ok(status) => {
+                tracing::warn!(
+                    "[BingleLocalApi][keypair_status] blockchain unreachable; returning last-known status '{}'",
+                    status.status
+                );
+                Ok(status)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Record a freshly resolved status so later calls can survive a blockchain outage: caches
+    /// the whole status (A2) and, when a handle is present, the registered handle (A1).
+    fn cache_status(&self, status: &KeypairStatus) {
+        if let Some(handle) = status.handle.as_ref()
+            && let Ok(mut guard) = self.own_handle.lock()
+        {
+            *guard = Some(handle.clone());
+        }
+        if let Ok(mut guard) = self.last_status.lock() {
+            *guard = Some(status.clone());
+        }
+    }
+
+    /// The account's registered handle for outbound messages. Uses the cache populated by
+    /// keypair_status so queuing a send needs no live blockchain read once the account is
+    /// registered (issue #18, A1); falls back to a fresh status read only when nothing is cached.
+    fn sender_handle(&self) -> Result<String, BingleError> {
+        let cached = self.own_handle.lock().ok().and_then(|g| g.clone());
+        resolve_sender_handle(cached, || self.keypair_status())
+    }
+}
+
+/// Resolve the sender handle for an outbound message (issue #18, A1).
+///
+/// Returns the cached handle without invoking `fetch_status` when one is known, so queuing a
+/// send never needs a live blockchain read once the account is registered. Only a genuine first
+/// run (no cache) falls back to a fresh status read.
+pub fn resolve_sender_handle<F>(
+    cached_handle: Option<String>,
+    fetch_status: F,
+) -> Result<String, BingleError>
+where
+    F: FnOnce() -> Result<KeypairStatus, BingleError>,
+{
+    if let Some(handle) = cached_handle {
+        return Ok(handle);
+    }
+    let status = fetch_status()?;
+    status.handle.ok_or_else(|| {
+        BingleError::Other("No handle registered for current keypair".to_string())
+    })
+}
+
+/// Whether a `BingleError` indicates the blockchain host was unreachable (a transient network
+/// outage) as opposed to a genuine failure. Used to decide when to fall back to cached state.
+pub fn algo_host_unreachable(err: &BingleError) -> bool {
+    matches!(err, BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable)
+}
+
+/// Decide a status result under a possible blockchain outage (issue #18, A2).
+///
+/// Returns the `cached` status only when the failure is a host-unreachable outage and a cached
+/// status exists; any other error (or a genuine first run with no cache) propagates so callers
+/// still see NoBlockchain.
+pub fn status_or_last_known(
+    err: BingleError,
+    cached: Option<KeypairStatus>,
+) -> Result<KeypairStatus, BingleError> {
+    if algo_host_unreachable(&err)
+        && let Some(cached) = cached
+    {
+        return Ok(cached);
+    }
+    Err(err)
 }
 
 impl BingleLocalApi for BingleApiLocalImpl {
@@ -422,10 +515,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             "[BingleLocalApi] Queuing message to: {:?}",
             recipient_handles
         );
-        let status = self.keypair_status()?;
-        let sender_handle = status.handle.ok_or_else(|| {
-            BingleError::Other("No handle registered for current keypair".to_string())
-        })?;
+        // Use the cached registered handle so queuing works offline once the account is
+        // registered; only a genuine first run (empty cache) needs a live status read.
+        let sender_handle = self.sender_handle()?;
 
         if recipient_handles.is_empty() {
             return Err(BingleError::Other(
@@ -788,7 +880,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                         asset_id,
                         e
                     );
-                    return Err(BingleError::from_anyhow(e));
+                    return self.fallback_status(BingleError::from_anyhow(e));
                 }
             }
         } else {
@@ -808,7 +900,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                             app_id,
                             e
                         );
-                        return Err(BingleError::from_anyhow(e));
+                        return self.fallback_status(BingleError::from_anyhow(e));
                     }
                 };
                 local_state.and_then(|entries| {
@@ -845,7 +937,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                         "[BingleLocalApi][keypair_status] Failed to get account balance: {}",
                         e
                     );
-                    return Err(BingleError::from_anyhow(e));
+                    return self.fallback_status(BingleError::from_anyhow(e));
                 }
             };
             let balance_algos = balance.unwrap_or(0.0);
@@ -884,13 +976,15 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
-        Ok(keypair_status_from_facts(
+        let status = keypair_status_from_facts(
             algorand_id,
             has_asset,
             handle,
             balance_algos,
             required_target_algos,
-        ))
+        );
+        self.cache_status(&status);
+        Ok(status)
     }
 
     fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
