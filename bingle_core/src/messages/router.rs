@@ -116,15 +116,15 @@ impl BingleApi for LockingApiWrapper {
         }
     }
     fn start(
-        &mut self,
+        &self,
         _options: &crate::api::bingle_api::StartOptions,
     ) -> Result<(), BingleError> {
         Err(BingleError::Other(
             "not supported in handler context".to_string(),
         ))
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> {
         self.api("handle_lookup")
             .ok_or_else(|| BingleError::Other("API dropped".to_string()))
@@ -204,10 +204,10 @@ impl BingleApi for LockingApiWrapper {
             .ok_or_else(|| BingleError::Other("API dropped".to_string()))
             .and_then(|a| a.send_message_to_network_with_response(nsk, user_id, message, progress))
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
     fn set_on_listening(
-        &mut self,
+        &self,
         _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     ) {
     }

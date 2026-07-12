@@ -31,11 +31,11 @@ impl BingleApi for MockBingleApi {
     fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
         None
     }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), BingleError> {
+    fn start(&self, _options: &StartOptions) -> Result<(), BingleError> {
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> {
         if handle == "notfound" {
             Ok(None)
@@ -106,9 +106,9 @@ impl BingleApi for MockBingleApi {
     ) -> Result<JsonValue, BingleError> {
         Ok(json!({"text": "stub response"}))
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
-    fn set_on_listening(&mut self, _handler: Option<Arc<OnListeningHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_listening(&self, _handler: Option<Arc<OnListeningHandler>>) {}
 }
 
 /// A mock BingleApi that returns a handle and can resolve handle by id.
@@ -149,11 +149,11 @@ impl BingleApi for HandleMockBingleApi {
     fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
         None
     }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), BingleError> {
+    fn start(&self, _options: &StartOptions) -> Result<(), BingleError> {
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> {
         if handle == "notfound" {
             Ok(None)
@@ -224,9 +224,9 @@ impl BingleApi for HandleMockBingleApi {
     ) -> Result<JsonValue, BingleError> {
         Ok(json!({"text": "stub response"}))
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
-    fn set_on_listening(&mut self, _handler: Option<Arc<OnListeningHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_listening(&self, _handler: Option<Arc<OnListeningHandler>>) {}
 }
 
 /// A mock BingleApi that tracks whether start() has been called.
@@ -272,15 +272,15 @@ impl BingleApi for CapturingMockBingleApi {
     fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
         None
     }
-    fn start(&mut self, options: &StartOptions) -> Result<(), BingleError> {
+    fn start(&self, options: &StartOptions) -> Result<(), BingleError> {
         let mut s = self.started.lock().unwrap();
         *s = true;
         let mut c = self.captured_opts.lock().unwrap();
         *c = Some(options.clone());
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, BingleError> {
         Ok(None)
     }
@@ -343,9 +343,9 @@ impl BingleApi for CapturingMockBingleApi {
     ) -> Result<JsonValue, BingleError> {
         Ok(json!({"text": "stub response"}))
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
-    fn set_on_listening(&mut self, _handler: Option<Arc<OnListeningHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_listening(&self, _handler: Option<Arc<OnListeningHandler>>) {}
 }
 
 impl TrackingMockBingleApi {
@@ -377,13 +377,13 @@ impl BingleApi for TrackingMockBingleApi {
     fn get_algo_provider_config(&self) -> Option<AlgoChainConfig> {
         None
     }
-    fn start(&mut self, _options: &StartOptions) -> Result<(), BingleError> {
+    fn start(&self, _options: &StartOptions) -> Result<(), BingleError> {
         let mut s = self.started.lock().unwrap();
         *s = true;
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(&self, _handle: &Handle) -> Result<Option<UserId>, BingleError> {
         Ok(None)
     }
@@ -446,7 +446,7 @@ impl BingleApi for TrackingMockBingleApi {
     ) -> Result<JsonValue, BingleError> {
         Ok(json!({"text": "stub response"}))
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
-    fn set_on_listening(&mut self, _handler: Option<Arc<OnListeningHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_listening(&self, _handler: Option<Arc<OnListeningHandler>>) {}
 }

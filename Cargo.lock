@@ -475,6 +475,7 @@ dependencies = [
  "algonaut",
  "anyhow",
  "base64 0.21.7",
+ "bingle_core",
  "bingle_test",
  "chrono",
  "ctrlc",

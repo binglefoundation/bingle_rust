@@ -12,7 +12,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::error::{AlgoError, AlgoErrorKind};
 use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
-use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::parse_start_options_from_args;
 use bingle_core::util::config_utils::{
     parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids,
@@ -376,7 +376,7 @@ fn cmd_run(mut args: Vec<String>) {
     // Install handlers (requires mutable access to the Arc contents; CLI owns the only strong ref here)
     {
         let api_for_echo = api.clone();
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
                     tracing::info!(
@@ -455,7 +455,7 @@ fn cmd_run(mut args: Vec<String>) {
     // Start API
     loop {
         let mut start_res = Ok(());
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             start_res = api_mut.start(&opts);
         });
 
@@ -574,7 +574,7 @@ fn cmd_run(mut args: Vec<String>) {
 
     // Stop API
     {
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             api_mut.stop();
         });
     }
@@ -780,7 +780,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
     let api = BingleApiImpl::new(&opts);
     loop {
         let mut start_res = Ok(());
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             start_res = api_mut.start(&opts);
         });
 
@@ -901,7 +901,7 @@ fn cmd_checkrelays(mut args: Vec<String>) {
     }
 
     // Stop API before exit
-    api.access_unsafe_for_tests(|api_mut| api_mut.stop());
+    api.access(|api_mut| api_mut.stop());
 }
 
 fn cmd_register(args: Vec<String>) {

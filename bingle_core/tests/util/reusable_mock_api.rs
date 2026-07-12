@@ -222,7 +222,7 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
         self.inner_bingle_api.list_all_relays(include_self)
     }
     fn set_on_listening(
-        &mut self,
+        &self,
         handler: Option<std::sync::Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
     ) {
         self.inner_bingle_api.set_on_listening(handler);
@@ -255,17 +255,17 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
     }
 
     fn start(
-        &mut self,
+        &self,
         options: &bingle_core::api::bingle_api::StartOptions,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
         self.inner_bingle_api.start(options)
     }
 
-    fn stop(&mut self) {
+    fn stop(&self) {
         self.inner_bingle_api.stop();
     }
 
-    fn network_change(&mut self) {
+    fn network_change(&self) {
         self.inner_bingle_api.network_change();
     }
 
@@ -370,14 +370,14 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
     }
 
     fn set_on_message(
-        &mut self,
+        &self,
         handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>,
     ) {
         self.inner_bingle_api.set_on_message(handler);
     }
 
     fn set_on_connect(
-        &mut self,
+        &self,
         handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>,
     ) {
         self.inner_bingle_api.set_on_connect(handler);

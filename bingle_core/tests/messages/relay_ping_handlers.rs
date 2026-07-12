@@ -151,7 +151,7 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
             None
         }
         fn set_on_listening(
-            &mut self,
+            &self,
             _handler: Option<std::sync::Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
         ) {
         }
@@ -171,13 +171,13 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
             None
         }
         fn start(
-            &mut self,
+            &self,
             _options: &StartOptions,
         ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
             Ok(())
         }
-        fn stop(&mut self) {}
-        fn network_change(&mut self) {}
+        fn stop(&self) {}
+        fn network_change(&self) {}
         fn handle_lookup(
             &self,
             _handle: &Handle,
@@ -249,8 +249,8 @@ pub fn on_triangle_test1_sends_triangle_test2_to_peer() {
                 "ni".into(),
             ))
         }
-        fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-        fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
+        fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+        fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let router = Arc::new(bingle_core::messages::router::Router::new(Arc::downgrade(
@@ -308,7 +308,7 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
             None
         }
         fn set_on_listening(
-            &mut self,
+            &self,
             _handler: Option<std::sync::Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
         ) {
         }
@@ -328,13 +328,13 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
             None
         }
         fn start(
-            &mut self,
+            &self,
             _options: &StartOptions,
         ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
             Ok(())
         }
-        fn stop(&mut self) {}
-        fn network_change(&mut self) {}
+        fn stop(&self) {}
+        fn network_change(&self) {}
         fn handle_lookup(
             &self,
             _handle: &Handle,
@@ -406,8 +406,8 @@ pub fn on_triangle_test2_sends_triangle_test3_to_endpoint() {
                 "ni".into(),
             ))
         }
-        fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-        fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
+        fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+        fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
     }
     let api: Arc<dyn BingleApiBoth> = Arc::new(MockApi);
     let router = Arc::new(bingle_core::messages::router::Router::new(Arc::downgrade(
