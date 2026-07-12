@@ -115,10 +115,7 @@ impl BingleApi for LockingApiWrapper {
             a.clear_accounts_cache()
         }
     }
-    fn start(
-        &self,
-        _options: &crate::api::bingle_api::StartOptions,
-    ) -> Result<(), BingleError> {
+    fn start(&self, _options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> {
         Err(BingleError::Other(
             "not supported in handler context".to_string(),
         ))
@@ -206,11 +203,7 @@ impl BingleApi for LockingApiWrapper {
     }
     fn set_on_message(&self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
-    fn set_on_listening(
-        &self,
-        _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
-    ) {
-    }
+    fn set_on_listening(&self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {}
 }
 
 impl BingleApiInternal for LockingApiWrapper {

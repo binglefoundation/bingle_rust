@@ -881,7 +881,9 @@ impl BingleJsiApi for BingleJsiApiImpl {
         // Route through bingle_error_to_jsi so a duplicate handle surfaces as the typed
         // HandleTaken (issue #15 A1) rather than a generic InternalError, letting the app
         // prompt for a different handle instead of showing a funding/other failure.
-        guard.register_keypair(handle).map_err(bingle_error_to_jsi)?;
+        guard
+            .register_keypair(handle)
+            .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(())
