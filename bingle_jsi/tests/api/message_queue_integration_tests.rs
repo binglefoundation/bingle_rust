@@ -59,10 +59,7 @@ impl BingleApi for MockBingleApi {
     fn handle_lookup(&self, _: &Handle) -> Result<Option<UserId>, BingleError> {
         Ok(Some("test-id".to_string()))
     }
-    fn handle_lookup_partial(
-        &self,
-        _: &Handle,
-    ) -> Result<Option<(UserId, Handle)>, BingleError> {
+    fn handle_lookup_partial(&self, _: &Handle) -> Result<Option<(UserId, Handle)>, BingleError> {
         Ok(Some(("test-id".to_string(), "Test_User".to_string())))
     }
     fn handle_lookup_by_id(&self, _: &UserId) -> Option<Handle> {

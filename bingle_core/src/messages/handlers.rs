@@ -326,11 +326,7 @@ impl BingleApi for BothAsApi {
     }
     fn set_on_message(&self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
-    fn set_on_listening(
-        &self,
-        _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
-    ) {
-    }
+    fn set_on_listening(&self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {}
 }
 
 pub trait MessageHandler {
@@ -1897,10 +1893,9 @@ impl DefaultPrintingHandler {
                     app: None,
                     tag: None,
                 };
-                let json =
-                    crate::messages::marshal::to_json_value(&Message::Relay(RelayMessage::Listen(
-                        listen,
-                    )));
+                let json = crate::messages::marshal::to_json_value(&Message::Relay(
+                    RelayMessage::Listen(listen),
+                ));
                 match api_for_thread.send_message_to_network_with_response(&nsk, &uid, json, None) {
                     Ok(resp) => {
                         let ty_ok =
@@ -1938,7 +1933,9 @@ impl DefaultPrintingHandler {
                 }
             }
             if !listen_ok {
-                warn!("[on_triangle_test1_response] Listen failed after {LISTEN_ATTEMPTS} attempts");
+                warn!(
+                    "[on_triangle_test1_response] Listen failed after {LISTEN_ATTEMPTS} attempts"
+                );
                 return;
             }
 

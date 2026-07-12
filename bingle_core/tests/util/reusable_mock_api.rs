@@ -369,17 +369,11 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
         )
     }
 
-    fn set_on_message(
-        &self,
-        handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>,
-    ) {
+    fn set_on_message(&self, handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>) {
         self.inner_bingle_api.set_on_message(handler);
     }
 
-    fn set_on_connect(
-        &self,
-        handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>,
-    ) {
+    fn set_on_connect(&self, handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>) {
         self.inner_bingle_api.set_on_connect(handler);
     }
 }
