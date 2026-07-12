@@ -216,7 +216,11 @@ fn run_registration_skips_opt_ins_when_already_opted_in() {
             "register(alice)".to_string(),
         ]
     );
-    assert!(!ops.calls().iter().any(|c| c == "opt_in_app" || c == "opt_in_to_asset"));
+    assert!(
+        !ops.calls()
+            .iter()
+            .any(|c| c == "opt_in_app" || c == "opt_in_to_asset")
+    );
 }
 
 #[test]
@@ -260,7 +264,9 @@ fn run_registration_fails_fast_when_handle_taken_by_other() {
     );
     let spent = ["opt_in_app", "opt_in_to_asset", "buy_bingle", "register"];
     assert!(
-        !ops.calls().iter().any(|c| spent.iter().any(|s| c.starts_with(s))),
+        !ops.calls()
+            .iter()
+            .any(|c| spent.iter().any(|s| c.starts_with(s))),
         "no on-chain spend should occur when the handle is taken: {:?}",
         ops.calls()
     );
@@ -294,5 +300,8 @@ fn run_registration_surfaces_register_failure() {
     let err = run_registration(&ops, "bob").expect_err("should fail");
     assert!(err.to_string().contains("register"));
     // The whole chain ran; register was reached and failed.
-    assert_eq!(ops.calls().last().map(String::as_str), Some("register(bob)"));
+    assert_eq!(
+        ops.calls().last().map(String::as_str),
+        Some("register(bob)")
+    );
 }

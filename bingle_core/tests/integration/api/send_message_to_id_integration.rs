@@ -239,8 +239,12 @@ pub fn register_relays(
     // Also wait for the relay handles to be resolvable via the indexer. Reverse handle->id lookup
     // is indexer-based (whereas register_client_on_blockchain only waits for algod), so without
     // this a handle-based flow can race the indexer even though the endpoints are already visible.
-    if !wait_for_handles_visible(cfg.clone(), app_id, &["relay1", "relay2"], Duration::from_secs(60))
-    {
+    if !wait_for_handles_visible(
+        cfg.clone(),
+        app_id,
+        &["relay1", "relay2"],
+        Duration::from_secs(60),
+    ) {
         panic!("Relay handles did not become visible via indexer within 60s");
     }
 }

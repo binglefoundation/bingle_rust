@@ -69,7 +69,9 @@ struct SucceedingDtls {
 
 impl SucceedingDtls {
     fn new() -> Self {
-        Self::with_fail_flag(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))
+        Self::with_fail_flag(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+            false,
+        )))
     }
     fn with_fail_flag(fail: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
         Self {

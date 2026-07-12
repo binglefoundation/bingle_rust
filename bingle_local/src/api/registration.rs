@@ -135,7 +135,9 @@ impl RegistrationOps for ChainRegistrationOps {
     }
 
     fn handle_lookup(&self, handle: &str) -> Result<Option<String>, BingleError> {
-        self.bgl.handle_lookup(handle).map_err(BingleError::from_anyhow)
+        self.bgl
+            .handle_lookup(handle)
+            .map_err(BingleError::from_anyhow)
     }
 
     fn is_opted_in_app(&self) -> Result<bool, BingleError> {
