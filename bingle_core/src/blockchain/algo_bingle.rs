@@ -123,6 +123,41 @@ impl AlgoBingle {
             .and_then(|(_, v)| v.parse::<u64>().ok())
     }
 
+    /// Read the app's local-state schema `(num_uints, num_byte_slices)` from application info.
+    ///
+    /// These drive the minimum-balance increase an account incurs when it opts in to the app,
+    /// so callers can size the exact funding needed to register rather than a padded constant.
+    pub fn get_app_local_schema(&self, app_id: u64) -> Result<(u64, u64)> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let client = self.ops.algod_client()?;
+        let app_info = self
+            .ops
+            .algod_call(|| client.app(AppId(app_id)))
+            .map_err(|e| anyhow!("application_information failed: {e}"))?;
+        let v = serde_json::to_value(&app_info)
+            .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
+        let schema = v
+            .get("params")
+            .and_then(|p| {
+                p.get("local-state-schema")
+                    .or_else(|| p.get("local_state_schema"))
+            })
+            .ok_or_else(|| anyhow!("local-state-schema missing for app_id {app_id}"))?;
+        let num_uints = schema
+            .get("num-uint")
+            .or_else(|| schema.get("num_uint"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let num_byte_slices = schema
+            .get("num-byte-slice")
+            .or_else(|| schema.get("num_byte_slice"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        Ok((num_uints, num_byte_slices))
+    }
+
     /// Fetch the current Bingle price from the application's global state under key "BinglePrice".
     /// The price is stored as a uint in global state (microAlgos per Bingle unit).
     /// Errors if the key is not set or the application cannot be queried.
