@@ -5,6 +5,7 @@ use crate::api::{
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
+use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -95,6 +96,24 @@ impl BingleApiLocalImpl {
         }
     }
 
+    /// On a blockchain-unreachable error, return the last-known status so an already-known
+    /// account stays usable during a transient outage (issue #18, A2); otherwise propagate the
+    /// error (e.g. a genuine first run with no cache still reports NoBlockchain upstream).
+    fn fallback_status(&self, err: BingleError) -> Result<KeypairStatus, BingleError> {
+        let cached = self.last_status.lock().ok().and_then(|g| g.clone());
+        match status_or_last_known(err, cached) {
+            // Ok is only produced by the fallback (unreachable + a cached status present).
+            Ok(status) => {
+                tracing::warn!(
+                    "[BingleLocalApi][keypair_status] blockchain unreachable; returning last-known status '{}'",
+                    status.status
+                );
+                Ok(status)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Record a freshly resolved status so later calls can survive a blockchain outage: caches
     /// the whole status (A2) and, when a handle is present, the registered handle (A1).
     fn cache_status(&self, status: &KeypairStatus) {
@@ -136,6 +155,29 @@ where
     status.handle.ok_or_else(|| {
         BingleError::Other("No handle registered for current keypair".to_string())
     })
+}
+
+/// Whether a `BingleError` indicates the blockchain host was unreachable (a transient network
+/// outage) as opposed to a genuine failure. Used to decide when to fall back to cached state.
+pub fn algo_host_unreachable(err: &BingleError) -> bool {
+    matches!(err, BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable)
+}
+
+/// Decide a status result under a possible blockchain outage (issue #18, A2).
+///
+/// Returns the `cached` status only when the failure is a host-unreachable outage and a cached
+/// status exists; any other error (or a genuine first run with no cache) propagates so callers
+/// still see NoBlockchain.
+pub fn status_or_last_known(
+    err: BingleError,
+    cached: Option<KeypairStatus>,
+) -> Result<KeypairStatus, BingleError> {
+    if algo_host_unreachable(&err)
+        && let Some(cached) = cached
+    {
+        return Ok(cached);
+    }
+    Err(err)
 }
 
 impl BingleLocalApi for BingleApiLocalImpl {
@@ -838,7 +880,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                         asset_id,
                         e
                     );
-                    return Err(BingleError::from_anyhow(e));
+                    return self.fallback_status(BingleError::from_anyhow(e));
                 }
             }
         } else {
@@ -858,7 +900,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                             app_id,
                             e
                         );
-                        return Err(BingleError::from_anyhow(e));
+                        return self.fallback_status(BingleError::from_anyhow(e));
                     }
                 };
                 local_state.and_then(|entries| {
@@ -895,7 +937,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                         "[BingleLocalApi][keypair_status] Failed to get account balance: {}",
                         e
                     );
-                    return Err(BingleError::from_anyhow(e));
+                    return self.fallback_status(BingleError::from_anyhow(e));
                 }
             };
             let balance_algos = balance.unwrap_or(0.0);

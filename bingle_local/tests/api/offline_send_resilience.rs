@@ -6,7 +6,7 @@
 use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::error::{AlgoError, AlgoErrorKind};
 use bingle_local::api::KeypairStatus;
-use bingle_local::api::bingle_local_api_impl::resolve_sender_handle;
+use bingle_local::api::bingle_local_api_impl::{resolve_sender_handle, status_or_last_known};
 
 fn no_blockchain_err() -> BingleError {
     BingleError::Algo(AlgoError::unreachable(
@@ -65,4 +65,38 @@ fn errors_when_status_has_no_handle_and_cache_empty() {
     };
     let err = resolve_sender_handle(None, || Ok(unfunded)).expect_err("should fail");
     assert!(err.to_string().contains("No handle registered"));
+}
+
+// ── A2: keypair_status tolerates a transient outage ──────────────────────────────
+
+#[test]
+fn returns_last_known_status_when_unreachable_and_cached() {
+    // Already-known account: a host-unreachable read falls back to the cached ACTIVE status
+    // rather than surfacing NoBlockchain, keeping the running app usable.
+    let out = status_or_last_known(no_blockchain_err(), Some(active_status("alice")))
+        .expect("should fall back to cached");
+    assert_eq!(out.status, "ACTIVE");
+    assert_eq!(out.handle.as_deref(), Some("alice"));
+}
+
+#[test]
+fn propagates_when_unreachable_but_nothing_cached() {
+    // Genuine first run, offline: no cache -> surface the outage so the UI shows NoBlockchain.
+    let err = status_or_last_known(no_blockchain_err(), None).expect_err("should propagate");
+    match err {
+        BingleError::Algo(ae) => assert_eq!(ae.kind, AlgoErrorKind::HostUnreachable),
+        other => panic!("expected Algo/HostUnreachable, got {:?}", other),
+    }
+}
+
+#[test]
+fn non_outage_error_is_not_masked_by_cache() {
+    // A real (non-network) error must propagate even if a cached status exists, so genuine
+    // failures are not hidden.
+    let err = status_or_last_known(
+        BingleError::Other("bad config".to_string()),
+        Some(active_status("alice")),
+    )
+    .expect_err("non-outage error should propagate");
+    assert!(err.to_string().contains("bad config"));
 }
