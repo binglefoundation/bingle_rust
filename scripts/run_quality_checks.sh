@@ -41,6 +41,15 @@ esac
 # the `test-hooks` feature automatically via bingle_core's self dev-dependency.
 CLIPPY_TARGETS=(--workspace --all-targets)
 
+# Target set for `clippy --fix`: lib + bins only, NOT test targets. The test tree
+# includes shared helpers (e.g. tests/test_util.rs) via `#[path = "../test_util.rs"]`
+# from dozens of files, so a single `clippy --fix --all-targets` pass sees those
+# files many times and applies each suggestion repeatedly, corrupting them ("prefix
+# `ok` is unknown", mismatched delimiters). lib/bins are single-membership units, so
+# fixing only those is safe. Test-code lints are still *reported* (via CLIPPY_TARGETS)
+# but not auto-fixed; apply those manually or restructure the duplicate #[path] mods.
+FIX_TARGETS=(--workspace --lib --bins)
+
 # rustfmt package set: every workspace member except bingle_test. bingle_test's
 # lib.rs declares iOS-only modules via `#[cfg(target_os = "ios")] #[path =
 # "../../tests/..."]`; `cargo fmt` does not evaluate cfg, so on a non-iOS host it
@@ -56,20 +65,20 @@ section() { echo -e "\n${BOLD}${YELLOW}== $1 ==${NC}"; }
 
 # ------------------------------------------------------------------ fix mode
 if [[ "${MODE}" == "fix" ]]; then
-  # `cargo clippy --fix` rewrites source and has been observed to corrupt files
-  # when many overlapping suggestions apply at once. To keep it safe we (1) refuse
-  # to run on a dirty tree — so its edits are the only uncommitted changes and are
-  # trivially reviewable/revertible — (2) verify the result still compiles across
-  # all targets, and (3) auto-revert clippy's edits if it broke the build. Only
-  # then do we run rustfmt (which is deterministic and safe).
+  # `cargo clippy --fix` rewrites source and corrupts files that are #[path]-included
+  # into multiple compilation units (see FIX_TARGETS above), so we fix lib + bins only.
+  # To stay safe we also (1) refuse to run on a dirty tree — so its edits are the only
+  # uncommitted changes and are trivially reviewable/revertible — (2) verify the result
+  # still compiles across all targets, and (3) auto-revert clippy's edits if it broke
+  # the build. Only then do we run rustfmt (which is deterministic and safe).
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
     echo -e "${RED}fix mode needs a clean git tree${NC} (so clippy's edits stay reviewable/revertible)."
     echo "Commit or stash your changes first, then re-run: $0 fix"
     exit 1
   fi
 
-  section "clippy --fix (apply)"
-  cargo clippy "${CLIPPY_TARGETS[@]}" --fix
+  section "clippy --fix (lib + bins only)"
+  cargo clippy "${FIX_TARGETS[@]}" --fix
 
   section "verify the tree still compiles"
   if ! cargo check "${CLIPPY_TARGETS[@]}"; then
