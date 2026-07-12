@@ -1,6 +1,6 @@
 use data_encoding::BASE32_NOPAD;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::themes;
@@ -98,19 +98,22 @@ impl HandleCacheBi {
 /// - start: instantiate a DTLS implementation (DtlsOpenSsl on non-iOS) but do not start the accept loop (no address yet).
 /// - send_message_to_network: when given a direct socket address, call DTLS send with the JSON message bytes.
 pub struct BingleApiImpl {
-    on_message: Option<Arc<OnMessageHandler>>,
-    on_connect: Option<Arc<OnConnectHandler>>,
-    started_options: StartOptions,
+    // Interior-mutable so the lifecycle/setter methods can take &self (the API is shared via
+    // Arc/Weak; see Stage 2). These mirror the Engine's interior-mutability idiom and are never
+    // locked across I/O.
+    on_message: Mutex<Option<Arc<OnMessageHandler>>>,
+    on_connect: Mutex<Option<Arc<OnConnectHandler>>>,
+    started_options: RwLock<StartOptions>,
     // Shared on_message handler accessible from Engine/DTLS callback without needing &self
     shared_on_message: Arc<Mutex<Option<Arc<OnMessageHandler>>>>,
     // Optional on_listening handler
-    on_listening: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
+    on_listening: Mutex<Option<Arc<crate::api::bingle_api::OnListeningHandler>>>,
     // Engine instance for endpoint identification and DTLS/mux lifecycle. Owned 1:1 by this API;
     // the Engine's background threads re-enter it via the shared Weak<dyn BingleApiBoth> handle.
     engine: Engine,
 
     // Per-API router to avoid global cross-talk
-    router: Option<Arc<crate::messages::router::Router>>,
+    router: Mutex<Option<Arc<crate::messages::router::Router>>>,
     // Weak reference to ourselves for passing to components
     this: crate::api::bingle_api::BingleApiBothType,
     handle_lookup_mock:
@@ -120,10 +123,20 @@ pub struct BingleApiImpl {
         Mutex<Option<Box<dyn Fn(&UserId) -> Result<Option<Handle>, String> + Send + Sync>>>,
     handle_cache: Mutex<HandleCacheBi>,
     accounts_cache: Arc<Mutex<AccountsCache>>,
-    span: tracing::Span,
+    span: Mutex<tracing::Span>,
 }
 
 impl BingleApiImpl {
+    /// Clone of the current tracing span (held under a short-lived lock).
+    fn span(&self) -> tracing::Span {
+        self.span.lock().expect("span lock").clone()
+    }
+
+    /// Read guard over the started options (read-heavy; written once at start()).
+    fn opts(&self) -> std::sync::RwLockReadGuard<'_, StartOptions> {
+        self.started_options.read().expect("options lock")
+    }
+
     fn check_dangerous_debug(options: &StartOptions) {
         if options.dangerous_debug && !cfg!(debug_assertions) {
             panic!("dangerous_debug is only allowed in debug builds");
@@ -138,19 +151,19 @@ impl BingleApiImpl {
             let me_both = me.clone();
             let engine = Engine::new(&initial_options, me_both.clone());
             Self {
-                on_message: None,
-                on_connect: None,
-                started_options: initial_options,
+                on_message: Mutex::new(None),
+                on_connect: Mutex::new(None),
+                started_options: RwLock::new(initial_options),
                 shared_on_message: Arc::new(Mutex::new(None)),
-                on_listening: None,
+                on_listening: Mutex::new(None),
                 engine,
-                router: None,
+                router: Mutex::new(None),
                 this: me_both,
                 handle_lookup_mock: Mutex::new(None),
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
                 accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
-                span: tracing::Span::none(),
+                span: Mutex::new(tracing::Span::none()),
             }
         })
     }
@@ -185,19 +198,19 @@ impl BingleApiImpl {
             let me_both = me.clone();
             let engine = Engine::new_with_dtls(&options, me_both.clone(), dtls);
             Self {
-                on_message: None,
-                on_connect: None,
-                started_options: options,
+                on_message: Mutex::new(None),
+                on_connect: Mutex::new(None),
+                started_options: RwLock::new(options),
                 shared_on_message: Arc::new(Mutex::new(None)),
-                on_listening: None,
+                on_listening: Mutex::new(None),
                 engine,
-                router: None,
+                router: Mutex::new(None),
                 this: me_both,
                 handle_lookup_mock: Mutex::new(None),
                 id_to_handle_lookup_mock: Mutex::new(None),
                 handle_cache: Mutex::new(HandleCacheBi::new()),
                 accounts_cache: Arc::new(Mutex::new(AccountsCache::default())),
-                span: tracing::Span::none(),
+                span: Mutex::new(tracing::Span::none()),
             }
         })
     }
@@ -354,7 +367,7 @@ impl BingleApiImpl {
         true
     }
 
-    fn ensure_dtls(&mut self) {
+    fn ensure_dtls(&self) {
         // No longer needed as Engine always has a DTLS instance.
     }
 
@@ -415,16 +428,16 @@ const DEFAULT_WAIT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(90);
 
 impl BingleApi for BingleApiImpl {
     fn debug_print_options(&self) {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         info_theme!(
             themes::API,
             "[BingleApiImpl::debug_print_options] started_options={}",
-            self.started_options
+            *self.opts()
         );
     }
     fn list_all_relays(&self, include_self: bool) -> Vec<crate::relay::relay_finder::RelayInfo> {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         info_theme!(
             themes::API,
@@ -441,7 +454,7 @@ impl BingleApi for BingleApiImpl {
         res
     }
     fn get_my_id(&self) -> Option<String> {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         // Prefer issuer from Engine (issuer = id + ISSUER_SUFFIX). Trim suffix to return pure id.
         match self
@@ -459,14 +472,14 @@ impl BingleApi for BingleApiImpl {
         self.get_my_id()
     }
     fn get_handle(&self) -> Option<String> {
-        let h = self.started_options.handle.clone();
+        let h = self.opts().handle.clone();
         if h.is_empty() { None } else { Some(h) }
     }
     fn get_app_id(&self) -> Option<u64> {
-        self.started_options.app_id
+        self.opts().app_id
     }
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
-        self.started_options.algo_provider_config.clone()
+        self.opts().algo_provider_config.clone()
     }
     fn get_accounts_cache(&self) -> Option<Arc<Mutex<AccountsCache>>> {
         Some(self.accounts_cache.clone())
@@ -483,9 +496,9 @@ impl BingleApi for BingleApiImpl {
         // Delegate to inherent reverse-lookup with caching/blockchain fallback
         BingleApiImpl::handle_lookup_by_id(self, user_id)
     }
-    fn start(&mut self, options: &StartOptions) -> Result<(), BingleError> {
+    fn start(&self, options: &StartOptions) -> Result<(), BingleError> {
         let span = tracing::info_span!("BingleApi", handle = %options.handle);
-        self.span = span.clone();
+        *self.span.lock().expect("span lock") = span.clone();
         let _guard = span.enter();
 
         Self::check_dangerous_debug(options);
@@ -561,7 +574,7 @@ impl BingleApi for BingleApiImpl {
             }
         }
 
-        self.engine.set_span(self.span.clone());
+        self.engine.set_span(self.span());
 
         info_theme!(
             themes::API,
@@ -569,7 +582,7 @@ impl BingleApi for BingleApiImpl {
             options
         );
         // Persist options and create a DTLS instance (not starting acceptor yet), then initialize PKI.
-        self.started_options = options.clone();
+        *self.started_options.write().expect("options lock") = options.clone();
         self.ensure_dtls();
 
         // Initialize AlgoOps from provided algoPassphrase if available.
@@ -662,9 +675,10 @@ impl BingleApi for BingleApiImpl {
             router.set_sender(Some(sender_cb));
             router
         };
-        self.router = Some(router_arc.clone());
+        *self.router.lock().expect("router lock") = Some(router_arc.clone());
         // If an on_message handler was set prior to start(), propagate it to the newly created router now
-        if let Some(h) = self.on_message.clone() {
+        let pending_on_message = self.on_message.lock().expect("on_message lock").clone();
+        if let Some(h) = pending_on_message {
             router_arc.set_on_message(Some(h));
         }
 
@@ -708,14 +722,15 @@ impl BingleApi for BingleApiImpl {
         Ok(())
     }
 
-    fn stop(&mut self) {
+    fn stop(&self) {
         tracing::info!(
             "[BingleApiImpl::stop][enter] {:?}:{:?}",
             self.engine.issuer(),
             self.engine.last_public_addr()
         );
         // Notify listeners that we are no longer listening
-        if let Some(cb) = &self.on_listening {
+        let on_listening = self.on_listening.lock().expect("on_listening lock").clone();
+        if let Some(cb) = on_listening {
             cb(false, crate::engine::NatType::Unknown);
         }
         // Stop Engine
@@ -727,14 +742,14 @@ impl BingleApi for BingleApiImpl {
         );
     }
 
-    fn network_change(&mut self) {
+    fn network_change(&self) {
         tracing::info!("[BingleApiImpl::network_change][enter]");
         // Placeholder: in a full implementation, we would rescan STUN/static IP and update listeners.
         tracing::info!("[BingleApiImpl::network_change][exit]");
     }
 
     fn handle_lookup(&self, handle: &Handle) -> Result<Option<UserId>, BingleError> {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         info_theme!(
             themes::API,
@@ -743,7 +758,7 @@ impl BingleApi for BingleApiImpl {
         );
 
         let expiry_duration = self
-            .started_options
+            .opts()
             .handle_cache_expiry
             .unwrap_or(Duration::from_secs(600)); // Default 10 minutes
 
@@ -806,7 +821,7 @@ impl BingleApi for BingleApiImpl {
         &self,
         handle: &Handle,
     ) -> Result<Option<(UserId, Handle)>, BingleError> {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         info_theme!(
             themes::API,
@@ -927,7 +942,7 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         info_theme!(
             themes::API,
@@ -980,7 +995,7 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
-        let span = self.span.clone();
+        let span = self.span();
         let _guard = span.enter();
         info_theme!(
             themes::API,
@@ -1241,7 +1256,7 @@ impl BingleApi for BingleApiImpl {
 
         // Now wait for a response tagged with our UUID using the Engine's pending map
         let timeout = self
-            .started_options
+            .opts()
             .wait_response_timeout
             .unwrap_or(DEFAULT_WAIT_RESPONSE_TIMEOUT);
         if let Some(resp) = Engine::wait_for_response_static(pending, &tag, timeout) {
@@ -1280,7 +1295,7 @@ impl BingleApi for BingleApiImpl {
         }
     }
 
-    fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>) {
+    fn set_on_message(&self, handler: Option<Arc<OnMessageHandler>>) {
         tracing::info!(
             "[BingleApiImpl::set_on_message][enter] handler_is_some={}",
             handler.is_some()
@@ -1289,11 +1304,12 @@ impl BingleApi for BingleApiImpl {
         {}
 
         // Store the handler and register it with the per-API router and global fallback
-        self.on_message = handler.clone();
+        *self.on_message.lock().expect("on_message lock") = handler.clone();
         if let Ok(mut g) = self.shared_on_message.lock() {
             *g = handler.clone();
         }
-        if let Some(r) = &self.router {
+        let router = self.router.lock().expect("router lock").clone();
+        if let Some(r) = router {
             r.set_on_message(handler.clone());
         }
 
@@ -1302,17 +1318,17 @@ impl BingleApi for BingleApiImpl {
         {}
     }
 
-    fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>) {
+    fn set_on_connect(&self, handler: Option<Arc<OnConnectHandler>>) {
         tracing::info!(
             "[BingleApiImpl::set_on_connect][enter] handler_is_some={}",
             handler.is_some()
         );
-        self.on_connect = handler;
+        *self.on_connect.lock().expect("on_connect lock") = handler;
         tracing::info!("[BingleApiImpl::set_on_connect][exit]");
     }
 
     fn set_on_listening(
-        &mut self,
+        &self,
         handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     ) {
         tracing::info!(
@@ -1320,7 +1336,7 @@ impl BingleApi for BingleApiImpl {
             handler.is_some()
         );
         // Store locally
-        self.on_listening = handler.clone();
+        *self.on_listening.lock().expect("on_listening lock") = handler.clone();
         // Propagate to Engine so internal notifications can reach the application
         self.engine.set_on_listening_handler(handler);
         tracing::info!("[BingleApiImpl::set_on_listening][exit]");
@@ -1349,7 +1365,8 @@ impl BingleApiImpl {
             cache.insert(sender_handle.clone(), sender.clone(), Instant::now());
         }
         // Engine now fulfills tagged responses; just forward application messages.
-        if let Some(cb) = &self.on_message {
+        let on_message = self.on_message.lock().expect("on_message lock").clone();
+        if let Some(cb) = on_message {
             cb(sender, sender_handle, message);
         }
         tracing::info!("[BingleApiImpl::handle_incoming_network_message][exit]");
@@ -1362,7 +1379,7 @@ impl BingleApiImpl {
     /// Lookup a handle by user id using the local cache. Returns None if not present or expired.
     pub fn handle_lookup_by_id(&self, user_id: &UserId) -> Option<Handle> {
         let expiry_duration = self
-            .started_options
+            .opts()
             .handle_cache_expiry
             .unwrap_or(Duration::from_secs(600));
         // 1) Check cache first
@@ -1414,7 +1431,7 @@ impl BingleApiImpl {
 
         // Build AlgoOps with provided config
         let ops = AlgoOps::new(
-            self.started_options.algo_passphrase.clone(),
+            self.opts().algo_passphrase.clone(),
             None,
             Some(config),
         );
@@ -1547,7 +1564,8 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
             listening,
             nat_type
         );
-        if let Some(cb) = &self.on_listening {
+        let on_listening = self.on_listening.lock().expect("on_listening lock").clone();
+        if let Some(cb) = on_listening {
             cb(listening, nat_type);
         }
     }
@@ -1617,7 +1635,7 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.test_take_listen_drop()
     }
     fn is_relay(&self) -> bool {
-        self.started_options.am_relay
+        self.opts().am_relay
     }
     fn signal_signon_complete(&self) {
         tracing::info!("[BingleApiImpl::signal_signon_complete]");

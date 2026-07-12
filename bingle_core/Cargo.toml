@@ -34,12 +34,22 @@ chrono = { version = "0.4", features = ["serde"] }
 openssl = { version = "0.10.81", features = ["vendored"] }
 openssl-sys = { version = "0.9.117" }
 
+[features]
+# Exposes the unsafe test-only accessor `access_unsafe_for_tests`. Enabled automatically for this
+# crate's test/example/bench targets via the self dev-dependency below; a normal `cargo build
+# [--release]` (which does not pull dev-dependencies) leaves it off, so the accessor is absent from
+# production builds.
+test-hooks = []
+
 [dev-dependencies]
 # env_logger removed in favor of tracing-subscriber
 bingle_test = { path = "../bingle_test" }
 tempfile = "3"
 ntest = "0.9"
 serial_test = "3"
+# Self dev-dependency: turns on `test-hooks` when building bingle_core's own tests (integration test
+# binaries link the crate as a normal dependency, so `cfg(test)` is false for lib code there).
+bingle_core = { path = ".", features = ["test-hooks"] }
 
 [build-dependencies]
 vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }

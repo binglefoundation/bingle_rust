@@ -121,6 +121,11 @@ impl<T: ?Sized> BingleAccess<T> for std::sync::Weak<T> {
     }
 }
 
+/// Test-only escape hatch. Gated behind the `test-hooks` feature so it is physically absent from
+/// production builds (any stray call is then a compile error). The feature is enabled for
+/// bingle_core's own test/example/bench targets via a self dev-dependency in Cargo.toml; a normal
+/// `cargo build [--release]` leaves it off.
+#[cfg(feature = "test-hooks")]
 pub trait BingleAccessUnsafeForTests<T: ?Sized> {
     /// Test-only escape hatch: get a mutable reference out of an `Arc`/`Weak` without locking.
     ///
@@ -133,6 +138,7 @@ pub trait BingleAccessUnsafeForTests<T: ?Sized> {
         F: FnOnce(&mut T) -> R;
 }
 
+#[cfg(feature = "test-hooks")]
 impl<T: ?Sized> BingleAccessUnsafeForTests<T> for Arc<T> {
     fn access_unsafe_for_tests<F, R>(&self, f: F) -> R
     where
@@ -147,6 +153,7 @@ impl<T: ?Sized> BingleAccessUnsafeForTests<T> for Arc<T> {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 impl<T: ?Sized> BingleAccessUnsafeForTests<T> for std::sync::Weak<T> {
     fn access_unsafe_for_tests<F, R>(&self, f: F) -> R
     where

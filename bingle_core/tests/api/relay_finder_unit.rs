@@ -40,7 +40,7 @@ impl BingleApi for MockApi {
         Vec::new()
     }
     fn set_on_listening(
-        &mut self,
+        &self,
         _handler: Option<std::sync::Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
     ) {
     }
@@ -63,13 +63,13 @@ impl BingleApi for MockApi {
         None
     }
     fn start(
-        &mut self,
+        &self,
         _options: &StartOptions,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(
         &self,
         _handle: &Handle,
@@ -174,8 +174,8 @@ impl BingleApi for MockApi {
         }
     }
 
-    fn set_on_message(&mut self, _handler: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<OnConnectHandler>>) {}
 }
 
 impl bingle_core::api::bingle_api::BingleApiInternal for MockApi {

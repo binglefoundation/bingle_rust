@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
 };
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
-use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_core::engine::BingleAccess;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ pub fn try_start_api(state: &AppState) {
             opts_clone.algo_passphrase = Some(kp.passphrase);
         }
         let api_clone = state.api.clone();
-        api_clone.access_unsafe_for_tests(|api_mut| {
+        api_clone.access(|api_mut| {
             if let Err(e) = api_mut.start(&opts_clone) {
                 tracing::error!("Failed to start Bingle API: {}", e);
             } else {

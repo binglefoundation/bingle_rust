@@ -1,6 +1,6 @@
 use crate::api::bingle_api::{BingleApi, BingleApiBoth, BingleApiInternal, BingleError};
 use crate::ddb::DdbBackend;
-use crate::engine::{BingleAccessUnsafeForTests, RelayState};
+use crate::engine::RelayState;
 use crate::messages::types::*;
 use crate::relay::relay_finder::RelayFinderTrait;
 use std::sync::{Arc, Mutex};
@@ -237,14 +237,14 @@ impl BingleApi for BothAsApi {
     fn get_algo_provider_config(&self) -> Option<crate::blockchain::algo_ops::AlgoChainConfig> {
         self.inner.get_algo_provider_config()
     }
-    fn start(&mut self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> {
-        self.inner.access_unsafe_for_tests(|a| a.start(options))
+    fn start(&self, options: &crate::api::bingle_api::StartOptions) -> Result<(), BingleError> {
+        self.inner.start(options)
     }
-    fn stop(&mut self) {
-        self.inner.access_unsafe_for_tests(|a| a.stop())
+    fn stop(&self) {
+        self.inner.stop()
     }
-    fn network_change(&mut self) {
-        self.inner.access_unsafe_for_tests(|a| a.network_change())
+    fn network_change(&self) {
+        self.inner.network_change()
     }
     fn handle_lookup(
         &self,
@@ -324,10 +324,10 @@ impl BingleApi for BothAsApi {
         self.inner
             .send_message_to_network_with_response(nsk, user_id, message, progress)
     }
-    fn set_on_message(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
+    fn set_on_message(&self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
+    fn set_on_connect(&self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
     fn set_on_listening(
-        &mut self,
+        &self,
         _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
     ) {
     }

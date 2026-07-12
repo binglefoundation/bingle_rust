@@ -205,7 +205,7 @@ pub fn test_relay_ping_handler_honors_exclusions() {
             None
         }
         fn set_on_listening(
-            &mut self,
+            &self,
             _h: Option<Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
         ) {
         }
@@ -225,13 +225,13 @@ pub fn test_relay_ping_handler_honors_exclusions() {
             None
         }
         fn start(
-            &mut self,
+            &self,
             _o: &StartOptions,
         ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
             Ok(())
         }
-        fn stop(&mut self) {}
-        fn network_change(&mut self) {}
+        fn stop(&self) {}
+        fn network_change(&self) {}
         fn handle_lookup(
             &self,
             _h: &Handle,
@@ -303,8 +303,8 @@ pub fn test_relay_ping_handler_honors_exclusions() {
                 "ni".into(),
             ))
         }
-        fn set_on_message(&mut self, _h: Option<Arc<OnMessageHandler>>) {}
-        fn set_on_connect(&mut self, _h: Option<Arc<OnConnectHandler>>) {}
+        fn set_on_message(&self, _h: Option<Arc<OnMessageHandler>>) {}
+        fn set_on_connect(&self, _h: Option<Arc<OnConnectHandler>>) {}
     }
 
     let sends = Arc::new(Mutex::new(vec![]));
