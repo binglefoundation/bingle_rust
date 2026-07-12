@@ -1,7 +1,13 @@
+use bingle_local::api::REQUIRED_ALGO;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{
     BingleApiLocalImpl, LocalApiConfig, keypair_status_from_facts,
 };
+
+/// Small helper for comparing the f64 required_algo top-up.
+fn approx(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-9
+}
 
 #[test]
 fn test_keypair_status_none_when_no_keypair() {
@@ -78,4 +84,44 @@ fn test_status_unfunded_when_no_asset_and_low_balance() {
     assert_eq!(status.status, "UNFUNDED");
     assert!(status.handle.is_none());
     assert!(status.required_algo.is_some());
+}
+
+#[test]
+fn test_required_algo_is_full_target_when_balance_zero() {
+    // A brand-new account should be asked for the whole adequate-funding target.
+    let status = keypair_status_from_facts("ID_EMPTY".to_string(), false, None, 0.0);
+    assert_eq!(status.status, "UNFUNDED");
+    let required = status.required_algo.expect("required_algo should be set when unfunded");
+    assert!(
+        approx(required, REQUIRED_ALGO),
+        "expected {} got {}",
+        REQUIRED_ALGO,
+        required
+    );
+}
+
+#[test]
+fn test_required_algo_is_shortfall_when_semi_funded() {
+    // Semi-funded (issue #15): a partial balance means we only ask for the delta, not the
+    // full 1.5 again. Balance 0.04 -> required = REQUIRED_ALGO - 0.04.
+    let balance = 0.04;
+    let status = keypair_status_from_facts("ID_SEMI".to_string(), false, None, balance);
+    assert_eq!(status.status, "UNFUNDED");
+    let required = status.required_algo.expect("required_algo should be set when unfunded");
+    assert!(
+        approx(required, REQUIRED_ALGO - balance),
+        "expected {} got {}",
+        REQUIRED_ALGO - balance,
+        required
+    );
+    // And it must be strictly less than the flat target — the whole point of A3.
+    assert!(required < REQUIRED_ALGO);
+}
+
+#[test]
+fn test_required_algo_none_when_funded() {
+    // At or above the target the account is FUNDED and nothing more is required.
+    let status = keypair_status_from_facts("ID_FUNDED".to_string(), false, None, REQUIRED_ALGO);
+    assert_eq!(status.status, "FUNDED");
+    assert!(status.required_algo.is_none());
 }
