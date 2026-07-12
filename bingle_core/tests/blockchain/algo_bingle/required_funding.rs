@@ -10,9 +10,10 @@ fn approx(a: f64, b: f64) -> bool {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn test_registration_funding_zero_price_empty_schema() {
-    // base 0.1 + app opt-in base 0.1 + asset opt-in 0.1 + fees (4 * 0.001) = 0.304 ALGO.
+    // base 0.1 + app opt-in base 0.1 + asset opt-in 0.1 + fees (12 * 0.001) + margin 0.01
+    // = 0.322 ALGO.
     let required = AlgoBingle::registration_funding_algos(0, 0, 0);
-    assert!(approx(required, 0.304), "expected 0.304 got {}", required);
+    assert!(approx(required, 0.322), "expected 0.322 got {}", required);
 }
 
 #[test]
@@ -21,10 +22,28 @@ pub fn test_registration_funding_includes_price_and_schema() {
     // price 0.2 ALGO (200_000 microalgos), schema 2 uints + 1 byte-slice.
     // app opt-in = 100_000 + 2*28_500 + 1*50_000 = 207_000
     // min balance = 100_000 (base) + 207_000 (app) + 100_000 (asset) = 407_000
-    // fees = 4 * 1_000 = 4_000
-    // total = 407_000 + 200_000 + 4_000 = 611_000 microalgos = 0.611 ALGO
+    // fees = 12 * 1_000 = 12_000, safety margin = 10_000
+    // total = 407_000 + 200_000 + 12_000 + 10_000 = 629_000 microalgos = 0.629 ALGO
     let required = AlgoBingle::registration_funding_algos(200_000, 2, 1);
-    assert!(approx(required, 0.611), "expected 0.611 got {}", required);
+    assert!(approx(required, 0.629), "expected 0.629 got {}", required);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_registration_funding_covers_min_balance_plus_spend() {
+    // Regression for issue #15: with the deployed app's local schema (3 uints + 3 byte-slices)
+    // the account minimum balance is 0.5355 ALGO (base 0.1 + app opt-in 0.3355 + asset 0.1).
+    // Even at a near-zero price the target must exceed that minimum by a spend headroom, so the
+    // multi-transaction register flow never drops below min mid-way (the reported failure was
+    // "balance 534500 below min 535500").
+    let min_balance_algos = 0.5355;
+    let required = AlgoBingle::registration_funding_algos(1, 3, 3);
+    assert!(
+        required >= min_balance_algos + 0.02,
+        "required {} should exceed min balance {} with spend headroom",
+        required,
+        min_balance_algos
+    );
 }
 
 #[test]
