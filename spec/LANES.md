@@ -97,7 +97,7 @@ robustness:
 - ~~fix bingle_admin deploy and upgrade~~
 - ~~app replace migrate local data~~
 - ~~reorganize naming~~
-- identify `unsafe` and fix
+- ~~identify `unsafe` and fix~~
 - run code quality tools, fixup and ignore (needs script)
 
 network:
