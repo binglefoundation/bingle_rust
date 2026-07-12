@@ -8,3 +8,7 @@ pub use bingle_local_api::*;
 // Local implementation stub (only generate_keypair currently implemented)
 pub mod bingle_local_api_impl;
 pub use bingle_local_api_impl::*;
+
+// On-chain registration seam (see issue #15, step A4).
+pub mod registration;
+pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};

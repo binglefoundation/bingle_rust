@@ -21,6 +21,11 @@ pub enum BingleError {
     Algo(#[from] AlgoError),
     #[error("Retryable error: {0}")]
     Retryable(String),
+    /// The requested handle is already registered to another account. Typed so callers
+    /// (and the app UI) can prompt for a different handle rather than treating it as a
+    /// funding/other failure. The payload is the owning account address.
+    #[error("Handle already in use by {0}")]
+    HandleTaken(String),
     #[error("{0}")]
     Other(String),
 }
