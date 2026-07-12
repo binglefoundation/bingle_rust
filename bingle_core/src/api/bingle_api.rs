@@ -493,13 +493,14 @@ pub trait BingleApi: Send + Sync {
     /// Clears the persistent accounts cache.
     fn clear_accounts_cache(&self) {}
     /// Start the node using the provided options. Implementations may spawn background tasks.
-    fn start(&mut self, options: &StartOptions) -> Result<(), BingleError>;
+    /// Takes &self: implementations are shared via Arc/Weak and use interior mutability.
+    fn start(&self, options: &StartOptions) -> Result<(), BingleError>;
 
     /// Stop all threads/tasks and release resources.
-    fn stop(&mut self);
+    fn stop(&self);
 
     /// indicates the network connection has changed and we need to rescan for IP address/port.
-    fn network_change(&mut self);
+    fn network_change(&self);
 
     /// List all known relays (root and non-root). When include_self is false, filters out this node.
     /// Implementations should internally use RelayFinder and the configured blockchain discovery.
@@ -580,11 +581,11 @@ pub trait BingleApi: Send + Sync {
     // Handler properties:
 
     /// Set or clear the onMessage callback. Pass None to clear.
-    fn set_on_message(&mut self, handler: Option<Arc<OnMessageHandler>>);
+    fn set_on_message(&self, handler: Option<Arc<OnMessageHandler>>);
 
     /// Set or clear the onConnect callback. Pass None to clear.
-    fn set_on_connect(&mut self, handler: Option<Arc<OnConnectHandler>>);
+    fn set_on_connect(&self, handler: Option<Arc<OnConnectHandler>>);
 
     /// Set or clear the onListening callback. Pass None to clear.
-    fn set_on_listening(&mut self, handler: Option<Arc<OnListeningHandler>>);
+    fn set_on_listening(&self, handler: Option<Arc<OnListeningHandler>>);
 }

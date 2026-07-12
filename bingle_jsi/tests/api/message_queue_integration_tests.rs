@@ -47,11 +47,11 @@ impl BingleApi for MockBingleApi {
     ) -> Option<bingle_core::blockchain::algo_ops::AlgoChainConfig> {
         None
     }
-    fn start(&mut self, _: &StartOptions) -> Result<(), BingleError> {
+    fn start(&self, _: &StartOptions) -> Result<(), BingleError> {
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
 
     fn list_all_relays(&self, _: bool) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         vec![]
@@ -127,9 +127,9 @@ impl BingleApi for MockBingleApi {
         Ok(serde_json::json!({}))
     }
 
-    fn set_on_message(&mut self, _: Option<Arc<OnMessageHandler>>) {}
-    fn set_on_connect(&mut self, _: Option<Arc<OnConnectHandler>>) {}
-    fn set_on_listening(&mut self, handler: Option<Arc<OnListeningHandler>>) {
+    fn set_on_message(&self, _: Option<Arc<OnMessageHandler>>) {}
+    fn set_on_connect(&self, _: Option<Arc<OnConnectHandler>>) {}
+    fn set_on_listening(&self, handler: Option<Arc<OnListeningHandler>>) {
         if let Ok(mut guard) = self.on_listening.lock() {
             *guard = handler;
         }

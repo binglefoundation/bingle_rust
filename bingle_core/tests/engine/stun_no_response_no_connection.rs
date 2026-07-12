@@ -170,7 +170,7 @@ impl BingleApi for NullApi {
     ) -> Vec<bingle_core::relay::relay_finder::RelayInfo> {
         Vec::new()
     }
-    fn set_on_listening(&mut self, _handler: Option<Arc<OnListeningHandler>>) {}
+    fn set_on_listening(&self, _handler: Option<Arc<OnListeningHandler>>) {}
     fn get_user_id(&self) -> Option<String> {
         None
     }
@@ -190,13 +190,13 @@ impl BingleApi for NullApi {
         None
     }
     fn start(
-        &mut self,
+        &self,
         _options: &StartOptions,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(
         &self,
         _handle: &Handle,
@@ -269,12 +269,12 @@ impl BingleApi for NullApi {
         ))
     }
     fn set_on_message(
-        &mut self,
+        &self,
         _handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>,
     ) {
     }
     fn set_on_connect(
-        &mut self,
+        &self,
         _handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>,
     ) {
     }

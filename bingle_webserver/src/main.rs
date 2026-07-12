@@ -1,6 +1,6 @@
 use bingle_core::api::bingle_api::{BingleApi, OnMessageHandler};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
-use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_core::engine::BingleAccess;
 use bingle_core::util::cli_utils::parse_start_options_from_args;
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
 use bingle_local::api::bingle_local_api::BingleLocalApi;
@@ -119,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
     // Setup on-listening handler to update nat_type in shared state
     {
         let nat_type_for_closure = nat_type.clone();
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> =
                 Arc::new(move |listening: bool, nt: bingle_core::engine::NatType| {
                     let type_str = if listening {
@@ -146,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
         let local_api_for_closure = local_api.clone();
         let local_file_for_closure = local_file.clone();
         let api_for_handle = api.clone();
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
                 tracing::info!("Received message from {} ({}): {}", sender, sender_handle, message);
                 let text = message.get("text")
@@ -216,7 +216,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Ok(Some(kp)) = guard.get_keypair() {
                     opts_clone.algo_passphrase = Some(kp.passphrase);
                 }
-                api_clone.access_unsafe_for_tests(|api_mut| {
+                api_clone.access(|api_mut| {
                     if let Err(e) = api_mut.start(&opts_clone) {
                         tracing::error!("Failed to start Bingle API: {}", e);
                     }
@@ -234,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
         // No --local: start API immediately as before
         let api_clone = api.clone();
         let opts_clone = opts.clone();
-        api_clone.access_unsafe_for_tests(|api_mut| {
+        api_clone.access(|api_mut| {
             if let Err(e) = api_mut.start(&opts_clone) {
                 tracing::error!("Failed to start Bingle API: {}", e);
             }
@@ -259,7 +259,7 @@ async fn main() -> anyhow::Result<()> {
     let res = start_server(addr, state).await;
 
     tracing::info!("Stopping Bingle API...");
-    api.access_unsafe_for_tests(|a| a.stop());
+    api.access(|a| a.stop());
     tracing::info!("Stopped.");
 
     res

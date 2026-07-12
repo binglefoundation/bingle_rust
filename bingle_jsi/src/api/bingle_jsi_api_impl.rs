@@ -18,7 +18,7 @@ use bingle_core::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartO
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_core::blockchain::error::AlgoErrorKind;
-use bingle_core::engine::BingleAccessUnsafeForTests;
+use bingle_core::engine::BingleAccess;
 use bingle_core::util::config_utils::{
     parse_node_file_with_ids, parse_stun_file, parse_stun_list, resolve_app_asset_ids,
 };
@@ -346,7 +346,7 @@ impl BingleJsiApiImpl {
             let nat_type_for_closure = nat_type.clone();
             let lcb = listening_callback.clone();
             let listening_atomic = listening.clone();
-            api.access_unsafe_for_tests(|api_mut| {
+            api.access(|api_mut| {
                 let on_listening: Arc<bingle_core::api::bingle_api::OnListeningHandler> = Arc::new(
                     move |listening_val: bool, nt: bingle_core::engine::NatType| {
                         let type_str = if listening_val {
@@ -382,7 +382,7 @@ impl BingleJsiApiImpl {
             let local_file_for_closure = local_file.clone();
             let api_for_handle = api.clone();
             let cb = message_callback.clone();
-            api.access_unsafe_for_tests(|api_mut| {
+            api.access(|api_mut| {
                 let on_message: Arc<bingle_core::api::bingle_api::OnMessageHandler> =
                     Arc::new(move |sender, sender_handle, message| {
                         tracing::info!("[BingleJsiApiImpl][init handler] Received message from {}: {}", sender_handle, message);
@@ -495,7 +495,7 @@ impl BingleJsiApiImpl {
                                 if let Ok(Some(kp)) = guard.get_keypair() {
                                     opts_clone.algo_passphrase = Some(kp.passphrase);
                                 }
-                                api_clone.access_unsafe_for_tests(|api_mut| {
+                                api_clone.access(|api_mut| {
                                     if let Err(e) = api_mut.start(&opts_clone) {
                                         tracing::error!("Failed to start Bingle API: {}", e);
                                     }
@@ -515,7 +515,7 @@ impl BingleJsiApiImpl {
         } else {
             let api_clone = api.clone();
             let opts_clone = opts.clone();
-            api_clone.access_unsafe_for_tests(|api_mut| {
+            api_clone.access(|api_mut| {
                 if let Err(e) = api_mut.start(&opts_clone) {
                     tracing::error!("Failed to start Bingle API: {}", e);
                 }
@@ -652,7 +652,7 @@ impl BingleJsiApiImpl {
         let opts = Arc::new(Mutex::new(opts_obj));
 
         let listening_atomic = listening.clone();
-        api.access_unsafe_for_tests(|api_mut| {
+        api.access(|api_mut| {
             api_mut.set_on_listening(Some(Arc::new(move |listening_val, _nat| {
                 listening_atomic.store(listening_val, Ordering::SeqCst);
             })));
@@ -1126,7 +1126,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             // Start the engine
             let api_clone = self.api.clone();
             let mut start_err = None;
-            api_clone.access_unsafe_for_tests(|api_mut| {
+            api_clone.access(|api_mut| {
                 if let Err(e) = api_mut.start(&opts_clone) {
                     tracing::error!("Failed to start Bingle API: {}", e);
                     start_err = Some(bingle_error_to_jsi(e));
@@ -1199,7 +1199,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
         }
 
         // Stop the engine
-        self.api.access_unsafe_for_tests(|api_mut| {
+        self.api.access(|api_mut| {
             api_mut.stop();
         });
 

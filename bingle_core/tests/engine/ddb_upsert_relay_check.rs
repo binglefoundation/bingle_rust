@@ -21,7 +21,7 @@ impl BingleApi for DummyApi {
         Vec::new()
     }
     fn set_on_listening(
-        &mut self,
+        &self,
         _handler: Option<std::sync::Arc<bingle_core::api::bingle_api::OnListeningHandler>>,
     ) {
     }
@@ -50,13 +50,13 @@ impl BingleApi for DummyApi {
     }
     fn clear_accounts_cache(&self) {}
     fn start(
-        &mut self,
+        &self,
         _options: &StartOptions,
     ) -> Result<(), bingle_core::api::bingle_api::BingleError> {
         Ok(())
     }
-    fn stop(&mut self) {}
-    fn network_change(&mut self) {}
+    fn stop(&self) {}
+    fn network_change(&self) {}
     fn handle_lookup(
         &self,
         _handle: &Handle,
@@ -129,12 +129,12 @@ impl BingleApi for DummyApi {
         ))
     }
     fn set_on_message(
-        &mut self,
+        &self,
         _handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>,
     ) {
     }
     fn set_on_connect(
-        &mut self,
+        &self,
         _handler: Option<Arc<bingle_core::api::bingle_api::OnConnectHandler>>,
     ) {
     }
