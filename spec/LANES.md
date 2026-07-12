@@ -133,14 +133,15 @@ Bugs:
 ~~- Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))~~
 ~~- After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))~~
 - ~~STUN handler does not pick up a change to inconsistent ([#2](https://github.com/bingle-foundation/bingle_rust/issues/2))~~
- - Algo balance shown incorrectly in app when we are semi-funded
-  #15
-
+ - ~~Algo balance shown incorrectly in app when we are semi-funded #15~~
+- **Error on send when no network #18**
+- Keep alive still loses relay listener #16
+- 
 Deferred (to create bugs):
 - cache DDB locally with timeout / cancel
 - (protocol review) ensure fails result in a fail message which gets handled
 
-- -android:
-- support NDK in library
-- support Android for react native UX
-- build APK
+- Android:
+  - support NDK in library
+  - support Android for react native UX
+  - build APK
