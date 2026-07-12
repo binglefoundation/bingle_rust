@@ -1327,10 +1327,7 @@ impl BingleApi for BingleApiImpl {
         tracing::info!("[BingleApiImpl::set_on_connect][exit]");
     }
 
-    fn set_on_listening(
-        &self,
-        handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>,
-    ) {
+    fn set_on_listening(&self, handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {
         tracing::info!(
             "[BingleApiImpl::set_on_listening][enter] handler_is_some={}",
             handler.is_some()
@@ -1430,11 +1427,7 @@ impl BingleApiImpl {
         };
 
         // Build AlgoOps with provided config
-        let ops = AlgoOps::new(
-            self.opts().algo_passphrase.clone(),
-            None,
-            Some(config),
-        );
+        let ops = AlgoOps::new(self.opts().algo_passphrase.clone(), None, Some(config));
         match ops.local_state_for_account(app_id, user_id) {
             Ok(Some(entries)) => {
                 if let Some((_k, h)) = entries.into_iter().find(|(k, _)| k == "Handle") {
@@ -1603,7 +1596,8 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
     }
     fn set_relay_state(&self, state: crate::engine::RelayState) {
         tracing::info!("[BingleApiImpl::set_relay_state] state={:?}", state);
-        self.engine.set_relay_state(state, "set_relay_state from API internal");
+        self.engine
+            .set_relay_state(state, "set_relay_state from API internal");
     }
     fn get_peer_ddb_target(&self) -> Option<usize> {
         self.engine.access(|e| e.peer_ddb_records())
