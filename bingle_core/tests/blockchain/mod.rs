@@ -28,6 +28,9 @@ pub mod set_allow_relay_test;
 #[path = "algo_bingle/check_allow_relay_test.rs"]
 pub mod check_allow_relay_test;
 
+#[path = "algo_bingle/required_funding.rs"]
+pub mod required_funding;
+
 #[path = "algo_bingle_unit.rs"]
 pub mod algo_bingle_unit;
 

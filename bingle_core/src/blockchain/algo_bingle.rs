@@ -78,6 +78,19 @@ pub enum QueryMode {
     ForceFull, // Force a full scan
 }
 
+// Algorand minimum-balance and fee schedule, in microalgos (see the developer docs on
+// minimum balance). Used by the registration cost model; the app opt-in cost also depends on
+// the app's local-state schema, read live via AlgoOps::get_app_local_schema.
+const MICROALGOS_PER_ALGO: u64 = 1_000_000;
+const MBR_BASE_MICROALGOS: u64 = 100_000; // base account minimum balance
+const MBR_ASSET_OPTIN_MICROALGOS: u64 = 100_000; // per ASA opt-in
+const MBR_APP_OPTIN_BASE_MICROALGOS: u64 = 100_000; // per app opt-in, before schema
+const MBR_APP_UINT_MICROALGOS: u64 = 28_500; // per local uint in the app schema
+const MBR_APP_BYTESLICE_MICROALGOS: u64 = 50_000; // per local byte-slice in the app schema
+const MIN_TXN_FEE_MICROALGOS: u64 = 1_000; // per transaction
+// opt-in app, opt-in asset, buy Bingle$, register handle.
+const REGISTRATION_TXN_COUNT: u64 = 4;
+
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
         // Debug-print the AlgoOps configuration for visibility
@@ -121,6 +134,38 @@ impl AlgoBingle {
             .iter()
             .find(|(k, _)| k == "BinglePrice")
             .and_then(|(_, v)| v.parse::<u64>().ok())
+    }
+
+    /// Exact ALGO balance an account must hold to complete registration, derived from live
+    /// cost rather than a padded flat constant (issue #15, A3b).
+    ///
+    /// Reads the Bingle$ price and the app's local-state schema on-chain, then sums the
+    /// post-registration minimum balance, the price, and the transaction fees via
+    /// [`AlgoBingle::registration_funding_algos`]. Errors propagate so the caller can fall
+    /// back to a static target if the chain is unreachable.
+    pub fn required_funding(&self) -> Result<f64> {
+        let price = self.get_bingle_price(self.app_id)?;
+        let (uints, byte_slices) = self.ops.get_app_local_schema(self.app_id)?;
+        Ok(Self::registration_funding_algos(price, uints, byte_slices))
+    }
+
+    /// Pure cost model for registering a handle: sums the post-registration minimum balance
+    /// (base + app opt-in incl. schema + asset opt-in) + the Bingle$ price + the registration
+    /// transaction fees. The MBR/fee figures are Algorand protocol constants; `price_microalgos`
+    /// and the app schema `(local_uints, local_byte_slices)` are read on-chain by
+    /// [`AlgoBingle::required_funding`].
+    pub fn registration_funding_algos(
+        price_microalgos: u64,
+        local_uints: u64,
+        local_byte_slices: u64,
+    ) -> f64 {
+        let app_optin_mbr = MBR_APP_OPTIN_BASE_MICROALGOS
+            + MBR_APP_UINT_MICROALGOS * local_uints
+            + MBR_APP_BYTESLICE_MICROALGOS * local_byte_slices;
+        let minimum_balance = MBR_BASE_MICROALGOS + app_optin_mbr + MBR_ASSET_OPTIN_MICROALGOS;
+        let fees = MIN_TXN_FEE_MICROALGOS * REGISTRATION_TXN_COUNT;
+        let total_microalgos = minimum_balance + price_microalgos + fees;
+        total_microalgos as f64 / MICROALGOS_PER_ALGO as f64
     }
 
     /// Fetch the current Bingle price from the application's global state under key "BinglePrice".

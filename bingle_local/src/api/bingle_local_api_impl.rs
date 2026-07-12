@@ -25,15 +25,17 @@ pub struct LocalApiConfig {
 /// check (FUNDED / UNFUNDED). `balance_algos` is only consulted when the
 /// account is not ACTIVE.
 ///
-/// For UNFUNDED, `required_algo` is the **top-up** needed to reach adequate
-/// funding (`REQUIRED_ALGO - balance_algos`), not the flat target — so a
-/// semi-funded account is only asked for the shortfall rather than the full
-/// amount again (issue #15, A3).
+/// `required_target_algos` is the balance considered adequate to register: the
+/// live cost from [`required_funding_algos`] when it can be read, or `REQUIRED_ALGO`
+/// as a fallback. For UNFUNDED, `required_algo` is the **top-up** to reach that
+/// target (`required_target_algos - balance_algos`), so a semi-funded account is
+/// only asked for the shortfall (issue #15, A3/A3b).
 pub fn keypair_status_from_facts(
     algorand_id: String,
     has_asset: bool,
     handle: Option<String>,
     balance_algos: f64,
+    required_target_algos: f64,
 ) -> KeypairStatus {
     if has_asset && handle.is_some() {
         KeypairStatus {
@@ -42,7 +44,7 @@ pub fn keypair_status_from_facts(
             handle,
             required_algo: None,
         }
-    } else if balance_algos >= REQUIRED_ALGO {
+    } else if balance_algos >= required_target_algos {
         KeypairStatus {
             status: "FUNDED".to_string(),
             id: Some(algorand_id),
@@ -50,9 +52,9 @@ pub fn keypair_status_from_facts(
             required_algo: None,
         }
     } else {
-        // Ask only for the shortfall to reach REQUIRED_ALGO. Clamped at 0 defensively; in
-        // this branch balance_algos < REQUIRED_ALGO so the difference is already positive.
-        let top_up = (REQUIRED_ALGO - balance_algos).max(0.0);
+        // Ask only for the shortfall to reach the target. Clamped at 0 defensively; in this
+        // branch balance_algos < required_target_algos so the difference is already positive.
+        let top_up = (required_target_algos - balance_algos).max(0.0);
         KeypairStatus {
             status: "UNFUNDED".to_string(),
             id: Some(algorand_id),
@@ -855,11 +857,39 @@ impl BingleLocalApi for BingleApiLocalImpl {
             balance_algos
         };
 
+        // Derive the adequate-funding target from live cost (AlgoBingle::required_funding reads
+        // the Bingle$ price + the app's local-schema MBR + fees), falling back to the flat
+        // REQUIRED_ALGO if the chain read fails so a transient hiccup never blocks the status
+        // (issue #15, A3b). Only needed when not ACTIVE; skip the read otherwise.
+        let required_target_algos = if has_asset && handle.is_some() {
+            REQUIRED_ALGO
+        } else {
+            let bgl = AlgoBingle::new(ops.clone(), self.config.app_id, self.config.asset_id);
+            match bgl.required_funding() {
+                Ok(target) => {
+                    tracing::info!(
+                        "[BingleLocalApi][keypair_status] derived required funding {} ALGO",
+                        target
+                    );
+                    target
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[BingleLocalApi][keypair_status] could not derive required funding ({}); falling back to REQUIRED_ALGO {}",
+                        e,
+                        REQUIRED_ALGO
+                    );
+                    REQUIRED_ALGO
+                }
+            }
+        };
+
         Ok(keypair_status_from_facts(
             algorand_id,
             has_asset,
             handle,
             balance_algos,
+            required_target_algos,
         ))
     }
 
