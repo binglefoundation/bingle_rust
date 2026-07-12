@@ -1,7 +1,7 @@
 use bingle_local::api::REQUIRED_ALGO;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{
-    BingleApiLocalImpl, LocalApiConfig, keypair_status_from_facts, required_funding_algos,
+    BingleApiLocalImpl, LocalApiConfig, keypair_status_from_facts,
 };
 
 /// Small helper for comparing the f64 required_algo top-up.
@@ -145,33 +145,4 @@ fn test_status_uses_provided_target_not_flat_constant() {
     assert_eq!(unfunded.status, "UNFUNDED");
     let required = unfunded.required_algo.expect("required when unfunded");
     assert!(approx(required, target - 0.2), "expected {} got {}", target - 0.2, required);
-}
-
-// ── required_funding_algos: the live cost model (A3b) ────────────────────────────
-
-#[test]
-fn test_required_funding_zero_price_empty_schema() {
-    // base 0.1 + app opt-in base 0.1 + asset opt-in 0.1 + fees (4 * 0.001) = 0.304 ALGO.
-    let required = required_funding_algos(0, 0, 0);
-    assert!(approx(required, 0.304), "expected 0.304 got {}", required);
-}
-
-#[test]
-fn test_required_funding_includes_price_and_schema() {
-    // price 0.2 ALGO (200_000 microalgos), schema 2 uints + 1 byte-slice.
-    // app opt-in = 100_000 + 2*28_500 + 1*50_000 = 207_000
-    // min balance = 100_000 (base) + 207_000 (app) + 100_000 (asset) = 407_000
-    // fees = 4 * 1_000 = 4_000
-    // total = 407_000 + 200_000 + 4_000 = 611_000 microalgos = 0.611 ALGO
-    let required = required_funding_algos(200_000, 2, 1);
-    assert!(approx(required, 0.611), "expected 0.611 got {}", required);
-}
-
-#[test]
-fn test_required_funding_grows_with_price() {
-    let cheap = required_funding_algos(100_000, 1, 1);
-    let dear = required_funding_algos(900_000, 1, 1);
-    assert!(dear > cheap);
-    // The difference is exactly the price delta (0.8 ALGO).
-    assert!(approx(dear - cheap, 0.8), "expected 0.8 got {}", dear - cheap);
 }

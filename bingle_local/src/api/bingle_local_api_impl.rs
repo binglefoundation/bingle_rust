@@ -18,35 +18,6 @@ pub struct LocalApiConfig {
     pub asset_id: u64,
 }
 
-// Algorand minimum-balance and fee schedule, in microalgos. These are protocol constants
-// (see the developer docs on minimum balance); the app opt-in cost also depends on the app's
-// local-state schema, which is read live via AlgoBingle::get_app_local_schema.
-const MICROALGOS_PER_ALGO: u64 = 1_000_000;
-const MBR_BASE_MICROALGOS: u64 = 100_000; // base account minimum balance
-const MBR_ASSET_OPTIN_MICROALGOS: u64 = 100_000; // per ASA opt-in
-const MBR_APP_OPTIN_BASE_MICROALGOS: u64 = 100_000; // per app opt-in, before schema
-const MBR_APP_UINT_MICROALGOS: u64 = 28_500; // per local uint in the app schema
-const MBR_APP_BYTESLICE_MICROALGOS: u64 = 50_000; // per local byte-slice in the app schema
-const MIN_TXN_FEE_MICROALGOS: u64 = 1_000; // per transaction
-// opt-in app, opt-in asset, buy Bingle$, register handle.
-const REGISTRATION_TXN_COUNT: u64 = 4;
-
-/// Exact ALGO balance an account must hold to complete registration, derived from live cost
-/// rather than a padded flat constant (issue #15, A3b).
-///
-/// Sums the post-registration minimum balance (base + app opt-in incl. schema + asset opt-in),
-/// the Bingle$ price, and the transaction fees. `price_microalgos` and the app schema
-/// `(local_uints, local_byte_slices)` are read on-chain; the rest are protocol constants.
-pub fn required_funding_algos(price_microalgos: u64, local_uints: u64, local_byte_slices: u64) -> f64 {
-    let app_optin_mbr = MBR_APP_OPTIN_BASE_MICROALGOS
-        + MBR_APP_UINT_MICROALGOS * local_uints
-        + MBR_APP_BYTESLICE_MICROALGOS * local_byte_slices;
-    let minimum_balance = MBR_BASE_MICROALGOS + app_optin_mbr + MBR_ASSET_OPTIN_MICROALGOS;
-    let fees = MIN_TXN_FEE_MICROALGOS * REGISTRATION_TXN_COUNT;
-    let total_microalgos = minimum_balance + price_microalgos + fees;
-    total_microalgos as f64 / MICROALGOS_PER_ALGO as f64
-}
-
 /// Decide the keypair status from resolved on-chain facts.
 ///
 /// ACTIVE requires both the Bingle$ asset and a registered handle. When the
@@ -886,32 +857,26 @@ impl BingleLocalApi for BingleApiLocalImpl {
             balance_algos
         };
 
-        // Derive the adequate-funding target from live cost (Bingle$ price + the app's local
-        // schema MBR + fees), falling back to the flat REQUIRED_ALGO if either read fails so a
-        // transient blockchain hiccup never blocks the status (issue #15, A3b). Only needed when
-        // not ACTIVE; skip the reads otherwise.
+        // Derive the adequate-funding target from live cost (AlgoBingle::required_funding reads
+        // the Bingle$ price + the app's local-schema MBR + fees), falling back to the flat
+        // REQUIRED_ALGO if the chain read fails so a transient hiccup never blocks the status
+        // (issue #15, A3b). Only needed when not ACTIVE; skip the read otherwise.
         let required_target_algos = if has_asset && handle.is_some() {
             REQUIRED_ALGO
         } else {
-            let app_id = self.config.app_id;
-            let bgl = AlgoBingle::new(ops.clone(), app_id, self.config.asset_id);
-            match (bgl.get_bingle_price(app_id), bgl.get_app_local_schema(app_id)) {
-                (Ok(price), Ok((uints, byte_slices))) => {
-                    let target = required_funding_algos(price, uints, byte_slices);
+            let bgl = AlgoBingle::new(ops.clone(), self.config.app_id, self.config.asset_id);
+            match bgl.required_funding() {
+                Ok(target) => {
                     tracing::info!(
-                        "[BingleLocalApi][keypair_status] derived required funding {} ALGO (price={} uints={} byte_slices={})",
-                        target,
-                        price,
-                        uints,
-                        byte_slices
+                        "[BingleLocalApi][keypair_status] derived required funding {} ALGO",
+                        target
                     );
                     target
                 }
-                (price_res, schema_res) => {
+                Err(e) => {
                     tracing::warn!(
-                        "[BingleLocalApi][keypair_status] could not derive required funding (price: {:?}, schema: {:?}); falling back to REQUIRED_ALGO {}",
-                        price_res.as_ref().err(),
-                        schema_res.as_ref().err(),
+                        "[BingleLocalApi][keypair_status] could not derive required funding ({}); falling back to REQUIRED_ALGO {}",
+                        e,
                         REQUIRED_ALGO
                     );
                     REQUIRED_ALGO

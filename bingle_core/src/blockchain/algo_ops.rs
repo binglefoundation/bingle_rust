@@ -619,6 +619,40 @@ impl AlgoOps {
         Ok(None)
     }
 
+    /// Read an app's local-state schema `(num_uints, num_byte_slices)` from application info.
+    ///
+    /// Generic to any app: these counts drive the minimum-balance increase an account incurs
+    /// when it opts in to the app, so callers can size the exact funding an opt-in requires.
+    pub fn get_app_local_schema(&self, app_id: u64) -> Result<(u64, u64)> {
+        if app_id == 0 {
+            bail!("app_id must be > 0");
+        }
+        let client = self.algod_client()?;
+        let app_info = self
+            .algod_call(|| client.app(algonaut::core::AppId(app_id)))
+            .map_err(|e| anyhow!("application_information failed: {e}"))?;
+        let v = serde_json::to_value(&app_info)
+            .map_err(|e| anyhow!("failed to serialize application info: {e}"))?;
+        let schema = v
+            .get("params")
+            .and_then(|p| {
+                p.get("local-state-schema")
+                    .or_else(|| p.get("local_state_schema"))
+            })
+            .ok_or_else(|| anyhow!("local-state-schema missing for app_id {app_id}"))?;
+        let num_uints = schema
+            .get("num-uint")
+            .or_else(|| schema.get("num_uint"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let num_byte_slices = schema
+            .get("num-byte-slice")
+            .or_else(|| schema.get("num_byte_slice"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        Ok((num_uints, num_byte_slices))
+    }
+
     pub fn local_state_for_account(
         &self,
         app_id: u64,
