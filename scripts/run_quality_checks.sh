@@ -41,16 +41,47 @@ esac
 # the `test-hooks` feature automatically via bingle_core's self dev-dependency.
 CLIPPY_TARGETS=(--workspace --all-targets)
 
+# rustfmt package set: every workspace member except bingle_test. bingle_test's
+# lib.rs declares iOS-only modules via `#[cfg(target_os = "ios")] #[path =
+# "../../tests/..."]`; `cargo fmt` does not evaluate cfg, so on a non-iOS host it
+# tries to resolve those paths and fails with "No such file or directory".
+# Derived from the workspace member list so it stays correct as crates are added.
+FMT_ARGS=()
+while IFS= read -r pkg; do
+  [[ -n "${pkg}" && "${pkg}" != "bingle_test" ]] && FMT_ARGS+=(-p "${pkg}")
+done < <(sed -n '/members = \[/,/\]/p' Cargo.toml | grep -oE '"[^"]+"' | tr -d '"')
+[[ "${#FMT_ARGS[@]}" -eq 0 ]] && FMT_ARGS=(--all)  # fallback if parsing found nothing
+
 section() { echo -e "\n${BOLD}${YELLOW}== $1 ==${NC}"; }
 
 # ------------------------------------------------------------------ fix mode
 if [[ "${MODE}" == "fix" ]]; then
-  section "rustfmt (apply)"
-  cargo fmt --all
+  # `cargo clippy --fix` rewrites source and has been observed to corrupt files
+  # when many overlapping suggestions apply at once. To keep it safe we (1) refuse
+  # to run on a dirty tree — so its edits are the only uncommitted changes and are
+  # trivially reviewable/revertible — (2) verify the result still compiles across
+  # all targets, and (3) auto-revert clippy's edits if it broke the build. Only
+  # then do we run rustfmt (which is deterministic and safe).
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    echo -e "${RED}fix mode needs a clean git tree${NC} (so clippy's edits stay reviewable/revertible)."
+    echo "Commit or stash your changes first, then re-run: $0 fix"
+    exit 1
+  fi
+
   section "clippy --fix (apply)"
-  # --allow-dirty/--allow-staged so it runs against an uncommitted tree.
-  cargo clippy "${CLIPPY_TARGETS[@]}" --fix --allow-dirty --allow-staged
-  echo -e "\n${YELLOW}Applied mechanical fixes. Re-run '$0' to see what remains.${NC}"
+  cargo clippy "${CLIPPY_TARGETS[@]}" --fix
+
+  section "verify the tree still compiles"
+  if ! cargo check "${CLIPPY_TARGETS[@]}"; then
+    echo -e "${RED}clippy --fix produced code that does not compile — reverting its changes.${NC}"
+    git restore .
+    echo "Reverted. Apply clippy suggestions manually instead (see '$0 --detail')."
+    exit 1
+  fi
+
+  section "rustfmt (apply)"
+  cargo fmt "${FMT_ARGS[@]}"
+  echo -e "\n${GREEN}Applied clippy --fix + rustfmt.${NC} Review 'git diff' before committing."
   exit 0
 fi
 
@@ -61,7 +92,7 @@ fail=0
 # --------------------------------------------------------------------- fmt
 if [[ "${RUN_FMT}" == "1" ]]; then
   section "rustfmt"
-  fmt_out="$(cargo fmt --all -- --check 2>/dev/null)"
+  fmt_out="$(cargo fmt "${FMT_ARGS[@]}" -- --check)"
   if [[ -z "${fmt_out}" ]]; then
     echo -e "${GREEN}clean${NC}"
   else
