@@ -28,3 +28,6 @@ tempfile = "3"
 # Unit tests: all bingle_webserver tests are local unit-style tests.
 name = "unit"
 path = "tests/all.rs"
+
+[lints]
+workspace = true
