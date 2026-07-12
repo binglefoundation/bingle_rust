@@ -88,8 +88,16 @@ const MBR_APP_OPTIN_BASE_MICROALGOS: u64 = 100_000; // per app opt-in, before sc
 const MBR_APP_UINT_MICROALGOS: u64 = 28_500; // per local uint in the app schema
 const MBR_APP_BYTESLICE_MICROALGOS: u64 = 50_000; // per local byte-slice in the app schema
 const MIN_TXN_FEE_MICROALGOS: u64 = 1_000; // per transaction
-// opt-in app, opt-in asset, buy Bingle$, register handle.
-const REGISTRATION_TXN_COUNT: u64 = 4;
+// The register flow is not 4 transactions: opt-in app + opt-in asset, then buy_bingle (opt-in
+// sender to asset + a payment/app-call group whose app performs an inner ASA transfer) and
+// register (opt-in app-to-asset + opt-in sender + opt-in app + an asset-transfer/app-call group
+// with an inner transfer), several opt-ins re-issued idempotently. Under-counting the fees left
+// the account below its (asset-raised) minimum balance mid-registration, so the register txn
+// failed with "balance N below min N+ε" (issue #15). Budget for the full set.
+const REGISTRATION_TXN_COUNT: u64 = 12;
+// Extra safety margin (microalgos) on top of the modelled fees so fee/rounding variance can
+// never leave the account below its minimum balance during registration (issue #15).
+const REGISTRATION_SAFETY_MARGIN_MICROALGOS: u64 = 10_000;
 
 impl AlgoBingle {
     pub fn new(ops: AlgoOps, app_id: u64, asset_id: u64) -> Self {
@@ -164,7 +172,8 @@ impl AlgoBingle {
             + MBR_APP_BYTESLICE_MICROALGOS * local_byte_slices;
         let minimum_balance = MBR_BASE_MICROALGOS + app_optin_mbr + MBR_ASSET_OPTIN_MICROALGOS;
         let fees = MIN_TXN_FEE_MICROALGOS * REGISTRATION_TXN_COUNT;
-        let total_microalgos = minimum_balance + price_microalgos + fees;
+        let total_microalgos =
+            minimum_balance + price_microalgos + fees + REGISTRATION_SAFETY_MARGIN_MICROALGOS;
         total_microalgos as f64 / MICROALGOS_PER_ALGO as f64
     }
 
