@@ -25,6 +25,12 @@ pub trait RegistrationOps {
     /// fail-fast pre-check (A1); present on the seam from A4 so the trait is stable.
     fn handle_lookup(&self, handle: &str) -> Result<Option<String>, BingleError>;
 
+    /// Whether the account already holds local state for the Bingle app.
+    fn is_opted_in_app(&self) -> Result<bool, BingleError>;
+
+    /// Whether the account already holds the Bingle$ asset.
+    fn is_opted_in_asset(&self) -> Result<bool, BingleError>;
+
     /// Opt the account in to the Bingle app.
     fn opt_in_app(&self) -> Result<(), BingleError>;
 
@@ -67,12 +73,27 @@ pub fn run_registration(ops: &dyn RegistrationOps, handle: &str) -> Result<(), B
         return Err(BingleError::HandleTaken(owner));
     }
 
-    ops.opt_in_app().inspect_err(|e| {
-        tracing::error!("[register] opt_in_app failed: {}", e);
-    })?;
-    ops.opt_in_to_asset().inspect_err(|e| {
-        tracing::error!("[register] opt_in_to_asset failed: {}", e);
-    })?;
+    // Idempotent opt-ins (A2): opting in is a non-refundable min-balance bump, so skip it
+    // when the account already holds the app/asset. This makes a retry after a mid-flow
+    // failure not re-spend on steps that already succeeded.
+    if ops.is_opted_in_app().inspect_err(|e| {
+        tracing::error!("[register] is_opted_in_app check failed: {}", e);
+    })? {
+        tracing::debug!("[register] already opted in to app; skipping opt_in_app");
+    } else {
+        ops.opt_in_app().inspect_err(|e| {
+            tracing::error!("[register] opt_in_app failed: {}", e);
+        })?;
+    }
+    if ops.is_opted_in_asset().inspect_err(|e| {
+        tracing::error!("[register] is_opted_in_asset check failed: {}", e);
+    })? {
+        tracing::debug!("[register] already opted in to asset; skipping opt_in_to_asset");
+    } else {
+        ops.opt_in_to_asset().inspect_err(|e| {
+            tracing::error!("[register] opt_in_to_asset failed: {}", e);
+        })?;
+    }
     let price = ops.get_bingle_price().inspect_err(|e| {
         tracing::error!("[register] get_bingle_price failed: {}", e);
     })?;
@@ -115,6 +136,21 @@ impl RegistrationOps for ChainRegistrationOps {
 
     fn handle_lookup(&self, handle: &str) -> Result<Option<String>, BingleError> {
         self.bgl.handle_lookup(handle).map_err(BingleError::from_anyhow)
+    }
+
+    fn is_opted_in_app(&self) -> Result<bool, BingleError> {
+        let address = self.self_address()?;
+        self.ops
+            .local_state_for_account(self.app_id, &address)
+            .map(|state| state.is_some())
+            .map_err(BingleError::from_anyhow)
+    }
+
+    fn is_opted_in_asset(&self) -> Result<bool, BingleError> {
+        let address = self.self_address()?;
+        self.ops
+            .is_account_opted_in_to_asset(&address, self.asset_id)
+            .map_err(BingleError::from_anyhow)
     }
 
     fn opt_in_app(&self) -> Result<(), BingleError> {

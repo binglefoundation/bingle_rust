@@ -26,6 +26,8 @@ struct RecordingOps {
     self_addr: String,
     price: u64,
     fail_at: FailAt,
+    opted_in_app: bool,
+    opted_in_asset: bool,
 }
 
 impl RecordingOps {
@@ -36,6 +38,8 @@ impl RecordingOps {
             self_addr: "SELF_ADDR".to_string(),
             price: 1000,
             fail_at: FailAt::None,
+            opted_in_app: false,
+            opted_in_asset: false,
         }
     }
 
@@ -48,6 +52,13 @@ impl RecordingOps {
     fn with_handle_owner(owner: Option<&str>) -> Self {
         let mut ops = RecordingOps::new();
         ops.handle_owner = owner.map(str::to_string);
+        ops
+    }
+
+    fn already_opted_in(app: bool, asset: bool) -> Self {
+        let mut ops = RecordingOps::new();
+        ops.opted_in_app = app;
+        ops.opted_in_asset = asset;
         ops
     }
 
@@ -73,6 +84,16 @@ impl RegistrationOps for RecordingOps {
     fn handle_lookup(&self, _handle: &str) -> Result<Option<String>, BingleError> {
         self.record("handle_lookup");
         Ok(self.handle_owner.clone())
+    }
+
+    fn is_opted_in_app(&self) -> Result<bool, BingleError> {
+        self.record("is_opted_in_app");
+        Ok(self.opted_in_app)
+    }
+
+    fn is_opted_in_asset(&self) -> Result<bool, BingleError> {
+        self.record("is_opted_in_asset");
+        Ok(self.opted_in_asset)
     }
 
     fn opt_in_app(&self) -> Result<(), BingleError> {
@@ -118,7 +139,8 @@ impl RegistrationOps for RecordingOps {
 
 #[test]
 fn run_registration_drives_the_chain_in_order() {
-    // Handle is free (handle_owner = None), so the pre-check passes and the full chain runs.
+    // Handle is free (handle_owner = None) and the account is not opted in, so the pre-check
+    // passes and the full chain runs including both opt-ins.
     let ops = RecordingOps::new();
     run_registration(&ops, "alice").expect("registration should succeed");
     assert_eq!(
@@ -126,7 +148,9 @@ fn run_registration_drives_the_chain_in_order() {
         vec![
             "self_address".to_string(),
             "handle_lookup".to_string(),
+            "is_opted_in_app".to_string(),
             "opt_in_app".to_string(),
+            "is_opted_in_asset".to_string(),
             "opt_in_to_asset".to_string(),
             "get_bingle_price".to_string(),
             "buy_bingle(1000)".to_string(),
@@ -146,6 +170,7 @@ fn run_registration_stops_at_first_opt_in_failure() {
         vec![
             "self_address".to_string(),
             "handle_lookup".to_string(),
+            "is_opted_in_app".to_string(),
             "opt_in_app".to_string(),
         ]
     );
@@ -162,13 +187,58 @@ fn run_registration_stops_before_register_when_buy_fails() {
         vec![
             "self_address".to_string(),
             "handle_lookup".to_string(),
+            "is_opted_in_app".to_string(),
             "opt_in_app".to_string(),
+            "is_opted_in_asset".to_string(),
             "opt_in_to_asset".to_string(),
             "get_bingle_price".to_string(),
             "buy_bingle(1000)".to_string(),
         ]
     );
     assert!(!ops.calls().iter().any(|c| c.starts_with("register")));
+}
+
+#[test]
+fn run_registration_skips_opt_ins_when_already_opted_in() {
+    // Retry scenario (issue #15 A2): the account already holds the app and asset, so neither
+    // opt-in runs again — only the read-only checks — and no min-balance is re-spent.
+    let ops = RecordingOps::already_opted_in(true, true);
+    run_registration(&ops, "alice").expect("registration should succeed");
+    assert_eq!(
+        ops.calls(),
+        vec![
+            "self_address".to_string(),
+            "handle_lookup".to_string(),
+            "is_opted_in_app".to_string(),
+            "is_opted_in_asset".to_string(),
+            "get_bingle_price".to_string(),
+            "buy_bingle(1000)".to_string(),
+            "register(alice)".to_string(),
+        ]
+    );
+    assert!(!ops.calls().iter().any(|c| c == "opt_in_app" || c == "opt_in_to_asset"));
+}
+
+#[test]
+fn run_registration_opts_in_asset_only_when_app_already_done() {
+    // Mixed retry: app opt-in already succeeded on a prior attempt, asset did not. Only the
+    // asset opt-in should be re-attempted.
+    let ops = RecordingOps::already_opted_in(true, false);
+    run_registration(&ops, "alice").expect("registration should succeed");
+    assert_eq!(
+        ops.calls(),
+        vec![
+            "self_address".to_string(),
+            "handle_lookup".to_string(),
+            "is_opted_in_app".to_string(),
+            "is_opted_in_asset".to_string(),
+            "opt_in_to_asset".to_string(),
+            "get_bingle_price".to_string(),
+            "buy_bingle(1000)".to_string(),
+            "register(alice)".to_string(),
+        ]
+    );
+    assert!(!ops.calls().iter().any(|c| c == "opt_in_app"));
 }
 
 #[test]
@@ -207,7 +277,9 @@ fn run_registration_proceeds_when_handle_owned_by_self() {
         vec![
             "self_address".to_string(),
             "handle_lookup".to_string(),
+            "is_opted_in_app".to_string(),
             "opt_in_app".to_string(),
+            "is_opted_in_asset".to_string(),
             "opt_in_to_asset".to_string(),
             "get_bingle_price".to_string(),
             "buy_bingle(1000)".to_string(),
