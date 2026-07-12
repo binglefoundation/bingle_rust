@@ -4,18 +4,18 @@
 // The keep-alive interval is set very long so no send fires during these tests;
 // only the sender lifecycle is observed via relay_keep_alive_target_for_tests.
 
-use std::net::SocketAddr;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
-use std::time::Duration;
 use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, StartOptions};
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
 use bingle_core::engine::Engine;
 use bingle_core::messages::router::Router;
 use bingle_core::relay::relay_finder::RelayInfo;
+use std::net::SocketAddr;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use std::time::Duration;
 
 use crate::util::reusable_mock_api::{InnerBingleApi, InnerBingleApiInternal, MockApiBoth};
 

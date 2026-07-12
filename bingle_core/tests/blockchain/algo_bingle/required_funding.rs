@@ -53,5 +53,9 @@ pub fn test_registration_funding_grows_with_price() {
     let dear = AlgoBingle::registration_funding_algos(900_000, 1, 1);
     assert!(dear > cheap);
     // The difference is exactly the price delta (0.8 ALGO).
-    assert!(approx(dear - cheap, 0.8), "expected 0.8 got {}", dear - cheap);
+    assert!(
+        approx(dear - cheap, 0.8),
+        "expected 0.8 got {}",
+        dear - cheap
+    );
 }

@@ -1412,10 +1412,12 @@ pub mod openssl_impl {
 
         // &self accessors for the interior-mutable debug flags.
         fn dangerous_debug(&self) -> bool {
-            self.dangerous_debug.load(std::sync::atomic::Ordering::SeqCst)
+            self.dangerous_debug
+                .load(std::sync::atomic::Ordering::SeqCst)
         }
         fn null_encryption(&self) -> bool {
-            self.null_encryption.load(std::sync::atomic::Ordering::SeqCst)
+            self.null_encryption
+                .load(std::sync::atomic::Ordering::SeqCst)
         }
         fn app_layer_only_verification(&self) -> bool {
             self.app_layer_only_verification
@@ -1887,10 +1889,7 @@ pub mod openssl_impl {
             }
         }
 
-        pub fn start_accept_with_mux(
-            &self,
-            mux: Arc<crate::dtls::UdpNetworkMux>,
-        ) -> Result<()> {
+        pub fn start_accept_with_mux(&self, mux: Arc<crate::dtls::UdpNetworkMux>) -> Result<()> {
             use std::sync::Arc;
             // Validate server creds
             if self.server_signing_cert.get().is_none()

@@ -94,7 +94,9 @@ fn test_required_algo_is_full_target_when_balance_zero() {
     // A brand-new account should be asked for the whole adequate-funding target.
     let status = keypair_status_from_facts("ID_EMPTY".to_string(), false, None, 0.0, REQUIRED_ALGO);
     assert_eq!(status.status, "UNFUNDED");
-    let required = status.required_algo.expect("required_algo should be set when unfunded");
+    let required = status
+        .required_algo
+        .expect("required_algo should be set when unfunded");
     assert!(
         approx(required, REQUIRED_ALGO),
         "expected {} got {}",
@@ -111,7 +113,9 @@ fn test_required_algo_is_shortfall_when_semi_funded() {
     let status =
         keypair_status_from_facts("ID_SEMI".to_string(), false, None, balance, REQUIRED_ALGO);
     assert_eq!(status.status, "UNFUNDED");
-    let required = status.required_algo.expect("required_algo should be set when unfunded");
+    let required = status
+        .required_algo
+        .expect("required_algo should be set when unfunded");
     assert!(
         approx(required, REQUIRED_ALGO - balance),
         "expected {} got {}",
@@ -125,8 +129,13 @@ fn test_required_algo_is_shortfall_when_semi_funded() {
 #[test]
 fn test_required_algo_none_when_funded() {
     // At or above the target the account is FUNDED and nothing more is required.
-    let status =
-        keypair_status_from_facts("ID_FUNDED".to_string(), false, None, REQUIRED_ALGO, REQUIRED_ALGO);
+    let status = keypair_status_from_facts(
+        "ID_FUNDED".to_string(),
+        false,
+        None,
+        REQUIRED_ALGO,
+        REQUIRED_ALGO,
+    );
     assert_eq!(status.status, "FUNDED");
     assert!(status.required_algo.is_none());
 }
@@ -144,5 +153,10 @@ fn test_status_uses_provided_target_not_flat_constant() {
     let unfunded = keypair_status_from_facts("ID_CHEAP".to_string(), false, None, 0.2, target);
     assert_eq!(unfunded.status, "UNFUNDED");
     let required = unfunded.required_algo.expect("required when unfunded");
-    assert!(approx(required, target - 0.2), "expected {} got {}", target - 0.2, required);
+    assert!(
+        approx(required, target - 0.2),
+        "expected {} got {}",
+        target - 0.2,
+        required
+    );
 }

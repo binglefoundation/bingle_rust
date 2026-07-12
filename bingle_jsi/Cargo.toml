@@ -32,3 +32,6 @@ vergen = { version = "8", features = ["build", "git", "gitcl", "cargo"] }
 [[test]]
 name = "unit"
 path = "tests/all.rs"
+
+[lints]
+workspace = true

@@ -267,10 +267,7 @@ pub fn test_pick_oldest_prefix_match() {
     ];
 
     let result = AlgoBingle::pick_oldest_prefix_match(matches);
-    assert_eq!(
-        result,
-        Some(("ADDR1".to_string(), "Bob_jones".to_string()))
-    );
+    assert_eq!(result, Some(("ADDR1".to_string(), "Bob_jones".to_string())));
 }
 
 #[test]

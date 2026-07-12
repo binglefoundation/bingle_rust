@@ -9,8 +9,9 @@ use test_util::{ADDRESS_SPEND, PASSPHRASE_SPEND, localnet_config, ops_from_mnemo
 
 fn fund_test_accounts_or_panic() {
     let cfg = test_util::localnet_config();
-    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND])
-        .expect("Failed to ensure localnet test accounts funded; install algokit and start localnet");
+    setup_localnet::ensure_localnet_accounts_funded(&cfg, &[test_util::ADDRESS_SPEND]).expect(
+        "Failed to ensure localnet test accounts funded; install algokit and start localnet",
+    );
 }
 
 /// End-to-end partial (prefix) handle lookup against localnet.
@@ -52,7 +53,10 @@ pub fn test_handle_lookup_partial_returns_canonical() {
         .expect("partial lookup should succeed")
         .expect("prefix should match a registered handle");
 
-    assert_eq!(hit.0, ADDRESS_SPEND, "should resolve to Account A's address");
+    assert_eq!(
+        hit.0, ADDRESS_SPEND,
+        "should resolve to Account A's address"
+    );
     assert_eq!(
         hit.1, canonical,
         "should return the canonical handle exactly as written on-chain"

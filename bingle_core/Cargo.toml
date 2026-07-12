@@ -93,3 +93,6 @@ path = "tests/e2e/testnet/ping_registered_node.rs"
 [[test]]
 name = "flaky"
 path = "tests/flaky_all.rs"
+
+[lints]
+workspace = true
