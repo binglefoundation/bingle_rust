@@ -12,11 +12,12 @@ do. Pick the path that matches your goal.
 ## Which path is for you?
 
 - **Run a relay node, integrate Bingle messaging into your own app, or explore Bingle from the
-  desktop.** Clone and build this repository — start with the [Quick start](#quick-start) below.
+  desktop.** Install the CLI and libraries from crates.io — no clone needed. Start with the
+  [Quick start](#quick-start) below.
 - **Just try the Bingle app as an end user, or build your own iOS / React Native app on top of
   Bingle.** Head to the app project instead: **[bingle_ux](https://github.com/bingle-foundation/bingle_ux)**.
-- **Dig into the internals and contribute.** See [Going deeper](#going-deeper-development) and the
-  [Developer Guide](DEVELOPER.md).
+- **Dig into the internals and contribute.** Clone and build the repository — see
+  [Going deeper](#going-deeper-development) and the [Developer Guide](DEVELOPER.md).
 
 ## Quick start
 
@@ -28,10 +29,9 @@ covered in the [Developer Guide](DEVELOPER.md).)
 ### Prerequisites
 
 - **Rust** (stable, 2024 edition — Rust 1.85 or newer) via [rustup](https://rustup.rs).
-- An **Algorand account** — a standard 25-word mnemonic. You can create one with any Algorand
-  wallet, e.g. [Pera](https://perawallet.app/) or [Defly](https://defly.app/).
-- A small amount of **ALGO** in that account to cover registration (see
-  [Acquiring ALGO](#acquiring-algo)).
+- An **Algorand account with a little ALGO** — see
+  [Set up a wallet and add ALGO](#set-up-a-wallet-and-add-algo). You will use its 25-word
+  passphrase with the CLI.
 
 ### Install the CLI
 
@@ -50,19 +50,31 @@ cd bingle_rust
 cargo install --path bingle_core --bin bingle_cli
 ```
 
-### Acquiring ALGO
+### Set up a wallet and add ALGO
 
-Registering a handle is an on-chain action, so the account needs a small amount of ALGO (roughly
-0.6 ALGO covers the minimum balance plus fees). You can obtain ALGO by:
+Your Bingle identity is an Algorand account, so you need a wallet holding a little ALGO.
 
-- **Buying with fiat** on a KYC exchange that lists ALGO — for example
-  [Coinbase](https://www.coinbase.com/), [Kraken](https://www.kraken.com/), or
-  [Binance](https://www.binance.com/) — then withdrawing to your account's address.
-- **Swapping other crypto** on a decentralized exchange — for example the Algorand DEXs
-  [Tinyman](https://tinyman.org/) and [Pact](https://www.pact.fi/), or an aggregator such as
-  [Vestige](https://vestige.fi/) — and holding the result as ALGO in your account.
+> **Free as in beer (BYO glassware).** For a limited time Bingle itself is free — there is no
+> per-message or subscription charge. You only ever cover Algorand's on-chain fees, so a tiny ALGO
+> balance (well under 1 USD) is all you need to register and use a handle.
 
-Send the ALGO to your account's address and wait for the transaction to confirm.
+The simplest option is the [Pera Wallet](https://perawallet.app/):
+
+1. Install Pera (iOS, Android, or web) and **create a new account**.
+2. Copy your **account address** — the long string beginning with an uppercase letter, e.g.
+   `JWPYTCFOAS23MXVV…`.
+3. Add a few ALGO (under 1 USD is plenty):
+   - **buy with fiat** on a KYC exchange that lists ALGO — e.g. [Coinbase](https://www.coinbase.com/),
+     [Kraken](https://www.kraken.com/) or [Binance](https://www.binance.com/) — and **withdraw to
+     your address**, or
+   - **swap crypto you already hold** on a decentralized exchange — e.g. the Algorand DEXs
+     [Tinyman](https://tinyman.org/) and [Pact](https://www.pact.fi/) (aggregated by
+     [Vestige](https://vestige.fi/)) — into ALGO in your account.
+4. In Pera, reveal your **25-word passphrase** (Settings → the account → *Show passphrase* /
+   recovery phrase). This is the value you pass to the CLI as `--passphrase` below.
+
+> **Keep the passphrase secret.** Anyone with the 25 words controls the account and its funds. For
+> exploring Bingle, prefer a fresh account you use only for this.
 
 ### Register a handle
 
