@@ -803,9 +803,21 @@ impl BingleLocalApi for BingleApiLocalImpl {
         }
 
         // Probe the node with an account_balance read (the same check start uses). Without a
-        // keypair we cannot form the query, so propagate that error; the caller runs the cheap
-        // transport-level NoConnection check first anyway.
-        let ops = self.get_algo_ops()?;
+        // keypair (or if ops can't be built) there is nothing to send/register, so report the
+        // network as unavailable rather than erroring — the caller should not attempt to send.
+        let ops = match self.get_algo_ops() {
+            Ok(ops) => ops,
+            Err(e) => {
+                tracing::debug!(
+                    "[BingleLocalApi][network_available] no algo ops ({}); reporting unavailable",
+                    e
+                );
+                if let Ok(mut guard) = self.last_network_check.lock() {
+                    *guard = Some((false, std::time::Instant::now()));
+                }
+                return Ok(false);
+            }
+        };
         let available = match ops.account_balance() {
             // The node responded (even a non-network error means it was reachable).
             Ok(_) => true,

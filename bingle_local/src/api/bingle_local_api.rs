@@ -144,9 +144,10 @@ pub trait BingleLocalApi: Send + Sync {
     /// Whether the Algorand network is currently reachable.
     ///
     /// Probes the configured Algorand node (an `account_balance` read, the same check
-    /// `start` uses) and maps an unreachable-host error to `false`. Used to decide whether
-    /// an outbound message should be sent now or queued as pending (issue #31), and to avoid
-    /// running blockchain ops while offline. Results are cached for a short interval; pass
+    /// `start` uses) and maps an unreachable-host error to `false`. Returns `false` when there
+    /// is no keypair yet (nothing to send or register). Used to decide whether an outbound
+    /// message should be sent now or queued as pending (issue #31), and to avoid running
+    /// blockchain ops while offline. Results are cached for a short interval; pass
     /// `force_recheck = true` to bypass the cache (e.g. on a network-change event).
     fn network_available(&self, force_recheck: bool) -> Result<bool, BingleError>;
 

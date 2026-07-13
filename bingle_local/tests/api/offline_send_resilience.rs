@@ -100,3 +100,12 @@ fn non_outage_error_is_not_masked_by_cache() {
     .expect_err("non-outage error should propagate");
     assert!(err.to_string().contains("bad config"));
 }
+
+#[test]
+fn network_available_is_false_without_a_keypair() {
+    use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
+    // With no keypair there is nothing to send or register, so network_available reports false
+    // (rather than erroring) and issues no blockchain probe (issue #31).
+    let api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    assert!(!api.network_available(true).expect("should not error"));
+}
