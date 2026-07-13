@@ -81,7 +81,13 @@ pub struct BingleApiLocalImpl {
     // Last successfully computed status, returned when a later read finds the blockchain
     // unreachable so an already-known account stays usable during an outage (issue #18, A2).
     last_status: Mutex<Option<KeypairStatus>>,
+    // Cached result of the last network_available() probe with the time it was taken, so the
+    // send hot-path does not hit the Algorand node on every message (issue #31).
+    last_network_check: Mutex<Option<(bool, std::time::Instant)>>,
 }
+
+/// How long a `network_available` probe result is reused before re-probing.
+const NETWORK_CHECK_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl BingleApiLocalImpl {
     pub fn new(config: LocalApiConfig) -> Self {
@@ -93,6 +99,7 @@ impl BingleApiLocalImpl {
             messages: Mutex::new(Vec::new()),
             own_handle: Mutex::new(None),
             last_status: Mutex::new(None),
+            last_network_check: Mutex::new(None),
         }
     }
 
@@ -783,6 +790,37 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         tracing::info!("[BingleLocalApi] State loaded successfully from: {}", path);
         Ok(())
+    }
+
+    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleError> {
+        // Serve a recent cached result unless a fresh probe is explicitly requested.
+        if !force_recheck
+            && let Ok(guard) = self.last_network_check.lock()
+            && let Some((available, at)) = *guard
+            && at.elapsed() < NETWORK_CHECK_TTL
+        {
+            return Ok(available);
+        }
+
+        // Probe the node with an account_balance read (the same check start uses). Without a
+        // keypair we cannot form the query, so propagate that error; the caller runs the cheap
+        // transport-level NoConnection check first anyway.
+        let ops = self.get_algo_ops()?;
+        let available = match ops.account_balance() {
+            // The node responded (even a non-network error means it was reachable).
+            Ok(_) => true,
+            Err(e) => !algo_host_unreachable(&BingleError::from_anyhow(e)),
+        };
+
+        if let Ok(mut guard) = self.last_network_check.lock() {
+            *guard = Some((available, std::time::Instant::now()));
+        }
+        tracing::debug!(
+            "[BingleLocalApi][network_available] available={} (force_recheck={})",
+            available,
+            force_recheck
+        );
+        Ok(available)
     }
 
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {

@@ -163,6 +163,20 @@ fn parse_nat_type(nat: &str) -> NatType {
     }
 }
 
+/// Whether a failed pending-message send looks transient (i.e. connectivity-related) and so the
+/// message should stay pending to be retried, rather than being marked permanently failed.
+/// Recognises retryable errors, undelivered sends, and no-route/no-relay/unreachable conditions.
+pub fn is_transient_send_failure(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.starts_with("retryable:")
+        || e.contains("send returned false")
+        || e.contains("no available relay")
+        || e.contains("no relay")
+        || e.contains("unreachable")
+        || e.contains("no route")
+        || e.contains("noconnection")
+}
+
 fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
     match e {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
@@ -537,11 +551,20 @@ impl BingleJsiApiImpl {
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
         listening: Arc<AtomicBool>,
+        nat_type: Arc<Mutex<String>>,
         started: Arc<Mutex<bool>>,
     ) {
         tracing::info!("[BingleJsiApiImpl] Starting background processing loop");
         while *started.lock().unwrap_or_else(|e| e.into_inner()) {
-            if listening.load(Ordering::SeqCst)
+            // Only drain the pending queue when the transport can actually deliver: we must be
+            // listening and not in NoConnection (no route). Otherwise leave messages pending so
+            // they are retried once connectivity returns, without noisy failed sends (issue #31).
+            let transport_up = listening.load(Ordering::SeqCst)
+                && nat_type
+                    .lock()
+                    .map(|g| *g != "NoConnection")
+                    .unwrap_or(true);
+            if transport_up
                 && let Some(ref local_arc) = local_api
             {
                 let pending_message_list = match local_arc.lock() {
@@ -616,14 +639,25 @@ impl BingleJsiApiImpl {
                                 let _ = guard.update_message_status(timestamp, 1.0, None);
                             }
                         } else if let Some(err) = last_error {
-                            if err.starts_with("Retryable:") {
-                                if let Ok(mut guard) = local_arc.lock() {
-                                    let _ = guard.update_message_status(timestamp, 0.0, Some(err));
-                                }
+                            // A transient failure (retryable, undelivered, or no route/relay while
+                            // connectivity is flapping) keeps the message pending (progress 0.0) so
+                            // it is retried on the next tick once the transport recovers; only a
+                            // genuinely permanent failure is marked terminal (progress 1.0). This
+                            // stops an offline/relay-down send from being silently dropped (#31).
+                            let (progress, level) = if is_transient_send_failure(&err) {
+                                (0.0, "transient")
                             } else {
-                                if let Ok(mut guard) = local_arc.lock() {
-                                    let _ = guard.update_message_status(timestamp, 1.0, Some(err));
-                                }
+                                (1.0, "permanent")
+                            };
+                            tracing::debug!(
+                                "[BingleJsiApiImpl] pending message {} send failed ({}): {}",
+                                timestamp,
+                                level,
+                                err
+                            );
+                            if let Ok(mut guard) = local_arc.lock() {
+                                let _ =
+                                    guard.update_message_status(timestamp, progress, Some(err));
                             }
                         }
                     }
@@ -1010,6 +1044,27 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
+    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleJsiError> {
+        // Transport-level short-circuit (issue #31 addendum): if we are not listening, or the
+        // engine reports NoConnection (no route), treat as down without probing the node.
+        if !self.listening.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+        if self
+            .nat_type
+            .lock()
+            .map(|g| *g == "NoConnection")
+            .unwrap_or(false)
+        {
+            return Ok(false);
+        }
+        // Transport is up: confirm the Algorand node is actually reachable.
+        let guard = local_api_guard(&self.local_api)?;
+        guard
+            .network_available(force_recheck)
+            .map_err(bingle_error_to_jsi)
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         let status = guard.keypair_status().map_err(bingle_error_to_jsi)?;
@@ -1153,10 +1208,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
         let api_inner = self.api.clone();
         let local_inner = self.local_api.clone();
         let listening_inner = self.listening.clone();
+        let nat_type_inner = self.nat_type.clone();
         let started_inner = self.started.clone();
 
         let processing_thread = std::thread::spawn(move || {
-            Self::run_processing_loop(api_inner, local_inner, listening_inner, started_inner);
+            Self::run_processing_loop(
+                api_inner,
+                local_inner,
+                listening_inner,
+                nat_type_inner,
+                started_inner,
+            );
         });
 
         if let Ok(mut guard) = self.processing_thread.lock() {

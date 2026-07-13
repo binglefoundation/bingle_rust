@@ -527,3 +527,18 @@ fn set_listening_callback_replaces_previous() {
     // Replacing should not panic
     api.set_listening_callback(Box::new(cb2));
 }
+
+#[test]
+fn transient_send_failures_keep_messages_pending() {
+    use bingle_jsi::api::bingle_jsi_api_impl::is_transient_send_failure;
+    // Connectivity-related failures are transient -> keep the message pending for retry (#31).
+    assert!(is_transient_send_failure("Retryable: relay timed out"));
+    assert!(is_transient_send_failure("Send returned false"));
+    assert!(is_transient_send_failure("no available relay"));
+    assert!(is_transient_send_failure("Other: no relay for id"));
+    assert!(is_transient_send_failure("host unreachable"));
+    assert!(is_transient_send_failure("NoConnection"));
+    // A genuine permanent failure is not transient -> may be marked terminally failed.
+    assert!(!is_transient_send_failure("recipient handle is invalid"));
+    assert!(!is_transient_send_failure("account not opted in"));
+}

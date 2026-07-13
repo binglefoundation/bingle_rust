@@ -183,6 +183,12 @@ export interface BingleJsiApi {
     failureReason: string | null
   ): void;
   keypairStatus(): KeypairStatusResponse;
+  /**
+   * Whether the network is available for sending (issue #31). Returns false when the transport
+   * is not listening or reports NoConnection; otherwise probes Algorand-node reachability. Pass
+   * forceRecheck=true to bypass the cached probe result.
+   */
+  networkAvailable(forceRecheck: boolean): boolean;
   save(path: string): void;
   load(path: string): void;
 
