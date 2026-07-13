@@ -9,6 +9,31 @@ This repository contains a Rust library with Algorand helpers and the peer-to-pe
 ## Prerequisites
 - Rust toolchain (stable) via [rustup](https://rustup.rs)
 
+## Networks (mainnet, testnet, localnet)
+
+The published CLI targets **Algorand mainnet** by default (see the [README](README.md) quick
+start). For development you will usually want **testnet** or a **local** Algorand network instead.
+
+The CLI selects the network and the Bingle app/asset ids from a node file passed with
+`--node-file`. The repository ships a ready-made testnet configuration, `nodely_testnet_node.json`,
+which points at Algorand testnet and the deployed Bingle app/asset, so you can run against testnet
+without supplying `--app-id` / `--asset-id`:
+
+```bash
+bingle_cli register --handle alice --passphrase "word1 ... word25" \
+  --node-file nodely_testnet_node.json --price-units 1
+
+bingle_cli run --handle alice --passphrase "word1 ... word25" \
+  --node-file nodely_testnet_node.json
+```
+
+Fund a testnet account for free from the
+[Algorand testnet dispenser](https://bank.testnet.algorand.network/) (or `algokit dispenser fund`).
+
+For a fully local Algorand network, start one with
+[AlgoKit](https://github.com/algorandfoundation/algokit-cli) (`algokit localnet start`); the
+localnet integration tests below use it.
+
 ## Post-Checkout Setup
 
 To automate the resolution of merge conflicts in `.build_number` files, you must configure a custom merge driver locally. This only needs to be done once after cloning the repository:

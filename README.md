@@ -20,24 +20,29 @@ do. Pick the path that matches your goal.
 
 ## Quick start
 
-The quickest way to see Bingle work is the **Bingle CLI**: register a handle on Algorand testnet
-and then run a client that listens for and sends messages.
+The quickest way to see Bingle work is the **Bingle CLI**: register a handle on Algorand and then
+run a client that listens for and sends messages. The CLI targets the Bingle deployment on
+**Algorand mainnet** by default. (Developing against testnet or a local Algorand network is
+covered in the [Developer Guide](DEVELOPER.md).)
 
 ### Prerequisites
 
 - **Rust** (stable, 2024 edition — Rust 1.85 or newer) via [rustup](https://rustup.rs).
 - An **Algorand account** — a standard 25-word mnemonic. You can create one with any Algorand
-  wallet (e.g. [Pera](https://perawallet.app/)) or with
-  [AlgoKit](https://github.com/algorandfoundation/algokit-cli) (`algokit goal account new`).
-- A small amount of **testnet ALGO** in that account (see [Acquiring ALGO](#acquiring-algo)).
-
-The repository ships a ready-made testnet configuration, `nodely_testnet_node.json`, which points
-the CLI at Algorand testnet and the deployed Bingle app/asset — pass it with `--node-file` and you
-do not need to supply `--app-id` / `--asset-id` yourself.
+  wallet, e.g. [Pera](https://perawallet.app/) or [Defly](https://defly.app/).
+- A small amount of **ALGO** in that account to cover registration (see
+  [Acquiring ALGO](#acquiring-algo)).
 
 ### Install the CLI
 
-Clone the repo and install the `bingle_cli` binary with cargo:
+Install the `bingle_cli` binary from [crates.io](https://crates.io/):
+
+```bash
+cargo install bingle_core
+```
+
+This puts the `bingle_cli` command on your `PATH`. Alternatively, build it from a clone of this
+repository:
 
 ```bash
 git clone https://github.com/bingle-foundation/bingle_rust.git
@@ -45,22 +50,19 @@ cd bingle_rust
 cargo install --path bingle_core --bin bingle_cli
 ```
 
-`cargo install` places `bingle_cli` on your `PATH`. Prefer not to install? Run it in place with
-`cargo run -p bingle_core --bin bingle_cli -- <args>` instead of `bingle_cli <args>` in the
-examples below.
-
 ### Acquiring ALGO
 
-Registering a handle is an on-chain action, so the account needs to be funded (roughly 0.6 ALGO on
-testnet covers the minimum balance plus fees). On **testnet**, top up your address for free from a
-dispenser:
+Registering a handle is an on-chain action, so the account needs a small amount of ALGO (roughly
+0.6 ALGO covers the minimum balance plus fees). You can obtain ALGO by:
 
-- The [Algorand testnet dispenser](https://bank.testnet.algorand.network/), or
-- `algokit dispenser fund` if you use AlgoKit.
+- **Buying with fiat** on a KYC exchange that lists ALGO — for example
+  [Coinbase](https://www.coinbase.com/), [Kraken](https://www.kraken.com/), or
+  [Binance](https://www.binance.com/) — then withdrawing to your account's address.
+- **Swapping other crypto** on a decentralized exchange — for example the Algorand DEXs
+  [Tinyman](https://tinyman.org/) and [Pact](https://www.pact.fi/), or an aggregator such as
+  [Vestige](https://vestige.fi/) — and holding the result as ALGO in your account.
 
-Paste your account's address, request funds, and wait for the transaction to confirm. (On
-**mainnet** you would instead acquire ALGO from an exchange — testnet is recommended for
-exploration.)
+Send the ALGO to your account's address and wait for the transaction to confirm.
 
 ### Register a handle
 
@@ -68,7 +70,6 @@ exploration.)
 bingle_cli register \
   --handle alice \
   --passphrase "word1 word2 ... word25" \
-  --node-file nodely_testnet_node.json \
   --price-units 1
 ```
 
@@ -83,13 +84,26 @@ messages for your handle:
 ```bash
 bingle_cli run \
   --handle alice \
-  --passphrase "word1 word2 ... word25" \
-  --node-file nodely_testnet_node.json
+  --passphrase "word1 word2 ... word25"
 ```
 
-Add `--relay` to run the node as a relay, or `--static-ip <ip:port>` to advertise a fixed public
-address. Run `bingle_cli` with no arguments to see the full usage for every command (`run`,
-`register`, `buybingle`, `sellbingle`, `checkrelays`).
+Run `bingle_cli` with no arguments to see the full usage for every command (`run`, `register`,
+`buybingle`, `sellbingle`, `checkrelays`).
+
+### Running a relay
+
+Relays help peers connect when a direct peer-to-peer path is blocked by NAT or firewalls:
+
+```bash
+bingle_cli run --handle my-relay --passphrase "word1 ... word25" --relay --static-ip <ip:port>
+```
+
+**Relay nodes are currently permissioned on mainnet.** While the network is stabilising, only
+approved accounts are accepted as relays — for security and stability reasons — and this
+restriction is expected to be lifted as Bingle matures. Relay providers earn tangible rewards in
+**Bingle$** assets, which can be converted to ALGO.
+
+To have your relay admitted to the network, contact **[tbd — relay-admissions email]**.
 
 ## Going deeper (development)
 
