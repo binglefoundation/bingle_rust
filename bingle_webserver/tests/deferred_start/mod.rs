@@ -104,6 +104,10 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(None)
     }
 
+    fn network_available(&self, _force_recheck: bool) -> Result<bool, BingleError> {
+        Ok(true)
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         Ok(KeypairStatus {
             status: self.status_override.clone(),

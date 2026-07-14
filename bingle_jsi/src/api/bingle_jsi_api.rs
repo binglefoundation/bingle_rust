@@ -142,6 +142,15 @@ pub trait BingleJsiApi: Send + Sync {
         failure_reason: Option<String>,
     ) -> Result<(), BingleJsiError>;
 
+    /// Whether the network is currently available for sending (issue #31).
+    ///
+    /// Returns `false` immediately when the transport is not listening or reports
+    /// `NoConnection` (no route) — no probe is issued in that case. Otherwise it probes the
+    /// Algorand node's reachability. Pass `force_recheck = true` to bypass the cached probe
+    /// result (e.g. on a network-change event). The app can use this to decide whether to send
+    /// a message now or queue it as pending.
+    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleJsiError>;
+
     /// Check the status of the local keypair.
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError>;
 

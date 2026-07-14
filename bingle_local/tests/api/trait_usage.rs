@@ -150,6 +150,10 @@ impl BingleLocalApi for DummyLocal {
         Ok(())
     }
 
+    fn network_available(&self, _force_recheck: bool) -> Result<bool, BingleError> {
+        Ok(true)
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError> {
         match &self.keypair {
             Some(kp) => Ok(KeypairStatus {

@@ -137,6 +137,9 @@ export const BingleJsi = BingleJsiNative as {
     handle: string | null;
     required_algo: number | null;
   }>;
+  /** Whether the network is available for sending (issue #31); false when not listening or
+   * NoConnection, otherwise probes Algorand-node reachability. forceRecheck bypasses the cache. */
+  networkAvailable(forceRecheck: boolean): Promise<boolean>;
   save(path: string): Promise<void>;
   load(path: string): Promise<void>;
   setLogCallback(logLevel: string | null): Promise<void>;

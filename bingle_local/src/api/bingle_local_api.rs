@@ -141,6 +141,16 @@ pub trait BingleLocalApi: Send + Sync {
     /// Load all local state from a JSON file at the given path, replacing current state.
     fn load(&mut self, path: &str) -> Result<(), BingleError>;
 
+    /// Whether the Algorand network is currently reachable.
+    ///
+    /// Probes the configured Algorand node (an `account_balance` read, the same check
+    /// `start` uses) and maps an unreachable-host error to `false`. Returns `false` when there
+    /// is no keypair yet (nothing to send or register). Used to decide whether an outbound
+    /// message should be sent now or queued as pending (issue #31), and to avoid running
+    /// blockchain ops while offline. Results are cached for a short interval; pass
+    /// `force_recheck = true` to bypass the cache (e.g. on a network-change event).
+    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleError>;
+
     /// Check the status of the current keypair.
     /// Returns a KeypairStatus indicating None, UNFUNDED, FUNDED, or ACTIVE.
     fn keypair_status(&self) -> Result<KeypairStatus, BingleError>;
