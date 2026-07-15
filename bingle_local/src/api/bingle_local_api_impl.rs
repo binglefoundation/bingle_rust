@@ -219,6 +219,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if let Ok(mut guard) = self.keypair.lock() {
             *guard = Some(kp.clone());
         }
+        // A brand-new keypair is not yet ACTIVE: clear the memoized ACTIVE handle/status so
+        // keypair_status re-resolves from chain until this account registers.
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.last_status.lock() {
+            *g = None;
+        }
         // Invalidate cached AlgoOps since keypair changed
         if let Ok(mut ops_guard) = self.algo_ops.lock() {
             *ops_guard = None;
@@ -259,6 +267,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             "[BingleLocalApi] Keypair registered successfully with handle: {}",
             handle
         );
+        // The account is now ACTIVE with this handle, permanently registered to the id. Memoize
+        // it so keypair_status serves ACTIVE with no further blockchain read.
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = Some(handle.clone());
+        }
         Ok(true)
     }
 
@@ -662,6 +675,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
             keypair: Option<Keypair>,
             contacts: Vec<ContactEntry>,
             messages: Vec<Message>,
+            // The registered handle, memoized once ACTIVE so status survives restart with no
+            // blockchain read (issue #18/#31). Only set when the account is ACTIVE.
+            #[serde(default)]
+            own_handle: Option<String>,
         }
 
         // Snapshot under locks (avoid holding multiple locks longer than needed)
@@ -706,10 +723,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
             g.clone()
         };
 
+        let own_handle = self.own_handle.lock().ok().and_then(|g| g.clone());
+
         let state = LocalState {
             keypair,
             contacts: contacts_vec,
             messages,
+            own_handle,
         };
 
         // Ensure parent directory exists
@@ -762,6 +782,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             contacts: Vec<ContactEntry>,
             #[serde(default)]
             messages: Vec<Message>,
+            #[serde(default)]
+            own_handle: Option<String>,
         }
 
         let file = match std::fs::File::open(path) {
@@ -809,6 +831,15 @@ impl BingleLocalApi for BingleApiLocalImpl {
         } else {
             tracing::error!("[load] Failed to lock messages: mutex poisoned");
             return Err(BingleError::Other("mutex poisoned".to_string()));
+        }
+        // Restore the memoized ACTIVE handle so keypair_status serves ACTIVE with no blockchain
+        // read after a restart. The in-memory last_status cache does not persist; drop it so the
+        // reloaded account re-resolves cleanly.
+        if let Ok(mut oh) = self.own_handle.lock() {
+            *oh = state.own_handle;
+        }
+        if let Ok(mut ls) = self.last_status.lock() {
+            *ls = None;
         }
 
         tracing::info!("[BingleLocalApi] State loaded successfully from: {}", path);
@@ -891,6 +922,26 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
 
         let algorand_id = kp.id.clone();
+
+        // Once the account is ACTIVE the handle is permanently registered to this address, so there
+        // is nothing left to verify on-chain. Serve the memoized handle with no blockchain read:
+        // this eliminates the steady keypair-status polling once registered and stops a node
+        // outage from blocking or delaying status (issue #18/#31). The memo is set on registration
+        // / the first live ACTIVE read and persisted across restarts; it is cleared when the
+        // keypair changes.
+        if let Some(handle) = self.own_handle.lock().ok().and_then(|g| g.clone()) {
+            tracing::debug!(
+                "[BingleLocalApi][keypair_status] ACTIVE (memoized handle '{}'); skipping blockchain",
+                handle
+            );
+            return Ok(KeypairStatus {
+                status: "ACTIVE".to_string(),
+                id: Some(algorand_id),
+                handle: Some(handle),
+                required_algo: None,
+                stale: false,
+            });
+        }
 
         // Superseded-app gate: if the configured app has been marked superseded (a newer app
         // replaced it), the client must upgrade. Report UPGRADE_REQUIRED and short-circuit
