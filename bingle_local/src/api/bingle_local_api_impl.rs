@@ -44,6 +44,7 @@ pub fn keypair_status_from_facts(
             id: Some(algorand_id),
             handle,
             required_algo: None,
+            stale: false,
         }
     } else if balance_algos >= required_target_algos {
         KeypairStatus {
@@ -51,6 +52,7 @@ pub fn keypair_status_from_facts(
             id: Some(algorand_id),
             handle: None,
             required_algo: None,
+            stale: false,
         }
     } else {
         // Ask only for the shortfall to reach the target. Clamped at 0 defensively; in this
@@ -61,6 +63,7 @@ pub fn keypair_status_from_facts(
             id: Some(algorand_id),
             handle: None,
             required_algo: Some(top_up),
+            stale: false,
         }
     }
 }
@@ -106,10 +109,28 @@ impl BingleApiLocalImpl {
     /// On a blockchain-unreachable error, return the last-known status so an already-known
     /// account stays usable during a transient outage (issue #18, A2); otherwise propagate the
     /// error (e.g. a genuine first run with no cache still reports NoBlockchain upstream).
-    fn fallback_status(&self, err: BingleError) -> Result<KeypairStatus, BingleError> {
+    ///
+    /// `context` describes the read that failed. A host-unreachable outage is expected and handled
+    /// here, so it logs at debug to avoid flooding the log while the node is unreachable (a UI that
+    /// polls keypair_status would otherwise emit an error per read); any other error logs at error.
+    fn fallback_status(
+        &self,
+        context: &str,
+        err: BingleError,
+    ) -> Result<KeypairStatus, BingleError> {
+        if algo_host_unreachable(&err) {
+            tracing::debug!(
+                "[BingleLocalApi][keypair_status] {} (blockchain unreachable): {}",
+                context,
+                err
+            );
+        } else {
+            tracing::error!("[BingleLocalApi][keypair_status] {}: {}", context, err);
+        }
         let cached = self.last_status.lock().ok().and_then(|g| g.clone());
         match status_or_last_known(err, cached) {
-            // Ok is only produced by the fallback (unreachable + a cached status present).
+            // Ok is only produced by the fallback (unreachable + a cached status present), and
+            // status_or_last_known has already flagged it stale.
             Ok(status) => {
                 tracing::warn!(
                     "[BingleLocalApi][keypair_status] blockchain unreachable; returning last-known status '{}'",
@@ -174,14 +195,16 @@ pub fn algo_host_unreachable(err: &BingleError) -> bool {
 ///
 /// Returns the `cached` status only when the failure is a host-unreachable outage and a cached
 /// status exists; any other error (or a genuine first run with no cache) propagates so callers
-/// still see NoBlockchain.
+/// still see NoBlockchain. The returned cached status is flagged `stale` so the UI can show it as
+/// unavailable rather than a freshly confirmed read (issue #31).
 pub fn status_or_last_known(
     err: BingleError,
     cached: Option<KeypairStatus>,
 ) -> Result<KeypairStatus, BingleError> {
     if algo_host_unreachable(&err)
-        && let Some(cached) = cached
+        && let Some(mut cached) = cached
     {
+        cached.stale = true;
         return Ok(cached);
     }
     Err(err)
@@ -861,6 +884,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
                         id: None,
                         handle: None,
                         required_algo: None,
+                        stale: false,
                     });
                 }
             }
@@ -890,13 +914,27 @@ impl BingleLocalApi for BingleApiLocalImpl {
                                 id: Some(algorand_id),
                                 handle: None,
                                 required_algo: None,
+                                stale: false,
                             });
                         }
                         Ok(None) => {}
-                        Err(e) => tracing::warn!(
-                            "[BingleLocalApi][keypair_status] successor check failed (continuing): {}",
-                            e
-                        ),
+                        Err(e) => {
+                            // Best-effort: a read failure never blocks status. A host-unreachable
+                            // outage is expected and logs at debug so a polling UI does not flood
+                            // the log; any other failure logs at warn.
+                            let e = BingleError::from_anyhow(e);
+                            if algo_host_unreachable(&e) {
+                                tracing::debug!(
+                                    "[BingleLocalApi][keypair_status] successor check unreachable (continuing): {}",
+                                    e
+                                );
+                            } else {
+                                tracing::warn!(
+                                    "[BingleLocalApi][keypair_status] successor check failed (continuing): {}",
+                                    e
+                                );
+                            }
+                        }
                     }
                 }
                 Err(e) => tracing::warn!(
@@ -924,13 +962,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
             match ops.is_account_opted_in_to_asset(&algorand_id, asset_id) {
                 Ok(v) => v,
                 Err(e) => {
-                    tracing::error!(
-                        "[BingleLocalApi][keypair_status] Failed to check asset opt-in for {} (asset {}): {}",
-                        algorand_id,
-                        asset_id,
-                        e
+                    return self.fallback_status(
+                        &format!(
+                            "Failed to check asset opt-in for {} (asset {})",
+                            algorand_id, asset_id
+                        ),
+                        BingleError::from_anyhow(e),
                     );
-                    return self.fallback_status(BingleError::from_anyhow(e));
                 }
             }
         } else {
@@ -944,13 +982,13 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 let local_state = match ops.local_state_for_account(app_id, &algorand_id) {
                     Ok(s) => s,
                     Err(e) => {
-                        tracing::error!(
-                            "[BingleLocalApi][keypair_status] Failed to get local state for {} (app {}): {}",
-                            algorand_id,
-                            app_id,
-                            e
+                        return self.fallback_status(
+                            &format!(
+                                "Failed to get local state for {} (app {})",
+                                algorand_id, app_id
+                            ),
+                            BingleError::from_anyhow(e),
                         );
-                        return self.fallback_status(BingleError::from_anyhow(e));
                     }
                 };
                 local_state.and_then(|entries| {
@@ -983,11 +1021,10 @@ impl BingleLocalApi for BingleApiLocalImpl {
             let balance = match ops.account_balance() {
                 Ok(b) => b,
                 Err(e) => {
-                    tracing::error!(
-                        "[BingleLocalApi][keypair_status] Failed to get account balance: {}",
-                        e
+                    return self.fallback_status(
+                        "Failed to get account balance",
+                        BingleError::from_anyhow(e),
                     );
-                    return self.fallback_status(BingleError::from_anyhow(e));
                 }
             };
             let balance_algos = balance.unwrap_or(0.0);

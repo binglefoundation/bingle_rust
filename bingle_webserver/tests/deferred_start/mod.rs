@@ -118,6 +118,7 @@ impl BingleLocalApi for ControllableLocalApi {
                 None
             },
             required_algo: None,
+            stale: false,
         })
     }
 

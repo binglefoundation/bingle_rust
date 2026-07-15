@@ -214,11 +214,13 @@ fn keypair_status_response_none() {
         id: None,
         handle: None,
         required_algo: None,
+        stale: false,
     };
     assert_eq!(resp.status, KeypairStatus::None);
     assert!(resp.id.is_none());
     assert!(resp.handle.is_none());
     assert!(resp.required_algo.is_none());
+    assert!(!resp.stale);
 }
 
 #[test]
@@ -228,12 +230,15 @@ fn keypair_status_response_active() {
         id: Some("ALGO_ADDR".to_string()),
         handle: Some("alice".to_string()),
         required_algo: None,
+        stale: true,
     };
     assert_eq!(resp.status, KeypairStatus::Active);
     let id = resp.id.expect("id should be Some");
     assert_eq!(id, "ALGO_ADDR");
     let handle = resp.handle.expect("handle should be Some");
     assert_eq!(handle, "alice");
+    // A last-known status (returned during a blockchain outage) is flagged stale.
+    assert!(resp.stale);
 }
 
 #[test]
@@ -243,6 +248,7 @@ fn keypair_status_response_unfunded() {
         id: Some("ADDR".to_string()),
         handle: None,
         required_algo: Some(0.1),
+        stale: false,
     };
     assert_eq!(resp.status, KeypairStatus::Unfunded);
     let algo = resp.required_algo.expect("required_algo should be Some");

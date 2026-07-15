@@ -475,16 +475,23 @@ impl AlgoOps {
         let info = match self.algod_call(|| client.account(&address)) {
             Ok(r) => r,
             Err(e) => {
+                if AlgoError::is_host_unreachable(&e) {
+                    // Expected during a transient node outage; callers fall back to cached state,
+                    // so log at debug to avoid flooding the log while the node is unreachable.
+                    tracing::debug!(
+                        "[account_balance] account information unreachable for {}: {}",
+                        address,
+                        e
+                    );
+                    return Err(
+                        AlgoError::unreachable("account_information", &e.to_string()).into(),
+                    );
+                }
                 tracing::error!(
                     "[account_balance] Failed to fetch account information for {}: {}",
                     address,
                     e
                 );
-                if AlgoError::is_host_unreachable(&e) {
-                    return Err(
-                        AlgoError::unreachable("account_information", &e.to_string()).into(),
-                    );
-                }
                 return Err(e);
             }
         };

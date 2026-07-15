@@ -161,12 +161,14 @@ impl BingleLocalApi for DummyLocal {
                 id: Some(kp.id.clone()),
                 handle: Some("test_handle".to_string()),
                 required_algo: None,
+                stale: false,
             }),
             None => Ok(KeypairStatus {
                 status: "None".to_string(),
                 id: None,
                 handle: None,
                 required_algo: None,
+                stale: false,
             }),
         }
     }
