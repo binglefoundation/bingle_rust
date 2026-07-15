@@ -555,11 +555,24 @@ impl BingleJsiApiImpl {
         started: Arc<Mutex<bool>>,
     ) {
         tracing::info!("[BingleJsiApiImpl] Starting background processing loop");
-        // The transport can deliver only when we are listening and not in NoConnection (no
-        // route). Evaluated before each send — not just once per tick — so we never *start* a
-        // delivery while the transport is down. This keeps the single-threaded drain loop from
-        // blocking on a send that can't complete; messages stay pending and retry once
-        // connectivity returns, without noisy failed sends (issue #31).
+
+        // Delivery (relay discovery, DTLS, blockchain lookups) can block or take a long time when
+        // connectivity is flaky. To guarantee this loop can never hang, all sending happens on a
+        // dedicated worker thread, one message at a time; this scheduler thread only hands work
+        // off and reaps results, so it never blocks on a send.
+        const SEND_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(45);
+        type PendingMsg = bingle_local::api::bingle_local_api::Message;
+
+        let Some(local_api) = local_api else {
+            tracing::info!("[BingleJsiApiImpl] no local API; processing loop idle");
+            while *started.lock().unwrap_or_else(|e| e.into_inner()) {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            tracing::info!("[BingleJsiApiImpl] Background processing loop stopped");
+            return;
+        };
+
+        // The transport can deliver only when we are listening and not in NoConnection (no route).
         let transport_up = || {
             listening.load(Ordering::SeqCst)
                 && nat_type
@@ -567,42 +580,26 @@ impl BingleJsiApiImpl {
                     .map(|g| *g != "NoConnection")
                     .unwrap_or(true)
         };
-        while *started.lock().unwrap_or_else(|e| e.into_inner()) {
-            if transport_up()
-                && let Some(ref local_arc) = local_api
-            {
-                let pending_message_list = match local_arc.lock() {
-                    Ok(guard) => guard.get_pending_messages(),
-                    Err(_) => {
-                        tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
-                        break;
-                    }
-                };
 
-                if let Ok(messages) = pending_message_list {
-                    for msg in messages {
-                        // The transport may have gone down partway through the drain. Re-check
-                        // before starting another send so we don't block on one that can't
-                        // complete; leave the remaining messages pending for the next tick.
-                        if !transport_up() {
-                            tracing::debug!(
-                                "[BingleJsiApiImpl] transport went down mid-drain; deferring remaining pending messages"
-                            );
-                            break;
-                        }
-                        tracing::info!(
-                            "[BingleJsiApiImpl] Processing pending message: {}",
-                            msg.timestamp
-                        );
-                        let api_clone = api.clone();
-                        let local_api_clone = local_arc.clone();
+        // Scheduler -> worker: the pending message to send. Worker -> scheduler: the outcome
+        // (timestamp, progress, failure_reason) to persist.
+        let (req_tx, req_rx) = std::sync::mpsc::channel::<PendingMsg>();
+        let (res_tx, res_rx) = std::sync::mpsc::channel::<(i64, f32, Option<String>)>();
+
+        // Dedicated sender worker: owns every send_message_to_handle call. It blocks here (never on
+        // the scheduler) if a send is slow; a panic is contained by catch_unwind so it can't die.
+        let worker = {
+            let api = api.clone();
+            let local_api = local_api.clone();
+            std::thread::Builder::new()
+                .name("bingle-sender".to_string())
+                .spawn(move || {
+                    while let Ok(msg) = req_rx.recv() {
                         let timestamp = msg.timestamp;
-
+                        let progress_local = local_api.clone();
                         let progress_callback =
                             Arc::new(move |percent: u8, _status_msg: String| {
-                                // Note: progress messages don't come with a good failure reason
-                                // we could separate these through the API but TMWFN
-                                if let Ok(mut guard) = local_api_clone.lock() {
+                                if let Ok(mut guard) = progress_local.lock() {
                                     let _ = guard.update_message_status(
                                         timestamp,
                                         percent as f32 / 100.0,
@@ -612,36 +609,27 @@ impl BingleJsiApiImpl {
                             });
 
                         let mut all_success = true;
-                        let mut last_error = None;
-
+                        let mut last_error: Option<String> = None;
                         for handle in &msg.recipient_handles {
-                            let payload = serde_json::json!({
-                                "text": msg.text,
-                            });
-
+                            let payload = serde_json::json!({ "text": msg.text });
                             tracing::info!(
                                 "BingleJsiApiImpl][send_message_to_handles] Sending message to handle: {:?}",
                                 handle
                             );
-
-                            // Guard the send with catch_unwind: a panic anywhere in the delivery
-                            // path (e.g. relay discovery) must never unwind and kill this
-                            // single-threaded drain loop — that would stop all future retries.
-                            // On panic, treat it as a transient failure so the message stays
-                            // pending and is retried on the next tick.
-                            let res = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                                || {
-                                    api_clone.send_message_to_handle(
+                            // A panic anywhere in the delivery path must not kill the worker.
+                            let res = match std::panic::catch_unwind(
+                                std::panic::AssertUnwindSafe(|| {
+                                    api.send_message_to_handle(
                                         handle,
                                         payload,
                                         Some(progress_callback.clone()),
                                     )
-                                },
-                            )) {
+                                }),
+                            ) {
                                 Ok(r) => r,
                                 Err(_) => {
                                     tracing::error!(
-                                        "[BingleJsiApiImpl] send_message_to_handle panicked for {:?}; keeping message pending",
+                                        "[BingleJsiApiImpl] send_message_to_handle panicked for {:?}",
                                         handle
                                     );
                                     Err(BingleError::Retryable("send panicked".to_string()))
@@ -665,20 +653,17 @@ impl BingleJsiApiImpl {
                             }
                         }
 
-                        if all_success {
-                            if let Ok(mut guard) = local_arc.lock() {
-                                let _ = guard.update_message_status(timestamp, 1.0, None);
-                            }
-                        } else if let Some(err) = last_error {
-                            // A transient failure (retryable, undelivered, or no route/relay while
-                            // connectivity is flapping) keeps the message pending (progress 0.0) so
-                            // it is retried on the next tick once the transport recovers; only a
-                            // genuinely permanent failure is marked terminal (progress 1.0). This
-                            // stops an offline/relay-down send from being silently dropped (#31).
+                        // A transient failure keeps the message pending (progress 0.0) for retry;
+                        // only a permanent failure is marked terminal (progress 1.0).
+                        let result = if all_success {
+                            (timestamp, 1.0_f32, None)
+                        } else {
+                            let err =
+                                last_error.unwrap_or_else(|| "unknown send failure".to_string());
                             let (progress, level) = if is_transient_send_failure(&err) {
-                                (0.0, "transient")
+                                (0.0_f32, "transient")
                             } else {
-                                (1.0, "permanent")
+                                (1.0_f32, "permanent")
                             };
                             tracing::debug!(
                                 "[BingleJsiApiImpl] pending message {} send failed ({}): {}",
@@ -686,16 +671,86 @@ impl BingleJsiApiImpl {
                                 level,
                                 err
                             );
-                            if let Ok(mut guard) = local_arc.lock() {
-                                let _ =
-                                    guard.update_message_status(timestamp, progress, Some(err));
-                            }
+                            (timestamp, progress, Some(err))
+                        };
+                        if res_tx.send(result).is_err() {
+                            break; // scheduler gone
                         }
+                    }
+                    tracing::info!("[BingleJsiApiImpl] sender worker stopped");
+                })
+                .ok()
+        };
+
+        // Scheduler: never blocks on a send. Hands the worker the oldest pending message, one at a
+        // time, and reaps results. If a send is slow/stuck we simply don't hand off another — so
+        // the loop stays responsive and cannot hang; the message retries once the worker frees.
+        let mut in_flight: Option<(i64, std::time::Instant)> = None;
+        let mut warned_stuck = false;
+        while *started.lock().unwrap_or_else(|e| e.into_inner()) {
+            // Reap a completed result (blocks up to 200ms — responsive, no busy-spin).
+            match res_rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                Ok((ts, progress, reason)) => {
+                    if let Ok(mut guard) = local_api.lock() {
+                        let _ = guard.update_message_status(ts, progress, reason);
+                    }
+                    if in_flight.map(|(t, _)| t == ts).unwrap_or(false) {
+                        in_flight = None;
+                        warned_stuck = false;
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    tracing::error!("[BingleJsiApiImpl] sender worker gone; stopping loop");
+                    break;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            }
+
+            // Watchdog: note (but tolerate) a send taking a long time. We never start a concurrent
+            // send, so a stuck send just defers delivery until it returns (bounded by the send
+            // path's own timeouts). The scheduler itself keeps running.
+            if let Some((ts, since)) = in_flight {
+                if !warned_stuck && since.elapsed() > SEND_WATCHDOG {
+                    tracing::warn!(
+                        "[BingleJsiApiImpl] pending message {} send exceeded {:?}; deferring further drains until it completes",
+                        ts,
+                        SEND_WATCHDOG
+                    );
+                    warned_stuck = true;
+                }
+            }
+
+            // Hand off the oldest pending message when the worker is free and the transport is up.
+            if in_flight.is_none() && transport_up() {
+                let next = match local_api.lock() {
+                    Ok(guard) => guard.get_pending_messages().ok().and_then(|mut v| {
+                        v.sort_by_key(|m| m.timestamp);
+                        v.into_iter().next()
+                    }),
+                    Err(_) => {
+                        tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
+                        None
+                    }
+                };
+                if let Some(msg) = next {
+                    tracing::info!(
+                        "[BingleJsiApiImpl] Processing pending message: {}",
+                        msg.timestamp
+                    );
+                    in_flight = Some((msg.timestamp, std::time::Instant::now()));
+                    if req_tx.send(msg).is_err() {
+                        tracing::error!("[BingleJsiApiImpl] sender worker gone; stopping loop");
+                        break;
                     }
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(5));
         }
+
+        // Shutdown: close the request channel so the worker exits. We don't join — if a send is in
+        // progress the worker finishes it and exits on its own; not joining keeps shutdown from
+        // blocking on a slow send.
+        drop(req_tx);
+        drop(worker);
         tracing::info!("[BingleJsiApiImpl] Background processing loop stopped");
     }
 
