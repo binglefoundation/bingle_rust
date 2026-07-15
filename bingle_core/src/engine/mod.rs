@@ -1918,30 +1918,19 @@ impl Engine {
         // Save last known public address (for validation/tests)
         self.set_last_public_addr(public_addr);
 
-        // If our public endpoint changed while we were already registered with a relay, the
-        // old registration (and NAT mapping) is tied to the previous address. Re-register with
-        // the same relay on the new mapping so inbound relayed traffic keeps reaching us. The
-        // address-change reset above set state to TrianglePing, which would otherwise cause the
-        // guard below to early-return and leave us permanently stuck without re-registering.
-        if addr_changed && let Some(relay) = self.last_registered_relay.lock().unwrap().clone() {
-            tracing::info!(
-                "[Engine] public address changed; re-registering with known relay {} (id={})",
-                relay.address(),
-                relay.id()
-            );
-            self.register_with_relay(Some(relay));
-            return;
-        }
-
         // Transition to TrianglePing and perform the relay triangle test.
         //
-        // The triangle handshake is one-shot: if we've begun it (raw state TrianglePing) we
-        // normally don't re-run it. But if it's still genuinely pending (derived state is still
-        // TrianglePing — not progressed to NATRestricted/EndpointAvailable/Registered) and has been
-        // for longer than REGISTER_WATCHDOG, a subsequent STUN-consistent event re-drives it
-        // (re-sends TriangleTest1) so a relay that failed to answer the first TriangleTest1 can
-        // self-heal instead of leaving us stranded.
-        if self.state_field() == EngineState::TrianglePing {
+        // The triangle handshake is normally one-shot: once we've begun it (raw state
+        // TrianglePing) we don't re-run it. There are two exceptions:
+        //   - the public endpoint changed (`addr_changed`) — e.g. a network reconnection that
+        //     rebound us to a new IP:port. The previous triangle result, NAT mapping and relay
+        //     registration are all tied to the old address, so we always re-run the full triangle
+        //     test against the new endpoint rather than trusting the stale registration.
+        //   - it is still genuinely pending (derived state still TrianglePing, not progressed to
+        //     NATRestricted/EndpointAvailable/Registered) and has been for longer than
+        //     REGISTER_WATCHDOG, so a relay that failed to answer the first TriangleTest1 can
+        //     self-heal instead of leaving us stranded.
+        if !addr_changed && self.state_field() == EngineState::TrianglePing {
             let stuck = self.state() == EngineState::TrianglePing;
             let stale = self
                 .register_attempt_at
@@ -1978,39 +1967,6 @@ impl Engine {
         let mut relay_target: Option<RelayInfo> = None;
         if let Some(addr) = public_addr {
             let _a2 = addr;
-            // Use the real BingleApi provided via router
-            let api = self.bingle_api.clone();
-
-            // Use Indexer-based discovery when available via AlgoBingle::list_static_endpoints_via_indexer
-            // Prefer app_id from StartOptions; fallback to env var for legacy tests; else use built-in localhost relays.
-            let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                // Capture app_id and provider config from options
-                let opt_app_id = self.opts().app_id;
-                let opt_cfg = self.opts().algo_provider_config.clone();
-                let app_id_opt = opt_app_id.or_else(|| {
-                    std::env::var("BINGLE_APP_ID")
-                        .ok()
-                        .and_then(|s| s.parse::<u64>().ok())
-                });
-                if let Some(app_id) = app_id_opt {
-                    let api = match self.bingle_api.upgrade() {
-                        Some(a) => a,
-                        None => {
-                            tracing::error!(
-                                "[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache"
-                            );
-                            return;
-                        }
-                    };
-                    let cache = api.get_accounts_cache();
-                    crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
-                } else {
-                    // No app id set
-                    panic!("[Engine] indexer discovery has no app id");
-                }
-            };
-
-            let finder = RelayFinder::new(api.clone(), discover);
             // Use our id (Algorand address) for relay selection, not the user-visible handle.
             // Prefer the issuer set earlier by BingleApiImpl::start (issuer = id + ISSUER_SUFFIX).
             let my_id: String = if let Some(iss) = self.issuer.get().map(|s| s.as_str()) {
@@ -2020,6 +1976,48 @@ impl Engine {
                 // Fallback: if issuer is not set, use the handle (best-effort; may yield suboptimal selection).
                 self.opts().handle.clone()
             };
+
+            // Reuse an existing RelayFinder when we already have one: it caches discovered root
+            // relays (refreshed by its own TTLs), so re-driving the triangle test — e.g. after a
+            // reconnection with a changed public endpoint — does not rebuild it from scratch. Only
+            // build a fresh finder via indexer discovery when we have none. Reuse also lets tests
+            // inject a finder to exercise this path without the indexer.
+            let finder: Arc<RelayFinder> =
+                if let Some(existing) = self.relay_finder.lock().unwrap().clone() {
+                    existing
+                } else {
+                    // Use the real BingleApi provided via router
+                    let api = self.bingle_api.clone();
+                    // Use Indexer-based discovery when available. Prefer app_id from StartOptions;
+                    // fallback to env var for legacy tests.
+                    let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
+                        let opt_app_id = self.opts().app_id;
+                        let opt_cfg = self.opts().algo_provider_config.clone();
+                        let app_id_opt = opt_app_id.or_else(|| {
+                            std::env::var("BINGLE_APP_ID")
+                                .ok()
+                                .and_then(|s| s.parse::<u64>().ok())
+                        });
+                        if let Some(app_id) = app_id_opt {
+                            let api = match self.bingle_api.upgrade() {
+                                Some(a) => a,
+                                None => {
+                                    tracing::error!(
+                                        "[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache"
+                                    );
+                                    return;
+                                }
+                            };
+                            let cache = api.get_accounts_cache();
+                            crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
+                        } else {
+                            // No app id set
+                            panic!("[Engine] indexer discovery has no app id");
+                        }
+                    };
+                    Arc::new(RelayFinder::new(api.clone(), discover))
+                };
+
             // If configured as a relay, update the in-memory DDB with all root relays discovered
             if self.opts().am_relay {
                 let roots = finder.list_root_relays(&my_id, true);
@@ -2045,13 +2043,13 @@ impl Engine {
                 // Reset the STUN finder state to None so that future STUN responses can
                 // re-trigger the state change handler and retry relay discovery.
                 if let Some(stun_arc) = self.stun.lock().unwrap().clone()
-                    && let Ok(mut finder) = stun_arc.lock()
+                    && let Ok(mut stun_finder) = stun_arc.lock()
                 {
-                    finder.reset_state();
+                    stun_finder.reset_state();
                 }
                 return;
             }
-            *self.relay_finder.lock().unwrap() = Some(Arc::new(finder));
+            *self.relay_finder.lock().unwrap() = Some(finder);
         }
 
         // Send TriangleTest1 to the discovered relay using the Bingle API callback if installed
@@ -2368,9 +2366,17 @@ impl Engine {
                     Ok(ip) => {
                         let addr = SocketAddr::new(ip, port);
                         let nsk = NetworkEndpoint::new_direct(addr);
-                        mux_clone
-                            .write(&nsk, payload)
-                            .expect("UDP mux write failed in STUN send_packet_handler");
+                        // A write failure here is expected while the transport is
+                        // briefly down (e.g. the socket is mid-rebind after a
+                        // network drop). Log and continue — panicking would kill
+                        // the STUN worker thread and stop endpoint discovery from
+                        // ever recovering.
+                        if let Err(e) = mux_clone.write(&nsk, payload) {
+                            tracing::debug!(
+                                "[Engine::start] STUN send_packet_handler: mux write failed (transport down?): {}",
+                                e
+                            );
+                        }
                     }
                     Err(e) => {
                         tracing::warn!(

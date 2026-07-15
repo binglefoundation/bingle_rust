@@ -95,6 +95,80 @@ fn updater_with_api(
     )
 }
 
+/// Captures the response timeout passed to the relay-status query so we can
+/// assert it is the short bounded probe timeout rather than the ~90s default.
+struct TimeoutCapturingApi {
+    captured_timeout: Arc<Mutex<Option<Duration>>>,
+    response: serde_json::Value,
+}
+
+impl InnerBingleApi for TimeoutCapturingApi {
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, BingleError> {
+        assert_eq!(
+            message.get("type").and_then(|value| value.as_str()),
+            Some("getRelaysStatus")
+        );
+        *self
+            .captured_timeout
+            .lock()
+            .expect("captured_timeout lock should succeed") = Some(timeout);
+        Ok(self.response.clone())
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_status_query_uses_bounded_timeout() {
+    // Regression (bingle_rust #31/#43): the relay-status probe must fail fast when
+    // the relay is unreachable so the single-threaded pending-message drain loop
+    // is not wedged for the full ~90s default response timeout while offline.
+    let captured = Arc::new(Mutex::new(None));
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(60001), RelayState::Own),
+            ("ROOT1", addr(60002), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(TimeoutCapturingApi {
+        captured_timeout: captured.clone(),
+        response,
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            signed_root_relay("MYID", addr(60001)),
+            signed_root_relay("ROOT1", addr(60002)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let selected = updater
+        .relay_select_and_query(&[])
+        .expect("relay-status query should succeed");
+    assert_eq!(selected.id(), "ROOT1");
+
+    let timeout = captured
+        .lock()
+        .expect("captured_timeout lock should succeed")
+        .expect("relay-status query should pass an explicit timeout");
+    assert!(
+        timeout > Duration::ZERO && timeout <= Duration::from_secs(10),
+        "relay-status query should use a short bounded timeout (not the ~90s default), got {:?}",
+        timeout
+    );
+}
+
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {

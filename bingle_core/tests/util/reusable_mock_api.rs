@@ -144,6 +144,19 @@ pub trait InnerBingleApi {
         ))
     }
 
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        network_source_key: &bingle_core::api::bingle_api::NetworkEndpoint,
+        user_id: &bingle_core::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
+        _timeout: std::time::Duration,
+    ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
+        // Default mirrors the production trait: ignore the override and defer to
+        // the untimed variant so existing mocks keep working unchanged.
+        self.send_message_to_network_with_response(network_source_key, user_id, message, progress)
+    }
+
     fn set_on_message(
         &self,
         _handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>,
@@ -367,6 +380,24 @@ impl bingle_core::api::bingle_api::BingleApi for MockApiBoth {
             message,
             progress,
         )
+    }
+
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        network_source_key: &bingle_core::api::bingle_api::NetworkEndpoint,
+        user_id: &bingle_core::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<bingle_core::api::bingle_api::ProgressCallback>>,
+        timeout: std::time::Duration,
+    ) -> Result<serde_json::Value, bingle_core::api::bingle_api::BingleError> {
+        self.inner_bingle_api
+            .send_message_to_network_with_response_timeout(
+                network_source_key,
+                user_id,
+                message,
+                progress,
+                timeout,
+            )
     }
 
     fn set_on_message(&self, handler: Option<Arc<bingle_core::api::bingle_api::OnMessageHandler>>) {

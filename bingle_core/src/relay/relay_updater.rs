@@ -16,6 +16,14 @@ const LONG_TTL_SECS: u64 = 30_000;
 const MEDIUM_TTL_SECS: u64 = 300;
 const SHORT_TTL_SECS: u64 = 30;
 
+/// A relay-status check is a local health probe that answers in well under a
+/// second when the relay is reachable. Bound it tightly (instead of the ~90s
+/// default response timeout) so that when the transport is down the probe fails
+/// fast: this keeps the synchronous pending-message drain loop from being wedged
+/// for the full default timeout while offline, so it can retry each tick and
+/// deliver once connectivity returns (bingle_rust #31/#43).
+const RELAY_STATUS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub struct RelayUpdater {
     my_id: String,
     api: Option<BingleApiBothType>,
@@ -273,11 +281,12 @@ impl RelayUpdater {
             err
         })?;
         let response = api_ref
-            .send_message_to_network_with_response(
+            .send_message_to_network_with_response_timeout(
                 &nsk,
                 &relay.id().to_string(),
                 to_json_value(&request),
                 None,
+                RELAY_STATUS_RESPONSE_TIMEOUT,
             )
             .map_err(|err| err.to_string())?;
 

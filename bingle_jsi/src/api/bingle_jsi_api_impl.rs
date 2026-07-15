@@ -555,16 +555,20 @@ impl BingleJsiApiImpl {
         started: Arc<Mutex<bool>>,
     ) {
         tracing::info!("[BingleJsiApiImpl] Starting background processing loop");
-        while *started.lock().unwrap_or_else(|e| e.into_inner()) {
-            // Only drain the pending queue when the transport can actually deliver: we must be
-            // listening and not in NoConnection (no route). Otherwise leave messages pending so
-            // they are retried once connectivity returns, without noisy failed sends (issue #31).
-            let transport_up = listening.load(Ordering::SeqCst)
+        // The transport can deliver only when we are listening and not in NoConnection (no
+        // route). Evaluated before each send — not just once per tick — so we never *start* a
+        // delivery while the transport is down. This keeps the single-threaded drain loop from
+        // blocking on a send that can't complete; messages stay pending and retry once
+        // connectivity returns, without noisy failed sends (issue #31).
+        let transport_up = || {
+            listening.load(Ordering::SeqCst)
                 && nat_type
                     .lock()
                     .map(|g| *g != "NoConnection")
-                    .unwrap_or(true);
-            if transport_up
+                    .unwrap_or(true)
+        };
+        while *started.lock().unwrap_or_else(|e| e.into_inner()) {
+            if transport_up()
                 && let Some(ref local_arc) = local_api
             {
                 let pending_message_list = match local_arc.lock() {
@@ -577,6 +581,15 @@ impl BingleJsiApiImpl {
 
                 if let Ok(messages) = pending_message_list {
                     for msg in messages {
+                        // The transport may have gone down partway through the drain. Re-check
+                        // before starting another send so we don't block on one that can't
+                        // complete; leave the remaining messages pending for the next tick.
+                        if !transport_up() {
+                            tracing::debug!(
+                                "[BingleJsiApiImpl] transport went down mid-drain; deferring remaining pending messages"
+                            );
+                            break;
+                        }
                         tracing::info!(
                             "[BingleJsiApiImpl] Processing pending message: {}",
                             msg.timestamp
@@ -611,11 +624,29 @@ impl BingleJsiApiImpl {
                                 handle
                             );
 
-                            let res = api_clone.send_message_to_handle(
-                                handle,
-                                payload,
-                                Some(progress_callback.clone()),
-                            );
+                            // Guard the send with catch_unwind: a panic anywhere in the delivery
+                            // path (e.g. relay discovery) must never unwind and kill this
+                            // single-threaded drain loop — that would stop all future retries.
+                            // On panic, treat it as a transient failure so the message stays
+                            // pending and is retried on the next tick.
+                            let res = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                                || {
+                                    api_clone.send_message_to_handle(
+                                        handle,
+                                        payload,
+                                        Some(progress_callback.clone()),
+                                    )
+                                },
+                            )) {
+                                Ok(r) => r,
+                                Err(_) => {
+                                    tracing::error!(
+                                        "[BingleJsiApiImpl] send_message_to_handle panicked for {:?}; keeping message pending",
+                                        handle
+                                    );
+                                    Err(BingleError::Retryable("send panicked".to_string()))
+                                }
+                            };
                             match res {
                                 Ok(true) => {}
                                 Ok(false) => {

@@ -201,6 +201,22 @@ impl BingleApi for LockingApiWrapper {
             .ok_or_else(|| BingleError::Other("API dropped".to_string()))
             .and_then(|a| a.send_message_to_network_with_response(nsk, user_id, message, progress))
     }
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        nsk: &NetworkEndpoint,
+        user_id: &UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+        timeout: std::time::Duration,
+    ) -> Result<serde_json::Value, BingleError> {
+        self.api("send_message_to_network_with_response_timeout")
+            .ok_or_else(|| BingleError::Other("API dropped".to_string()))
+            .and_then(|a| {
+                a.send_message_to_network_with_response_timeout(
+                    nsk, user_id, message, progress, timeout,
+                )
+            })
+    }
     fn set_on_message(&self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
     fn set_on_listening(&self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {}

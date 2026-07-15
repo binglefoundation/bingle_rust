@@ -7,17 +7,21 @@
 
 use std::net::SocketAddr;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use bingle_core::api::bingle_api::{NetworkEndpoint, StartOptions};
+use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
+use bingle_core::ddb::InetSocketAddress;
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate};
-use bingle_core::engine::{Engine, NatType};
+use bingle_core::engine::{Engine, NatType, RelayState};
+use bingle_core::messages::marshal::to_json_value;
 use bingle_core::messages::router::Router;
+use bingle_core::messages::types::{DdbMessage, DdbRelaysStatusResponse, Message};
 
-use crate::util::reusable_mock_api::MockApiBoth;
+use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
+use crate::util::test_util::signed_root_relay;
 
 // ---------------------------------------------------------------------------
 // Tracking DTLS stub — records forget_peers calls.
@@ -162,6 +166,103 @@ fn build_engine(dtls: TrackingDtls) -> Engine {
     let router = Arc::new(Router::new(api));
     eng.set_router(router);
     eng
+}
+
+// Inner mock API that answers relay-status queries so RelayFinder::find_relay can
+// select a relay without touching the network.
+struct RelayStatusApi {
+    response: serde_json::Value,
+}
+
+impl InnerBingleApi for RelayStatusApi {
+    fn send_message_to_network_with_response(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+    ) -> Result<serde_json::Value, BingleError> {
+        if message.get("type").and_then(|value| value.as_str()) == Some("getRelaysStatus") {
+            Ok(self.response.clone())
+        } else {
+            Err(BingleError::Other("unexpected request".to_string()))
+        }
+    }
+}
+
+fn build_engine_with_relay_status(dtls: TrackingDtls, response: serde_json::Value) -> Engine {
+    let inner: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(RelayStatusApi { response });
+    let api = to_weak_api_both(MockApiBoth::new_with_api_override(inner));
+    let eng = Engine::new_with_dtls(
+        &StartOptions::new("test".into()),
+        api.clone(),
+        Box::new(dtls),
+    );
+    let router = Arc::new(Router::new(api));
+    eng.set_router(router);
+    eng
+}
+
+fn relays_status_response(relay_id: &str, relay_addr: SocketAddr) -> serde_json::Value {
+    to_json_value(&Message::Ddb(DdbMessage::RelaysStatusResponse(
+        DdbRelaysStatusResponse {
+            app: "ddb".to_string(),
+            responder_state: RelayState::Available,
+            epoch_id: 1,
+            tree_order: 1,
+            relay_ids: vec![relay_id.to_string()],
+            relay_endpoints: Some(vec![InetSocketAddress::from(relay_addr)]),
+            relay_states: vec![RelayState::Available],
+            response_tag: None,
+            text: None,
+            data: None,
+        },
+    )))
+}
+
+// ---------------------------------------------------------------------------
+// Test: a *changed* public endpoint re-runs the full triangle test.
+//
+// Regression for the offline/reconnect flow: after the transport rebinds to a new
+// IP:port, the previous NAT mapping and relay registration are stale, so a fresh
+// STUN-consistent event with a different endpoint must re-drive the triangle test
+// (send TriangleTest1) rather than trusting the old registration.
+// ---------------------------------------------------------------------------
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn stun_address_change_reruns_triangle_test() {
+    let root_addr: SocketAddr = "9.9.9.9:7000".parse().unwrap();
+    let dtls = TrackingDtls::new();
+    let eng = build_engine_with_relay_status(dtls, relays_status_response("ROOT1", root_addr));
+
+    // Capture outbound messages; TriangleTest1 is sent through send_via_bingle.
+    let sent: Arc<Mutex<Vec<serde_json::Value>>> = Arc::new(Mutex::new(Vec::new()));
+    let sent_clone = sent.clone();
+    eng.set_send_via_bingle(Some(Arc::new(
+        move |_nsk: &NetworkEndpoint, _uid: &UserId, json: serde_json::Value| {
+            sent_clone.lock().expect("sent lock").push(json);
+            true
+        },
+    )));
+
+    // Pre-load a relay finder so discovery reuses it instead of hitting the indexer.
+    eng.test_set_relay_finder_for_inconsistent(vec![signed_root_relay("ROOT1", root_addr)]);
+
+    // We had a known public endpoint; STUN now reports a *different* one.
+    let addr1: SocketAddr = "1.2.3.4:5000".parse().unwrap();
+    let addr2: SocketAddr = "5.6.7.8:9000".parse().unwrap();
+    eng.set_last_public_addr(Some(addr1));
+
+    eng.test_stun_consistent_process_with_addr(addr2);
+
+    let messages = sent.lock().expect("sent lock").clone();
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.get("type").and_then(|t| t.as_str()) == Some("TriangleTest1")),
+        "a changed public endpoint should re-run the triangle test (send TriangleTest1); sent={:?}",
+        messages
+    );
 }
 
 // ---------------------------------------------------------------------------
