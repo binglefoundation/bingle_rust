@@ -1044,25 +1044,21 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
-    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleJsiError> {
-        // Transport-level short-circuit (issue #31 addendum): if we are not listening, or the
-        // engine reports NoConnection (no route), treat as down without probing the node.
+    fn network_available(&self, _force_recheck: bool) -> Result<bool, BingleJsiError> {
+        // Availability *for sending* depends only on the P2P transport, not the Algorand node
+        // (issue #31). Message delivery uses the STUN-discovered endpoint and DTLS relays; handle
+        // lookups are served from cache. So a node outage must not mark the network unavailable for
+        // messaging — that would wrongly stop queue draining while messages can still be delivered.
+        // We are available when listening and the engine reports a usable route (not NoConnection).
         if !self.listening.load(Ordering::SeqCst) {
             return Ok(false);
         }
-        if self
+        let no_route = self
             .nat_type
             .lock()
             .map(|g| *g == "NoConnection")
-            .unwrap_or(false)
-        {
-            return Ok(false);
-        }
-        // Transport is up: confirm the Algorand node is actually reachable.
-        let guard = local_api_guard(&self.local_api)?;
-        guard
-            .network_available(force_recheck)
-            .map_err(bingle_error_to_jsi)
+            .unwrap_or(false);
+        Ok(!no_route)
     }
 
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
@@ -1073,6 +1069,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
             id: status.id,
             handle: status.handle,
             required_algo: status.required_algo,
+            stale: status.stale,
         })
     }
 
