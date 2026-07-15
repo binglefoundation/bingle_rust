@@ -53,7 +53,10 @@ fn should_bump_build_number() -> bool {
         if path.file_name().and_then(|s| s.to_str()) != Some("master") {
             return false;
         }
-        if !path.join(".git").is_dir() {
+        // Require a git checkout at the toplevel, but accept both forms of `.git`: a directory in
+        // a primary checkout, or a file (a gitdir pointer) in a linked worktree. Using is_dir()
+        // here wrongly excluded worktrees, so builds run from a worktree never bumped the number.
+        if !path.join(".git").exists() {
             return false;
         }
     } else {
