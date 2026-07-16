@@ -1,0 +1,101 @@
+# CI: unit tests on pull requests
+
+`.github/workflows/unit-tests.yml` runs the workspace unit tests in GitHub
+Actions whenever a PR is raised or amended, and on pushes to `master`.
+
+## What runs, and when
+
+| Trigger | Event |
+| --- | --- |
+| PR opened | `pull_request: opened` |
+| PR amended (new commits pushed) | `pull_request: synchronize` |
+| PR reopened | `pull_request: reopened` |
+| Draft PR marked ready | `pull_request: ready_for_review` |
+| Push to `master` | `push` (post-merge sanity run) |
+
+Draft PRs are skipped and run automatically once marked ready. A
+`concurrency` group cancels the previous run when you push more commits, so an
+amended PR is always graded on its latest state.
+
+## What the job does
+
+1. Checks out the code and installs the stable Rust toolchain (needed for
+   `edition = "2024"`). OpenSSL is vendored, so it compiles from source — no
+   system packages required.
+2. Caches the cargo registry and `target/` (`Swatinem/rust-cache`).
+3. Installs `cargo-nextest`.
+4. **Builds** the `unit` test target for `bingle_core`, `bingle_webserver`,
+   `bingle_local`, `bingle_jsi` with `--locked`. A compile break here fails the
+   job — an *incomplete* run counts as a failure and blocks merge.
+5. **Runs** `cargo nextest run --profile ci --test unit` across those crates.
+   The `ci` profile (from `.config/nextest.toml`) gives a 20s per-test timeout,
+   one retry, and `junit.xml`.
+6. Publishes a pass/fail table onto the PR (`dorny/test-reporter`), even on
+   failure.
+
+`RUSTFLAGS: -D warnings` turns any compiler warning into a failure, matching the
+"all tests pass with no warnings" rule in `CLAUDE.md`.
+
+The job is named **`unit`** — that is the status-check name you require in
+branch protection.
+
+## Make it block merge (require a passing run)
+
+The workflow reports status; **GitHub branch protection** is what actually
+blocks the merge button. Configure it once against `master`.
+
+### Option A — GitHub UI
+
+1. Repo → **Settings** → **Branches** → **Add branch ruleset** (or **Add rule**
+   under "Branch protection rules").
+2. Branch name pattern: `master`.
+3. Enable **Require status checks to pass before merging**.
+4. Enable **Require branches to be up to date before merging** (optional but
+   recommended — forces a re-run against the latest `master`).
+5. In the search box, add the check named **`unit`**.
+   - The check only appears in that list after the workflow has run at least
+     once, so open a throwaway PR (or push this workflow) first.
+6. Save.
+
+An in-progress run leaves the check *pending*, which also keeps merge blocked
+until it completes — so "incomplete" blocks merge too.
+
+### Option B — `gh` CLI
+
+Run once after the workflow has appeared at least once:
+
+```bash
+gh api -X PUT repos/bingle-foundation/bingle_rust/branches/master/protection \
+  -H "Accept: application/vnd.github+json" \
+  -f 'required_status_checks[strict]=true' \
+  -f 'required_status_checks[checks][][context]=unit' \
+  -f 'enforce_admins=false' \
+  -f 'required_pull_request_reviews[required_approving_review_count]=0' \
+  -F 'restrictions='
+```
+
+`enforce_admins=false` is what lets
+you **override / merge anyway** (see below); set it to `true` if you ever want
+the block to apply to admins as well.
+
+## Overriding the block when you need to
+
+Because `enforce_admins` is left off, a repo admin can still merge a PR whose
+`unit` check failed or is incomplete:
+
+- **UI:** the merge button shows a warning and an admin sees a
+  **"Merge without waiting for requirements to be met (bypass rules)"** option.
+- **CLI:** `gh pr merge <number> --admin --squash` (the `--admin` flag bypasses
+  the failing required check).
+
+Regular contributors without admin/bypass rights cannot merge until `unit`
+passes.
+
+## Local equivalent
+
+The same tests run locally via:
+
+```bash
+scripts/run_unit_tests.sh            # plain cargo test, per-test timeout
+scripts/run_unit_tests_nextest.sh    # nextest equivalent
+```
