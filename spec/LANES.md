@@ -14,6 +14,7 @@ UX:
 - ~~UX to offline credentials~~
 - ~~UX to restart~~
 - ~~upgrade required ux~~
+- offline send: queue message as pending (no error popup) when network is down; deliver on reconnect (#43; core/JSI side #31)
 
 security:
 - ensure protocol is built as documented, changes as follows:

@@ -95,6 +95,80 @@ fn updater_with_api(
     )
 }
 
+/// Captures the response timeout passed to the relay-status query so we can
+/// assert it is the short bounded probe timeout rather than the ~90s default.
+struct TimeoutCapturingApi {
+    captured_timeout: Arc<Mutex<Option<Duration>>>,
+    response: serde_json::Value,
+}
+
+impl InnerBingleApi for TimeoutCapturingApi {
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        _nsk: &NetworkEndpoint,
+        _user_id: &UserId,
+        message: serde_json::Value,
+        _progress: Option<Arc<ProgressCallback>>,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, BingleError> {
+        assert_eq!(
+            message.get("type").and_then(|value| value.as_str()),
+            Some("getRelaysStatus")
+        );
+        *self
+            .captured_timeout
+            .lock()
+            .expect("captured_timeout lock should succeed") = Some(timeout);
+        Ok(self.response.clone())
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_status_query_uses_bounded_timeout() {
+    // Regression (bingle_rust #31/#43): the relay-status probe must fail fast when
+    // the relay is unreachable so the single-threaded pending-message drain loop
+    // is not wedged for the full ~90s default response timeout while offline.
+    let captured = Arc::new(Mutex::new(None));
+    let response = relays_status_response_json(
+        RelayState::Available,
+        vec![
+            ("MYID", addr(60001), RelayState::Own),
+            ("ROOT1", addr(60002), RelayState::Available),
+        ],
+    );
+
+    let api: Arc<dyn InnerBingleApi + Send + Sync> = Arc::new(TimeoutCapturingApi {
+        captured_timeout: captured.clone(),
+        response,
+    });
+
+    let updater = updater_with_api(
+        "MYID.",
+        vec![
+            signed_root_relay("MYID", addr(60001)),
+            signed_root_relay("ROOT1", addr(60002)),
+        ],
+        api,
+    );
+    updater.init_from_blockchain();
+
+    let selected = updater
+        .relay_select_and_query(&[])
+        .expect("relay-status query should succeed");
+    assert_eq!(selected.id(), "ROOT1");
+
+    let timeout = captured
+        .lock()
+        .expect("captured_timeout lock should succeed")
+        .expect("relay-status query should pass an explicit timeout");
+    assert!(
+        timeout > Duration::ZERO && timeout <= Duration::from_secs(10),
+        "relay-status query should use a short bounded timeout (not the ~90s default), got {:?}",
+        timeout
+    );
+}
+
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
@@ -141,6 +215,49 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
     assert!(second_other.is_root);
     assert_eq!(second_other.state, Some(RelayState::Unknown));
     assert_eq!(second_other.ttl, Some(30));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn relay_updater_init_from_blockchain_keeps_cache_when_discovery_empty() {
+    // Regression (bingle_rust #31/#43): when the indexer is unreachable, discovery
+    // returns an empty list. init_from_blockchain must NOT wipe the existing relay
+    // cache in that case, so a queued message can still deliver over known relays
+    // once the UDP transport recovers, without waiting for the indexer.
+    let call = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let call_for_closure = call.clone();
+    let updater = RelayUpdater::new(
+        "MYID.".to_string(),
+        Arc::new(move || {
+            // First call: relays discovered. Subsequent calls: indexer down (empty).
+            if call_for_closure.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                vec![
+                    signed_root_relay("MYID", addr(56201)),
+                    signed_root_relay("AAA", addr(56202)),
+                ]
+            } else {
+                Vec::new()
+            }
+        }),
+    );
+
+    // Populate the cache from a good discovery.
+    updater.init_from_blockchain();
+    assert_eq!(
+        updater.relay_info_cache().list_all_relays("MYID", true).len(),
+        2,
+        "cache should be populated from the first (successful) discovery"
+    );
+
+    // Indexer now unreachable: discovery returns empty. The cache must be preserved.
+    updater.init_from_blockchain();
+    let relays = updater.relay_info_cache().list_all_relays("MYID", true);
+    assert_eq!(
+        relays.len(),
+        2,
+        "empty discovery (indexer unreachable) must not wipe the relay cache"
+    );
+    assert!(relays.iter().any(|r| r.id() == "AAA"));
 }
 
 #[test]

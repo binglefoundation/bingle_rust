@@ -77,6 +77,9 @@ export interface KeypairStatusResponse {
   id: string | null;
   handle: string | null;
   required_algo: number | null;
+  /** True when `status` is a last-known value returned during a blockchain outage rather than a
+   * fresh on-chain read (issue #18 A2 / #31). Surface as "account status unavailable". */
+  stale: boolean;
 }
 
 export interface NatTypeResponse {
@@ -183,6 +186,13 @@ export interface BingleJsiApi {
     failureReason: string | null
   ): void;
   keypairStatus(): KeypairStatusResponse;
+  /**
+   * Whether the network is available for sending (issue #31). Reflects the P2P transport only:
+   * true when listening with a usable route, false when not listening or NoConnection. Independent
+   * of Algorand-node reachability (messages go over relays), so a node outage does not make sending
+   * unavailable. forceRecheck is accepted for compatibility but not needed.
+   */
+  networkAvailable(forceRecheck: boolean): boolean;
   save(path: string): void;
   load(path: string): void;
 

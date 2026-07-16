@@ -60,6 +60,11 @@ pub struct KeypairStatus {
     pub handle: Option<String>,
     #[serde(rename = "requiredAlgo", skip_serializing_if = "Option::is_none")]
     pub required_algo: Option<f64>,
+    /// True when this is a last-known status returned during a blockchain outage rather than a
+    /// fresh read (issue #18 A2 / #31). Lets the UI show "account status unavailable" instead of
+    /// implying the cached value was just confirmed on-chain. Defaults to false (a fresh read).
+    #[serde(default)]
+    pub stale: bool,
 }
 
 /// Trait describing the local API for storing messages and contacts.
@@ -140,6 +145,17 @@ pub trait BingleLocalApi: Send + Sync {
 
     /// Load all local state from a JSON file at the given path, replacing current state.
     fn load(&mut self, path: &str) -> Result<(), BingleError>;
+
+    /// Whether the configured Algorand node is currently reachable.
+    ///
+    /// Probes the node (an `account_balance` read, the same check `start` uses) and maps an
+    /// unreachable-host error to `false`. Returns `false` when there is no keypair yet (nothing to
+    /// send or register). This is a **blockchain-node** reachability probe — used to gate actions
+    /// that genuinely need the chain (registration/funding). It is *not* the send-availability
+    /// signal: message delivery uses the P2P transport, so that is answered at the JSI layer from
+    /// the transport state (issue #31), not from this probe. Results are cached for a short
+    /// interval; pass `force_recheck = true` to bypass the cache (e.g. on a network-change event).
+    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleError>;
 
     /// Check the status of the current keypair.
     /// Returns a KeypairStatus indicating None, UNFUNDED, FUNDED, or ACTIVE.

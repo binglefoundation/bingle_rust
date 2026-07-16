@@ -15,6 +15,9 @@ pub mod relay_keep_alive_sender;
 #[path = "relay_updater.rs"]
 pub mod relay_updater;
 
+#[path = "discovery.rs"]
+pub mod discovery;
+
 #[path = "relay_client_unit.rs"]
 pub mod relay_client_unit;
 

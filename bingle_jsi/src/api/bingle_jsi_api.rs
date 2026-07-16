@@ -142,6 +142,16 @@ pub trait BingleJsiApi: Send + Sync {
         failure_reason: Option<String>,
     ) -> Result<(), BingleJsiError>;
 
+    /// Whether the network is currently available for sending (issue #31).
+    ///
+    /// Reflects the P2P transport only: `true` when listening with a usable route, `false` when
+    /// not listening or when the engine reports `NoConnection`. It is deliberately independent of
+    /// Algorand-node reachability — messages are delivered over the transport (DTLS relays) with
+    /// cached handle lookups, so a node outage does not make sending unavailable. `force_recheck`
+    /// is accepted for API compatibility but not needed (the transport state is always current).
+    /// The app can use this to decide whether to send a message now or queue it as pending.
+    fn network_available(&self, force_recheck: bool) -> Result<bool, BingleJsiError>;
+
     /// Check the status of the local keypair.
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError>;
 

@@ -106,6 +106,10 @@ pub struct KeypairStatusResponse {
     pub id: Option<String>,
     pub handle: Option<String>,
     pub required_algo: Option<f64>,
+    /// True when `status` is a last-known value returned during a blockchain outage rather than a
+    /// fresh on-chain read (issue #18 A2 / #31). The UI can surface this as "account status
+    /// unavailable" instead of implying the value was just confirmed.
+    pub stale: bool,
 }
 
 /// Detected NAT type.

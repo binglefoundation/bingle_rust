@@ -1198,12 +1198,34 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<JsonValue, BingleError> {
-        tracing::info!(
-            "[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={}",
+        let timeout = self
+            .opts()
+            .wait_response_timeout
+            .unwrap_or(DEFAULT_WAIT_RESPONSE_TIMEOUT);
+        self.send_message_to_network_with_response_timeout(
             network_source_key,
             user_id,
             message,
-            progress.is_some()
+            progress,
+            timeout,
+        )
+    }
+
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        network_source_key: &NetworkEndpoint,
+        user_id: &UserId,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+        timeout: Duration,
+    ) -> Result<JsonValue, BingleError> {
+        tracing::info!(
+            "[BingleApiImpl::send_message_to_network_with_response][enter] nsk={} user_id={} msg={} progress={} timeout={:?}",
+            network_source_key,
+            user_id,
+            message,
+            progress.is_some(),
+            timeout
         );
         #[allow(unused)]
         {}
@@ -1254,11 +1276,8 @@ impl BingleApi for BingleApiImpl {
             return Err(BingleError::Other("Failed to send request".to_string()));
         }
 
-        // Now wait for a response tagged with our UUID using the Engine's pending map
-        let timeout = self
-            .opts()
-            .wait_response_timeout
-            .unwrap_or(DEFAULT_WAIT_RESPONSE_TIMEOUT);
+        // Now wait for a response tagged with our UUID using the Engine's pending map,
+        // bounded by the caller-supplied timeout.
         if let Some(resp) = Engine::wait_for_response_static(pending, &tag, timeout) {
             if let Some(cb) = progress.as_ref() {
                 cb(100, "Received response".to_string());

@@ -160,3 +160,97 @@ fn test_status_uses_provided_target_not_flat_constant() {
         required
     );
 }
+
+// --- ACTIVE memoization: no blockchain read once registered (issue #18/#31) ---
+
+fn temp_state_path(name: &str) -> String {
+    let mut p = std::env::temp_dir();
+    p.push(format!(
+        "bingle_test_{}_{}_{}.json",
+        name,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    p.to_string_lossy().to_string()
+}
+
+/// A persisted state with a keypair + own_handle represents an ACTIVE account. keypair_status must
+/// serve ACTIVE from the memo with no blockchain read — the default config has no node, so a live
+/// read would fail; returning ACTIVE proves it short-circuited.
+#[test]
+fn test_keypair_status_active_from_memoized_handle_without_blockchain() {
+    let path = temp_state_path("memo_active");
+    std::fs::write(
+        &path,
+        r#"{ "keypair": { "id": "MEMOID", "passphrase": "seed" }, "contacts": [], "messages": [], "own_handle": "alice" }"#,
+    )
+    .expect("write state");
+
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    api.load(&path).expect("load should succeed");
+
+    let status = api
+        .keypair_status()
+        .expect("keypair_status should succeed from the memo");
+    assert_eq!(status.status, "ACTIVE");
+    assert_eq!(status.id.as_deref(), Some("MEMOID"));
+    assert_eq!(status.handle.as_deref(), Some("alice"));
+    assert!(!status.stale);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Generating a fresh keypair clears the memo so the new (unregistered) account no longer
+/// short-circuits to ACTIVE.
+#[test]
+fn test_generate_keypair_clears_memoized_active() {
+    let path = temp_state_path("memo_clear");
+    std::fs::write(
+        &path,
+        r#"{ "keypair": { "id": "OLDID", "passphrase": "seed" }, "contacts": [], "messages": [], "own_handle": "alice" }"#,
+    )
+    .expect("write state");
+
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    api.load(&path).expect("load");
+    assert_eq!(api.keypair_status().unwrap().status, "ACTIVE");
+
+    api.generate_keypair().expect("generate");
+    // No memo now: with default config and no node, status must not be ACTIVE (either a non-ACTIVE
+    // status or a blockchain error — both acceptable, but never a false ACTIVE).
+    match api.keypair_status() {
+        Ok(s) => assert_ne!(s.status, "ACTIVE", "memo should be cleared on regenerate"),
+        Err(_) => {}
+    }
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The memoized handle round-trips through save/load into a fresh instance.
+#[test]
+fn test_memoized_handle_survives_save_load() {
+    let seed = temp_state_path("memo_persist_seed");
+    std::fs::write(
+        &seed,
+        r#"{ "keypair": { "id": "PID", "passphrase": "seed" }, "contacts": [], "messages": [], "own_handle": "bob" }"#,
+    )
+    .expect("write seed");
+
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    api.load(&seed).expect("load");
+
+    let out = temp_state_path("memo_persist_out");
+    api.save(&out).expect("save");
+
+    let mut api2 = BingleApiLocalImpl::new(LocalApiConfig::default());
+    api2.load(&out).expect("reload");
+    let status = api2.keypair_status().expect("status");
+    assert_eq!(status.status, "ACTIVE");
+    assert_eq!(status.handle.as_deref(), Some("bob"));
+
+    let _ = std::fs::remove_file(&seed);
+    let _ = std::fs::remove_file(&out);
+}

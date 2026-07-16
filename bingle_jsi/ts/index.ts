@@ -136,7 +136,14 @@ export const BingleJsi = BingleJsiNative as {
     id: string | null;
     handle: string | null;
     required_algo: number | null;
+    /** True when status is a last-known value returned during a blockchain outage (issue #18 A2 /
+     * #31), not a fresh read. Surface as "account status unavailable". */
+    stale: boolean;
   }>;
+  /** Whether the network is available for sending (issue #31); reflects the P2P transport only —
+   * true when listening with a usable route, false when not listening or NoConnection. Independent
+   * of Algorand-node reachability (messages go over relays). forceRecheck accepted for compat. */
+  networkAvailable(forceRecheck: boolean): Promise<boolean>;
   save(path: string): Promise<void>;
   load(path: string): Promise<void>;
   setLogCallback(logLevel: string | null): Promise<void>;

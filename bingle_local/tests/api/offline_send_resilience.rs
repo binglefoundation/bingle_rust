@@ -21,6 +21,7 @@ fn active_status(handle: &str) -> KeypairStatus {
         id: Some("ID".to_string()),
         handle: Some(handle.to_string()),
         required_algo: None,
+        stale: false,
     }
 }
 
@@ -62,6 +63,7 @@ fn errors_when_status_has_no_handle_and_cache_empty() {
         id: Some("ID".to_string()),
         handle: None,
         required_algo: Some(1.5),
+        stale: false,
     };
     let err = resolve_sender_handle(None, || Ok(unfunded)).expect_err("should fail");
     assert!(err.to_string().contains("No handle registered"));
@@ -73,10 +75,14 @@ fn errors_when_status_has_no_handle_and_cache_empty() {
 fn returns_last_known_status_when_unreachable_and_cached() {
     // Already-known account: a host-unreachable read falls back to the cached ACTIVE status
     // rather than surfacing NoBlockchain, keeping the running app usable.
-    let out = status_or_last_known(no_blockchain_err(), Some(active_status("alice")))
+    let cached = active_status("alice");
+    assert!(!cached.stale, "a freshly resolved status is not stale");
+    let out = status_or_last_known(no_blockchain_err(), Some(cached))
         .expect("should fall back to cached");
     assert_eq!(out.status, "ACTIVE");
     assert_eq!(out.handle.as_deref(), Some("alice"));
+    // The fallen-back value is flagged stale so the UI can show it as unavailable (issue #31).
+    assert!(out.stale, "last-known status returned during an outage must be flagged stale");
 }
 
 #[test]
@@ -99,4 +105,13 @@ fn non_outage_error_is_not_masked_by_cache() {
     )
     .expect_err("non-outage error should propagate");
     assert!(err.to_string().contains("bad config"));
+}
+
+#[test]
+fn network_available_is_false_without_a_keypair() {
+    use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
+    // With no keypair there is nothing to send or register, so network_available reports false
+    // (rather than erroring) and issues no blockchain probe (issue #31).
+    let api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    assert!(!api.network_available(true).expect("should not error"));
 }
