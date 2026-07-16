@@ -54,7 +54,19 @@ pub fn indexer_discover_closure(
                 out
             }
             Err(e) => {
-                panic!("[discovery] indexer discovery failed: {}", e);
+                // Do NOT panic here: this closure runs synchronously on whatever thread drives
+                // discovery — including the single-threaded pending-message drain loop
+                // (send_message_to_id → list_root_relays → discover_roots). A panic there
+                // unwinds and silently kills the drain thread, so no message is ever sent again
+                // (even after connectivity returns). When the indexer is unreachable, return an
+                // empty list: the relay finder then falls back to cached relays / DDB lookup, the
+                // send fails transiently, and the message stays pending to retry once the indexer
+                // recovers (bingle_rust #31/#43).
+                tracing::warn!(
+                    "[discovery] indexer discovery failed: {}; returning empty relay list",
+                    e
+                );
+                Vec::new()
             }
         };
 

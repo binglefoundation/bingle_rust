@@ -16,6 +16,14 @@ const LONG_TTL_SECS: u64 = 30_000;
 const MEDIUM_TTL_SECS: u64 = 300;
 const SHORT_TTL_SECS: u64 = 30;
 
+/// A relay-status check is a local health probe that answers in well under a
+/// second when the relay is reachable. Bound it tightly (instead of the ~90s
+/// default response timeout) so that when the transport is down the probe fails
+/// fast: this keeps the synchronous pending-message drain loop from being wedged
+/// for the full default timeout while offline, so it can retry each tick and
+/// deliver once connectivity returns (bingle_rust #31/#43).
+const RELAY_STATUS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub struct RelayUpdater {
     my_id: String,
     api: Option<BingleApiBothType>,
@@ -57,6 +65,21 @@ impl RelayUpdater {
         let my_id_norm = self.my_id.trim_end_matches(crate::protocol::ISSUER_SUFFIX);
         let mut relays = (self.discover_roots)();
         relays.sort_by(|left, right| left.id().cmp(right.id()));
+
+        // `discover_roots` returns an empty list when the indexer is unreachable
+        // (see indexer_discover_closure — it swallows the error to avoid killing
+        // the drain thread). Do NOT wipe the existing relay cache in that case:
+        // keeping known relays lets a queued message still deliver over a
+        // recovered UDP transport without first waiting for the indexer to come
+        // back, decoupling reconnect delivery from indexer availability
+        // (bingle_rust #31/#43). A genuine "no relays on chain" is treated the
+        // same — an acceptable trade vs. re-wedging delivery on every indexer blip.
+        if relays.is_empty() {
+            tracing::warn!(
+                "[RelayUpdater] discovery returned no relays (indexer unreachable?); keeping existing cache"
+            );
+            return;
+        }
 
         let updated_relays: Vec<RelayInfo> = relays
             .into_iter()
@@ -273,11 +296,12 @@ impl RelayUpdater {
             err
         })?;
         let response = api_ref
-            .send_message_to_network_with_response(
+            .send_message_to_network_with_response_timeout(
                 &nsk,
                 &relay.id().to_string(),
                 to_json_value(&request),
                 None,
+                RELAY_STATUS_RESPONSE_TIMEOUT,
             )
             .map_err(|err| err.to_string())?;
 

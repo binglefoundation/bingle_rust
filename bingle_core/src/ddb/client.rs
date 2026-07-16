@@ -1,5 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 
@@ -7,6 +8,14 @@ use crate::api::bingle_api::{BingleError, NetworkEndpoint};
 use crate::messages::types::*;
 use crate::messages::{Message, to_json_value};
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
+
+/// DDB control-plane requests (lookup / register / init) are relay round-trips that
+/// answer in well under a second when the relay is reachable. Bound them tightly
+/// (rather than the ~90s default response timeout) so they fail fast when the
+/// transport is down: these run synchronously on the pending-message drain loop
+/// (via send_message_to_id → ddb.lookup), and an unbounded wait would wedge the
+/// loop for the full default timeout, blocking all later retries (bingle_rust #31/#43).
+const DDB_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Public DDB client interface used by higher layers.
 /// Provides register_ip and lookup helpers that send DDB messages over the network
@@ -124,11 +133,12 @@ impl DdbClientImpl {
             data: None,
         }));
         let json: JsonValue = to_json_value(&req);
-        let resp = match self.api()?.send_message_to_network_with_response(
+        let resp = match self.api()?.send_message_to_network_with_response_timeout(
             &nsk,
             &relay_user,
             json,
             None,
+            DDB_RESPONSE_TIMEOUT,
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -293,11 +303,12 @@ impl DdbClient for DdbClientImpl {
 
         // Send and await InitResponse
         let nsk_direct = NetworkEndpoint::new_direct(addr);
-        let resp: serde_json::Value = match self.api()?.send_message_to_network_with_response(
+        let resp: serde_json::Value = match self.api()?.send_message_to_network_with_response_timeout(
             &nsk_direct,
             &relay_user,
             json,
             None,
+            DDB_RESPONSE_TIMEOUT,
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -407,11 +418,12 @@ impl DdbClient for DdbClientImpl {
             "[DdbClientImpl::register_ip] sending DdbUpsertResolve: {:?}",
             json
         );
-        let resp = match self.api()?.send_message_to_network_with_response(
+        let resp = match self.api()?.send_message_to_network_with_response_timeout(
             &nsk,
             &relay_user_b64,
             json,
             None,
+            DDB_RESPONSE_TIMEOUT,
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -580,11 +592,12 @@ impl DdbClient for DdbClientImpl {
             "[DdbClientImpl::register_relay] sending DdbUpsertResolve: {:?}",
             json
         );
-        let resp = match self.api()?.send_message_to_network_with_response(
+        let resp = match self.api()?.send_message_to_network_with_response_timeout(
             &nsk,
             &relay_user_b64,
             json,
             None,
+            DDB_RESPONSE_TIMEOUT,
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -644,11 +657,12 @@ impl DdbClient for DdbClientImpl {
         let json: JsonValue = to_json_value(&q);
 
         // 3) Send and await response
-        let resp = match self.api()?.send_message_to_network_with_response(
+        let resp = match self.api()?.send_message_to_network_with_response_timeout(
             &nsk,
             &relay_user_b64,
             json,
             None,
+            DDB_RESPONSE_TIMEOUT,
         ) {
             Ok(r) => r,
             Err(e) => {

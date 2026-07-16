@@ -51,6 +51,11 @@ pub fn mux_type_for(data: &[u8]) -> MuxType {
 /// UDP-based NetworkMux implementation
 pub struct UdpNetworkMux {
     socket: Mutex<Option<UdpSocket>>,
+    /// The concrete local address the socket is bound to (e.g. `0.0.0.0:PORT`).
+    /// Kept so the receive loop can rebind to the same port after a transient
+    /// network error (mobile connectivity drop) instead of tearing the transport
+    /// down permanently.
+    bind_addr: std::net::SocketAddr,
     handle_dtls: Mutex<Option<HandleDtls>>,
     handle_stun: Mutex<Option<HandleStun>>,
     handle_turn: OnceLock<HandleTurn>,
@@ -72,8 +77,12 @@ impl UdpNetworkMux {
             .map_err(|e| std::io::Error::other(format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
         socket.set_read_timeout(Some(Duration::from_millis(200)))?;
+        // Remember the concrete bound address (resolves port 0 to the assigned
+        // port) so we can rebind to the same port on transient network errors.
+        let bind_addr = socket.local_addr()?;
         Ok(Self {
             socket: Mutex::new(Some(socket)),
+            bind_addr,
             handle_dtls: Mutex::new(None),
             handle_stun: Mutex::new(None),
             handle_turn: OnceLock::new(),
@@ -98,6 +107,28 @@ impl UdpNetworkMux {
     /// Get only the bound IP address (for debug printing)
     pub fn bound_ip(&self) -> std::io::Result<std::net::IpAddr> {
         self.local_addr().map(|a| a.ip())
+    }
+
+    /// Rebind a fresh UDP socket to the original bind address, replacing the one
+    /// held in the Mutex, and return a clone for the receive loop.
+    ///
+    /// Used to recover the transport after a transient network error (e.g. a
+    /// mobile connectivity drop that killed the old socket). The caller must have
+    /// already dropped every handle to the previous socket — including clearing
+    /// the Mutex — so the port is free to rebind.
+    fn rebind(&self) -> std::io::Result<UdpSocket> {
+        let socket = UdpSocket::bind(self.bind_addr).map_err(|e| {
+            std::io::Error::other(format!("udp rebind to {:?} failed: {}", self.bind_addr, e))
+        })?;
+        socket.set_read_timeout(Some(Duration::from_millis(200)))?;
+        let loop_clone = socket.try_clone()?;
+        // Install the live socket so write() and local_addr() use it again.
+        let mut guard = self
+            .socket
+            .lock()
+            .map_err(|_| std::io::Error::other("socket lock poisoned"))?;
+        *guard = Some(socket);
+        Ok(loop_clone)
     }
 
     /// Set read timeout on the underlying socket
@@ -138,11 +169,39 @@ impl UdpNetworkMux {
         let handle = thread::spawn(move || {
             let _guard = span.enter();
             let mut buf = [0u8; 2048];
+            // Held in an Option so a transient network error can drop it (freeing
+            // the port) and a later rebind can replace it, keeping the loop alive.
+            let mut socket_opt: Option<UdpSocket> = Some(socket);
 
             info!("[UdpNetworkMux][receive][loop on {:?}] starts", to);
 
             while this.running.load(Ordering::SeqCst) {
-                match socket.recv_from(&mut buf) {
+                // Recover the socket if a prior error dropped it. Binding to the
+                // unspecified address (0.0.0.0:PORT) succeeds even while the
+                // network is down, after which recv just times out until traffic
+                // returns — so this backs off rather than spinning.
+                if socket_opt.is_none() {
+                    match this.rebind() {
+                        Ok(s) => {
+                            info!(
+                                "[UdpNetworkMux][receive][loop on {:?}] rebound socket after network error",
+                                to
+                            );
+                            socket_opt = Some(s);
+                        }
+                        Err(e) => {
+                            debug!(
+                                "[UdpNetworkMux][receive][loop on {:?}] rebind failed: {}; retrying",
+                                to, e
+                            );
+                            thread::sleep(Duration::from_millis(500));
+                            continue;
+                        }
+                    }
+                }
+
+                let recv_result = socket_opt.as_ref().unwrap().recv_from(&mut buf);
+                match recv_result {
                     Ok((n, from)) => {
                         if n == 0 {
                             continue;
@@ -164,23 +223,35 @@ impl UdpNetworkMux {
                         this.process_packet(&NetworkEndpoint::new_direct(from), data);
                     }
                     Err(e) => {
-                        // Respect timeout for shutdown; ignore WouldBlock/TimedOut, break on other errors
+                        // Timeouts are expected (they let us poll `running` for
+                        // shutdown) — just loop again.
                         if e.kind() == std::io::ErrorKind::WouldBlock
                             || e.kind() == std::io::ErrorKind::TimedOut
                         {
                             continue;
-                        } else {
-                            // If socket error, stop running
-                            warn!("[UdpNetworkMux][receive][loop on {:?}] error {:?}", to, e);
-
-                            this.running.store(false, Ordering::SeqCst);
                         }
+                        // Any other error means the underlying socket died — on
+                        // mobile this is a transient connectivity drop, not a
+                        // permanent failure. Drop the dead socket (both this
+                        // clone and the Mutex copy, freeing the port) and let the
+                        // top of the loop rebind so listening recovers on its own
+                        // when the network returns.
+                        warn!(
+                            "[UdpNetworkMux][receive][loop on {:?}] recv error {:?}; will rebind",
+                            to, e
+                        );
+                        socket_opt = None;
+                        if let Ok(mut guard) = this.socket.lock() {
+                            let taken = guard.take();
+                            drop(taken);
+                        }
+                        thread::sleep(Duration::from_millis(500));
                     }
                 }
             }
-            // Drop the cloned socket used by the receive loop
-            drop(socket);
-            // Take the original socket out of the Mutex to close it and free the port
+            // Shutting down: drop the receive-loop socket and clear the Mutex to
+            // close it and free the port.
+            drop(socket_opt);
             if let Ok(mut guard) = this.socket.lock() {
                 let taken = guard.take();
                 drop(taken);
@@ -378,11 +449,50 @@ impl NetworkMux for UdpNetworkMux {
 
 #[cfg(test)]
 mod tests {
-    use super::{MuxType, mux_type_for};
+    use super::{MuxType, UdpNetworkMux, mux_type_for};
+    use std::net::UdpSocket;
+    use std::time::Duration;
 
     #[test]
     fn mux_type_empty_is_unknown() {
         assert_eq!(mux_type_for(&[]), MuxType::Unknown);
+    }
+
+    #[test]
+    fn rebind_recovers_socket_on_same_port() {
+        // Regression: a transient network error must not tear the transport down
+        // permanently. The receive loop drops the dead socket (freeing the port)
+        // and rebinds; this exercises that rebind directly.
+        let mux = UdpNetworkMux::bind("127.0.0.1:0").expect("bind");
+        let port = mux.local_addr().expect("local_addr").port();
+
+        // Simulate the receive loop's teardown after a recv error: drop the live
+        // socket so the port is free to rebind.
+        {
+            let mut guard = mux.socket.lock().unwrap();
+            let taken = guard.take();
+            drop(taken);
+        }
+        assert!(mux.is_closed(), "socket should be closed after take");
+
+        // Rebind succeeds on the same port and installs a live socket again.
+        let loop_sock = mux.rebind().expect("rebind should succeed");
+        loop_sock
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        assert!(!mux.is_closed(), "socket should be live after rebind");
+        assert_eq!(
+            mux.local_addr().unwrap().port(),
+            port,
+            "rebind should reuse the same port"
+        );
+
+        // The rebound socket actually receives traffic on that port.
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.send_to(b"ping", ("127.0.0.1", port)).expect("send_to");
+        let mut buf = [0u8; 16];
+        let (n, _from) = loop_sock.recv_from(&mut buf).expect("recv after rebind");
+        assert_eq!(&buf[..n], b"ping", "rebound socket should receive datagrams");
     }
 
     #[test]

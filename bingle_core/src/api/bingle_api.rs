@@ -578,6 +578,25 @@ pub trait BingleApi: Send + Sync {
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<JsonValue, BingleError>;
 
+    /// Like `send_message_to_network_with_response`, but with an explicit response
+    /// timeout rather than the configured/default one. Used for short-lived internal
+    /// probes (e.g. relay-status health checks) that must fail fast when the peer is
+    /// unreachable, so a caller on a single-threaded loop (the pending-message drain)
+    /// is not wedged for the full default timeout while offline.
+    ///
+    /// The default implementation ignores the override and defers to the standard
+    /// method; the real implementation and any forwarding wrappers honour it.
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        network_source_key: &NetworkEndpoint,
+        user_id: &UserId,
+        message: JsonValue,
+        progress: Option<Arc<ProgressCallback>>,
+        _timeout: Duration,
+    ) -> Result<JsonValue, BingleError> {
+        self.send_message_to_network_with_response(network_source_key, user_id, message, progress)
+    }
+
     // Handler properties:
 
     /// Set or clear the onMessage callback. Pass None to clear.

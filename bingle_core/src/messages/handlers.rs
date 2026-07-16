@@ -324,6 +324,17 @@ impl BingleApi for BothAsApi {
         self.inner
             .send_message_to_network_with_response(nsk, user_id, message, progress)
     }
+    fn send_message_to_network_with_response_timeout(
+        &self,
+        nsk: &crate::api::bingle_api::NetworkEndpoint,
+        user_id: &crate::api::bingle_api::UserId,
+        message: serde_json::Value,
+        progress: Option<Arc<crate::api::bingle_api::ProgressCallback>>,
+        timeout: std::time::Duration,
+    ) -> Result<serde_json::Value, BingleError> {
+        self.inner
+            .send_message_to_network_with_response_timeout(nsk, user_id, message, progress, timeout)
+    }
     fn set_on_message(&self, _handler: Option<Arc<crate::api::bingle_api::OnMessageHandler>>) {}
     fn set_on_connect(&self, _handler: Option<Arc<crate::api::bingle_api::OnConnectHandler>>) {}
     fn set_on_listening(&self, _handler: Option<Arc<crate::api::bingle_api::OnListeningHandler>>) {}
