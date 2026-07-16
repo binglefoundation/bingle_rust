@@ -22,6 +22,51 @@ use crate::protocol::ISSUER_SUFFIX;
 use crate::relay::relay_finder::RelayFinderTrait;
 use ed25519_dalek::SigningKey;
 
+/// Upper bound on a single hot-path blockchain lookup — the outgoing `handle_lookup`
+/// and the incoming `handle_lookup_by_id`. Both resolve a handle via one Indexer/algod
+/// query and answer in well under a second when the node is reachable. algonaut 0.8
+/// sets no HTTP timeout, so without this an unreachable-but-routable node could block
+/// the caller on TCP connect (~75 s) — stalling the drain worker's send or the DTLS
+/// auth check (bingle_rust #48). Only these two lookups are bounded; the funding /
+/// registration / confirmation paths (which legitimately take longer) are untouched.
+const HANDLE_LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Run a blocking lookup `f` on a detached worker thread, bounded by `timeout`, and
+/// return its result — or `None` if it doesn't finish in time.
+///
+/// The worker is intentionally not joined: if the underlying call is genuinely stuck
+/// (algonaut's un-timed HTTP client) the thread lingers until the OS/algonaut errors,
+/// but the caller has already moved on (fail-fast). Used only for the hot-path handle
+/// lookups so a hung node can't wedge message delivery or inbound auth.
+fn run_bounded<T, F>(timeout: Duration, label: &'static str, f: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    if std::thread::Builder::new()
+        .name(format!("bingle-{label}"))
+        .spawn(move || {
+            let _ = tx.send(f());
+        })
+        .is_err()
+    {
+        tracing::error!("[BingleApiImpl] failed to spawn bounded worker for {}", label);
+        return None;
+    }
+    match rx.recv_timeout(timeout) {
+        Ok(v) => Some(v),
+        Err(_) => {
+            tracing::warn!(
+                "[BingleApiImpl] {} exceeded {:?}; treating as unreachable",
+                label,
+                timeout
+            );
+            None
+        }
+    }
+}
+
 // Simple bidirectional cache for handle <-> user_id with per-entry timestamps
 // Not exposed publicly; guarded by the encompassing Mutex in BingleApiImpl
 struct HandleCacheBi {
@@ -794,7 +839,19 @@ impl BingleApi for BingleApiImpl {
         }
 
         let ab = self.build_indexer_algo_bingle()?;
-        let res = ab.handle_lookup(handle).map_err(BingleError::from_anyhow);
+        // Bound the blockchain query so an unreachable node can't wedge the caller
+        // (e.g. the drain worker's send). A timeout is surfaced as a Retryable
+        // "unreachable" error so the send path keeps the message pending and retries,
+        // rather than marking it permanently failed (bingle_rust #48).
+        let handle_owned = handle.clone();
+        let res = match run_bounded(HANDLE_LOOKUP_TIMEOUT, "handle_lookup", move || {
+            ab.handle_lookup(&handle_owned).map_err(BingleError::from_anyhow)
+        }) {
+            Some(r) => r,
+            None => Err(BingleError::Retryable(format!(
+                "handle lookup for '{handle}' timed out; node unreachable"
+            ))),
+        };
 
         // Update cache on success
         if let Ok(Some(ref user_id)) = res
@@ -1447,8 +1504,16 @@ impl BingleApiImpl {
 
         // Build AlgoOps with provided config
         let ops = AlgoOps::new(self.opts().algo_passphrase.clone(), None, Some(config));
-        match ops.local_state_for_account(app_id, user_id) {
-            Ok(Some(entries)) => {
+        // Bound the blockchain query: this runs on the DTLS receive path (sender-auth
+        // check), so an unreachable node must not stall inbound message processing. A
+        // timeout resolves to None (same as unreachable) — the sender retries and the
+        // handle cache covers repeat senders (bingle_rust #48).
+        let uid = user_id.clone();
+        let lookup = run_bounded(HANDLE_LOOKUP_TIMEOUT, "handle_lookup_by_id", move || {
+            ops.local_state_for_account(app_id, &uid)
+        });
+        match lookup {
+            Some(Ok(Some(entries))) => {
                 if let Some((_k, h)) = entries.into_iter().find(|(k, _)| k == "Handle") {
                     // Update cache and return
                     if let Ok(mut cache) = self.handle_cache.lock() {
@@ -1462,20 +1527,22 @@ impl BingleApiImpl {
                 );
                 None
             }
-            Ok(None) => {
+            Some(Ok(None)) => {
                 tracing::info!(
                     "[BingleApiImpl::handle_lookup_by_id] user not opted in or no local state for {}",
                     user_id
                 );
                 None
             }
-            Err(e) => {
+            Some(Err(e)) => {
                 tracing::warn!(
                     "[BingleApiImpl::handle_lookup_by_id] blockchain query failed: {}",
                     e
                 );
                 None
             }
+            // Timed out (already warned in run_bounded): treat as unreachable.
+            None => None,
         }
     }
 }
@@ -1674,5 +1741,36 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
 
     fn get_signing_key(&self) -> Option<SigningKey> {
         self.engine.access(|e| e.get_signing_key())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // `run_bounded` is a private module helper (it bounds the hot-path handle
+    // lookups), so it is unit-tested inline here rather than from the tests tree.
+    use super::run_bounded;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn run_bounded_returns_value_when_fast() {
+        let out = run_bounded(Duration::from_secs(5), "fast", || 42);
+        assert_eq!(out, Some(42));
+    }
+
+    #[test]
+    fn run_bounded_times_out_and_fails_fast() {
+        // A call that outlives the bound must return None promptly (not block for the
+        // full duration of the stuck work), so a hung node can't wedge the caller.
+        let started = Instant::now();
+        let out = run_bounded(Duration::from_millis(50), "slow", || {
+            std::thread::sleep(Duration::from_secs(3));
+            99
+        });
+        assert_eq!(out, None, "a call exceeding the bound must yield None");
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "must fail fast (~timeout), not wait for the stuck call; took {:?}",
+            started.elapsed()
+        );
     }
 }
