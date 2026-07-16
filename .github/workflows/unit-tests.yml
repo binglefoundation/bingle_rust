@@ -1,0 +1,75 @@
+name: unit-tests
+
+# Run the workspace unit tests on every pull request (open, push more commits,
+# reopen, or change the base branch) and on pushes to master. The job named
+# below ("unit") is what you mark as a required status check in branch
+# protection so a failing or incomplete run blocks merge. See CI-UNIT-TESTS.md.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [master]
+
+# Cancel an in-flight run when the same PR/branch gets new commits, so an
+# amended PR is always graded on its latest state.
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write        # allow the test-reporter to publish the JUnit summary
+
+jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    # Skip draft PRs; they run again automatically on "ready_for_review".
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    env:
+      CARGO_TERM_COLOR: always
+      # Fail the build on any compiler warning, matching the "no warnings"
+      # requirement in CLAUDE.md.
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # edition = "2024" needs a recent stable toolchain; stable on the runner
+      # is fine. openssl is vendored, so it builds from source (perl + cc are
+      # preinstalled on ubuntu-latest) — no libssl-dev needed.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # nextest gives per-test process isolation, a hard per-test timeout, and
+      # JUnit output. The repo already defines [profile.ci] in .config/nextest.toml
+      # (20s slow-timeout, one retry, junit.xml).
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      # Compile the unit test target for every crate first, so a build/compile
+      # break is reported as a failure (an "incomplete" run) that blocks merge.
+      - name: Build unit tests
+        run: >
+          cargo test --no-run --locked
+          -p bingle_core -p bingle_webserver -p bingle_local -p bingle_jsi
+          --test unit
+
+      - name: Run unit tests
+        run: >
+          cargo nextest run --profile ci --no-fail-fast
+          -p bingle_core -p bingle_webserver -p bingle_local -p bingle_jsi
+          --test unit
+
+      # Publish a readable pass/fail table on the PR even when tests fail.
+      - name: Publish test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: unit test results
+          path: target/nextest/ci/junit.xml
+          reporter: java-junit
+          fail-on-error: false
