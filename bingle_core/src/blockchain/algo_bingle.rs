@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::blockchain::algo_ops::{AlgoOps, AppArg, address_to_byte_key};
+use crate::blockchain::error::AlgoError;
 
 use algonaut::{
     Algod,
@@ -782,10 +783,19 @@ impl AlgoBingle {
         });
 
         if let Err(e) = indexer_query_result {
-            tracing::error!(
-                "[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync failed: {}",
-                e
-            );
+            // A host-unreachable failure (no connection / HTTP send error) is an expected transient
+            // condition, so log at info; any other failure is a genuine error.
+            if AlgoError::is_host_unreachable(&e) {
+                tracing::info!(
+                    "[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync unreachable: {}",
+                    e
+                );
+            } else {
+                tracing::error!(
+                    "[AlgoBingle::list_static_endpoints_via_indexer_sync] indexer_query_opted_in_accounts_sync failed: {}",
+                    e
+                );
+            }
             Err(e)
         } else {
             algo_log!(
