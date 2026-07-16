@@ -390,3 +390,34 @@ pub fn start_sets_issuer_and_passes_to_dtls_send() {
     assert_eq!(cap.len(), 1);
     assert_eq!(cap[0].0, addr_send);
 }
+
+// `run_bounded` bounds the hot-path handle lookups (bingle_rust #48). It is exposed
+// as `#[doc(hidden)] pub` purely so its fail-fast behaviour can be exercised here.
+#[test]
+fn run_bounded_returns_value_when_fast() {
+    use bingle_core::api::bingle_api_impl::run_bounded;
+    use std::time::Duration;
+
+    let out = run_bounded(Duration::from_secs(5), "fast", || 42);
+    assert_eq!(out, Some(42));
+}
+
+#[test]
+fn run_bounded_times_out_and_fails_fast() {
+    use bingle_core::api::bingle_api_impl::run_bounded;
+    use std::time::{Duration, Instant};
+
+    // A call that outlives the bound must return None promptly (not block for the full
+    // duration of the stuck work), so a hung node can't wedge the caller.
+    let started = Instant::now();
+    let out = run_bounded(Duration::from_millis(50), "slow", || {
+        std::thread::sleep(Duration::from_secs(3));
+        99
+    });
+    assert_eq!(out, None, "a call exceeding the bound must yield None");
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "must fail fast (~timeout), not wait for the stuck call; took {:?}",
+        started.elapsed()
+    );
+}
