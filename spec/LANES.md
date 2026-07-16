@@ -98,7 +98,7 @@ robustness:
 - ~~app replace migrate local data~~
 - ~~reorganize naming~~
 - ~~identify `unsafe` and fix~~
-- run code quality tools, fixup and ignore (needs script)
+- ~~run code quality tools, fixup and ignore (needs script)~~
 
 network:
 - ~~handle network change and clear caches / rediscover nat type~~
@@ -129,14 +129,8 @@ deploy:
 - release of Android app
 
 Bugs:
-- ~~NAT timeout causes incoming relay data loss ([#5](https://github.com/bingle-foundation/bingle_rust/issues/5))~~
-~~- Backend search doesn't display canonical handle ([#4](https://github.com/bingle-foundation/bingle_rust/issues/4))~~
-~~- After registering we never get to connected ([#3](https://github.com/bingle-foundation/bingle_rust/issues/3))~~
-- ~~STUN handler does not pick up a change to inconsistent ([#2](https://github.com/bingle-foundation/bingle_rust/issues/2))~~
- - ~~Algo balance shown incorrectly in app when we are semi-funded #15~~
-- **Error on send when no network #18**
-- Keep alive still loses relay listener #16
-- 
+- issues fixed or deferred
+
 Deferred (to create bugs):
 - cache DDB locally with timeout / cancel
 - (protocol review) ensure fails result in a fail message which gets handled
