@@ -38,7 +38,11 @@ const HANDLE_LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
 /// (algonaut's un-timed HTTP client) the thread lingers until the OS/algonaut errors,
 /// but the caller has already moved on (fail-fast). Used only for the hot-path handle
 /// lookups so a hung node can't wedge message delivery or inbound auth.
-fn run_bounded<T, F>(timeout: Duration, label: &'static str, f: F) -> Option<T>
+///
+/// `pub` + `#[doc(hidden)]`: not part of the public API, exposed only so its
+/// fail-fast behaviour can be unit-tested from the tests tree.
+#[doc(hidden)]
+pub fn run_bounded<T, F>(timeout: Duration, label: &'static str, f: F) -> Option<T>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -1741,36 +1745,5 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
 
     fn get_signing_key(&self) -> Option<SigningKey> {
         self.engine.access(|e| e.get_signing_key())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    // `run_bounded` is a private module helper (it bounds the hot-path handle
-    // lookups), so it is unit-tested inline here rather than from the tests tree.
-    use super::run_bounded;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn run_bounded_returns_value_when_fast() {
-        let out = run_bounded(Duration::from_secs(5), "fast", || 42);
-        assert_eq!(out, Some(42));
-    }
-
-    #[test]
-    fn run_bounded_times_out_and_fails_fast() {
-        // A call that outlives the bound must return None promptly (not block for the
-        // full duration of the stuck work), so a hung node can't wedge the caller.
-        let started = Instant::now();
-        let out = run_bounded(Duration::from_millis(50), "slow", || {
-            std::thread::sleep(Duration::from_secs(3));
-            99
-        });
-        assert_eq!(out, None, "a call exceeding the bound must yield None");
-        assert!(
-            started.elapsed() < Duration::from_secs(1),
-            "must fail fast (~timeout), not wait for the stuck call; took {:?}",
-            started.elapsed()
-        );
     }
 }
