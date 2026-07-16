@@ -303,13 +303,15 @@ impl DdbClient for DdbClientImpl {
 
         // Send and await InitResponse
         let nsk_direct = NetworkEndpoint::new_direct(addr);
-        let resp: serde_json::Value = match self.api()?.send_message_to_network_with_response_timeout(
-            &nsk_direct,
-            &relay_user,
-            json,
-            None,
-            DDB_RESPONSE_TIMEOUT,
-        ) {
+        let resp: serde_json::Value = match self
+            .api()?
+            .send_message_to_network_with_response_timeout(
+                &nsk_direct,
+                &relay_user,
+                json,
+                None,
+                DDB_RESPONSE_TIMEOUT,
+            ) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(

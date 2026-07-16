@@ -244,7 +244,10 @@ pub fn relay_updater_init_from_blockchain_keeps_cache_when_discovery_empty() {
     // Populate the cache from a good discovery.
     updater.init_from_blockchain();
     assert_eq!(
-        updater.relay_info_cache().list_all_relays("MYID", true).len(),
+        updater
+            .relay_info_cache()
+            .list_all_relays("MYID", true)
+            .len(),
         2,
         "cache should be populated from the first (successful) discovery"
     );

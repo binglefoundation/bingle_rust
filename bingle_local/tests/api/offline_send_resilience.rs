@@ -35,7 +35,10 @@ fn cached_handle_is_used_without_a_status_read() {
     })
     .expect("cached handle should resolve");
     assert_eq!(handle, "alice");
-    assert!(!fetched, "keypair_status must not be consulted when the handle is cached");
+    assert!(
+        !fetched,
+        "keypair_status must not be consulted when the handle is cached"
+    );
 }
 
 #[test]
@@ -82,7 +85,10 @@ fn returns_last_known_status_when_unreachable_and_cached() {
     assert_eq!(out.status, "ACTIVE");
     assert_eq!(out.handle.as_deref(), Some("alice"));
     // The fallen-back value is flagged stale so the UI can show it as unavailable (issue #31).
-    assert!(out.stale, "last-known status returned during an outage must be flagged stale");
+    assert!(
+        out.stale,
+        "last-known status returned during an outage must be flagged stale"
+    );
 }
 
 #[test]

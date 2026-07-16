@@ -749,7 +749,8 @@ impl BingleJsiApiImpl {
                 // Forget backoff deadlines for messages that are no longer pending (delivered or
                 // removed) so the map stays bounded.
                 retry_after.retain(|ts, _| pending.iter().any(|m| m.timestamp == *ts));
-                let next = select_sendable_message(pending, &retry_after, std::time::Instant::now());
+                let next =
+                    select_sendable_message(pending, &retry_after, std::time::Instant::now());
                 if let Some(msg) = next {
                     tracing::info!(
                         "[BingleJsiApiImpl] Processing pending message: {}",
