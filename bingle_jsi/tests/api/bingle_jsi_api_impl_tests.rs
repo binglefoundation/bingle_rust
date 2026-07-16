@@ -423,7 +423,7 @@ fn start_ok_when_already_started() {
     let api = BingleJsiApiImpl::init(config_with_handle("testuser")).expect("init should succeed");
     assert!(api.is_started());
     let result = api.start();
-    assert!(!result.is_err());
+    assert!(result.is_ok());
 }
 
 // ── set_message_callback tests ───────────────────────────────────────

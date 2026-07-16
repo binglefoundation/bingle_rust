@@ -1,7 +1,16 @@
-# CI: unit tests on pull requests
+# CI: pull-request checks
 
-`.github/workflows/unit-tests.yml` runs the workspace unit tests in GitHub
-Actions whenever a PR is raised or amended, and on pushes to `master`.
+Two GitHub Actions workflows run whenever a PR is raised or amended, and on
+pushes to `master`. Each defines one required status check:
+
+| Workflow | Job / check | What it enforces |
+| --- | --- | --- |
+| `.github/workflows/unit-tests.yml` | `unit` | workspace unit tests pass (nextest) |
+| `.github/workflows/quality-checks.yml` | `quality` | `scripts/run_quality_checks.sh --strict`: rustfmt clean + clippy `-D warnings` |
+
+The sections below describe the unit-tests workflow; the quality-checks
+workflow is covered under [Quality checks](#quality-checks). Branch protection
+(below) requires **both** checks.
 
 ## What runs, and when
 
@@ -52,9 +61,9 @@ blocks the merge button. Configure it once against `master`.
 3. Enable **Require status checks to pass before merging**.
 4. Enable **Require branches to be up to date before merging** (optional but
    recommended — forces a re-run against the latest `master`).
-5. In the search box, add the check named **`unit`**.
-   - The check only appears in that list after the workflow has run at least
-     once, so open a throwaway PR (or push this workflow) first.
+5. In the search box, add the checks named **`unit`** and **`quality`**.
+   - A check only appears in that list after its workflow has run at least
+     once, so open a throwaway PR (or push these workflows) first.
 6. Save.
 
 An in-progress run leaves the check *pending*, which also keeps merge blocked
@@ -69,6 +78,7 @@ gh api -X PUT repos/bingle-foundation/bingle_rust/branches/master/protection \
   -H "Accept: application/vnd.github+json" \
   -f 'required_status_checks[strict]=true' \
   -f 'required_status_checks[checks][][context]=unit' \
+  -f 'required_status_checks[checks][][context]=quality' \
   -f 'enforce_admins=false' \
   -f 'required_pull_request_reviews[required_approving_review_count]=0' \
   -F 'restrictions='
@@ -90,6 +100,28 @@ Because `enforce_admins` is left off, a repo admin can still merge a PR whose
 
 Regular contributors without admin/bypass rights cannot merge until `unit`
 passes.
+
+## Quality checks
+
+`.github/workflows/quality-checks.yml` runs `scripts/run_quality_checks.sh
+--strict` on the same PR/push triggers, as the job named **`quality`**. Strict
+mode is a gate: rustfmt must report no drift and clippy must pass with
+`-D warnings`, so the script exits non-zero (failing the job, blocking merge)
+on any formatting or lint regression.
+
+The large clippy backlog is silenced centrally in `[workspace.lints.clippy]`
+(root `Cargo.toml`, tracked by issues #33–#39), so `--strict` only fails on
+*new* lints outside that backlog and on formatting drift. Override / bypass
+works exactly as for the `unit` check above (admin merge).
+
+Fix locally before pushing:
+
+```bash
+scripts/run_quality_checks.sh            # report only (never fails)
+scripts/run_quality_checks.sh --strict   # same gate CI runs
+scripts/run_quality_checks.sh fix        # auto-apply cargo fmt + clippy --fix
+scripts/run_quality_checks.sh --detail   # full fmt diff + clippy output
+```
 
 ## Local equivalent
 

@@ -1982,41 +1982,42 @@ impl Engine {
             // reconnection with a changed public endpoint — does not rebuild it from scratch. Only
             // build a fresh finder via indexer discovery when we have none. Reuse also lets tests
             // inject a finder to exercise this path without the indexer.
-            let finder: Arc<RelayFinder> =
-                if let Some(existing) = self.relay_finder.lock().unwrap().clone() {
-                    existing
-                } else {
-                    // Use the real BingleApi provided via router
-                    let api = self.bingle_api.clone();
-                    // Use Indexer-based discovery when available. Prefer app_id from StartOptions;
-                    // fallback to env var for legacy tests.
-                    let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
-                        let opt_app_id = self.opts().app_id;
-                        let opt_cfg = self.opts().algo_provider_config.clone();
-                        let app_id_opt = opt_app_id.or_else(|| {
-                            std::env::var("BINGLE_APP_ID")
-                                .ok()
-                                .and_then(|s| s.parse::<u64>().ok())
-                        });
-                        if let Some(app_id) = app_id_opt {
-                            let api = match self.bingle_api.upgrade() {
-                                Some(a) => a,
-                                None => {
-                                    tracing::error!(
-                                        "[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache"
-                                    );
-                                    return;
-                                }
-                            };
-                            let cache = api.get_accounts_cache();
-                            crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
-                        } else {
-                            // No app id set
-                            panic!("[Engine] indexer discovery has no app id");
-                        }
-                    };
-                    Arc::new(RelayFinder::new(api.clone(), discover))
+            let finder: Arc<RelayFinder> = if let Some(existing) =
+                self.relay_finder.lock().unwrap().clone()
+            {
+                existing
+            } else {
+                // Use the real BingleApi provided via router
+                let api = self.bingle_api.clone();
+                // Use Indexer-based discovery when available. Prefer app_id from StartOptions;
+                // fallback to env var for legacy tests.
+                let discover: Arc<dyn Fn() -> Vec<RelayInfo> + Send + Sync> = {
+                    let opt_app_id = self.opts().app_id;
+                    let opt_cfg = self.opts().algo_provider_config.clone();
+                    let app_id_opt = opt_app_id.or_else(|| {
+                        std::env::var("BINGLE_APP_ID")
+                            .ok()
+                            .and_then(|s| s.parse::<u64>().ok())
+                    });
+                    if let Some(app_id) = app_id_opt {
+                        let api = match self.bingle_api.upgrade() {
+                            Some(a) => a,
+                            None => {
+                                tracing::error!(
+                                    "[Engine::stun_consistent_process] bingle_api upgrade failed for accounts cache"
+                                );
+                                return;
+                            }
+                        };
+                        let cache = api.get_accounts_cache();
+                        crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
+                    } else {
+                        // No app id set
+                        panic!("[Engine] indexer discovery has no app id");
+                    }
                 };
+                Arc::new(RelayFinder::new(api.clone(), discover))
+            };
 
             // If configured as a relay, update the in-memory DDB with all root relays discovered
             if self.opts().am_relay {

@@ -11,7 +11,9 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, ProgressCallback, StartOptions, UserId};
+use bingle_core::api::bingle_api::{
+    BingleError, NetworkEndpoint, ProgressCallback, StartOptions, UserId,
+};
 use bingle_core::ddb::InetSocketAddress;
 use bingle_core::dtls::network_mux_udp::UdpNetworkMux;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate};

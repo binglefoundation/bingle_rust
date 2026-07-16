@@ -180,9 +180,9 @@ where
         return Ok(handle);
     }
     let status = fetch_status()?;
-    status.handle.ok_or_else(|| {
-        BingleError::Other("No handle registered for current keypair".to_string())
-    })
+    status
+        .handle
+        .ok_or_else(|| BingleError::Other("No handle registered for current keypair".to_string()))
 }
 
 /// Whether a `BingleError` indicates the blockchain host was unreachable (a transient network

@@ -489,10 +489,16 @@ mod tests {
 
         // The rebound socket actually receives traffic on that port.
         let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
-        sender.send_to(b"ping", ("127.0.0.1", port)).expect("send_to");
+        sender
+            .send_to(b"ping", ("127.0.0.1", port))
+            .expect("send_to");
         let mut buf = [0u8; 16];
         let (n, _from) = loop_sock.recv_from(&mut buf).expect("recv after rebind");
-        assert_eq!(&buf[..n], b"ping", "rebound socket should receive datagrams");
+        assert_eq!(
+            &buf[..n],
+            b"ping",
+            "rebound socket should receive datagrams"
+        );
     }
 
     #[test]
