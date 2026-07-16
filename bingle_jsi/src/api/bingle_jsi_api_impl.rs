@@ -682,17 +682,33 @@ impl BingleJsiApiImpl {
                 .ok()
         };
 
-        // Scheduler: never blocks on a send. Hands the worker the oldest pending message, one at a
-        // time, and reaps results. If a send is slow/stuck we simply don't hand off another — so
-        // the loop stays responsive and cannot hang; the message retries once the worker frees.
+        // A transient-failed message backs off this long before it is eligible again, so it does
+        // not immediately re-take the head of the queue and starve newer messages.
+        const RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
+
+        // Scheduler: never blocks on a send. Hands the worker the oldest *eligible* pending message,
+        // one at a time, and reaps results. If a send is slow/stuck we simply don't hand off
+        // another — so the loop stays responsive and cannot hang; the message retries once the
+        // worker frees. `retry_after` holds per-message backoff deadlines so a repeatedly-failing
+        // recipient can't block delivery to others (head-of-line blocking).
         let mut in_flight: Option<(i64, std::time::Instant)> = None;
         let mut warned_stuck = false;
+        let mut retry_after: std::collections::HashMap<i64, std::time::Instant> =
+            std::collections::HashMap::new();
         while *started.lock().unwrap_or_else(|e| e.into_inner()) {
             // Reap a completed result (blocks up to 200ms — responsive, no busy-spin).
             match res_rx.recv_timeout(std::time::Duration::from_millis(200)) {
                 Ok((ts, progress, reason)) => {
                     if let Ok(mut guard) = local_api.lock() {
                         let _ = guard.update_message_status(ts, progress, reason);
+                    }
+                    // progress >= 1.0 is terminal (delivered or permanently failed): no more
+                    // retries. Otherwise the message stays pending — back it off so it yields the
+                    // head of the queue to other messages before its next attempt.
+                    if progress >= 1.0 {
+                        retry_after.remove(&ts);
+                    } else {
+                        retry_after.insert(ts, std::time::Instant::now() + RETRY_BACKOFF);
                     }
                     if in_flight.map(|(t, _)| t == ts).unwrap_or(false) {
                         in_flight = None;
@@ -720,18 +736,20 @@ impl BingleJsiApiImpl {
                 }
             }
 
-            // Hand off the oldest pending message when the worker is free and the transport is up.
+            // Hand off the oldest eligible pending message when the worker is free and the
+            // transport is up.
             if in_flight.is_none() && transport_up() {
-                let next = match local_api.lock() {
-                    Ok(guard) => guard.get_pending_messages().ok().and_then(|mut v| {
-                        v.sort_by_key(|m| m.timestamp);
-                        v.into_iter().next()
-                    }),
+                let pending = match local_api.lock() {
+                    Ok(guard) => guard.get_pending_messages().ok().unwrap_or_default(),
                     Err(_) => {
                         tracing::error!("[BingleJsiApiImpl] local_api lock poisoned");
-                        None
+                        Vec::new()
                     }
                 };
+                // Forget backoff deadlines for messages that are no longer pending (delivered or
+                // removed) so the map stays bounded.
+                retry_after.retain(|ts, _| pending.iter().any(|m| m.timestamp == *ts));
+                let next = select_sendable_message(pending, &retry_after, std::time::Instant::now());
                 if let Some(msg) = next {
                     tracing::info!(
                         "[BingleJsiApiImpl] Processing pending message: {}",
@@ -810,6 +828,28 @@ fn local_api_guard(
         })?;
     local_arc.lock().map_err(|_| BingleJsiError::InternalError {
         reason: "Local API lock poisoned".to_string(),
+    })
+}
+
+/// Pick the oldest pending message eligible to send right now.
+///
+/// A message that recently transient-failed carries a `retry_after` deadline;
+/// until that deadline passes it is skipped so one repeatedly-failing recipient
+/// (e.g. permanently offline) can't starve newer messages behind it — the
+/// scheduler always drains the *oldest* message, so without this a stuck head of
+/// queue would block everything (head-of-line blocking, bingle_rust #31/#43).
+/// Messages with no recorded deadline are always eligible.
+fn select_sendable_message(
+    mut pending: Vec<bingle_local::api::bingle_local_api::Message>,
+    retry_after: &std::collections::HashMap<i64, std::time::Instant>,
+    now: std::time::Instant,
+) -> Option<bingle_local::api::bingle_local_api::Message> {
+    pending.sort_by_key(|m| m.timestamp);
+    pending.into_iter().find(|m| {
+        retry_after
+            .get(&m.timestamp)
+            .map(|deadline| *deadline <= now)
+            .unwrap_or(true)
     })
 }
 
@@ -1366,5 +1406,63 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
     fn is_started(&self) -> bool {
         self.started.lock().map(|g| *g).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_sendable_message;
+    use bingle_local::api::bingle_local_api::Message;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn msg(timestamp: i64) -> Message {
+        Message {
+            sender_handle: "me".to_string(),
+            recipient_handles: vec!["them".to_string()],
+            timestamp,
+            text: "hi".to_string(),
+            cipher_suite: None,
+            progress: Some(0.0),
+            failure_reason: None,
+        }
+    }
+
+    #[test]
+    fn picks_oldest_when_no_backoff() {
+        let now = Instant::now();
+        let retry_after = HashMap::new();
+        let chosen = select_sendable_message(vec![msg(30), msg(10), msg(20)], &retry_after, now);
+        assert_eq!(chosen.map(|m| m.timestamp), Some(10));
+    }
+
+    #[test]
+    fn skips_backed_off_head_and_picks_next_eligible() {
+        // Regression: the oldest message (ts=10) is backing off, so it must NOT starve
+        // the newer, eligible message (ts=20) — that was the head-of-line block.
+        let now = Instant::now();
+        let mut retry_after = HashMap::new();
+        retry_after.insert(10, now + Duration::from_secs(5)); // not yet eligible
+        let chosen = select_sendable_message(vec![msg(10), msg(20)], &retry_after, now);
+        assert_eq!(chosen.map(|m| m.timestamp), Some(20));
+    }
+
+    #[test]
+    fn retries_backed_off_message_once_deadline_passes() {
+        let now = Instant::now();
+        let mut retry_after = HashMap::new();
+        retry_after.insert(10, now - Duration::from_secs(1)); // deadline already passed
+        let chosen = select_sendable_message(vec![msg(10), msg(20)], &retry_after, now);
+        assert_eq!(chosen.map(|m| m.timestamp), Some(10));
+    }
+
+    #[test]
+    fn returns_none_when_all_backed_off() {
+        let now = Instant::now();
+        let mut retry_after = HashMap::new();
+        retry_after.insert(10, now + Duration::from_secs(5));
+        retry_after.insert(20, now + Duration::from_secs(5));
+        let chosen = select_sendable_message(vec![msg(10), msg(20)], &retry_after, now);
+        assert!(chosen.is_none());
     }
 }

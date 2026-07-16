@@ -66,6 +66,21 @@ impl RelayUpdater {
         let mut relays = (self.discover_roots)();
         relays.sort_by(|left, right| left.id().cmp(right.id()));
 
+        // `discover_roots` returns an empty list when the indexer is unreachable
+        // (see indexer_discover_closure — it swallows the error to avoid killing
+        // the drain thread). Do NOT wipe the existing relay cache in that case:
+        // keeping known relays lets a queued message still deliver over a
+        // recovered UDP transport without first waiting for the indexer to come
+        // back, decoupling reconnect delivery from indexer availability
+        // (bingle_rust #31/#43). A genuine "no relays on chain" is treated the
+        // same — an acceptable trade vs. re-wedging delivery on every indexer blip.
+        if relays.is_empty() {
+            tracing::warn!(
+                "[RelayUpdater] discovery returned no relays (indexer unreachable?); keeping existing cache"
+            );
+            return;
+        }
+
         let updated_relays: Vec<RelayInfo> = relays
             .into_iter()
             .map(|mut relay| {

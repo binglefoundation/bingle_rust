@@ -219,6 +219,49 @@ pub fn relay_updater_init_from_blockchain_sets_state_ttl_and_sorts() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
+pub fn relay_updater_init_from_blockchain_keeps_cache_when_discovery_empty() {
+    // Regression (bingle_rust #31/#43): when the indexer is unreachable, discovery
+    // returns an empty list. init_from_blockchain must NOT wipe the existing relay
+    // cache in that case, so a queued message can still deliver over known relays
+    // once the UDP transport recovers, without waiting for the indexer.
+    let call = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let call_for_closure = call.clone();
+    let updater = RelayUpdater::new(
+        "MYID.".to_string(),
+        Arc::new(move || {
+            // First call: relays discovered. Subsequent calls: indexer down (empty).
+            if call_for_closure.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                vec![
+                    signed_root_relay("MYID", addr(56201)),
+                    signed_root_relay("AAA", addr(56202)),
+                ]
+            } else {
+                Vec::new()
+            }
+        }),
+    );
+
+    // Populate the cache from a good discovery.
+    updater.init_from_blockchain();
+    assert_eq!(
+        updater.relay_info_cache().list_all_relays("MYID", true).len(),
+        2,
+        "cache should be populated from the first (successful) discovery"
+    );
+
+    // Indexer now unreachable: discovery returns empty. The cache must be preserved.
+    updater.init_from_blockchain();
+    let relays = updater.relay_info_cache().list_all_relays("MYID", true);
+    assert_eq!(
+        relays.len(),
+        2,
+        "empty discovery (indexer unreachable) must not wipe the relay cache"
+    );
+    assert!(relays.iter().any(|r| r.id() == "AAA"));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
 pub fn relay_updater_init_from_blockchain_sets_unknown_when_own_not_found() {
     let updater = RelayUpdater::new(
         "MISSING.".to_string(),
