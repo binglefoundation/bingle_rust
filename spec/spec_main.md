@@ -550,6 +550,8 @@ Each client node has one relay node they access - this is algorithmically determ
 Search messages `DdbQueryResolve` are executed in the relay node.
 Upserts and deletes are passed through each node (in an algorithmically determined graph).
 New relay nodes are initialized, receive a copy of the DB and are then added.
+A relay signs on with `DdbSignon` once initialized and signs off with `DdbSignoff` when it
+leaves the network in an orderly shutdown.
 This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed.
 
 !include ../generated/message_reference.md
