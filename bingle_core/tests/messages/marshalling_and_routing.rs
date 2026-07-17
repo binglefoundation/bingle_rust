@@ -119,19 +119,6 @@ pub fn integration_decode_check_response() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn integration_decode_call_response() {
-    let msg = decode("{\"app\":null,\"type\":\"CallResponse\",\"calledId\":\"x\",\"channel\":42}");
-    match msg {
-        Message::Relay(RelayMessage::CallResponse(m)) => {
-            assert_eq!(m.called_id, "x");
-            assert_eq!(m.channel, 42);
-        }
-        _ => panic!("expected CallResponse"),
-    }
-}
-
-#[test]
-#[cfg(not(target_os = "ios"))]
 pub fn integration_decode_keep_alive() {
     let msg = decode("{\"app\":null,\"type\":\"KeepAlive\"}");
     match msg {

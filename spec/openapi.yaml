@@ -1089,35 +1089,6 @@ components:
             Relay state string: one of "off", "starting", or "available".
       required: [app, type, state]
 
-    RelayCallResponse:
-      type: object
-      description: Response to a `RelayCall` message. |
-        Provides the channel number of the relay channel. |
-        TURN encapsulated messages can then be sent via the relay node and channel.
-      properties:
-        app:
-          nullable: true
-          enum: [null]
-          description: Must be null for Relay commands.
-        type:
-          type: string
-          enum: ["CallResponse"]
-          description: CallResponse
-        cipher_suite:
-          type: string
-          nullable: true
-          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
-        responseTag:
-          type: string
-          nullable: true
-          description: Optional correlation tag for responses.
-        calledId:
-          type: string
-          description: The identifier of the node that was called.
-        channel:
-          type: integer
-      required: [app, type, channel]
-
     RelayCalled:
       type: object
       description: |

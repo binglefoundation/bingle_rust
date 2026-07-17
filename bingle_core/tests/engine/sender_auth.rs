@@ -19,10 +19,9 @@ use bingle_core::messages::router::Router;
 use bingle_core::messages::types::{
     DdbDeleteResolve, DdbDumpResolve, DdbGetRelaysStatus, DdbInitResolve, DdbQueryResolve,
     DdbRelaysStatusResponse, DdbSignon, DdbSignonResponse, DdbUpsertResolve, Message, PingPing,
-    PingResponse, PlainTextMessage, RelayCall, RelayCallResponse, RelayCalled, RelayCheck,
-    RelayCheckResponse, RelayKeepAlive, RelayListen, RelayListenResponse, RelayResponse,
-    RelayTriangleTest1, RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3,
-    ReportFailMessage,
+    PingResponse, PlainTextMessage, RelayCall, RelayCalled, RelayCheck, RelayCheckResponse,
+    RelayKeepAlive, RelayListen, RelayListenResponse, RelayResponse, RelayTriangleTest1,
+    RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3, ReportFailMessage,
 };
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
@@ -305,14 +304,6 @@ impl MessageHandler for CapturingHandler {
         _api: Arc<dyn BingleApiBoth>,
         _from: &FromStruct,
         _msg: &RelayCheckResponse,
-    ) {
-        self.called.store(true, Ordering::SeqCst);
-    }
-    fn on_relay_call_response(
-        &self,
-        _api: Arc<dyn BingleApiBoth>,
-        _from: &FromStruct,
-        _msg: &RelayCallResponse,
     ) {
         self.called.store(true, Ordering::SeqCst);
     }
