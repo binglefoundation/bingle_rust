@@ -14,8 +14,9 @@ UX:
 - ~~UX to offline credentials~~
 - ~~UX to restart~~
 - ~~upgrade required ux~~
-- offline send: queue message as pending (no error popup) when network is down; deliver on reconnect (#43; core/JSI side #31)
-
+- ~~offline send: queue message as pending (no error popup) when network is down; deliver on reconnect (#43; core/JSI side #31)~~
+- run code quality tools, fixup and ignore (needs script)
+- 
 security:
 - ensure protocol is built as documented, changes as follows:
 *   ~~Update spec to match correct message changes~~
@@ -112,14 +113,12 @@ tokenomics:
 - develop tokenomics model
 - implement pricing accordingly
 
-
-
 deploy:
 - Rewrite README.md with description and instructions to get started with iOS app
 - quick deploy steps for UX/backend change
 - ~~deploy update to relay stack without total replace~~
   This is in README.md --redeploy
-- run unit tests on CD
+- ~~run unit tests on CD~~
 - stabilise integration tests and run on CD with localnet
 - run staging tests on CD / AWS
 - deploy bingle_jsi into npm
