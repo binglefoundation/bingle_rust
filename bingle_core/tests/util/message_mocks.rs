@@ -8,11 +8,10 @@ use bingle_core::messages::types::{
     DdbMessage, DdbQueryResolve, DdbQueryResponse, DdbRelaysStatusResponse, DdbSignoff, DdbSignon,
     DdbSignonResponse, DdbUpdateResponse, DdbUpsertResolve, FailVote, Message, MutexMessage,
     MutexRelease, MutexRequest, MutexResponse, PingMessage, PingPing, PingResponse,
-    PlainTextMessage, RelayCall, RelayCallResponse, RelayCalled, RelayCheck, RelayCheckResponse,
-    RelayKeepAlive, RelayListen, RelayListenResponse, RelayMessage, RelayReportFailed,
-    RelayResponse, RelayTriangleTest1, RelayTriangleTest1Response, RelayTriangleTest2,
-    RelayTriangleTest3, ReportFailMessage, ReportFailedComplete, ReportFailedRipple,
-    ReportFailedRippleResponse,
+    PlainTextMessage, RelayCall, RelayCalled, RelayCheck, RelayCheckResponse, RelayKeepAlive,
+    RelayListen, RelayListenResponse, RelayMessage, RelayReportFailed, RelayResponse,
+    RelayTriangleTest1, RelayTriangleTest1Response, RelayTriangleTest2, RelayTriangleTest3,
+    ReportFailMessage, ReportFailedComplete, ReportFailedRipple, ReportFailedRippleResponse,
 };
 
 fn sample_advert_record() -> AdvertRecord {
@@ -139,16 +138,6 @@ pub fn all_message_samples() -> Vec<(&'static str, Message)> {
             Message::Relay(RelayMessage::CheckResponse(RelayCheckResponse {
                 app: None,
                 relay_state: "available".to_string(),
-                response_tag: None,
-            })),
-        ),
-        // Relay::CallResponse
-        (
-            "Relay::CallResponse",
-            Message::Relay(RelayMessage::CallResponse(RelayCallResponse {
-                app: None,
-                called_id: "callee1".to_string(),
-                channel: 2,
                 response_tag: None,
             })),
         ),

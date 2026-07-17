@@ -15,7 +15,7 @@ use crate::messages::{Message, RelayMessage};
 /// - Accept a relay NetworkEndpoint (NSK) that carries a relay_id and optionally a relay_address.
 /// - If relay_address is missing, look it up via DdbClient::lookup(relay_id) and extract the direct address.
 /// - Send Relay::Call(calledId = target_id) to the relay using BingleApi and await response.
-/// - Parse the response (RelayResponse or RelayCallResponse) to obtain the allocated channel.
+/// - Parse the RelayResponse to obtain the allocated channel.
 /// - Return a populated NetworkEndpoint with relay_id, relay_address and relay_channel.
 #[derive(Clone)]
 pub struct RelayClient {
@@ -93,17 +93,13 @@ impl RelayClient {
             None,
         )?;
 
-        // Parse channel from either RelayResponse or RelayCallResponse
+        // Parse channel from the RelayResponse
         let ty = resp
             .get("type")
             .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let channel_opt = match ty {
             "RelayResponse" => resp
-                .get("channel")
-                .and_then(|v: &serde_json::Value| v.as_u64())
-                .map(|v| v as u16),
-            "CallResponse" | "RelayCallResponse" => resp
                 .get("channel")
                 .and_then(|v: &serde_json::Value| v.as_u64())
                 .map(|v| v as u16),
