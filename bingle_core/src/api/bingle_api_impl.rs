@@ -55,7 +55,10 @@ where
         })
         .is_err()
     {
-        tracing::error!("[BingleApiImpl] failed to spawn bounded worker for {}", label);
+        tracing::error!(
+            "[BingleApiImpl] failed to spawn bounded worker for {}",
+            label
+        );
         return None;
     }
     match rx.recv_timeout(timeout) {
@@ -849,7 +852,8 @@ impl BingleApi for BingleApiImpl {
         // rather than marking it permanently failed (bingle_rust #48).
         let handle_owned = handle.clone();
         let res = match run_bounded(HANDLE_LOOKUP_TIMEOUT, "handle_lookup", move || {
-            ab.handle_lookup(&handle_owned).map_err(BingleError::from_anyhow)
+            ab.handle_lookup(&handle_owned)
+                .map_err(BingleError::from_anyhow)
         }) {
             Some(r) => r,
             None => Err(BingleError::Retryable(format!(

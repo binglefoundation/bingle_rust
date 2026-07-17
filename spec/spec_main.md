@@ -144,7 +144,7 @@ The relay endpoint is then advertised in the distributed database.
 When a node wishes to send a message to a relayed node, it sends a `Call` message to the relay server.
 This allocates a TURN channel.
 The relay server then notifies the called node with a `RelayCalled` message containing the channel number.
-The relay responds to the caller with a `RelayCallResponse` message containing the channel number to use.
+The relay responds to the caller with a `RelayResponse` message containing the channel number to use.
 DTLS UDP traffic can then be encapsulated in TURN `ChannelData` messages sent to the relay server.
 Return traffic is encapsulated in the same way on the same channel.
 

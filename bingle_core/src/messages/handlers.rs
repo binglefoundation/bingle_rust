@@ -675,14 +675,6 @@ pub trait MessageHandler {
     ) {
         self.on_unimplemented(&Message::Relay(RelayMessage::CheckResponse(_msg.clone())));
     }
-    fn on_relay_call_response(
-        &self,
-        _api: Arc<dyn BingleApiBoth>,
-        _from: &FromStruct,
-        _msg: &RelayCallResponse,
-    ) {
-        self.on_unimplemented(&Message::Relay(RelayMessage::CallResponse(_msg.clone())));
-    }
     fn on_relay_keep_alive(
         &self,
         api: Arc<dyn BingleApiBoth>,

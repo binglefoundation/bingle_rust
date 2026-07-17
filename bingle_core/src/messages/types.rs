@@ -53,8 +53,6 @@ pub enum RelayMessage {
     ListenResponse(RelayListenResponse),
     #[serde(rename = "CheckResponse")]
     CheckResponse(RelayCheckResponse),
-    #[serde(rename = "CallResponse")]
-    CallResponse(RelayCallResponse),
     #[serde(rename = "KeepAlive")]
     KeepAlive(RelayKeepAlive),
     #[serde(rename = "RelayCalled")]
@@ -205,21 +203,6 @@ pub struct RelayCheckResponse {
     pub app: Option<String>, // must be None (null)
     #[serde(rename = "state")]
     pub relay_state: String,
-    #[serde(
-        rename = "responseTag",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub response_tag: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RelayCallResponse {
-    #[serde(default, deserialize_with = "nullable_app::deserialize_null")]
-    pub app: Option<String>, // must be None (null)
-    #[serde(rename = "calledId")]
-    pub called_id: String,
-    pub channel: u16,
     #[serde(
         rename = "responseTag",
         default,
