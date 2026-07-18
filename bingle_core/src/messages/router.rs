@@ -445,9 +445,6 @@ impl Router {
                 RelayMessage::CheckResponse(m) => {
                     handler.on_relay_check_response(api.clone(), from, m)
                 }
-                RelayMessage::CallResponse(m) => {
-                    handler.on_relay_call_response(api.clone(), from, m)
-                }
                 RelayMessage::KeepAlive(m) => handler.on_relay_keep_alive(api.clone(), from, m),
                 RelayMessage::RelayCalled(m) => handler.on_relay_called(api.clone(), from, m),
             },

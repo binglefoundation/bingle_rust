@@ -1170,7 +1170,7 @@ components:
           description: The identifier of the node that was called.
         channel:
           type: integer
-      required: [app, type, calledId, channel]
+      required: [app, type, channel]
 
     RelayCalled:
       type: object
