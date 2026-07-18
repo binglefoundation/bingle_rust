@@ -24,9 +24,9 @@ fn addr(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
 }
 
+#[ntest::timeout(90_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
-
 pub fn dtls_send_via_relay_end_to_end() {
     init_test_logging();
 
@@ -36,9 +36,11 @@ pub fn dtls_send_via_relay_end_to_end() {
     let server_key_pem: Vec<u8> = certs.server_key.clone();
     let ca_pem: Vec<u8> = certs.ca_crt.clone();
 
-    let target_port = test_util::find_unused_loopback_port();
-    let mut mux_target =
-        UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, target_port)).expect("bind target mux");
+    // Bind to an OS-assigned port (0) rather than find_unused_loopback_port(), which drops its
+    // probe socket before we re-bind — a TOCTOU window a parallel test can win (observed as
+    // "Address already in use"). The target's address is read back from the mux via local_addr()
+    // wherever it is needed.
+    let mut mux_target = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind target mux");
 
     // Server will record the first plaintext message it receives
     let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -103,13 +105,14 @@ pub fn dtls_send_via_relay_end_to_end() {
         .start(mux_target_arc.clone())
         .expect("start dtls server");
 
-    // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun)
-    let relay_port = test_util::find_unused_loopback_port();
-    let relay_addr = addr(relay_port);
+    // 2) Start a relay node using the BingleApiImpl pattern (as in endpoint_identify_via_forced_stun).
+    // Bind to an OS-assigned port (0) and read the actual bound address back after start (see the
+    // note on the target mux above re: the find_unused_loopback_port TOCTOU). The relay is
+    // addressed directly by that resolved address below, so an ephemeral port is fine.
     let relay_opts = StartOptions {
         handle: Handle::from("relay"),
         algo_passphrase: Some(test_util::PASSPHRASE_10MIL.to_string()),
-        static_ip: Some(relay_addr),
+        static_ip: Some(addr(0)),
         am_relay: true,
         stun_servers: None,
         algo_provider_config: None,
@@ -133,6 +136,16 @@ pub fn dtls_send_via_relay_end_to_end() {
     relay_api
         .access_unsafe_for_tests(|a: &mut BingleApiImpl| a.start(&relay_opts))
         .expect("start relay api");
+    // Resolve the relay's actual loopback address from its bound mux and use it for all
+    // subsequent direct addressing (Listen/Call sends and the relay endpoint).
+    let relay_addr = addr(
+        relay_api
+            .engine_mux_for_tests()
+            .expect("relay mux should be available")
+            .local_addr()
+            .expect("relay mux should have a bound address")
+            .port(),
+    );
     if !test_util::wait_for_relay_available(&relay_api, Duration::from_secs(30)) {
         panic!("relay did not become Available within 30s");
     }
@@ -155,9 +168,9 @@ pub fn dtls_send_via_relay_end_to_end() {
     let server_key_pem2: Vec<u8> = certs2.server_key.clone();
     let ca_pem2: Vec<u8> = certs2.ca_crt.clone();
 
-    let client_port = test_util::find_unused_loopback_port();
-    let mut mux_client =
-        UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, client_port)).expect("bind target mux 2");
+    // Bind to an OS-assigned port (0); the client's address is read back via local_addr() where
+    // needed (see the target mux note above re: the find_unused_loopback_port TOCTOU).
+    let mut mux_client = UdpNetworkMux::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind target mux 2");
 
     // Add TURN handler to dtls_client for client mode (non-relay)
     let turn_client2 = Arc::new(bingle_core::turn::turn_handler::TurnClientImpl::new());
