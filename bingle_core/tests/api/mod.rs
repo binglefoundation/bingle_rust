@@ -68,3 +68,6 @@ pub mod bingle_error_tests;
 
 #[path = "dangerous_debug_check.rs"]
 pub mod dangerous_debug_check;
+
+#[path = "dtls_via_relay_integration.rs"]
+pub mod dtls_via_relay_integration;
