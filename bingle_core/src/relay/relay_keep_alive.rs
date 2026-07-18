@@ -78,14 +78,19 @@ impl RelayKeepAliveSender {
                 // spurious condvar wakeups don't shorten the interval.
                 let deadline = Instant::now() + interval;
                 loop {
-                    if !running.load(Ordering::SeqCst) {
-                        return;
-                    }
                     let now = Instant::now();
                     if now >= deadline {
                         break;
                     }
+                    // Check `running` while holding the stop_signal lock, then wait under the
+                    // same lock. stop() flips `running` to false and notifies under this lock,
+                    // so a notification cannot slip in between the check and the wait. Without
+                    // this, a lost wakeup would leave us parked for the full (possibly very
+                    // long) interval, hanging the join() in stop().
                     let guard = stop_signal.0.lock().unwrap();
+                    if !running.load(Ordering::SeqCst) {
+                        return;
+                    }
                     let _ = stop_signal.1.wait_timeout(guard, deadline - now).unwrap();
                 }
                 if !running.load(Ordering::SeqCst) {
@@ -124,7 +129,15 @@ impl RelayKeepAliveSender {
 
     pub fn stop(&mut self) {
         if self.running.swap(false, Ordering::SeqCst) {
-            self.stop_signal.1.notify_all();
+            // Notify under the stop_signal lock so this happens-after the waiter's
+            // `running` check (which is also done under the lock): the waiter either
+            // sees running=false before waiting, or is already parked and receives this
+            // notification. This closes the lost-wakeup race that could otherwise hang
+            // join() until the (possibly very long) keep-alive interval elapsed.
+            {
+                let _guard = self.stop_signal.0.lock().unwrap();
+                self.stop_signal.1.notify_all();
+            }
             if let Some(h) = self.thread.take() {
                 let _ = h.join();
             }

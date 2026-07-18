@@ -1918,6 +1918,24 @@ impl Engine {
         // Save last known public address (for validation/tests)
         self.set_last_public_addr(public_addr);
 
+        // On a public-endpoint change while we were already registered, re-register with the
+        // same relay on the new mapping directly (no re-discovery) to restart the keep-alive.
+        // The previous registration and keep-alive were torn down above because they were bound
+        // to the old address. Using the remembered relay avoids a full triangle re-drive (which
+        // needs the indexer/app_id) when we already know our relay. See last_registered_relay.
+        if addr_changed {
+            let remembered = self.last_registered_relay.lock().unwrap().clone();
+            if let Some(relay) = remembered {
+                tracing::info!(
+                    "[Engine] public endpoint changed; re-registering with remembered relay {} (id={}) on new mapping",
+                    relay.address(),
+                    relay.id()
+                );
+                self.register_with_relay(Some(relay));
+                return;
+            }
+        }
+
         // Transition to TrianglePing and perform the relay triangle test.
         //
         // The triangle handshake is normally one-shot: once we've begun it (raw state
@@ -2012,8 +2030,15 @@ impl Engine {
                         let cache = api.get_accounts_cache();
                         crate::relay::discovery::indexer_discover_closure(app_id, opt_cfg, cache)
                     } else {
-                        // No app id set
-                        panic!("[Engine] indexer discovery has no app id");
+                        // No app id and no injected/cached finder: we cannot discover a relay.
+                        // Log and bail rather than panic — a hard panic here crashes the engine
+                        // worker thread on a recoverable condition. A later STUN event or the
+                        // registration watchdog will retry. Mirrors register_with_relay's handling
+                        // of the same missing-app_id case.
+                        tracing::warn!(
+                            "[Engine::stun_consistent_process] no app id and no relay finder; cannot discover relay"
+                        );
+                        return;
                     }
                 };
                 Arc::new(RelayFinder::new(api.clone(), discover))
