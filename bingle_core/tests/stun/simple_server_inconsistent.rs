@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,31 +7,27 @@ use bingle_core::stun::{
     SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,
 };
 
-fn find_unused_loopback_port() -> u16 {
-    crate::util::test_util::find_unused_loopback_port()
-}
+use crate::util::test_util::loopback_addr;
 
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn simple_stun_mixed_servers_inconsistent() {
-    // Start two simple STUN servers: one normal, one broken_nat
-    let p1 = find_unused_loopback_port();
-    let p2 = find_unused_loopback_port();
-    let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
-    let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
-
+    // Start two simple STUN servers (one normal, one broken_nat) on OS-assigned loopback ports
+    // and read their bound addresses back — no allocate-a-port-then-bind-it race.
     let s1 = SimpleStunServer::start(SimpleStunStartOptions {
-        bind_addr: a1,
+        bind_addr: loopback_addr(0),
         attach_to: None,
         broken_nat: false,
     })
     .expect("start s1");
+    let a1 = s1.local_addr();
     let s2 = SimpleStunServer::start(SimpleStunStartOptions {
-        bind_addr: a2,
+        bind_addr: loopback_addr(0),
         attach_to: None,
         broken_nat: true,
     })
     .expect("start s2");
+    let a2 = s2.local_addr();
 
     // Mux
     let mux = Arc::new(UdpNetworkMux::bind(("0.0.0.0", 0)).expect("bind mux"));

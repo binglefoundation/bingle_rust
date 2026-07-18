@@ -145,6 +145,29 @@ pub fn make_standard_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps>
     accounts
 }
 
+// Build a loopback (127.0.0.1) SocketAddr for the given port. Pass 0 to request an OS-assigned
+// port when binding, then read the bound address back (e.g. UdpNetworkMux::local_addr,
+// SimpleStunServer::local_addr, or BingleApiImpl::engine_mux_for_tests().local_addr()).
+#[allow(dead_code)]
+pub fn loopback_addr(port: u16) -> std::net::SocketAddr {
+    use std::net::{IpAddr, Ipv4Addr};
+    std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
+
+// The loopback address a started node is actually bound to. Use with a node started with
+// `static_ip: Some(loopback_addr(0))` to recover the OS-assigned port without the
+// allocate-then-bind race: the node's mux binds to 0.0.0.0:<port>, and this returns
+// 127.0.0.1:<port> for direct addressing by peers.
+#[allow(dead_code)]
+pub fn node_loopback_addr(api: &BingleApiImpl) -> std::net::SocketAddr {
+    let bound = api
+        .engine_mux_for_tests()
+        .expect("node mux should be available")
+        .local_addr()
+        .expect("node mux should have a bound address");
+    loopback_addr(bound.port())
+}
+
 // Shared helper for tests: allocate a free UDP port on loopback.
 //
 // Binding a probe socket to port 0, reading the assigned port, and dropping the socket leaves a
