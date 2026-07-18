@@ -325,7 +325,59 @@ components:
           description: The identifier of the new node that is signing on, an Algorand address.
         originalSignature:
           type: string
-          description: A ed25519 signature of `startId` + `epoch` by the node making the request.
+          description: An optional ed25519 signature of `startId` by the node making the request.
+        rippled:
+          type: boolean
+          description: True if the message was rippled to the database.
+      required: [app, type, startId]
+      additionalProperties: true
+
+    DdbSignoff:
+      type: object
+      description: |
+        Sign off as a relay node from the DDB.
+        This message is sent when a relay node is leaving the network (an orderly shutdown),
+        and is the counterpart to `DdbSignon`.
+        The receiving relay validates that the sender is a permissioned relay, that the
+        signing-off `startId` matches a record it holds, and that the message arrived from the
+        endpoint registered for that node, before removing the relay and rippling the signoff
+        onward to all configured nodes in the graph. As with signon, this changes the graph
+        configuration and causes the epoch number to be incremented.
+        A `DdbSignonResponse` is not sent; removal is propagated by the ripple.
+
+        NOTE: currently, the sender must be permissioned as a relay.
+      properties:
+        app:
+          type: string
+          enum: ["ddb"]
+          description: ddb
+        type:
+          type: string
+          enum: ["signoff"]
+          description: signoff
+        cipher_suite:
+          type: string
+          nullable: true
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        tag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for request/response association.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        text:
+          type: string
+          nullable: true
+          description: Optional text field if the typed message conveys textual content
+        data:
+          type: object
+          description: Optional structured payload; schema depends on (`app`, `type`)
+          additionalProperties: true
+        startId:
+          type: string
+          description: The identifier of the relay node that is signing off, an Algorand address.
         rippled:
           type: boolean
           description: True if the message was rippled to the database.
@@ -1085,9 +1137,40 @@ components:
           description: Optional correlation tag for responses.
         state:
           type: string
+          enum: ["unknown", "off", "starting", "loading", "loaded", "available", "own"]
           description: |
-            Relay state string: one of "off", "starting", or "available".
+            Relay state string, the lowercase name of the responding relay's state: one of
+            "unknown", "off", "starting", "loading", "loaded", "available", or "own".
       required: [app, type, state]
+
+    RelayCallResponse:
+      type: object
+      description: Response to a `RelayCall` message. |
+        Provides the channel number of the relay channel. |
+        TURN encapsulated messages can then be sent via the relay node and channel.
+      properties:
+        app:
+          nullable: true
+          enum: [null]
+          description: Must be null for Relay commands.
+        type:
+          type: string
+          enum: ["CallResponse"]
+          description: CallResponse
+        cipher_suite:
+          type: string
+          nullable: true
+          description: The cipher suite in use on the connection when the message was received. Derived by the client; not transmitted on the wire — this is an internal value injected by the receiving endpoint.
+        responseTag:
+          type: string
+          nullable: true
+          description: Optional correlation tag for responses.
+        calledId:
+          type: string
+          description: The identifier of the node that was called.
+        channel:
+          type: integer
+      required: [app, type, channel]
 
     RelayCalled:
       type: object

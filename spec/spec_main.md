@@ -56,6 +56,21 @@ Steps for this are as follows:
 - return the oldest entries `id` based on `HandleTime`
 - if no entry is found, return NULL/Fail
 
+### Partial handle lookup
+
+A prefix variant is provided by the Bingle API call
+`handleLookupPartial(prefix) => (id, handle)`. It supports incremental / type-ahead handle
+resolution, where the caller has only the start of a handle.
+
+The `prefix` is normalised by the same handle matching rules (lowercase, alphanumeric only) and
+matched against the *start* of each registered handle's normalised form, so `abc` matches a
+registered `ab_cd`. As with the exact lookup, when several accounts match the *oldest* one (by
+`HandleTime`) is chosen, preserving handle uniqueness.
+
+On a match it returns the matching account's `id` together with the `handle` in its canonical
+form — that is, exactly as written in the account's blockchain local state, not the normalised
+form. If no registered handle starts with the prefix, it returns NULL/Fail.
+
 ## Outgoing message transfer
 
 This implements six methods:
@@ -437,6 +452,13 @@ The peer relay follows this with a "DdbRelaysStatusResponse" message containing 
 
 The new relay is now initialized and live, it shoud expect to receive requests from selected peers.
 
+When a relay leaves the network in an orderly shutdown, it performs the reverse operation by
+sending a "DdbSignoff" message to its peer relay (the counterpart to "DdbSignon"). The peer
+validates that the sender is a permissioned relay, that the signing-off `startId` matches a
+record it holds, and that the message arrived from the endpoint registered for that node. It
+then removes the relay and ripples the "DdbSignoff" onward to all configured nodes in the graph.
+As with signon, this alters the relay graph configuration and increments the epoch number.
+
 ## Relay Coordination (Distributed Mutex)
 
 To coordinate relay initialization and other cluster-wide operations, relays use a distributed mutex implementation based on Lamport timestamps.
@@ -528,6 +550,8 @@ Each client node has one relay node they access - this is algorithmically determ
 Search messages `DdbQueryResolve` are executed in the relay node.
 Upserts and deletes are passed through each node (in an algorithmically determined graph).
 New relay nodes are initialized, receive a copy of the DB and are then added.
+A relay signs on with `DdbSignon` once initialized and signs off with `DdbSignoff` when it
+leaves the network in an orderly shutdown.
 This causes the epoch number to be incremented, indicating a new configuration - this also happens when a relay is removed.
 
 !include ../generated/message_reference.md
@@ -552,7 +576,7 @@ Credits the Bingle$ price * amount sold in Algorand to the sender.
 
 # Register
 
-Requires opt in to the asset and the app. Requires a one time payment of the current price in Bingle$.
+Requires opt in to the asset and the app. Requires a one time payment of 1 Bingle$ (a fixed fee, not the current Bingle$ price).
 Takes an argument of the handle to register and creates a new account with that handle.
 The handle is stored in local storage under the key `Handle` and with `HandleTime` set to Global.latest_timestamp()
 (Only the *oldest* handle is used. Further entries will be ignored in lookup. The caller needs to ensure the handle is unique).
