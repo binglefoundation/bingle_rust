@@ -22,8 +22,6 @@ pub mod islanding;
 pub mod dtls_session_randomness_test;
 #[path = "../api/dtls_via_relay_integration.rs"]
 pub mod dtls_via_relay_integration;
-#[path = "../engine/stun_inconsistent_relay.rs"]
-pub mod stun_inconsistent_relay;
 // Extracted from security/renegotiation_test.rs — only the live-handshake test is
 // flaky; its companion config-only test stays in the unit suite.
 pub mod renegotiation_handshake;

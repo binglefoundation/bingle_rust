@@ -77,3 +77,6 @@ pub mod ddb_upsert_relay_check;
 
 #[path = "relay_keep_alive_engine.rs"]
 pub mod relay_keep_alive_engine;
+
+#[path = "stun_inconsistent_relay.rs"]
+pub mod stun_inconsistent_relay;
