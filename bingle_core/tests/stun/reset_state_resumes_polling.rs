@@ -7,10 +7,6 @@ use bingle_core::stun::{
     SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,
 };
 
-fn find_unused_loopback_port() -> u16 {
-    crate::util::test_util::find_unused_loopback_port()
-}
-
 /// Verifies that after reset_state() is called (e.g. when no relay is found), the STUN polling
 /// loop re-polls all servers and can reach Consistent again. This is the regression test for the
 /// bug where reset_state() did not clear server.responded flags, causing the polling loop to
@@ -18,8 +14,8 @@ fn find_unused_loopback_port() -> u16 {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn reset_state_resumes_stun_polling() {
-    let p1 = find_unused_loopback_port();
-    let p2 = find_unused_loopback_port();
+    let p1 = crate::util::test_util::find_unused_loopback_port();
+    let p2 = crate::util::test_util::find_unused_loopback_port();
     let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
     let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
 

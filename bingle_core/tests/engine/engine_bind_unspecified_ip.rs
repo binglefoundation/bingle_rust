@@ -7,16 +7,12 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 #[path = "../test_util.rs"]
 pub mod test_util;
 
-fn find_unused_loopback_port() -> u16 {
-    crate::util::test_util::find_unused_loopback_port()
-}
-
 #[ntest::timeout(15_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_binds_to_unspecified_ip_when_static_addr_is_provided() {
     // Choose a random available port by probing loopback; we use that port for static_ip.
-    let port = find_unused_loopback_port();
+    let port = test_util::find_unused_loopback_port();
     assert_ne!(port, 0, "probe should yield a non-zero port");
 
     // Provide a loopback static address; engine should still bind to 0.0.0.0:<port>.
