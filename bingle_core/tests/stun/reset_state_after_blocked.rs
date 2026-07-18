@@ -8,7 +8,7 @@
 // list went empty because the finder immediately re-entered Blocked and the
 // state_change callback fired with None endpoint before any server could respond.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -16,13 +16,6 @@ use bingle_core::dtls::{NetworkMux, UdpNetworkMux};
 use bingle_core::stun::{
     SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,
 };
-
-fn find_unused_loopback_port() -> u16 {
-    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-    let port = sock.local_addr().expect("local addr").port();
-    drop(sock);
-    port
-}
 
 /// Verifies that reset_state() after Blocked does not immediately re-enter Blocked.
 /// Steps:
@@ -32,8 +25,8 @@ fn find_unused_loopback_port() -> u16 {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn reset_state_after_blocked_recovers_to_consistent() {
-    let p1 = find_unused_loopback_port();
-    let p2 = find_unused_loopback_port();
+    let p1 = crate::util::test_util::find_unused_loopback_port();
+    let p2 = crate::util::test_util::find_unused_loopback_port();
     let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
     let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
 

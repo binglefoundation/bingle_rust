@@ -146,13 +146,38 @@ pub fn make_standard_accounts(cfg: &AlgoChainConfig) -> HashMap<String, AlgoOps>
 }
 
 // Shared helper for tests: allocate a free UDP port on loopback.
+//
+// Binding a probe socket to port 0, reading the assigned port, and dropping the socket leaves a
+// TOCTOU window in which the port can be reused. The most common symptom is this helper handing
+// the *same* freshly-freed port to two calls in quick succession (e.g. a receiver/sender pair),
+// which then collide on bind ("Address already in use"). To avoid that, we track the ports this
+// process has already handed out and never return the same one twice, holding the rejected probe
+// sockets open during the search so each retry's port-0 bind lands on a different ephemeral port.
+//
+// Note: this closes helper-vs-helper collisions but not the residual cross-test window where some
+// other socket grabs the freed port before the caller re-binds it. A caller that needs a fully
+// race-free port should bind to port 0 directly and read the bound port back via local_addr()
+// (see the DTLS tests) rather than allocate-then-rebind.
 #[allow(dead_code)]
 pub fn find_unused_loopback_port() -> u16 {
+    use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, UdpSocket};
-    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-    let port = sock.local_addr().expect("local addr").port();
-    drop(sock);
-    port
+    use std::sync::{Mutex, OnceLock};
+
+    static HANDED_OUT: OnceLock<Mutex<HashSet<u16>>> = OnceLock::new();
+    let handed_out = HANDED_OUT.get_or_init(|| Mutex::new(HashSet::new()));
+
+    // Keep rejected probes bound so successive port-0 binds get distinct ports.
+    let mut probes = Vec::new();
+    for _ in 0..1000 {
+        let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
+        let port = sock.local_addr().expect("local addr").port();
+        if handed_out.lock().expect("port set poisoned").insert(port) {
+            return port;
+        }
+        probes.push(sock);
+    }
+    panic!("find_unused_loopback_port: no distinct free port found after 1000 attempts");
 }
 
 #[allow(dead_code)]
