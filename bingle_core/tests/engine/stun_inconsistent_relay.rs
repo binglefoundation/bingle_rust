@@ -277,6 +277,7 @@ fn build_engine_with_relay(
 // ---------------------------------------------------------------------------
 // Test: on_stun_inconsistent must register with relay (currently FAILS).
 // ---------------------------------------------------------------------------
+#[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn on_stun_inconsistent_registers_with_relay() {
