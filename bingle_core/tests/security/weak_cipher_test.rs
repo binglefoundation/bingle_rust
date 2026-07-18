@@ -1,5 +1,5 @@
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, Handle, StartOptions};
@@ -32,14 +32,11 @@ impl std::io::Write for UdpStream {
 fn weak_cipher_3des_rejected() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
+    // 1) Setup Bingle node as server, bound to an OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server_weak_cipher"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: false,
         ..StartOptions::new("".into())
     };
@@ -47,6 +44,7 @@ fn weak_cipher_3des_rejected() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(100));
 
@@ -107,14 +105,11 @@ fn weak_cipher_3des_rejected() {
 fn null_cipher_rejected_by_default() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
+    // 1) Setup Bingle node as server, bound to an OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server_no_enull"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: false,
         ..StartOptions::new("".into())
     };
@@ -122,6 +117,7 @@ fn null_cipher_rejected_by_default() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(100));
 
@@ -165,14 +161,12 @@ fn null_cipher_rejected_by_default() {
 fn null_cipher_accepted_when_dangerous_debug_is_on() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server with dangerous_debug ON and null_encryption ON
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
+    // 1) Setup Bingle node as server with dangerous_debug ON and null_encryption ON, bound to an
+    // OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server_enull_ok"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: true,
         ..StartOptions::new("".into())
     };
@@ -188,6 +182,7 @@ fn null_cipher_accepted_when_dangerous_debug_is_on() {
             a.start(&server_opts)
         })
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(100));
 
