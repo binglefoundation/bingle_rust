@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use bingle_core::api::bingle_api::{BingleApi, StartOptions};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
@@ -8,10 +8,7 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 pub mod test_util;
 
 fn find_unused_loopback_port() -> u16 {
-    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-    let port = sock.local_addr().expect("local addr").port();
-    drop(sock);
-    port
+    crate::util::test_util::find_unused_loopback_port()
 }
 
 #[ntest::timeout(15_000)]

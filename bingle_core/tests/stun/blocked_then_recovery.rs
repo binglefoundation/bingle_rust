@@ -6,7 +6,7 @@
 //
 // Also verifies that while in Blocked state, STUN Binding Requests are sent every 2s.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -17,10 +17,7 @@ use bingle_core::stun::{
 };
 
 fn find_unused_loopback_port() -> u16 {
-    let sock = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).expect("bind temp socket");
-    let port = sock.local_addr().expect("local addr").port();
-    drop(sock);
-    port
+    crate::util::test_util::find_unused_loopback_port()
 }
 
 /// Start the finder pointing at two silent addresses (nothing bound), wait for
