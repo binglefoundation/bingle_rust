@@ -32,6 +32,32 @@ class BingleDapp(ARC4Contract):
         # user to upgrade. Same encoding as AncestorApps so app_global_bytes can read it.
         self.successor_app = GlobalState(Bytes, key="SuccessorApp")
 
+        # --- Reserved spare schema slots -------------------------------------------------
+        # An app's state schema is fixed at creation and cannot be grown by UpdateApplication.
+        # We therefore claim spare global/local capacity now so a future contract version can
+        # be deployed as an in-place update and populate real fields into these slots without a
+        # schema break or a full app-replacement migration. A reserved slot may be repurposed
+        # by a later version as long as its type (uint vs byte-slice) is preserved, so the
+        # compiled schema counts stay identical.
+        #
+        # These proxies are intentionally never read or written: declaring them is enough for
+        # puyapy to count them in the compiled schema, which makes this contract the single
+        # source of truth for the reserved capacity. See the schema in BingleDapp.arc56.json.
+        #
+        # Reserved: 8 global slots (4 uint + 4 byte-slice), 4 local slots (2 uint + 2 byte-slice).
+        self.reserved_global_int_0 = GlobalState(UInt64, key="rsvd_g_i0")
+        self.reserved_global_int_1 = GlobalState(UInt64, key="rsvd_g_i1")
+        self.reserved_global_int_2 = GlobalState(UInt64, key="rsvd_g_i2")
+        self.reserved_global_int_3 = GlobalState(UInt64, key="rsvd_g_i3")
+        self.reserved_global_bytes_0 = GlobalState(Bytes, key="rsvd_g_b0")
+        self.reserved_global_bytes_1 = GlobalState(Bytes, key="rsvd_g_b1")
+        self.reserved_global_bytes_2 = GlobalState(Bytes, key="rsvd_g_b2")
+        self.reserved_global_bytes_3 = GlobalState(Bytes, key="rsvd_g_b3")
+        self.reserved_local_int_0 = LocalState(UInt64, key="rsvd_l_i0")
+        self.reserved_local_int_1 = LocalState(UInt64, key="rsvd_l_i1")
+        self.reserved_local_bytes_0 = LocalState(Bytes, key="rsvd_l_b0")
+        self.reserved_local_bytes_1 = LocalState(Bytes, key="rsvd_l_b1")
+
     @abimethod(create="require")
     def create(self, app_admin: Account, app_withdrawer: Account) -> None:
         self.app_admin.value = app_admin

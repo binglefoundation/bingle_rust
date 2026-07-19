@@ -109,3 +109,7 @@ tracing from `App.tsx` "Checking activation status" → JSI start → Rust.
   clears it or the old app is deleted.
 - Only accounts that run the new app are migrated; this is inherent to Algorand's local-state
   opt-in rule and is why the admin batch approach was dropped.
+- Adding new state fields to a future version only forces this full app-replacement migration
+  when it grows the schema. To avoid that, the current contract pre-claims spare global/local
+  schema capacity so field additions can ship as an in-place `UpdateApplication`; see
+  [reserved_state_schema.md](reserved_state_schema.md).
