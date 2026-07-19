@@ -35,20 +35,21 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn end_to_end_turn_relay_forwards_payload() {
-    // Allocate three ports: relay, client A, client B
-    let relay_port = test_util::find_unused_loopback_port();
-    let a_port = test_util::find_unused_loopback_port();
-    let b_port = test_util::find_unused_loopback_port();
-    assert_ne!(relay_port, 0);
-    assert_ne!(a_port, 0);
-    assert_ne!(b_port, 0);
-
-    let relay_addr = addr(relay_port);
-    let a_addr = addr(a_port);
-    let b_addr = addr(b_port);
+    // Bind the two client sockets (A sends, B receives) and the relay mux to OS-assigned
+    // loopback ports up front, reading their real addresses back — no allocate-then-bind race.
+    // The client sockets are bound here (not later) because their addresses are registered in
+    // the relay's TURN handler below and must match where the payload is sent from / received.
+    let recv_sock = UdpSocket::bind(addr(0)).expect("bind b udp");
+    recv_sock
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .ok();
+    let b_addr = recv_sock.local_addr().expect("b addr");
+    let send_sock = UdpSocket::bind(addr(0)).expect("bind a udp");
+    let a_addr = send_sock.local_addr().expect("a addr");
 
     // Create the relay UDP mux and TURN handler
-    let mut mux = UdpNetworkMux::bind(relay_addr).expect("bind relay mux");
+    let mut mux = UdpNetworkMux::bind(addr(0)).expect("bind relay mux");
+    let relay_addr = mux.local_addr().expect("relay addr");
     let turn = std::sync::Arc::new(bingle_core::turn::turn_handler::TurnHandlerImpl::new());
 
     // Configure TURN ChannelData handler to forward payloads to destination
@@ -193,16 +194,11 @@ pub fn end_to_end_turn_relay_forwards_payload() {
         Some(ch as u64)
     );
 
-    // 3) Bind a raw UDP socket on B's address to receive the forwarded payload
-    let recv_sock = UdpSocket::bind(b_addr).expect("bind b udp");
-    recv_sock
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .ok();
+    // 3) recv_sock (B) is already bound and listening (see top of test).
 
     // 4) Send TURN ChannelData from A to the relay and verify it arrives at B
     let payload = b" TURN_OK"; // leading space to avoid special mux classifications
     let ch_data = build_channel_data(ch, payload);
-    let send_sock = UdpSocket::bind(a_addr).expect("bind temp udp");
     send_sock
         .send_to(&ch_data, relay_addr)
         .expect("send channeldata");
