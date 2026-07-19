@@ -13,7 +13,7 @@ use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::error::{AlgoError, AlgoErrorKind};
 use bingle_core::ddb::{AdvertRecord, InetSocketAddress};
 use bingle_core::engine::BingleAccess;
-use bingle_core::util::cli_utils::parse_start_options_from_args;
+use bingle_core::util::cli_utils::{args_request_auto_migrate, parse_start_options_from_args};
 use bingle_core::util::config_utils::{
     parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids,
 };
@@ -178,7 +178,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     if code == 0 {
         tracing::info!("{}", usage);
     } else {
@@ -191,7 +191,7 @@ fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
         warn!(
-            "Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--echo]"
+            "Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--echo] [--auto-migrate]"
         );
         std::process::exit(0);
     }
@@ -221,12 +221,16 @@ fn cmd_run(mut args: Vec<String>) {
         i += 1;
     }
 
+    // Whether to migrate local state from an ancestor app on startup (see below). Detected from
+    // the raw args rather than StartOptions so the flag does not perturb StartOptions constructions.
+    let auto_migrate = args_request_auto_migrate(&args);
+
     // Parse CLI args into StartOptions
     let opts = match parse_start_options_from_args(args.clone()) {
         Ok(o) => o,
         Err(e) => {
             warn!(
-                "Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>]",
+                "Error: {}\nUsage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--auto-migrate]",
                 e
             );
             std::process::exit(2);
@@ -278,6 +282,42 @@ fn cmd_run(mut args: Vec<String>) {
                 app_id, successor
             );
             std::process::exit(1);
+        }
+    }
+
+    // Auto-migrate: after the successor check (so we only run against a live app), optionally copy
+    // the user's local state from the creator-blessed ancestor app into the current app. This is a
+    // one-time, idempotent `migrate_local` — once the user holds a Handle on the current app it is a
+    // no-op. Best-effort: a read/transaction hiccup must not stop the client from starting.
+    if auto_migrate {
+        match (app_id_for_check, opts.algo_passphrase.as_ref()) {
+            (Some(app_id), Some(passphrase)) => {
+                let ops = AlgoOps::new(
+                    Some(passphrase.clone()),
+                    None,
+                    opts.algo_provider_config.clone(),
+                );
+                let asset_id_for_ctor = opts
+                    .asset_id
+                    .or_else(|| opts.algo_provider_config.as_ref().and_then(|c| c.asset_id))
+                    .unwrap_or(0);
+                let bingle = AlgoBingle::new(ops, app_id, asset_id_for_ctor);
+                match bingle.ensure_local_migrated(app_id) {
+                    Ok(Some(txid)) => tracing::info!(
+                        "auto-migrate: migrated local state to app {} (txid {})",
+                        app_id,
+                        txid
+                    ),
+                    Ok(None) => {
+                        tracing::info!("auto-migrate: nothing to migrate for app {}", app_id)
+                    }
+                    Err(e) => warn!("auto-migrate: skipped ({})", e),
+                }
+            }
+            (_, None) => {
+                warn!("--auto-migrate set but no --passphrase; skipping local migration")
+            }
+            _ => {}
         }
     }
 
