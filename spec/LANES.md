@@ -15,10 +15,10 @@ UX:
 - ~~UX to restart~~
 - ~~upgrade required ux~~
 - ~~offline send: queue message as pending (no error popup) when network is down; deliver on reconnect (#43; core/JSI side #31)~~
-- run code quality tools, fixup and ignore (needs script)
+- ~~run code quality tools, fixup and ignore (needs script)~~
 - 
 security:
-- ensure protocol is built as documented, changes as follows:
+- ~~ensure protocol is built as documented, changes as follows:~~
 *   ~~Update spec to match correct message changes~~
 *   ~~Update spec for issuer suffix of "."~~
 *   ~~**DTLS Identity Validation**:~~
@@ -123,10 +123,9 @@ deploy:
 - run staging tests on CD / AWS
 - deploy bingle_jsi into npm
 - deploy rust crates
-- mainnet production deploy docs DEPLOY_APP.md, DEPLOY_RELAY.md, DEPLOY_CODE.md
+- mainnet production deploy docs ~~DEPLOY_APP.md~~, ~~DEPLOY_RELAY.md~~, ~~DEPLOY_CODE.md~~
 - production deploy
-- release of iOS app
-- release of Android app
+
 
 Bugs:
 - issues fixed or deferred
@@ -134,8 +133,10 @@ Bugs:
 Deferred (to create bugs):
 - cache DDB locally with timeout / cancel
 - (protocol review) ensure fails result in a fail message which gets handled
+- release of iOS app
 
 - Android:
   - support NDK in library
   - support Android for react native UX
   - build APK
+  - release of Android app
