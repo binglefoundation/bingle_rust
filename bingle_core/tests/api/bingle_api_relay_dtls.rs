@@ -36,10 +36,8 @@ pub fn bingle_api_send_via_relay() {
 
     // 1) Spin up destination DTLS server (node B)
     tracing::info!("Starting DTLS server");
-    let b_port = test_util::find_unused_loopback_port();
-    let b_addr = addr(b_port);
-
-    let mut mux_b = UdpNetworkMux::bind(b_addr).expect("bind B mux");
+    let mut mux_b = UdpNetworkMux::bind(addr(0)).expect("bind B mux");
+    let b_addr = mux_b.local_addr().expect("B addr");
 
     let turn_client = std::sync::Arc::new(TurnClientImpl::new());
     let turn_client_clone = turn_client.clone();
@@ -116,10 +114,8 @@ pub fn bingle_api_send_via_relay() {
 
     // 2) Spin up a relay UDP mux + TURN handler + Router acting as a relay
     tracing::info!("Starting relay UDP mux + TURN handler + Router");
-    let relay_port = test_util::find_unused_loopback_port();
-    let relay_addr = addr(relay_port);
-
-    let mut mux_relay = UdpNetworkMux::bind(relay_addr).expect("bind relay mux");
+    let mut mux_relay = UdpNetworkMux::bind(addr(0)).expect("bind relay mux");
+    let relay_addr = mux_relay.local_addr().expect("relay addr");
     let turn = std::sync::Arc::new(bingle_core::turn::turn_handler::TurnHandlerImpl::new());
 
     let a_addr_capture = Arc::new(Mutex::new(None));
