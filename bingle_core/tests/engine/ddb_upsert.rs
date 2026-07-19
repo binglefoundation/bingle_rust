@@ -1,6 +1,6 @@
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -23,15 +23,10 @@ fn start_pair(
     SocketAddr,
     SocketAddr,
 ) {
-    let server_port = test_util::find_unused_loopback_port();
-    let client_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port);
-    let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
-
     let server_opts = StartOptions {
         handle: "server".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         am_relay: server_am_relay,
         stun_servers: None,
         algo_provider_config: None,
@@ -47,7 +42,7 @@ fn start_pair(
     let client_opts = StartOptions {
         handle: "client".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
-        static_ip: Some(client_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         am_relay: false,
         stun_servers: None,
         algo_provider_config: None,
@@ -85,6 +80,9 @@ fn start_pair(
     client
         .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts))
         .expect("client start ok");
+    // Resolve each node's actual bound loopback address (no allocate-then-bind race).
+    let server_addr = test_util::node_loopback_addr(&server);
+    let client_addr = test_util::node_loopback_addr(&client);
     (server, client, server_addr, client_addr)
 }
 

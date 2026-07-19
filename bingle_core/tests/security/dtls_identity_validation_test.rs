@@ -35,13 +35,10 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
     test_util::init_test_logging();
     println!("Starting DTLS identity validation test");
 
-    // 1) Setup receiver (server)
-    let receiver_port = test_util::find_unused_loopback_port();
-    let receiver_api = setup_node(
-        "identity_receiver",
-        receiver_port,
-        test_util::PASSPHRASE_RECEIVE,
-    );
+    // 1) Setup receiver (server) on an OS-assigned loopback port; resolve its real address after
+    // start (no allocate-then-bind race). The sender's own port is irrelevant, so it binds to 0 too.
+    let receiver_api = setup_node("identity_receiver", 0, test_util::PASSPHRASE_RECEIVE);
+    let receiver_port = test_util::node_loopback_addr(&receiver_api).port();
 
     // Track received messages on the receiver
     let received_messages = Arc::new(Mutex::new(Vec::new()));
@@ -53,8 +50,7 @@ fn dtls_unregistered_identity_is_rejected_in_engine() {
     });
 
     // 2) Setup sender (client)
-    let sender_port = test_util::find_unused_loopback_port();
-    let sender_api = setup_node("identity_sender", sender_port, test_util::PASSPHRASE_SPEND);
+    let sender_api = setup_node("identity_sender", 0, test_util::PASSPHRASE_SPEND);
     let _sender_id = test_util::ADDRESS_SPEND.to_string();
 
     // 3) Initially, the receiver will accept the message (default behavior currently)

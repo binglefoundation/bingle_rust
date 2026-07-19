@@ -20,6 +20,7 @@ use std::thread::{self, JoinHandle};
 pub struct SimpleStunServer {
     running: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    local_addr: SocketAddr,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +43,10 @@ impl Default for StartOptions {
 impl SimpleStunServer {
     pub fn start(opts: StartOptions) -> std::io::Result<Self> {
         let sock = UdpSocket::bind(opts.bind_addr)?;
+        // Capture the actual bound address before the socket is moved into the worker thread.
+        // This lets callers bind to port 0 (OS-assigned) and read the real address back, avoiding
+        // the allocate-a-port-then-bind-it TOCTOU.
+        let local_addr = sock.local_addr()?;
         sock.set_nonblocking(true)?;
         let running = Arc::new(AtomicBool::new(true));
         let running_thread = running.clone();
@@ -158,7 +163,13 @@ impl SimpleStunServer {
         Ok(Self {
             running,
             thread: Some(handle),
+            local_addr,
         })
+    }
+
+    /// The actual address the server is bound to (useful when started on port 0).
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 
     pub fn stop(&mut self) {

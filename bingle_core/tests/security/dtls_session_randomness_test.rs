@@ -31,6 +31,7 @@ fn setup_node(name: &str, port: u16, passphrase: &str) -> Arc<BingleApiImpl> {
     api
 }
 
+#[ntest::timeout(60_000)]
 #[test]
 fn dtls_session_randomness_test() {
     test_util::init_test_logging();
@@ -46,12 +47,15 @@ fn dtls_session_randomness_test() {
     for s in 0..session_count {
         println!("--- Session {} ---", s);
 
-        let receiver_port = test_util::find_unused_loopback_port();
-        let sender_port = test_util::find_unused_loopback_port();
-
+        // Bind the receiver to an OS-assigned port (0) and read back the actual bound port
+        // below. Previously this used find_unused_loopback_port(), which binds a probe socket,
+        // records its port, and drops it before the node re-binds — a TOCTOU window in which a
+        // parallel test can grab the same port (observed as "Address already in use"). Binding
+        // to 0 and reading local_addr() closes that window. The sender's own port is irrelevant
+        // for addressing, so it also binds to 0.
         let receiver_api = setup_node(
             &format!("session_test_receiver_{}", s),
-            receiver_port,
+            0,
             test_util::PASSPHRASE_RECEIVE,
         );
 
@@ -61,6 +65,10 @@ fn dtls_session_randomness_test() {
         let mux = receiver_api
             .engine_mux_for_tests()
             .expect("receiver mux should be available");
+        let receiver_port = mux
+            .local_addr()
+            .expect("receiver mux should have a bound address")
+            .port();
         let original_handler = mux
             .get_handle_dtls()
             .expect("original DTLS handler should be set");
@@ -76,7 +84,7 @@ fn dtls_session_randomness_test() {
 
         let sender_api = setup_node(
             &format!("session_test_sender_{}", s),
-            sender_port,
+            0,
             test_util::PASSPHRASE_SPEND,
         );
 

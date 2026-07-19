@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
@@ -18,15 +18,10 @@ fn start_pair() -> (
     SocketAddr,
     SocketAddr,
 ) {
-    let relay_port = test_util::find_unused_loopback_port();
-    let client_port = test_util::find_unused_loopback_port();
-    let relay_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), relay_port);
-    let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
-
     let relay_opts = StartOptions {
         handle: "relay".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(relay_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         am_relay: true,
         stun_servers: None,
         algo_provider_config: None,
@@ -42,7 +37,7 @@ fn start_pair() -> (
     let client_opts = StartOptions {
         handle: "client".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
-        static_ip: Some(client_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         am_relay: false,
         stun_servers: None,
         algo_provider_config: None,
@@ -77,12 +72,14 @@ fn start_pair() -> (
     relay
         .access_unsafe_for_tests(|r| r.start(&relay_opts))
         .expect("relay start ok");
+    let relay_addr = test_util::node_loopback_addr(&relay);
     if !test_util::wait_for_relay_available(&relay, std::time::Duration::from_secs(30)) {
         panic!("relay did not become Available within 30s");
     }
     client
         .access_unsafe_for_tests(|c| c.start(&client_opts))
         .expect("client start ok");
+    let client_addr = test_util::node_loopback_addr(&client);
     (relay, client, relay_addr, client_addr)
 }
 

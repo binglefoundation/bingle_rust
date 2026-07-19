@@ -1,6 +1,5 @@
 use bingle_core::engine::BingleAccessUnsafeForTests;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -17,16 +16,7 @@ pub mod test_util;
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn engine_basic_bingle_dtls_layer() {
-    // Allocate two free loopback ports for server and client static endpoints.
-    let server_port = test_util::find_unused_loopback_port();
-    let client_port = test_util::find_unused_loopback_port();
-    assert_ne!(server_port, 0);
-    assert_ne!(client_port, 0);
-
-    let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port);
-    let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), client_port);
-
-    // Create server and client nodes
+    // Create server and client nodes (bound to OS-assigned loopback ports below).
     let server = BingleApiImpl::new(&StartOptions::new("".into()));
     let client = BingleApiImpl::new(&StartOptions::new("".into()));
 
@@ -57,7 +47,7 @@ pub fn engine_basic_bingle_dtls_layer() {
     let server_opts = StartOptions {
         handle: "server".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         am_relay: false,
         stun_servers: None,
         algo_provider_config: None,
@@ -73,7 +63,7 @@ pub fn engine_basic_bingle_dtls_layer() {
     let client_opts = StartOptions {
         handle: "client".into(),
         algo_passphrase: Some(test_util::PASSPHRASE_SPEND.to_string()),
-        static_ip: Some(client_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         am_relay: false,
         stun_servers: None,
         algo_provider_config: None,
@@ -87,15 +77,17 @@ pub fn engine_basic_bingle_dtls_layer() {
         wait_response_timeout: None,
     };
 
-    // Start both nodes
-    tracing::info!("[test] starting server at {}", server_addr);
+    // Start both nodes (bound to OS-assigned loopback ports).
     server
         .access_unsafe_for_tests(|s: &mut BingleApiImpl| s.start(&server_opts))
         .expect("server start() should succeed");
-    tracing::info!("[test] starting client at {}", client_addr);
     client
         .access_unsafe_for_tests(|c: &mut BingleApiImpl| c.start(&client_opts))
         .expect("client start() should succeed");
+
+    // Resolve the server's actual bound loopback address for direct addressing.
+    let server_addr = test_util::node_loopback_addr(&server);
+    tracing::info!("[test] server started at {}", server_addr);
 
     // Build direct network destination to server and send a simple plaintext JSON message.
     let dest = NetworkEndpoint::new_direct(server_addr);
