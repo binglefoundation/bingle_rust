@@ -2,6 +2,7 @@ pub mod cert_verification_test;
 pub mod compression_test;
 pub mod dtls_encryption_randomness_test;
 pub mod dtls_identity_validation_test;
+pub mod dtls_session_randomness_test;
 pub mod extended_master_secret_test;
 pub mod padding_oracle_test;
 pub mod pki_algorithm_test;

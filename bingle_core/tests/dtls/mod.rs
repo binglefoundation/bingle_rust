@@ -79,3 +79,9 @@ pub mod peer_cmd_display;
 
 #[path = "dtls_reconnect_after_worker_close.rs"]
 pub mod dtls_reconnect_after_worker_close;
+
+#[path = "dtls_client_peer_cert_rejection.rs"]
+pub mod dtls_client_peer_cert_rejection;
+
+#[path = "dtls_app_layer_verification.rs"]
+pub mod dtls_app_layer_verification;
