@@ -1,5 +1,5 @@
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, Handle, StartOptions};
@@ -59,14 +59,11 @@ fn dtls_configuration_disables_compression() {
 fn dtls_compression_is_disabled_handshake() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().expect("valid IP"), server_port);
-
+    // 1) Setup Bingle node as server, bound to an OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server_compression_test"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: false,
         ..StartOptions::new("".into())
     };
@@ -74,6 +71,8 @@ fn dtls_compression_is_disabled_handshake() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    // Read the node's actual bound loopback address back (no allocate-then-bind race).
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(200));
 

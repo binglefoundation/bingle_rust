@@ -1,5 +1,5 @@
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, Handle, StartOptions};
@@ -29,14 +29,11 @@ impl std::io::Write for UdpStream {
 fn cbc_ciphers_vulnerable_to_lucky13_are_rejected() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().expect("valid IP"), server_port);
-
+    // 1) Setup Bingle node as server, bound to an OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server_lucky13_test"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: false,
         ..StartOptions::new("".into())
     };
@@ -44,6 +41,7 @@ fn cbc_ciphers_vulnerable_to_lucky13_are_rejected() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(200));
 
@@ -106,13 +104,10 @@ fn aead_ciphers_not_vulnerable_to_lucky13_are_accepted() {
     test_util::init_test_logging();
 
     // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().expect("valid IP"), server_port);
-
     let server_opts = StartOptions {
         handle: Handle::from("server_aead_test"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: false,
         ..StartOptions::new("".into())
     };
@@ -120,6 +115,7 @@ fn aead_ciphers_not_vulnerable_to_lucky13_are_accepted() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(200));
 
@@ -180,13 +176,10 @@ fn default_negotiated_cipher_is_aead() {
     test_util::init_test_logging();
 
     // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().expect("valid IP"), server_port);
-
     let server_opts = StartOptions {
         handle: Handle::from("server_default_cipher_test"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: false,
         ..StartOptions::new("".into())
     };
@@ -194,6 +187,7 @@ fn default_negotiated_cipher_is_aead() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(200));
 

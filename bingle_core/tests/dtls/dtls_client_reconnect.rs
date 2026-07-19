@@ -79,17 +79,16 @@ pub fn dtls_client_reconnect() {
 
     thread::sleep(Duration::from_millis(400));
 
-    // 2. Setup Client 1
-    let client_mux_port = test_util::find_unused_loopback_port();
-    let client_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), client_mux_port);
+    // 2. Setup Client 1 — bind to an OS-assigned port and reuse that exact address for the
+    // reconnect (client 2 below), avoiding the allocate-then-bind race.
+    let mux_cli1 = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client 1 mux"));
+    let client_addr = mux_cli1.local_addr().expect("client addr");
 
     tracing::info!(
         "Starting client 1 on addr:port {} server on {}",
         client_addr,
         mux_srv.local_addr().unwrap()
     );
-
-    let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client 1 mux"));
     let client1 = DtlsOpenSsl::new("client1".to_string())
         //  .with_null_encryption()
         .with_handle_message(Arc::new(client_handler_2))

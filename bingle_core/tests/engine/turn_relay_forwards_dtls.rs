@@ -34,20 +34,10 @@ fn build_channel_data(channel: u16, payload: &[u8]) -> Vec<u8> {
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn end_to_end_turn_relay_forwards_dtls() {
-    // Allocate two free ports on loopback: relay and destination mux
-    let relay_port = test_util::find_unused_loopback_port();
-    let mut b_port = test_util::find_unused_loopback_port();
-    if b_port == relay_port {
-        b_port = test_util::find_unused_loopback_port();
-    }
-    assert_ne!(relay_port, 0);
-    assert_ne!(b_port, 0);
-
-    let relay_addr = addr(relay_port);
-    let b_addr = addr(b_port);
-
-    // Create destination mux (client B) with a DTLS handler that records packets
-    let mut mux_b = UdpNetworkMux::bind(b_addr).expect("bind B mux");
+    // Create destination mux (client B) with a DTLS handler that records packets. Bind to an
+    // OS-assigned loopback port and read the real address back (no allocate-then-bind race).
+    let mut mux_b = UdpNetworkMux::bind(addr(0)).expect("bind B mux");
+    let b_addr = mux_b.local_addr().expect("B addr");
     let dtls_records: Arc<Mutex<Vec<(NetworkEndpoint, Vec<u8>)>>> =
         Arc::new(Mutex::new(Vec::new()));
     let dtls_records_clone = dtls_records.clone();
@@ -61,8 +51,9 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     let mux_b = Arc::new(mux_b);
     mux_b.start().expect("start B mux");
 
-    // Create the relay UDP mux and TURN handler
-    let mut mux_relay = UdpNetworkMux::bind(relay_addr).expect("bind relay mux");
+    // Create the relay UDP mux and TURN handler, bound to an OS-assigned loopback port.
+    let mut mux_relay = UdpNetworkMux::bind(addr(0)).expect("bind relay mux");
+    let relay_addr = mux_relay.local_addr().expect("relay addr");
     let turn = std::sync::Arc::new(bingle_core::turn::turn_handler::TurnHandlerImpl::new());
 
     // Configure TURN ChannelData handler to forward stripped payloads to destination
@@ -165,8 +156,10 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
         Some("ListenResponse")
     );
 
-    // 2) Simulate A sending RelayCall(calledId=BID) to the relay
-    let a_addr = addr(test_util::find_unused_loopback_port());
+    // 2) Simulate A sending RelayCall(calledId=BID) to the relay. Bind A's socket to an
+    // OS-assigned loopback port up front so its real address is what gets registered / sent from.
+    let send_sock = UdpSocket::bind(addr(0)).expect("bind sender udp");
+    let a_addr = send_sock.local_addr().expect("A addr");
     router.set_last_from(Some(a_addr));
     let call_msg = Message::Relay(RelayMessage::Call(RelayCall {
         app: None,
@@ -211,7 +204,7 @@ pub fn end_to_end_turn_relay_forwards_dtls() {
     // 3) Send TURN ChannelData from A to the relay containing a DTLS-shaped payload (first byte 20..=63)
     let dtls_payload: [u8; 6] = [20, 1, 2, 3, 4, 5]; // classified as DTLS by mux_type_for
     let ch_data = build_channel_data(ch, &dtls_payload);
-    let send_sock = UdpSocket::bind(a_addr).expect("bind sender udp");
+    // send_sock (A) is already bound (see above).
     send_sock
         .send_to(&ch_data, relay_addr)
         .expect("send channeldata");

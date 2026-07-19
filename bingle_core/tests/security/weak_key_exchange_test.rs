@@ -3,7 +3,7 @@ use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
 use openssl::ssl::{SslAcceptor, SslMethod};
 use openssl::x509::X509;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, Handle, StartOptions};
@@ -100,9 +100,6 @@ fn dh_1024_rejected() {
     test_util::init_test_logging();
 
     // 1) Setup a raw OpenSSL server with 1024-bit DH params
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
     let certs = pki::generate_ed25519_test_certs();
     let srv_crt = X509::from_pem(&certs.server_crt).unwrap();
     let srv_key = PKey::private_key_from_pem(&certs.server_key).unwrap();
@@ -125,7 +122,10 @@ fn dh_1024_rejected() {
 
     let acceptor = acceptor_builder.build();
 
-    let socket = UdpSocket::bind(server_addr).unwrap();
+    // Bind the raw server socket to an OS-assigned loopback port and read its address back before
+    // the socket is moved into the server thread (no allocate-then-bind race).
+    let socket = UdpSocket::bind(test_util::loopback_addr(0)).unwrap();
+    let server_addr = socket.local_addr().unwrap();
     socket
         .set_read_timeout(Some(Duration::from_millis(500)))
         .unwrap();
@@ -184,9 +184,6 @@ fn rsa_1024_server_cert_rejected() {
     test_util::init_test_logging();
 
     // 1) Setup a raw OpenSSL server with 1024-bit RSA cert
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
     let (ca_cert, ca_key) = pki::make_ca(test_util::ADDRESS_RECEIVE);
     let (srv_cert, srv_key) = make_ee_rsa(
         &ca_cert,
@@ -202,7 +199,10 @@ fn rsa_1024_server_cert_rejected() {
 
     let acceptor = acceptor_builder.build();
 
-    let socket = UdpSocket::bind(server_addr).unwrap();
+    // Bind the raw server socket to an OS-assigned loopback port and read its address back before
+    // the socket is moved into the server thread (no allocate-then-bind race).
+    let socket = UdpSocket::bind(test_util::loopback_addr(0)).unwrap();
+    let server_addr = socket.local_addr().unwrap();
     socket
         .set_read_timeout(Some(Duration::from_millis(500)))
         .unwrap();

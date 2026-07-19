@@ -1,5 +1,5 @@
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::time::Duration;
 
 use bingle_core::api::bingle_api::{BingleApi, Handle, StartOptions};
@@ -32,14 +32,11 @@ impl std::io::Write for UdpStream {
 fn dtls_1_0_downgrade_fails() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server (accepts only DTLS 1.2)
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
+    // 1) Setup Bingle node as server (accepts only DTLS 1.2), bound to an OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: true,
         ..StartOptions::new("".into())
     };
@@ -47,6 +44,7 @@ fn dtls_1_0_downgrade_fails() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     // Give server time to start
     std::thread::sleep(Duration::from_millis(100));
@@ -87,14 +85,11 @@ fn dtls_1_0_downgrade_fails() {
 fn dtls_1_2_handshake_succeeds() {
     test_util::init_test_logging();
 
-    // 1) Setup Bingle node as server
-    let server_port = test_util::find_unused_loopback_port();
-    let server_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), server_port);
-
+    // 1) Setup Bingle node as server, bound to an OS-assigned loopback port.
     let server_opts = StartOptions {
         handle: Handle::from("server_ok"),
         algo_passphrase: Some(test_util::PASSPHRASE_RECEIVE.to_string()),
-        static_ip: Some(server_addr),
+        static_ip: Some(test_util::loopback_addr(0)),
         dangerous_debug: true,
         ..StartOptions::new("".into())
     };
@@ -102,6 +97,7 @@ fn dtls_1_2_handshake_succeeds() {
     server_api
         .access_unsafe_for_tests(|a| a.start(&server_opts))
         .expect("start server api");
+    let server_addr = test_util::node_loopback_addr(&server_api);
 
     std::thread::sleep(Duration::from_millis(100));
 

@@ -64,11 +64,10 @@ pub fn dtls_reconnect_after_worker_channel_close() {
 
     thread::sleep(Duration::from_millis(300));
 
-    // --- client 1: first connection ---
-    let client_port = test_util::find_unused_loopback_port();
-    let client_addr = SocketAddr::new("127.0.0.1".parse().unwrap(), client_port);
-
-    let mux_cli1 = Arc::new(UdpNetworkMux::bind(client_addr).expect("bind client mux 1"));
+    // --- client 1: first connection --- bind to an OS-assigned port and reuse that exact address
+    // for the reconnect (client 2 below), avoiding the allocate-then-bind race.
+    let mux_cli1 = Arc::new(UdpNetworkMux::bind(("127.0.0.1", 0)).expect("bind client mux 1"));
+    let client_addr = mux_cli1.local_addr().expect("client addr");
     let client1 = DtlsOpenSsl::new("cli1".to_string())
         .with_client_cert(certs.client_crt.clone())
         .with_client_private_key(certs.client_key.clone())

@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,6 +7,8 @@ use bingle_core::stun::{
     SimpleStunServer, SimpleStunStartOptions, StunEndpointFinder, StunEndpointFinderImpl, StunState,
 };
 
+use crate::util::test_util::loopback_addr;
+
 /// Verifies that after reset_state() is called (e.g. when no relay is found), the STUN polling
 /// loop re-polls all servers and can reach Consistent again. This is the regression test for the
 /// bug where reset_state() did not clear server.responded flags, causing the polling loop to
@@ -14,23 +16,22 @@ use bingle_core::stun::{
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn reset_state_resumes_stun_polling() {
-    let p1 = crate::util::test_util::find_unused_loopback_port();
-    let p2 = crate::util::test_util::find_unused_loopback_port();
-    let a1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p1);
-    let a2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p2);
-
+    // Start two STUN servers on OS-assigned loopback ports and read their bound addresses back
+    // — no allocate-a-port-then-bind-it race.
     let s1 = SimpleStunServer::start(SimpleStunStartOptions {
-        bind_addr: a1,
+        bind_addr: loopback_addr(0),
         attach_to: None,
         broken_nat: false,
     })
     .expect("start s1");
+    let a1 = s1.local_addr();
     let s2 = SimpleStunServer::start(SimpleStunStartOptions {
-        bind_addr: a2,
+        bind_addr: loopback_addr(0),
         attach_to: None,
         broken_nat: false,
     })
     .expect("start s2");
+    let a2 = s2.local_addr();
 
     let mux = Arc::new(UdpNetworkMux::bind(("0.0.0.0", 0)).expect("bind mux"));
     mux.set_read_timeout(Some(Duration::from_millis(100)))
