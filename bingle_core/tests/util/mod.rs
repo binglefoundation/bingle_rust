@@ -15,6 +15,9 @@ pub mod cli_parse_test;
 #[path = "cli/debug_flag.rs"]
 pub mod cli_debug_flag;
 
+#[path = "cli/auto_migrate_flag.rs"]
+pub mod cli_auto_migrate_flag;
+
 #[path = "cli/node_file_ids.rs"]
 pub mod cli_node_file_ids;
 

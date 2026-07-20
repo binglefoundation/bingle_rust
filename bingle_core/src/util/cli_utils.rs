@@ -15,6 +15,12 @@ use std::net::SocketAddr;
 ///  --stun-servers <list>
 ///  --stun-servers-file <file>
 ///  --node-file <file>
+///  --auto-migrate
+///
+/// Note: `--auto-migrate` is tolerated here (it does not affect `StartOptions`, mirroring
+/// `--debug`, to keep `StartOptions` stable for existing tests). Whether a run should perform the
+/// one-time local migration is determined from the raw args by [`args_request_auto_migrate`], which
+/// the `bingle_cli run` command consults after its on-chain successor check.
 pub fn parse_start_options_from_args<I>(args: I) -> Result<StartOptions, String>
 where
     I: IntoIterator<Item = String>,
@@ -126,6 +132,11 @@ where
                 // Accept a --debug flag. The binary may use this to enable verbose output.
                 // Intentionally no-op here to keep StartOptions stable for existing tests.
             }
+            "--auto-migrate" => {
+                // Accept the --auto-migrate flag. Intentionally no-op here (keeps StartOptions
+                // stable like --debug); `bingle_cli run` detects it via args_request_auto_migrate
+                // and performs the one-time local migration after its successor check.
+            }
             s if s.starts_with('-') => {
                 return Err(format!("Unknown option: {}", s));
             }
@@ -170,4 +181,14 @@ where
         log_mode,
         wait_response_timeout: None,
     })
+}
+
+/// True if `--auto-migrate` is present in the CLI args.
+///
+/// `bingle_cli run` consults this to decide whether to copy the user's local state from the
+/// creator-blessed ancestor app into the current app on startup (a one-time, idempotent
+/// `migrate_local`). Kept as a standalone predicate rather than a `StartOptions` field so the flag
+/// does not perturb the many `StartOptions` construction sites (mirrors `--debug`/`--echo`).
+pub fn args_request_auto_migrate(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--auto-migrate")
 }
