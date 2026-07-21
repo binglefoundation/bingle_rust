@@ -2,7 +2,7 @@
 // End-to-end test: start a user on testnet and send a Ping to a registered remote node (pinguser20).
 // Requirements:
 // - run only when BINGLE_RUN_TESTNET=1
-// - load testnet config from nodely_testnet_node.json
+// - load testnet config from nodely_staging_testnet_node.json
 // - ensure two root relays available via indexer
 // - start user with TESTNET_USER/TESTNET_PASSPHRASE
 // - wait for Registered or NATRestricted, assert Registered

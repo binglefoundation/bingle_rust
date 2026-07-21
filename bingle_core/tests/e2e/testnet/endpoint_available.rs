@@ -1,8 +1,8 @@
 // tests/api/testnet/endpoint_available.rs
-// Integration test targeting testnet using the bundled nodely_testnet_node.json.
+// Integration test targeting testnet using the bundled nodely_staging_testnet_node.json.
 //
 // Requirements per issue:
-// - runs against testnet using the nodely_testnet_node.json config
+// - runs against testnet using the nodely_staging_testnet_node.json config
 // - expects two root relays to exist and be running - list_static_endpoints_via_indexer will locate them
 // - starts using a configured user with handle TESTNET_USER and passphrase TESTNET_PASSPHRASE
 // - starts the user and waits for state EndpointAvailable
@@ -41,7 +41,7 @@ pub fn testnet_user_reaches_endpoint_available() {
         .try_init();
 
     // Load testnet node configuration and IDs from the bundled file.
-    let node_path = "nodely_testnet_node.json";
+    let node_path = "nodely_staging_testnet_node.json";
     let (network_name, provider_cfg, node_app_id, node_asset_id) =
         parse_node_file_with_ids(node_path).expect("parse testnet node file");
 

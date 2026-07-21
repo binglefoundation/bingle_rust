@@ -12,7 +12,7 @@ set -euo pipefail
 #   EXTERNAL_IP - externally reachable IP or DNS name; if blank, auto-detected (only used when RELAY is set)
 #   EXTRA_ARGS  - any extra args to pass to the CLI
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
-#   NODE_FILE   - path to node configuration JSON (default /app/nodely_testnet_node.json)
+#   NODE_FILE   - path to node configuration JSON (default /app/nodely_staging_testnet_node.json)
 #   NAT_MODE    - Direct|Full|Restricted (default Direct)
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"

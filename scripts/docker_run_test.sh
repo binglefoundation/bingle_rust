@@ -9,12 +9,12 @@
 #   OUT_FILE      (optional): Output file path for combined stdout+stderr (default /out/test_results.txt)
 #   TEST_FILTER   (optional): libtest filter string (default: testnet_user_reaches_endpoint_available)
 #   TESTNET_USER, TESTNET_PASSPHRASE: Credentials required by the integration test
-#   NODE_FILE     (optional): Path to node file; default /app/nodely_testnet_node.json
+#   NODE_FILE     (optional): Path to node file; default /app/nodely_staging_testnet_node.json
 #   NAT_MODE      (optional): Direct|Full|Restricted|All (default: All if not set by outer script)
 #   EXPECT_FINAL_STATE (optional): Overrides expected final engine state for single-run mode
 #
 # Notes:
-# - The container image is built to include /app/nodely_testnet_node.json and /app/stunservers.txt.
+# - The container image is built to include /app/nodely_staging_testnet_node.json and /app/stunservers.txt.
 # - Ensure the host mounts a directory at /out to collect OUT_FILE.
 #
 set -euo pipefail
@@ -22,7 +22,7 @@ set -euo pipefail
 TEST_BIN=${TEST_BIN_PATH:-/app/test_bin}
 OUT_FILE=${OUT_FILE:-/out/test_results.txt}
 FILTER=${TEST_FILTER:-testnet_user_reaches_endpoint_available}
-NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
+NODE_FILE=${NODE_FILE:-/app/nodely_staging_testnet_node.json}
 NAT_MODE=${NAT_MODE:-All}
 
 # Configure NAT/iptables if requested via NAT_MODE

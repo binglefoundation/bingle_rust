@@ -16,7 +16,7 @@
 #   STATIC_PORT         - public port for the static endpoint
 #
 # Environment variables (optional):
-#   NODE_FILE        - path to node file JSON (defaults to ./nodely_testnet_node.json)
+#   NODE_FILE        - path to node file JSON (defaults to ./nodely_staging_testnet_node.json)
 #                      May include app_id/asset_id; otherwise APP_ID/ASSET_ID env vars are used by bingle_cli.
 #   PRICE_UNITS      - price in Bingle units for handle registration (default: 1)
 #   FUND_ALGOS       - amount to fund the new account from creator, in ALGOs (default: 2)
@@ -26,7 +26,7 @@
 #   ADMIN_ARGS       - extra flags appended to bingle_admin calls
 #
 # Notes:
-# - This script targets testnet by default using the bundled nodely_testnet_node.json.
+# - This script targets testnet by default using the bundled nodely_staging_testnet_node.json.
 # - It attempts to fund using `algokit` first for testnet and remote use. If unavailable, it will try `goal` only when GOAL_DATA_DIR is provided (local node).
 # - The exact flags for bingle_admin and bingle_cli registerstatic may vary by your setup.
 #   Adjust ADMIN_ARGS / EXTRA_ARGS accordingly if needed.
@@ -240,7 +240,7 @@ EOF
 : "${STATIC_IP:?STATIC_IP must be set}"
 : "${STATIC_PORT:?STATIC_PORT must be set}"
 
-NODE_FILE=${NODE_FILE:-"$(dirname "$0")/../nodely_testnet_node.json"}
+NODE_FILE=${NODE_FILE:-"$(dirname "$0")/../nodely_staging_testnet_node.json"}
 PRICE_UNITS=${PRICE_UNITS:-1}
 FUND_ALGOS=${FUND_ALGOS:-2}
 EXTRA_ARGS=${EXTRA_ARGS:-}
