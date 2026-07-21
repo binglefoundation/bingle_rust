@@ -81,6 +81,15 @@ pub struct BingleApiLocalImpl {
     // offline operations (queue_message) obtain the sender handle without a live blockchain
     // read once the account is registered (issue #18, A1).
     own_handle: Mutex<Option<String>>,
+    // The app id the memoized `own_handle` was established on. The ACTIVE short-circuit only trusts
+    // the memo when this matches the configured app: after an app upgrade (same keypair, new
+    // app_id) the memo is stale for the new app, so status re-resolves from chain and drives the
+    // one-time local migration. `None` (e.g. state written before this field existed) is likewise
+    // not trusted, so existing users migrate on upgrade.
+    own_handle_app_id: Mutex<Option<u64>>,
+    // Session cache: an app id we have confirmed (this process) is not superseded, so the ACTIVE
+    // memo path does not re-read the successor pointer on every poll (issue #18/#31).
+    live_app_confirmed: Mutex<Option<u64>>,
     // Last successfully computed status, returned when a later read finds the blockchain
     // unreachable so an already-known account stays usable during an outage (issue #18, A2).
     last_status: Mutex<Option<KeypairStatus>>,
@@ -101,6 +110,8 @@ impl BingleApiLocalImpl {
             contacts: Mutex::new(HashMap::new()),
             messages: Mutex::new(Vec::new()),
             own_handle: Mutex::new(None),
+            own_handle_app_id: Mutex::new(None),
+            live_app_confirmed: Mutex::new(None),
             last_status: Mutex::new(None),
             last_network_check: Mutex::new(None),
         }
@@ -145,10 +156,14 @@ impl BingleApiLocalImpl {
     /// Record a freshly resolved status so later calls can survive a blockchain outage: caches
     /// the whole status (A2) and, when a handle is present, the registered handle (A1).
     fn cache_status(&self, status: &KeypairStatus) {
-        if let Some(handle) = status.handle.as_ref()
-            && let Ok(mut guard) = self.own_handle.lock()
-        {
-            *guard = Some(handle.clone());
+        if let Some(handle) = status.handle.as_ref() {
+            if let Ok(mut guard) = self.own_handle.lock() {
+                *guard = Some(handle.clone());
+            }
+            // Scope the memo to the app it was resolved on so it is not trusted after an upgrade.
+            if let Ok(mut g) = self.own_handle_app_id.lock() {
+                *g = Some(self.config.app_id);
+            }
         }
         if let Ok(mut guard) = self.last_status.lock() {
             *guard = Some(status.clone());
@@ -224,6 +239,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
         if let Ok(mut g) = self.own_handle.lock() {
             *g = None;
         }
+        if let Ok(mut g) = self.own_handle_app_id.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.live_app_confirmed.lock() {
+            *g = None;
+        }
         if let Ok(mut g) = self.last_status.lock() {
             *g = None;
         }
@@ -268,9 +289,12 @@ impl BingleLocalApi for BingleApiLocalImpl {
             handle
         );
         // The account is now ACTIVE with this handle, permanently registered to the id. Memoize
-        // it so keypair_status serves ACTIVE with no further blockchain read.
+        // it (scoped to this app) so keypair_status serves ACTIVE with no further blockchain read.
         if let Ok(mut g) = self.own_handle.lock() {
             *g = Some(handle.clone());
+        }
+        if let Ok(mut g) = self.own_handle_app_id.lock() {
+            *g = Some(app_id);
         }
         Ok(true)
     }
@@ -679,6 +703,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             // blockchain read (issue #18/#31). Only set when the account is ACTIVE.
             #[serde(default)]
             own_handle: Option<String>,
+            // The app id `own_handle` was established on. Absent in state written before app-scoped
+            // memoization; a missing value means the memo is not trusted (forces a re-resolve, so
+            // an upgrading user migrates instead of falsely reading as ACTIVE on the new app).
+            #[serde(default)]
+            own_handle_app_id: Option<u64>,
         }
 
         // Snapshot under locks (avoid holding multiple locks longer than needed)
@@ -724,12 +753,14 @@ impl BingleLocalApi for BingleApiLocalImpl {
         };
 
         let own_handle = self.own_handle.lock().ok().and_then(|g| g.clone());
+        let own_handle_app_id = self.own_handle_app_id.lock().ok().and_then(|g| *g);
 
         let state = LocalState {
             keypair,
             contacts: contacts_vec,
             messages,
             own_handle,
+            own_handle_app_id,
         };
 
         // Ensure parent directory exists
@@ -784,6 +815,8 @@ impl BingleLocalApi for BingleApiLocalImpl {
             messages: Vec<Message>,
             #[serde(default)]
             own_handle: Option<String>,
+            #[serde(default)]
+            own_handle_app_id: Option<u64>,
         }
 
         let file = match std::fs::File::open(path) {
@@ -837,6 +870,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
         // reloaded account re-resolves cleanly.
         if let Ok(mut oh) = self.own_handle.lock() {
             *oh = state.own_handle;
+        }
+        if let Ok(mut oha) = self.own_handle_app_id.lock() {
+            *oha = state.own_handle_app_id;
         }
         if let Ok(mut ls) = self.last_status.lock() {
             *ls = None;
@@ -923,16 +959,63 @@ impl BingleLocalApi for BingleApiLocalImpl {
 
         let algorand_id = kp.id.clone();
 
-        // Once the account is ACTIVE the handle is permanently registered to this address, so there
-        // is nothing left to verify on-chain. Serve the memoized handle with no blockchain read:
-        // this eliminates the steady keypair-status polling once registered and stops a node
-        // outage from blocking or delaying status (issue #18/#31). The memo is set on registration
-        // / the first live ACTIVE read and persisted across restarts; it is cleared when the
-        // keypair changes.
-        if let Some(handle) = self.own_handle.lock().ok().and_then(|g| g.clone()) {
+        let configured_app_id = self.config.app_id;
+
+        // Serve the memoized ACTIVE handle without a blockchain read — but only when the memo was
+        // established for the *currently configured* app. This keeps steady-state polling read-free
+        // (issue #18/#31) while staying correct across an app upgrade:
+        //   - memo app == configured app: the account is registered here. Confirm once per session
+        //     that the app has not been superseded (else UPGRADE_REQUIRED), then serve ACTIVE.
+        //   - memo app != configured app, or no recorded app (state written before app-scoped
+        //     memoization): the memo is stale for this app, so fall through to the full on-chain
+        //     check. That reports non-ACTIVE and lets the caller drive the one-time local migration.
+        // When no app is configured (app_id 0, e.g. tests) there is nothing to scope against, so the
+        // memo is served as before.
+        let memoized_handle = self.own_handle.lock().ok().and_then(|g| g.clone());
+        let memo_app_id = self.own_handle_app_id.lock().ok().and_then(|g| *g);
+        if let Some(handle) = memoized_handle
+            && (configured_app_id == 0 || memo_app_id == Some(configured_app_id))
+        {
+            // A registered user still configured for a *superseded* app must be told to upgrade.
+            // Check the successor pointer once per session and cache the "live" result so later
+            // polls stay read-free. A read error is best-effort: serve ACTIVE rather than block.
+            let already_live =
+                self.live_app_confirmed.lock().ok().and_then(|g| *g) == Some(configured_app_id);
+            if configured_app_id > 0
+                && !already_live
+                && let Ok(ops) = self.get_algo_ops()
+            {
+                let bgl = AlgoBingle::new(ops, configured_app_id, self.config.asset_id);
+                match bgl.successor_app(configured_app_id) {
+                    Ok(Some(successor)) => {
+                        tracing::info!(
+                            "[BingleLocalApi][keypair_status] memoized app {} superseded by {}; UPGRADE_REQUIRED",
+                            configured_app_id,
+                            successor
+                        );
+                        return Ok(KeypairStatus {
+                            status: "UPGRADE_REQUIRED".to_string(),
+                            id: Some(algorand_id),
+                            handle: None,
+                            required_algo: None,
+                            stale: false,
+                        });
+                    }
+                    Ok(None) => {
+                        if let Ok(mut g) = self.live_app_confirmed.lock() {
+                            *g = Some(configured_app_id);
+                        }
+                    }
+                    Err(e) => tracing::debug!(
+                        "[BingleLocalApi][keypair_status] memoized-app successor check failed (serving ACTIVE): {}",
+                        BingleError::from_anyhow(e)
+                    ),
+                }
+            }
             tracing::debug!(
-                "[BingleLocalApi][keypair_status] ACTIVE (memoized handle '{}'); skipping blockchain",
-                handle
+                "[BingleLocalApi][keypair_status] ACTIVE (memoized handle '{}' for app {}); skipping blockchain",
+                handle,
+                configured_app_id
             );
             return Ok(KeypairStatus {
                 status: "ACTIVE".to_string(),
@@ -943,12 +1026,11 @@ impl BingleLocalApi for BingleApiLocalImpl {
             });
         }
 
-        // Superseded-app gate: if the configured app has been marked superseded (a newer app
-        // replaced it), the client must upgrade. Report UPGRADE_REQUIRED and short-circuit
-        // ahead of the funding/registration checks — the whole app is retired regardless of
-        // this account's funding or handle. Best-effort: a read error falls through to the
-        // normal status rather than blocking the user.
-        let configured_app_id = self.config.app_id;
+        // Superseded-app gate for the non-memoized path: if the configured app has been marked
+        // superseded (a newer app replaced it), the client must upgrade. Report UPGRADE_REQUIRED and
+        // short-circuit ahead of the funding/registration checks — the whole app is retired
+        // regardless of this account's funding or handle. Best-effort: a read error falls through to
+        // the normal status rather than blocking the user.
         if configured_app_id > 0 {
             match self.get_algo_ops() {
                 Ok(ops) => {
