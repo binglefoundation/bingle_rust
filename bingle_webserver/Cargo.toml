@@ -5,6 +5,8 @@ edition = "2024"
 description = "HTTP/WebSocket server exposing the Bingle messaging engine over an axum-based API."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/binglefoundation/bingle_rust"
+# Server application crate — not consumed as a library dependency, so not published to crates.io.
+publish = false
 autotests = false
 
 [dependencies]
