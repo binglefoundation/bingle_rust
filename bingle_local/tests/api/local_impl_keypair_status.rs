@@ -229,6 +229,64 @@ fn test_generate_keypair_clears_memoized_active() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// App-scoped memo: a handle memoized on a DIFFERENT app than the one now configured must NOT be
+/// served as ACTIVE. This is the app-upgrade case (same keypair, new app_id) — the client must
+/// re-resolve from chain and migrate, not falsely read as already-registered on the new app.
+/// State written before app-scoped memoization records no app id and is treated the same way.
+#[test]
+fn test_memoized_handle_not_trusted_for_different_app() {
+    let path = temp_state_path("memo_app_mismatch");
+    std::fs::write(
+        &path,
+        r#"{ "keypair": { "id": "MEMOID", "passphrase": "seed" }, "contacts": [], "messages": [], "own_handle": "alice", "own_handle_app_id": 111 }"#,
+    )
+    .expect("write state");
+
+    // Configure a DIFFERENT app id than the memo (222 != 111).
+    let cfg = LocalApiConfig {
+        app_id: 222,
+        ..Default::default()
+    };
+    let mut api = BingleApiLocalImpl::new(cfg);
+    api.load(&path).expect("load");
+
+    // The stale cross-app memo must not short-circuit to ACTIVE. With no live registration on app
+    // 222 the status resolves to non-ACTIVE (or a blockchain error) — never a false ACTIVE.
+    match api.keypair_status() {
+        Ok(s) => assert_ne!(
+            s.status, "ACTIVE",
+            "stale cross-app memo must not read as ACTIVE"
+        ),
+        Err(_) => {}
+    }
+    let _ = std::fs::remove_file(&path);
+}
+
+/// App-scoped memo: a handle memoized on the SAME app that is configured is still served as ACTIVE
+/// (steady-state / already-migrated case), even when the successor check cannot reach a node
+/// (best-effort serves ACTIVE rather than block a registered user).
+#[test]
+fn test_memoized_handle_trusted_for_matching_app() {
+    let path = temp_state_path("memo_app_match");
+    std::fs::write(
+        &path,
+        r#"{ "keypair": { "id": "MEMOID", "passphrase": "seed" }, "contacts": [], "messages": [], "own_handle": "alice", "own_handle_app_id": 222 }"#,
+    )
+    .expect("write state");
+
+    let cfg = LocalApiConfig {
+        app_id: 222,
+        ..Default::default()
+    };
+    let mut api = BingleApiLocalImpl::new(cfg);
+    api.load(&path).expect("load");
+
+    let status = api.keypair_status().expect("status");
+    assert_eq!(status.status, "ACTIVE");
+    assert_eq!(status.handle.as_deref(), Some("alice"));
+    let _ = std::fs::remove_file(&path);
+}
+
 /// The memoized handle round-trips through save/load into a fresh instance.
 #[test]
 fn test_memoized_handle_survives_save_load() {
