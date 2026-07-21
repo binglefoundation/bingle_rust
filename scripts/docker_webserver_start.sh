@@ -11,7 +11,7 @@ set -euo pipefail
 #   ADDRESS     - Webserver listen address (default 0.0.0.0)
 #   EXTRA_ARGS  - any extra args to pass to the CLI
 #   STUN_FILE   - path to STUN servers file (default /app/stunservers.txt)
-#   NODE_FILE   - path to node configuration JSON (default /app/nodely_testnet_node.json)
+#   NODE_FILE   - path to node configuration JSON (default /app/nodely_staging_testnet_node.json)
 
 : "${PASSPHRASE:?Environment variable PASSPHRASE must be set}"
 : "${HANDLE:?Environment variable HANDLE must be set}"
@@ -19,7 +19,7 @@ set -euo pipefail
 PORT=${PORT:-12121}
 ADDRESS=${ADDRESS:-0.0.0.0}
 STUN_FILE=${STUN_FILE:-/app/stunservers.txt}
-NODE_FILE=${NODE_FILE:-/app/nodely_testnet_node.json}
+NODE_FILE=${NODE_FILE:-/app/nodely_staging_testnet_node.json}
 
 CMD=("/app/bingle_webserver" \
   "--port" "$PORT" \

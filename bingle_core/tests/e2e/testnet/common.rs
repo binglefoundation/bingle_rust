@@ -23,7 +23,7 @@ pub fn load_testnet_config() -> (
     u64,
     Option<u64>,
 ) {
-    let node_path = "nodely_testnet_node.json";
+    let node_path = "nodely_staging_testnet_node.json";
     let (network_name, provider_cfg, node_app_id, node_asset_id) =
         parse_node_file_with_ids(node_path).expect("parse testnet node file");
     let app_id = node_app_id.expect("app_id must be present in the testnet node file");
