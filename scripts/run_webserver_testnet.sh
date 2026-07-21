@@ -90,10 +90,10 @@ PINGABLE_PORT=30001
 
 # 1) Admin setup: Ensure users are opted in and enabled on testnet
 echo "Updating testnet user states via bingle_admin..."
-bingle_admin root $RELAY_A_ADDRESS --enable --node-file nodely_testnet_node.json --passphrase "$CREATOR_PASSPHRASE"
-bingle_admin root $RELAY_B_ADDRESS --enable --node-file nodely_testnet_node.json --passphrase "$CREATOR_PASSPHRASE"
-bingle_admin updateuser --handle $TESTNET_USER --passphrase "$CREATOR_PASSPHRASE" --node-file nodely_testnet_node.json --userpassphrase "$TESTNET_PASSPHRASE"
-bingle_admin updateuser --handle $PINGABLE_USER --passphrase "$CREATOR_PASSPHRASE" --node-file nodely_testnet_node.json --userpassphrase "$PINGABLE_PASSPHRASE"
+bingle_admin root $RELAY_A_ADDRESS --enable --node-file nodely_staging_testnet_node.json --passphrase "$CREATOR_PASSPHRASE"
+bingle_admin root $RELAY_B_ADDRESS --enable --node-file nodely_staging_testnet_node.json --passphrase "$CREATOR_PASSPHRASE"
+bingle_admin updateuser --handle $TESTNET_USER --passphrase "$CREATOR_PASSPHRASE" --node-file nodely_staging_testnet_node.json --userpassphrase "$TESTNET_PASSPHRASE"
+bingle_admin updateuser --handle $PINGABLE_USER --passphrase "$CREATOR_PASSPHRASE" --node-file nodely_staging_testnet_node.json --userpassphrase "$PINGABLE_PASSPHRASE"
 
 # 2) Setup Docker network
 if ! docker network inspect bingle_testnet >/dev/null 2>&1; then

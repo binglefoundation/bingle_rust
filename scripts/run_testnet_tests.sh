@@ -83,11 +83,11 @@ fi
 
 # Update these users
 bingle_admin root $RELAY_A_ADDRESS --enable \
- --node-file nodely_testnet_node.json \
+ --node-file nodely_staging_testnet_node.json \
  --passphrase "$CREATOR_PASSPHRASE"
 
 bingle_admin root $RELAY_B_ADDRESS --enable \
- --node-file nodely_testnet_node.json \
+ --node-file nodely_staging_testnet_node.json \
  --passphrase "$CREATOR_PASSPHRASE"
 
 # Ensure a dedicated test network exists with custom subnet for IP assignment

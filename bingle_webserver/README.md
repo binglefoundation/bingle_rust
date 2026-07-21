@@ -31,7 +31,7 @@ Other arguments are forwarded to the Bingle API, same as `bingle_cli run`.
 To run against the Algorand testnet using the provided Nodely configuration:
 
 ```bash
-cargo run -p bingle_webserver -- <handle> --node-file nodely_testnet_node.json --passphrase "your passphrase"
+cargo run -p bingle_webserver -- <handle> --node-file nodely_staging_testnet_node.json --passphrase "your passphrase"
 ```
 
 ## Testing with curl
