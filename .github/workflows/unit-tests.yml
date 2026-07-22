@@ -1,14 +1,14 @@
 name: unit-tests
 
 # Run the workspace unit tests on every pull request (open, push more commits,
-# reopen, or change the base branch) and on pushes to master. The job named
+# reopen, or change the base branch) and on pushes to staging. The job named
 # below ("unit") is what you mark as a required status check in branch
 # protection so a failing or incomplete run blocks merge. See CI-UNIT-TESTS.md.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [master]
+    branches: [staging]
 
 # Cancel an in-flight run when the same PR/branch gets new commits, so an
 # amended PR is always graded on its latest state.
