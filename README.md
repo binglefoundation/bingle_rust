@@ -69,9 +69,16 @@ The simplest option is the [Pera Wallet](https://perawallet.app/):
      your address**, or
    - **swap crypto you already hold** on a decentralized exchange — e.g. the Algorand DEXs
      [Tinyman](https://tinyman.org/) and [Pact](https://www.pact.fi/) (aggregated by
-     [Vestige](https://vestige.fi/)) — into ALGO in your account.
+     [Vestige](https://vestige.fi/)) — into ALGO in your account, or
+   - **swap crypto with no account** via an instant-exchange service such as
+     [SimpleSwap](https://simpleswap.io/) — send a coin you already hold and receive ALGO at your
+     address.
 4. In Pera, reveal your **25-word passphrase** (Settings → the account → *Show passphrase* /
    recovery phrase). This is the value you pass to the CLI as `--passphrase` below.
+
+> **We don't endorse any of these services.** The exchanges and swap providers above are listed
+> only as examples, not recommendations. Do your own due diligence before using any of them, and
+> when trying one for the first time, move only a small amount.
 
 > **Keep the passphrase secret.** Anyone with the 25 words controls the account and its funds. For
 > exploring Bingle, prefer a fresh account you use only for this.

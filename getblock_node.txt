@@ -1,9 +1,0 @@
-{
-  "network": "mainnet",
-  "client_api_url": "https://algo.getblock.io",
-  "client_api_port": 443,
-  "indexer_api_url": "https://algo-indexer.getblock.io",
-  "indexer_api_port": 443,
-  "token": null,
-  "token_key": "X-API-Key"
-}
