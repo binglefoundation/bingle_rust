@@ -4,7 +4,7 @@
 #   1. Verifies a Python 3.12+ toolchain (python == python3).
 #   2. Ensures the AlgoKit + Poetry build environment (idempotent bootstrap).
 #   3. Compiles the contract(s) to TEAL / ARC56 artifacts.
-#   4. Warns when the built app schema differs from the master-branch baseline.
+#   4. Warns when the built app schema differs from the staging-branch baseline.
 #      A state-schema change means the on-chain app can no longer be updated in
 #      place and must be re-deployed (a new app is created).
 #
@@ -13,7 +13,7 @@
 # Usage:
 #   scripts/build_dapp.sh [--no-schema-check]
 #
-#   --no-schema-check   Build only; skip the master-branch schema comparison.
+#   --no-schema-check   Build only; skip the staging-branch schema comparison.
 
 set -euo pipefail
 
@@ -27,10 +27,10 @@ ARC56="$ARTIFACT_DIR/BingleDapp.arc56.json"
 APPROVAL_TEAL="$ARTIFACT_DIR/BingleDapp.approval.teal"
 CLEAR_TEAL="$ARTIFACT_DIR/BingleDapp.clear.teal"
 # Committed schema baseline (a small "golden" file, tracked in git) that records
-# the app's state schema + program fingerprints for the master comparison.
+# the app's state schema + program fingerprints for the staging comparison.
 SCHEMA_REF_REL="dapp_projects/smart_contracts/$CONTRACT_NAME/app_schema.json"
 SCHEMA_REF="$REPO_ROOT/$SCHEMA_REF_REL"
-BASELINE_REF="master"
+BASELINE_REF="staging"
 
 DO_SCHEMA_CHECK=1
 for arg in "$@"; do
@@ -108,7 +108,7 @@ fi
 echo "==> Build OK. Artifacts in $ARTIFACT_DIR"
 
 # ------------------------------------------------------------------ #
-# 4. Refresh the schema baseline and compare against master
+# 4. Refresh the schema baseline and compare against staging
 # ------------------------------------------------------------------ #
 # Regenerate the committed schema fingerprint from the fresh build. This is the
 # source of truth for "what schema/program is expected to be deployed".
@@ -136,7 +136,7 @@ if [[ "$DO_SCHEMA_CHECK" -eq 0 ]]; then
   exit 0
 fi
 
-# Resolve a baseline ref: prefer local master, fall back to origin/master.
+# Resolve a baseline ref: prefer local staging, fall back to origin/staging.
 BASE=""
 if git rev-parse --verify --quiet "refs/heads/$BASELINE_REF" >/dev/null; then
   BASE="$BASELINE_REF"
