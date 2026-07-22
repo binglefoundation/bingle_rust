@@ -32,6 +32,7 @@ WORKDIR /app
 # Copy common runtime assets
 COPY stunservers.txt /app/stunservers.txt
 COPY nodely_staging_testnet_node.json /app/nodely_staging_testnet_node.json
+COPY nodely_deployed_mainnet_node.json /app/nodely_deployed_mainnet_node.json
 
 # Create output directory for test logs (mounted at runtime)
 RUN mkdir -p /out /sentinels
