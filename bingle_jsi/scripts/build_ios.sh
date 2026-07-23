@@ -19,7 +19,13 @@ CRATE_NAME="bingle_jsi"
 ROOT_DIR="$(cd "$(dirname "$0")"/../.. && pwd)"
 JSI_DIR="$ROOT_DIR/bingle_jsi"
 IOS_DIR="$JSI_DIR/ios"
-BUILD_DIR="$ROOT_DIR/target"
+# Build into a username-free target dir. Vendored OpenSSL bakes its
+# OPENSSLDIR/ENGINESDIR/MODULESDIR constants from OUT_DIR at C-compile time;
+# --remap-path-prefix (a rustc flag) cannot rewrite those, so if OUT_DIR sat
+# under $ROOT_DIR the builder's home path would leak into the shipped .a libs.
+# Overridable by setting CARGO_TARGET_DIR in the environment.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/var/tmp/bingle_native_target}"
+BUILD_DIR="$CARGO_TARGET_DIR"
 GENERATED_DIR="$IOS_DIR/generated"
 
 # ── helpers ───────────────────────────────────────────────────────────
@@ -64,6 +70,23 @@ RUSTC_CMD=(rustup run "$ACTIVE_TOOLCHAIN" rustc)
 
 export IPHONEOS_DEPLOYMENT_TARGET=13.0
 
+# ── strip local build paths from the shipped libraries ────────────────
+# Dependency panic-location strings and debuginfo embed absolute source
+# paths, mostly under $CARGO_HOME (~/.cargo/registry). Left as-is these
+# leak the builder's username and filesystem layout into the .a static
+# libs packaged in the XCFramework. Remap them to stable placeholders,
+# computed from the live environment so no personal path is committed.
+REMAP_FLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup --remap-path-prefix=$ROOT_DIR=/bingle"
+
+# Per-target RUSTFLAGS. Note: setting RUSTFLAGS overrides (does not merge
+# with) the per-target rustflags in .cargo/config.toml, so the iOS
+# deployment-target link args that normally live there must be repeated
+# here — keep them in sync with .cargo/config.toml. $1 is the clang
+# `-target` triple for the given Rust target.
+ios_rustflags() {
+  echo "$REMAP_FLAGS -C link-arg=-target -C link-arg=$1"
+}
+
 # ── install targets ───────────────────────────────────────────────────
 
 ensure_target aarch64-apple-ios
@@ -81,14 +104,17 @@ fi
 # ── build static libraries ───────────────────────────────────────────
 
 echo "Building $CRATE_NAME for aarch64-apple-ios..."
-"${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios
+RUSTFLAGS="$(ios_rustflags arm64-apple-ios13.0)" \
+  "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios
 
 echo "Building $CRATE_NAME for aarch64-apple-ios-sim..."
-"${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios-sim
+RUSTFLAGS="$(ios_rustflags arm64-apple-ios13.0-simulator)" \
+  "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios-sim
 
 if $HAS_X64_SIM; then
   echo "Building $CRATE_NAME for x86_64-apple-ios..."
-  "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target x86_64-apple-ios || true
+  RUSTFLAGS="$(ios_rustflags x86_64-apple-ios13.0-simulator)" \
+    "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target x86_64-apple-ios || true
 fi
 
 LIB_DEVICE="$BUILD_DIR/aarch64-apple-ios/release/libBingleJsi.a"
@@ -164,6 +190,10 @@ xcodebuild -create-xcframework \
   -library "$LIB_DEVICE" -headers "$HEADERS_DIR" \
   -library "$SIM_LIB" -headers "$HEADERS_DIR" \
   -output "$XCFRAMEWORK_PATH"
+
+# ── guard: fail if any build-machine path leaked into the static libs ─
+source "$(dirname "$0")/scan_native_leaks.sh"
+scan_native_leaks "$XCFRAMEWORK_PATH"
 
 echo ""
 echo "=== iOS build complete ==="
