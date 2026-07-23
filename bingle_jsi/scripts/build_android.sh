@@ -20,7 +20,13 @@ ROOT_DIR="$(cd "$(dirname "$0")"/../.. && pwd)"
 JSI_DIR="$ROOT_DIR/bingle_jsi"
 ANDROID_DIR="$JSI_DIR/android"
 JNILIBS_DIR="$ANDROID_DIR/src/main/jniLibs"
-BUILD_DIR="$ROOT_DIR/target"
+# Build into a username-free target dir. Vendored OpenSSL bakes its
+# OPENSSLDIR/ENGINESDIR/MODULESDIR constants from OUT_DIR at C-compile time;
+# --remap-path-prefix (a rustc flag) cannot rewrite those, so if OUT_DIR sat
+# under $ROOT_DIR the builder's home path would leak into the shipped .so.
+# Overridable by setting CARGO_TARGET_DIR in the environment.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/var/tmp/bingle_native_target}"
+BUILD_DIR="$CARGO_TARGET_DIR"
 GENERATED_DIR="$ANDROID_DIR/generated"
 
 # ── helpers ───────────────────────────────────────────────────────────
@@ -60,6 +66,16 @@ if [[ -z "${ACTIVE_TOOLCHAIN:-}" ]]; then
 fi
 
 CARGO_CMD=(rustup run "$ACTIVE_TOOLCHAIN" cargo)
+
+# ── strip local build paths from the shipped library ──────────────────
+# Dependency panic-location strings and debuginfo embed absolute source
+# paths, mostly under $CARGO_HOME (~/.cargo/registry). Left as-is these
+# leak the builder's username and filesystem layout into the .so files
+# bundled in the npm package. Remap them to stable placeholders. Computed
+# from the live environment so no personal path is committed to the repo.
+# (Android has no per-target rustflags in .cargo/config.toml, so exporting
+# RUSTFLAGS here does not clobber anything.)
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup --remap-path-prefix=$ROOT_DIR=/bingle"
 
 # ── locate Android NDK ────────────────────────────────────────────────
 
@@ -161,6 +177,10 @@ BINDING_LIB="$BUILD_DIR/aarch64-linux-android/release/lib${CRATE_NAME}.so"
   --out-dir "$GENERATED_DIR"
 
 echo "Kotlin bindings generated in $GENERATED_DIR"
+
+# ── guard: fail if any build-machine path leaked into the .so files ───
+source "$(dirname "$0")/scan_native_leaks.sh"
+scan_native_leaks "$JNILIBS_DIR"
 
 echo ""
 echo "=== Android build complete ==="
