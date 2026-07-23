@@ -39,6 +39,9 @@
 /bingle_jsi/example/ios/BingleJsiExample.xcodeproj/
 /bingle_jsi/example/package-lock.json
 
+# Ignore a bingle_jsi package
+/bingle_jsi/package
+
 **/react-native-bingle-jsi*.tgz
 
 **/.build_number
