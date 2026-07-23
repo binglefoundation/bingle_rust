@@ -470,7 +470,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "algonaut",
  "anyhow",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_jsi"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bingle_core",
  "bingle_local",
@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_local"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bingle_core",
  "bingle_test",
@@ -533,7 +533,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_test"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.21.7",
  "bingle_core",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_webserver"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",

@@ -1,6 +1,6 @@
 {
   "name": "react-native-bingle-jsi",
-  "version": "0.0.6",
+  "version": "0.2.1",
   "description": "React Native module for Bingle peer-to-peer messaging via JSI/uniffi",
   "main": "ts/index.ts",
   "types": "ts/index.ts",
