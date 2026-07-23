@@ -179,7 +179,7 @@ BINDING_LIB="$BUILD_DIR/aarch64-linux-android/release/lib${CRATE_NAME}.so"
 echo "Kotlin bindings generated in $GENERATED_DIR"
 
 # ── guard: fail if any build-machine path leaked into the .so files ───
-source "$(dirname "$0")/scan_native_leaks.sh"
+source "$(dirname "$0")/../../scripts/scan_native_leaks.sh"
 scan_native_leaks "$JNILIBS_DIR"
 
 echo ""
