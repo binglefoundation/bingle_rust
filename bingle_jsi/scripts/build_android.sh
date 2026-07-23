@@ -117,15 +117,24 @@ fi
 # Set the minimum API level
 API_LEVEL=21
 
+# Put the NDK toolchain on PATH so the C compiler can be invoked by bare name
+# below. Vendored OpenSSL bakes the CC command verbatim into a compiled-in
+# build-info string (OPENSSL_CFLAGS, in .rodata — read at runtime, so neither
+# --remap-path-prefix nor `strip` can remove it). Passing CC as an absolute
+# path would embed the builder's home dir there; a bare name keeps it clean.
+export PATH="$NDK_BIN:$PATH"
+
 # Export linker environment variables for each target
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android${API_LEVEL}-clang"
 export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_BIN/armv7a-linux-androideabi${API_LEVEL}-clang"
 export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_BIN/x86_64-linux-android${API_LEVEL}-clang"
 
-# Also set CC for openssl-sys (vendored)
-export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android${API_LEVEL}-clang"
-export CC_armv7_linux_androideabi="$NDK_BIN/armv7a-linux-androideabi${API_LEVEL}-clang"
-export CC_x86_64_linux_android="$NDK_BIN/x86_64-linux-android${API_LEVEL}-clang"
+# Also set CC for openssl-sys (vendored). Bare tool names (resolved via the
+# PATH entry above) keep the NDK's absolute path out of OpenSSL's baked-in
+# build-info string — see scripts/scan_native_leaks.sh.
+export CC_aarch64_linux_android="aarch64-linux-android${API_LEVEL}-clang"
+export CC_armv7_linux_androideabi="armv7a-linux-androideabi${API_LEVEL}-clang"
+export CC_x86_64_linux_android="x86_64-linux-android${API_LEVEL}-clang"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
 export AR_armv7_linux_androideabi="$NDK_BIN/llvm-ar"
 export AR_x86_64_linux_android="$NDK_BIN/llvm-ar"
