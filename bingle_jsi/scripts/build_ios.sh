@@ -192,7 +192,7 @@ xcodebuild -create-xcframework \
   -output "$XCFRAMEWORK_PATH"
 
 # ── guard: fail if any build-machine path leaked into the static libs ─
-source "$(dirname "$0")/scan_native_leaks.sh"
+source "$(dirname "$0")/../../scripts/scan_native_leaks.sh"
 scan_native_leaks "$XCFRAMEWORK_PATH"
 
 echo ""
