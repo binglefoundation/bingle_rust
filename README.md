@@ -141,6 +141,11 @@ Prerequisites are just the Rust toolchain; localnet integration tests additional
 build/test workflow, Docker images, testnet/localnet integration runs, relay deployment to AWS,
 and the mobile (JSI) bridge details are all in the **[Developer Guide](DEVELOPER.md)**.
 
+Before publishing, `scripts/scan_native_leaks.sh` checks that no build-machine paths leak into
+shipped native libraries or the cargo/npm packages — see
+[Release hygiene](DEVELOPER.md#release-hygiene-scanning-for-leaked-build-paths) in the Developer
+Guide.
+
 ## What's in this repository
 
 Bingle is a Cargo workspace of five crates:
