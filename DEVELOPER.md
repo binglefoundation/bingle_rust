@@ -122,6 +122,31 @@ Pre-configured Run Configurations are provided in the `.run` directory and appea
 
 Mobile (iOS/Android) bindings are produced by the React Native JSI bridge in `bingle_jsi/`, which generates its bindings from the Rust code via [uniffi](https://mozilla.github.io/uniffi-rs/). See `bingle_jsi/README.md` for building and testing those.
 
+## Release hygiene: scanning for leaked build paths
+
+Compilers can embed the build machine's absolute paths (e.g. `/Users/<you>/...`,
+`~/.cargo/registry`) into shipped binaries, exposing the builder's username and
+filesystem layout. `scripts/scan_native_leaks.sh` guards against this. The
+needles are derived from the live environment and generic home roots at run
+time, so the script itself carries no personal identifiers.
+
+```bash
+# Scan native libraries (.so/.a/.dylib) under one or more paths.
+# The iOS and Android build scripts call this automatically after linking.
+bash scripts/scan_native_leaks.sh <file-or-dir> [more...]
+
+# Build and scan the distributable packages before publishing.
+bash scripts/scan_native_leaks.sh --cargo      # cargo `.crate` tarballs (bingle_core, bingle_local)
+bash scripts/scan_native_leaks.sh --npm        # npm `.tgz` (react-native-bingle-jsi)
+bash scripts/scan_native_leaks.sh --packages   # both of the above
+```
+
+The `--cargo` / `--npm` modes package the crates (`cargo package --no-verify`)
+and the npm module (`npm pack`), extract each archive into `tmp/leak-scan/`, and
+scan every file inside — so a leak in a bundled native library or a generated
+text file is caught before it reaches crates.io or npm. Any embedded build path
+makes the scan exit non-zero, so it can gate a release in CI.
+
 ## Environment Variables
 
 - `BINGLE_ALGO_DEBUG`: Set to `true` or `1` to enable verbose logging for Algorand blockchain operations (algod/indexer requests, transaction preflights, etc.). Disabled by default.
