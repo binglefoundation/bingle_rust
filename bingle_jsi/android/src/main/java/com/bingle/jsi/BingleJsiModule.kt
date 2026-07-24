@@ -177,6 +177,23 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun networkAvailable(forceRecheck: Boolean, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val available = api.networkAvailable(forceRecheck)
+                promise.resolve(available)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun generateKeypair(promise: Promise) {
         val api = apiInstance
         if (api == null) {

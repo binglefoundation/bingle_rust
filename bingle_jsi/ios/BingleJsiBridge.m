@@ -34,6 +34,10 @@ RCT_EXTERN_METHOD(queued:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(getNatType:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(networkAvailable:(BOOL)forceRecheck
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(generateKeypair:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
