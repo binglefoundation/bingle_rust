@@ -122,6 +122,43 @@ Pre-configured Run Configurations are provided in the `.run` directory and appea
 
 Mobile (iOS/Android) bindings are produced by the React Native JSI bridge in `bingle_jsi/`, which generates its bindings from the Rust code via [uniffi](https://mozilla.github.io/uniffi-rs/). See `bingle_jsi/README.md` for building and testing those.
 
+## Cutting a release
+
+`scripts/deploy_code.sh` bumps every crate and the npm module to a given version,
+builds, and publishes the crates to [crates.io](https://crates.io) and the module
+to npm. It runs **only on the `deployed` branch**.
+
+```bash
+git checkout deployed
+scripts/deploy_code.sh 0.2.2                 # full release
+scripts/deploy_code.sh --dry-run 0.2.2       # validate + package everything, publish nothing
+scripts/deploy_code.sh --skip-native-build 0.2.2   # reuse already-built native libs
+```
+
+What it does, in order:
+
+1. **Preflight** — validates the version, confirms you are on `deployed` with a
+   clean working tree, checks the required tools are installed, and verifies you
+   are authenticated to **both** registries (`npm whoami`, and a crates.io token
+   validated against the API). If either is missing it stops and prints the exact
+   command to run (`npm login` / `cargo login`).
+2. **Bump** the version across all crate `Cargo.toml`s (including the workspace
+   path-dependency pins), `bingle_jsi/package.json`, and `Cargo.lock`.
+3. **Build** — `cargo check --workspace`, then the iOS and Android native
+   libraries (unless `--skip-native-build`), which also run the leak scan below.
+4. **Dry-run** `cargo publish` for each crate and `npm publish` for the module.
+
+Only once every one of those passes does it commit `chore: release vX.Y.Z`, tag
+it, publish the crates (`bingle_core` then `bingle_local`) and the npm module,
+and push the branch and tag.
+
+Publishing to crates.io and npm cannot be rolled back, so the script front-loads
+every check that can fail cheaply and treats the dry run as the go/no-go gate. If
+a push still fails partway, it detects the versions that already went out and
+skips them, so re-running `scripts/deploy_code.sh <same version>` resumes safely.
+The mobile toolchains (Xcode + Android NDK) must be installed unless you pass
+`--skip-native-build`, because the npm module ships freshly built native libraries.
+
 ## Release hygiene: scanning for leaked build paths
 
 Compilers can embed the build machine's absolute paths (e.g. `/Users/<you>/...`,
