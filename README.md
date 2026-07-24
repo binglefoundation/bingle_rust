@@ -58,9 +58,19 @@ Your Bingle identity is an Algorand account, so you need a wallet holding a litt
 > per-message or subscription charge. You only ever cover Algorand's on-chain fees, so a tiny ALGO
 > balance (well under 1 USD) is all you need to register and use a handle.
 
-The simplest option is the [Pera Wallet](https://perawallet.app/):
+For a quick, low-friction setup — especially for the small amounts Bingle needs —
+[A-Wallet](https://www.a-wallet.net/) is a simple web wallet that runs right in the browser and is
+perfectly acceptable for small balances. The [Pera Wallet](https://perawallet.app/) mobile app is
+another popular choice.
 
-1. Install Pera (iOS, Android, or web) and **create a new account**.
+> **Pera web is read-only.** [Pera's web app](https://web.perawallet.app/) can only *view*
+> accounts, not sign transactions or reveal a passphrase. Use the **Pera mobile app** if you want
+> Pera, or use **[A-Wallet](https://www.a-wallet.net/)** in the browser.
+
+1. Create a new account:
+   - **A-Wallet (browser):** open [a-wallet.net](https://www.a-wallet.net/) and create a new
+     account — no install needed.
+   - **Pera (mobile):** install Pera on iOS or Android and create a new account.
 2. Copy your **account address** — the long string beginning with an uppercase letter, e.g.
    `JWPYTCFOAS23MXVV…`.
 3. Add a few ALGO (under 1 USD is plenty):
@@ -73,12 +83,13 @@ The simplest option is the [Pera Wallet](https://perawallet.app/):
    - **swap crypto with no account** via an instant-exchange service such as
      [SimpleSwap](https://simpleswap.io/) — send a coin you already hold and receive ALGO at your
      address.
-4. In Pera, reveal your **25-word passphrase** (Settings → the account → *Show passphrase* /
-   recovery phrase). This is the value you pass to the CLI as `--passphrase` below.
+4. Reveal your **25-word passphrase** (in A-Wallet, *Show mnemonic*; in the Pera app, Settings →
+   the account → *Show passphrase* / recovery phrase). This is the value you pass to the CLI as
+   `--passphrase` below.
 
-> **We don't endorse any of these services.** The exchanges and swap providers above are listed
-> only as examples, not recommendations. Do your own due diligence before using any of them, and
-> when trying one for the first time, move only a small amount.
+> **We don't endorse any of these services.** The wallets, exchanges and swap providers above are
+> listed only as examples, not recommendations. Do your own due diligence before using any of them,
+> and when trying one for the first time, move only a small amount.
 
 > **Keep the passphrase secret.** Anyone with the 25 words controls the account and its funds. For
 > exploring Bingle, prefer a fresh account you use only for this.
