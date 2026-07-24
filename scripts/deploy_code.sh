@@ -183,19 +183,15 @@ fi
 
 # ── dry-run every publish before touching a registry ──────────────────
 info "dry-run: cargo packages"
-# bingle_core has no workspace deps, so it verifies fully. Dependent crates would
-# need the not-yet-published core in the registry to verify, so they are packaged
-# with --no-verify (manifest + contents are still checked).
-first=1
-for crate in "${PUBLISH_CRATES[@]}"; do
-  if [[ $first -eq 1 ]]; then
-    cargo publish -p "$crate" --dry-run --allow-dirty
-    first=0
-  else
-    cargo publish -p "$crate" --dry-run --allow-dirty --no-verify
-  fi
-  ok "packaged $crate@$VERSION"
-done
+# Dry-run all crates together (cargo orders them by the dependency graph). With
+# multiple -p, cargo packages each crate into a temporary local registry and
+# verifies dependents against it, so a dependent resolves the not-yet-published
+# dependency version locally instead of failing against the crates.io index.
+# This fully verifies every crate — no --no-verify escape hatch needed.
+pkg_args=()
+for crate in "${PUBLISH_CRATES[@]}"; do pkg_args+=(-p "$crate"); done
+cargo publish --dry-run --allow-dirty "${pkg_args[@]}"
+for crate in "${PUBLISH_CRATES[@]}"; do ok "packaged $crate@$VERSION"; done
 
 info "dry-run: npm module"
 ( cd "$NPM_DIR" && npm publish --dry-run )
