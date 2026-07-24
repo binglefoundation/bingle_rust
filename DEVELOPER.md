@@ -132,8 +132,7 @@ External contributions are welcome via pull request:
 4. Open a PR against `staging` describing the change.
 
 Publishing releases (bumping versions and pushing to crates.io / npm) is performed by the
-maintainers via `scripts/deploy_code.sh`; the operational runbook lives in the admin docs
-(`bingle_admin/admin_docs/UPDATE_CODE.md`), not here.
+maintainers.
 
 ## Release hygiene: scanning for leaked build paths
 
