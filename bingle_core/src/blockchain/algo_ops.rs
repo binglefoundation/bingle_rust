@@ -88,21 +88,43 @@ impl AlgoOps {
         (id, passphrase)
     }
 
-    /// Derive the Algorand address for an existing 25-word mnemonic `passphrase`,
-    /// without generating a new key. This is the inverse of `generate_keypair`,
-    /// reusing the same seed → public key → address derivation. Returns an error
-    /// if `passphrase` is not a valid Algorand mnemonic.
+    /// Derive the 32-byte ed25519 secret seed for a `passphrase`, accepting either a 25-word
+    /// Algorand mnemonic or a legacy base64-encoded secret with a "b64:" prefix (used by tests).
+    /// This is the single source of truth for passphrase → seed used by `new`,
+    /// `address_from_passphrase`, and `private_key_bytes`.
+    pub fn seed_from_passphrase(passphrase: &str) -> Result<[u8; 32]> {
+        // Algorand 25-word mnemonic.
+        if !passphrase.is_empty()
+            && let Ok(key) = algonaut::crypto::mnemonic::to_key(passphrase)
+        {
+            return key
+                .to_vec()
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow!("invalid passphrase: derived seed is not 32 bytes"));
+        }
+
+        // Legacy base64-encoded secret with a "b64:" prefix.
+        if let Some(rest) = passphrase.strip_prefix("b64:") {
+            let bytes = general_purpose::STANDARD
+                .decode(rest)
+                .map_err(|e| anyhow!("invalid passphrase: bad base64 secret ({e})"))?;
+            return bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow!("invalid passphrase: secret is not 32 bytes"));
+        }
+
+        bail!("invalid passphrase: expected a 25-word Algorand mnemonic")
+    }
+
+    /// Derive the Algorand address for an existing `passphrase`, without generating a new key.
+    /// This is the inverse of `generate_keypair`. Returns an error if `passphrase` is not a valid
+    /// Algorand mnemonic (or b64: secret).
     pub fn address_from_passphrase(passphrase: &str) -> Result<String> {
         use ed25519_dalek::SigningKey;
 
-        let seed = algonaut::crypto::mnemonic::to_key(passphrase)
-            .map_err(|e| anyhow!("invalid passphrase: not a valid Algorand mnemonic ({e})"))?;
-        let sk: [u8; 32] = seed
-            .to_vec()
-            .as_slice()
-            .try_into()
-            .map_err(|_| anyhow!("invalid passphrase: derived seed is not 32 bytes"))?;
-
+        let sk = Self::seed_from_passphrase(passphrase)?;
         let signing_key = SigningKey::from_bytes(&sk);
         let pk: [u8; 32] = signing_key.verifying_key().to_bytes();
         byte_key_to_address(&pk)
@@ -125,40 +147,13 @@ impl AlgoOps {
             config,
         };
 
-        // If no address was provided but we have a passphrase, derive the address immediately
+        // If no address was provided but we have a passphrase, derive the address immediately.
+        // A malformed passphrase simply leaves the address unset (callers surface the error later).
         if ops.address.is_none()
             && let Some(ref pass) = ops.passphrase
+            && let Ok(addr) = Self::address_from_passphrase(pass)
         {
-            // Try Algorand mnemonic first
-            let maybe_seed = if !pass.is_empty() {
-                match algonaut::crypto::mnemonic::to_key(pass) {
-                    Ok(k) if k.len() == 32 => Some(k.to_vec()),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-
-            let seed32: Option<[u8; 32]> = if let Some(bytes) = maybe_seed {
-                bytes.as_slice().try_into().ok()
-            } else if let Some(rest) = pass.strip_prefix("b64:") {
-                match general_purpose::STANDARD.decode(rest) {
-                    Ok(b) => b.as_slice().try_into().ok(),
-                    Err(_) => None,
-                }
-            } else {
-                None
-            };
-
-            if let Some(seed) = seed32 {
-                use ed25519_dalek::SigningKey;
-                let signing_key = SigningKey::from_bytes(&seed);
-                let verifying_key = signing_key.verifying_key();
-                let pk: [u8; 32] = verifying_key.to_bytes();
-                if let Ok(addr) = byte_key_to_address(&pk) {
-                    ops.address = Some(addr);
-                }
-            }
+            ops.address = Some(addr);
         }
 
         ops
@@ -410,29 +405,8 @@ impl AlgoOps {
             .as_ref()
             .ok_or_else(|| anyhow!("This operation needs account access"))?;
 
-        // New behavior: expect ASCII mnemonic passphrase. Derive 32-byte key using Algorand mnemonic.
-        if !pass.is_empty()
-            && let Ok(key32) = algonaut::crypto::mnemonic::to_key(pass)
-        {
-            if key32.len() == 32 {
-                return Ok(key32.to_vec());
-            } else {
-                bail!("Derived key must be 32 bytes, got {}", key32.len());
-            }
-        }
-
-        // Backward compatibility: support legacy base64 format with "b64:" prefix
-        if let Some(rest) = pass.strip_prefix("b64:") {
-            let sk = general_purpose::STANDARD
-                .decode(rest)
-                .map_err(|e| anyhow!("Invalid base64 secret: {e}"))?;
-            if sk.len() != 32 {
-                bail!("Secret key must be 32 bytes, got {}", sk.len());
-            }
-            return Ok(sk);
-        }
-
-        bail!("Unsupported passphrase format: expected ASCII mnemonic")
+        // Accepts an ASCII Algorand mnemonic or a legacy "b64:" secret (see seed_from_passphrase).
+        Ok(Self::seed_from_passphrase(pass)?.to_vec())
     }
 
     /// Compute the application (contract) address from app id.
