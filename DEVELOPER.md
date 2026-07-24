@@ -122,42 +122,18 @@ Pre-configured Run Configurations are provided in the `.run` directory and appea
 
 Mobile (iOS/Android) bindings are produced by the React Native JSI bridge in `bingle_jsi/`, which generates its bindings from the Rust code via [uniffi](https://mozilla.github.io/uniffi-rs/). See `bingle_jsi/README.md` for building and testing those.
 
-## Cutting a release
+## Contributing
 
-`scripts/deploy_code.sh` bumps every crate and the npm module to a given version,
-builds, and publishes the crates to [crates.io](https://crates.io) and the module
-to npm. It runs **only on the `deployed` branch**.
+External contributions are welcome via pull request:
 
-```bash
-git checkout deployed
-scripts/deploy_code.sh 0.2.2                 # full release
-scripts/deploy_code.sh --dry-run 0.2.2       # validate + package everything, publish nothing
-scripts/deploy_code.sh --skip-native-build 0.2.2   # reuse already-built native libs
-```
+1. Fork the repository (or create a branch if you have push access) off `staging`.
+2. Make your change with tests, keeping tests in the `tests/` tree per the project layout above.
+3. Ensure `cargo test --test unit` passes with no warnings and `scripts/run_quality_checks.sh --strict` is clean.
+4. Open a PR against `staging` describing the change.
 
-What it does, in order:
-
-1. **Preflight** — validates the version, confirms you are on `deployed` with a
-   clean working tree, checks the required tools are installed, and verifies you
-   are authenticated to **both** registries (`npm whoami`, and a crates.io token
-   validated against the API). If either is missing it stops and prints the exact
-   command to run (`npm login` / `cargo login`).
-2. **Bump** the version across all crate `Cargo.toml`s (including the workspace
-   path-dependency pins), `bingle_jsi/package.json`, and `Cargo.lock`.
-3. **Build** — `cargo check --workspace`, then the iOS and Android native
-   libraries (unless `--skip-native-build`), which also run the leak scan below.
-4. **Dry-run** `cargo publish` for each crate and `npm publish` for the module.
-
-Only once every one of those passes does it commit `chore: release vX.Y.Z`, tag
-it, publish the crates (`bingle_core` then `bingle_local`) and the npm module,
-and push the branch and tag.
-
-Publishing to crates.io and npm cannot be rolled back, so the script front-loads
-every check that can fail cheaply and treats the dry run as the go/no-go gate. If
-a push still fails partway, it detects the versions that already went out and
-skips them, so re-running `scripts/deploy_code.sh <same version>` resumes safely.
-The mobile toolchains (Xcode + Android NDK) must be installed unless you pass
-`--skip-native-build`, because the npm module ships freshly built native libraries.
+Publishing releases (bumping versions and pushing to crates.io / npm) is performed by the
+maintainers via `scripts/deploy_code.sh`; the operational runbook lives in the admin docs
+(`bingle_admin/admin_docs/UPDATE_CODE.md`), not here.
 
 ## Release hygiene: scanning for leaked build paths
 
