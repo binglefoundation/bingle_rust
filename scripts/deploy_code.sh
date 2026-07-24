@@ -102,9 +102,10 @@ if ! npm_user="$(npm whoami 2>/dev/null)"; then
 fi
 ok "npm authenticated as '$npm_user'"
 
-# crates.io: a token in the environment or the cargo credentials file, validated
-# against the crates.io identity endpoint so a stale token is caught here rather
-# than mid-publish.
+# crates.io: confirm a token is present in the environment or the cargo credentials
+# file. crates.io deliberately restricts its identity endpoint (/api/v1/me) to the
+# website, so an API token cannot be pre-validated here; an invalid token surfaces
+# at publish time, which the dry run still gates everything before.
 CRATES_TOKEN="${CARGO_REGISTRY_TOKEN:-}"
 if [[ -z "$CRATES_TOKEN" ]]; then
   for cred in "${CARGO_HOME:-$HOME/.cargo}/credentials.toml" "${CARGO_HOME:-$HOME/.cargo}/credentials"; do
@@ -115,12 +116,7 @@ if [[ -z "$CRATES_TOKEN" ]]; then
   done
 fi
 [[ -n "$CRATES_TOKEN" ]] || die "not authenticated to crates.io. Run: cargo login"
-crates_me="$(curl -sf -A "bingle-deploy" -H "Authorization: $CRATES_TOKEN" \
-  https://crates.io/api/v1/me 2>/dev/null || true)"
-if ! grep -q '"login"' <<<"$crates_me"; then
-  die "crates.io token is present but not valid. Run: cargo login"
-fi
-ok "crates.io token validated ($(sed -n 's/.*"login":"\([^"]*\)".*/\1/p' <<<"$crates_me"))"
+ok "crates.io token found"
 
 # ── crates.io / npm existence helpers ─────────────────────────────────
 crate_version_exists() { # <crate> <version>
