@@ -1036,6 +1036,19 @@ impl BingleJsiApi for BingleJsiApiImpl {
         })
     }
 
+    fn import_keypair(&self, passphrase: String) -> Result<Keypair, BingleJsiError> {
+        let mut guard = local_api_guard(&self.local_api)?;
+        let kp = guard
+            .import_keypair(passphrase)
+            .map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        save_if_configured(&self.local_api, &self.local_file);
+        Ok(Keypair {
+            id: kp.id,
+            passphrase: kp.passphrase,
+        })
+    }
+
     fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
         // Route through bingle_error_to_jsi so a duplicate handle surfaces as the typed

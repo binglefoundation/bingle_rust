@@ -198,6 +198,27 @@ fn generate_keypair_succeeds() {
 }
 
 #[test]
+fn import_keypair_adopts_account() {
+    let api = init_with_local_helper();
+    // Generate to obtain a valid mnemonic, then import it and confirm the same account is adopted.
+    let generated = api
+        .generate_keypair()
+        .expect("generate_keypair should succeed");
+    let imported = api
+        .import_keypair(generated.passphrase.clone())
+        .expect("import_keypair should succeed for a valid mnemonic");
+    assert_eq!(imported.id, generated.id);
+    assert_eq!(imported.passphrase, generated.passphrase);
+}
+
+#[test]
+fn import_keypair_rejects_invalid_passphrase() {
+    let api = init_with_local_helper();
+    let result = api.import_keypair("not a valid mnemonic".to_string());
+    assert!(result.is_err(), "invalid mnemonic must not import");
+}
+
+#[test]
 #[ignore] // needs localnet
 fn generate_keypair_changes_status_to_unfunded() {
     let api = init_with_local_helper();

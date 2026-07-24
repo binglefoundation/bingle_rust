@@ -13,6 +13,40 @@ fn test_generate_keypair_works() {
 }
 
 #[test]
+fn test_import_keypair_adopts_account() {
+    // Generate a keypair to obtain a valid mnemonic, then import that same mnemonic into a
+    // fresh api instance and confirm it adopts the identical account (id derived from passphrase).
+    let mut source = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let generated = source.generate_keypair().expect("keypair");
+
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let imported = api
+        .import_keypair(generated.passphrase.clone())
+        .expect("import should succeed for a valid mnemonic");
+
+    assert_eq!(
+        imported.id, generated.id,
+        "imported id must match the account"
+    );
+    assert_eq!(imported.passphrase, generated.passphrase);
+    // The imported keypair is the current one: get_algo_ops derives the same address.
+    let ops = api.get_algo_ops().expect("ops");
+    assert_eq!(ops.address.expect("address"), generated.id);
+}
+
+#[test]
+fn test_import_keypair_rejects_invalid_passphrase() {
+    let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
+    let res = api.import_keypair("not a valid mnemonic".to_string());
+    assert!(res.is_err(), "importing an invalid mnemonic must fail");
+    // A failed import must not leave a partial keypair behind.
+    assert!(
+        api.get_algo_ops().is_err(),
+        "no keypair should be set after a failed import"
+    );
+}
+
+#[test]
 fn test_get_algo_ops_uses_existing_keypair() {
     let mut api = BingleApiLocalImpl::new(LocalApiConfig::default());
     let kp = api.generate_keypair().expect("keypair");
