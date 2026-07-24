@@ -73,6 +73,13 @@ pub trait BingleLocalApi: Send + Sync {
     /// Generate a new Algorand keypair (id and passphrase) and set it as current.
     fn generate_keypair(&mut self) -> Result<Keypair, BingleError>;
 
+    /// Import an existing account from its 25-word Algorand mnemonic `passphrase` and set it
+    /// as current. Validates the mnemonic and derives the account id, then clears any memoized
+    /// ACTIVE handle/status so `keypair_status` re-resolves from chain (the imported account may
+    /// already be registered). Errors if `passphrase` is not a valid mnemonic. Never logs the
+    /// passphrase.
+    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError>;
+
     /// Register the current keypair with Bingle (requires credited funds).
     /// Returns Ok(()) on success, or Err(message) on failure.
     /// Parameter:

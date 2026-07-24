@@ -165,6 +165,7 @@ export interface BingleJsiApi {
 
   // Local storage and contacts
   generateKeypair(): Keypair;
+  importKeypair(passphrase: string): Keypair;
   registerKeypair(handle: string): boolean;
   addContact(handle: string, id: string, source: ContactSource): void;
   blockContact(id: string): void;
