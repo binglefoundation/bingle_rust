@@ -122,6 +122,18 @@ Pre-configured Run Configurations are provided in the `.run` directory and appea
 
 Mobile (iOS/Android) bindings are produced by the React Native JSI bridge in `bingle_jsi/`, which generates its bindings from the Rust code via [uniffi](https://mozilla.github.io/uniffi-rs/). See `bingle_jsi/README.md` for building and testing those.
 
+## Contributing
+
+External contributions are welcome via pull request:
+
+1. Fork the repository (or create a branch if you have push access) off `staging`.
+2. Make your change with tests, keeping tests in the `tests/` tree per the project layout above.
+3. Ensure `cargo test --test unit` passes with no warnings and `scripts/run_quality_checks.sh --strict` is clean.
+4. Open a PR against `staging` describing the change.
+
+Publishing releases (bumping versions and pushing to crates.io / npm) is performed by the
+maintainers.
+
 ## Release hygiene: scanning for leaked build paths
 
 Compilers can embed the build machine's absolute paths (e.g. `/Users/<you>/...`,
