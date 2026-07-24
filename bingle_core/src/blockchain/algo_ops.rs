@@ -88,6 +88,26 @@ impl AlgoOps {
         (id, passphrase)
     }
 
+    /// Derive the Algorand address for an existing 25-word mnemonic `passphrase`,
+    /// without generating a new key. This is the inverse of `generate_keypair`,
+    /// reusing the same seed → public key → address derivation. Returns an error
+    /// if `passphrase` is not a valid Algorand mnemonic.
+    pub fn address_from_passphrase(passphrase: &str) -> Result<String> {
+        use ed25519_dalek::SigningKey;
+
+        let seed = algonaut::crypto::mnemonic::to_key(passphrase)
+            .map_err(|e| anyhow!("invalid passphrase: not a valid Algorand mnemonic ({e})"))?;
+        let sk: [u8; 32] = seed
+            .to_vec()
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("invalid passphrase: derived seed is not 32 bytes"))?;
+
+        let signing_key = SigningKey::from_bytes(&sk);
+        let pk: [u8; 32] = signing_key.verifying_key().to_bytes();
+        byte_key_to_address(&pk)
+    }
+
     pub fn new_indexer(config: Option<AlgoChainConfig>) -> Self {
         Self::new(None, None, config)
     }

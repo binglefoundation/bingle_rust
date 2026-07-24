@@ -91,6 +91,10 @@ pub trait BingleJsiApi: Send + Sync {
     /// Generate a new Algorand keypair and set it as current.
     fn generate_keypair(&self) -> Result<Keypair, BingleJsiError>;
 
+    /// Import an existing account from its 25-word Algorand mnemonic passphrase and set it as
+    /// current. Errors if the passphrase is not a valid mnemonic.
+    fn import_keypair(&self, passphrase: String) -> Result<Keypair, BingleJsiError>;
+
     /// Register the current keypair with Bingle using the provided handle.
     fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError>;
 

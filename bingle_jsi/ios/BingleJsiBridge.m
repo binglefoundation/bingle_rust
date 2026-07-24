@@ -37,6 +37,10 @@ RCT_EXTERN_METHOD(getNatType:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(generateKeypair:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(importKeypair:(NSString *)passphrase
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(registerKeypair:(NSString *)handle
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

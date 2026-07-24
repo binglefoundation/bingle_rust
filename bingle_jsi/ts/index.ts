@@ -103,6 +103,7 @@ export const BingleJsi = BingleJsiNative as {
   queued(): Promise<Record<string, unknown>[]>;
   getNatType(): Promise<{ nat_type: string }>;
   generateKeypair(): Promise<{ id: string; passphrase: string }>;
+  importKeypair(passphrase: string): Promise<{ id: string; passphrase: string }>;
   registerKeypair(handle: string): Promise<boolean>;
   addContact(handle: string, id: string, source: string): Promise<void>;
   blockContact(id: string): Promise<void>;
