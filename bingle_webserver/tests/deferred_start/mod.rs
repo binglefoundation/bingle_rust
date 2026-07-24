@@ -33,6 +33,15 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(kp)
     }
 
+    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
+        let kp = Keypair {
+            id: "TEST_ID".into(),
+            passphrase,
+        };
+        self.keypair = Some(kp.clone());
+        Ok(kp)
+    }
+
     fn register_keypair(&self, _handle: String) -> Result<bool, BingleError> {
         Ok(true)
     }

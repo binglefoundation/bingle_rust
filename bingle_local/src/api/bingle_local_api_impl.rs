@@ -255,6 +255,37 @@ impl BingleLocalApi for BingleApiLocalImpl {
         Ok(kp)
     }
 
+    fn import_keypair(&mut self, passphrase: String) -> Result<Keypair, BingleError> {
+        tracing::info!("[BingleLocalApi] Importing keypair from passphrase");
+        // Validate the mnemonic and derive the account id. The passphrase itself is never logged.
+        let id = AlgoOps::address_from_passphrase(&passphrase)
+            .map_err(|e| BingleError::Other(e.to_string()))?;
+        let kp = Keypair { id, passphrase };
+        tracing::info!("[BingleLocalApi] Imported keypair with id: {}", kp.id);
+        if let Ok(mut guard) = self.keypair.lock() {
+            *guard = Some(kp.clone());
+        }
+        // The imported account's on-chain state is unknown (it may already be registered), so
+        // clear the memoized ACTIVE handle/status and let keypair_status re-resolve from chain.
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.own_handle_app_id.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.live_app_confirmed.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.last_status.lock() {
+            *g = None;
+        }
+        // Invalidate cached AlgoOps since keypair changed
+        if let Ok(mut ops_guard) = self.algo_ops.lock() {
+            *ops_guard = None;
+        }
+        Ok(kp)
+    }
+
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError> {
         tracing::info!(
             "[BingleLocalApi] Registering keypair with handle: {}",

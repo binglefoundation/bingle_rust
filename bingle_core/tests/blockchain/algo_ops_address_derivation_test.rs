@@ -49,3 +49,25 @@ pub fn derives_address_from_legacy_b64_seed_when_constructed() {
         .expect("address should be derived from legacy b64 seed");
     assert_eq!(addr, &expected_address);
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn address_from_passphrase_derives_expected_address() {
+    // Same known test mnemonic/address pair as above.
+    let mnemonic = "theme term glow reflect essence artefact tired bicycle february demand vacuum tent faculty arch elevator rent already anchor rough cry sketch nurse mom able inquiry";
+    let expected_address = "4TKGNGRAUHMQI4EOQ34L2AIDX2VGS4OZNZIOE6BLEQFZUDRSB6RJRBPVRE";
+
+    let addr = AlgoOps::address_from_passphrase(mnemonic)
+        .expect("valid mnemonic should derive an address");
+    assert_eq!(addr, expected_address);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn address_from_passphrase_rejects_invalid_mnemonic() {
+    let result = AlgoOps::address_from_passphrase("not a valid mnemonic at all");
+    assert!(
+        result.is_err(),
+        "an invalid mnemonic must not derive an address"
+    );
+}

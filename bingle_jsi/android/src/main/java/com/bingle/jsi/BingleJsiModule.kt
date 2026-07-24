@@ -197,6 +197,26 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun importKeypair(passphrase: String, promise: Promise) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val kp = api.importKeypair(passphrase)
+                val map = Arguments.createMap()
+                map.putString("id", kp.id)
+                map.putString("passphrase", kp.passphrase)
+                promise.resolve(map)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun registerKeypair(handle: String, promise: Promise) {
         val api = apiInstance
         if (api == null) {
