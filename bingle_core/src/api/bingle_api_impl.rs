@@ -914,7 +914,7 @@ impl BingleApi for BingleApiImpl {
         message: JsonValue,
         progress: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
-        warn_theme!(
+        info_theme!(
             themes::API,
             "[BingleApiImpl::send_message_to_id][enter] user_id={} msg={} progress={}",
             user_id,
