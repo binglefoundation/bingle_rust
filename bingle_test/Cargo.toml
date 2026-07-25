@@ -1,6 +1,6 @@
 [package]
 name = "bingle_test"
-version = "0.2.1"
+version = "0.2.3"
 edition = "2024"
 # Test-support crate — never published to crates.io.
 publish = false
