@@ -14,6 +14,7 @@
 - Always validate that a call returning `Option` succeeds before using the value.
 - Do not prefix an in-use parameter name with `_` — that prefix signals an intentionally unused parameter.
 - Do not use Title Case in comments.
+- where there are worktrees in a checked out repo, the root directory of the repo should have `deployed` checked out and should not be altered
 
 ## Files
 
