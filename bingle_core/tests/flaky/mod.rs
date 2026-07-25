@@ -16,3 +16,7 @@ pub mod renegotiation_handshake;
 // Extracted from security/weak_key_exchange_test.rs — the client-cert handshake test
 // was flagged leaky under load; its two sibling tests stay in the unit suite.
 pub mod weak_key_exchange_rsa_client;
+
+// Extracted from distributed_mutex/modified_lamport.rs — the 3-node mutual-exclusion
+// test is timing-sensitive and fails intermittently; its sibling stays in the unit suite.
+pub mod modified_lamport_mutex_3_nodes;

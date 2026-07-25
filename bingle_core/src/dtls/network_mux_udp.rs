@@ -72,7 +72,7 @@ impl UdpNetworkMux {
         {
             crate::util::printing::enable_immediate_prints();
         }
-        warn!("[UdpNetworkMux] bind {:?}", addr);
+        info!("[UdpNetworkMux] bind {:?}", addr);
         let socket = UdpSocket::bind(&addr)
             .map_err(|e| std::io::Error::other(format!("udp bind to {:?} failed: {}", addr, e)))?;
         // Set a modest read timeout to allow responsive shutdown of the receive loop
@@ -324,7 +324,7 @@ impl NetworkMux for UdpNetworkMux {
                 }
             };
             // Log as TURN send
-            warn!(
+            info!(
                 "[UdpNetworkMux][write TURN][{:?} -> {}][ch=0x{:04X}] inner_len={} wrapped_len={}",
                 from_addr,
                 relay_addr,
