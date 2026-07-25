@@ -4,28 +4,53 @@
 # Purpose: Download the latest log stream from a specified AWS CloudWatch log group.
 #
 # Usage:
-#   scripts/download_latest_logs.sh <relay_name>
+#   scripts/download_latest_logs.sh [--region <region>] <relay_name>
+#
+# The AWS region defaults to your `aws configure` region; override it with
+# --region. CloudWatch log groups are region-scoped, so this must match the
+# region the relay was deployed to (see aws/deploy_relay.sh).
 #
 # Example:
 #   scripts/download_latest_logs.sh bingle-relay-staging-1
+#   scripts/download_latest_logs.sh --region eu-west-1 bingle-relay-staging-1
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <relay_name>"
+REGION=$(aws configure get region 2>/dev/null || true)
+RELAY_NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --region) REGION="$2"; shift 2 ;;
+    -h|--help) echo "Usage: $0 [--region <region>] <relay_name>"; exit 0 ;;
+    -*) echo "Unknown option: $1" >&2; exit 1 ;;
+    *)
+      if [[ -n "$RELAY_NAME" ]]; then
+        echo "Unexpected extra argument: $1" >&2; exit 1
+      fi
+      RELAY_NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$RELAY_NAME" ]]; then
+  echo "Usage: $0 [--region <region>] <relay_name>" >&2
   exit 1
 fi
 
-RELAY_NAME="$1"
+if [[ -z "$REGION" ]]; then
+  echo "Error: no AWS region set. Pass --region <region> or run 'aws configure set region <region>'." >&2
+  exit 1
+fi
 # Replace slashes with underscores for the filename
 SAFE_RELAY_NAME=$(echo "$RELAY_NAME" | sed 's/\//_/g' | sed 's/^_//')
 OUTPUT_FILE="tmp/$SAFE_RELAY_NAME".log
 
 LOG_GROUP_NAME="/bingle/relay/$RELAY_NAME"
-echo "Fetching latest log stream for group: $LOG_GROUP_NAME"
+echo "Fetching latest log stream for group: $LOG_GROUP_NAME (region: $REGION)"
 
 # 1) Get the latest log stream name
 STREAM_NAME=$(aws logs describe-log-streams \
+  --region "$REGION" \
   --log-group-name "$LOG_GROUP_NAME" \
   --order-by LastEventTime \
   --descending \
@@ -52,6 +77,7 @@ while true; do
   if [[ -z "$NEXT_TOKEN" ]]; then
     # First call
     RESPONSE=$(aws logs get-log-events \
+      --region "$REGION" \
       --log-group-name "$LOG_GROUP_NAME" \
       --log-stream-name "$STREAM_NAME" \
       --start-from-head \
@@ -59,6 +85,7 @@ while true; do
   else
     # Subsequent calls with nextForwardToken
     RESPONSE=$(aws logs get-log-events \
+      --region "$REGION" \
       --log-group-name "$LOG_GROUP_NAME" \
       --log-stream-name "$STREAM_NAME" \
       --next-token "$NEXT_TOKEN" \
