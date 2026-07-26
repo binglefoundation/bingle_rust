@@ -177,6 +177,19 @@ pub fn is_transient_send_failure(err: &str) -> bool {
         || e.contains("noconnection")
 }
 
+/// Map a raw send error to a concise, human-readable `failure_reason` for a queued message so the
+/// app can surface it via the existing failure_reason channel (issue #43). A transient
+/// (connectivity) failure keeps the message pending and retrying, so the reason says so rather
+/// than leaking the internal error; a permanent failure surfaces the underlying error. The raw
+/// error is still logged for debugging.
+pub fn pending_failure_reason(err: &str, transient: bool) -> String {
+    if transient {
+        "Recipient unreachable — will keep retrying".to_string()
+    } else {
+        format!("Message failed to send: {err}")
+    }
+}
+
 fn bingle_error_to_jsi(e: BingleError) -> BingleJsiError {
     match e {
         BingleError::Algo(ae) if ae.kind == AlgoErrorKind::HostUnreachable => {
@@ -660,18 +673,24 @@ impl BingleJsiApiImpl {
                         } else {
                             let err =
                                 last_error.unwrap_or_else(|| "unknown send failure".to_string());
-                            let (progress, level) = if is_transient_send_failure(&err) {
-                                (0.0_f32, "transient")
-                            } else {
-                                (1.0_f32, "permanent")
-                            };
+                            let transient = is_transient_send_failure(&err);
+                            let (progress, level) =
+                                if transient { (0.0_f32, "transient") } else { (1.0_f32, "permanent") };
+                            // Log the raw error for debugging, but surface a concise, human-readable
+                            // failure_reason on the queued message so the app can indicate the error
+                            // (issue #43). Transient failures stay pending (progress 0.0) and keep
+                            // retrying; the reason clears automatically on the next successful send.
                             tracing::debug!(
                                 "[BingleJsiApiImpl] pending message {} send failed ({}): {}",
                                 timestamp,
                                 level,
                                 err
                             );
-                            (timestamp, progress, Some(err))
+                            (
+                                timestamp,
+                                progress,
+                                Some(pending_failure_reason(&err, transient)),
+                            )
                         };
                         if res_tx.send(result).is_err() {
                             break; // scheduler gone
