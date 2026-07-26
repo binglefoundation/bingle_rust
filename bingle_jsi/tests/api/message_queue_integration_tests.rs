@@ -13,6 +13,9 @@ use std::time::Duration;
 struct MockBingleApi {
     pub progress_steps: Vec<u8>,
     pub on_listening: Mutex<Option<Arc<OnListeningHandler>>>,
+    // Number of initial send_message_to_handle calls to fail with a transient error before
+    // succeeding. 0 (default) = always succeed. Used to drive the drain-loop failure_reason path.
+    pub send_fail_count: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl BingleApiInternal for MockBingleApi {
@@ -72,6 +75,15 @@ impl BingleApi for MockBingleApi {
         _payload: serde_json::Value,
         progress_callback: Option<Arc<ProgressCallback>>,
     ) -> Result<bool, BingleError> {
+        use std::sync::atomic::Ordering;
+        // Simulate an unreachable peer for the first `send_fail_count` attempts (transient), then
+        // deliver. Lets a test observe the failure_reason being set and later cleared (#43).
+        if self.send_fail_count.load(Ordering::SeqCst) > 0 {
+            self.send_fail_count.fetch_sub(1, Ordering::SeqCst);
+            return Err(BingleError::Retryable(
+                "no ACK_COMPLETE received after 3 retries".to_string(),
+            ));
+        }
         if let Some(cb) = progress_callback {
             for &step in &self.progress_steps {
                 cb(step, format!("Step {}%", step));
@@ -140,6 +152,7 @@ fn test_handle_lookup_partial_maps_canonical_handle() {
     let mock_api = Arc::new(MockBingleApi {
         progress_steps: vec![],
         on_listening: Mutex::new(None),
+        send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
 
     let jsi = BingleJsiApiImpl::init_for_tests(mock_api, None);
@@ -157,6 +170,7 @@ fn test_message_queue_with_mock_progress() {
     let mock_api = Arc::new(MockBingleApi {
         progress_steps: vec![10, 50, 90],
         on_listening: Mutex::new(None),
+        send_fail_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
 
     let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
@@ -210,6 +224,90 @@ fn test_message_queue_with_mock_progress() {
 
     assert!(reached_0_5, "Message never reached 50% progress");
     assert!(reached_1_0, "Message never reached 100% progress");
+
+    jsi.stop().unwrap();
+}
+
+// #43: a queued message whose delivery attempt fails (unreachable peer) must stay pending AND
+// gain a concise, human-readable failure_reason, which then clears once delivery succeeds.
+#[test]
+fn queued_message_gains_failure_reason_then_clears_on_success() {
+    use std::sync::atomic::AtomicUsize;
+
+    // Fail the first delivery attempt (transient), then succeed on the retry.
+    let mock_api = Arc::new(MockBingleApi {
+        progress_steps: vec![],
+        on_listening: Mutex::new(None),
+        send_fail_count: Arc::new(AtomicUsize::new(1)),
+    });
+
+    let local_api: Arc<Mutex<Box<dyn BingleLocalApi>>> = Arc::new(Mutex::new(Box::new(
+        BingleApiLocalImpl::new(LocalApiConfig::default()),
+    )));
+    let jsi = BingleJsiApiImpl::init_for_tests(mock_api, Some(local_api.clone()));
+
+    let timestamp = 424343i64;
+    {
+        let mut guard = local_api.lock().unwrap();
+        guard
+            .add_message(
+                "testuser".to_string(),
+                vec!["recipient".to_string()],
+                timestamp,
+                "Hello".to_string(),
+                None,
+            )
+            .unwrap();
+        guard.update_message_status(timestamp, 0.0, None).unwrap();
+    }
+
+    jsi.start().unwrap();
+    jsi.api_for_tests()
+        .notify_listening(true, bingle_core::engine::NatType::Restricted);
+
+    // Phase 1: the first attempt fails transiently -> message stays pending and gains the
+    // human-readable failure_reason (not the raw internal error).
+    let mut saw_failure_reason = false;
+    for _ in 0..10 {
+        std::thread::sleep(Duration::from_millis(500));
+        let msgs = jsi.get_messages().unwrap();
+        if let Some(m) = msgs.iter().find(|m| m.timestamp == timestamp)
+            && let Some(reason) = &m.failure_reason
+        {
+            assert!(
+                m.progress.map_or(true, |p| p < 1.0),
+                "message must stay pending while it is still being retried"
+            );
+            assert_eq!(reason, "Recipient unreachable — will keep retrying");
+            saw_failure_reason = true;
+            break;
+        }
+    }
+    assert!(
+        saw_failure_reason,
+        "a queued message should gain a failure_reason after a failed delivery attempt"
+    );
+
+    // Phase 2: a later retry succeeds -> delivered (progress 1.0) and failure_reason cleared.
+    let mut cleared = false;
+    for _ in 0..30 {
+        std::thread::sleep(Duration::from_millis(500));
+        let msgs = jsi.get_messages().unwrap();
+        if let Some(m) = msgs.iter().find(|m| m.timestamp == timestamp)
+            && m.progress == Some(1.0)
+        {
+            assert!(
+                m.failure_reason.is_none(),
+                "failure_reason must clear once delivery succeeds"
+            );
+            cleared = true;
+            break;
+        }
+    }
+    assert!(
+        cleared,
+        "message should eventually deliver and clear its failure_reason"
+    );
 
     jsi.stop().unwrap();
 }
