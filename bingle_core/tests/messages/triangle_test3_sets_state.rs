@@ -189,3 +189,69 @@ pub fn triangle_test3_sets_engine_state_via_internal_api() {
         st
     );
 }
+
+/// Integration for #41 (reproduces the client-side scratch_6 sequence at the real Engine level).
+///
+/// After a STUN public-address change resets the node (nat_type back to Unknown, not listening) the
+/// `registered` flag can remain set, so `state()` still reports `Registered`. A TriangleTest1Response
+/// with `noCornerNode=true` arriving in that stale state previously logged "ignoring due to
+/// state=Registered" and the client stayed Unknown forever. It must instead re-classify to a
+/// concrete NAT type (NATRestricted). This drives the real BingleApiImpl → Engine → Router →
+/// DefaultPrintingHandler path (exercising the real state()/nat_type() atomics and the router's
+/// LockingApiWrapper NAT forwarding).
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn no_corner_node_reclassifies_stale_registered_via_real_engine() {
+    use bingle_core::api::bingle_api::BingleApiBoth;
+    use bingle_core::engine::NatType;
+    use bingle_core::messages::handlers::DefaultPrintingHandler;
+    use bingle_core::messages::router::Router;
+    use bingle_core::messages::types::{Message, RelayMessage, RelayTriangleTest1Response};
+
+    // A real BingleApiImpl owns a live Engine (no start() needed). Route a no-corner response
+    // through a Router backed by that real engine so the fix is exercised end-to-end against the
+    // real state()/nat_type() atomics and the router's LockingApiWrapper NAT forwarding.
+    let api_impl = BingleApiImpl::new_with_dtls(Box::new(MockDtls::new()));
+    let api_dyn: Arc<dyn BingleApiBoth> = api_impl.clone();
+    let router = Arc::new(Router::new(Arc::downgrade(&api_dyn)));
+
+    // Force the stale post-reset condition: Registered flag set, but NAT back to Unknown
+    // (as happens after a STUN public-address change reset — see scratch_6 / issue #41).
+    api_dyn.set_state(EngineState::Registered);
+    api_dyn.set_nat_type(NatType::Unknown);
+    assert_eq!(
+        api_dyn.get_state(),
+        EngineState::Registered,
+        "precondition: engine should report a (stale) Registered state"
+    );
+    assert_eq!(api_dyn.get_nat_type(), NatType::Unknown);
+
+    // Deliver a no-corner TriangleTest1Response.
+    let msg = Message::Relay(RelayMessage::TriangleTest1Response(
+        RelayTriangleTest1Response {
+            app: None,
+            no_corner_node: true,
+            response_tag: None,
+        },
+    ));
+    Router::with_current_router(router.clone(), || {
+        router.route(&DefaultPrintingHandler, &msg, "FROMID");
+    });
+
+    // The fallback runs on a spawned thread; poll for re-classification to a concrete NAT type.
+    let start = std::time::Instant::now();
+    let mut nat = NatType::Unknown;
+    while start.elapsed() < std::time::Duration::from_secs(5) {
+        nat = api_dyn.get_nat_type();
+        if nat == NatType::Restricted {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert_eq!(
+        nat,
+        NatType::Restricted,
+        "a stale Registered node with Unknown NAT must re-classify to Restricted (issue #41), got {:?}",
+        nat
+    );
+}
