@@ -263,6 +263,11 @@ impl BingleApiInternal for LockingApiWrapper {
             a.set_nat_type(nat)
         }
     }
+    fn get_nat_type(&self) -> crate::engine::NatType {
+        self.api("get_nat_type")
+            .map(|a| a.get_nat_type())
+            .unwrap_or(crate::engine::NatType::Unknown)
+    }
     fn get_last_public_addr(&self) -> Option<SocketAddr> {
         self.api("get_last_public_addr")
             .and_then(|a| a.get_last_public_addr())

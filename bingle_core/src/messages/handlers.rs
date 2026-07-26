@@ -116,6 +116,9 @@ impl BingleApiInternal for BothAsApi {
     fn set_nat_type(&self, nat: crate::engine::NatType) {
         self.inner.set_nat_type(nat)
     }
+    fn get_nat_type(&self) -> crate::engine::NatType {
+        self.inner.get_nat_type()
+    }
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
         self.inner.get_last_public_addr()
     }
@@ -1830,13 +1833,19 @@ impl DefaultPrintingHandler {
 impl DefaultPrintingHandler {
     /// Shared logic executed after a triangle test response (either delayed or immediate).
     ///
-    /// Sets NATRestricted if current state is neither EndpointAvailable nor Registered,
-    /// then contacts the associated relay to start TURN Listen and registers in the DDB.
+    /// Falls back to NATRestricted (and registers with a relay) unless the node is already
+    /// genuinely settled — i.e. a full-cone EndpointAvailable, or a Registered node that already
+    /// has a concrete (non-Unknown) NAT type. A stale EndpointAvailable/Registered flag left over
+    /// from before a STUN public-address change reset the node (nat_type back to Unknown, not
+    /// listening) must NOT suppress re-classification; otherwise a client that can't complete the
+    /// triangle test (no corner node) stays Unknown forever (issue #41).
     fn post_triangle_relay_register(api_for_thread: Arc<dyn BingleApiBoth>) {
         let cur = api_for_thread.get_state();
-        if cur != crate::engine::EngineState::EndpointAvailable
-            && cur != crate::engine::EngineState::Registered
-        {
+        let settled = matches!(
+            cur,
+            crate::engine::EngineState::EndpointAvailable | crate::engine::EngineState::Registered
+        ) && api_for_thread.get_nat_type() != crate::engine::NatType::Unknown;
+        if !settled {
             api_for_thread.set_state(crate::engine::EngineState::NATRestricted);
             api_for_thread.set_nat_type(crate::engine::NatType::Restricted);
 
@@ -1963,8 +1972,9 @@ impl DefaultPrintingHandler {
             }
         } else {
             tracing::info!(
-                "[on_triangle_test1_response] ignoring due to state={:?}",
-                cur
+                "[on_triangle_test1_response] already settled (state={:?}, nat_type={:?}); no fallback needed",
+                cur,
+                api_for_thread.get_nat_type()
             );
         }
     }
