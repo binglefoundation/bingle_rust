@@ -6,7 +6,9 @@ This project has been generated using AlgoKit. See below for default getting sta
 
 ### Pre-requisites
 
-- [Python 3.12](https://www.python.org/downloads/) or later
+- [Python 3.12 or 3.13](https://www.python.org/downloads/) (3.12 recommended). Avoid 3.14 for now — a
+  transitive dependency (`coincurve`) has no 3.14 wheel yet, so `poetry install` fails on it. See
+  [Troubleshooting](#troubleshooting).
 - [Docker](https://www.docker.com/) (only required for LocalNet)
 
 If python3 is not the default python version, then in bash use `alias python='python3'`
@@ -42,6 +44,36 @@ For example: `algokit project run build -- hello_world` will only build the `hel
 For example: `algokit project deploy localnet -- hello_world` will only deploy the `hello_world` contract.
 
 NOTE: if after a python upgrade and/or in a new checkout, you may need to `poetry add <package>` any reported missing dependencies.
+
+### Troubleshooting
+
+#### `ModuleNotFoundError: No module named 'algokit_utils'` when running build/deploy
+
+Symptom — `algokit project run build` (or `poetry run python -m smart_contracts ...`) fails with:
+
+```
+ModuleNotFoundError: No module named 'algokit_utils'
+```
+
+even though `poetry show algokit-utils` lists it. `poetry show` reports what the **lock file** says should be
+installed, not what is actually in the `.venv` — so this means the dependencies were never installed into the
+virtualenv.
+
+The usual cause is that `.venv` was created on **Python 3.14 (or newer)**, where `poetry install` fails to build
+`coincurve` from source (no prebuilt wheel yet), so the whole install aborts and the venv is left empty of project
+deps. Confirm the venv's Python with `poetry env info` (look at `Virtualenv → Python`).
+
+Fix — pin the venv to a Python version with full wheel coverage (3.12 is AlgoKit's default and the safest; 3.13
+also works) and reinstall:
+
+```bash
+cd dapp_projects
+poetry env use python3.12   # recreate .venv on 3.12
+poetry install              # now succeeds (coincurve, algokit-utils, puyapy, ...)
+```
+
+Verify with `poetry run python -c "import algokit_utils; print('ok')"`, then re-run the build. Do **not** use
+Python 3.14 for this venv until `coincurve` publishes a 3.14 wheel.
 
 #### VS Code 
 For a seamless experience with breakpoint debugging and other features:
