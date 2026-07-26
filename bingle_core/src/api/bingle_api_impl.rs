@@ -1584,6 +1584,9 @@ impl crate::api::bingle_api::BingleApiInternal for BingleApiImpl {
         self.engine.access(|e| e.set_nat_type(nat));
         tracing::info!("[BingleApiImpl::set_nat_type][exit]");
     }
+    fn get_nat_type(&self) -> crate::engine::NatType {
+        self.engine.access(|e| e.nat_type())
+    }
     fn get_last_public_addr(&self) -> Option<SocketAddr> {
         self.engine.access(|e| e.last_public_addr())
     }
