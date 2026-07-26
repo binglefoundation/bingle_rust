@@ -67,6 +67,11 @@ pub trait BingleApiInternal: Send + Sync {
     }
     /// Set the detected NAT type on the engine.
     fn set_nat_type(&self, _nat: crate::engine::NatType) {}
+    /// Get the currently detected NAT type from the engine. Defaults to `Unknown` so existing
+    /// mocks need not implement it.
+    fn get_nat_type(&self) -> crate::engine::NatType {
+        crate::engine::NatType::Unknown
+    }
     /// Retrieve the last discovered public address (IP:port) if available.
     fn get_last_public_addr(&self) -> Option<SocketAddr> {
         None

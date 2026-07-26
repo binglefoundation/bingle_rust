@@ -426,6 +426,10 @@ impl bingle_core::api::bingle_api::BingleApiInternal for MockApiBoth {
         self.inner_bingle_api_internal.set_nat_type(nat);
     }
 
+    fn get_nat_type(&self) -> bingle_core::engine::NatType {
+        self.inner_bingle_api_internal.get_nat_type()
+    }
+
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
         self.inner_bingle_api_internal.get_last_public_addr()
     }
@@ -578,6 +582,10 @@ pub trait InnerBingleApiInternal {
     }
 
     fn set_nat_type(&self, _nat: bingle_core::engine::NatType) {}
+
+    fn get_nat_type(&self) -> bingle_core::engine::NatType {
+        bingle_core::engine::NatType::Unknown
+    }
 
     fn get_last_public_addr(&self) -> Option<std::net::SocketAddr> {
         None
