@@ -550,3 +550,20 @@ fn transient_send_failures_keep_messages_pending() {
     assert!(!is_transient_send_failure("recipient handle is invalid"));
     assert!(!is_transient_send_failure("account not opted in"));
 }
+
+#[test]
+fn pending_failure_reason_is_human_readable() {
+    use bingle_jsi::api::bingle_jsi_api_impl::pending_failure_reason;
+    // A transient (connectivity) failure yields a concise, retry-aware message that does not
+    // leak the raw internal error (issue #43).
+    let transient =
+        pending_failure_reason("Retryable: no ACK_COMPLETE received after 3 retries", true);
+    assert_eq!(transient, "Recipient unreachable — will keep retrying");
+    assert!(
+        !transient.contains("ACK_COMPLETE"),
+        "must not leak the raw error"
+    );
+    // A permanent failure surfaces the underlying error so it is actionable.
+    let permanent = pending_failure_reason("recipient handle is invalid", false);
+    assert!(permanent.contains("recipient handle is invalid"));
+}
