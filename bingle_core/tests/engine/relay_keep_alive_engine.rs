@@ -273,19 +273,17 @@ pub fn engine_stop_stops_keep_alive() {
     );
 }
 
-// Regression test for the STUN port-change re-registration bug: STUN becomes consistent on
-// port P and the node registers with a relay (keep-alive running); the NAT then remaps and
-// STUN becomes consistent on a NEW port Q. The node must re-register / reconnect to the relay
-// for the new endpoint.
+// Regression test: STUN becomes consistent on port P and the node registers with a relay
+// (keep-alive running); the NAT then remaps and STUN becomes consistent on a NEW port Q on the
+// same IP. The relay keep-alive must remain active toward the known relay across the port change.
 //
-// The bug: Engine::stun_consistent_process detected the address change, tore down the relay
-// keep-alive and forgot peers, set state = TrianglePing, then hit the
-// `if self.state == EngineState::TrianglePing { return; }` guard and early-returned WITHOUT
-// re-registering — leaving the keep-alive dead and the node stuck in TrianglePing forever.
-//
-// The fix: on an address change while registered, re-register with the remembered relay
-// (Engine::last_registered_relay) on the new mapping before that guard, which restarts the
-// keep-alive.
+// History: a port change once tore down the keep-alive and forgot peers, then hit the
+// `state == TrianglePing` guard and early-returned WITHOUT re-registering, stranding the node.
+// That was first fixed by re-registering with the remembered relay on the new mapping. With the
+// #40 hardening, a port-only change on a stable IP is now treated as benign churn and is not a
+// teardown at all — so the keep-alive is simply *preserved* (never interrupted) rather than
+// stopped-and-restarted. Either way the invariant asserted here holds: after a port-only change
+// the keep-alive is running and still targets the known relay.
 #[ntest::timeout(20_000)]
 #[test]
 #[cfg(not(target_os = "ios"))]
@@ -308,13 +306,13 @@ pub fn stun_port_change_after_register_reconnects_relay() {
     // NAT remaps: STUN is now consistent on a NEW port Q.
     eng.test_stun_consistent_process_with_addr(port_q);
 
-    // The node must re-register / reconnect to the relay for the new endpoint, so the relay
-    // keep-alive must be running again and still target the known relay.
+    // After the port-only change the relay keep-alive must still be running and still target the
+    // known relay (preserved across the benign port remap; see #40).
     assert_eq!(
         eng.relay_keep_alive_target_for_tests(),
         Some(("relay_p".to_string(), relay_addr)),
-        "after the STUN port changed P -> Q the engine must re-register and reconnect to the \
-         known relay, restarting the keep-alive"
+        "after the STUN port changed P -> Q on a stable IP the relay keep-alive must remain active \
+         toward the known relay"
     );
 
     eng.stop();

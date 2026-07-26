@@ -268,6 +268,111 @@ pub fn stun_address_change_reruns_triangle_test() {
 }
 
 // ---------------------------------------------------------------------------
+// Test (#40): a port-only STUN change on a stable IP must NOT tear down.
+//
+// A symmetric / port-randomising NAT remaps the mapped port on every STUN poll while the public
+// IP is constant. Reacting to each with a full reset (forget peers + listening=false) traps the
+// engine in an endless teardown/re-listen loop. Assert that repeated port-only changes forget no
+// peers and never drop listening.
+// ---------------------------------------------------------------------------
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn stun_port_only_change_does_not_reset_or_drop_listening() {
+    let root_addr: SocketAddr = "9.9.9.9:7000".parse().unwrap();
+    let dtls = TrackingDtls::new();
+    let forget_count = dtls.forget_count.clone();
+    let eng = build_engine_with_relay_status(dtls, relays_status_response("ROOT1", root_addr));
+    eng.set_send_via_bingle(Some(Arc::new(
+        |_: &NetworkEndpoint, _: &UserId, _: serde_json::Value| true,
+    )));
+    eng.test_set_relay_finder_for_inconsistent(vec![signed_root_relay("ROOT1", root_addr)]);
+
+    let listening_false = Arc::new(AtomicBool::new(false));
+    let flag = listening_false.clone();
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+        if !listening {
+            flag.store(true, Ordering::SeqCst);
+        }
+    })));
+
+    // Committed on a stable IP:port.
+    eng.set_last_public_addr(Some("1.2.3.4:5000".parse().unwrap()));
+
+    // The NAT remaps the port on the same IP, repeatedly (as a symmetric NAT does each poll).
+    for port in [6000u16, 7000, 8000, 6000] {
+        let flapped: SocketAddr = format!("1.2.3.4:{port}").parse().unwrap();
+        eng.test_stun_consistent_process_with_addr(flapped);
+    }
+
+    assert_eq!(
+        forget_count.load(Ordering::SeqCst),
+        0,
+        "a port-only STUN change (stable IP) must not forget peers (issue #40)"
+    );
+    assert!(
+        !listening_false.load(Ordering::SeqCst),
+        "a port-only STUN change (stable IP) must not drop listening (issue #40)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test (#40): a genuinely new IP is debounced over several polls before resetting.
+//
+// A single-poll IP flap should not tear down; the new IP must persist for
+// PENDING_IP_CHANGE_POLLS consecutive polls before the engine commits to the reset.
+// ---------------------------------------------------------------------------
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn stun_ip_change_debounced_over_polls_then_resets() {
+    use bingle_core::engine::PENDING_IP_CHANGE_POLLS;
+
+    let root_addr: SocketAddr = "9.9.9.9:7000".parse().unwrap();
+    let dtls = TrackingDtls::new();
+    let forget_count = dtls.forget_count.clone();
+    let eng = build_engine_with_relay_status(dtls, relays_status_response("ROOT1", root_addr));
+    eng.set_send_via_bingle(Some(Arc::new(
+        |_: &NetworkEndpoint, _: &UserId, _: serde_json::Value| true,
+    )));
+    eng.test_set_relay_finder_for_inconsistent(vec![signed_root_relay("ROOT1", root_addr)]);
+
+    let listening_false = Arc::new(AtomicBool::new(false));
+    let flag = listening_false.clone();
+    eng.set_on_listening_handler(Some(Arc::new(move |listening, _nat: NatType| {
+        if !listening {
+            flag.store(true, Ordering::SeqCst);
+        }
+    })));
+
+    eng.set_last_public_addr(Some("1.2.3.4:5000".parse().unwrap()));
+    let new_ip: SocketAddr = "5.6.7.8:9000".parse().unwrap();
+
+    // The first PENDING_IP_CHANGE_POLLS-1 polls on the new IP are debounced: no teardown yet.
+    for i in 1..PENDING_IP_CHANGE_POLLS {
+        eng.test_stun_consistent_process_with_addr(new_ip);
+        assert_eq!(
+            forget_count.load(Ordering::SeqCst),
+            0,
+            "poll {i}: an unconfirmed IP change must be debounced, not reset"
+        );
+        assert!(
+            !listening_false.load(Ordering::SeqCst),
+            "poll {i}: listening must not drop while an IP change is being debounced"
+        );
+    }
+
+    // The PENDING_IP_CHANGE_POLLS-th consecutive poll on the same new IP confirms it: reset fires.
+    eng.test_stun_consistent_process_with_addr(new_ip);
+    assert!(
+        forget_count.load(Ordering::SeqCst) >= 1,
+        "a confirmed IP change (>= PENDING_IP_CHANGE_POLLS polls) must reset/forget peers"
+    );
+    assert!(
+        listening_false.load(Ordering::SeqCst),
+        "a confirmed IP change must notify listening=false"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Test: no previous address — no reset triggered on first STUN consistent.
 // ---------------------------------------------------------------------------
 #[test]

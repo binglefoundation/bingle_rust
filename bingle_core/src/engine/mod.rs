@@ -34,6 +34,28 @@ pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
 /// stranding the node — the registration path is otherwise one-shot with no retry.
 pub const REGISTER_WATCHDOG: Duration = Duration::from_secs(30);
 
+/// Number of consecutive STUN-consistent polls a *new public IP* must persist for before the
+/// engine treats it as a genuine network change and tears down (forgets peers, drops listening,
+/// stops the relay keep-alive). Debounces a single-poll IP flap. Port-only changes on a stable IP
+/// are never a reset regardless of this count — they are benign symmetric-NAT port remaps. See
+/// issue #40.
+pub const PENDING_IP_CHANGE_POLLS: u32 = 3;
+
+/// How a newly observed STUN public address relates to the one the engine is committed to.
+/// Drives whether we tear down and whether we commit the new address. See issue #40.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PublicAddrChange {
+    /// No meaningful change (first address, or identical to the committed one).
+    Unchanged,
+    /// Same IP, different port — a benign symmetric-NAT port remap. Commit the new port, no reset.
+    PortOnly,
+    /// A new IP that has not yet persisted for `PENDING_IP_CHANGE_POLLS` polls. Do NOT commit it
+    /// (keep the old address so the debounce can accumulate) and do NOT reset.
+    PendingIpDebounce,
+    /// A confirmed change (address lost, or a new IP seen for enough polls). Commit and reset.
+    Reset,
+}
+
 // Helper: count peer states (excluding self) from finder caches
 fn count_peer_states(finder: &dyn RelayFinderTrait, my_id: &str) -> (usize, usize) {
     let peers = finder.list_root_relays(my_id, false);
@@ -189,6 +211,11 @@ pub struct Engine {
     // Relay role state. Atomic for the same cross-thread reason as `state`.
     relay_state: std::sync::atomic::AtomicU8,
     last_public_addr_shared: Arc<Mutex<Option<SocketAddr>>>,
+    // Debounce state for a candidate public-IP change: (new IP, consecutive polls seen).
+    // A new IP must persist for PENDING_IP_CHANGE_POLLS polls before we tear down. Cleared
+    // whenever a poll matches the committed IP (flap resolved) or a port-only change arrives.
+    // See stun_consistent_process / issue #40.
+    pending_ip_change: Mutex<Option<(std::net::IpAddr, u32)>>,
     stun: Mutex<Option<Arc<Mutex<Box<dyn StunEndpointFinder + Send + Sync>>>>>, // background STUN
     relay_finder: Mutex<Option<Arc<RelayFinder>>>, // used to locate peer relay
     // The relay we most recently registered with. Retained so that, if our public endpoint
@@ -610,6 +637,7 @@ impl Engine {
                 None
             }),
             on_listening_cb: Arc::new(Mutex::new(None)),
+            pending_ip_change: Mutex::new(None),
             peer_ddb_records: Mutex::new(None),
             signon_complete: Arc::new((Mutex::new(false), Condvar::new())),
             seen_endpoints: Arc::new(Mutex::new(std::collections::HashSet::new())),
@@ -1889,13 +1917,95 @@ impl Engine {
         });
     }
 
+    /// Clear any in-progress candidate IP-change debounce (flap resolved / no longer relevant).
+    fn clear_pending_ip_change(&self) {
+        if let Ok(mut g) = self.pending_ip_change.lock() {
+            *g = None;
+        }
+    }
+
+    /// Classify a newly observed STUN-consistent `new_addr` against the committed `prev_addr`,
+    /// advancing the IP-change debounce counter as a side effect. See `PublicAddrChange` and
+    /// issue #40. A port-only change on a stable IP is never a reset; a genuinely new IP is
+    /// debounced over `PENDING_IP_CHANGE_POLLS` polls before it counts as a confirmed change.
+    fn classify_public_addr_change(
+        &self,
+        prev_addr: Option<SocketAddr>,
+        new_addr: Option<SocketAddr>,
+    ) -> PublicAddrChange {
+        // No prior address: this is a first identification, not a change.
+        let Some(prev) = prev_addr else {
+            self.clear_pending_ip_change();
+            return PublicAddrChange::Unchanged;
+        };
+
+        match new_addr {
+            // Address lost entirely — a genuine change; reset immediately (not debounced).
+            None => {
+                self.clear_pending_ip_change();
+                PublicAddrChange::Reset
+            }
+            // Identical address — nothing changed.
+            Some(new) if new == prev => {
+                self.clear_pending_ip_change();
+                PublicAddrChange::Unchanged
+            }
+            // Same IP, different port — benign symmetric-NAT port remap. Do not tear down.
+            Some(new) if new.ip() == prev.ip() => {
+                self.clear_pending_ip_change();
+                tracing::info!(
+                    "[Engine] STUN port-only change {:?} -> {:?} (IP stable); keeping listening, no reset",
+                    prev,
+                    new
+                );
+                PublicAddrChange::PortOnly
+            }
+            // New IP — debounce: require it to persist for PENDING_IP_CHANGE_POLLS polls.
+            Some(new) => {
+                let Ok(mut g) = self.pending_ip_change.lock() else {
+                    // Lock poisoned: err on the side of not tearing down.
+                    return PublicAddrChange::PendingIpDebounce;
+                };
+                let count = match *g {
+                    Some((ip, n)) if ip == new.ip() => n + 1,
+                    _ => 1,
+                };
+                if count >= PENDING_IP_CHANGE_POLLS {
+                    *g = None;
+                    tracing::warn!(
+                        "[Engine] STUN IP change {:?} -> {:?} confirmed after {} polls; resetting",
+                        prev,
+                        new,
+                        count
+                    );
+                    PublicAddrChange::Reset
+                } else {
+                    *g = Some((new.ip(), count));
+                    tracing::info!(
+                        "[Engine] STUN IP change candidate {:?} -> {:?} ({}/{} polls); waiting for stability before reset",
+                        prev,
+                        new,
+                        count,
+                        PENDING_IP_CHANGE_POLLS
+                    );
+                    PublicAddrChange::PendingIpDebounce
+                }
+            }
+        }
+    }
+
     fn stun_consistent_process(&self, public_addr: Option<SocketAddr>) {
         tracing::info!("[Engine] on_stun_consistent: public_addr={:?}", public_addr);
 
-        // Detect public address change: if we already have a known address and it differs,
-        // reset state so peers re-handshake with the new address.
+        // Detect a public-address change that warrants tearing down and re-handshaking. A
+        // port-randomising (symmetric) NAT flaps the mapped port on every STUN poll while the
+        // public IP stays constant; reacting to each with a full reset traps the engine in an
+        // endless teardown/re-listen loop (listening stuck false, NAT Unknown — issue #40). So a
+        // port-only change on a stable IP is treated as benign endpoint churn (no reset), and a
+        // genuinely new IP is debounced over several polls before we commit to the reset.
         let prev_addr = self.last_public_addr();
-        let addr_changed = prev_addr.is_some() && prev_addr != public_addr;
+        let change = self.classify_public_addr_change(prev_addr, public_addr);
+        let addr_changed = change == PublicAddrChange::Reset;
         if addr_changed {
             tracing::warn!(
                 "[Engine] public address changed: {:?} -> {:?}; resetting peers",
@@ -1915,8 +2025,12 @@ impl Engine {
             }
         }
 
-        // Save last known public address (for validation/tests)
-        self.set_last_public_addr(public_addr);
+        // Commit the observed public address — except while an IP change is still being debounced,
+        // where we must keep the previously committed address so the debounce can accumulate
+        // across polls (otherwise the candidate becomes "current" and never confirms). Issue #40.
+        if change != PublicAddrChange::PendingIpDebounce {
+            self.set_last_public_addr(public_addr);
+        }
 
         // On a public-endpoint change while we were already registered, re-register with the
         // same relay on the new mapping directly (no re-discovery) to restart the keep-alive.
