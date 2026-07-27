@@ -1280,6 +1280,14 @@ pub mod openssl_impl {
             }
         }
         fn forget_peers(&self) {}
+        fn forget_peer(&self, endpoint: &NetworkEndpoint) {
+            if let Some(key) = endpoint.get_key()
+                && let Ok(mut map) = self.0.lock()
+                && let Some(ps) = map.remove(&key)
+            {
+                close_peer_state(ps);
+            }
+        }
     }
 
     /// OpenSSL-backed DTLS implementation (non-iOS).
@@ -2646,6 +2654,26 @@ pub mod openssl_impl {
                 for (_, ps) in map.drain() {
                     close_peer_state(ps);
                 }
+            }
+        }
+
+        fn forget_peer(&self, endpoint: &NetworkEndpoint) {
+            let _guard = self.span.enter();
+            let Some(key) = endpoint.get_key() else {
+                tracing::warn!(
+                    "[DtlsOpenSsl:::forget_peer] endpoint has no key; nothing to forget: {}",
+                    endpoint
+                );
+                return;
+            };
+            tracing::info!(
+                "[DtlsOpenSsl:::forget_peer] clearing peer state for {}",
+                endpoint
+            );
+            if let Ok(mut map) = self.peer_states.lock()
+                && let Some(ps) = map.remove(&key)
+            {
+                close_peer_state(ps);
             }
         }
     }
