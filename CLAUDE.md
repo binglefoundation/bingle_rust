@@ -9,7 +9,7 @@
 
 ## Code conventions
 
-- Do not use default values on traits outside test-only code.
+- Do not use default values on traits outside test-only code. Defaults on traits can be used for testing, but should panic if called in non-test code.
 - All state should be in a struct, not global or thread-local, except in very special cases — ask before using global or thread-local storage.
 - Always validate that a call returning `Option` succeeds before using the value.
 - Do not prefix an in-use parameter name with `_` — that prefix signals an intentionally unused parameter.
