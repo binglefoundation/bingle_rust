@@ -566,6 +566,15 @@ impl PacketTransport for DtlsReliablePacketTransport {
                 cleanup_err
             );
         }
+
+        // Every retry re-sent the same block on the same DTLS session and still saw no
+        // ACK_COMPLETE. The local write kept "succeeding" so the session looks healthy, but
+        // nothing is coming back: it is silently dead — e.g. after a network change to a
+        // non-home root relay whose session is never re-established. Forget the peer so the
+        // caller's next retry performs a fresh DTLS handshake and can recover, instead of
+        // reusing the dead session forever. See issue #46.
+        self.dtls.forget_peer(to);
+
         Err(format!(
             "[DtlsReliablePacketTransport::send] no ACK_COMPLETE received after {} retries for tx_id={}",
             delays.len(),
