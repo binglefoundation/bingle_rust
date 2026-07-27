@@ -6,6 +6,11 @@
 #   scripts/deploy_code.sh --dry-run <version>  validate + dry-run only, publish nothing
 #   scripts/deploy_code.sh --skip-native-build <version>
 #
+#   NPM_TOKEN=<automation-token>  publish to npm non-interactively (bypasses npm
+#                                 2FA), so an unattended release needs no browser
+#                                 click after the long native build. Create one at
+#                                 npmjs.com > Access Tokens > Generate > Automation.
+#
 # Only runs on the `deployed` branch. Publishing to crates.io and npm is
 # irreversible and cannot be made truly transactional, so the script front-loads
 # every check that can fail cheaply — auth, a clean build, and `--dry-run`
@@ -42,7 +47,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run)           DRY_RUN_ONLY=1 ;;
     --skip-native-build) SKIP_NATIVE=1 ;;
-    -h|--help)           sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)           sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)                  die "unknown option: $arg" ;;
     *)                   [[ -n "$VERSION" ]] && die "unexpected extra argument: $arg"; VERSION="$arg" ;;
   esac
@@ -60,6 +65,8 @@ BUMP_APPLIED=0
 RELEASE_COMMITTED=0
 cleanup() {
   local ec=$?
+  # Always remove the temporary npmrc holding the automation token, on success or failure.
+  [[ -n "${NPM_USERCONFIG:-}" ]] && rm -f "$NPM_USERCONFIG"
   [[ $ec -eq 0 ]] && return 0
   if [[ $RELEASE_COMMITTED -eq 1 ]]; then
     warn "release v$VERSION was committed and publishing may be partially done."
@@ -96,11 +103,37 @@ fi
 ok "environment, branch ($BRANCH), and clean tree"
 
 # ── preflight: publish auth ───────────────────────────────────────────
-# npm: whoami fails (non-zero) when not logged in.
-if ! npm_user="$(npm whoami 2>/dev/null)"; then
-  die "not authenticated to npm. Run: npm login"
+# npm publishing is the one step that can block on an interactive browser prompt,
+# and it lands *after* the ~10-minute native build: with account 2FA set to
+# "auth and writes", an ordinary `npm publish` opens a short-lived web-auth window
+# that fails the release if it isn't clicked promptly. An npm automation token
+# bypasses 2FA, so when NPM_TOKEN is provided we publish non-interactively via a
+# throwaway npmrc (cleaned up by the trap) and validate it now — a bad token fails
+# in seconds rather than after the build. Without a token we keep the interactive
+# flow but say so up front so the wait is expected, not a surprise.
+NPM_USERCONFIG=""
+NPM_PUBLISH_ARGS=()
+if [[ -n "${NPM_TOKEN:-}" ]]; then
+  NPM_USERCONFIG="$(mktemp -t bingle-npmrc.XXXXXX)"
+  {
+    printf 'registry=https://registry.npmjs.org/\n'
+    printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN"
+  } > "$NPM_USERCONFIG"
+  NPM_PUBLISH_ARGS=(--userconfig "$NPM_USERCONFIG")
+  if ! npm_user="$(npm whoami "${NPM_PUBLISH_ARGS[@]}" 2>/dev/null)"; then
+    die "NPM_TOKEN is set but is not valid for registry.npmjs.org. Generate an Automation token at npmjs.com > Access Tokens."
+  fi
+  ok "npm authenticated as '$npm_user' via NPM_TOKEN (non-interactive publish)"
+else
+  # whoami fails (non-zero) when not logged in.
+  if ! npm_user="$(npm whoami 2>/dev/null)"; then
+    die "not authenticated to npm. Run: npm login"
+  fi
+  ok "npm authenticated as '$npm_user'"
+  warn "no NPM_TOKEN set — the final 'npm publish' will require an interactive 2FA browser click,"
+  warn "which appears only after the native build. For an unattended release, create an npm"
+  warn "Automation token (npmjs.com > Access Tokens) and re-run with NPM_TOKEN=... set."
 fi
-ok "npm authenticated as '$npm_user'"
 
 # crates.io: confirm a token is present in the environment or the cargo credentials
 # file. crates.io deliberately restricts its identity endpoint (/api/v1/me) to the
@@ -194,7 +227,7 @@ cargo publish --dry-run --allow-dirty "${pkg_args[@]}"
 for crate in "${PUBLISH_CRATES[@]}"; do ok "packaged $crate@$VERSION"; done
 
 info "dry-run: npm module"
-( cd "$NPM_DIR" && npm publish --dry-run )
+( cd "$NPM_DIR" && npm publish --dry-run ${NPM_PUBLISH_ARGS[@]+"${NPM_PUBLISH_ARGS[@]}"} )
 ok "packaged $NPM_PKG@$VERSION"
 
 if [[ $DRY_RUN_ONLY -eq 1 ]]; then
@@ -232,7 +265,7 @@ info "publishing $NPM_PKG to npm"
 if npm_version_exists "$NPM_PKG" "$VERSION"; then
   ok "$NPM_PKG@$VERSION already published — skipping"
 else
-  ( cd "$NPM_DIR" && npm publish )
+  ( cd "$NPM_DIR" && npm publish ${NPM_PUBLISH_ARGS[@]+"${NPM_PUBLISH_ARGS[@]}"} )
   ok "published $NPM_PKG@$VERSION"
 fi
 
