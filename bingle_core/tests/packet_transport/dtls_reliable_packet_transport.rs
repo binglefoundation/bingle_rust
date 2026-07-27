@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 struct MockDtls {
     handle_message: Mutex<Option<HandleMessage>>,
     sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    forgotten_peers: Arc<Mutex<Vec<SocketAddr>>>,
     auto_ack_on_send: bool,
 }
 
@@ -25,6 +26,7 @@ impl MockDtls {
         Self {
             handle_message: Mutex::new(None),
             sent_packets: Arc::new(Mutex::new(vec![])),
+            forgotten_peers: Arc::new(Mutex::new(vec![])),
             auto_ack_on_send,
         }
     }
@@ -46,15 +48,31 @@ fn new_transport_with_sent_packets_and_ack(
     DtlsReliablePacketTransport,
     Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
 ) {
+    let (transport, sent_packets, _forgotten_peers) =
+        new_transport_with_sent_and_forgotten(mtu, auto_ack_on_send);
+    (transport, sent_packets)
+}
+
+fn new_transport_with_sent_and_forgotten(
+    mtu: usize,
+    auto_ack_on_send: bool,
+) -> (
+    DtlsReliablePacketTransport,
+    Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
+    Arc<Mutex<Vec<SocketAddr>>>,
+) {
     let sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>> = Arc::new(Mutex::new(vec![]));
+    let forgotten_peers: Arc<Mutex<Vec<SocketAddr>>> = Arc::new(Mutex::new(vec![]));
     let dtls = MockDtls {
         handle_message: Mutex::new(None),
         sent_packets: sent_packets.clone(),
+        forgotten_peers: forgotten_peers.clone(),
         auto_ack_on_send,
     };
     (
         DtlsReliablePacketTransport::new(Box::new(dtls), mtu),
         sent_packets,
+        forgotten_peers,
     )
 }
 
@@ -218,6 +236,15 @@ impl Dtls for MockDtls {
         None
     }
     fn forget_peers(&self) {}
+    fn forget_peer(&self, endpoint: &NetworkEndpoint) {
+        let address = endpoint
+            .inet_socket_address()
+            .expect("MockDtls::forget_peer requires inet socket address");
+        self.forgotten_peers
+            .lock()
+            .expect("forgotten_peers lock should not be poisoned")
+            .push(address);
+    }
 }
 
 #[test]
@@ -577,4 +604,61 @@ pub fn ack_complete_is_consumed_and_not_forwarded_to_handler() {
         .lock()
         .expect("sent_packets lock should not be poisoned after ACK_COMPLETE");
     assert!(sent.is_empty());
+}
+
+// issue #46: after a network change the DTLS session to a non-home root relay can be silently
+// dead — sends keep succeeding locally but no ACK_COMPLETE ever returns. When the reliable send
+// exhausts all its ACK retries it must forget the peer so the caller's next retry re-handshakes
+// instead of reusing the dead session forever.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn send_forgets_peer_after_all_retries_exhausted_with_no_ack() {
+    let (transport, _sent_packets, forgotten_peers) =
+        new_transport_with_sent_and_forgotten(1492, false);
+    transport.set_retry_delays(vec![
+        Duration::from_millis(20),
+        Duration::from_millis(20),
+        Duration::from_millis(20),
+    ]);
+
+    let to_addr: SocketAddr = "127.0.0.1:7008".parse().expect("valid socket address");
+    let to = NetworkEndpoint::new_direct(to_addr);
+
+    let result = transport.send(&to, b"hello");
+    assert!(
+        result.is_err(),
+        "send should fail after all retries are exhausted without an ACK"
+    );
+
+    let forgotten = forgotten_peers
+        .lock()
+        .expect("forgotten_peers lock should not be poisoned");
+    assert_eq!(
+        forgotten.as_slice(),
+        &[to_addr],
+        "the dead peer should be forgotten exactly once so the next retry re-handshakes"
+    );
+}
+
+// A send that is ACKed must NOT forget the peer — the healthy session should be reused.
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn send_does_not_forget_peer_when_ack_arrives() {
+    let (transport, _sent_packets, forgotten_peers) =
+        new_transport_with_sent_and_forgotten(1492, true);
+
+    let to_addr: SocketAddr = "127.0.0.1:7009".parse().expect("valid socket address");
+    let to = NetworkEndpoint::new_direct(to_addr);
+
+    transport
+        .send(&to, b"hello")
+        .expect("send should succeed when the peer auto-acks");
+
+    let forgotten = forgotten_peers
+        .lock()
+        .expect("forgotten_peers lock should not be poisoned");
+    assert!(
+        forgotten.is_empty(),
+        "a successfully ACKed send must not tear down the healthy session"
+    );
 }

@@ -170,4 +170,22 @@ pub trait Dtls {
      * Used when the public address changes so that fresh DTLS handshakes are performed.
      */
     fn forget_peers(&self);
+
+    /**
+     * Forget a single peer connection, closing its worker, so the next send to
+     * that endpoint performs a fresh DTLS handshake.
+     *
+     * Used by the reliable transport when a send exhausts its ACK retries: after
+     * a network change, the session to a peer (e.g. a non-home root relay) can be
+     * silently dead — local UDP writes still "succeed" but nothing comes back, so
+     * the worker stays healthy and every send reuses the dead session forever.
+     * Tearing the peer down on that signal lets the next retry re-handshake and
+     * recover. See issue #46.
+     *
+     * A panicking default is provided so test-only `Dtls` mocks that never exercise
+     * this path need not implement it; production impls MUST override it.
+     */
+    fn forget_peer(&self, _endpoint: &NetworkEndpoint) {
+        panic!("Dtls::forget_peer must be implemented by production Dtls impls");
+    }
 }
