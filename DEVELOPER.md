@@ -132,7 +132,47 @@ External contributions are welcome via pull request:
 4. Open a PR against `staging` describing the change.
 
 Publishing releases (bumping versions and pushing to crates.io / npm) is performed by the
-maintainers.
+maintainers with `scripts/deploy_code.sh` — see below.
+
+## Publishing a release
+
+`scripts/deploy_code.sh <version>` bumps every crate and the npm module to the given version,
+builds the native libraries, dry-runs every publish, then (past a commit "point of no return")
+publishes the crates to crates.io and the module to npm and pushes the branch + tag. It only runs
+on the `deployed` branch and is resumable: re-running the same command skips versions that were
+already published.
+
+```bash
+git checkout deployed
+scripts/deploy_code.sh --dry-run 0.2.4     # validate + package everything, publish nothing
+scripts/deploy_code.sh 0.2.4               # the real release
+```
+
+### Unattended publishing (npm automation token)
+
+The npmjs account has 2FA set to *authorization and writes*, so a plain `npm publish` opens a
+short-lived browser auth window — and it appears only **after** the ~10-minute native build, so the
+release fails if the window isn't clicked promptly.
+
+To run the release unattended, publish with an npm **automation token**, which bypasses 2FA:
+
+1. At [npmjs.com](https://www.npmjs.com/) → your avatar → **Access Tokens** → **Generate New Token**
+   → **Classic Token** → **Automation** (or a Granular Access Token scoped to the
+   `react-native-bingle-jsi` package with read/write). Automation tokens are exempt from 2FA.
+2. Run the deploy with the token in the environment:
+
+   ```bash
+   NPM_TOKEN=npm_xxxxxxxxxxxxxxxxxxxx scripts/deploy_code.sh 0.2.4
+   ```
+
+The script validates the token during preflight (a bad token fails in seconds, not after the
+build), publishes npm non-interactively via a throwaway npmrc, and removes that file on exit. The
+token is never written to the repo tree or the release commit. Without `NPM_TOKEN` the script still
+works but warns up front that the final `npm publish` will need an interactive browser click.
+
+> crates.io publishing is already non-interactive: the script reads the token from
+> `CARGO_REGISTRY_TOKEN` or `~/.cargo/credentials.toml` (run `cargo login` once). Only npm needed the
+> automation-token path.
 
 ## Release hygiene: scanning for leaked build paths
 

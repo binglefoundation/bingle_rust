@@ -1,7 +1,7 @@
 use bingle_core::api::bingle_api::NetworkEndpoint;
 use bingle_core::dtls::UdpNetworkMux;
 use bingle_core::dtls::dtls_trait::{
-    Dtls, HandleMessage, HandlePeerCertificate, Result as DtlsResult,
+    Dtls, HandleMessage, HandleNewSession, HandlePeerCertificate, Result as DtlsResult,
 };
 use bingle_core::packet_transport::{
     DtlsReliablePacketTransport, PacketTransport, PacketTransportHandleMessage,
@@ -15,6 +15,9 @@ struct MockDtls {
     sent_packets: Arc<Mutex<Vec<(SocketAddr, Vec<u8>)>>>,
     forgotten_peers: Arc<Mutex<Vec<SocketAddr>>>,
     auto_ack_on_send: bool,
+    // Captures the forwarder the transport installs for outbound-session events, so a test can
+    // simulate a DTLS rebuild by invoking it (issue #50).
+    outbound_session_handler: Arc<Mutex<Option<HandleNewSession>>>,
 }
 
 impl MockDtls {
@@ -28,6 +31,7 @@ impl MockDtls {
             sent_packets: Arc::new(Mutex::new(vec![])),
             forgotten_peers: Arc::new(Mutex::new(vec![])),
             auto_ack_on_send,
+            outbound_session_handler: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -68,6 +72,7 @@ fn new_transport_with_sent_and_forgotten(
         sent_packets: sent_packets.clone(),
         forgotten_peers: forgotten_peers.clone(),
         auto_ack_on_send,
+        outbound_session_handler: Arc::new(Mutex::new(None)),
     };
     (
         DtlsReliablePacketTransport::new(Box::new(dtls), mtu),
@@ -119,6 +124,10 @@ impl Dtls for MockDtls {
         &self,
         _handler: Option<bingle_core::dtls::dtls_trait::HandleNewSession>,
     ) {
+    }
+
+    fn set_handle_new_outbound_session(&self, handler: Option<HandleNewSession>) {
+        *self.outbound_session_handler.lock().unwrap() = handler;
     }
 
     fn with_handle_message(self, handler: HandleMessage) -> Self
@@ -661,4 +670,71 @@ pub fn send_does_not_forget_peer_when_ack_arrives() {
         forgotten.is_empty(),
         "a successfully ACKed send must not tear down the healthy session"
     );
+}
+
+// When the DTLS layer signals a fresh outbound session, the transport forwards it to the
+// installed engine observer with the peer endpoint (issue #50, the DTLS-rebuild reconnect trigger).
+#[test]
+pub fn outbound_session_forwarded_to_installed_observer() {
+    let outbound_session_handler: Arc<Mutex<Option<HandleNewSession>>> = Arc::new(Mutex::new(None));
+    let dtls = MockDtls {
+        handle_message: Mutex::new(None),
+        sent_packets: Arc::new(Mutex::new(vec![])),
+        forgotten_peers: Arc::new(Mutex::new(vec![])),
+        auto_ack_on_send: false,
+        outbound_session_handler: outbound_session_handler.clone(),
+    };
+    let transport = DtlsReliablePacketTransport::new(Box::new(dtls), 1492);
+
+    // Record endpoints the observer is called with.
+    let observed: Arc<Mutex<Vec<SocketAddr>>> = Arc::new(Mutex::new(vec![]));
+    let observed_for_cb = observed.clone();
+    transport.set_new_outbound_session_observer(Some(Arc::new(move |ep| {
+        if let Some(addr) = ep.inet_socket_address() {
+            observed_for_cb.lock().unwrap().push(addr);
+        }
+    })));
+
+    // The transport must have installed a forwarder into the DTLS layer during new().
+    let forwarder = outbound_session_handler
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("transport should install an outbound-session handler on the DTLS layer");
+
+    // Simulate a fresh outbound session (a DTLS rebuild) to a peer.
+    let relay_addr: SocketAddr = "127.0.0.1:7100".parse().expect("valid socket address");
+    forwarder(&NetworkEndpoint::new_direct(relay_addr));
+
+    let observed = observed.lock().unwrap();
+    assert_eq!(
+        &*observed,
+        &vec![relay_addr],
+        "the installed observer should be invoked with the rebuilt peer endpoint"
+    );
+}
+
+// With no observer installed, forwarding an outbound-session event is a harmless no-op (it must
+// not panic or affect reliable state) — a Dtls impl may fire it before the engine wires an observer.
+#[test]
+pub fn outbound_session_without_observer_is_noop() {
+    let outbound_session_handler: Arc<Mutex<Option<HandleNewSession>>> = Arc::new(Mutex::new(None));
+    let dtls = MockDtls {
+        handle_message: Mutex::new(None),
+        sent_packets: Arc::new(Mutex::new(vec![])),
+        forgotten_peers: Arc::new(Mutex::new(vec![])),
+        auto_ack_on_send: false,
+        outbound_session_handler: outbound_session_handler.clone(),
+    };
+    let _transport = DtlsReliablePacketTransport::new(Box::new(dtls), 1492);
+
+    let forwarder = outbound_session_handler
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("transport should install an outbound-session handler on the DTLS layer");
+
+    // No observer installed; invoking the forwarder must simply do nothing.
+    let addr: SocketAddr = "127.0.0.1:7101".parse().expect("valid socket address");
+    forwarder(&NetworkEndpoint::new_direct(addr));
 }

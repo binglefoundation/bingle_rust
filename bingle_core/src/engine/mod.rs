@@ -34,6 +34,12 @@ pub const SEND_FAIL_BACKOFF: Duration = Duration::from_secs(30);
 /// stranding the node — the registration path is otherwise one-shot with no retry.
 pub const REGISTER_WATCHDOG: Duration = Duration::from_secs(30);
 
+/// Minimum spacing between relay-registration refreshes triggered by the reconnect signals
+/// (app foreground, DTLS rebuild, keep-alive failure — issue #50). Overlapping signals arriving
+/// close together (e.g. a foreground event that is immediately followed by a send-driven DTLS
+/// rebuild) collapse to a single re-registration rather than issuing redundant Listens.
+pub const REREGISTER_DEBOUNCE: Duration = Duration::from_secs(5);
+
 /// Number of consecutive STUN-consistent polls a *new public IP* must persist for before the
 /// engine treats it as a genuine network change and tears down (forgets peers, drops listening,
 /// stops the relay keep-alive). Debounces a single-poll IP flap. Port-only changes on a stable IP
@@ -222,6 +228,10 @@ pub struct Engine {
     // changes (e.g. a NAT port remap), we can re-register with the same relay on the new
     // mapping without a full re-discovery.
     last_registered_relay: Mutex<Option<RelayInfo>>,
+    // Timestamp of the most recent relay-registration refresh (issue #50). Consulted to debounce
+    // the reconnect triggers (foreground / DTLS rebuild / keep-alive failure) so overlapping
+    // signals don't stack redundant re-registrations.
+    last_reregister_at: Mutex<Option<Instant>>,
     triangle_wait: Mutex<Option<(Arc<(Mutex<bool>, Condvar)>, Instant)>>, // wait for TriangleTest3
     // Timestamp of the most recent relay-registration attempt (entering TrianglePing). Consulted
     // by the registration watchdog to re-drive a stuck attempt. See REGISTER_WATCHDOG.
@@ -608,6 +618,7 @@ impl Engine {
             stun: Mutex::new(None),
             relay_finder: Mutex::new(None),
             last_registered_relay: Mutex::new(None),
+            last_reregister_at: Mutex::new(None),
             triangle_wait: Mutex::new(None),
             register_attempt_at: Mutex::new(None),
             send_via_bingle: Mutex::new(None),
@@ -651,6 +662,23 @@ impl Engine {
             ),
         };
         eng.set_last_public_addr(options.static_ip);
+
+        // Wire the DTLS-rebuild reconnect trigger (issue #50): when a fresh outbound session is
+        // established to our home relay, refresh the listener registration immediately instead of
+        // waiting for the next periodic keep-alive tick. The callback fires on a DTLS worker thread
+        // and must not block it or re-enter the engine synchronously, so it hands off to a spawned
+        // thread that re-enters via with_engine — mirroring on_stun_consistent.
+        let api_weak = eng.bingle_api.clone();
+        eng.packet_transport
+            .set_new_outbound_session_observer(Some(Arc::new(move |endpoint| {
+                let Some(api) = api_weak.upgrade() else {
+                    return;
+                };
+                let endpoint = endpoint.clone();
+                std::thread::spawn(move || {
+                    api.with_engine(&mut |e| e.on_outbound_session_established(&endpoint));
+                });
+            })));
         eng
     }
 
@@ -2433,6 +2461,76 @@ impl Engine {
         }
     }
 
+    /// Handle the notification that a fresh outbound DTLS session was established to `endpoint`
+    /// (issue #50). If it is a rebuild of the session to our home relay while we believe we are
+    /// registered, the relay has almost certainly lost our listener registration (the old session
+    /// went stale over background/idle), so refresh it immediately rather than waiting for the next
+    /// periodic keep-alive tick. Sessions to any other peer are ignored.
+    pub(crate) fn on_outbound_session_established(&self, endpoint: &NetworkEndpoint) {
+        let remembered = self.last_registered_relay.lock().unwrap().clone();
+        let Some(relay) = remembered else {
+            // Not registered with any relay yet; the normal registration path owns this.
+            return;
+        };
+        if endpoint.inet_socket_address() != Some(relay.address()) {
+            // A rebuild to some other peer/relay — not our listener registration.
+            return;
+        }
+        tracing::info!(
+            "[Engine::on_outbound_session_established] home relay {} session rebuilt; refreshing registration",
+            relay.address()
+        );
+        self.refresh_relay_registration("dtls-rebuild");
+    }
+
+    /// Re-run the relay listener registration on the remembered home relay, coalescing the
+    /// reconnect triggers (app foreground, DTLS rebuild, keep-alive failure — issue #50) behind a
+    /// single debounced path. No-op unless we are Registered with a remembered relay; skipped if a
+    /// refresh already ran within REREGISTER_DEBOUNCE so overlapping signals don't stack.
+    pub(crate) fn refresh_relay_registration(&self, reason: &str) {
+        if self.state() != EngineState::Registered {
+            tracing::debug!(
+                "[Engine::refresh_relay_registration] state={:?} (not Registered); skipping refresh ({})",
+                self.state(),
+                reason
+            );
+            return;
+        }
+        let remembered = self.last_registered_relay.lock().unwrap().clone();
+        let Some(relay) = remembered else {
+            tracing::debug!(
+                "[Engine::refresh_relay_registration] no remembered relay; skipping refresh ({})",
+                reason
+            );
+            return;
+        };
+
+        // Debounce check-and-set under a single lock so concurrent triggers collapse to one refresh.
+        {
+            let mut last = self.last_reregister_at.lock().unwrap();
+            if let Some(t) = *last
+                && t.elapsed() < REREGISTER_DEBOUNCE
+            {
+                tracing::debug!(
+                    "[Engine::refresh_relay_registration] last refresh {:?} ago < {:?}; skipping ({})",
+                    t.elapsed(),
+                    REREGISTER_DEBOUNCE,
+                    reason
+                );
+                return;
+            }
+            *last = Some(Instant::now());
+        }
+
+        tracing::info!(
+            "[Engine::refresh_relay_registration] re-registering with home relay {} (id={}) [{}]",
+            relay.address(),
+            relay.id(),
+            reason
+        );
+        self.register_with_relay(Some(relay));
+    }
+
     /// Start (or restart) the periodic keep-alive towards the relay we just registered
     /// with. Any previously running sender is stopped first so re-registration never
     /// leaves two live loops.
@@ -2460,6 +2558,44 @@ impl Engine {
         if let Some(mut old) = old {
             old.stop();
         }
+    }
+
+    /// Start the relay keep-alive towards the remembered home relay if it is not already running.
+    /// Used on foreground to resume the keep-alive that backgrounding paused, without disturbing a
+    /// keep-alive that is already live.
+    fn ensure_relay_keep_alive_running(&self) {
+        let already_running = self
+            .relay_keep_alive
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false);
+        if already_running {
+            return;
+        }
+        let remembered = self.last_registered_relay.lock().unwrap().clone();
+        if let Some(relay) = remembered {
+            self.start_relay_keep_alive(relay.id().to_string(), relay.address());
+        }
+    }
+
+    /// The host app returned to the foreground (issue #50). Refresh the relay listener registration
+    /// immediately so inbound recovers without waiting for the next periodic tick, and ensure the
+    /// keep-alive (which `on_background` may have paused) is running again. This is the primary,
+    /// proactive reconnect trigger; the DTLS-rebuild and keep-alive-failure paths are fallbacks for
+    /// when the app cannot deliver this signal.
+    pub fn on_foreground(&self) {
+        tracing::info!("[Engine::on_foreground] app resumed; refreshing relay registration");
+        self.refresh_relay_registration("foreground");
+        self.ensure_relay_keep_alive_running();
+    }
+
+    /// The host app went to the background (issue #50). Pause the periodic keep-alive to avoid
+    /// waking the radio while suspended (the OS freezes the thread anyway); `on_foreground` restarts
+    /// it. The relay registration itself is left intact so a short background does not force a
+    /// re-registration on return.
+    pub fn on_background(&self) {
+        tracing::info!("[Engine::on_background] app backgrounded; pausing relay keep-alive");
+        self.stop_relay_keep_alive();
     }
 
     pub(crate) fn on_stun_blocked(&self) {
@@ -2827,6 +2963,16 @@ impl Engine {
     /// bypassing relay discovery so no real network relay check is needed.
     pub fn test_register_with_relay_direct(&self, relay_info: RelayInfo) {
         self.register_with_relay(Some(relay_info));
+    }
+
+    /// Test helper: drive the fresh-outbound-session reconnect trigger (issue #50) synchronously.
+    pub fn test_on_outbound_session_established(&self, endpoint: &NetworkEndpoint) {
+        self.on_outbound_session_established(endpoint);
+    }
+
+    /// Test helper: drive the relay-registration refresh funnel (issue #50) synchronously.
+    pub fn test_refresh_relay_registration(&self, reason: &str) {
+        self.refresh_relay_registration(reason);
     }
 
     /// Test helper: pre-load a relay finder with a fixed relay list so that

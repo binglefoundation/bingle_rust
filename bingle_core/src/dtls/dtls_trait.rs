@@ -74,6 +74,25 @@ pub trait Dtls {
     fn set_handle_new_session(&self, handler: Option<HandleNewSession>);
 
     /**
+     * Set a callback invoked when this side establishes a *fresh outbound* DTLS
+     * session to a peer — i.e. a handshake performed because no live session
+     * existed (first contact, or a rebuild after the previous session was
+     * forgotten/died). Used to re-run relay listener registration immediately on
+     * reconnect instead of waiting for the next periodic tick (issue #50).
+     *
+     * Unlike `set_handle_new_session`, this carries no reliable-transport side
+     * effects (no session-generation bump, no pending-ACK reset): it is a pure
+     * notification, so firing it must not disturb the in-flight send that is
+     * driving the rebuild.
+     *
+     * Default: a no-op. This is an optional observer — a `Dtls` impl that never
+     * fires it is still correct (the keep-alive path still recovers) — so unlike
+     * the mandatory `forget_peer` the default does not panic. Production
+     * `DtlsOpenSsl` overrides it; test mocks inherit the no-op.
+     */
+    fn set_handle_new_outbound_session(&self, _handler: Option<HandleNewSession>) {}
+
+    /**
      * Get the peer certificate handler function
      */
     fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate>;

@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 use bingle_core::api::bingle_api::{
     BingleApiBoth, BingleError, NetworkEndpoint, ProgressCallback, UserId,
 };
-use bingle_core::relay::relay_keep_alive::RelayKeepAliveSender;
+use bingle_core::relay::relay_keep_alive::{
+    RELAY_KEEP_ALIVE_FAILURE_BASE_BACKOFF, RELAY_KEEP_ALIVE_INTERVAL, RelayKeepAliveSender,
+    next_wait,
+};
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth};
 
@@ -155,6 +158,57 @@ pub fn stop_halts_sends_and_returns_promptly() {
         count_after_stop,
         "keep-alives sent after stop()"
     );
+}
+
+// The backoff schedule (issue #50): a successful send waits the full interval; a run of failures
+// retries on an exponential backoff (base, 2x, 4x, ...) capped at the interval, so a stale session
+// is rebuilt promptly instead of after a full ~10-minute interval.
+#[test]
+pub fn next_wait_uses_full_interval_after_success() {
+    let interval = Duration::from_secs(600);
+    let base = Duration::from_secs(5);
+    assert_eq!(next_wait(interval, base, 0), interval);
+}
+
+#[test]
+pub fn next_wait_backs_off_exponentially_on_failure() {
+    let interval = Duration::from_secs(600);
+    let base = Duration::from_secs(5);
+    assert_eq!(
+        next_wait(interval, base, 1),
+        base,
+        "first retry uses the base delay"
+    );
+    assert_eq!(next_wait(interval, base, 2), base * 2);
+    assert_eq!(next_wait(interval, base, 3), base * 4);
+    assert_eq!(next_wait(interval, base, 4), base * 8);
+}
+
+#[test]
+pub fn next_wait_caps_at_interval_and_never_overflows() {
+    let interval = Duration::from_secs(600);
+    let base = Duration::from_secs(5);
+    // Escalation must never exceed the interval...
+    assert_eq!(next_wait(interval, base, 12), interval);
+    // ...and a very large failure count must not overflow (saturates to the interval).
+    assert_eq!(next_wait(interval, base, u32::MAX), interval);
+}
+
+#[test]
+pub fn production_backoff_is_shorter_than_interval() {
+    // The whole point of the fix: the first post-failure retry is far shorter than a full interval.
+    let first_retry = next_wait(
+        RELAY_KEEP_ALIVE_INTERVAL,
+        RELAY_KEEP_ALIVE_FAILURE_BASE_BACKOFF,
+        1,
+    );
+    assert!(
+        first_retry < RELAY_KEEP_ALIVE_INTERVAL,
+        "first retry {:?} must be shorter than the full interval {:?}",
+        first_retry,
+        RELAY_KEEP_ALIVE_INTERVAL
+    );
+    assert_eq!(first_retry, RELAY_KEEP_ALIVE_FAILURE_BASE_BACKOFF);
 }
 
 #[test]
