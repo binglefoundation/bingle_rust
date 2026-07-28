@@ -260,6 +260,10 @@ impl BingleJsiApi for StubApi {
     fn is_started(&self) -> bool {
         false
     }
+
+    fn foregrounding(&self) {}
+
+    fn backgrounding(&self) {}
 }
 
 #[test]

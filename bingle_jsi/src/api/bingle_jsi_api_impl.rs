@@ -1440,6 +1440,25 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn is_started(&self) -> bool {
         self.started.lock().map(|g| *g).unwrap_or(false)
     }
+
+    fn foregrounding(&self) {
+        // Refresh the relay registration off the bridge thread: on_foreground may perform a
+        // blocking Listen round-trip, so we must not block the app's AppState callback (issue #50).
+        tracing::info!("[BingleJsiApiImpl] foregrounding()");
+        let api = self.api.clone();
+        std::thread::spawn(move || {
+            api.with_engine(&mut |e| e.on_foreground());
+        });
+    }
+
+    fn backgrounding(&self) {
+        // Pause the keep-alive off the bridge thread (stopping it joins a worker) (issue #50).
+        tracing::info!("[BingleJsiApiImpl] backgrounding()");
+        let api = self.api.clone();
+        std::thread::spawn(move || {
+            api.with_engine(&mut |e| e.on_background());
+        });
+    }
 }
 
 #[cfg(test)]

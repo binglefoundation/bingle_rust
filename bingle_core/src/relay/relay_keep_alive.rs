@@ -14,6 +14,26 @@ use crate::messages::types::{Message, RelayKeepAlive, RelayMessage};
 /// the mapping alive without meaningful load.
 pub const RELAY_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(600);
 
+/// Base delay before retrying after a *failed* keep-alive send. On failure the loop no longer waits
+/// a full interval (which left inbound dark for up to ~10 minutes after a background/idle resume —
+/// issue #50); it retries on an exponential backoff starting here and doubling up to the normal
+/// interval. A prompt retry re-establishes the DTLS session, which both refreshes the relay's
+/// listener mapping and fires the engine's fresh-outbound-session trigger to re-register.
+pub const RELAY_KEEP_ALIVE_FAILURE_BASE_BACKOFF: Duration = Duration::from_secs(5);
+
+/// Compute the wait before the next keep-alive attempt: the full `interval` when the last send
+/// succeeded (`consecutive_failures == 0`), otherwise `base * 2^(failures-1)` capped at `interval`.
+/// Public so the backoff schedule can be verified directly in unit tests.
+pub fn next_wait(interval: Duration, base: Duration, consecutive_failures: u32) -> Duration {
+    if consecutive_failures == 0 {
+        return interval;
+    }
+    // Cap the shift so the multiply can't overflow, then clamp the result to the interval.
+    let shift = (consecutive_failures - 1).min(16);
+    let factor = 1u32 << shift;
+    base.checked_mul(factor).unwrap_or(interval).min(interval)
+}
+
 /// Background sender that periodically sends a Relay::KeepAlive to the relay
 /// this client registered with (TURN Listen), refreshing the NAT mapping for
 /// the client<->relay 5-tuple so the relay can keep delivering inbound data.
@@ -72,11 +92,19 @@ impl RelayKeepAliveSender {
         let relay_addr = self.relay_addr;
         let interval = self.interval;
         self.thread = Some(thread::spawn(move || {
+            // Consecutive failed sends; drives the failure backoff and resets to 0 on success.
+            let mut consecutive_failures: u32 = 0;
             loop {
-                // Wait one full interval before the first send: registration itself
-                // just sent a Listen, so the mapping is fresh. Use a deadline so
-                // spurious condvar wakeups don't shorten the interval.
-                let deadline = Instant::now() + interval;
+                // Wait before the next send. Normally a full interval (registration/last send just
+                // refreshed the mapping); after a failure, a short backoff so a stale session is
+                // rebuilt promptly instead of leaving inbound dark for ~10 min (issue #50). Use a
+                // deadline so spurious condvar wakeups don't shorten the wait.
+                let wait = next_wait(
+                    interval,
+                    RELAY_KEEP_ALIVE_FAILURE_BASE_BACKOFF,
+                    consecutive_failures,
+                );
+                let deadline = Instant::now() + wait;
                 loop {
                     let now = Instant::now();
                     if now >= deadline {
@@ -105,6 +133,7 @@ impl RelayKeepAliveSender {
                 let nsk = NetworkEndpoint::new_direct(relay_addr);
                 match api.send_message_to_network(&nsk, &relay_id, to_json_value(&msg), None) {
                     Ok(_) => {
+                        consecutive_failures = 0;
                         send_count.fetch_add(1, Ordering::SeqCst);
                         tracing::info!(
                             "[RelayKeepAliveSender] sent KeepAlive to relay {} ({})",
@@ -113,13 +142,23 @@ impl RelayKeepAliveSender {
                         );
                     }
                     Err(e) => {
-                        // Keep looping: a transient failure should not stop refreshes,
-                        // and dead-relay failover is handled elsewhere.
+                        // Don't stop refreshing on a transient failure, but retry soon (short
+                        // backoff) rather than after a full interval: a failed keep-alive means the
+                        // session went stale (e.g. resumed from background), and a prompt retry
+                        // rebuilds the DTLS pipe — refreshing the relay mapping and driving
+                        // re-registration — instead of leaving inbound dark for ~10 min (issue #50).
+                        consecutive_failures = consecutive_failures.saturating_add(1);
                         tracing::warn!(
-                            "[RelayKeepAliveSender] KeepAlive send to relay {} ({}) failed: {}",
+                            "[RelayKeepAliveSender] KeepAlive send to relay {} ({}) failed (attempt {}): {}; retrying in {:?}",
                             relay_id,
                             relay_addr,
-                            e
+                            consecutive_failures,
+                            e,
+                            next_wait(
+                                interval,
+                                RELAY_KEEP_ALIVE_FAILURE_BASE_BACKOFF,
+                                consecutive_failures
+                            )
                         );
                     }
                 }
