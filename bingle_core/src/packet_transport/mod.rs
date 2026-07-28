@@ -25,6 +25,11 @@ pub type PacketTransportHandleMessage = Arc<
         + Sync,
 >;
 
+/// Observer invoked (with the peer endpoint) when a fresh outbound DTLS session
+/// is established for that peer — a reconnect signal the engine uses to refresh
+/// relay registration (issue #50).
+pub type NewOutboundSessionObserver = Arc<dyn Fn(&NetworkEndpoint) + Send + Sync>;
+
 pub trait PacketTransport {
     fn send(&self, to: &NetworkEndpoint, block: &[u8]) -> Result<(), String>;
 
@@ -48,6 +53,9 @@ pub struct DtlsReliablePacketTransport {
     endpoint_sessions: Arc<Mutex<HashMap<NetworkEndpointKey, SessionGeneration>>>,
     pending_acks: Arc<Mutex<HashMap<AckKey, AckWaiter>>>,
     received_single_blocks: Arc<Mutex<HashSet<DeliveredKey>>>,
+    // Engine-level observer for fresh outbound DTLS sessions (issue #50). Set via
+    // set_new_outbound_session_observer; invoked from the DTLS outbound-session hook.
+    on_new_outbound_session: Arc<Mutex<Option<NewOutboundSessionObserver>>>,
 }
 
 enum ParsedPacket<'a> {
@@ -67,6 +75,7 @@ impl DtlsReliablePacketTransport {
             endpoint_sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_acks: Arc::new(Mutex::new(HashMap::new())),
             received_single_blocks: Arc::new(Mutex::new(HashSet::new())),
+            on_new_outbound_session: Arc::new(Mutex::new(None)),
         };
 
         let handle_message_for_dtls = transport.handle_message.clone();
@@ -112,7 +121,32 @@ impl DtlsReliablePacketTransport {
                 }
             })));
 
+        // Forward fresh-outbound-session events to the engine observer, if one is
+        // installed. This carries no reliable-transport side effects (issue #50).
+        let on_new_outbound_for_dtls = transport.on_new_outbound_session.clone();
         transport
+            .dtls
+            .set_handle_new_outbound_session(Some(Arc::new(move |endpoint| {
+                let observer = on_new_outbound_for_dtls.lock().ok().and_then(|g| g.clone());
+                if let Some(observer) = observer {
+                    observer(endpoint);
+                }
+            })));
+
+        transport
+    }
+
+    /// Install the observer invoked when a fresh outbound DTLS session is
+    /// established to a peer. The engine uses this to refresh relay registration
+    /// on reconnect (issue #50). Replaces any previously installed observer.
+    pub fn set_new_outbound_session_observer(&self, observer: Option<NewOutboundSessionObserver>) {
+        match self.on_new_outbound_session.lock() {
+            Ok(mut g) => *g = observer,
+            Err(e) => tracing::warn!(
+                "[DtlsReliablePacketTransport::set_new_outbound_session_observer] lock poisoned: {}",
+                e
+            ),
+        }
     }
 
     pub fn dtls(&self) -> &(dyn Dtls + Send + Sync) {
