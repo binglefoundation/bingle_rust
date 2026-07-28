@@ -192,4 +192,18 @@ pub trait BingleJsiApi: Send + Sync {
 
     /// Return whether the engine has been started.
     fn is_started(&self) -> bool;
+
+    /// Notify the engine that the host app has returned to the foreground.
+    ///
+    /// Used to proactively refresh the relay listener registration after a
+    /// background/idle period that may have outlived the listener lease, so the
+    /// node can receive inbound again without waiting for the next periodic tick
+    /// (issue #50). Safe to call at any time; a no-op if not registered.
+    fn foregrounding(&self);
+
+    /// Notify the engine that the host app has gone to the background.
+    ///
+    /// Lets the engine pause battery-costly background work (e.g. the relay
+    /// keep-alive) while suspended. Safe to call at any time.
+    fn backgrounding(&self);
 }
