@@ -1344,6 +1344,10 @@ pub mod openssl_impl {
         // Handlers
         pub(crate) handle_message: Mutex<Option<HandleMessage>>,
         pub(crate) handle_new_session: Mutex<Option<HandleNewSession>>,
+        // Fired when a fresh outbound session is established (issue #50). Kept
+        // separate from handle_new_session so it has no reliable-transport side
+        // effects on the in-flight send that drives the rebuild.
+        pub(crate) handle_new_outbound_session: Mutex<Option<HandleNewSession>>,
         pub(crate) handle_peer_certificate: Mutex<Option<HandlePeerCertificate>>,
 
         // Credentials. Set exactly once during startup, read many times during runtime -> OnceLock.
@@ -1398,6 +1402,7 @@ pub mod openssl_impl {
                 client_mux: Mutex::new(None),
                 handle_message: Mutex::new(None),
                 handle_new_session: Mutex::new(None),
+                handle_new_outbound_session: Mutex::new(None),
                 handle_peer_certificate: Mutex::new(None),
                 ca_cert: std::sync::OnceLock::new(),
                 client_cert: std::sync::OnceLock::new(),
@@ -2278,6 +2283,17 @@ pub mod openssl_impl {
             #[allow(unused)]
             {}
 
+            // Notify observers that a fresh outbound session was established, so the
+            // relay listener registration can be refreshed immediately on reconnect
+            // rather than waiting for the next periodic tick (issue #50). Clone the
+            // handler out before invoking so we never hold the lock across the
+            // callback. This is deliberately side-effect-free w.r.t. reliable state
+            // (it is not the session-generation/ACK-reset hook).
+            let on_outbound = self.handle_new_outbound_session.lock().unwrap().clone();
+            if let Some(handler) = on_outbound {
+                handler(to);
+            }
+
             // Immediately invoke peer certificate handler on the client side with the server's certificate
             // (while we still hold the `stream` guard, before splitting the stream).
             if let Some(h) = *self.handle_peer_certificate.lock().unwrap() {
@@ -2519,6 +2535,10 @@ pub mod openssl_impl {
 
         fn set_handle_new_session(&self, handler: Option<HandleNewSession>) {
             *self.handle_new_session.lock().unwrap() = handler;
+        }
+
+        fn set_handle_new_outbound_session(&self, handler: Option<HandleNewSession>) {
+            *self.handle_new_outbound_session.lock().unwrap() = handler;
         }
 
         fn get_handle_peer_certificate(&self) -> Option<HandlePeerCertificate> {
