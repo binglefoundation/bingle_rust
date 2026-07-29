@@ -215,6 +215,21 @@ impl BingleJsiApi for StubApi {
         })
     }
 
+    fn sign_notify_envelope(
+        &self,
+        _route: String,
+        _iss: String,
+        _audience: String,
+        _token: String,
+        _env: String,
+        _nonce: String,
+        _exp: i64,
+    ) -> Result<String, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "sign_notify_envelope".to_string(),
+        })
+    }
+
     fn keypair_status(&self) -> Result<KeypairStatusResponse, BingleJsiError> {
         Err(BingleJsiError::NotImplemented {
             reason: "keypair_status".to_string(),

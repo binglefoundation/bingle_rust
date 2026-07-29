@@ -167,6 +167,15 @@ export interface BingleJsiApi {
   generateKeypair(): Keypair;
   importKeypair(passphrase: string): Keypair;
   registerKeypair(handle: string): boolean;
+  signNotifyEnvelope(
+    route: string,
+    iss: string,
+    audience: string,
+    token: string,
+    env: string,
+    nonce: string,
+    exp: number,
+  ): string;
   addContact(handle: string, id: string, source: ContactSource): void;
   blockContact(id: string): void;
   removeContact(id: string): void;
