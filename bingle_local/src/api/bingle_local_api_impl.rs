@@ -1,3 +1,4 @@
+use crate::api::notify::{AlertPoster, HttpAlertPoster, post_giveup_alerts};
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
@@ -8,15 +9,38 @@ use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Configuration for the local API implementation.
 /// Includes the blockchain provider configuration and required ids.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct LocalApiConfig {
     pub algo_config: AlgoChainConfig,
     pub app_id: u64,
     pub asset_id: u64,
+    /// Feature gate for the give-up nudge (bingle_notify #11). When `true` (the current default),
+    /// a store-and-retry give-up POSTs a content-free `/alert` to the notify gateway so the
+    /// recipient's device wakes and the end-to-end flow can retry while both are online. When
+    /// `false`, give-up behaves exactly as before — no nudge, no gateway call.
+    pub notify_on_giveup: bool,
+    /// Base URL of the notify gateway (the bingle_notify stack's `ApiBaseUrl`). The nudge POSTs to
+    /// `{notify_gateway_url}/alert`. When `None`, the nudge is skipped even if `notify_on_giveup`
+    /// is set — each caller opts in per instance by providing the URL.
+    pub notify_gateway_url: Option<String>,
+}
+
+impl Default for LocalApiConfig {
+    fn default() -> Self {
+        // notify_on_giveup defaults to `true` (bingle_notify #11, revisit once proven); the gateway
+        // URL defaults to `None`, so a defaulted config makes no gateway call until a URL is set.
+        Self {
+            algo_config: AlgoChainConfig::default(),
+            app_id: 0,
+            asset_id: 0,
+            notify_on_giveup: true,
+            notify_gateway_url: None,
+        }
+    }
 }
 
 /// Decide the keypair status from resolved on-chain facts.
@@ -96,6 +120,9 @@ pub struct BingleApiLocalImpl {
     // Cached result of the last network_available() probe with the time it was taken, so the
     // send hot-path does not hit the Algorand node on every message (issue #31).
     last_network_check: Mutex<Option<(bool, std::time::Instant)>>,
+    // Best-effort sender for the give-up nudge to the notify gateway (bingle_notify #11). Defaults
+    // to the real HTTP poster; a seam so tests can observe the nudge without a live gateway.
+    alert_poster: Arc<dyn AlertPoster>,
 }
 
 /// How long a `network_available` probe result is reused before re-probing.
@@ -114,7 +141,73 @@ impl BingleApiLocalImpl {
             live_app_confirmed: Mutex::new(None),
             last_status: Mutex::new(None),
             last_network_check: Mutex::new(None),
+            alert_poster: Arc::new(HttpAlertPoster::new()),
         }
+    }
+
+    /// Override the give-up nudge sender (bingle_notify #11). Intended for tests, which inject a
+    /// recording poster to observe the `/alert` without a live gateway.
+    pub fn set_alert_poster(&mut self, poster: Arc<dyn AlertPoster>) {
+        self.alert_poster = poster;
+    }
+
+    /// Seed the memoized local handle (tests only). Lets a test exercise the give-up nudge, which
+    /// signs the envelope as the local handle, without a live blockchain read to resolve it.
+    pub fn seed_own_handle_for_tests(&self, handle: String) {
+        if let Ok(mut g) = self.own_handle.lock() {
+            *g = Some(handle);
+        }
+    }
+
+    /// Fire the best-effort give-up nudge for the recipients we gave up on (bingle_notify #11).
+    ///
+    /// Gated on `notify_on_giveup` and a configured `notify_gateway_url`; when either is off this is
+    /// a no-op and give-up behaves exactly as before. Resolves the local (sender) handle and the
+    /// active keypair, then delegates the per-recipient sign-and-post to
+    /// [`post_giveup_alerts`](crate::api::notify::post_giveup_alerts). Never blocks or fails
+    /// delivery: a missing handle, signing failure, or transport error is logged and swallowed.
+    fn notify_giveup(&self, recipient_handles: &[String]) {
+        if !self.config.notify_on_giveup {
+            return;
+        }
+        let Some(gateway_url) = self.config.notify_gateway_url.as_deref() else {
+            return;
+        };
+        if recipient_handles.is_empty() {
+            return;
+        }
+
+        // The envelope issuer is the local (sender) handle. Use the cached handle so this needs no
+        // live blockchain read; if none is known we cannot sign a valid envelope, so skip.
+        let iss = match self.sender_handle() {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::warn!(
+                    "[notify_giveup] no local handle to sign alert ({}); skipping nudge",
+                    e
+                );
+                return;
+            }
+        };
+        // Bind the signer to the active keypair (no network). Without it we cannot sign; skip.
+        let ops = match self.get_algo_ops() {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::warn!(
+                    "[notify_giveup] no keypair to sign alert ({}); skipping nudge",
+                    e
+                );
+                return;
+            }
+        };
+
+        post_giveup_alerts(
+            self.alert_poster.as_ref(),
+            gateway_url,
+            &ops,
+            &iss,
+            recipient_handles,
+        );
     }
 
     /// On a blockchain-unreachable error, return the last-known status so an already-known
@@ -673,18 +766,36 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
-        if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
-            msg.progress = Some(progress);
-            if failure_reason.is_some() || progress >= 1.0 {
-                msg.failure_reason = failure_reason;
+        // On give-up (a terminal failure: progress >= 1.0 with a failure_reason) fire the notify
+        // nudge for this message's recipients. A transient failure (progress < 1.0) keeps the
+        // message pending and does not nudge, so the nudge fires only on give-up — never per retry
+        // — and a successful send (progress 1.0, no reason) does not nudge either.
+        let giveup_recipients = {
+            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
+                msg.progress = Some(progress);
+                let is_giveup = progress >= 1.0 && failure_reason.is_some();
+                if failure_reason.is_some() || progress >= 1.0 {
+                    msg.failure_reason = failure_reason;
+                }
+                if is_giveup {
+                    Some(msg.recipient_handles.clone())
+                } else {
+                    None
+                }
+            } else {
+                return Err(BingleError::Other(format!(
+                    "Message with timestamp {} not found",
+                    timestamp
+                )));
             }
-            Ok(())
-        } else {
-            Err(BingleError::Other(format!(
-                "Message with timestamp {} not found",
-                timestamp
-            )))
+        };
+        // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
+        // algo_ops) and hands off to the poster, which must not run under the messages lock.
+        drop(guard);
+        if let Some(recipients) = giveup_recipients {
+            self.notify_giveup(&recipients);
         }
+        Ok(())
     }
 
     fn get_pending_messages(&self) -> Result<Vec<Message>, BingleError> {
