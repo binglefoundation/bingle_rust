@@ -24,5 +24,8 @@ mod registration_seam;
 #[path = "api/offline_send_resilience.rs"]
 mod offline_send_resilience;
 
+#[path = "api/notify_giveup.rs"]
+mod notify_giveup;
+
 #[path = "module_version.rs"]
 mod module_version;
