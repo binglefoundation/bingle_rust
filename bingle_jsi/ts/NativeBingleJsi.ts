@@ -100,6 +100,12 @@ export interface BingleJsiConfig {
   handle_cache_expiry_secs: number | null;
   debug: boolean;
   local: string | null;
+  /** Notify gateway base URL for the give-up nudge (bingle_notify #11). When set (with local mode),
+   * a message give-up POSTs a content-free alert to `{url}/alert`; null leaves the nudge dormant. */
+  notify_gateway_url: string | null;
+  /** Override for the give-up nudge gate (bingle_notify #11). null keeps the default (enabled);
+   * false disables the nudge even when a gateway URL is set. */
+  notify_on_giveup: boolean | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────

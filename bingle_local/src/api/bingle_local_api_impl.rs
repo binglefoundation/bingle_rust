@@ -43,6 +43,28 @@ impl Default for LocalApiConfig {
     }
 }
 
+impl LocalApiConfig {
+    /// Build a config from a caller's configuration surface, applying the give-up-nudge defaults
+    /// (bingle_notify #17). `notify_on_giveup` defaults to `true` when the caller passes `None`; the
+    /// gateway URL passes through unchanged (`None` ⇒ the nudge stays dormant). Shared by the JSI and
+    /// webserver call sites so the mapping lives — and is tested — in one place.
+    pub fn with_notify(
+        algo_config: AlgoChainConfig,
+        app_id: u64,
+        asset_id: u64,
+        notify_on_giveup: Option<bool>,
+        notify_gateway_url: Option<String>,
+    ) -> Self {
+        Self {
+            algo_config,
+            app_id,
+            asset_id,
+            notify_on_giveup: notify_on_giveup.unwrap_or(true),
+            notify_gateway_url,
+        }
+    }
+}
+
 /// Decide the keypair status from resolved on-chain facts.
 ///
 /// ACTIVE requires both the Bingle$ asset and a registered handle. When the
@@ -1359,5 +1381,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
         Ok(guard.clone())
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
