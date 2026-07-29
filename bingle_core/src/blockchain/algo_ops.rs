@@ -2,7 +2,7 @@ use crate::blockchain::error::AlgoError;
 use algonaut::core::ToMsgPack;
 use anyhow::{Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
-use data_encoding::BASE32_NOPAD;
+use data_encoding::{BASE32_NOPAD, HEXLOWER};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -428,6 +428,57 @@ impl AlgoOps {
             .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
         let signing_key = SigningKey::from_bytes(&sk_arr);
         let signature = signing_key.sign(text.as_bytes());
+        Ok(general_purpose::STANDARD.encode(signature.to_bytes()))
+    }
+
+    /// Sign the canonical bingle-notify envelope with this account's key.
+    ///
+    /// Builds the fixed, newline-delimited UTF-8 message (NOT JSON)
+    /// `"bingle-notify:v1"\nroute\niss\naudience\nbodyHash\nnonce\nexp`, then signs it with the
+    /// Algorand byte-signing scheme — `Ed25519(sk, "MX" || msg)` — which is exactly what
+    /// `algosdk.signBytes` produces and `algosdk.verifyBytes` checks. Returns the base64 of the
+    /// 64-byte signature.
+    ///
+    /// `bodyHash` is the lowercase hex SHA-256 of the route-specific body:
+    /// - `"register"`: `sha256(utf8(token + "\n" + env))`, with `env` in {"sandbox","production"};
+    /// - `"alert"`: `sha256("")` (empty; `token`/`env` are ignored, `audience` is the recipient).
+    ///
+    /// Source of truth for the contract: bingle_notify/src/lib/verify.ts.
+    pub fn sign_notify_envelope(
+        &self,
+        route: &str,
+        iss: &str,
+        audience: &str,
+        token: &str,
+        env: &str,
+        nonce: &str,
+        exp: i64,
+    ) -> Result<String> {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        // bodyHash: lowercase hex sha256 of the route-specific body.
+        let body = match route {
+            "register" => format!("{token}\n{env}"),
+            "alert" => String::new(),
+            other => bail!("unknown notify route: {other}"),
+        };
+        let body_hash = HEXLOWER.encode(&Sha256::digest(body.as_bytes()));
+
+        // Canonical, newline-delimited message.
+        let msg =
+            format!("bingle-notify:v1\n{route}\n{iss}\n{audience}\n{body_hash}\n{nonce}\n{exp}");
+
+        // Algorand byte-signing: Ed25519(sk, "MX" || msg).
+        let sk_bytes = self.private_key_bytes()?;
+        let sk_arr: [u8; 32] = sk_bytes
+            .try_into()
+            .map_err(|_| anyhow!("Secret key must be 32 bytes"))?;
+        let signing_key = SigningKey::from_bytes(&sk_arr);
+        let mut signed = Vec::with_capacity(2 + msg.len());
+        signed.extend_from_slice(b"MX");
+        signed.extend_from_slice(msg.as_bytes());
+        let signature = signing_key.sign(&signed);
         Ok(general_purpose::STANDARD.encode(signature.to_bytes()))
     }
 

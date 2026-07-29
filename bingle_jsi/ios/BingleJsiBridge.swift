@@ -232,6 +232,22 @@ class BingleJsiBridge: RCTEventEmitter {
     }
 
     @objc
+    func signNotifyEnvelope(_ route: String, iss: String, audience: String, token: String, env: String, nonce: String, exp: NSNumber, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let sig = try api.signNotifyEnvelope(route: route, iss: iss, audience: audience, token: token, env: env, nonce: nonce, exp: exp.int64Value)
+                resolve(sig)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
     func registerKeypair(_ handle: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         guard let api = apiInstance else {
             reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
