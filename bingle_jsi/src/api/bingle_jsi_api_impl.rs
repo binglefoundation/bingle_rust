@@ -229,6 +229,8 @@ impl BingleJsiApiImpl {
     ///   handle_cache_expiry_secs: number | null,
     ///   debug: boolean,
     ///   local: string | null,
+    ///   notify_gateway_url: string | null,
+    ///   notify_on_giveup: boolean | null,
     /// }
     /// ```
     pub fn init(config: BingleJsiConfig) -> Result<Arc<Self>, BingleJsiError> {
@@ -324,14 +326,16 @@ impl BingleJsiApiImpl {
         // Initialize local API if --local was provided
         let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
         if let Some(path) = &local_file {
-            let cfg = LocalApiConfig {
-                algo_config: opts.algo_provider_config.clone().unwrap_or_default(),
-                app_id: opts.app_id.unwrap_or(0),
-                asset_id: opts.asset_id.unwrap_or(0),
-                // Give-up nudge (bingle_notify #11): keep the defaults (feature on, no gateway URL
-                // ⇒ dormant) until a caller wires a notify gateway URL through here.
-                ..LocalApiConfig::default()
-            };
+            // Give-up nudge (bingle_notify #11/#17): the feature stays on by default; supplying a
+            // gateway URL is what activates it. An explicit `notify_on_giveup: false` disables it
+            // even when a URL is set.
+            let cfg = LocalApiConfig::with_notify(
+                opts.algo_provider_config.clone().unwrap_or_default(),
+                opts.app_id.unwrap_or(0),
+                opts.asset_id.unwrap_or(0),
+                config.notify_on_giveup,
+                config.notify_gateway_url.clone(),
+            );
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
