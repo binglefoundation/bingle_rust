@@ -1,6 +1,4 @@
-use crate::api::notify::{
-    AlertPoster, HttpAlertPoster, alert_exp, build_alert_request, fresh_nonce, now_secs,
-};
+use crate::api::notify::{AlertPoster, HttpAlertPoster, post_giveup_alerts};
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
@@ -161,18 +159,18 @@ impl BingleApiLocalImpl {
         }
     }
 
-    /// Fire the best-effort give-up nudge for each recipient we gave up on (bingle_notify #11).
+    /// Fire the best-effort give-up nudge for the recipients we gave up on (bingle_notify #11).
     ///
     /// Gated on `notify_on_giveup` and a configured `notify_gateway_url`; when either is off this is
-    /// a no-op and give-up behaves exactly as before. For each recipient it builds and signs a
-    /// content-free `/alert` envelope with the active keypair and hands it to the poster, which
-    /// sends it off the delivery path. Never blocks or fails delivery: a missing handle, signing
-    /// failure, or transport error is logged and swallowed.
+    /// a no-op and give-up behaves exactly as before. Resolves the local (sender) handle and the
+    /// active keypair, then delegates the per-recipient sign-and-post to
+    /// [`post_giveup_alerts`](crate::api::notify::post_giveup_alerts). Never blocks or fails
+    /// delivery: a missing handle, signing failure, or transport error is logged and swallowed.
     fn notify_giveup(&self, recipient_handles: &[String]) {
         if !self.config.notify_on_giveup {
             return;
         }
-        let Some(gateway_url) = self.config.notify_gateway_url.clone() else {
+        let Some(gateway_url) = self.config.notify_gateway_url.as_deref() else {
             return;
         };
         if recipient_handles.is_empty() {
@@ -203,24 +201,13 @@ impl BingleApiLocalImpl {
             }
         };
 
-        let exp = alert_exp(now_secs());
-        for audience in recipient_handles {
-            let nonce = fresh_nonce();
-            match build_alert_request(&ops, &iss, audience, &nonce, exp) {
-                Ok(req) => {
-                    tracing::info!(
-                        "[notify_giveup] posting give-up alert for recipient '{}'",
-                        audience
-                    );
-                    self.alert_poster.post_alert(&gateway_url, req);
-                }
-                Err(e) => tracing::warn!(
-                    "[notify_giveup] could not sign alert for '{}' ({}); skipping",
-                    audience,
-                    e
-                ),
-            }
-        }
+        post_giveup_alerts(
+            self.alert_poster.as_ref(),
+            gateway_url,
+            &ops,
+            &iss,
+            recipient_handles,
+        );
     }
 
     /// On a blockchain-unreachable error, return the last-known status so an already-known
