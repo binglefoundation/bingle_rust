@@ -803,6 +803,13 @@ impl BingleJsiApiImpl {
         self.api.clone()
     }
 
+    /// The local API this instance was initialized with, if any. Lets tests reach the concrete
+    /// implementation (via `BingleLocalApi::as_any_mut`) to observe or override behaviour wired up
+    /// by `init` — e.g. the give-up nudge sender (bingle_notify #17).
+    pub fn local_api_for_tests(&self) -> Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> {
+        self.local_api.clone()
+    }
+
     pub fn init_for_tests(
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
