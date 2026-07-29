@@ -160,4 +160,11 @@ pub struct BingleJsiConfig {
     pub debug: bool,
     /// Enable local API with the given state file path.
     pub local: Option<String>,
+    /// Notify gateway base URL for the give-up nudge (bingle_notify #11). When set (and local mode
+    /// is enabled), a message give-up POSTs a content-free `/alert` to `{url}/alert`. When null the
+    /// nudge is dormant — nothing is signed or sent.
+    pub notify_gateway_url: Option<String>,
+    /// Override for the give-up nudge feature gate (bingle_notify #11). `null` keeps the default
+    /// (enabled); `false` disables the nudge even when a gateway URL is set.
+    pub notify_on_giveup: Option<bool>,
 }
