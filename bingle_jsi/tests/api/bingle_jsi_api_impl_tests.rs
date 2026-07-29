@@ -7,7 +7,35 @@ use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleJsiConfig, BingleMessage, ContactSource, KeypairStatus, NatType,
 };
+use bingle_local::api::bingle_local_api::BingleLocalApi;
+use bingle_local::api::bingle_local_api_impl::BingleApiLocalImpl;
+use bingle_local::api::notify::{AlertPoster, AlertRequest};
 use bingle_test::temp_file_helpers::project_tmp_file_path;
+
+/// Throwaway test account (the committed cross-impl vector's key) used to give the give-up nudge a
+/// signing identity without a live blockchain read.
+const TEST_MNEMONIC: &str = "square flat curtain negative three april hobby culture unit fit drip bronze cactus stage vault pluck captain nation pond pizza grief domain coin abstract path";
+
+/// Test poster: records every `/alert` handed to it instead of hitting a live gateway.
+#[derive(Default)]
+struct RecordingPoster {
+    calls: Mutex<Vec<(String, AlertRequest)>>,
+}
+
+impl RecordingPoster {
+    fn calls(&self) -> Vec<(String, AlertRequest)> {
+        self.calls.lock().expect("calls lock").clone()
+    }
+}
+
+impl AlertPoster for RecordingPoster {
+    fn post_alert(&self, gateway_url: &str, body: AlertRequest) {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push((gateway_url.to_string(), body));
+    }
+}
 
 /// Helper: build a minimal config with only `handle` set.
 fn config_with_handle(handle: &str) -> BingleJsiConfig {
@@ -140,6 +168,97 @@ fn init_with_notify_disabled_succeeds() {
         api.is_ok(),
         "init with the nudge disabled should succeed: {:?}",
         api.err()
+    );
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// End-to-end: a `notify_gateway_url` supplied through `BingleJsiConfig` reaches the local API that
+/// `init` builds, so a message give-up driven through the JSI trait fires exactly one signed
+/// `/alert` to that gateway (bingle_notify #17). A recording poster is injected into the
+/// JSI-created local API via the `as_any_mut` downcast seam to observe the nudge deterministically.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn end_to_end_giveup_via_jsi_fires_alert_to_configured_gateway() {
+    let tmp = project_tmp_file_path("bingle-jsi-test-e2e-notify", ".json");
+    let mut config = config_with_local(&tmp.to_string_lossy());
+    config.notify_gateway_url = Some("https://gw.example".to_string());
+    config.notify_on_giveup = Some(true);
+    let api = BingleJsiApiImpl::init(config).expect("init should succeed");
+
+    // Reach the concrete local API that init wired the notify config into, inject a recording
+    // poster, and give it a signing identity (keypair + local handle) with no blockchain read.
+    let recording = Arc::new(RecordingPoster::default());
+    {
+        let local = api.local_api_for_tests().expect("local api present");
+        let mut guard = local.lock().expect("local api lock");
+        let concrete = guard
+            .as_any_mut()
+            .downcast_mut::<BingleApiLocalImpl>()
+            .expect("local api is BingleApiLocalImpl");
+        concrete.set_alert_poster(recording.clone());
+        concrete
+            .import_keypair(TEST_MNEMONIC.to_string())
+            .expect("import test keypair");
+        concrete.seed_own_handle_for_tests("alice".to_string());
+        concrete
+            .add_message("alice".into(), vec!["bob".into()], 7, "hi".into(), None)
+            .expect("add message");
+    }
+
+    // Drive a give-up through the real JSI call site the app uses.
+    api.update_message_status(7, 1.0, Some("permanent".to_string()))
+        .expect("update_message_status");
+
+    let calls = recording.calls();
+    assert_eq!(
+        calls.len(),
+        1,
+        "a give-up via JSI must fire exactly one alert to the configured gateway"
+    );
+    let (gateway_url, req) = &calls[0];
+    assert_eq!(gateway_url, "https://gw.example");
+    assert_eq!(req.iss, "alice");
+    assert_eq!(req.audience, "bob");
+    assert!(!req.sig.is_empty(), "the alert must carry a signature");
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// End-to-end: with `notify_on_giveup: false`, a give-up driven through the JSI trait fires no
+/// alert even though a gateway URL is configured.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn end_to_end_giveup_via_jsi_is_silent_when_disabled() {
+    let tmp = project_tmp_file_path("bingle-jsi-test-e2e-notify-off", ".json");
+    let mut config = config_with_local(&tmp.to_string_lossy());
+    config.notify_gateway_url = Some("https://gw.example".to_string());
+    config.notify_on_giveup = Some(false);
+    let api = BingleJsiApiImpl::init(config).expect("init should succeed");
+
+    let recording = Arc::new(RecordingPoster::default());
+    {
+        let local = api.local_api_for_tests().expect("local api present");
+        let mut guard = local.lock().expect("local api lock");
+        let concrete = guard
+            .as_any_mut()
+            .downcast_mut::<BingleApiLocalImpl>()
+            .expect("local api is BingleApiLocalImpl");
+        concrete.set_alert_poster(recording.clone());
+        concrete
+            .import_keypair(TEST_MNEMONIC.to_string())
+            .expect("import test keypair");
+        concrete.seed_own_handle_for_tests("alice".to_string());
+        concrete
+            .add_message("alice".into(), vec!["bob".into()], 7, "hi".into(), None)
+            .expect("add message");
+    }
+
+    api.update_message_status(7, 1.0, Some("permanent".to_string()))
+        .expect("update_message_status");
+
+    assert!(
+        recording.calls().is_empty(),
+        "the nudge must stay silent when disabled"
     );
     let _ = std::fs::remove_file(&tmp);
 }

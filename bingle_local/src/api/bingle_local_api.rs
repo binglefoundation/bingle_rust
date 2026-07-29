@@ -170,4 +170,10 @@ pub trait BingleLocalApi: Send + Sync {
 
     /// Return the current keypair, if one has been generated.
     fn get_keypair(&self) -> Result<Option<Keypair>, BingleError>;
+
+    /// Downcast seam: return this implementation as `&mut dyn Any` so host or test code holding a
+    /// `Box<dyn BingleLocalApi>` can recover the concrete type — e.g. to observe or override the
+    /// give-up nudge sender (bingle_notify #17). Not part of the normal API surface; production
+    /// paths use the trait. Implementations return `self`.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
