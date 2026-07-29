@@ -1081,6 +1081,27 @@ impl BingleJsiApi for BingleJsiApiImpl {
         Ok(())
     }
 
+    fn sign_notify_envelope(
+        &self,
+        route: String,
+        iss: String,
+        audience: String,
+        token: String,
+        env: String,
+        nonce: String,
+        exp: i64,
+    ) -> Result<String, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        // get_algo_ops binds to the active keypair (no network); it errors if none is set, which
+        // maps to a typed jsi error rather than signing with a bogus key.
+        let ops = guard.get_algo_ops().map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        ops.sign_notify_envelope(&route, &iss, &audience, &token, &env, &nonce, exp)
+            .map_err(|e| BingleJsiError::InternalError {
+                reason: e.to_string(),
+            })
+    }
+
     fn add_contact(
         &self,
         handle: String,

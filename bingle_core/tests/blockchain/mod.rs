@@ -37,6 +37,9 @@ pub mod algo_bingle_unit;
 #[path = "algo_ops_address_derivation_test.rs"]
 pub mod algo_ops_address_derivation_test;
 
+#[path = "algo_ops_sign_notify_envelope_test.rs"]
+pub mod algo_ops_sign_notify_envelope_test;
+
 #[path = "algo_ops_reserve_helpers.rs"]
 pub mod algo_ops_reserve_helpers;
 
