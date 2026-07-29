@@ -25,6 +25,8 @@ fn config_with_handle(handle: &str) -> BingleJsiConfig {
         handle_cache_expiry_secs: None,
         debug: false,
         local: None,
+        notify_gateway_url: None,
+        notify_on_giveup: None,
     }
 }
 
@@ -44,6 +46,8 @@ fn config_with_local(path: &str) -> BingleJsiConfig {
         handle_cache_expiry_secs: None,
         debug: false,
         local: Some(path.to_string()),
+        notify_gateway_url: None,
+        notify_on_giveup: None,
     }
 }
 
@@ -63,6 +67,8 @@ fn empty_config() -> BingleJsiConfig {
         handle_cache_expiry_secs: None,
         debug: false,
         local: None,
+        notify_gateway_url: None,
+        notify_on_giveup: None,
     }
 }
 
@@ -100,6 +106,39 @@ fn init_with_local_and_no_handle_succeeds() {
     assert!(
         api.is_ok(),
         "init with local and no handle should succeed: {:?}",
+        api.err()
+    );
+    let _ = std::fs::remove_file(&tmp);
+}
+
+#[test]
+fn init_with_local_and_notify_gateway_succeeds() {
+    // The notify config surface (bingle_notify #17) is accepted end-to-end through init and
+    // threaded into the local API's LocalApiConfig via LocalApiConfig::with_notify.
+    let tmp = project_tmp_file_path("bingle-jsi-test-init-notify", ".json");
+    let mut config = config_with_local(&tmp.to_string_lossy());
+    config.notify_gateway_url = Some("https://gw.example".to_string());
+    config.notify_on_giveup = Some(true);
+    let api = BingleJsiApiImpl::init(config);
+    assert!(
+        api.is_ok(),
+        "init with a notify gateway url should succeed: {:?}",
+        api.err()
+    );
+    let _ = std::fs::remove_file(&tmp);
+}
+
+#[test]
+fn init_with_notify_disabled_succeeds() {
+    // An explicit notify_on_giveup=false is accepted even with a gateway URL set.
+    let tmp = project_tmp_file_path("bingle-jsi-test-init-notify-off", ".json");
+    let mut config = config_with_local(&tmp.to_string_lossy());
+    config.notify_gateway_url = Some("https://gw.example".to_string());
+    config.notify_on_giveup = Some(false);
+    let api = BingleJsiApiImpl::init(config);
+    assert!(
+        api.is_ok(),
+        "init with the nudge disabled should succeed: {:?}",
         api.err()
     );
     let _ = std::fs::remove_file(&tmp);
@@ -408,6 +447,8 @@ fn init_with_optional_fields() {
         handle_cache_expiry_secs: Some(300),
         debug: true,
         local: None,
+        notify_gateway_url: None,
+        notify_on_giveup: None,
     };
     let api = BingleJsiApiImpl::init(config);
     assert!(

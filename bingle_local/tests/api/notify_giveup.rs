@@ -80,6 +80,46 @@ fn default_config_gates_on_but_has_no_url() {
     );
 }
 
+/// `with_notify` is the shared mapping used by the JSI and webserver callers (#17): the gateway URL
+/// passes through and `notify_on_giveup` defaults to `true` when the caller leaves it unset.
+#[test]
+fn with_notify_maps_gateway_url_and_defaults_flag_on() {
+    let default_algo = bingle_core::blockchain::algo_ops::AlgoChainConfig::default();
+
+    // Caller supplies a URL and leaves the flag unset ⇒ URL reaches the config, flag defaults on.
+    let cfg = LocalApiConfig::with_notify(
+        default_algo.clone(),
+        111,
+        222,
+        None,
+        Some("https://gw.example".to_string()),
+    );
+    assert_eq!(cfg.app_id, 111);
+    assert_eq!(cfg.asset_id, 222);
+    assert_eq!(
+        cfg.notify_gateway_url.as_deref(),
+        Some("https://gw.example")
+    );
+    assert!(cfg.notify_on_giveup, "unset flag defaults on");
+
+    // Caller can disable the nudge even with a URL configured.
+    let disabled = LocalApiConfig::with_notify(
+        default_algo.clone(),
+        0,
+        0,
+        Some(false),
+        Some("https://gw.example".to_string()),
+    );
+    assert!(
+        !disabled.notify_on_giveup,
+        "explicit false disables the nudge"
+    );
+
+    // No URL ⇒ dormant regardless of the flag.
+    let dormant = LocalApiConfig::with_notify(default_algo, 0, 0, Some(true), None);
+    assert!(dormant.notify_gateway_url.is_none());
+}
+
 /// The signed content-free alert envelope is byte-for-byte identical to the committed cross-impl
 /// vector's alert case (`bodyHash = sha256("")`).
 #[test]

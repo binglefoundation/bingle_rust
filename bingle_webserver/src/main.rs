@@ -17,6 +17,11 @@ async fn main() -> anyhow::Result<()> {
     let mut address = "127.0.0.1".to_string();
     let mut other_args = Vec::new();
     let mut local_file: Option<PathBuf> = None;
+    // Give-up nudge (bingle_notify #11/#17): notify gateway URL activates the nudge; the flag can
+    // disable it even when a URL is set. Parsed here (not via StartOptions) since it is a
+    // LocalApiConfig concern, not a network-engine one.
+    let mut notify_gateway_url: Option<String> = None;
+    let mut notify_on_giveup: Option<bool> = None;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -52,6 +57,28 @@ async fn main() -> anyhow::Result<()> {
                     i += 2;
                 } else {
                     anyhow::bail!("--local requires a <file> value");
+                }
+            }
+            "--notify-gateway-url" => {
+                if i + 1 < args.len() {
+                    notify_gateway_url = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    anyhow::bail!("--notify-gateway-url requires a <url> value");
+                }
+            }
+            "--notify-on-giveup" => {
+                if i + 1 < args.len() {
+                    notify_on_giveup = Some(match args[i + 1].to_ascii_lowercase().as_str() {
+                        "true" | "1" | "yes" => true,
+                        "false" | "0" | "no" => false,
+                        other => {
+                            anyhow::bail!("--notify-on-giveup expects true|false, got '{}'", other)
+                        }
+                    });
+                    i += 2;
+                } else {
+                    anyhow::bail!("--notify-on-giveup requires a <true|false> value");
                 }
             }
             "--address" | "-a" => {
@@ -102,14 +129,15 @@ async fn main() -> anyhow::Result<()> {
     // Initialize local API if requested
     let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
     if let Some(path) = &local_file {
-        let cfg = LocalApiConfig {
-            algo_config: opts.algo_provider_config.clone().unwrap_or_default(),
-            app_id: opts.app_id.unwrap_or(0),
-            asset_id: opts.asset_id.unwrap_or(0),
-            // Give-up nudge (bingle_notify #11): keep the defaults (feature on, no gateway URL ⇒
-            // dormant) until a caller wires a notify gateway URL through here.
-            ..LocalApiConfig::default()
-        };
+        // Give-up nudge (bingle_notify #11/#17): a `--notify-gateway-url` activates the nudge;
+        // `--notify-on-giveup false` disables it even when a URL is set.
+        let cfg = LocalApiConfig::with_notify(
+            opts.algo_provider_config.clone().unwrap_or_default(),
+            opts.app_id.unwrap_or(0),
+            opts.asset_id.unwrap_or(0),
+            notify_on_giveup,
+            notify_gateway_url.clone(),
+        );
         let mut impl_api = BingleApiLocalImpl::new(cfg);
         if path.exists()
             && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
