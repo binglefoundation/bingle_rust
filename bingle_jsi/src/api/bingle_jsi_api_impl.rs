@@ -328,6 +328,9 @@ impl BingleJsiApiImpl {
                 algo_config: opts.algo_provider_config.clone().unwrap_or_default(),
                 app_id: opts.app_id.unwrap_or(0),
                 asset_id: opts.asset_id.unwrap_or(0),
+                // Give-up nudge (bingle_notify #11): keep the defaults (feature on, no gateway URL
+                // ⇒ dormant) until a caller wires a notify gateway URL through here.
+                ..LocalApiConfig::default()
             };
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
