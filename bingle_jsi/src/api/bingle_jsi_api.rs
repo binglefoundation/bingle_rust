@@ -98,6 +98,28 @@ pub trait BingleJsiApi: Send + Sync {
     /// Register the current keypair with Bingle using the provided handle.
     fn register_keypair(&self, handle: String) -> Result<(), BingleJsiError>;
 
+    /// Sign the canonical bingle-notify envelope with the active keypair and return the base64
+    /// signature. This is the signing primitive the RN app (which has no algosdk) uses to build
+    /// the `/register` (and `/alert`) envelopes the notify gateway verifies.
+    ///
+    /// The signed message is the fixed, newline-delimited UTF-8 string
+    /// `"bingle-notify:v1"\nroute\niss\naudience\nbodyHash\nnonce\nexp`, signed as
+    /// `Ed25519(sk, "MX" || msg)` (the Algorand byte-signing prefix). `bodyHash` is the lowercase
+    /// hex SHA-256 of the route-specific body: for `"register"`, `sha256(token + "\n" + env)`; for
+    /// `"alert"`, `sha256("")` (in which case `audience` is the recipient handle and `token`/`env`
+    /// are ignored). Errors if no keypair is set.
+    #[allow(clippy::too_many_arguments)]
+    fn sign_notify_envelope(
+        &self,
+        route: String,
+        iss: String,
+        audience: String,
+        token: String,
+        env: String,
+        nonce: String,
+        exp: i64,
+    ) -> Result<String, BingleJsiError>;
+
     /// Add a contact to the local store.
     fn add_contact(
         &self,
