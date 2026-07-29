@@ -49,6 +49,16 @@ RCT_EXTERN_METHOD(registerKeypair:(NSString *)handle
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(signNotifyEnvelope:(NSString *)route
+                  iss:(NSString *)iss
+                  audience:(NSString *)audience
+                  token:(NSString *)token
+                  env:(NSString *)env
+                  nonce:(NSString *)nonce
+                  exp:(nonnull NSNumber *)exp
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(addContact:(NSString *)handle
                   id:(NSString *)id
                   source:(NSString *)source
