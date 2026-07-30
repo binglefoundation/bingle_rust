@@ -32,7 +32,9 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     assetId = config.tryGetULong("asset_id"),
                     handleCacheExpirySecs = config.tryGetULong("handle_cache_expiry_secs"),
                     debug = if (config.hasKey("debug")) config.getBoolean("debug") else false,
-                    local = config.tryGetString("local")
+                    local = config.tryGetString("local"),
+                    notifyGatewayUrl = config.tryGetString("notify_gateway_url"),
+                    notifyOnGiveup = config.tryGetBoolean("notify_on_giveup")
                 )
                 val api = createBingleApi(jsiConfig)
                 apiInstance = api
@@ -600,6 +602,9 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
 
     private fun ReadableMap.tryGetULong(key: String): ULong? =
         if (hasKey(key) && !isNull(key)) getDouble(key).toULong() else null
+
+    private fun ReadableMap.tryGetBoolean(key: String): Boolean? =
+        if (hasKey(key) && !isNull(key)) getBoolean(key) else null
 
     private fun mapToMessage(map: ReadableMap): BingleMessage = BingleMessage(
         app = map.tryGetString("app"),

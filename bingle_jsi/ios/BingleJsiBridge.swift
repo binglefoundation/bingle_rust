@@ -41,7 +41,9 @@ class BingleJsiBridge: RCTEventEmitter {
                     assetId: (config["asset_id"] as? NSNumber)?.uint64Value,
                     handleCacheExpirySecs: (config["handle_cache_expiry_secs"] as? NSNumber)?.uint64Value,
                     debug: config["debug"] as? Bool ?? false,
-                    local: config["local"] as? String
+                    local: config["local"] as? String,
+                    notifyGatewayUrl: config["notify_gateway_url"] as? String,
+                    notifyOnGiveup: config["notify_on_giveup"] as? Bool
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 self.apiInstance = api
