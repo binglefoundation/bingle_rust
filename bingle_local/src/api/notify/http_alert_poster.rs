@@ -28,6 +28,12 @@ impl Default for HttpAlertPoster {
 impl AlertPoster for HttpAlertPoster {
     fn post_alert(&self, gateway_url: &str, body: AlertRequest) {
         let endpoint = format!("{}/alert", gateway_url.trim_end_matches('/'));
+        // TEMP (#11 debug): trace the actual POST to the gateway lambda. Drop later.
+        tracing::warn!(
+            "[notify][alert] TEMP posting nudge for '{}' to {}",
+            body.audience,
+            endpoint
+        );
         // Detach: the nudge is best-effort and must not delay or block message delivery. The
         // blocking client is built here, on this plain OS thread, so its runtime is never created
         // or dropped inside a caller's async context.
@@ -54,8 +60,8 @@ impl AlertPoster for HttpAlertPoster {
                         // 200/202 accepted; 429 is the gateway coalescing/rate-limiting per caller
                         // — all fine. Anything else is logged and ignored.
                         if alert_status_accepted(status) {
-                            tracing::debug!(
-                                "[notify][alert] gateway accepted alert for '{}' (status {})",
+                            tracing::warn!(
+                                "[notify][alert] TEMP gateway accepted alert for '{}' (status {})",
                                 body.audience,
                                 status
                             );

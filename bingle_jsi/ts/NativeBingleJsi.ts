@@ -226,6 +226,8 @@ export interface BingleJsiApi {
   start(): void;
   stop(): void;
   isStarted(): boolean;
+  setString(key: string, value: string): void;
+  getString(key: string): string | null;
 
   // App lifecycle (call from the host app's AppState listener).
   // foregrounding refreshes the relay registration after background/idle so

@@ -572,6 +572,20 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun setString(key: String, value: String, promise: Promise) {
+        val prefs = reactApplicationContext.getSharedPreferences("BingleJsiPrefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putString(key, value).apply()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun getString(key: String, promise: Promise) {
+        val prefs = reactApplicationContext.getSharedPreferences("BingleJsiPrefs", android.content.Context.MODE_PRIVATE)
+        val value = prefs.getString(key, null)
+        promise.resolve(value)
+    }
+
+    @ReactMethod
     fun setMessageCallback(promise: Promise) {
         val api = apiInstance
         if (api == null) {

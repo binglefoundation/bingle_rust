@@ -166,15 +166,16 @@ fn parse_nat_type(nat: &str) -> NatType {
 /// Whether a failed pending-message send looks transient (i.e. connectivity-related) and so the
 /// message should stay pending to be retried, rather than being marked permanently failed.
 /// Recognises retryable errors, undelivered sends, and no-route/no-relay/unreachable conditions.
-pub fn is_transient_send_failure(err: &str) -> bool {
+pub fn is_permanent_send_failure(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
-    e.starts_with("retryable:")
-        || e.contains("send returned false")
-        || e.contains("no available relay")
-        || e.contains("no relay")
-        || e.contains("unreachable")
-        || e.contains("no route")
-        || e.contains("noconnection")
+    // Unfixable: the recipient or message is invalid, so retrying can never deliver it and waking
+    // the recipient cannot help. Only these stop retrying and do not nudge. Everything else — every
+    // "recipient unreachable" / relay / connection / infra error — is transient: we keep retrying
+    // and nudge the recipient to come online (bingle_notify #11). Retry+nudge is the safe default,
+    // so a not-yet-classified failure retries rather than being dropped.
+    e.contains("invalid")
+        || e.contains("not opted in")
+        || e.contains("not configured")
 }
 
 /// Map a raw send error to a concise, human-readable `failure_reason` for a queued message so the
@@ -680,9 +681,9 @@ impl BingleJsiApiImpl {
                         } else {
                             let err =
                                 last_error.unwrap_or_else(|| "unknown send failure".to_string());
-                            let transient = is_transient_send_failure(&err);
+                            let permanent = is_permanent_send_failure(&err);
                             let (progress, level) =
-                                if transient { (0.0_f32, "transient") } else { (1.0_f32, "permanent") };
+                                if permanent { (1.0_f32, "permanent") } else { (0.0_f32, "transient") };
                             // Log the raw error for debugging, but surface a concise, human-readable
                             // failure_reason on the queued message so the app can indicate the error
                             // (issue #43). Transient failures stay pending (progress 0.0) and keep
@@ -696,7 +697,7 @@ impl BingleJsiApiImpl {
                             (
                                 timestamp,
                                 progress,
-                                Some(pending_failure_reason(&err, transient)),
+                                Some(pending_failure_reason(&err, !permanent)),
                             )
                         };
                         if res_tx.send(result).is_err() {

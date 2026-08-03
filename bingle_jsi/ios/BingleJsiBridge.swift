@@ -563,6 +563,18 @@ class BingleJsiBridge: RCTEventEmitter {
         }
     }
 
+    @objc
+    func setString(_ key: String, value: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        UserDefaults.standard.set(value, forKey: key)
+        resolve(nil)
+    }
+
+    @objc
+    func getString(_ key: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        let value = UserDefaults.standard.string(forKey: key)
+        resolve(value)
+    }
+
     @objc(setLogCallback:resolver:rejecter:)
     func setLogCallback(_ logLevel: String?, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
         let bridge = LogCallbackBridge(emitter: self)

@@ -205,15 +205,16 @@ fn end_to_end_giveup_via_jsi_fires_alert_to_configured_gateway() {
             .expect("add message");
     }
 
-    // Drive a give-up through the real JSI call site the app uses.
-    api.update_message_status(7, 1.0, Some("permanent".to_string()))
+    // Drive an unreachable (transient) failure through the real JSI call site the app uses — the
+    // recipient is offline and we keep retrying, so this is what nudges (bingle_notify #11).
+    api.update_message_status(7, 0.0, Some("Retryable: offline".to_string()))
         .expect("update_message_status");
 
     let calls = recording.calls();
     assert_eq!(
         calls.len(),
         1,
-        "a give-up via JSI must fire exactly one alert to the configured gateway"
+        "an unreachable send via JSI must fire exactly one alert to the configured gateway"
     );
     let (gateway_url, req) = &calls[0];
     assert_eq!(gateway_url, "https://gw.example");
@@ -748,17 +749,21 @@ fn set_listening_callback_replaces_previous() {
 
 #[test]
 fn transient_send_failures_keep_messages_pending() {
-    use bingle_jsi::api::bingle_jsi_api_impl::is_transient_send_failure;
-    // Connectivity-related failures are transient -> keep the message pending for retry (#31).
-    assert!(is_transient_send_failure("Retryable: relay timed out"));
-    assert!(is_transient_send_failure("Send returned false"));
-    assert!(is_transient_send_failure("no available relay"));
-    assert!(is_transient_send_failure("Other: no relay for id"));
-    assert!(is_transient_send_failure("host unreachable"));
-    assert!(is_transient_send_failure("NoConnection"));
-    // A genuine permanent failure is not transient -> may be marked terminally failed.
-    assert!(!is_transient_send_failure("recipient handle is invalid"));
-    assert!(!is_transient_send_failure("account not opted in"));
+    use bingle_jsi::api::bingle_jsi_api_impl::is_permanent_send_failure;
+    // Connectivity-related failures are NOT permanent -> keep the message pending for retry and
+    // nudge the recipient (#31, bingle_notify #11).
+    assert!(!is_permanent_send_failure("Retryable: relay timed out"));
+    assert!(!is_permanent_send_failure("Send returned false"));
+    assert!(!is_permanent_send_failure("no available relay"));
+    assert!(!is_permanent_send_failure("Other: no relay for id"));
+    assert!(!is_permanent_send_failure("host unreachable"));
+    assert!(!is_permanent_send_failure("NoConnection"));
+    // Infra blips are retryable too (previously mis-stopped by the old allowlist).
+    assert!(!is_permanent_send_failure("DDB lookup failed"));
+    assert!(!is_permanent_send_failure("Failed to send request"));
+    // A genuine permanent failure (invalid recipient/message) -> terminally failed, no nudge.
+    assert!(is_permanent_send_failure("recipient handle is invalid"));
+    assert!(is_permanent_send_failure("account not opted in"));
 }
 
 #[test]

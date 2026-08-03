@@ -8,7 +8,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Configuration for the local API implementation.
@@ -145,6 +145,10 @@ pub struct BingleApiLocalImpl {
     // Best-effort sender for the give-up nudge to the notify gateway (bingle_notify #11). Defaults
     // to the real HTTP poster; a seam so tests can observe the nudge without a live gateway.
     alert_poster: Arc<dyn AlertPoster>,
+    // Message timestamps already nudged this unreachable episode, so the give-up nudge fires once
+    // per message and not on every ~10s retry (bingle_notify #11). Cleared when the message reaches
+    // a terminal state so a later message — or a fresh unreachable episode — can nudge again.
+    nudged: Mutex<HashSet<i64>>,
 }
 
 /// How long a `network_available` probe result is reused before re-probing.
@@ -164,6 +168,7 @@ impl BingleApiLocalImpl {
             last_status: Mutex::new(None),
             last_network_check: Mutex::new(None),
             alert_poster: Arc::new(HttpAlertPoster::new()),
+            nudged: Mutex::new(HashSet::new()),
         }
     }
 
@@ -189,13 +194,23 @@ impl BingleApiLocalImpl {
     /// [`post_giveup_alerts`](crate::api::notify::post_giveup_alerts). Never blocks or fails
     /// delivery: a missing handle, signing failure, or transport error is logged and swallowed.
     fn notify_giveup(&self, recipient_handles: &[String]) {
+        // TEMP (#11 debug): warn-level stage tracing. Drop later.
+        tracing::warn!(
+            "[notify_giveup] TEMP entered for {} recipient(s): {:?}",
+            recipient_handles.len(),
+            recipient_handles
+        );
         if !self.config.notify_on_giveup {
+            tracing::warn!("[notify_giveup] TEMP SKIP: notify_on_giveup is false");
             return;
         }
         let Some(gateway_url) = self.config.notify_gateway_url.as_deref() else {
+            tracing::warn!("[notify_giveup] TEMP SKIP: notify_gateway_url is None");
             return;
         };
+        tracing::warn!("[notify_giveup] TEMP gateway_url = {}", gateway_url);
         if recipient_handles.is_empty() {
+            tracing::warn!("[notify_giveup] TEMP SKIP: no recipients");
             return;
         }
 
@@ -788,34 +803,67 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
-        // On give-up (a terminal failure: progress >= 1.0 with a failure_reason) fire the notify
-        // nudge for this message's recipients. A transient failure (progress < 1.0) keeps the
-        // message pending and does not nudge, so the nudge fires only on give-up — never per retry
-        // — and a successful send (progress 1.0, no reason) does not nudge either.
-        let giveup_recipients = {
-            if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
-                msg.progress = Some(progress);
-                let is_giveup = progress >= 1.0 && failure_reason.is_some();
-                if failure_reason.is_some() || progress >= 1.0 {
-                    msg.failure_reason = failure_reason;
+        // The nudge exists to wake a recipient we CAN'T reach but WILL keep retrying — a transient
+        // failure (progress < 1.0 with a reason). Success (reason None) and a permanent give-up
+        // (progress >= 1.0, retries stopped) do not nudge: waking the recipient cannot help once we
+        // are no longer retrying (bingle_notify #11).
+        let notify_recipients = {
+            match guard.iter_mut().find(|m| m.timestamp == timestamp) {
+                Some(msg) => {
+                    msg.progress = Some(progress);
+                    let is_transient_failure = progress < 1.0 && failure_reason.is_some();
+                    if failure_reason.is_some() || progress >= 1.0 {
+                        msg.failure_reason = failure_reason;
+                    }
+                    if is_transient_failure {
+                        Some(msg.recipient_handles.clone())
+                    } else {
+                        None
+                    }
                 }
-                if is_giveup {
-                    Some(msg.recipient_handles.clone())
-                } else {
-                    None
+                None => {
+                    return Err(BingleError::Other(format!(
+                        "Message with timestamp {} not found",
+                        timestamp
+                    )));
                 }
-            } else {
-                return Err(BingleError::Other(format!(
-                    "Message with timestamp {} not found",
-                    timestamp
-                )));
             }
         };
         // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
         // algo_ops) and hands off to the poster, which must not run under the messages lock.
         drop(guard);
-        if let Some(recipients) = giveup_recipients {
-            self.notify_giveup(&recipients);
+
+        // TEMP (#11 debug): every status update with its nudge decision. Drop later.
+        tracing::warn!(
+            "[notify_giveup] TEMP update_message_status ts={} progress={} will_nudge={}",
+            timestamp,
+            progress,
+            notify_recipients.is_some()
+        );
+
+        // Terminal (delivered or permanently failed): forget the dedup marker so a later message —
+        // or a fresh unreachable episode — can nudge again.
+        if progress >= 1.0 {
+            if let Ok(mut nudged) = self.nudged.lock() {
+                nudged.remove(&timestamp);
+            }
+        }
+
+        if let Some(recipients) = notify_recipients {
+            // Nudge once per message per unreachable episode — not on every retry. The message
+            // stays pending and keeps retrying regardless. `insert` returns true the first time.
+            let first_time = match self.nudged.lock() {
+                Ok(mut nudged) => nudged.insert(timestamp),
+                Err(_) => false,
+            };
+            if first_time {
+                self.notify_giveup(&recipients);
+            } else {
+                tracing::warn!(
+                    "[notify_giveup] TEMP msg {} already nudged this episode; skipping",
+                    timestamp
+                );
+            }
         }
         Ok(())
     }

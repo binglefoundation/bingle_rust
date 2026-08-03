@@ -27,9 +27,10 @@ pub fn post_giveup_alerts(
         let nonce = fresh_nonce();
         match build_alert_request(ops, iss, audience, &nonce, exp) {
             Ok(req) => {
-                tracing::info!(
-                    "[notify_giveup] posting give-up alert for recipient '{}'",
-                    audience
+                tracing::warn!(
+                    "[notify_giveup] TEMP posting give-up alert for recipient '{}' -> {}",
+                    audience,
+                    gateway_url
                 );
                 poster.post_alert(gateway_url, req);
             }

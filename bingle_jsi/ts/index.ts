@@ -162,4 +162,6 @@ export const BingleJsi = BingleJsiNative as {
   start(): Promise<void>;
   stop(): Promise<void>;
   isStarted(): Promise<boolean>;
+  setString(key: string, value: string): Promise<void>;
+  getString(key: string): Promise<string | null>;
 };

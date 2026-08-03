@@ -173,7 +173,7 @@ fn giveup_with_flag_off_sends_nothing() {
         None,
     )
     .expect("add message");
-    api.update_message_status(42, 1.0, Some("permanent".into()))
+    api.update_message_status(42, 0.0, Some("Retryable: offline".into()))
         .expect("update");
     assert!(poster.calls().is_empty(), "flag off must send no alert");
 }
@@ -191,7 +191,7 @@ fn giveup_with_no_url_sends_nothing() {
         None,
     )
     .expect("add message");
-    api.update_message_status(42, 1.0, Some("permanent".into()))
+    api.update_message_status(42, 0.0, Some("Retryable: offline".into()))
         .expect("update");
     assert!(poster.calls().is_empty(), "no URL must send no alert");
 }
@@ -211,23 +211,26 @@ fn giveup_fires_once_not_per_retry() {
     )
     .expect("add message");
 
-    // A transient failure keeps the message pending and must NOT nudge.
+    // First unreachable failure fires exactly one nudge; the message stays pending and keeps
+    // retrying.
     api.update_message_status(7, 0.0, Some("Retryable: offline".into()))
-        .expect("transient update");
-    assert!(
-        poster.calls().is_empty(),
-        "a transient retry must not fire the nudge"
-    );
-
-    // Give-up: terminal failure fires exactly one nudge for the recipient.
-    api.update_message_status(7, 1.0, Some("permanent".into()))
-        .expect("terminal update");
+        .expect("first transient update");
     let calls = poster.calls();
-    assert_eq!(calls.len(), 1, "give-up fires exactly one alert");
+    assert_eq!(calls.len(), 1, "first unreachable failure fires one alert");
     let (url, req) = &calls[0];
     assert_eq!(url, "https://gw.example/");
     assert_eq!(req.iss, ALERT_ISS);
     assert_eq!(req.audience, ALERT_AUDIENCE);
+
+    // A subsequent retry (still unreachable) must NOT fire another nudge — deduped per message.
+    api.update_message_status(7, 0.0, Some("Retryable: offline".into()))
+        .expect("second transient update");
+    assert_eq!(poster.calls().len(), 1, "retries must not re-fire the nudge");
+
+    // A permanent give-up (retries stopped) adds no nudge either.
+    api.update_message_status(7, 1.0, Some("recipient handle is invalid".into()))
+        .expect("terminal update");
+    assert_eq!(poster.calls().len(), 1, "a permanent failure does not nudge");
 
     // The posted signature is a valid alert envelope for the recorded nonce/exp.
     let expected = api
@@ -262,8 +265,8 @@ fn giveup_fires_once_per_recipient() {
         None,
     )
     .expect("add message");
-    api.update_message_status(9, 1.0, Some("permanent".into()))
-        .expect("terminal update");
+    api.update_message_status(9, 0.0, Some("Retryable: offline".into()))
+        .expect("transient update");
     let audiences: Vec<String> = poster
         .calls()
         .into_iter()
@@ -309,19 +312,19 @@ fn giveup_nudge_does_not_affect_delivery_outcome() {
         None,
     )
     .expect("add message");
-    let result = api.update_message_status(5, 1.0, Some("permanent".into()));
+    let result = api.update_message_status(5, 0.0, Some("Retryable: offline".into()));
     assert!(result.is_ok(), "the nudge must never fail delivery");
     assert_eq!(poster.calls().len(), 1, "the nudge was exercised");
 
-    // Delivery outcome is untouched by the nudge: still terminally failed with its reason.
+    // Delivery outcome is untouched by the nudge: the message stays pending and keeps retrying.
     let msg = api
         .get_messages()
         .expect("messages")
         .into_iter()
         .find(|m| m.timestamp == 5)
         .expect("message present");
-    assert_eq!(msg.progress, Some(1.0));
-    assert_eq!(msg.failure_reason.as_deref(), Some("permanent"));
+    assert_eq!(msg.progress, Some(0.0));
+    assert_eq!(msg.failure_reason.as_deref(), Some("Retryable: offline"));
 }
 
 /// Best-effort status handling: 2xx and the coalescing 429 are accepted; other statuses (and, by
