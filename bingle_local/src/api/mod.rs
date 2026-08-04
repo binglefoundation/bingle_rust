@@ -15,4 +15,7 @@ pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};
 
 // Give-up nudge to the notify gateway (bingle_notify #11).
 pub mod notify;
-pub use notify::{AlertPoster, AlertRequest, HttpAlertPoster, build_alert_request};
+pub use notify::{
+    AlertPoster, AlertRequest, HttpAlertPoster, HttpRegisterPoster, RegisterPoster,
+    RegisterRequest, build_alert_request, build_register_request, encode_apns_token,
+};

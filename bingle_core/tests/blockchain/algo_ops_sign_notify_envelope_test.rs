@@ -7,6 +7,8 @@ use bingle_core::algo_ops::{AlgoChainConfig, AlgoOps};
 const TEST_MNEMONIC: &str = "square flat curtain negative three april hobby culture unit fit drip bronze cactus stage vault pluck captain nation pond pizza grief domain coin abstract path";
 const TEST_ADDRESS: &str = "JH2CPATVR25EJ4B2CQD7P5436MHXJOU2MZGIWPFPAB3JBNVX3CGQDLDENU";
 const TEST_NONCE: &str = "BBBBBBBBBBBBBBBBBBBBBB";
+// The committed `alert` vector signs with this nonce (the `register` vector uses TEST_NONCE).
+const ALERT_NONCE: &str = "AAAAAAAAAAAAAAAAAAAAAA";
 const TEST_EXP: i64 = 1893456000;
 
 fn default_cfg() -> AlgoChainConfig {
@@ -42,6 +44,20 @@ pub fn signs_register_envelope_matching_the_committed_vector() {
     assert_eq!(
         sig,
         "x/Xuu41OFj2kEqfos74PuFcrXrjfWW14ys8lYxyX+e9F7D8Q0iUwE+82ayIRPXFN4IfzwNDK+flzHRvkwxfwBA=="
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn signs_alert_envelope_matching_the_committed_vector() {
+    // alert case: iss="alice", audience="bob"; token/env are ignored (bodyHash = sha256("")).
+    // This is the give-up nudge envelope the gateway's /alert route verifies.
+    let sig = test_ops()
+        .sign_notify_envelope("alert", "alice", "bob", "", "", ALERT_NONCE, TEST_EXP)
+        .expect("alert envelope should sign");
+    assert_eq!(
+        sig,
+        "9MMEaEHeZavEh53x0OcWbHzS7dasYW3hh8VqqNOVQZDQF8Bq3BYLX4wilD9XGczHznjn+Kf5WHxllp9JS2MwAw=="
     );
 }
 

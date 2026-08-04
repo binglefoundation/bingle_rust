@@ -137,6 +137,7 @@ async fn main() -> anyhow::Result<()> {
             opts.asset_id.unwrap_or(0),
             notify_on_giveup,
             notify_gateway_url.clone(),
+            None,
         );
         let mut impl_api = BingleApiLocalImpl::new(cfg);
         if path.exists()

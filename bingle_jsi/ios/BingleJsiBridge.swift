@@ -1,5 +1,7 @@
 import Foundation
 import React
+import UIKit
+import UserNotifications
 
 /// React Native native module that bridges the uniffi-generated BingleJsi API to JavaScript.
 ///
@@ -10,10 +12,51 @@ class BingleJsiBridge: RCTEventEmitter {
 
     private var apiInstance: (any BingleJsiApiProtocol)?
 
+    override init() {
+        super.init()
+        // The app's AppDelegate posts the raw APNs token / failure as Notifications (so it needs no
+        // reference to this module and stays a pure conduit). Observe them and forward to Rust.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApnsToken(_:)),
+            name: Notification.Name("BingleApnsToken"),
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApnsRegistrationFailed(_:)),
+            name: Notification.Name("BingleApnsRegistrationFailed"),
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     /// Inject a mock or alternative API instance for testing.
     /// Call this before any bridge methods that require initialization.
     func injectApi(_ api: any BingleJsiApiProtocol) {
         self.apiInstance = api
+    }
+
+    /// Forwards the raw APNs token bytes the AppDelegate captured straight to Rust (which
+    /// hex-encodes, signs, and POSTs /register). No logic here — pure conduit.
+    @objc private func handleApnsToken(_ note: Notification) {
+        guard let api = apiInstance, let data = note.userInfo?["token"] as? Data else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                _ = try api.registerApnsToken(token: data)
+            } catch {
+                NSLog("[BingleJsi] registerApnsToken failed: \(error)")
+            }
+        }
+    }
+
+    @objc private func handleApnsRegistrationFailed(_ note: Notification) {
+        guard let api = apiInstance else { return }
+        let reason = (note.userInfo?["reason"] as? String) ?? "unknown"
+        api.apnsRegistrationFailed(reason: reason)
     }
 
     override static func requiresMainQueueSetup() -> Bool {
@@ -43,7 +86,8 @@ class BingleJsiBridge: RCTEventEmitter {
                     debug: config["debug"] as? Bool ?? false,
                     local: config["local"] as? String,
                     notifyGatewayUrl: config["notify_gateway_url"] as? String,
-                    notifyOnGiveup: config["notify_on_giveup"] as? Bool
+                    notifyOnGiveup: config["notify_on_giveup"] as? Bool,
+                    notifyEnv: config["notify_env"] as? String
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 self.apiInstance = api
@@ -247,6 +291,67 @@ class BingleJsiBridge: RCTEventEmitter {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
         }
+    }
+
+    // MARK: - iOS push registration (bingle_notify #i)
+    //
+    // Pure bridge: the raw APNs token bytes cross to Rust untouched (hex-encoding, envelope
+    // building, signing, and the POST all live in Rust). The only native work here is the
+    // irreducible UIKit platform calls, driven from the PushRegistrationCallback bridge below.
+
+    @objc(requestPushRegistration:rejecter:)
+    func requestPushRegistration(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        do {
+            try api.requestPushRegistration()
+            resolve(nil)
+        } catch {
+            reject("BINGLE_ERROR", "\(error)", error)
+        }
+    }
+
+    @objc(registerApnsToken:resolver:rejecter:)
+    func registerApnsToken(_ token: NSArray, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        // The token arrives from JS as an array of byte values (the raw Data iOS delivered). Forward
+        // the bytes verbatim — no hex-encoding here. uniffi maps Rust `Vec<u8>` to Swift `Data`.
+        let bytes: [UInt8] = token.compactMap { ($0 as? NSNumber)?.uint8Value }
+        let data = Data(bytes)
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let accepted = try api.registerApnsToken(token: data)
+                resolve(accepted)
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc(apnsRegistrationFailed:resolver:rejecter:)
+    func apnsRegistrationFailed(_ reason: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        api.apnsRegistrationFailed(reason: reason)
+        resolve(nil)
+    }
+
+    @objc(setPushRegistrationCallback:rejecter:)
+    func setPushRegistrationCallback(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        let bridge = PushRegistrationCallbackBridge()
+        api.setPushRegistrationCallback(callback: bridge)
+        resolve(nil)
     }
 
     @objc
@@ -724,5 +829,25 @@ class ListeningCallbackBridge: ListeningCallback {
             "listening": listening,
             "nat_type": natType,
         ])
+    }
+}
+
+/// Bridges uniffi's PushRegistrationCallback to the iOS platform registration calls.
+///
+/// When Rust asks the host to register (via `requestPushRegistration`), this performs the only two
+/// UIKit calls that cannot live in Rust: request notification permission, then
+/// `registerForRemoteNotifications()`. The resulting token is delivered by iOS to the app's
+/// AppDelegate, which forwards the raw bytes back through `registerApnsToken` — there is no other
+/// logic here.
+class PushRegistrationCallbackBridge: PushRegistrationCallback {
+    func onRequestRegistration() {
+        DispatchQueue.main.async {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                guard granted else { return }
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+        }
     }
 }

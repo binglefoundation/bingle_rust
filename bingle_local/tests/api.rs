@@ -27,5 +27,8 @@ mod offline_send_resilience;
 #[path = "api/notify_giveup.rs"]
 mod notify_giveup;
 
+#[path = "api/register.rs"]
+mod register;
+
 #[path = "module_version.rs"]
 mod module_version;

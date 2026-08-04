@@ -30,6 +30,21 @@ pub trait LogCallback: Send + Sync {
     fn on_log(&self, timestamp: i64, level: String, message: String);
 }
 
+/// Callback interface asking the host to start iOS push registration.
+///
+/// The APNs device token can only be obtained from the platform (UIKit delivers it to the
+/// AppDelegate), so Rust cannot request it directly. When [`request_push_registration`] is called,
+/// Rust invokes this callback and the host's thin Swift bridge performs the actual platform calls
+/// (`requestAuthorization` + `registerForRemoteNotifications`). The resulting raw token is handed
+/// back via [`register_apns_token`]; there is no logic in the bridge.
+///
+/// Register via `set_push_registration_callback`.
+#[uniffi::export(callback_interface)]
+pub trait PushRegistrationCallback: Send + Sync {
+    /// Called when the host should ask iOS for an APNs device token (permission prompt + register).
+    fn on_request_registration(&self);
+}
+
 /// Callback interface for listening state changes.
 ///
 /// Implement this trait on the React Native / TypeScript side to receive

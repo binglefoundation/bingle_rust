@@ -167,4 +167,8 @@ pub struct BingleJsiConfig {
     /// Override for the give-up nudge feature gate (bingle_notify #11). `null` keeps the default
     /// (enabled); `false` disables the nudge even when a gateway URL is set.
     pub notify_on_giveup: Option<bool>,
+    /// APNs environment this build's device tokens belong to: `"sandbox"` (Xcode/dev builds) or
+    /// `"production"` (TestFlight/App Store). Used as the `env` when the app registers its device
+    /// token via `/register`. `null` defaults to `"sandbox"`.
+    pub notify_env: Option<String>,
 }

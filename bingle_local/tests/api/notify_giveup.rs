@@ -93,6 +93,7 @@ fn with_notify_maps_gateway_url_and_defaults_flag_on() {
         222,
         None,
         Some("https://gw.example".to_string()),
+        None,
     );
     assert_eq!(cfg.app_id, 111);
     assert_eq!(cfg.asset_id, 222);
@@ -109,6 +110,7 @@ fn with_notify_maps_gateway_url_and_defaults_flag_on() {
         0,
         Some(false),
         Some("https://gw.example".to_string()),
+        None,
     );
     assert!(
         !disabled.notify_on_giveup,
@@ -116,7 +118,7 @@ fn with_notify_maps_gateway_url_and_defaults_flag_on() {
     );
 
     // No URL ⇒ dormant regardless of the flag.
-    let dormant = LocalApiConfig::with_notify(default_algo, 0, 0, Some(true), None);
+    let dormant = LocalApiConfig::with_notify(default_algo, 0, 0, Some(true), None, None);
     assert!(dormant.notify_gateway_url.is_none());
 }
 
