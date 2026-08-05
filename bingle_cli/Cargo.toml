@@ -33,5 +33,12 @@ tempfile = "3"
 name = "unit"
 path = "tests/unit.rs"
 
+# Integration tests: drive the compiled binary. The offline cases run everywhere; the live-chain
+# registration cases are #[ignore]d and need a localnet (run with `--ignored` and the env vars they
+# document).
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
 [lints]
 workspace = true

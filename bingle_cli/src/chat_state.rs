@@ -13,11 +13,24 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use bingle_core::api::bingle_api::StartOptions;
-use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
+use bingle_core::api::bingle_api::{BingleError, StartOptions};
+use bingle_core::blockchain::algo_bingle::AlgoBingle;
+use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
 use crate::chat::ChatArgs;
+use crate::chat_register::AccountStatus;
+
+/// Outcome of an on-chain registration attempt, distinguishing the "handle already taken by another
+/// account" case (which `run_registration` reports before spending anything) so `cmd_chat` can give
+/// it a dedicated message.
+#[derive(Debug)]
+pub enum RegisterError {
+    /// The chosen handle is already registered to another account (payload: the owning address).
+    HandleTaken(String),
+    /// Any other registration/persistence failure.
+    Other(String),
+}
 
 /// The chat session's persisted state, bridged from a BingleLocal state file.
 ///
@@ -43,9 +56,11 @@ impl ChatState {
     /// When `--state_file` names an existing file it is loaded and its keypair/handle/contacts are
     /// surfaced into [`opts`](ChatState::opts) and [`contacts`](ChatState::contacts). CLI-provided
     /// `--passphrase`/`--handle` win over the stored values. A malformed file is a hard error; a
-    /// path that does not exist yet is treated as an empty first-run store (the account is created
-    /// and registered by a later subtask). Returns an error string if no handle can be resolved
-    /// (neither on the command line nor in the file), since the engine needs one to start.
+    /// path that does not exist yet is treated as an empty first-run store. When no handle can be
+    /// resolved (neither on the command line nor in the file) [`opts.handle`](ChatState::opts) is
+    /// left empty — that is a not-yet-registered account, which the `cmd_chat` first-run flow
+    /// resolves via [`resolve_account_status`](ChatState::resolve_account_status); it is not an error
+    /// here.
     ///
     /// Never logs the passphrase.
     pub fn from_chat_args(args: &ChatArgs) -> Result<ChatState, String> {
@@ -104,14 +119,10 @@ impl ChatState {
             }
         }
 
-        // The engine needs a handle to start; if we could resolve neither a CLI nor a stored one,
-        // fail with a clear message rather than starting with an empty identity.
-        if opts.handle.is_empty() {
-            return Err(
-                "no handle available: pass --handle <handle>, or use a --state_file with a registered account"
-                    .to_string(),
-            );
-        }
+        // An empty handle here is not an error: it means the account is not yet registered on this
+        // machine. The first-run registration flow in `cmd_chat` (issue #59) decides what to do —
+        // register from a supplied passphrase/handle, or ask for credentials — based on the resolved
+        // account status. Callers that need a definitely-registered handle go through that flow.
 
         Ok(ChatState {
             local,
@@ -167,6 +178,100 @@ impl ChatState {
     /// Resolve a recipient handle to its id using the contact map seeded from the state file.
     pub fn resolve_recipient(&self, handle: &str) -> Option<&str> {
         self.contacts.get(handle).map(String::as_str)
+    }
+
+    /// Whether the local store currently holds a keypair.
+    pub fn has_keypair(&self) -> bool {
+        matches!(self.local.get_keypair(), Ok(Some(_)))
+    }
+
+    /// Import an account from its 25-word Algorand mnemonic, replacing any current keypair. Used by
+    /// the first-run flow when the state file has no keypair. Never logs the passphrase.
+    pub fn import_keypair(&mut self, passphrase: &str) -> Result<(), String> {
+        self.local
+            .import_keypair(passphrase.to_string())
+            .map(|_keypair| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Resolve the account's startup status for the registration decision, reading balance/funding
+    /// from chain for the `ACTIVE` case (which `keypair_status()` does not inspect).
+    ///
+    /// Maps the `bingle_local` status strings to [`AccountStatus`]. A `None` (no keypair) maps to
+    /// [`AccountStatus::NoKeypair`]; `UPGRADE_REQUIRED` and any unrecognized/blockchain-unreachable
+    /// status become an error string the caller surfaces and exits on.
+    pub fn resolve_account_status(&self) -> Result<AccountStatus, String> {
+        let status = self.local.keypair_status().map_err(|e| e.to_string())?;
+        match status.status.as_str() {
+            "None" => Ok(AccountStatus::NoKeypair),
+            "UNFUNDED" => Ok(AccountStatus::Unfunded {
+                id: status.id.unwrap_or_default(),
+                // required_algo carries the shortfall/top-up; fall back to the flat target.
+                shortfall_algos: status.required_algo.unwrap_or(REQUIRED_ALGO),
+            }),
+            "FUNDED" => Ok(AccountStatus::Funded {
+                id: status.id.unwrap_or_default(),
+            }),
+            "ACTIVE" => {
+                let handle = status
+                    .handle
+                    .or_else(|| self.local.own_handle())
+                    .unwrap_or_default();
+                let (balance_algos, operating_min_algos) = self.operating_funding()?;
+                Ok(AccountStatus::Active {
+                    id: status.id.unwrap_or_default(),
+                    handle,
+                    balance_algos,
+                    operating_min_algos,
+                })
+            }
+            "UPGRADE_REQUIRED" => Err(
+                "this client is out of date for the configured app; please upgrade to continue"
+                    .to_string(),
+            ),
+            other => Err(format!(
+                "cannot determine account status ('{other}'); is the Algorand node reachable?"
+            )),
+        }
+    }
+
+    /// The current balance and the operating minimum (both in ALGOs) for the account.
+    ///
+    /// `keypair_status()` reports `ACTIVE` without inspecting the balance, so `chat` checks it here:
+    /// the operating minimum is the live registration cost from
+    /// [`AlgoBingle::required_funding`](bingle_core::blockchain::algo_bingle::AlgoBingle::required_funding),
+    /// falling back to [`REQUIRED_ALGO`] when the chain read fails or no app is configured.
+    fn operating_funding(&self) -> Result<(f64, f64), String> {
+        let ops = self.local.get_algo_ops().map_err(|e| e.to_string())?;
+        let balance_algos = ops
+            .account_balance()
+            .map_err(|e| e.to_string())?
+            .unwrap_or(0.0);
+        let app_id = self.opts.app_id.unwrap_or(0);
+        let asset_id = self.opts.asset_id.unwrap_or(0);
+        let operating_min_algos = if app_id != 0 {
+            let bingle = AlgoBingle::new(ops, app_id, asset_id);
+            bingle.required_funding().unwrap_or(REQUIRED_ALGO)
+        } else {
+            REQUIRED_ALGO
+        };
+        Ok((balance_algos, operating_min_algos))
+    }
+
+    /// Register `handle` on-chain for the current keypair, then persist the (now ACTIVE) account to
+    /// the state file. Assumes a keypair is present (import first if not). The handle-uniqueness
+    /// pre-check in `run_registration` fails fast with [`RegisterError::HandleTaken`] before spending
+    /// anything if the handle belongs to another account.
+    pub fn register(&mut self, handle: &str) -> Result<(), RegisterError> {
+        self.local
+            .register_keypair(handle.to_string())
+            .map(|_ok| ())
+            .map_err(|e| match e {
+                BingleError::HandleTaken(owner) => RegisterError::HandleTaken(owner),
+                other => RegisterError::Other(other.to_string()),
+            })?;
+        // Persist the registered keypair + handle so later runs need no --passphrase/--handle.
+        self.save_state().map_err(RegisterError::Other)
     }
 }
 
