@@ -158,9 +158,40 @@ impl AlgoBingle {
         Ok(Self::registration_funding_algos(price, uints, byte_slices))
     }
 
-    /// Pure cost model for registering a handle: sums the post-registration minimum balance
-    /// (base + app opt-in incl. schema + asset opt-in) + the Bingle$ price + the registration
-    /// transaction fees. The MBR/fee figures are Algorand protocol constants; `price_microalgos`
+    /// The **post-registration minimum balance** (Algorand MBR) a *registered* account must retain,
+    /// read live from this account's app: base + app opt-in (incl. local schema) + asset opt-in.
+    ///
+    /// Unlike [`required_funding`], this excludes the one-time Bingle$ price and registration
+    /// transaction fees — those are spent *at* registration, so charging them again would report a
+    /// freshly registered account as short by exactly what it just paid. Algorand enforces this MBR
+    /// on-chain, so a successfully registered account is always at or above it. Use this to decide
+    /// whether an already-registered account can operate; use [`required_funding`] for the funding
+    /// needed to reach registration. Errors propagate so the caller can fall back if the chain is
+    /// unreachable.
+    pub fn post_registration_mbr(&self) -> Result<f64> {
+        let (uints, byte_slices) = self.ops.get_app_local_schema(self.app_id)?;
+        Ok(Self::post_registration_mbr_algos(uints, byte_slices))
+    }
+
+    /// Pure model of the post-registration minimum balance in microalgos (base + app opt-in incl.
+    /// schema + asset opt-in). Shared with [`registration_funding_algos`], which adds the one-time
+    /// price + fees + safety margin on top.
+    pub fn post_registration_mbr_microalgos(local_uints: u64, local_byte_slices: u64) -> u64 {
+        let app_optin_mbr = MBR_APP_OPTIN_BASE_MICROALGOS
+            + MBR_APP_UINT_MICROALGOS * local_uints
+            + MBR_APP_BYTESLICE_MICROALGOS * local_byte_slices;
+        MBR_BASE_MICROALGOS + app_optin_mbr + MBR_ASSET_OPTIN_MICROALGOS
+    }
+
+    /// [`post_registration_mbr_microalgos`] expressed in ALGOs.
+    pub fn post_registration_mbr_algos(local_uints: u64, local_byte_slices: u64) -> f64 {
+        Self::post_registration_mbr_microalgos(local_uints, local_byte_slices) as f64
+            / MICROALGOS_PER_ALGO as f64
+    }
+
+    /// Pure cost model for registering a handle: the post-registration minimum balance
+    /// ([`post_registration_mbr_microalgos`]) + the Bingle$ price + the registration transaction
+    /// fees + a safety margin. The MBR/fee figures are Algorand protocol constants; `price_microalgos`
     /// and the app schema `(local_uints, local_byte_slices)` are read on-chain by
     /// [`AlgoBingle::required_funding`].
     pub fn registration_funding_algos(
@@ -168,10 +199,8 @@ impl AlgoBingle {
         local_uints: u64,
         local_byte_slices: u64,
     ) -> f64 {
-        let app_optin_mbr = MBR_APP_OPTIN_BASE_MICROALGOS
-            + MBR_APP_UINT_MICROALGOS * local_uints
-            + MBR_APP_BYTESLICE_MICROALGOS * local_byte_slices;
-        let minimum_balance = MBR_BASE_MICROALGOS + app_optin_mbr + MBR_ASSET_OPTIN_MICROALGOS;
+        let minimum_balance =
+            Self::post_registration_mbr_microalgos(local_uints, local_byte_slices);
         let fees = MIN_TXN_FEE_MICROALGOS * REGISTRATION_TXN_COUNT;
         let total_microalgos =
             minimum_balance + price_microalgos + fees + REGISTRATION_SAFETY_MARGIN_MICROALGOS;
