@@ -59,3 +59,43 @@ pub fn test_registration_funding_grows_with_price() {
         dear - cheap
     );
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_post_registration_mbr_is_min_balance_only() {
+    // Empty schema: base 0.1 + app opt-in base 0.1 + asset opt-in 0.1 = 0.3 ALGO (no price/fees).
+    let mbr = AlgoBingle::post_registration_mbr_algos(0, 0);
+    assert!(approx(mbr, 0.3), "expected 0.3 got {}", mbr);
+
+    // Deployed app schema (3 uints + 3 byte-slices): 0.1 + (0.1 + 3*0.0285 + 3*0.05) + 0.1 = 0.5355.
+    let mbr_deployed = AlgoBingle::post_registration_mbr_algos(3, 3);
+    assert!(
+        approx(mbr_deployed, 0.5355),
+        "expected 0.5355 got {}",
+        mbr_deployed
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn test_post_registration_mbr_below_registration_cost() {
+    // The operating floor (MBR) must be strictly below the one-time registration cost — this is the
+    // fix for the post-register funding gap: a registered account that has already paid the price +
+    // fees keeps only its MBR, so re-checking against the full registration cost wrongly blocked it.
+    for &(price, uints, byte_slices) in &[(0u64, 0u64, 0u64), (200_000, 2, 1), (900_000, 3, 3)] {
+        let mbr = AlgoBingle::post_registration_mbr_algos(uints, byte_slices);
+        let registration = AlgoBingle::registration_funding_algos(price, uints, byte_slices);
+        assert!(
+            mbr < registration,
+            "MBR {mbr} should be below registration cost {registration} for price {price}"
+        );
+        // The gap is exactly the price + fees (0.012) + safety margin (0.01) that registration adds.
+        let expected_gap = price as f64 / 1_000_000.0 + 0.012 + 0.010;
+        assert!(
+            approx(registration - mbr, expected_gap),
+            "gap {} should equal price+fees+margin {}",
+            registration - mbr,
+            expected_gap
+        );
+    }
+}
