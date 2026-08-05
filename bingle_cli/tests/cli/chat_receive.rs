@@ -1,6 +1,6 @@
 // Unit tests for the chat receive path (bingle_cli::chat_receive::receive_message).
 use bingle_cli::chat::parse_chat_args;
-use bingle_cli::chat_receive::{ReceivedMessage, receive_message};
+use bingle_cli::chat_receive::receive_message;
 use bingle_cli::chat_state::ChatState;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
@@ -36,14 +36,10 @@ fn state_registered_as(handle: &str, seed_contact: Option<(&str, &str)>) -> (Cha
 pub fn plaintext_message_prints_persists_and_adds_contact() {
     let (mut state, _dir) = state_registered_as("alice", None);
 
-    let out = receive_message(&mut state, "PEER_BOB", "bob", &json!({ "text": "hello" }));
-    assert_eq!(
-        out,
-        Some(ReceivedMessage {
-            display_handle: "bob".to_string(),
-            text: "hello".to_string(),
-        })
-    );
+    let received = receive_message(&mut state, "PEER_BOB", "bob", &json!({ "text": "hello" }))
+        .expect("plaintext message should be accepted");
+    assert_eq!(received.sender_handle, "bob");
+    assert_eq!(received.text, "hello");
 
     // The sender was recorded as a contact, resolvable for later --to.
     assert_eq!(state.resolve_recipient("bob"), Some("PEER_BOB"));
@@ -61,14 +57,11 @@ pub fn plaintext_message_prints_persists_and_adds_contact() {
 pub fn unknown_sender_handle_falls_back_to_id() {
     let (mut state, _dir) = state_registered_as("alice", None);
 
-    let out = receive_message(&mut state, "PEER_RAW", "", &json!({ "text": "hi" }));
-    assert_eq!(
-        out,
-        Some(ReceivedMessage {
-            display_handle: "PEER_RAW".to_string(),
-            text: "hi".to_string(),
-        })
-    );
+    let received = receive_message(&mut state, "PEER_RAW", "", &json!({ "text": "hi" }))
+        .expect("plaintext message should be accepted");
+    // Falls back to the id as the display handle when the sender handle is unknown.
+    assert_eq!(received.sender_handle, "PEER_RAW");
+    assert_eq!(received.text, "hi");
     // Contact keyed by id when the handle is unknown.
     assert_eq!(state.resolve_recipient("PEER_RAW"), Some("PEER_RAW"));
 }
@@ -106,14 +99,10 @@ pub fn known_sender_is_not_re_added() {
     // Pre-seed bob as a Manual contact; receiving from bob must not duplicate/downgrade the contact.
     let (mut state, _dir) = state_registered_as("alice", Some(("bob", "PEER_BOB")));
 
-    let out = receive_message(&mut state, "PEER_BOB", "bob", &json!({ "text": "yo" }));
-    assert_eq!(
-        out,
-        Some(ReceivedMessage {
-            display_handle: "bob".to_string(),
-            text: "yo".to_string(),
-        })
-    );
+    let received = receive_message(&mut state, "PEER_BOB", "bob", &json!({ "text": "yo" }))
+        .expect("plaintext message should be accepted");
+    assert_eq!(received.sender_handle, "bob");
+    assert_eq!(received.text, "yo");
     // Still exactly one contact for bob, and the message was stored.
     assert_eq!(state.contacts.len(), 1);
     assert_eq!(state.resolve_recipient("bob"), Some("PEER_BOB"));
