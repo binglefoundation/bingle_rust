@@ -7,6 +7,10 @@ pub mod chat_args;
 pub mod chat_receive;
 #[path = "chat_register.rs"]
 pub mod chat_register;
+#[path = "chat_repl.rs"]
+pub mod chat_repl;
+#[path = "chat_send.rs"]
+pub mod chat_send;
 #[path = "chat_state.rs"]
 pub mod chat_state;
 #[path = "echo_mode.rs"]

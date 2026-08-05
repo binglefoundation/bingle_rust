@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bingle_core::api::bingle_api::{BingleError, StartOptions};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
@@ -199,6 +200,63 @@ impl ChatState {
         self.local.get_messages().map_err(|e| e.to_string())
     }
 
+    /// Persist an outbound message as **pending** (`progress = 0.0`) and return its timestamp, which
+    /// keys later [`mark_delivered`](ChatState::mark_delivered) /
+    /// [`mark_send_failed`](ChatState::mark_send_failed) updates. Persisting before the send attempt
+    /// means a failed send survives in the state file for retry. Saves the state file.
+    pub fn queue_outbound(&mut self, recipient_handle: &str, text: &str) -> Result<i64, String> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .map_err(|e| e.to_string())?;
+        let sender = self.opts.handle.clone();
+        // add_message records it delivered (progress 1.0); immediately mark it pending so the retry
+        // path owns its lifecycle.
+        self.local
+            .add_message(
+                sender,
+                vec![recipient_handle.to_string()],
+                timestamp,
+                text.to_string(),
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+        self.local
+            .update_message_status(timestamp, 0.0, None)
+            .map_err(|e| e.to_string())?;
+        self.save_state()?;
+        Ok(timestamp)
+    }
+
+    /// Mark a previously queued outbound message (by `timestamp`) delivered, and save.
+    pub fn mark_delivered(&mut self, timestamp: i64) -> Result<(), String> {
+        self.local
+            .update_message_status(timestamp, 1.0, None)
+            .map_err(|e| e.to_string())?;
+        self.save_state()
+    }
+
+    /// Record a failed send attempt on a queued message. `permanent` distinguishes a give-up
+    /// (`progress = 1.0` with the reason — terminal) from a transient failure (`progress = 0.0` —
+    /// stays pending for retry). Saves the state file.
+    pub fn mark_send_failed(
+        &mut self,
+        timestamp: i64,
+        reason: &str,
+        permanent: bool,
+    ) -> Result<(), String> {
+        let progress = if permanent { 1.0 } else { 0.0 };
+        self.local
+            .update_message_status(timestamp, progress, Some(reason.to_string()))
+            .map_err(|e| e.to_string())?;
+        self.save_state()
+    }
+
+    /// Outbound messages still awaiting delivery (`progress < 1.0`).
+    pub fn pending_outbound(&self) -> Result<Vec<Message>, String> {
+        self.local.get_pending_messages().map_err(|e| e.to_string())
+    }
+
     /// Whether the local store currently holds a keypair.
     pub fn has_keypair(&self) -> bool {
         matches!(self.local.get_keypair(), Ok(Some(_)))
@@ -256,10 +314,14 @@ impl ChatState {
 
     /// The current balance and the operating minimum (both in ALGOs) for the account.
     ///
-    /// `keypair_status()` reports `ACTIVE` without inspecting the balance, so `chat` checks it here:
-    /// the operating minimum is the live registration cost from
-    /// [`AlgoBingle::required_funding`](bingle_core::blockchain::algo_bingle::AlgoBingle::required_funding),
-    /// falling back to [`REQUIRED_ALGO`] when the chain read fails or no app is configured.
+    /// `keypair_status()` reports `ACTIVE` without inspecting the balance, so `chat` checks it here.
+    /// The operating minimum is the account's **post-registration minimum balance** (MBR) — what a
+    /// registered account must retain — not the one-time registration cost. Using
+    /// [`required_funding`](bingle_core::blockchain::algo_bingle::AlgoBingle::required_funding) here
+    /// (as an earlier version did) re-charged the Bingle$ price + fees already spent at registration,
+    /// so a freshly registered account was wrongly flagged short by exactly what it just paid. If the
+    /// MBR cannot be read (chain hiccup, or no app configured) we do not block: a registered account
+    /// is guaranteed on-chain to hold at least its MBR, so `0.0` proceeds.
     fn operating_funding(&self) -> Result<(f64, f64), String> {
         let ops = self.local.get_algo_ops().map_err(|e| e.to_string())?;
         let balance_algos = ops
@@ -270,9 +332,14 @@ impl ChatState {
         let asset_id = self.opts.asset_id.unwrap_or(0);
         let operating_min_algos = if app_id != 0 {
             let bingle = AlgoBingle::new(ops, app_id, asset_id);
-            bingle.required_funding().unwrap_or(REQUIRED_ALGO)
+            bingle.post_registration_mbr().unwrap_or_else(|e| {
+                tracing::warn!(
+                    "chat: could not read account minimum balance ({e}); not blocking a registered account"
+                );
+                0.0
+            })
         } else {
-            REQUIRED_ALGO
+            0.0
         };
         Ok((balance_algos, operating_min_algos))
     }

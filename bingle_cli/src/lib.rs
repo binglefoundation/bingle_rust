@@ -6,4 +6,6 @@
 pub mod chat;
 pub mod chat_receive;
 pub mod chat_register;
+pub mod chat_repl;
+pub mod chat_send;
 pub mod chat_state;
