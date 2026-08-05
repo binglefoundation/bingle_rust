@@ -169,6 +169,7 @@ fn main() {
     let sub = args.remove(0);
     match sub.as_str() {
         "run" => cmd_run(args),
+        "chat" => cmd_chat(args),
         "register" => cmd_register(args),
         "buybingle" => cmd_buybingle(args),
         "sellbingle" => cmd_sellbingle(args),
@@ -182,7 +183,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     // Help (exit 0) is user-requested output and goes to stdout; a usage error (non-zero) goes to
     // stderr. Both bypass the tracing logger so they are never suppressed by the active log level.
     if code == 0 {
@@ -649,6 +650,38 @@ fn cmd_run(mut args: Vec<String>) {
     tracing::info!("Stopped.");
 }
 
+/// `chat` subcommand scaffold: parse and validate arguments, then report that the interactive chat
+/// is not wired up yet. Engine/network handling lands in later subtasks of the chat epic (#56); this
+/// command exists so those subtasks have a stable place to grow from. Argument parsing itself lives
+/// in `bingle_cli::chat::parse_chat_args` so it can be unit tested.
+fn cmd_chat(args: Vec<String>) {
+    const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--debug]";
+
+    // Subcommand help prints to stdout and exits 0, mirroring the other subcommands.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+
+    let chat_args = match parse_chat_args(args) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("Error: {e}\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+
+    // Scaffold only: the arguments are parsed and validated (including the --to/--to-id conflict and
+    // the log level) but there is no engine or connection yet. Emit the parsed shape at debug for the
+    // upcoming subtasks and a clear note that chat is not yet interactive.
+    tracing::debug!("chat: parsed args = {:?}", chat_args);
+    tracing::warn!(
+        "chat: argument scaffold only; interactive chat is not implemented yet (log level would be {})",
+        chat_args.log_level
+    );
+}
+
+use bingle_cli::chat::parse_chat_args;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use serde_json::json;
 use std::net::SocketAddr;
