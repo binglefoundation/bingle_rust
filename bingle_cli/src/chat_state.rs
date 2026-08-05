@@ -256,10 +256,14 @@ impl ChatState {
 
     /// The current balance and the operating minimum (both in ALGOs) for the account.
     ///
-    /// `keypair_status()` reports `ACTIVE` without inspecting the balance, so `chat` checks it here:
-    /// the operating minimum is the live registration cost from
-    /// [`AlgoBingle::required_funding`](bingle_core::blockchain::algo_bingle::AlgoBingle::required_funding),
-    /// falling back to [`REQUIRED_ALGO`] when the chain read fails or no app is configured.
+    /// `keypair_status()` reports `ACTIVE` without inspecting the balance, so `chat` checks it here.
+    /// The operating minimum is the account's **post-registration minimum balance** (MBR) — what a
+    /// registered account must retain — not the one-time registration cost. Using
+    /// [`required_funding`](bingle_core::blockchain::algo_bingle::AlgoBingle::required_funding) here
+    /// (as an earlier version did) re-charged the Bingle$ price + fees already spent at registration,
+    /// so a freshly registered account was wrongly flagged short by exactly what it just paid. If the
+    /// MBR cannot be read (chain hiccup, or no app configured) we do not block: a registered account
+    /// is guaranteed on-chain to hold at least its MBR, so `0.0` proceeds.
     fn operating_funding(&self) -> Result<(f64, f64), String> {
         let ops = self.local.get_algo_ops().map_err(|e| e.to_string())?;
         let balance_algos = ops
@@ -270,9 +274,14 @@ impl ChatState {
         let asset_id = self.opts.asset_id.unwrap_or(0);
         let operating_min_algos = if app_id != 0 {
             let bingle = AlgoBingle::new(ops, app_id, asset_id);
-            bingle.required_funding().unwrap_or(REQUIRED_ALGO)
+            bingle.post_registration_mbr().unwrap_or_else(|e| {
+                tracing::warn!(
+                    "chat: could not read account minimum balance ({e}); not blocking a registered account"
+                );
+                0.0
+            })
         } else {
-            REQUIRED_ALGO
+            0.0
         };
         Ok((balance_algos, operating_min_algos))
     }
