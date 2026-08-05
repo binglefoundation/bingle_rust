@@ -3,6 +3,8 @@
 pub mod app_support;
 #[path = "chat_args.rs"]
 pub mod chat_args;
+#[path = "chat_receive.rs"]
+pub mod chat_receive;
 #[path = "chat_register.rs"]
 pub mod chat_register;
 #[path = "chat_state.rs"]

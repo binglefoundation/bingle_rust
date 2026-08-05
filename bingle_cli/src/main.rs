@@ -688,7 +688,106 @@ fn cmd_chat(args: Vec<String>) {
         }
     };
 
+    // Ensure the account is registered and funded (exits non-zero with a clear message otherwise).
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
+
+    // Start the engine and receive/print/persist incoming messages until Ctrl-C.
+    let debug = chat_args.log_level == tracing_subscriber::filter::LevelFilter::DEBUG;
+    run_chat_session(state, debug);
+}
+
+/// Start the P2P engine for a ready (registered, funded) account and run the receive path: incoming
+/// plaintext messages are printed and appended to the state file until Ctrl-C, which stops the
+/// engine and saves once more. Mirrors `cmd_run`'s start loop and Ctrl-C handling. The send side and
+/// interactive prompt land in the REPL subtask (#61); this installs the receive handler only.
+fn run_chat_session(state: ChatState, debug: bool) {
+    let opts = state.opts.clone();
+    // Share the state with the engine's callback thread: the on_message handler mutates it.
+    let shared = Arc::new(std::sync::Mutex::new(state));
+    let api = BingleApiImpl::new(&opts);
+
+    {
+        let shared_for_msg = shared.clone();
+        api.access(|api_mut| {
+            let on_message: Arc<OnMessageHandler> =
+                Arc::new(move |sender, sender_handle, message| {
+                    let mut guard = match shared_for_msg.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            tracing::error!("chat: state lock poisoned; dropping message: {}", e);
+                            return;
+                        }
+                    };
+                    if let Some(received) = bingle_cli::chat_receive::receive_message(
+                        &mut guard,
+                        &sender,
+                        &sender_handle,
+                        &message,
+                    ) {
+                        // Print the received line. The interactive prompt redraw lands in #61.
+                        println!("{}: {}", received.display_handle, received.text);
+                    }
+                });
+            api_mut.set_on_message(Some(on_message));
+
+            // Status callbacks are noise for normal use; only wire them up under --debug.
+            if debug {
+                let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
+                    tracing::debug!("chat: connected sender={} handle={}", sender, sender_handle);
+                });
+                api_mut.set_on_connect(Some(on_connect));
+
+                let on_listening: Arc<OnListeningHandler> =
+                    Arc::new(move |listening, _nat_type| {
+                        tracing::debug!("chat: listening={}", listening);
+                    });
+                api_mut.set_on_listening(Some(on_listening));
+            }
+        });
+    }
+
+    // Start the engine, retrying while the Algorand node is unreachable (mirrors cmd_run).
+    loop {
+        let mut start_res = Ok(());
+        api.access(|api_mut| {
+            start_res = api_mut.start(&opts);
+        });
+        match start_res {
+            Ok(_) => break,
+            Err(e) => {
+                if let BingleError::Algo(ae) = &e
+                    && ae.kind == AlgoErrorKind::HostUnreachable
+                {
+                    tracing::error!("Algorand node unreachable: {}. Retrying in 60s...", ae);
+                    std::thread::sleep(Duration::from_secs(60));
+                    continue;
+                }
+                warn!("chat: failed to start: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    let (tx, rx) = channel::<()>();
+    install_ctrlc_handler(tx);
+    tracing::info!("chat: started as '{}'. Press Ctrl-C to stop.", opts.handle);
+
+    // Wait until Ctrl-C / SIGTERM.
+    let _ = rx.recv();
+    tracing::info!("chat: shutting down...");
+
+    api.access(|api_mut| api_mut.stop());
+
+    // Final save so any message received during shutdown is not lost.
+    match shared.lock() {
+        Ok(guard) => {
+            if let Err(e) = guard.save_state() {
+                warn!("chat: final save failed: {}", e);
+            }
+        }
+        Err(e) => warn!("chat: could not lock state for final save: {}", e),
+    }
+    tracing::info!("chat: stopped.");
 }
 
 /// Drive the first-run registration state machine to a ready account, or exit non-zero with a clear
@@ -708,9 +807,6 @@ fn run_chat_startup(state: &mut ChatState, cli_handle: Option<&str>, cli_passphr
                     "chat: account '{}' is registered and funded ({} known contact(s)); ready to chat",
                     handle,
                     state.contacts.len()
-                );
-                tracing::warn!(
-                    "chat: interactive session loop is implemented in a later subtask; exiting"
                 );
                 return;
             }
