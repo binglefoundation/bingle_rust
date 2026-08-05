@@ -229,6 +229,8 @@ impl BingleJsiApiImpl {
     ///   handle_cache_expiry_secs: number | null,
     ///   debug: boolean,
     ///   local: string | null,
+    ///   notify_gateway_url: string | null,
+    ///   notify_on_giveup: boolean | null,
     /// }
     /// ```
     pub fn init(config: BingleJsiConfig) -> Result<Arc<Self>, BingleJsiError> {
@@ -324,11 +326,16 @@ impl BingleJsiApiImpl {
         // Initialize local API if --local was provided
         let mut local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> = None;
         if let Some(path) = &local_file {
-            let cfg = LocalApiConfig {
-                algo_config: opts.algo_provider_config.clone().unwrap_or_default(),
-                app_id: opts.app_id.unwrap_or(0),
-                asset_id: opts.asset_id.unwrap_or(0),
-            };
+            // Give-up nudge (bingle_notify #11/#17): the feature stays on by default; supplying a
+            // gateway URL is what activates it. An explicit `notify_on_giveup: false` disables it
+            // even when a URL is set.
+            let cfg = LocalApiConfig::with_notify(
+                opts.algo_provider_config.clone().unwrap_or_default(),
+                opts.app_id.unwrap_or(0),
+                opts.asset_id.unwrap_or(0),
+                config.notify_on_giveup,
+                config.notify_gateway_url.clone(),
+            );
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
@@ -796,6 +803,13 @@ impl BingleJsiApiImpl {
         self.api.clone()
     }
 
+    /// The local API this instance was initialized with, if any. Lets tests reach the concrete
+    /// implementation (via `BingleLocalApi::as_any_mut`) to observe or override behaviour wired up
+    /// by `init` — e.g. the give-up nudge sender (bingle_notify #17).
+    pub fn local_api_for_tests(&self) -> Option<Arc<Mutex<Box<dyn BingleLocalApi>>>> {
+        self.local_api.clone()
+    }
+
     pub fn init_for_tests(
         api: Arc<dyn BingleApiBoth>,
         local_api: Option<Arc<Mutex<Box<dyn BingleLocalApi>>>>,
@@ -1079,6 +1093,27 @@ impl BingleJsiApi for BingleJsiApiImpl {
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
         Ok(())
+    }
+
+    fn sign_notify_envelope(
+        &self,
+        route: String,
+        iss: String,
+        audience: String,
+        token: String,
+        env: String,
+        nonce: String,
+        exp: i64,
+    ) -> Result<String, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        // get_algo_ops binds to the active keypair (no network); it errors if none is set, which
+        // maps to a typed jsi error rather than signing with a bogus key.
+        let ops = guard.get_algo_ops().map_err(bingle_error_to_jsi)?;
+        drop(guard);
+        ops.sign_notify_envelope(&route, &iss, &audience, &token, &env, &nonce, exp)
+            .map_err(|e| BingleJsiError::InternalError {
+                reason: e.to_string(),
+            })
     }
 
     fn add_contact(

@@ -41,7 +41,9 @@ class BingleJsiBridge: RCTEventEmitter {
                     assetId: (config["asset_id"] as? NSNumber)?.uint64Value,
                     handleCacheExpirySecs: (config["handle_cache_expiry_secs"] as? NSNumber)?.uint64Value,
                     debug: config["debug"] as? Bool ?? false,
-                    local: config["local"] as? String
+                    local: config["local"] as? String,
+                    notifyGatewayUrl: config["notify_gateway_url"] as? String,
+                    notifyOnGiveup: config["notify_on_giveup"] as? Bool
                 )
                 let api = try createBingleApi(config: jsiConfig)
                 self.apiInstance = api
@@ -225,6 +227,22 @@ class BingleJsiBridge: RCTEventEmitter {
             do {
                 let kp = try api.importKeypair(passphrase: passphrase)
                 resolve(["id": kp.id, "passphrase": kp.passphrase])
+            } catch {
+                reject("BINGLE_ERROR", "\(error)", error)
+            }
+        }
+    }
+
+    @objc
+    func signNotifyEnvelope(_ route: String, iss: String, audience: String, token: String, env: String, nonce: String, exp: NSNumber, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let api = apiInstance else {
+            reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.", nil)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let sig = try api.signNotifyEnvelope(route: route, iss: iss, audience: audience, token: token, env: env, nonce: nonce, exp: exp.int64Value)
+                resolve(sig)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }

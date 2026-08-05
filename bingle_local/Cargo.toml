@@ -17,6 +17,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Give-up nudge (bingle_notify #11): sign the canonical /alert envelope and POST it best-effort.
+base64 = "0.21"
+getrandom = "0.2"
+reqwest = { version = "0.11", features = ["json", "blocking"] }
 
 [[test]]
 # Unit tests: all bingle_local tests are local unit-style tests.
