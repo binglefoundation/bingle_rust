@@ -12,4 +12,5 @@ else
   echo "runclaude.sh: warning: ~/.config/bingle_claude.env not found; using default GitHub identity" >&2
 fi
 
-exec claude --ide --dangerously-skip-permissions -w master
+dir=$(basename "$(cd "$(dirname "$0")" && pwd)")
+exec claude --dangerously-skip-permissions -w "$dir"
