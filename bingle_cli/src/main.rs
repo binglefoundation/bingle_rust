@@ -650,11 +650,12 @@ fn cmd_run(mut args: Vec<String>) {
     tracing::info!("Stopped.");
 }
 
-/// `chat` subcommand: parse arguments, then bridge the BingleLocal `--state_file` (keypair, handle,
-/// contacts) into the engine configuration. The interactive transport is wired up by later subtasks
-/// of the chat epic (#56); this command establishes the parsed args and the state-file bridge they
-/// build on. Argument parsing and the bridge live in `bingle_cli::chat` / `bingle_cli::chat_state`
-/// so they can be unit tested.
+/// `chat` subcommand: parse arguments, bridge the BingleLocal `--state_file`, then run the first-run
+/// registration flow (issue #59). A user can chat only from a registered account, reached either by
+/// running `bingle_cli register` beforehand or by passing a funded `--passphrase` + `--handle` here;
+/// on later runs the saved state file suffices with no credentials. The interactive session loop is
+/// a later subtask of the chat epic (#56); this command takes the account to the point of being
+/// registered and ready. The pure startup decision lives in `bingle_cli::chat_register` for testing.
 fn cmd_chat(args: Vec<String>) {
     const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--debug]";
 
@@ -672,9 +673,14 @@ fn cmd_chat(args: Vec<String>) {
         }
     };
 
-    // Bridge the state file into the engine configuration: this resolves the handle/passphrase from
-    // the stored keypair and seeds the contact map for --to resolution.
-    let state = match ChatState::from_chat_args(&chat_args) {
+    // Capture the credentials the user supplied on the *command line* (before the state-file bridge
+    // may fill them in from the file). The registration decision distinguishes a CLI-supplied handle
+    // (to detect a mismatch with an already-registered one) from one resolved out of the file.
+    let cli_handle: Option<String> = Some(chat_args.opts.handle.clone()).filter(|h| !h.is_empty());
+    let cli_passphrase: Option<String> = chat_args.opts.algo_passphrase.clone();
+
+    // Bridge the state file: resolves handle/passphrase from the stored keypair and seeds contacts.
+    let mut state = match ChatState::from_chat_args(&chat_args) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error: {e}\n{USAGE}");
@@ -682,24 +688,114 @@ fn cmd_chat(args: Vec<String>) {
         }
     };
 
-    // Report the resolved configuration. Never log the passphrase — only whether one was resolved.
-    tracing::info!(
-        "chat: configured as handle '{}' with {} known contact(s){}",
-        state.opts.handle,
-        state.contacts.len(),
-        if state.opts.algo_passphrase.is_some() {
-            " (passphrase loaded)"
-        } else {
-            ""
-        }
-    );
+    run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
+}
 
-    // The interactive transport lands in a later subtask; the state-file bridge is in place.
-    tracing::warn!("chat: interactive chat is not implemented yet; state bridge only");
+/// Drive the first-run registration state machine to a ready account, or exit non-zero with a clear
+/// message. On success (the account is registered and adequately funded) it logs readiness and
+/// returns; the interactive session loop lands in a later subtask. Never logs the passphrase.
+fn run_chat_startup(state: &mut ChatState, cli_handle: Option<&str>, cli_passphrase: Option<&str>) {
+    let have_passphrase = cli_passphrase.is_some();
+    let mut status = resolve_status_or_exit(state);
+
+    // The loop re-decides after each state-changing step (import, register). Each step strictly
+    // advances the account (NoKeypair -> Funded/Active/Unfunded; Funded -> Active), so a small cap
+    // is a safety net against an unexpected non-converging status rather than normal flow.
+    for _ in 0..6 {
+        match decide_startup(&status, cli_handle, have_passphrase) {
+            StartupDecision::Proceed { handle } => {
+                tracing::info!(
+                    "chat: account '{}' is registered and funded ({} known contact(s)); ready to chat",
+                    handle,
+                    state.contacts.len()
+                );
+                tracing::warn!(
+                    "chat: interactive session loop is implemented in a later subtask; exiting"
+                );
+                return;
+            }
+            StartupDecision::NeedCredentials { gap } => {
+                let msg = match gap {
+                    CredentialGap::NoAccount => {
+                        "no registered account: pass a funded --passphrase and --handle to register on first run, or run `bingle_cli register` first"
+                    }
+                    CredentialGap::FundedNeedsHandle => {
+                        "account is funded but has no handle: pass --handle to register it"
+                    }
+                };
+                eprintln!("Error: {msg}");
+                std::process::exit(2);
+            }
+            StartupDecision::Fund { id, needed_algos } => {
+                eprintln!(
+                    "Error: account {id} is not sufficiently funded. Add {needed_algos:.6} ALGO to this address, then re-run."
+                );
+                std::process::exit(1);
+            }
+            StartupDecision::HandleMismatch { existing, supplied } => {
+                eprintln!(
+                    "Error: this account is already registered as '{existing}'; it cannot be re-registered as '{supplied}'. Omit --handle or pass '{existing}'."
+                );
+                std::process::exit(1);
+            }
+            StartupDecision::Register { handle } => {
+                // Ensure a keypair exists, importing from the CLI passphrase on genuine first run,
+                // then re-decide against the freshly resolved status (the account may turn out to be
+                // already registered, funded, or still unfunded).
+                if !state.has_keypair() {
+                    let Some(passphrase) = cli_passphrase else {
+                        // decide_startup only returns Register for NoKeypair when a passphrase is
+                        // present, so this is unreachable in practice; guard defensively.
+                        eprintln!("Error: --passphrase is required to register a new account");
+                        std::process::exit(2);
+                    };
+                    if let Err(e) = state.import_keypair(passphrase) {
+                        eprintln!("Error: could not import account from passphrase: {e}");
+                        std::process::exit(2);
+                    }
+                    status = resolve_status_or_exit(state);
+                    continue;
+                }
+                // Keypair present and funded but unregistered: register now, then re-resolve.
+                match state.register(&handle) {
+                    Ok(()) => {
+                        tracing::info!("chat: registered handle '{handle}'");
+                        status = resolve_status_or_exit(state);
+                    }
+                    Err(RegisterError::HandleTaken(owner)) => {
+                        eprintln!(
+                            "Error: handle '{handle}' is already in use by {owner}; choose another handle."
+                        );
+                        std::process::exit(1);
+                    }
+                    Err(RegisterError::Other(msg)) => {
+                        eprintln!("Error: registration failed: {msg}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("Error: could not reach a ready account state; please check funding and try again.");
+    std::process::exit(1);
+}
+
+/// Resolve the account status or exit non-zero with the error (e.g. blockchain unreachable).
+fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
+    match state.resolve_account_status() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 use bingle_cli::chat::parse_chat_args;
+use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_state::ChatState;
+use bingle_cli::chat_state::RegisterError;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use serde_json::json;
 use std::net::SocketAddr;

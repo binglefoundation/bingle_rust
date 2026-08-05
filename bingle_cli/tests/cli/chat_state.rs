@@ -116,19 +116,17 @@ pub fn missing_state_file_with_handle_starts_empty() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn missing_state_file_without_handle_is_clear_error() {
+pub fn missing_state_file_without_handle_defers_to_registration() {
+    // Since issue #59, a missing file with no --handle is not an error at load time: it is an
+    // unregistered account whose fate the cmd_chat registration flow decides. from_chat_args now
+    // succeeds with an empty handle rather than erroring here.
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("nope.json").to_string_lossy().into_owned();
 
     let chat_args = parse_chat_args(args(&["--state_file", &path])).expect("parse");
-    // ChatState intentionally does not implement Debug (it holds the passphrase), so use `.err()`.
-    let err = ChatState::from_chat_args(&chat_args)
-        .err()
-        .expect("no handle can be resolved");
-    assert!(
-        err.contains("no handle"),
-        "error should explain the missing handle; got: {err}"
-    );
+    let state = ChatState::from_chat_args(&chat_args).expect("load should not require a handle");
+    assert_eq!(state.opts.handle, "");
+    assert!(state.contacts.is_empty());
 }
 
 #[test]
