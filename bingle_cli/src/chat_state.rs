@@ -144,16 +144,6 @@ impl ChatState {
         }
     }
 
-    /// Add a contact to both the persistent store and the in-memory recipient map. The caller is
-    /// responsible for calling [`save_state`](ChatState::save_state) to persist it.
-    pub fn add_contact(&mut self, handle: &str, id: &str) -> Result<(), String> {
-        self.local
-            .add_contact(handle.to_string(), id.to_string(), ContactSource::Manual)
-            .map_err(|e| e.to_string())?;
-        self.contacts.insert(handle.to_string(), id.to_string());
-        Ok(())
-    }
-
     /// Append a message to the persistent history and return the stored [`Message`] record. The
     /// caller persists to disk via [`save_state`](ChatState::save_state).
     pub fn record_message(
