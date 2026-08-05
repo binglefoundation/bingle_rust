@@ -691,41 +691,87 @@ fn cmd_chat(args: Vec<String>) {
     // Ensure the account is registered and funded (exits non-zero with a clear message otherwise).
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
 
-    // Start the engine and receive/print/persist incoming messages until Ctrl-C.
+    // Start the engine and run the interactive REPL (send / receive / switch) until exit.
     let debug = chat_args.log_level == tracing_subscriber::filter::LevelFilter::DEBUG;
-    run_chat_session(state, debug);
+    run_chat_session(state, chat_args.to.clone(), chat_args.to_id.clone(), debug);
 }
 
-/// Start the P2P engine for a ready (registered, funded) account and run the receive path: incoming
-/// plaintext messages are printed and appended to the state file until Ctrl-C, which stops the
-/// engine and saves once more. Mirrors `cmd_run`'s start loop and Ctrl-C handling. The send side and
-/// interactive prompt land in the REPL subtask (#61); this installs the receive handler only.
-fn run_chat_session(state: ChatState, debug: bool) {
+/// Bounded send attempts before a queued message is marked permanently failed.
+const MAX_SEND_ATTEMPTS: u32 = 5;
+/// How often the background worker re-attempts pending outbound messages.
+const RETRY_INTERVAL_SECS: u64 = 5;
+
+/// `MessageSender` backed by the live engine: sends by handle or id.
+struct EngineSender {
+    api: Arc<BingleApiImpl>,
+}
+
+impl bingle_cli::chat_send::MessageSender for EngineSender {
+    fn send_text(
+        &self,
+        target: &bingle_cli::chat_send::SendTarget,
+        message: &serde_json::Value,
+    ) -> Result<bool, String> {
+        use bingle_cli::chat_send::SendTarget;
+        match target {
+            SendTarget::Handle(handle) => self
+                .api
+                .send_message_to_handle(handle, message.clone(), None)
+                .map_err(|e| e.to_string()),
+            SendTarget::Id(id) => self
+                .api
+                .send_message_to_id(id, message.clone(), None)
+                .map_err(|e| e.to_string()),
+        }
+    }
+}
+
+/// Print `prompt` with no trailing newline and flush, so the cursor sits after it.
+fn reprint_prompt(prompt: &str) {
+    print!("{prompt}");
+    let _ = std::io::stdout().flush();
+}
+
+/// Start the P2P engine for a ready (registered, funded) account and run the interactive REPL:
+/// receive/print/persist incoming messages, and prompt for outgoing ones. Plain input sends to the
+/// current recipient (persisted + retried via the pending-message model); `/prefix` switches the
+/// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit` or Ctrl-D exits
+/// cleanly (Ctrl-C likewise, via the signal handler). Mirrors `cmd_run`'s start loop.
+fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>, debug: bool) {
     let opts = state.opts.clone();
-    // Share the state with the engine's callback thread: the on_message handler mutates it.
+    // Shared with the engine callback and the retry worker: all mutate the one ChatState.
     let shared = Arc::new(std::sync::Mutex::new(state));
     let api = BingleApiImpl::new(&opts);
+    // The prompt currently shown, so async prints (received messages, retry results) can redraw it.
+    let prompt_line = Arc::new(std::sync::Mutex::new(CurrentRecipient::None.prompt()));
 
     {
         let shared_for_msg = shared.clone();
+        let prompt_for_msg = prompt_line.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
-                    let mut guard = match shared_for_msg.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            tracing::error!("chat: state lock poisoned; dropping message: {}", e);
-                            return;
-                        }
+                    let received = {
+                        let mut guard = match shared_for_msg.lock() {
+                            Ok(g) => g,
+                            Err(e) => {
+                                tracing::error!("chat: state lock poisoned; dropping message: {e}");
+                                return;
+                            }
+                        };
+                        bingle_cli::chat_receive::receive_message(
+                            &mut guard,
+                            &sender,
+                            &sender_handle,
+                            &message,
+                        )
                     };
-                    if let Some(received) = bingle_cli::chat_receive::receive_message(
-                        &mut guard,
-                        &sender,
-                        &sender_handle,
-                        &message,
-                    ) {
-                        // Print the received line. The interactive prompt redraw lands in #61.
-                        println!("{}: {}", received.sender_handle, received.text);
+                    if let Some(received) = received {
+                        // Print above the current prompt, then redraw it so a half-typed line stays
+                        // readable.
+                        println!("\n{}: {}", received.sender_handle, received.text);
+                        let prompt = prompt_for_msg.lock().map(|g| g.clone()).unwrap_or_default();
+                        reprint_prompt(&prompt);
                     }
                 });
             api_mut.set_on_message(Some(on_message));
@@ -768,24 +814,150 @@ fn run_chat_session(state: ChatState, debug: bool) {
         }
     }
 
-    let (tx, rx) = channel::<()>();
-    install_ctrlc_handler(tx);
-    tracing::info!("chat: started as '{}'. Press Ctrl-C to stop.", opts.handle);
+    // Ctrl-C / SIGTERM: the main thread blocks on stdin, so the signal handler itself performs the
+    // clean shutdown (stop + final save) and exits.
+    {
+        let api_sig = api.clone();
+        let shared_sig = shared.clone();
+        if let Err(e) = ctrlc::set_handler(move || {
+            tracing::info!("chat: received signal; shutting down");
+            api_sig.access(|api_mut| api_mut.stop());
+            if let Ok(guard) = shared_sig.lock() {
+                let _ = guard.save_state();
+            }
+            std::process::exit(0);
+        }) {
+            warn!("chat: failed to install signal handler: {}", e);
+        }
+    }
 
-    // Wait until Ctrl-C / SIGTERM.
-    let _ = rx.recv();
-    tracing::info!("chat: shutting down...");
+    // Background retry worker: periodically re-attempt any pending outbound messages.
+    {
+        let retry_api = api.clone();
+        let retry_shared = shared.clone();
+        let retry_prompt = prompt_line.clone();
+        std::thread::spawn(move || {
+            let sender = EngineSender { api: retry_api };
+            let mut attempts: std::collections::HashMap<i64, u32> =
+                std::collections::HashMap::new();
+            loop {
+                std::thread::sleep(Duration::from_secs(RETRY_INTERVAL_SECS));
+                let outcomes = match retry_shared.lock() {
+                    Ok(mut guard) => bingle_cli::chat_send::retry_pending(
+                        &sender,
+                        &mut guard,
+                        &mut attempts,
+                        MAX_SEND_ATTEMPTS,
+                    ),
+                    Err(_) => continue,
+                };
+                if outcomes.is_empty() {
+                    continue;
+                }
+                for outcome in outcomes {
+                    match outcome.result {
+                        RetryResult::Delivered => {
+                            println!("\n✓ delivered to {}", outcome.recipient)
+                        }
+                        RetryResult::GaveUp(reason) => println!(
+                            "\n! send to {} failed permanently: {}",
+                            outcome.recipient, reason
+                        ),
+                        // Interim retries are quiet; the first failure already printed a line.
+                        RetryResult::Retrying(_) => {}
+                    }
+                }
+                let prompt = retry_prompt.lock().map(|g| g.clone()).unwrap_or_default();
+                reprint_prompt(&prompt);
+            }
+        });
+    }
 
-    api.access(|api_mut| api_mut.stop());
+    tracing::info!(
+        "chat: started as '{}'. Type a message, /handle to switch recipient, or !exit.",
+        opts.handle
+    );
 
-    // Final save so any message received during shutdown is not lost.
-    match shared.lock() {
-        Ok(guard) => {
-            if let Err(e) = guard.save_state() {
-                warn!("chat: final save failed: {}", e);
+    // Interactive loop on the main thread (engine + retry worker run on their own threads).
+    let sender = EngineSender { api: api.clone() };
+    let mut recipient = CurrentRecipient::from_args(to.as_deref(), to_id.as_deref());
+    let stdin = std::io::stdin();
+    loop {
+        let prompt = recipient.prompt();
+        if let Ok(mut g) = prompt_line.lock() {
+            *g = prompt.clone();
+        }
+        reprint_prompt(&prompt);
+
+        let mut line = String::new();
+        match stdin.read_line(&mut line) {
+            Ok(0) => {
+                println!();
+                break;
+            } // Ctrl-D / EOF
+            Ok(_) => {}
+            Err(e) => {
+                warn!("chat: input error: {}", e);
+                break;
             }
         }
-        Err(e) => warn!("chat: could not lock state for final save: {}", e),
+
+        match parse_input(&line) {
+            ChatInput::Empty => continue,
+            ChatInput::Exit => break,
+            ChatInput::Switch { prefix } => {
+                if prefix.is_empty() {
+                    println!("usage: /<handle-prefix>");
+                    continue;
+                }
+                match api.handle_lookup_partial(&prefix) {
+                    Ok(Some((id, canonical))) => {
+                        recipient = CurrentRecipient::Handle {
+                            handle: canonical.clone(),
+                            id: Some(id.clone()),
+                        };
+                        if let Ok(mut guard) = shared.lock()
+                            && let Err(e) = guard.add_received_contact(&canonical, &id)
+                        {
+                            warn!("chat: could not record contact '{}': {}", canonical, e);
+                        }
+                    }
+                    Ok(None) => println!("no handle matching '{prefix}'"),
+                    Err(e) => println!("lookup failed: {e}"),
+                }
+            }
+            ChatInput::Send { text } => match recipient.target() {
+                None => println!("no recipient; use /<handle> to pick one, or start with --to"),
+                Some(target) => {
+                    let report = match shared.lock() {
+                        Ok(mut guard) => {
+                            bingle_cli::chat_send::send_once(&sender, &mut guard, &target, &text)
+                        }
+                        Err(_) => {
+                            warn!("chat: state lock poisoned");
+                            continue;
+                        }
+                    };
+                    // On success print nothing: the terminal already echoed the typed line, which is
+                    // the transcript entry. Only surface failures.
+                    if let SendReport::Failed(reason) = report {
+                        println!(
+                            "! send to {} failed: {} — retrying…",
+                            target.label(),
+                            reason
+                        );
+                    }
+                }
+            },
+        }
+    }
+
+    tracing::info!("chat: shutting down...");
+    api.access(|api_mut| api_mut.stop());
+    if let Ok(guard) = shared.lock()
+        && let Err(e) = guard.save_state()
+    {
+        warn!("chat: final save failed: {}", e);
     }
     tracing::info!("chat: stopped.");
 }
@@ -890,6 +1062,8 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
+use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
+use bingle_cli::chat_send::{RetryResult, SendReport};
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_core::api::network_endpoint::NetworkEndpoint;

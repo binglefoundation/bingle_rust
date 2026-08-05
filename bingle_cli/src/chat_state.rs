@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bingle_core::api::bingle_api::{BingleError, StartOptions};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
@@ -197,6 +198,63 @@ impl ChatState {
     /// The stored message history, newest-appended last.
     pub fn messages(&self) -> Result<Vec<Message>, String> {
         self.local.get_messages().map_err(|e| e.to_string())
+    }
+
+    /// Persist an outbound message as **pending** (`progress = 0.0`) and return its timestamp, which
+    /// keys later [`mark_delivered`](ChatState::mark_delivered) /
+    /// [`mark_send_failed`](ChatState::mark_send_failed) updates. Persisting before the send attempt
+    /// means a failed send survives in the state file for retry. Saves the state file.
+    pub fn queue_outbound(&mut self, recipient_handle: &str, text: &str) -> Result<i64, String> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .map_err(|e| e.to_string())?;
+        let sender = self.opts.handle.clone();
+        // add_message records it delivered (progress 1.0); immediately mark it pending so the retry
+        // path owns its lifecycle.
+        self.local
+            .add_message(
+                sender,
+                vec![recipient_handle.to_string()],
+                timestamp,
+                text.to_string(),
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+        self.local
+            .update_message_status(timestamp, 0.0, None)
+            .map_err(|e| e.to_string())?;
+        self.save_state()?;
+        Ok(timestamp)
+    }
+
+    /// Mark a previously queued outbound message (by `timestamp`) delivered, and save.
+    pub fn mark_delivered(&mut self, timestamp: i64) -> Result<(), String> {
+        self.local
+            .update_message_status(timestamp, 1.0, None)
+            .map_err(|e| e.to_string())?;
+        self.save_state()
+    }
+
+    /// Record a failed send attempt on a queued message. `permanent` distinguishes a give-up
+    /// (`progress = 1.0` with the reason — terminal) from a transient failure (`progress = 0.0` —
+    /// stays pending for retry). Saves the state file.
+    pub fn mark_send_failed(
+        &mut self,
+        timestamp: i64,
+        reason: &str,
+        permanent: bool,
+    ) -> Result<(), String> {
+        let progress = if permanent { 1.0 } else { 0.0 };
+        self.local
+            .update_message_status(timestamp, progress, Some(reason.to_string()))
+            .map_err(|e| e.to_string())?;
+        self.save_state()
+    }
+
+    /// Outbound messages still awaiting delivery (`progress < 1.0`).
+    pub fn pending_outbound(&self) -> Result<Vec<Message>, String> {
+        self.local.get_pending_messages().map_err(|e| e.to_string())
     }
 
     /// Whether the local store currently holds a keypair.
