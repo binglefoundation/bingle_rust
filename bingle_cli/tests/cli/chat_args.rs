@@ -118,3 +118,24 @@ pub fn unknown_flag_is_error() {
         "error should name the unknown flag; got: {err}"
     );
 }
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn state_file_allows_missing_handle() {
+    // With a state file the handle can come from the stored keypair, so it need not be on the CLI.
+    // parse leaves the handle empty; the bridge fills it in from the file.
+    let parsed = parse_chat_args(args(&["--state_file", "chat.state", "--to", "bob"]))
+        .expect("state file should defer the handle");
+    assert_eq!(parsed.opts.handle, "");
+    assert_eq!(parsed.state_file.as_deref(), Some("chat.state"));
+    assert_eq!(parsed.to.as_deref(), Some("bob"));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn state_file_still_accepts_explicit_handle() {
+    let parsed = parse_chat_args(args(&["alice", "--state_file", "chat.state"]))
+        .expect("explicit handle with a state file should parse");
+    assert_eq!(parsed.opts.handle, "alice");
+    assert_eq!(parsed.state_file.as_deref(), Some("chat.state"));
+}

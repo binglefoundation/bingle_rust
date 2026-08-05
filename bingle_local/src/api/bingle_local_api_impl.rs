@@ -173,6 +173,14 @@ impl BingleApiLocalImpl {
         self.alert_poster = poster;
     }
 
+    /// The account's registered handle as recorded in local state (memoized once the account is
+    /// ACTIVE, and restored by [`load`](BingleLocalApi::load)), or `None` if unknown. Reads the
+    /// in-memory memo only — no blockchain access. Used by the `bingle_cli chat` state-file bridge
+    /// to start the engine from a saved state file without requiring `--handle` on the command line.
+    pub fn own_handle(&self) -> Option<String> {
+        self.own_handle.lock().ok().and_then(|g| g.clone())
+    }
+
     /// Seed the memoized local handle (tests only). Lets a test exercise the give-up nudge, which
     /// signs the envelope as the local handle, without a live blockchain read to resolve it.
     pub fn seed_own_handle_for_tests(&self, handle: String) {

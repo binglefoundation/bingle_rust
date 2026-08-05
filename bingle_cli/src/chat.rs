@@ -11,6 +11,11 @@ use bingle_core::api::bingle_api::StartOptions;
 use bingle_core::util::cli_utils::parse_start_options_from_args;
 use tracing_subscriber::filter::LevelFilter;
 
+/// Placeholder positional handle injected so `parse_start_options_from_args` accepts args that omit
+/// `--handle` when a `--state_file` is present. It is blanked immediately after parsing; the chat
+/// state-file bridge fills the real handle from the stored keypair. Never surfaced to the user.
+const HANDLE_FROM_STATE_FILE: &str = "__bingle_chat_handle_from_state_file__";
+
 /// Parsed arguments for `bingle_cli chat`.
 #[derive(Debug)]
 pub struct ChatArgs {
@@ -66,7 +71,22 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         return Err("--to and --to-id are mutually exclusive".to_string());
     }
 
-    let opts = parse_start_options_from_args(rest)?;
+    // `parse_start_options_from_args` requires a handle. When a state file is supplied the handle
+    // (and passphrase) can come from the stored keypair instead, so a missing handle is not an error
+    // here — it is deferred to the state-file bridge. We detect that specific case from the parser's
+    // error and re-parse with a placeholder positional handle, then blank it so the bridge fills it
+    // in from the file (leaving it non-empty would be mistaken for a CLI-provided handle).
+    let opts = match parse_start_options_from_args(rest.clone()) {
+        Ok(o) => o,
+        Err(e) if state_file.is_some() && e.starts_with("Missing handle") => {
+            let mut with_placeholder = rest;
+            with_placeholder.push(HANDLE_FROM_STATE_FILE.to_string());
+            let mut o = parse_start_options_from_args(with_placeholder)?;
+            o.handle = String::new();
+            o
+        }
+        Err(e) => return Err(e),
+    };
 
     let log_level = if debug {
         LevelFilter::DEBUG
