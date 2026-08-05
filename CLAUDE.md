@@ -23,7 +23,7 @@
 ## Before creating a PR
 
 1. Run the `unit` test target and verify all tests pass with no warnings.
-2. Ensure `tests`, `bingle_jsi`, `bingle_local`, and `bingle_webserver` trees all compile.
+2. Ensure `tests`, `bingle_jsi`, `bingle_local`, `bingle_cli`, and `bingle_webserver` trees all compile.
 3. Ensure `scripts/run_quality_checks.sh --strict` passes
 
 ## Git notes
