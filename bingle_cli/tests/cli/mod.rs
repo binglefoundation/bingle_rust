@@ -7,3 +7,5 @@ pub mod echo_mode;
 pub mod run_args;
 #[path = "shutdown.rs"]
 pub mod shutdown;
+#[path = "version_help.rs"]
+pub mod version_help;

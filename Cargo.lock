@@ -470,7 +470,7 @@ dependencies = [
 
 [[package]]
 name = "bingle_cli"
-version = "0.2.3"
+version = "0.2.8"
 dependencies = [
  "bingle_core",
  "bingle_local",
@@ -481,6 +481,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "vergen",
 ]
 
 [[package]]
