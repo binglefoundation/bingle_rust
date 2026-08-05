@@ -1,0 +1,33 @@
+[package]
+name = "bingle_cli"
+version = "0.2.3"
+edition = "2024"
+description = "Command line interface for Bingle: register handles, run nodes/relays, and trade BINGLE on Algorand."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/binglefoundation/bingle_rust"
+autotests = false
+
+[[bin]]
+name = "bingle_cli"
+path = "src/main.rs"
+
+[dependencies]
+bingle_core = { path = "../bingle_core", version = "0.2.3" }
+bingle_local = { path = "../bingle_local", version = "0.2.3" }
+chrono = { version = "0.4", features = ["serde"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ctrlc = { version = "3", features = ["termination"] }
+
+[dev-dependencies]
+bingle_test = { path = "../bingle_test" }
+
+# Unit tests: local CLI tests with no external resource requirements.
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+
+[lints]
+workspace = true

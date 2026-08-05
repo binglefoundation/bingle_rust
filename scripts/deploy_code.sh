@@ -21,12 +21,12 @@ set -euo pipefail
 
 # ── configuration ─────────────────────────────────────────────────────
 BRANCH="deployed"
-PUBLISH_CRATES=(bingle_core bingle_local)   # crates.io, in dependency order
+PUBLISH_CRATES=(bingle_core bingle_local bingle_cli)   # crates.io, in dependency order (bingle_cli depends on the other two, so it publishes last)
 NPM_DIR="bingle_jsi"
 NPM_PKG="react-native-bingle-jsi"
 BUMP_FILES=(
   bingle_core/Cargo.toml bingle_local/Cargo.toml bingle_jsi/Cargo.toml
-  bingle_webserver/Cargo.toml bingle_test/Cargo.toml
+  bingle_webserver/Cargo.toml bingle_test/Cargo.toml bingle_cli/Cargo.toml
   bingle_jsi/package.json Cargo.lock
 )
 
@@ -173,7 +173,7 @@ BUMP_APPLIED=1
 python3 - "$VERSION" <<'PY'
 import re, sys, pathlib
 version = sys.argv[1]
-members = ["bingle_core", "bingle_local", "bingle_jsi", "bingle_webserver", "bingle_test"]
+members = ["bingle_core", "bingle_local", "bingle_jsi", "bingle_webserver", "bingle_test", "bingle_cli"]
 for m in members:
     p = pathlib.Path(m) / "Cargo.toml"
     text = p.read_text()

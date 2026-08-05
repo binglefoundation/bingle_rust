@@ -41,12 +41,12 @@ if [[ $DO_CARGO_BUILD -eq 1 ]]; then
       cargo install cargo-zigbuild
     fi
     rustup target add "$TARGET_TRIPLE" || true
-    echo "[build-cli-image] Using: cargo zigbuild --bin bingle_cli --target $TARGET_TRIPLE"
-    NO_COLOR=1 cargo zigbuild --bin bingle_cli --target "$TARGET_TRIPLE"
+    echo "[build-cli-image] Using: cargo zigbuild -p bingle_cli --bin bingle_cli --target $TARGET_TRIPLE"
+    NO_COLOR=1 cargo zigbuild -p bingle_cli --bin bingle_cli --target "$TARGET_TRIPLE"
   else
     rustup target add "$TARGET_TRIPLE" || true
-    echo "[build-cli-image] Using: cargo build --bin bingle_cli --target $TARGET_TRIPLE"
-    NO_COLOR=1 cargo build --bin bingle_cli --target "$TARGET_TRIPLE"
+    echo "[build-cli-image] Using: cargo build -p bingle_cli --bin bingle_cli --target $TARGET_TRIPLE"
+    NO_COLOR=1 cargo build -p bingle_cli --bin bingle_cli --target "$TARGET_TRIPLE"
   fi
 fi
 
