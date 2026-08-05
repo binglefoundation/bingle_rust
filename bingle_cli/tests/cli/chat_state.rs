@@ -85,7 +85,9 @@ pub fn save_state_round_trips_new_contact() {
 
     let chat_args = parse_chat_args(args(&["--state_file", &path])).expect("parse");
     let mut state = ChatState::from_chat_args(&chat_args).expect("bridge should load");
-    state.add_contact("carol", "CAROL_ID").expect("add contact");
+    state
+        .add_received_contact("carol", "CAROL_ID")
+        .expect("add contact");
     state.save_state().expect("save state");
 
     // Reload through a fresh bridge and assert both the old and new contacts persist.

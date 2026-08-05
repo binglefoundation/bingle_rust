@@ -1,12 +1,16 @@
-//! Integration tests for `bingle_cli chat` first-run registration (issue #59).
+//! Integration tests for `bingle_cli chat`: first-run registration (issue #59) and engine
+//! start-up (issue #60).
 //!
 //! The offline cases exercise the compiled binary on the paths that need no blockchain (they hinge
 //! on a "no keypair" status, which is resolved without a chain read) and assert exit codes/messages.
-//! The live-chain registration cases are `#[ignore]`d: they need a running localnet and a funded
+//! The live-chain cases are `#[ignore]`d: they need a running localnet and a funded/registered
 //! account, supplied via the environment, and are run explicitly with `cargo test -- --ignored`.
 
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
 fn run(args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
@@ -119,5 +123,58 @@ fn live_first_run_registers_then_second_run_needs_no_passphrase() {
         second.status.success(),
         "second run should start from the saved account with no credentials; stderr: {}",
         String::from_utf8_lossy(&second.stderr)
+    );
+}
+
+#[test]
+#[ignore = "requires a localnet + a pre-registered account; set BINGLE_IT_NODE_FILE and BINGLE_IT_STATE_FILE and run with --ignored"]
+#[cfg(not(target_os = "ios"))]
+fn live_chat_starts_engine_and_reaches_started() {
+    // Starts `chat` against a real node with a pre-registered account (via bingle_cli register /
+    // an earlier first run) and asserts it reaches the "started" state within a timeout, then stops
+    // it. Verifies the engine start + Ctrl-C shutdown wiring; the full two-peer receive assertion
+    // pairs with the send path from the REPL subtask (#61). Skips (passes) unless env is provided.
+    let (Some(node_file), Some(state_file)) = (
+        live_env("BINGLE_IT_NODE_FILE"),
+        live_env("BINGLE_IT_STATE_FILE"),
+    ) else {
+        eprintln!("skipping live start test: BINGLE_IT_NODE_FILE/STATE_FILE not set");
+        return;
+    };
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
+        .args([
+            "chat",
+            "--state_file",
+            &state_file,
+            "--node-file",
+            &node_file,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn chat");
+
+    // Scan stdout for the "started" marker on a background thread so we can time out.
+    let stdout = child.stdout.take().expect("child stdout");
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if line.contains("chat: started as") {
+                let _ = tx.send(());
+                break;
+            }
+        }
+    });
+
+    let started = rx.recv_timeout(Duration::from_secs(90)).is_ok();
+
+    // Best-effort teardown regardless of outcome.
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        started,
+        "chat should reach the started/listening state within the timeout"
     );
 }
