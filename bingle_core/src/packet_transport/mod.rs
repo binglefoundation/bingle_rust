@@ -476,16 +476,24 @@ impl DtlsReliablePacketTransport {
                 let ack_key = (from_key.clone(), from_generation, tx_id);
                 let matched_pending_ack = Self::complete_pending_ack(pending_acks, &ack_key)?;
                 if matched_pending_ack {
-                    tracing::debug!(
-                        "[DtlsReliablePacketTransport::dispatch_inbound_packet] received ACK_COMPLETE for endpoint={} generation={} tx_id={}",
+                    // Diagnostics (issue #82): logged at info so it shows in the same INFO capture as
+                    // the matching send, to confirm the round-trip completed on the sender.
+                    tracing::info!(
+                        "[FRPT-ACK] received ACK_COMPLETE (matched pending send) endpoint={} key={} generation={} tx_id={}",
                         from,
+                        from_key,
                         from_generation,
                         tx_id,
                     );
                 } else {
-                    tracing::debug!(
-                        "[DtlsReliablePacketTransport::dispatch_inbound_packet] received ACK_COMPLETE for unknown endpoint={} generation={} tx_id={}",
+                    // An ACK arrived but matches no pending send — e.g. it came back keyed by a
+                    // different endpoint (direct vs relay channel) than the send registered, or the
+                    // send already gave up. Warn (issue #82) so it is visible without --debug: this
+                    // is the signature of an ACK key mismatch versus genuine non-delivery.
+                    tracing::warn!(
+                        "[FRPT-ACK] received ACK_COMPLETE with NO matching pending send endpoint={} key={} generation={} tx_id={}",
                         from,
+                        from_key,
                         from_generation,
                         tx_id,
                     );
@@ -493,6 +501,16 @@ impl DtlsReliablePacketTransport {
                 Ok(None)
             }
             Some(ParsedPacket::DataSingle { tx_id, payload }) => {
+                // Diagnostics (issue #82): on the receiver (e.g. the mobile peer) this fires when a
+                // reliable data packet arrives, just before we ACK it — confirming the relay actually
+                // delivered the send and that we are about to reply.
+                tracing::info!(
+                    "[FRPT-ACK] received DATA_SINGLE endpoint={} key={} generation={} tx_id={}; sending ACK_COMPLETE",
+                    from,
+                    from_key,
+                    from_generation,
+                    tx_id,
+                );
                 Self::send_ack_complete(dtls, from, tx_id)?;
 
                 let should_deliver = {
@@ -541,6 +559,17 @@ impl PacketTransport for DtlsReliablePacketTransport {
         let tx_id = self.next_tx_id()?;
         let packet = Self::build_data_single_packet(tx_id, block);
         let ack_key = (endpoint_key, generation, tx_id);
+        // Diagnostics (issue #82): record the exact (endpoint key, generation, tx_id) we will wait
+        // on, so an ACK that comes back keyed differently (e.g. relay channel vs direct address) is
+        // easy to spot against the "[FRPT-ACK] received ACK_COMPLETE ..." lines.
+        tracing::info!(
+            "[FRPT-ACK] sending DATA_SINGLE to={:?} key={} generation={} tx_id={} ({} bytes); awaiting ACK_COMPLETE",
+            to,
+            ack_key.0,
+            ack_key.1,
+            tx_id,
+            block.len(),
+        );
         let waiter = self.register_pending_ack(&ack_key)?;
 
         if let Err(e) = self.dtls.send(to, &packet) {
@@ -562,8 +591,10 @@ impl PacketTransport for DtlsReliablePacketTransport {
                 Ok(true) => return Ok(()),
                 Ok(false) => {
                     tracing::warn!(
-                        "[DtlsReliablePacketTransport::send] timed out waiting {:?} for ACK_COMPLETE tx_id={} attempt={}",
+                        "[DtlsReliablePacketTransport::send] timed out waiting {:?} for ACK_COMPLETE key={} generation={} tx_id={} attempt={}",
                         delay,
+                        ack_key.0,
+                        ack_key.1,
                         tx_id,
                         attempt
                     );
