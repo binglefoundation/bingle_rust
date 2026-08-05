@@ -38,7 +38,7 @@ covered in the [Developer Guide](DEVELOPER.md).)
 Install the `bingle_cli` binary from [crates.io](https://crates.io/):
 
 ```bash
-cargo install bingle_core
+cargo install bingle_cli
 ```
 
 This puts the `bingle_cli` command on your `PATH`. Alternatively, build it from a clone of this
@@ -47,7 +47,7 @@ repository:
 ```bash
 git clone https://github.com/bingle-foundation/bingle_rust.git
 cd bingle_rust
-cargo install --path bingle_core --bin bingle_cli
+cargo install --path bingle_cli
 ```
 
 ### Set up a wallet and add ALGO
@@ -159,12 +159,13 @@ Guide.
 
 ## What's in this repository
 
-Bingle is a Cargo workspace of five crates:
+Bingle is a Cargo workspace of six crates:
 
 | Crate | Purpose |
 |---|---|
-| **`bingle_core`** | The heart of Bingle: the peer-to-peer comms engine (STUN NAT traversal, DTLS transport, relay discovery and routing) and the Algorand integration (`AlgoOps` generic helpers, `AlgoBingle` app/asset operations such as handle registration and lookup). Also builds the `bingle_cli` binary used in the quick start. |
+| **`bingle_core`** | The heart of Bingle: the peer-to-peer comms engine (STUN NAT traversal, DTLS transport, relay discovery and routing) and the Algorand integration (`AlgoOps` generic helpers, `AlgoBingle` app/asset operations such as handle registration and lookup). |
 | **`bingle_local`** | A thin local-state layer over `bingle_core`: keypair status, the message queue, and the contact store. Kept deliberately small so it can be re-implemented natively (iOS/Android) in future. |
+| **`bingle_cli`** | The `bingle_cli` command-line binary used in the quick start (`run`, `register`, `buybingle`, `sellbingle`, `checkrelays`). Depends on `bingle_core` and `bingle_local`. |
 | **`bingle_jsi`** | The React Native JSI bridge. Generates iOS/Android bindings from the Rust API via [uniffi](https://mozilla.github.io/uniffi-rs/) so apps like [bingle_ux](https://github.com/bingle-foundation/bingle_ux) can call Bingle. |
 | **`bingle_webserver`** | An HTTP server exposing the Bingle API — used to run relays and to drive Bingle from non-Rust environments. |
 | **`bingle_test`** | Shared test fixtures and helpers used across the other crates' test suites. |
