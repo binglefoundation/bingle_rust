@@ -725,7 +725,7 @@ fn run_chat_session(state: ChatState, debug: bool) {
                         &message,
                     ) {
                         // Print the received line. The interactive prompt redraw lands in #61.
-                        println!("{}: {}", received.display_handle, received.text);
+                        println!("{}: {}", received.sender_handle, received.text);
                     }
                 });
             api_mut.set_on_message(Some(on_message));

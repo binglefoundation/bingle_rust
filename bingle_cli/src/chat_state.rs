@@ -154,8 +154,8 @@ impl ChatState {
         Ok(())
     }
 
-    /// Append a message to the persistent history. The caller persists via
-    /// [`save_state`](ChatState::save_state).
+    /// Append a message to the persistent history and return the stored [`Message`] record. The
+    /// caller persists to disk via [`save_state`](ChatState::save_state).
     pub fn record_message(
         &mut self,
         sender_handle: &str,
@@ -163,7 +163,7 @@ impl ChatState {
         timestamp: i64,
         text: &str,
         cipher_suite: Option<String>,
-    ) -> Result<(), String> {
+    ) -> Result<Message, String> {
         self.local
             .add_message(
                 sender_handle.to_string(),
@@ -172,7 +172,14 @@ impl ChatState {
                 text.to_string(),
                 cipher_suite,
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        // Return the record as stored (add_message fills in progress/failure_reason), so callers
+        // display exactly what was persisted rather than reconstructing it.
+        self.local
+            .get_messages()
+            .map_err(|e| e.to_string())?
+            .pop()
+            .ok_or_else(|| "message missing after add_message".to_string())
     }
 
     /// Resolve a recipient handle to its id using the contact map seeded from the state file.

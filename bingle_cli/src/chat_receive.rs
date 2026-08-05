@@ -9,25 +9,18 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use bingle_local::api::bingle_local_api::Message;
 use serde_json::Value;
 
 use crate::chat_state::ChatState;
-
-/// A plaintext message received from a peer, ready to display as `display_handle: text`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReceivedMessage {
-    /// The sender's handle, or their id when the handle is unknown.
-    pub display_handle: String,
-    /// The message text.
-    pub text: String,
-}
 
 /// Handle an inbound engine message.
 ///
 /// When `message` is a plaintext `{ "text": ... }` message (the same shape `run --echo` uses — no
 /// non-null `app`/`type`), this records the sender as a `Received` contact if it is new, appends the
-/// message to the history, saves the state file, and returns the line to print. Non-plaintext or
-/// text-less messages are ignored (`None`).
+/// message to the history, saves the state file, and returns the stored [`Message`] for the caller
+/// to display (its `sender_handle` is the resolved handle, or the id when the sender is unknown).
+/// Non-plaintext or text-less messages are ignored (`None`).
 ///
 /// Persistence failures are logged, not propagated: a receive callback must never panic or tear down
 /// the connection, so a save hiccup only costs durability of that one message.
@@ -36,7 +29,7 @@ pub fn receive_message(
     sender_id: &str,
     sender_handle: &str,
     message: &Value,
-) -> Option<ReceivedMessage> {
+) -> Option<Message> {
     let text = message.get("text").and_then(|v| v.as_str())?;
     // Only plaintext messages: an app/type field marks a protocol message (ping, etc.), not chat.
     let is_plain = message.get("app").is_none_or(|v| v.is_null())
@@ -64,18 +57,19 @@ pub fn receive_message(
     }
 
     let recipient = state.opts.handle.clone();
-    if let Err(e) = state.record_message(display_handle, vec![recipient], now_millis(), text, None)
-    {
-        tracing::warn!("chat: could not persist incoming message: {}", e);
-    }
+    let stored =
+        match state.record_message(display_handle, vec![recipient], now_millis(), text, None) {
+            Ok(msg) => msg,
+            Err(e) => {
+                tracing::warn!("chat: could not persist incoming message: {}", e);
+                return None;
+            }
+        };
     if let Err(e) = state.save_state() {
         tracing::warn!("chat: could not save state after message: {}", e);
     }
 
-    Some(ReceivedMessage {
-        display_handle: display_handle.to_string(),
-        text: text.to_string(),
-    })
+    Some(stored)
 }
 
 /// Milliseconds since the Unix epoch, for message timestamps. Clamps a pre-epoch clock to 0.
