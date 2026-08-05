@@ -26,6 +26,7 @@ ctrlc = { version = "3", features = ["termination"] }
 
 [dev-dependencies]
 bingle_test = { path = "../bingle_test" }
+tempfile = "3"
 
 # Unit tests: local CLI tests with no external resource requirements.
 [[test]]

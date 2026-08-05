@@ -650,10 +650,11 @@ fn cmd_run(mut args: Vec<String>) {
     tracing::info!("Stopped.");
 }
 
-/// `chat` subcommand scaffold: parse and validate arguments, then report that the interactive chat
-/// is not wired up yet. Engine/network handling lands in later subtasks of the chat epic (#56); this
-/// command exists so those subtasks have a stable place to grow from. Argument parsing itself lives
-/// in `bingle_cli::chat::parse_chat_args` so it can be unit tested.
+/// `chat` subcommand: parse arguments, then bridge the BingleLocal `--state_file` (keypair, handle,
+/// contacts) into the engine configuration. The interactive transport is wired up by later subtasks
+/// of the chat epic (#56); this command establishes the parsed args and the state-file bridge they
+/// build on. Argument parsing and the bridge live in `bingle_cli::chat` / `bingle_cli::chat_state`
+/// so they can be unit tested.
 fn cmd_chat(args: Vec<String>) {
     const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--debug]";
 
@@ -671,17 +672,34 @@ fn cmd_chat(args: Vec<String>) {
         }
     };
 
-    // Scaffold only: the arguments are parsed and validated (including the --to/--to-id conflict and
-    // the log level) but there is no engine or connection yet. Emit the parsed shape at debug for the
-    // upcoming subtasks and a clear note that chat is not yet interactive.
-    tracing::debug!("chat: parsed args = {:?}", chat_args);
-    tracing::warn!(
-        "chat: argument scaffold only; interactive chat is not implemented yet (log level would be {})",
-        chat_args.log_level
+    // Bridge the state file into the engine configuration: this resolves the handle/passphrase from
+    // the stored keypair and seeds the contact map for --to resolution.
+    let state = match ChatState::from_chat_args(&chat_args) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error: {e}\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+
+    // Report the resolved configuration. Never log the passphrase — only whether one was resolved.
+    tracing::info!(
+        "chat: configured as handle '{}' with {} known contact(s){}",
+        state.opts.handle,
+        state.contacts.len(),
+        if state.opts.algo_passphrase.is_some() {
+            " (passphrase loaded)"
+        } else {
+            ""
+        }
     );
+
+    // The interactive transport lands in a later subtask; the state-file bridge is in place.
+    tracing::warn!("chat: interactive chat is not implemented yet; state bridge only");
 }
 
 use bingle_cli::chat::parse_chat_args;
+use bingle_cli::chat_state::ChatState;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use serde_json::json;
 use std::net::SocketAddr;
