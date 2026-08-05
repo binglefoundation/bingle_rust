@@ -134,6 +134,10 @@ impl BingleLocalApi for ControllableLocalApi {
     fn get_keypair(&self) -> Result<Option<Keypair>, BingleError> {
         Ok(self.keypair.clone())
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 #[test]

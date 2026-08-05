@@ -32,7 +32,9 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     assetId = config.tryGetULong("asset_id"),
                     handleCacheExpirySecs = config.tryGetULong("handle_cache_expiry_secs"),
                     debug = if (config.hasKey("debug")) config.getBoolean("debug") else false,
-                    local = config.tryGetString("local")
+                    local = config.tryGetString("local"),
+                    notifyGatewayUrl = config.tryGetString("notify_gateway_url"),
+                    notifyOnGiveup = config.tryGetBoolean("notify_on_giveup")
                 )
                 val api = createBingleApi(jsiConfig)
                 apiInstance = api
@@ -227,6 +229,32 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                 map.putString("id", kp.id)
                 map.putString("passphrase", kp.passphrase)
                 promise.resolve(map)
+            } catch (e: Exception) {
+                promise.reject("BINGLE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun signNotifyEnvelope(
+        route: String,
+        iss: String,
+        audience: String,
+        token: String,
+        env: String,
+        nonce: String,
+        exp: Double,
+        promise: Promise,
+    ) {
+        val api = apiInstance
+        if (api == null) {
+            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
+            return
+        }
+        Thread {
+            try {
+                val sig = api.signNotifyEnvelope(route, iss, audience, token, env, nonce, exp.toLong())
+                promise.resolve(sig)
             } catch (e: Exception) {
                 promise.reject("BINGLE_ERROR", e.message, e)
             }
@@ -574,6 +602,9 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
 
     private fun ReadableMap.tryGetULong(key: String): ULong? =
         if (hasKey(key) && !isNull(key)) getDouble(key).toULong() else null
+
+    private fun ReadableMap.tryGetBoolean(key: String): Boolean? =
+        if (hasKey(key) && !isNull(key)) getBoolean(key) else null
 
     private fun mapToMessage(map: ReadableMap): BingleMessage = BingleMessage(
         app = map.tryGetString("app"),

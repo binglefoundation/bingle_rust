@@ -105,6 +105,15 @@ export const BingleJsi = BingleJsiNative as {
   generateKeypair(): Promise<{ id: string; passphrase: string }>;
   importKeypair(passphrase: string): Promise<{ id: string; passphrase: string }>;
   registerKeypair(handle: string): Promise<boolean>;
+  signNotifyEnvelope(
+    route: string,
+    iss: string,
+    audience: string,
+    token: string,
+    env: string,
+    nonce: string,
+    exp: number,
+  ): Promise<string>;
   addContact(handle: string, id: string, source: string): Promise<void>;
   blockContact(id: string): Promise<void>;
   removeContact(id: string): Promise<void>;
