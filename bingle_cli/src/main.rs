@@ -1,3 +1,5 @@
+mod module_version;
+
 use std::fs;
 use std::io::Write;
 use std::sync::Arc;
@@ -18,7 +20,6 @@ use bingle_core::util::config_utils::{
     parse_algos_decimal_to_microalgos, parse_node_file_with_ids, resolve_app_asset_ids,
 };
 use bingle_core::util::logging::{BingleFormatter, HandleLayer, LogMode};
-use bingle_core::util::version::VersionsMap;
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
 use tracing::warn;
@@ -138,27 +139,30 @@ fn init_logger_from_args(args: &mut Vec<String>) {
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Version is informational and must print cleanly to stdout regardless of any --log-level
+    // filtering, so handle it before the logger is initialized and consumes no other args.
+    if args.iter().any(|a| a == "-V" || a == "--version") {
+        print_version_and_exit();
+    }
+
+    // Top-level help (no subcommand yet) is likewise printed cleanly to stdout before the logger
+    // starts. A subcommand's own --help (e.g. `run --help`) is handled inside that command.
+    if matches!(args.first().map(String::as_str), Some("--help" | "-h")) {
+        print_usage_and_exit(0);
+    }
+
     // Initialize logger from global flags and strip them from args (default Info)
     init_logger_from_args(&mut args);
 
-    // Build and output VersionsMap
-    let mut versions = VersionsMap::new();
-    versions.insert(
-        "Base".to_string(),
-        bingle_core::module_version::get_version(),
-    );
-    versions.insert(
-        "CLI".to_string(),
-        bingle_core::module_version::get_version(),
-    );
-    tracing::info!("Bingle CLI starting. Versions: {:?}", versions);
+    tracing::info!("Bingle CLI starting. Version: {}", version_string());
 
     if args.is_empty() {
         print_usage_and_exit(2);
     }
 
-    // Support top-level help
-    if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
+    // Support top-level help appearing after global flags (e.g. `-v --help`)
+    if args[0] == "--help" || args[0] == "-h" {
         print_usage_and_exit(0);
     }
 
@@ -177,20 +181,44 @@ fn main() {
     }
 }
 
-fn print_usage_and_exit(code: i32) {
-    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+fn print_usage_and_exit(code: i32) -> ! {
+    let usage = "Usage: bingle_cli <run|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+    // Help (exit 0) is user-requested output and goes to stdout; a usage error (non-zero) goes to
+    // stderr. Both bypass the tracing logger so they are never suppressed by the active log level.
     if code == 0 {
-        tracing::info!("{}", usage);
+        println!("{usage}");
     } else {
-        warn!("{}", usage);
+        eprintln!("{usage}");
     }
     std::process::exit(code);
 }
 
+/// Compact one-line version summary for the startup log.
+fn version_string() -> String {
+    let v = module_version::get_version();
+    match v.git_sha.as_deref() {
+        Some(sha) => format!("{} (git {sha}, built {})", v.version, v.build_timestamp),
+        None => format!("{} (built {})", v.version, v.build_timestamp),
+    }
+}
+
+/// Print version information to stdout and exit successfully. Backs `-V` / `--version`.
+fn print_version_and_exit() -> ! {
+    let cli = module_version::get_version();
+    let core = bingle_core::module_version::get_version();
+    println!("bingle_cli {}", cli.version);
+    println!("bingle_core {}", core.version);
+    if let Some(sha) = cli.git_sha.as_deref() {
+        println!("git sha: {sha}");
+    }
+    println!("built: {}", cli.build_timestamp);
+    std::process::exit(0);
+}
+
 fn cmd_run(mut args: Vec<String>) {
     // Support subcommand help
-    if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
-        warn!(
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
             "Usage: bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--sentinel-file <path>] [--echo] [--auto-migrate]"
         );
         std::process::exit(0);
@@ -629,8 +657,8 @@ use std::time::Instant;
 
 fn cmd_checkrelays(mut args: Vec<String>) {
     // Support subcommand help
-    if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
-        warn!(
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
             "Usage: bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--once] [--stun-servers <list>] [--stun-servers-file <file>]\n\
               Notes: by default this command repeats indefinitely, sleeping --interval-ms between runs. Use --once to run a single iteration."
         );
@@ -954,10 +982,8 @@ fn cmd_register(args: Vec<String>) {
     let mut node_file: Option<String> = None;
     let mut passphrase: Option<String> = None;
 
-    if let Some(arg) = it.clone().next()
-        && (arg == "--help" || arg == "-h")
-    {
-        warn!(
+    if it.clone().any(|a| a == "--help" || a == "-h") {
+        println!(
             "Usage: bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]"
         );
         std::process::exit(0);
@@ -1123,12 +1149,15 @@ fn cmd_register(args: Vec<String>) {
 }
 
 fn cmd_buybingle(args: Vec<String>) {
-    // Usage help
-    if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        warn!(
-            "Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]"
-        );
-        std::process::exit(if args.is_empty() { 2 } else { 0 });
+    // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
+    const USAGE: &str = "Usage: bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]";
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+    if args.is_empty() {
+        eprintln!("{USAGE}");
+        std::process::exit(2);
     }
 
     let mut it = args.into_iter();
@@ -1260,12 +1289,15 @@ fn cmd_buybingle(args: Vec<String>) {
 }
 
 fn cmd_sellbingle(args: Vec<String>) {
-    // Usage help
-    if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        warn!(
-            "Usage: bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]"
-        );
-        std::process::exit(if args.is_empty() { 2 } else { 0 });
+    // Usage help: an explicit --help prints to stdout and exits 0; missing args is an error to stderr.
+    const USAGE: &str = "Usage: bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>]";
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+    if args.is_empty() {
+        eprintln!("{USAGE}");
+        std::process::exit(2);
     }
 
     let mut it = args.into_iter();
