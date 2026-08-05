@@ -11,7 +11,6 @@
 // Unit tests (local, no external resources) — uses full util with test files
 pub mod api;
 pub mod blockchain;
-pub mod cli;
 pub mod dtls;
 pub mod engine;
 #[path = "messages.rs"]

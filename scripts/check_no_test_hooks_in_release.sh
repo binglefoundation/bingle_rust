@@ -22,7 +22,7 @@ NC='\033[0m'
 BINARIES=(
   "-p bingle_webserver"
   "-p bingle_jsi"
-  "-p bingle_core --bin bingle_cli"
+  "-p bingle_cli --bin bingle_cli"
 )
 
 fail() {
