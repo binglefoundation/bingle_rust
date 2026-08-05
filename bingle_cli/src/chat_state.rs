@@ -15,7 +15,7 @@ use std::path::Path;
 
 use bingle_core::api::bingle_api::{BingleError, StartOptions};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
-use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, REQUIRED_ALGO};
+use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, Message, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
 
 use crate::chat::ChatArgs;
@@ -144,18 +144,8 @@ impl ChatState {
         }
     }
 
-    /// Add a contact to both the persistent store and the in-memory recipient map. The caller is
-    /// responsible for calling [`save_state`](ChatState::save_state) to persist it.
-    pub fn add_contact(&mut self, handle: &str, id: &str) -> Result<(), String> {
-        self.local
-            .add_contact(handle.to_string(), id.to_string(), ContactSource::Manual)
-            .map_err(|e| e.to_string())?;
-        self.contacts.insert(handle.to_string(), id.to_string());
-        Ok(())
-    }
-
-    /// Append a message to the persistent history. The caller persists via
-    /// [`save_state`](ChatState::save_state).
+    /// Append a message to the persistent history and return the stored [`Message`] record. The
+    /// caller persists to disk via [`save_state`](ChatState::save_state).
     pub fn record_message(
         &mut self,
         sender_handle: &str,
@@ -163,7 +153,7 @@ impl ChatState {
         timestamp: i64,
         text: &str,
         cipher_suite: Option<String>,
-    ) -> Result<(), String> {
+    ) -> Result<Message, String> {
         self.local
             .add_message(
                 sender_handle.to_string(),
@@ -172,12 +162,41 @@ impl ChatState {
                 text.to_string(),
                 cipher_suite,
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        // Return the record as stored (add_message fills in progress/failure_reason), so callers
+        // display exactly what was persisted rather than reconstructing it.
+        self.local
+            .get_messages()
+            .map_err(|e| e.to_string())?
+            .pop()
+            .ok_or_else(|| "message missing after add_message".to_string())
     }
 
     /// Resolve a recipient handle to its id using the contact map seeded from the state file.
     pub fn resolve_recipient(&self, handle: &str) -> Option<&str> {
         self.contacts.get(handle).map(String::as_str)
+    }
+
+    /// Whether any known contact has this id. Used by the receive path to add a sender as a contact
+    /// only when it is genuinely new (so an existing Manual contact is not downgraded to Received).
+    pub fn knows_id(&self, id: &str) -> bool {
+        self.contacts.values().any(|known| known == id)
+    }
+
+    /// Add a contact discovered by receiving a message from them ([`ContactSource::Received`]), to
+    /// both the persistent store and the in-memory recipient map. The caller persists via
+    /// [`save_state`](ChatState::save_state).
+    pub fn add_received_contact(&mut self, handle: &str, id: &str) -> Result<(), String> {
+        self.local
+            .add_contact(handle.to_string(), id.to_string(), ContactSource::Received)
+            .map_err(|e| e.to_string())?;
+        self.contacts.insert(handle.to_string(), id.to_string());
+        Ok(())
+    }
+
+    /// The stored message history, newest-appended last.
+    pub fn messages(&self) -> Result<Vec<Message>, String> {
+        self.local.get_messages().map_err(|e| e.to_string())
     }
 
     /// Whether the local store currently holds a keypair.
