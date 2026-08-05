@@ -29,3 +29,4 @@
 ## Git notes
 
 - if you are still modifying a PR, put it in draft until it is ready for review/merge
+- however if the PR is believed to be complete and meet all requirements, put it in ready for review/merge
