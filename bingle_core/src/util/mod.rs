@@ -1,3 +1,4 @@
+pub mod arc_retry;
 pub mod printing;
 #[macro_use]
 pub mod logging;
