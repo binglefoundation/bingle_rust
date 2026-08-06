@@ -1,17 +1,21 @@
 // Unit tests for the outbound send/retry path (bingle_cli::chat_send), using a mock sender so no
-// live engine or chain is needed.
-use std::collections::{HashMap, VecDeque};
+// live engine or chain is needed. Mirrors the RN client's policy: transient failures keep retrying
+// (with backoff); only non-transient failures — or any failure under --no-retries — are permanent.
+use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use bingle_cli::chat::parse_chat_args;
-use bingle_cli::chat_send::{
-    MessageSender, RetryResult, SendReport, SendTarget, retry_pending, send_once,
-};
+use bingle_cli::chat_send::{MessageSender, SendOutcome, SendTarget, retry_pending, send_once};
 use bingle_cli::chat_state::ChatState;
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+use bingle_local::api::send_retry::RETRY_BACKOFF;
 use serde_json::Value;
 use tempfile::TempDir;
+
+const RETRIES_ON: bool = true;
+const RETRIES_OFF: bool = false;
 
 /// A scripted `MessageSender`: pops the next result per call, falling back to `default` when the
 /// script is exhausted.
@@ -59,16 +63,20 @@ fn alice_state() -> (ChatState, TempDir) {
     (state, dir)
 }
 
+fn bob() -> SendTarget {
+    SendTarget::Handle("bob".into())
+}
+
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn send_once_delivered_marks_message_delivered() {
     let (mut state, _dir) = alice_state();
     let sender = MockSender::always(Ok(true));
 
-    let report = send_once(&sender, &mut state, &SendTarget::Handle("bob".into()), "hi");
-    assert_eq!(report, SendReport::Delivered);
-
-    // Nothing left pending; the stored message is delivered (progress 1.0, no failure).
+    assert_eq!(
+        send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON),
+        SendOutcome::Delivered
+    );
     assert!(state.pending_outbound().expect("pending").is_empty());
     let messages = state.messages().expect("messages");
     assert_eq!(messages.len(), 1);
@@ -79,17 +87,15 @@ pub fn send_once_delivered_marks_message_delivered() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn send_once_not_accepted_leaves_pending() {
+pub fn transient_failure_stays_pending_and_retrying() {
     let (mut state, _dir) = alice_state();
+    // Ok(false) ("Send returned false") is a transient failure.
     let sender = MockSender::always(Ok(false));
 
-    let report = send_once(&sender, &mut state, &SendTarget::Handle("bob".into()), "hi");
-    match report {
-        SendReport::Failed(reason) => assert!(!reason.is_empty()),
-        other => panic!("expected Failed, got {other:?}"),
+    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
+        SendOutcome::Retrying(reason) => assert!(reason.contains("keep retrying"), "got: {reason}"),
+        other => panic!("expected Retrying, got {other:?}"),
     }
-
-    // The message is pending (progress < 1.0) so the retry worker will pick it up.
     let pending = state.pending_outbound().expect("pending");
     assert_eq!(pending.len(), 1);
     assert!(pending[0].progress.unwrap_or(1.0) < 1.0);
@@ -97,70 +103,100 @@ pub fn send_once_not_accepted_leaves_pending() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn send_once_error_leaves_pending() {
+pub fn non_transient_failure_is_permanent() {
     let (mut state, _dir) = alice_state();
-    let sender = MockSender::always(Err("transport down".to_string()));
+    // A non-connectivity error is a permanent failure — not retried.
+    let sender = MockSender::always(Err("recipient handle is invalid".into()));
 
-    let report = send_once(&sender, &mut state, &SendTarget::Handle("bob".into()), "hi");
-    assert_eq!(report, SendReport::Failed("transport down".to_string()));
-    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
-}
-
-#[test]
-#[cfg(not(target_os = "ios"))]
-pub fn failed_send_then_retry_delivers() {
-    let (mut state, _dir) = alice_state();
-    // First attempt (send_once) errors; the retry then succeeds.
-    let sender = MockSender::scripted(vec![Err("temporary".to_string()), Ok(true)]);
-
-    let report = send_once(
-        &sender,
-        &mut state,
-        &SendTarget::Handle("bob".into()),
-        "hello",
-    );
-    assert_eq!(report, SendReport::Failed("temporary".to_string()));
-    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
-
-    let mut attempts = HashMap::new();
-    let outcomes = retry_pending(&sender, &mut state, &mut attempts, 5);
-    assert_eq!(outcomes.len(), 1);
-    assert_eq!(outcomes[0].result, RetryResult::Delivered);
-    assert_eq!(outcomes[0].recipient, "bob");
-
-    // Delivered: nothing pending, message marked delivered.
+    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_ON) {
+        SendOutcome::Failed(reason) => assert!(reason.contains("Message failed to send")),
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    // Marked terminal (progress 1.0), not left pending.
     assert!(state.pending_outbound().expect("pending").is_empty());
-    let messages = state.messages().expect("messages");
-    assert_eq!(messages[0].progress, Some(1.0));
-    assert!(messages[0].failure_reason.is_none());
+    assert_eq!(state.messages().expect("messages")[0].progress, Some(1.0));
 }
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn retry_gives_up_after_max_attempts() {
+pub fn no_retries_marks_even_transient_failure_permanent() {
     let (mut state, _dir) = alice_state();
-    // Queue a pending message directly, then retry with an always-failing sender.
+    // Transient error, but --no-retries: must be permanent (nothing left pending).
+    let sender = MockSender::always(Err("Retryable: relay connect timeout".into()));
+
+    match send_once(&sender, &mut state, &bob(), "hi", RETRIES_OFF) {
+        SendOutcome::Failed(_) => {}
+        other => panic!("expected Failed under --no-retries, got {other:?}"),
+    }
+    assert!(state.pending_outbound().expect("pending").is_empty());
+    assert_eq!(state.messages().expect("messages")[0].progress, Some(1.0));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn transient_send_then_retry_delivers() {
+    let (mut state, _dir) = alice_state();
+    // First attempt is a transient error; the background retry then succeeds.
+    let sender = MockSender::scripted(vec![Err("Retryable: temporarily offline".into()), Ok(true)]);
+
+    assert!(matches!(
+        send_once(&sender, &mut state, &bob(), "hello", RETRIES_ON),
+        SendOutcome::Retrying(_)
+    ));
+    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+
+    let mut retry_after = std::collections::HashMap::new();
+    let outcome = retry_pending(&sender, &mut state, &mut retry_after, Instant::now())
+        .expect("a pending message to attempt");
+    assert_eq!(outcome.outcome, SendOutcome::Delivered);
+    assert_eq!(outcome.recipient, "bob");
+
+    assert!(state.pending_outbound().expect("pending").is_empty());
+    assert_eq!(state.messages().expect("messages")[0].progress, Some(1.0));
+    assert!(
+        state.messages().expect("messages")[0]
+            .failure_reason
+            .is_none()
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn retry_keeps_transient_pending_forever_with_backoff() {
+    let (mut state, _dir) = alice_state();
+    let _ts = state.queue_outbound("bob", "hello").expect("queue");
+    let sender = MockSender::always(Err("Retryable: still offline".into()));
+    let mut retry_after = std::collections::HashMap::new();
+    let t0 = Instant::now();
+
+    // First attempt: transient failure → stays pending, backed off (never gives up).
+    let first = retry_pending(&sender, &mut state, &mut retry_after, t0).expect("attempt");
+    assert!(matches!(first.outcome, SendOutcome::Retrying(_)));
+    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+
+    // Immediately after: the message is backed off, so nothing is eligible.
+    assert!(retry_pending(&sender, &mut state, &mut retry_after, t0).is_none());
+
+    // Once the backoff elapses it retries again — and still never permanently fails.
+    let t1 = t0 + RETRY_BACKOFF + Duration::from_millis(1);
+    let second = retry_pending(&sender, &mut state, &mut retry_after, t1).expect("attempt");
+    assert!(matches!(second.outcome, SendOutcome::Retrying(_)));
+    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+pub fn retry_marks_non_transient_permanent() {
+    let (mut state, _dir) = alice_state();
     let ts = state.queue_outbound("bob", "hello").expect("queue");
-    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
+    let sender = MockSender::always(Err("account not opted in".into()));
+    let mut retry_after = std::collections::HashMap::new();
 
-    let sender = MockSender::always(Err("still down".to_string()));
-    let mut attempts = HashMap::new();
+    let outcome =
+        retry_pending(&sender, &mut state, &mut retry_after, Instant::now()).expect("attempt");
+    assert!(matches!(outcome.outcome, SendOutcome::Failed(_)));
 
-    // max_attempts = 2: first retry keeps it pending, second gives up.
-    let first = retry_pending(&sender, &mut state, &mut attempts, 2);
-    assert_eq!(
-        first[0].result,
-        RetryResult::Retrying("still down".to_string())
-    );
-    assert_eq!(state.pending_outbound().expect("pending").len(), 1);
-
-    let second = retry_pending(&sender, &mut state, &mut attempts, 2);
-    assert_eq!(
-        second[0].result,
-        RetryResult::GaveUp("still down".to_string())
-    );
-
-    // Given up: no longer pending; recorded as a permanent failure (progress 1.0 + reason).
+    // No longer pending; recorded as a permanent failure.
     assert!(state.pending_outbound().expect("pending").is_empty());
     let stored = state
         .messages()
@@ -169,5 +205,5 @@ pub fn retry_gives_up_after_max_attempts() {
         .find(|m| m.timestamp == ts)
         .expect("message present");
     assert_eq!(stored.progress, Some(1.0));
-    assert_eq!(stored.failure_reason.as_deref(), Some("still down"));
+    assert!(stored.failure_reason.is_some());
 }
