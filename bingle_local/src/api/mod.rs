@@ -16,3 +16,9 @@ pub use registration::{ChainRegistrationOps, RegistrationOps, run_registration};
 // Give-up nudge to the notify gateway (bingle_notify #11).
 pub mod notify;
 pub use notify::{AlertPoster, AlertRequest, HttpAlertPoster, build_alert_request};
+
+// Shared outbound-send retry policy (issue #82): used by bingle_jsi (RN client) and bingle_cli chat.
+pub mod send_retry;
+pub use send_retry::{
+    RETRY_BACKOFF, is_transient_send_failure, pending_failure_reason, select_sendable_message,
+};
