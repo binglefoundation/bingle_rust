@@ -5,6 +5,7 @@ edition = "2024"
 description = "Command line interface for Bingle: register handles, run nodes/relays, and trade BINGLE on Algorand."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/binglefoundation/bingle_rust"
+readme = "README.md"
 autotests = false
 
 [[bin]]
