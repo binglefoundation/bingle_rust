@@ -5,6 +5,7 @@ edition = "2024"
 description = "Core library for Bingle: a peer-to-peer messaging engine with Algorand-based node registration and discovery."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/binglefoundation/bingle_rust"
+readme = "README.md"
 autotests = false
 
 [lib]
