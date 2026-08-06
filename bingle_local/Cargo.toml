@@ -5,6 +5,7 @@ edition = "2024"
 description = "Local API crate for storing messages and contacts for Bingle (placeholder)."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/binglefoundation/bingle_rust"
+readme = "README.md"
 autotests = false
 
 [lib]

@@ -1,6 +1,34 @@
-# Bingle Webserver
+# bingle_webserver
 
-This crate implements a local HTTP server that acts as a bridge between a browser client and the Bingle API.
+Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
+— so your conversations stay yours, with nobody able to read or shut them down.
+
+Bingle runs with no centralized server and uses end-to-end encryption, so there is no central infrastructure for third parties to compromise.
+Key management uses the Algorand blockchain to prevent impersonation, while messaging runs over the established
+DTLS (Datagram Transport Layer Security) protocol.
+A low-cost funding mechanism incentivizes the provision of relay nodes, keeping the network robust and resilient.
+
+## Role in Bingle
+
+`bingle_webserver` is an HTTP/WebSocket server that exposes the Bingle API over an axum-based
+interface — used to run relays and to drive Bingle from non-Rust environments. It acts as a local
+bridge between a browser (or other HTTP) client and the Bingle engine in
+[`bingle_core`](https://github.com/binglefoundation/bingle_rust).
+
+It is part of [`bingle_rust`](https://github.com/binglefoundation/bingle_rust), the Rust reference implementation of
+the Bingle protocol.
+
+## Installing
+
+`bingle_webserver` is a server application crate and is not published to crates.io — install it by
+building from a clone of the repository. This requires the Rust stable toolchain (2024 edition,
+Rust 1.85 or newer) via [rustup](https://rustup.rs):
+
+```bash
+git clone https://github.com/binglefoundation/bingle_rust.git
+cd bingle_rust
+cargo build -p bingle_webserver
+```
 
 ## Building
 
