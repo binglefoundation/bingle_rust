@@ -26,7 +26,7 @@ ctrlc = { version = "3", features = ["termination"] }
 
 [dev-dependencies]
 # `localnet` feature brings in the reusable algokit-localnet harness (and enables bingle_core's
-# test-hooks) used by the localnet chat e2e.
+# test-hooks) used by the self-provisioning localnet cases in the integration target.
 bingle_test = { path = "../bingle_test", features = ["localnet"] }
 tempfile = "3"
 serial_test = "3"
@@ -37,18 +37,12 @@ ntest = "0.9"
 name = "unit"
 path = "tests/unit.rs"
 
-# Integration tests: drive the compiled binary. The offline cases run everywhere; the live-chain
-# registration cases are #[ignore]d and need a localnet (run with `--ignored` and the env vars they
-# document).
+# Integration tests: drive the compiled binary. The offline cases run everywhere; the localnet cases
+# (module `localnet`) provision relays/STUN/app/accounts via bingle_test::localnet and drive the
+# compiled `chat` binary against a running algokit localnet, skipping cleanly when localnet is down.
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
-
-# Localnet e2e: provisions relays/STUN/app/accounts via bingle_test::localnet and drives the compiled
-# `bingle_cli chat` binary against a running algokit localnet. Skips cleanly when localnet is down.
-[[test]]
-name = "localnet"
-path = "tests/localnet_chat_e2e.rs"
 
 [lints]
 workspace = true
