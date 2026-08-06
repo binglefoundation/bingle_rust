@@ -1,13 +1,20 @@
 //! Outbound send + retry for the `chat` REPL, built on BingleLocal's pending-message model.
 //!
-//! Sending is abstracted behind [`MessageSender`] so the flow is unit-testable with a mock (no live
-//! engine). Each outbound message is first persisted as **pending** (`progress < 1.0`) so a failed
-//! send survives in the `--state_file` and can be retried later; [`send_once`] makes the first
-//! attempt and [`retry_pending`] (driven periodically by `cmd_chat`) re-attempts anything still
-//! pending until it delivers or a bounded number of attempts is exhausted.
+//! Follows the same retry policy the React Native client uses (`bingle_jsi`): an outbound message is
+//! first persisted as **pending** (`progress < 1.0`) so a failed send survives in the `--state_file`;
+//! a **transient** (connectivity) failure keeps the message pending and is retried **indefinitely**
+//! with a short per-message backoff, so it delivers once the recipient comes back online; only a
+//! **non-transient** failure is marked permanently failed. The classifier, human-readable reason and
+//! fair-scheduling selection are shared via `bingle_local::api::send_retry` (issue #82).
+//!
+//! Sending is abstracted behind [`MessageSender`] so the flow is unit-testable without a live engine.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
+use bingle_local::api::send_retry::{
+    RETRY_BACKOFF, is_transient_send_failure, pending_failure_reason, select_sendable_message,
+};
 use serde_json::{Value, json};
 
 use crate::chat_state::ChatState;
@@ -31,121 +38,132 @@ impl SendTarget {
 
 /// Abstraction over the engine's send calls, so send/retry logic is testable without a live engine.
 /// `Ok(true)` = delivered, `Ok(false)` = not accepted, `Err` = a send error; the last two are both
-/// treated as failures to retry.
+/// treated as failures (and classified transient vs permanent).
 pub trait MessageSender {
     fn send_text(&self, target: &SendTarget, message: &Value) -> Result<bool, String>;
 }
 
-/// Outcome of a single [`send_once`] attempt.
+/// Outcome of an attempt (from [`send_once`] or one [`retry_pending`] step).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SendReport {
+pub enum SendOutcome {
+    /// Delivered and marked complete.
     Delivered,
-    /// The attempt failed; the message is left pending for [`retry_pending`]. Carries the reason.
+    /// A transient failure: the message stays pending and will keep being retried. Carries the
+    /// human-readable reason.
+    Retrying(String),
+    /// A permanent failure (non-transient, or retries disabled): marked failed in the state.
     Failed(String),
 }
 
-/// Result of re-attempting one pending message in [`retry_pending`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RetryResult {
-    Delivered,
-    /// Still failing but under the attempt cap — left pending. Carries the latest reason.
-    Retrying(String),
-    /// Attempt cap reached — marked permanently failed in the state. Carries the last reason.
-    GaveUp(String),
-}
-
-/// A per-message retry outcome, for the transcript.
+/// A per-message retry outcome from [`retry_pending`], for the transcript.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryOutcome {
     pub timestamp: i64,
     pub recipient: String,
-    pub result: RetryResult,
+    pub outcome: SendOutcome,
 }
 
-/// The reason string for a send that returned `Ok(false)` (no error, but not accepted).
-const NOT_ACCEPTED: &str = "peer did not accept the message";
+/// The error string used when a send returns `Ok(false)`. Phrased so the shared classifier treats it
+/// as transient (the peer simply did not accept it this time).
+const SEND_RETURNED_FALSE: &str = "Send returned false";
+
+/// Classify a failed send and persist the message accordingly, returning the outcome.
+///
+/// A transient failure (per [`is_transient_send_failure`]) stays pending (`progress 0.0`) to be
+/// retried; a permanent one is marked terminal (`progress 1.0`). When `retries_enabled` is false
+/// (`--no-retries`) every failure is treated as permanent so nothing lingers pending.
+fn classify_and_persist(
+    state: &mut ChatState,
+    timestamp: i64,
+    err: &str,
+    retries_enabled: bool,
+) -> SendOutcome {
+    let transient = retries_enabled && is_transient_send_failure(err);
+    let reason = pending_failure_reason(err, transient);
+    if transient {
+        let _ = state.mark_send_failed(timestamp, &reason, false);
+        SendOutcome::Retrying(reason)
+    } else {
+        let _ = state.mark_send_failed(timestamp, &reason, true);
+        SendOutcome::Failed(reason)
+    }
+}
+
+/// Extract the error string from a non-delivered send result (`Ok(false)` or `Err`).
+fn failure_reason(result: Result<bool, String>) -> String {
+    match result {
+        Ok(false) => SEND_RETURNED_FALSE.to_string(),
+        Err(e) => e,
+        Ok(true) => unreachable!("delivered results are handled before this"),
+    }
+}
 
 /// Persist an outbound message as pending, make one send attempt, and record the result.
 ///
-/// On success the message is marked delivered; on failure it stays pending (with the reason) for
-/// [`retry_pending`]. Returns the report so the caller can print an inline transcript line — note it
-/// deliberately does not print or echo the sent text (the terminal already echoed it).
+/// On success the message is marked delivered. On a transient failure it stays pending for
+/// [`retry_pending`] to keep retrying; on a permanent failure (or when `retries_enabled` is false) it
+/// is marked failed. Does not echo the sent text — the terminal already echoed it.
 pub fn send_once(
     sender: &dyn MessageSender,
     state: &mut ChatState,
     target: &SendTarget,
     text: &str,
-) -> SendReport {
+    retries_enabled: bool,
+) -> SendOutcome {
     let ts = match state.queue_outbound(target.label(), text) {
         Ok(ts) => ts,
-        Err(e) => return SendReport::Failed(format!("could not queue message: {e}")),
+        Err(e) => return SendOutcome::Failed(format!("could not queue message: {e}")),
     };
-    match sender.send_text(target, &json!({ "text": text })) {
-        Ok(true) => {
-            let _ = state.mark_delivered(ts);
-            SendReport::Delivered
-        }
-        Ok(false) => {
-            let _ = state.mark_send_failed(ts, NOT_ACCEPTED, false);
-            SendReport::Failed(NOT_ACCEPTED.to_string())
-        }
-        Err(e) => {
-            let _ = state.mark_send_failed(ts, &e, false);
-            SendReport::Failed(e)
-        }
+    let result = sender.send_text(target, &json!({ "text": text }));
+    if matches!(result, Ok(true)) {
+        let _ = state.mark_delivered(ts);
+        return SendOutcome::Delivered;
     }
+    classify_and_persist(state, ts, &failure_reason(result), retries_enabled)
 }
 
-/// Re-attempt every still-pending outbound message once. `attempts` tracks tries per message
-/// (keyed by timestamp) across calls; a message that reaches `max_attempts` failures is marked
-/// permanently failed. Returns one [`RetryOutcome`] per message that changed state this call.
+/// Re-attempt the oldest *eligible* pending outbound message (respecting per-message backoff), one
+/// per call. `retry_after` holds backoff deadlines keyed by timestamp and is maintained across
+/// calls. A transient failure keeps the message pending and backs it off by [`RETRY_BACKOFF`] (so it
+/// keeps retrying without starving newer messages); a permanent failure marks it failed. Returns the
+/// outcome for the message attempted, or `None` when nothing is eligible right now.
 pub fn retry_pending(
     sender: &dyn MessageSender,
     state: &mut ChatState,
-    attempts: &mut HashMap<i64, u32>,
-    max_attempts: u32,
-) -> Vec<RetryOutcome> {
-    let pending = match state.pending_outbound() {
-        Ok(p) => p,
-        Err(_) => return Vec::new(),
+    retry_after: &mut HashMap<i64, Instant>,
+    now: Instant,
+) -> Option<RetryOutcome> {
+    let pending = state.pending_outbound().ok()?;
+    // Drop backoff deadlines for messages that are no longer pending, keeping the map bounded.
+    retry_after.retain(|ts, _| pending.iter().any(|m| m.timestamp == *ts));
+
+    let msg = select_sendable_message(pending, retry_after, now)?;
+    let recipient = msg.recipient_handles.first().cloned().unwrap_or_default();
+    // We stored the recipient label; retry by handle (the common case).
+    let target = SendTarget::Handle(recipient.clone());
+
+    let result = sender.send_text(&target, &json!({ "text": msg.text }));
+    let outcome = if matches!(result, Ok(true)) {
+        let _ = state.mark_delivered(msg.timestamp);
+        retry_after.remove(&msg.timestamp);
+        SendOutcome::Delivered
+    } else {
+        let err = failure_reason(result);
+        let transient = is_transient_send_failure(&err);
+        let reason = pending_failure_reason(&err, transient);
+        if transient {
+            let _ = state.mark_send_failed(msg.timestamp, &reason, false);
+            retry_after.insert(msg.timestamp, now + RETRY_BACKOFF);
+            SendOutcome::Retrying(reason)
+        } else {
+            let _ = state.mark_send_failed(msg.timestamp, &reason, true);
+            retry_after.remove(&msg.timestamp);
+            SendOutcome::Failed(reason)
+        }
     };
-
-    let mut outcomes = Vec::new();
-    for msg in pending {
-        let recipient = msg.recipient_handles.first().cloned().unwrap_or_default();
-        // We stored the recipient label; retry by handle (the common case). An id-only recipient
-        // whose label is not a registered handle simply keeps failing until it gives up.
-        let target = SendTarget::Handle(recipient.clone());
-
-        let result = match sender.send_text(&target, &json!({ "text": msg.text })) {
-            Ok(true) => {
-                let _ = state.mark_delivered(msg.timestamp);
-                attempts.remove(&msg.timestamp);
-                RetryResult::Delivered
-            }
-            other => {
-                let reason = match other {
-                    Ok(false) => NOT_ACCEPTED.to_string(),
-                    Err(e) => e,
-                    Ok(true) => unreachable!("handled above"),
-                };
-                let tries = attempts.entry(msg.timestamp).or_insert(0);
-                *tries += 1;
-                if *tries >= max_attempts {
-                    let _ = state.mark_send_failed(msg.timestamp, &reason, true);
-                    attempts.remove(&msg.timestamp);
-                    RetryResult::GaveUp(reason)
-                } else {
-                    let _ = state.mark_send_failed(msg.timestamp, &reason, false);
-                    RetryResult::Retrying(reason)
-                }
-            }
-        };
-        outcomes.push(RetryOutcome {
-            timestamp: msg.timestamp,
-            recipient,
-            result,
-        });
-    }
-    outcomes
+    Some(RetryOutcome {
+        timestamp: msg.timestamp,
+        recipient,
+        outcome,
+    })
 }
