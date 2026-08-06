@@ -3,7 +3,7 @@ Pod::Spec.new do |s|
   s.summary      = "React Native native module for Bingle P2P messaging (iOS)"
   s.description  = "Provides the Bingle JSI API to React Native iOS apps via uniffi-generated Swift bindings and a pre-built XCFramework."
   s.homepage     = "https://github.com/example/bingle_jsi"
-  s.license      = "UNLICENSED"
+  s.license      = "MIT OR Apache-2.0"
   s.author       = "Bingle"
   s.platform     = :ios, "13.0"
   s.source       = { :path => "." }
