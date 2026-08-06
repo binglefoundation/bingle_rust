@@ -105,11 +105,14 @@ fn init_logger_from_args(args: &mut Vec<String>) {
                 chosen = Some(LevelFilter::WARN);
                 true
             }
-            "--log-info" => {
+            // `--info` is a friendly alias for `--log-info`; likewise `--debug` for `--log-debug`.
+            // These are consumed here (stripped from args) so subcommand parsers never see them and
+            // every command honours them uniformly.
+            "--log-info" | "--info" => {
                 chosen = Some(LevelFilter::INFO);
                 true
             }
-            "--log-debug" | "-v" => {
+            "--log-debug" | "--debug" | "-v" => {
                 chosen = Some(LevelFilter::DEBUG);
                 true
             }
@@ -125,7 +128,15 @@ fn init_logger_from_args(args: &mut Vec<String>) {
             i += 1;
         }
     }
-    let level = chosen.unwrap_or(LevelFilter::INFO);
+    // With all logging flags stripped, the first remaining arg is the subcommand. `chat` is an
+    // interactive REPL, so it defaults to WARN to keep the prompt clean (use `--info`/`--debug` to
+    // restore verbose logs); every other subcommand keeps the INFO default.
+    let default_level = if args.first().map(String::as_str) == Some("chat") {
+        LevelFilter::WARN
+    } else {
+        LevelFilter::INFO
+    };
+    let level = chosen.unwrap_or(default_level);
     let mode = chosen_mode.unwrap_or(LogMode::Plain);
     let fmt_layer = tracing_subscriber::fmt::layer().event_format(BingleFormatter { mode });
 
@@ -183,7 +194,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
-    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|-q | --log-info | --log-debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--info|--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     // Help (exit 0) is user-requested output and goes to stdout; a usage error (non-zero) goes to
     // stderr. Both bypass the tracing logger so they are never suppressed by the active log level.
     if code == 0 {
@@ -657,7 +668,7 @@ fn cmd_run(mut args: Vec<String>) {
 /// a later subtask of the chat epic (#56); this command takes the account to the point of being
 /// registered and ready. The pure startup decision lives in `bingle_cli::chat_register` for testing.
 fn cmd_chat(args: Vec<String>) {
-    const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--debug]";
+    const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--info|--debug]";
 
     // Subcommand help prints to stdout and exits 0, mirroring the other subcommands.
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -692,8 +703,7 @@ fn cmd_chat(args: Vec<String>) {
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
 
     // Start the engine and run the interactive REPL (send / receive / switch) until exit.
-    let debug = chat_args.log_level == tracing_subscriber::filter::LevelFilter::DEBUG;
-    run_chat_session(state, chat_args.to.clone(), chat_args.to_id.clone(), debug);
+    run_chat_session(state, chat_args.to.clone(), chat_args.to_id.clone());
 }
 
 /// Bounded send attempts before a queued message is marked permanently failed.
@@ -737,7 +747,7 @@ fn reprint_prompt(prompt: &str) {
 /// current recipient (persisted + retried via the pending-message model); `/prefix` switches the
 /// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit` or Ctrl-D exits
 /// cleanly (Ctrl-C likewise, via the signal handler). Mirrors `cmd_run`'s start loop.
-fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>, debug: bool) {
+fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>) {
     let opts = state.opts.clone();
     // Shared with the engine callback and the retry worker: all mutate the one ChatState.
     let shared = Arc::new(std::sync::Mutex::new(state));
@@ -776,19 +786,18 @@ fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>,
                 });
             api_mut.set_on_message(Some(on_message));
 
-            // Status callbacks are noise for normal use; only wire them up under --debug.
-            if debug {
-                let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
-                    tracing::debug!("chat: connected sender={} handle={}", sender, sender_handle);
-                });
-                api_mut.set_on_connect(Some(on_connect));
+            // Connection/listening status callbacks log at debug, so they are silent at the default
+            // WARN level and only surface under `--debug` (or `--info` does not show them). Installed
+            // unconditionally — the level filter, not this wiring, decides whether they are seen.
+            let on_connect: Arc<OnConnectHandler> = Arc::new(move |sender, sender_handle| {
+                tracing::debug!("chat: connected sender={} handle={}", sender, sender_handle);
+            });
+            api_mut.set_on_connect(Some(on_connect));
 
-                let on_listening: Arc<OnListeningHandler> =
-                    Arc::new(move |listening, _nat_type| {
-                        tracing::debug!("chat: listening={}", listening);
-                    });
-                api_mut.set_on_listening(Some(on_listening));
-            }
+            let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
+                tracing::debug!("chat: listening={}", listening);
+            });
+            api_mut.set_on_listening(Some(on_listening));
         });
     }
 
