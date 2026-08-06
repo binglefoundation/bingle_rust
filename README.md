@@ -1,5 +1,13 @@
 # Bingle
 
+Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
+— so your conversations stay yours, with nobody able to read or shut them down.
+
+Bingle runs with no centralized server and uses end-to-end encryption, so there is no central infrastructure for third parties to compromise.
+Key management uses the Algorand blockchain to prevent impersonation, while messaging runs over the established
+DTLS (Datagram Transport Layer Security) protocol.
+A low-cost funding mechanism incentivizes the provision of relay nodes, keeping the network robust and resilient.
+
 Bingle is a peer-to-peer messaging project. Identities are **handles registered on the Algorand
 blockchain**, and messages travel **directly between peers** over an encrypted (DTLS) transport,
 using STUN for NAT traversal and relays only when a direct path is not available. This repository
