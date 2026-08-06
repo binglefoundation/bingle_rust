@@ -1,6 +1,10 @@
 pub mod tests_common;
 pub mod temp_file_helpers;
 
+// Reusable algokit-localnet integration harness, enabled with the `localnet` feature.
+#[cfg(feature = "localnet")]
+pub mod localnet;
+
 extern crate self as bingle_test;
 
 mod ffi_tests;

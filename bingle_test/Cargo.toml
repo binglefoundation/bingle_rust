@@ -18,6 +18,16 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Depend on the main crate for real backend access to AlgoOps
 bingle_core = { path = "../bingle_core" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[features]
+# Reusable algokit-localnet integration harness (bingle_test::localnet). Enables the in-process
+# relay/client test hooks in bingle_core. Off by default so normal builds don't pull test-only APIs.
+localnet = ["bingle_core/test-hooks"]
 
 [lints]
 workspace = true

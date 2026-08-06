@@ -25,17 +25,21 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ctrlc = { version = "3", features = ["termination"] }
 
 [dev-dependencies]
-bingle_test = { path = "../bingle_test" }
+# `localnet` feature brings in the reusable algokit-localnet harness (and enables bingle_core's
+# test-hooks) used by the self-provisioning localnet cases in the integration target.
+bingle_test = { path = "../bingle_test", features = ["localnet"] }
 tempfile = "3"
+serial_test = "3"
+ntest = "0.9"
 
 # Unit tests: local CLI tests with no external resource requirements.
 [[test]]
 name = "unit"
 path = "tests/unit.rs"
 
-# Integration tests: drive the compiled binary. The offline cases run everywhere; the live-chain
-# registration cases are #[ignore]d and need a localnet (run with `--ignored` and the env vars they
-# document).
+# Integration tests: drive the compiled binary. The offline cases run everywhere; the localnet cases
+# (module `localnet`) provision relays/STUN/app/accounts via bingle_test::localnet and drive the
+# compiled `chat` binary against a running algokit localnet, skipping cleanly when localnet is down.
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
