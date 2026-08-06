@@ -21,6 +21,13 @@ pub mod openssl_impl {
     use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
     use tokio_openssl::SslStream as TokioSslStream;
 
+    /// Attempts to take sole ownership of the stream `Arc` before splitting it, retrying to let a
+    /// peer worker's brief in-flight-write reference drop (issue #85). ~50 ms worst case
+    /// (25 × 2 ms), far longer than a single write, so a genuinely busy stream falls back to the
+    /// (still-correct) direct writer instead of hanging.
+    const STREAM_SPLIT_MAX_ATTEMPTS: u32 = 25;
+    const STREAM_SPLIT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(2);
+
     #[derive(Clone)]
     enum PeerWriterKind {
         /// Writes directly to the SSL stream from the calling thread using a blocking
@@ -66,6 +73,26 @@ pub mod openssl_impl {
                 .lock()
                 .map_err(|_| "peer writer lock poisoned".to_string())?;
             *guard = PeerWriterKind::Channel { tx };
+            Ok(())
+        }
+
+        /// Restore a working `Direct` writer over `stream_arc`. Used to recover if the stream-split
+        /// cannot take sole ownership of the stream (issue #85): rather than leaving the writer on a
+        /// dead channel, we switch it back to writing directly through the shared stream so later
+        /// sends keep working (the split is only an optimisation).
+        fn switch_to_direct(
+            &self,
+            runtime: Arc<tokio::runtime::Runtime>,
+            stream_arc: Arc<Mutex<TokioSslStream<CommonNetworkMuxConn>>>,
+        ) -> Result<()> {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| "peer writer lock poisoned".to_string())?;
+            *guard = PeerWriterKind::Direct {
+                runtime,
+                stream_arc,
+            };
             Ok(())
         }
 
@@ -2444,14 +2471,34 @@ pub mod openssl_impl {
                 let _ = w.switch_to_channel(dead_tx);
             }
 
-            // Now the only remaining owner is `stream_arc` itself; unwrap and split.
-            let inner_stream = Arc::try_unwrap(stream_arc)
-                .map_err(|_| {
-                    "stream_arc still has other owners after clearing Direct variant; cannot split"
-                        .to_string()
-                })?
-                .into_inner()
-                .map_err(|_| "stream mutex poisoned".to_string())?;
+            // Take sole ownership of `stream_arc` to split it. `PeerWriter::send` clones the stream
+            // Arc out of its mutex before writing, so the peer worker can hold a brief extra
+            // reference during an in-flight write; a single `try_unwrap` then spuriously fails.
+            // Retry to let that reference drop (issue #85). If it still cannot be taken, restore a
+            // working Direct writer (undoing the dead-channel switch above) and return a retryable
+            // error — never leave the peer on the dead channel, or every later write fails and
+            // forces a reconnect.
+            let inner_stream = match crate::util::arc_retry::try_unwrap_arc_with_retries(
+                stream_arc,
+                STREAM_SPLIT_MAX_ATTEMPTS,
+                STREAM_SPLIT_RETRY_DELAY,
+            ) {
+                Ok(mutex) => mutex
+                    .into_inner()
+                    .map_err(|_| "stream mutex poisoned".to_string())?,
+                Err(returned) => {
+                    if let Ok(m) = self.peer_states.lock()
+                        && let Some(ps) = m.get(&key_to)
+                        && let Some(w) = &ps.writer
+                    {
+                        let _ = w.switch_to_direct(self.dtls_async_runtime.clone(), returned);
+                    }
+                    return Err(
+                        "could not split stream: peer worker still writing after retries; kept direct writer, will retry"
+                            .to_string(),
+                    );
+                }
+            };
             let (read_half, write_half) = tokio::io::split(inner_stream);
 
             // Spawn a dedicated writer thread that owns the write half exclusively — no mutex needed.
