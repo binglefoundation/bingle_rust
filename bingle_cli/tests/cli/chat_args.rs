@@ -1,6 +1,5 @@
 // Unit tests for the `chat` subcommand argument parser (bingle_cli::chat::parse_chat_args).
 use bingle_cli::chat::parse_chat_args;
-use tracing_subscriber::filter::LevelFilter;
 
 fn args(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| s.to_string()).collect()
@@ -24,8 +23,6 @@ pub fn parses_handle_passphrase_and_to() {
     // Validate the Option explicitly per guidelines.
     assert!(parsed.to_id.is_none());
     assert!(parsed.state_file.is_none());
-    // Default log level is Warn.
-    assert_eq!(parsed.log_level, LevelFilter::WARN);
 }
 
 #[test]
@@ -51,9 +48,15 @@ pub fn accepts_both_state_file_spellings() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-pub fn debug_flag_raises_log_level_to_debug() {
-    let parsed = parse_chat_args(args(&["alice", "--debug"])).expect("should parse");
-    assert_eq!(parsed.log_level, LevelFilter::DEBUG);
+pub fn logging_flags_are_tolerated_and_not_treated_as_options() {
+    // --warn/--info/--debug are consumed globally by init_logger before dispatch, but parse_chat_args
+    // must also tolerate them (as no-ops) so they never reach parse_start_options_from_args, which
+    // would reject --info/--warn as unknown.
+    for flag in ["--debug", "--info", "--warn"] {
+        let parsed = parse_chat_args(args(&["alice", flag]))
+            .unwrap_or_else(|e| panic!("{flag} should parse: {e}"));
+        assert_eq!(parsed.opts.handle, "alice");
+    }
 }
 
 #[test]

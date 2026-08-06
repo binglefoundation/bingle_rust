@@ -1,15 +1,13 @@
 //! Argument parsing for the `chat` subcommand.
 //!
-//! This is the scaffold for the "Command line chat app" epic: it parses and validates the chat
-//! arguments but does not yet start an engine or open any network connection — later subtasks fill
-//! that in. Connection-shaped flags (`--handle`, `--passphrase`, `--node-file`, `--stun-servers`,
+//! Connection-shaped flags (`--handle`, `--passphrase`, `--node-file`, `--stun-servers`,
 //! `--app-id`, `--asset-id`, ...) are delegated to [`parse_start_options_from_args`] so they behave
-//! exactly as they do for `run`; the chat-specific flags (`--to`, `--to-id`, `--state_file`,
-//! `--debug`) are handled here.
+//! exactly as they do for `run`; the chat-specific flags (`--to`, `--to-id`, `--state_file`) are
+//! handled here. Logging flags (`--debug`, `--info`, `--log-*`) are consumed globally before dispatch
+//! by `init_logger_from_args`, so they never reach here; they are tolerated defensively.
 
 use bingle_core::api::bingle_api::StartOptions;
 use bingle_core::util::cli_utils::parse_start_options_from_args;
-use tracing_subscriber::filter::LevelFilter;
 
 /// Placeholder positional handle injected so `parse_start_options_from_args` accepts args that omit
 /// `--handle` when a `--state_file` is present. It is blanked immediately after parsing; the chat
@@ -28,8 +26,6 @@ pub struct ChatArgs {
     pub to_id: Option<String>,
     /// Optional local state file (`--state_file`, also accepted as `--state-file`).
     pub state_file: Option<String>,
-    /// Effective log level: `Warn` by default, raised to `Debug` when `--debug` is given.
-    pub log_level: LevelFilter,
 }
 
 /// Parse the arguments following `chat` into a [`ChatArgs`].
@@ -41,7 +37,6 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
     let mut to: Option<String> = None;
     let mut to_id: Option<String> = None;
     let mut state_file: Option<String> = None;
-    let mut debug = false;
     // Everything not consumed here is forwarded to the shared start-options parser.
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
 
@@ -57,11 +52,10 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
             "--state_file" | "--state-file" => {
                 state_file = Some(it.next().ok_or("--state_file requires a <file> value")?);
             }
-            "--debug" => {
-                // Chat-local alias for verbose logging. Consumed here rather than forwarded: it is a
-                // no-op for start-options parsing, and we want the effective level in ChatArgs.
-                debug = true;
-            }
+            // Logging flags are normally consumed before dispatch by `init_logger_from_args`. Tolerate
+            // them here too (as no-ops) so they never reach `parse_start_options_from_args`, which
+            // would reject `--info`/`--warn` as unknown.
+            "--debug" | "--info" | "--warn" => {}
             _ => rest.push(arg),
         }
     }
@@ -88,17 +82,10 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         Err(e) => return Err(e),
     };
 
-    let log_level = if debug {
-        LevelFilter::DEBUG
-    } else {
-        LevelFilter::WARN
-    };
-
     Ok(ChatArgs {
         opts,
         to,
         to_id,
         state_file,
-        log_level,
     })
 }
