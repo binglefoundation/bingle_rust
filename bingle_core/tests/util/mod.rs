@@ -4,6 +4,8 @@
 #[path = "../test_util.rs"]
 pub mod test_util;
 
+#[path = "arc_retry.rs"]
+pub mod arc_retry;
 pub mod mock_bingle_api;
 pub mod net_det;
 pub mod reusable_mock_api;
