@@ -1,10 +1,15 @@
 # Bingle
 
-Bingle is a peer-to-peer messaging project. Identities are **handles registered on the Algorand
-blockchain**, and messages travel **directly between peers** over an encrypted (DTLS) transport,
-using STUN for NAT traversal and relays only when a direct path is not available. This repository
-is the Rust core: the comms engine, the Algorand integration, a command-line client, a relay/web
-server, and the mobile bindings.
+Bingle is a decentralized, peer-to-peer messaging protocol that lets users communicate securely and privately
+— so your conversations stay yours, with nobody able to read or shut them down.
+
+Bingle runs with no centralized server and uses end-to-end encryption, so there is no central infrastructure for third parties to compromise.
+Key management uses the Algorand blockchain to prevent impersonation, while messaging runs over the established
+DTLS (Datagram Transport Layer Security) protocol.
+A low-cost funding mechanism incentivizes the provision of relay nodes, keeping the network robust and resilient.
+
+This repo is the reference Rust implementation of the Bingle protocol. It contains crates for 
+the Rust core, a command-line client, a relay/web server, and the mobile bindings.
 
 This guide is for people with app-development and build skills who want to explore what Bingle can
 do. Pick the path that matches your goal.
@@ -15,7 +20,7 @@ do. Pick the path that matches your goal.
   desktop.** Install the CLI and libraries from crates.io — no clone needed. Start with the
   [Quick start](#quick-start) below.
 - **Just try the Bingle app as an end user, or build your own iOS / React Native app on top of
-  Bingle.** Head to the app project instead: **[bingle_ux](https://github.com/bingle-foundation/bingle_ux)**.
+  Bingle.** Head to the app project instead: **[bingle_ux](https://github.com/binglefoundation/bingle_ux)**.
 - **Dig into the internals and contribute.** Clone and build the repository — see
   [Going deeper](#going-deeper-development) and the [Developer Guide](DEVELOPER.md).
 
@@ -45,7 +50,7 @@ This puts the `bingle_cli` command on your `PATH`. Alternatively, build it from 
 repository:
 
 ```bash
-git clone https://github.com/bingle-foundation/bingle_rust.git
+git clone https://github.com/binglefoundation/bingle_rust.git
 cd bingle_rust
 cargo install --path bingle_cli
 ```
@@ -141,7 +146,7 @@ To explore Bingle at a deeper level — modifying the engine, the Algorand integ
 mobile bindings — clone and build the repository:
 
 ```bash
-git clone https://github.com/bingle-foundation/bingle_rust.git
+git clone https://github.com/binglefoundation/bingle_rust.git
 cd bingle_rust
 cargo build
 cargo test --test unit      # unit tests, no external services required
@@ -166,7 +171,7 @@ Bingle is a Cargo workspace of six crates:
 | **`bingle_core`** | The heart of Bingle: the peer-to-peer comms engine (STUN NAT traversal, DTLS transport, relay discovery and routing) and the Algorand integration (`AlgoOps` generic helpers, `AlgoBingle` app/asset operations such as handle registration and lookup). |
 | **`bingle_local`** | A thin local-state layer over `bingle_core`: keypair status, the message queue, and the contact store. Kept deliberately small so it can be re-implemented natively (iOS/Android) in future. |
 | **`bingle_cli`** | The `bingle_cli` command-line binary used in the quick start (`run`, `register`, `buybingle`, `sellbingle`, `checkrelays`). Depends on `bingle_core` and `bingle_local`. |
-| **`bingle_jsi`** | The React Native JSI bridge. Generates iOS/Android bindings from the Rust API via [uniffi](https://mozilla.github.io/uniffi-rs/) so apps like [bingle_ux](https://github.com/bingle-foundation/bingle_ux) can call Bingle. |
+| **`bingle_jsi`** | The React Native JSI bridge. Generates iOS/Android bindings from the Rust API via [uniffi](https://mozilla.github.io/uniffi-rs/) so apps like [bingle_ux](https://github.com/binglefoundation/bingle_ux) can call Bingle. |
 | **`bingle_webserver`** | An HTTP server exposing the Bingle API — used to run relays and to drive Bingle from non-Rust environments. |
 | **`bingle_test`** | Shared test fixtures and helpers used across the other crates' test suites. |
 

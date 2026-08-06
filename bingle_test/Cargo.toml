@@ -4,6 +4,7 @@ version = "0.2.8"
 edition = "2024"
 # Test-support crate — never published to crates.io.
 publish = false
+readme = "README.md"
 
 [lib]
 name = "bingle_test"
