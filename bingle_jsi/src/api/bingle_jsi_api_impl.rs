@@ -24,6 +24,11 @@ use bingle_core::util::config_utils::{
 };
 use bingle_local::api::bingle_local_api::BingleLocalApi;
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
+// Shared outbound-send retry policy (issue #82). Re-exported so existing
+// `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
+// paths (and tests) keep resolving after the move to bingle_local.
+use bingle_local::api::send_retry::{RETRY_BACKOFF, select_sendable_message};
+pub use bingle_local::api::send_retry::{is_transient_send_failure, pending_failure_reason};
 
 /// Concrete implementation of BingleJsiApi backed by BingleApiImpl and BingleApiLocalImpl.
 pub struct BingleJsiApiImpl {
@@ -160,33 +165,6 @@ fn parse_nat_type(nat: &str) -> NatType {
         "Restricted" => NatType::Restricted,
         "FullCone" => NatType::FullCone,
         _ => NatType::Unknown,
-    }
-}
-
-/// Whether a failed pending-message send looks transient (i.e. connectivity-related) and so the
-/// message should stay pending to be retried, rather than being marked permanently failed.
-/// Recognises retryable errors, undelivered sends, and no-route/no-relay/unreachable conditions.
-pub fn is_transient_send_failure(err: &str) -> bool {
-    let e = err.to_ascii_lowercase();
-    e.starts_with("retryable:")
-        || e.contains("send returned false")
-        || e.contains("no available relay")
-        || e.contains("no relay")
-        || e.contains("unreachable")
-        || e.contains("no route")
-        || e.contains("noconnection")
-}
-
-/// Map a raw send error to a concise, human-readable `failure_reason` for a queued message so the
-/// app can surface it via the existing failure_reason channel (issue #43). A transient
-/// (connectivity) failure keeps the message pending and retrying, so the reason says so rather
-/// than leaking the internal error; a permanent failure surfaces the underlying error. The raw
-/// error is still logged for debugging.
-pub fn pending_failure_reason(err: &str, transient: bool) -> String {
-    if transient {
-        "Recipient unreachable — will keep retrying".to_string()
-    } else {
-        format!("Message failed to send: {err}")
     }
 }
 
@@ -708,10 +686,6 @@ impl BingleJsiApiImpl {
                 .ok()
         };
 
-        // A transient-failed message backs off this long before it is eligible again, so it does
-        // not immediately re-take the head of the queue and starve newer messages.
-        const RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
-
         // Scheduler: never blocks on a send. Hands the worker the oldest *eligible* pending message,
         // one at a time, and reaps results. If a send is slow/stuck we simply don't hand off
         // another — so the loop stays responsive and cannot hang; the message retries once the
@@ -862,28 +836,6 @@ fn local_api_guard(
         })?;
     local_arc.lock().map_err(|_| BingleJsiError::InternalError {
         reason: "Local API lock poisoned".to_string(),
-    })
-}
-
-/// Pick the oldest pending message eligible to send right now.
-///
-/// A message that recently transient-failed carries a `retry_after` deadline;
-/// until that deadline passes it is skipped so one repeatedly-failing recipient
-/// (e.g. permanently offline) can't starve newer messages behind it — the
-/// scheduler always drains the *oldest* message, so without this a stuck head of
-/// queue would block everything (head-of-line blocking, bingle_rust #31/#43).
-/// Messages with no recorded deadline are always eligible.
-fn select_sendable_message(
-    mut pending: Vec<bingle_local::api::bingle_local_api::Message>,
-    retry_after: &std::collections::HashMap<i64, std::time::Instant>,
-    now: std::time::Instant,
-) -> Option<bingle_local::api::bingle_local_api::Message> {
-    pending.sort_by_key(|m| m.timestamp);
-    pending.into_iter().find(|m| {
-        retry_after
-            .get(&m.timestamp)
-            .map(|deadline| *deadline <= now)
-            .unwrap_or(true)
     })
 }
 
