@@ -194,7 +194,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
-    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--info|--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--info|--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     // Help (exit 0) is user-requested output and goes to stdout; a usage error (non-zero) goes to
     // stderr. Both bypass the tracing logger so they are never suppressed by the active log level.
     if code == 0 {
@@ -668,7 +668,7 @@ fn cmd_run(mut args: Vec<String>) {
 /// a later subtask of the chat epic (#56); this command takes the account to the point of being
 /// registered and ready. The pure startup decision lives in `bingle_cli::chat_register` for testing.
 fn cmd_chat(args: Vec<String>) {
-    const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--info|--debug]";
+    const USAGE: &str = "Usage: bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--no-retries] [--info|--debug]";
 
     // Subcommand help prints to stdout and exits 0, mirroring the other subcommands.
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -703,13 +703,18 @@ fn cmd_chat(args: Vec<String>) {
     run_chat_startup(&mut state, cli_handle.as_deref(), cli_passphrase.as_deref());
 
     // Start the engine and run the interactive REPL (send / receive / switch) until exit.
-    run_chat_session(state, chat_args.to.clone(), chat_args.to_id.clone());
+    run_chat_session(
+        state,
+        chat_args.to.clone(),
+        chat_args.to_id.clone(),
+        !chat_args.no_retries,
+    );
 }
 
-/// Bounded send attempts before a queued message is marked permanently failed.
-const MAX_SEND_ATTEMPTS: u32 = 5;
-/// How often the background worker re-attempts pending outbound messages.
-const RETRY_INTERVAL_SECS: u64 = 5;
+/// How often the background worker checks for a pending outbound message to (re)attempt. A message
+/// is only eligible once its per-message backoff has elapsed, so this poll is just the scheduler
+/// tick, not the retry interval (that is `bingle_local::api::send_retry::RETRY_BACKOFF`).
+const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// `MessageSender` backed by the live engine: sends by handle or id.
 struct EngineSender {
@@ -747,7 +752,12 @@ fn reprint_prompt(prompt: &str) {
 /// current recipient (persisted + retried via the pending-message model); `/prefix` switches the
 /// recipient (resolved to its canonical handle via `handle_lookup_partial`); `!exit` or Ctrl-D exits
 /// cleanly (Ctrl-C likewise, via the signal handler). Mirrors `cmd_run`'s start loop.
-fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>) {
+fn run_chat_session(
+    state: ChatState,
+    to: Option<String>,
+    to_id: Option<String>,
+    retries_enabled: bool,
+) {
     let opts = state.opts.clone();
     // Shared with the engine callback and the retry worker: all mutate the one ChatState.
     let shared = Arc::new(std::sync::Mutex::new(state));
@@ -840,41 +850,38 @@ fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>)
         }
     }
 
-    // Background retry worker: periodically re-attempt any pending outbound messages.
-    {
+    // Background retry worker: keep re-attempting pending outbound messages (transient failures are
+    // retried indefinitely with per-message backoff, mirroring the RN client). Not started under
+    // --no-retries, where a failed send is reported once and never queued.
+    if retries_enabled {
         let retry_api = api.clone();
         let retry_shared = shared.clone();
         let retry_prompt = prompt_line.clone();
         std::thread::spawn(move || {
             let sender = EngineSender { api: retry_api };
-            let mut attempts: std::collections::HashMap<i64, u32> =
+            let mut retry_after: std::collections::HashMap<i64, std::time::Instant> =
                 std::collections::HashMap::new();
             loop {
-                std::thread::sleep(Duration::from_secs(RETRY_INTERVAL_SECS));
-                let outcomes = match retry_shared.lock() {
+                std::thread::sleep(RETRY_POLL_INTERVAL);
+                let outcome = match retry_shared.lock() {
                     Ok(mut guard) => bingle_cli::chat_send::retry_pending(
                         &sender,
                         &mut guard,
-                        &mut attempts,
-                        MAX_SEND_ATTEMPTS,
+                        &mut retry_after,
+                        std::time::Instant::now(),
                     ),
                     Err(_) => continue,
                 };
-                if outcomes.is_empty() {
-                    continue;
-                }
-                for outcome in outcomes {
-                    match outcome.result {
-                        RetryResult::Delivered => {
-                            println!("\n✓ delivered to {}", outcome.recipient)
-                        }
-                        RetryResult::GaveUp(reason) => println!(
-                            "\n! send to {} failed permanently: {}",
-                            outcome.recipient, reason
-                        ),
-                        // Interim retries are quiet; the first failure already printed a line.
-                        RetryResult::Retrying(_) => {}
+                let Some(outcome) = outcome else {
+                    continue; // nothing eligible right now
+                };
+                match outcome.outcome {
+                    SendOutcome::Delivered => println!("\n✓ delivered to {}", outcome.recipient),
+                    SendOutcome::Failed(reason) => {
+                        println!("\n! send to {} failed: {}", outcome.recipient, reason)
                     }
+                    // Transient: still retrying, stays quiet (the first failure already printed).
+                    SendOutcome::Retrying(_) => continue,
                 }
                 let prompt = retry_prompt.lock().map(|g| g.clone()).unwrap_or_default();
                 reprint_prompt(&prompt);
@@ -938,10 +945,14 @@ fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>)
             ChatInput::Send { text } => match recipient.target() {
                 None => println!("no recipient; use /<handle> to pick one, or start with --to"),
                 Some(target) => {
-                    let report = match shared.lock() {
-                        Ok(mut guard) => {
-                            bingle_cli::chat_send::send_once(&sender, &mut guard, &target, &text)
-                        }
+                    let outcome = match shared.lock() {
+                        Ok(mut guard) => bingle_cli::chat_send::send_once(
+                            &sender,
+                            &mut guard,
+                            &target,
+                            &text,
+                            retries_enabled,
+                        ),
                         Err(_) => {
                             warn!("chat: state lock poisoned");
                             continue;
@@ -949,12 +960,16 @@ fn run_chat_session(state: ChatState, to: Option<String>, to_id: Option<String>)
                     };
                     // On success print nothing: the terminal already echoed the typed line, which is
                     // the transcript entry. Only surface failures.
-                    if let SendReport::Failed(reason) = report {
-                        println!(
-                            "! send to {} failed: {} — retrying…",
+                    match outcome {
+                        SendOutcome::Delivered => {}
+                        SendOutcome::Retrying(reason) => println!(
+                            "! send to {} not delivered ({}); will keep retrying…",
                             target.label(),
                             reason
-                        );
+                        ),
+                        SendOutcome::Failed(reason) => {
+                            println!("! send to {} failed: {}", target.label(), reason)
+                        }
                     }
                 }
             },
@@ -1072,7 +1087,7 @@ fn resolve_status_or_exit(state: &ChatState) -> chat_register::AccountStatus {
 use bingle_cli::chat::parse_chat_args;
 use bingle_cli::chat_register::{self, CredentialGap, StartupDecision, decide_startup};
 use bingle_cli::chat_repl::{ChatInput, CurrentRecipient, parse_input};
-use bingle_cli::chat_send::{RetryResult, SendReport};
+use bingle_cli::chat_send::SendOutcome;
 use bingle_cli::chat_state::ChatState;
 use bingle_cli::chat_state::RegisterError;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
