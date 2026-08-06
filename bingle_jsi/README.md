@@ -18,6 +18,10 @@ apps can call the Bingle engine in
 It is part of [`bingle_rust`](https://github.com/binglefoundation/bingle_rust), the Rust reference implementation of
 the Bingle protocol.
 
+> **Android is under development and unsupported.** Only the iOS bridge is currently supported. The
+> Android bindings and build scripts are provided for development purposes, may be incomplete or
+> broken, and should not be relied on.
+
 ## Installing
 
 `bingle_jsi` is a React Native bridge crate and is not published to crates.io — it is consumed from
@@ -146,6 +150,9 @@ This will:
 - `bingle_jsi/ios/generated/` — Swift bindings (`.swift`) and C header (`.h`)
 
 #### Android
+
+> **Under development and unsupported.** The Android build is not currently supported and may be
+> incomplete or broken. The steps below are for development only.
 
 From the project root:
 
