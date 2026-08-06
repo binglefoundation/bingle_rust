@@ -54,8 +54,8 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
             }
             // Logging flags are normally consumed before dispatch by `init_logger_from_args`. Tolerate
             // them here too (as no-ops) so they never reach `parse_start_options_from_args`, which
-            // would reject `--info` as unknown.
-            "--debug" | "--info" => {}
+            // would reject `--info`/`--warn` as unknown.
+            "--debug" | "--info" | "--warn" => {}
             _ => rest.push(arg),
         }
     }

@@ -101,13 +101,13 @@ fn init_logger_from_args(args: &mut Vec<String>) {
         }
 
         let matched = match a {
-            "--log-warn" | "-q" => {
+            // `--warn` is a friendly alias for `--log-warn`/`-q`; `--info` for `--log-info`; and
+            // `--debug` for `--log-debug`. These are consumed here (stripped from args) so subcommand
+            // parsers never see them and every command honours them uniformly.
+            "--log-warn" | "--warn" | "-q" => {
                 chosen = Some(LevelFilter::WARN);
                 true
             }
-            // `--info` is a friendly alias for `--log-info`; likewise `--debug` for `--log-debug`.
-            // These are consumed here (stripped from args) so subcommand parsers never see them and
-            // every command honours them uniformly.
             "--log-info" | "--info" => {
                 chosen = Some(LevelFilter::INFO);
                 true
@@ -194,7 +194,7 @@ fn main() {
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
-    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--info|--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
+    let usage = "Usage: bingle_cli <run|chat|register|buybingle|sellbingle|checkrelays> [options]\n  Common options (for all commands): -h|--help | -V|--version | --log-warn|--warn|-q | --log-info|--info | --log-debug|--debug|-v | --log-trace|--vv|-vv | --log-mode <Plain|ANSI|AWS|JS> | --stun-servers <list> | --stun-servers-file <file>\n  Note: chat defaults to WARN-level logs to keep the prompt clean; use --info or --debug to see more.\n  bingle_cli run [--handle <handle>|<handle>] [--passphrase <text>] [--relay] [--static-ip <ip:port>] [--stun-servers <list>] [--stun-servers-file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--sentinel-file <path>] [--echo] [--auto-migrate] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] [--info|--debug]\n  bingle_cli register --handle <handle> --passphrase <text> --app-id <id> --asset-id <id> --price-units <n> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli buybingle <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli sellbingle <amount_units> <price_algos> --passphrase <text> --app-id <id> --asset-id <id> [--node-file <file>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]\n  bingle_cli checkrelays --passphrase <text> [--node-file <file>] [--app-id <id>] [--asset-id <id>] [--interval-ms <n>] [--stun-servers <list>] [--stun-servers-file <file>] [--log-mode <Plain|ANSI|AWS|JS>]";
     // Help (exit 0) is user-requested output and goes to stdout; a usage error (non-zero) goes to
     // stderr. Both bypass the tracing logger so they are never suppressed by the active log level.
     if code == 0 {
