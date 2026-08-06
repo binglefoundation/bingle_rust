@@ -26,6 +26,9 @@ pub struct ChatArgs {
     pub to_id: Option<String>,
     /// Optional local state file (`--state_file`, also accepted as `--state-file`).
     pub state_file: Option<String>,
+    /// `--no-retries`: send each message once and report failure immediately instead of keeping it
+    /// pending and retrying while the recipient is offline. Retries are on by default.
+    pub no_retries: bool,
 }
 
 /// Parse the arguments following `chat` into a [`ChatArgs`].
@@ -37,6 +40,7 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
     let mut to: Option<String> = None;
     let mut to_id: Option<String> = None;
     let mut state_file: Option<String> = None;
+    let mut no_retries = false;
     // Everything not consumed here is forwarded to the shared start-options parser.
     let mut rest: Vec<String> = Vec::with_capacity(args.len());
 
@@ -51,6 +55,11 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
             }
             "--state_file" | "--state-file" => {
                 state_file = Some(it.next().ok_or("--state_file requires a <file> value")?);
+            }
+            // Send each message once instead of keeping it pending and retrying (accept the singular
+            // `--no-retry` too).
+            "--no-retries" | "--no-retry" => {
+                no_retries = true;
             }
             // Logging flags are normally consumed before dispatch by `init_logger_from_args`. Tolerate
             // them here too (as no-ops) so they never reach `parse_start_options_from_args`, which
@@ -87,5 +96,6 @@ pub fn parse_chat_args(args: Vec<String>) -> Result<ChatArgs, String> {
         to,
         to_id,
         state_file,
+        no_retries,
     })
 }
