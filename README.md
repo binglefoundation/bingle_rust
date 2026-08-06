@@ -8,11 +8,8 @@ Key management uses the Algorand blockchain to prevent impersonation, while mess
 DTLS (Datagram Transport Layer Security) protocol.
 A low-cost funding mechanism incentivizes the provision of relay nodes, keeping the network robust and resilient.
 
-Bingle is a peer-to-peer messaging project. Identities are **handles registered on the Algorand
-blockchain**, and messages travel **directly between peers** over an encrypted (DTLS) transport,
-using STUN for NAT traversal and relays only when a direct path is not available. This repository
-is the Rust core: the comms engine, the Algorand integration, a command-line client, a relay/web
-server, and the mobile bindings.
+This repo is the reference Rust implementation of the Bingle protocol. It contains crates for 
+the Rust core, a command-line client, a relay/web server, and the mobile bindings.
 
 This guide is for people with app-development and build skills who want to explore what Bingle can
 do. Pick the path that matches your goal.
