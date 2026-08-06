@@ -346,5 +346,23 @@ mod localnet {
             transcript.contains("receiver: Echo: Hello from CLI"),
             "CLI transcript should show the peer's echoed reply; stdout was:\n{transcript}"
         );
+
+        // The receive path persists each inbound message to the --state_file (record_message +
+        // save_state), so the echoed reply must be durable in the sender's state after the run — the
+        // "persist" half of the epic's send -> receive -> persist loop.
+        let state_json = std::fs::read_to_string(&sender_state).expect("read sender state file");
+        let state: serde_json::Value =
+            serde_json::from_str(&state_json).expect("parse sender state file as JSON");
+        let messages = state
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .expect("state file should have a messages array");
+        assert!(
+            messages.iter().any(|m| {
+                m.get("sender_handle").and_then(|v| v.as_str()) == Some("receiver")
+                    && m.get("text").and_then(|v| v.as_str()) == Some("Echo: Hello from CLI")
+            }),
+            "the echoed reply should be stored in the --state_file; messages were:\n{messages:#?}"
+        );
     }
 }
