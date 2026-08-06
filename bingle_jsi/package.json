@@ -11,7 +11,9 @@
     "android/",
     "cpp/",
     "BingleJsiRN.podspec",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "scripts": {
     "build:ios": "bash scripts/build_ios.sh",
@@ -26,7 +28,7 @@
     "p2p",
     "messaging"
   ],
-  "license": "UNLICENSED",
+  "license": "MIT OR Apache-2.0",
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-native": ">=0.71.0"
