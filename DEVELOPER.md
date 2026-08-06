@@ -34,6 +34,94 @@ For a fully local Algorand network, start one with
 [AlgoKit](https://github.com/algorandfoundation/algokit-cli) (`algokit localnet start`); the
 localnet integration tests below use it.
 
+## Interactive chat
+
+`bingle_cli chat` is an interactive terminal chat client built on the same engine as `run`. It
+sends and receives plaintext messages from a registered account, showing a prompt for the current
+recipient and persisting the conversation to a BingleLocal **state file**.
+
+```bash
+bingle_cli chat [--handle <handle>|<handle>] [--passphrase <text>] \
+  [--to <handle> | --to-id <id>] [--state_file <file>] [--node-file <file>] \
+  [--app-id <id>] [--asset-id <id>] [--stun-servers <list>] [--stun-servers-file <file>] \
+  [--no-retries] [--info|--debug]
+```
+
+### Flags
+
+- `--state_file <file>` — a BingleLocal store holding the account keypair, known contacts, and
+  message history. It is loaded on start and written back as you chat (sent and received messages,
+  new contacts). A path that does not exist yet is treated as an empty first-run store. Once the
+  account is registered in this file, later runs need neither `--passphrase` nor `--handle`.
+- `--to <handle>` / `--to-id <id>` — the initial recipient. `--to` resolves the handle (via known
+  contacts, else a chain lookup); `--to-id` targets an account id directly. Without either, the
+  prompt starts as `User? > ` until you pick a recipient with `/<handle>`.
+- `--handle <handle>` / `--passphrase <text>` — credentials for **first-run registration** (see
+  below). Once the state file holds a registered account, both are optional and, if supplied,
+  the stored values are used unless overridden.
+- `--node-file <file>` — selects the Algorand network and Bingle app/asset ids (see
+  [Networks](#networks-mainnet-testnet-localnet)); defaults to mainnet. Use
+  `nodely_deployed_mainnet_node.json` to reach the public deployment.
+- `--stun-servers-file <file>` / `--stun-servers <list>` — STUN servers for NAT traversal. The
+  repository ships a ready-made `stunservers.txt`; pass `--stun-servers-file stunservers.txt` so
+  peers behind NAT can connect.
+- `--no-retries` — send each message once and report failure immediately, instead of queuing it for
+  background retry.
+- `--info` / `--debug` — chat logs at `WARN` by default to keep the prompt clean; raise the level to
+  see connection/session detail.
+
+### First-run registration flow
+
+Chat can only run from a **registered** account. On start it resolves the account status from the
+state file and the chain, then:
+
+- **Already registered** (state file has a registered keypair) → starts straight away; no
+  `--passphrase`/`--handle` needed.
+- **No account yet** → pass a funded `--passphrase` and a `--handle`; chat imports the account and
+  registers the handle on-chain on first run, then persists it to `--state_file`. (Or register
+  ahead of time with `bingle_cli register` and just point chat at the same state file.)
+- **Funded but no handle** → pass `--handle` to register it.
+- **Not sufficiently funded** → chat prints the address and the ALGO shortfall and exits; fund the
+  account and re-run.
+
+### In the REPL
+
+- The prompt shows the current recipient: `[bob] > ` when one is set, or `User? > ` when none is.
+- A plain line is sent to the current recipient. On an interactive terminal the line you typed is
+  the transcript entry — it is not reprinted.
+- `/<handle>` switches the recipient. The handle is prefix-resolved to its canonical registered
+  form (e.g. `/echo` → `echo-test-1`), which becomes the new prompt; an unknown prefix prints an
+  error and keeps the previous recipient.
+- Received messages print above the prompt as `sender: text`.
+- `!exit` or Ctrl-D exits cleanly (the engine stops and the state file is saved).
+
+### Worked example: the public echo peer
+
+A handle registered as `echo-test-1` runs on the deployed mainnet as an echo peer — it replies
+`Echo: <text>` to whatever it receives — so you can try chat end to end without running your own
+peer. Point chat at the mainnet node file and the shipped STUN list, and chat to `echo-test-1`:
+
+```bash
+bingle_cli chat --node-file nodely_deployed_mainnet_node.json \
+  --passphrase "word1 ... word25" --handle <my-handle> \
+  --to echo-test-1 --state_file tmp/<my-handle>_state.json \
+  --stun-servers-file stunservers.txt
+```
+
+On first run this registers `<my-handle>` on mainnet (the `--passphrase` must name a funded
+account); on later runs the account is read from the state file, so `--passphrase`/`--handle` can be
+dropped. Then type a message:
+
+```
+[echo-test-1] > Hello, echo
+echo-test-1: Echo: Hello, echo
+[echo-test-1] > !exit
+```
+
+Both the sent line and the echoed reply are persisted to `tmp/<my-handle>_state.json`.
+
+Both the sent line and the echoed reply are persisted to `echo-test-1.json`.
+
 ## Post-Checkout Setup
 
 To automate the resolution of merge conflicts in `.build_number` files, you must configure a custom merge driver locally. This only needs to be done once after cloning the repository:
