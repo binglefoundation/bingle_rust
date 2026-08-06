@@ -3,14 +3,17 @@
 //!
 //! The offline cases exercise the compiled binary on the paths that need no blockchain (they hinge
 //! on a "no keypair" status, which is resolved without a chain read) and assert exit codes/messages.
-//! The live-chain cases are `#[ignore]`d: they need a running localnet and a funded/registered
-//! account, supplied via the environment, and are run explicitly with `cargo test -- --ignored`.
+//!
+//! The localnet cases (module `localnet`) are **self-provisioning**: they stand up a full algokit
+//! localnet environment via `bingle_test::localnet` (funded accounts, a deployed Bingle app + asset,
+//! registered handles, two root relays and STUN servers) and drive the compiled `chat` binary
+//! against it — first-run registration, second-run start-up with no credentials, sending from the
+//! REPL, and the inbound receive/print path. They **skip cleanly (pass)** when no localnet is
+//! reachable, so a plain `cargo test` without a localnet is unaffected. Running them for real needs
+//! a live `algokit localnet` (algod `localhost:4001`, indexer `localhost:8980`) and the
+//! `algokit`/`goal` CLIs on `PATH`.
 
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::time::Duration;
+use std::process::Command;
 
 fn run(args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
@@ -70,161 +73,278 @@ fn chat_help_still_exits_0() {
     );
 }
 
-/// Read a required environment variable for the live tests, or `None` (so the test no-ops rather
-/// than failing) when it is unset.
-fn live_env(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|v| !v.is_empty())
-}
-
-#[test]
-#[ignore = "requires a localnet + funded account; set BINGLE_IT_NODE_FILE/PASSPHRASE/HANDLE and run with --ignored"]
+/// Self-provisioning localnet end-to-end tests for `bingle_cli chat`. Replaces the previous
+/// env-var-gated `#[ignore]`d live tests (which needed hand-set `BINGLE_IT_*` and a pre-registered
+/// account) with a test that stands up the whole environment itself.
 #[cfg(not(target_os = "ios"))]
-fn live_first_run_registers_then_second_run_needs_no_passphrase() {
-    // Live end-to-end: register on first run, then confirm the saved account starts with no creds.
-    // Skips (passes) unless the localnet env vars are provided.
-    let (Some(node_file), Some(passphrase), Some(handle)) = (
-        live_env("BINGLE_IT_NODE_FILE"),
-        live_env("BINGLE_IT_PASSPHRASE"),
-        live_env("BINGLE_IT_HANDLE"),
-    ) else {
-        eprintln!("skipping live registration test: BINGLE_IT_* env not set");
-        return;
-    };
+mod localnet {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
-    let dir = tempfile::tempdir().expect("tempdir");
-    let state_file: PathBuf = dir.path().join("chat.state.json");
-    let state = state_file.to_string_lossy().into_owned();
+    use bingle_core::api::bingle_api::{BingleApi, OnMessageHandler};
+    use bingle_core::api::bingle_api_impl::BingleApiImpl;
+    use bingle_core::engine::BingleAccessUnsafeForTests;
+    use bingle_test::localnet::{provision, relay_test_util, setup_localnet, test_util};
 
-    // First run: import + register + save.
-    let first = run(&[
-        "chat",
-        "--state_file",
-        &state,
-        "--node-file",
-        &node_file,
-        "--passphrase",
-        &passphrase,
-        "--handle",
-        &handle,
-    ]);
-    assert!(
-        first.status.success(),
-        "first-run registration should exit 0; stderr: {}",
-        String::from_utf8_lossy(&first.stderr)
-    );
-    assert!(
-        state_file.exists(),
-        "state file should be written on first run"
-    );
+    // A funded localnet account used as the in-process receiver/echo peer (not a relay account).
+    const RECEIVER_ADDRESS: &str = "P577OS2FPV7COU3Y43PCTS2IIZ5HAXHBZRHINAATVA5ECCEYKFSEVIYTHE";
+    const RECEIVER_PASSPHRASE: &str = "lift all minute first hair appear panel unfold pony property also dinosaur start robot board erupt tent pink essence stem protect ugly orphan absent dust";
 
-    // Second run: no --passphrase/--handle needed.
-    let second = run(&["chat", "--state_file", &state, "--node-file", &node_file]);
-    assert!(
-        second.status.success(),
-        "second run should start from the saved account with no credentials; stderr: {}",
-        String::from_utf8_lossy(&second.stderr)
-    );
-}
-
-#[test]
-#[ignore = "requires a localnet + a pre-registered account; set BINGLE_IT_NODE_FILE and BINGLE_IT_STATE_FILE and run with --ignored"]
-#[cfg(not(target_os = "ios"))]
-fn live_chat_starts_engine_and_reaches_started() {
-    // Starts `chat` against a real node with a pre-registered account (via bingle_cli register /
-    // an earlier first run) and asserts it reaches the "started" state within a timeout, then stops
-    // it. Verifies the engine start + Ctrl-C shutdown wiring; the full two-peer receive assertion
-    // pairs with the send path from the REPL subtask (#61). Skips (passes) unless env is provided.
-    let (Some(node_file), Some(state_file)) = (
-        live_env("BINGLE_IT_NODE_FILE"),
-        live_env("BINGLE_IT_STATE_FILE"),
-    ) else {
-        eprintln!("skipping live start test: BINGLE_IT_NODE_FILE/STATE_FILE not set");
-        return;
-    };
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
-        .args([
-            "chat",
-            "--state_file",
-            &state_file,
-            "--node-file",
-            &node_file,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn chat");
-
-    // Scan stdout for the "started" marker on a background thread so we can time out.
-    let stdout = child.stdout.take().expect("child stdout");
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if line.contains("chat: started as") {
-                let _ = tx.send(());
-                break;
+    /// Install an OnMessage handler on the in-process peer that records the first message + its text
+    /// and echoes `Echo: <text>` back to the sender, so the CLI's inbound receive/print path is
+    /// exercised (mirrors `bingle_cli run --echo`).
+    fn install_echo_handler(
+        api: &Arc<BingleApiImpl>,
+        received: &Arc<AtomicBool>,
+        text: &Arc<Mutex<Option<String>>>,
+    ) {
+        let received = received.clone();
+        let text_store = text.clone();
+        let echo_api = api.clone();
+        let handler: Arc<OnMessageHandler> = Arc::new(move |sender, sender_handle, message| {
+            let text = message
+                .get("text")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            tracing::info!(
+                "[e2e peer] got message from {sender} ({sender_handle}): {text:?}; echoing back"
+            );
+            if let Some(t) = &text
+                && let Ok(mut g) = text_store.lock()
+            {
+                *g = Some(t.clone());
             }
-        }
-    });
-
-    let started = rx.recv_timeout(Duration::from_secs(90)).is_ok();
-
-    // Best-effort teardown regardless of outcome.
-    let _ = child.kill();
-    let _ = child.wait();
-
-    assert!(
-        started,
-        "chat should reach the started/listening state within the timeout"
-    );
-}
-
-#[test]
-#[ignore = "requires a localnet + a registered account + an echo peer; set BINGLE_IT_NODE_FILE, BINGLE_IT_STATE_FILE, BINGLE_IT_ECHO_HANDLE and run with --ignored"]
-#[cfg(not(target_os = "ios"))]
-fn live_repl_send_to_echo_peer_prints_reply() {
-    // Drives the epic's worked example over piped stdin: with an echo peer (`run --echo`) registered
-    // as BINGLE_IT_ECHO_HANDLE, send "Hello, echo" then `!exit`, and assert the echoed reply is
-    // printed. Skips (passes) unless the localnet env vars are provided.
-    let (Some(node_file), Some(state_file), Some(echo_handle)) = (
-        live_env("BINGLE_IT_NODE_FILE"),
-        live_env("BINGLE_IT_STATE_FILE"),
-        live_env("BINGLE_IT_ECHO_HANDLE"),
-    ) else {
-        eprintln!("skipping live REPL test: BINGLE_IT_* env not set");
-        return;
-    };
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
-        .args([
-            "chat",
-            "--state_file",
-            &state_file,
-            "--node-file",
-            &node_file,
-            "--to",
-            &echo_handle,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn chat");
-
-    // Send a message and then exit. Give the engine a moment to reach listening first.
-    {
-        let mut stdin = child.stdin.take().expect("child stdin");
-        std::thread::sleep(Duration::from_secs(10));
-        writeln!(stdin, "Hello, echo").expect("write message");
-        std::thread::sleep(Duration::from_secs(5));
-        writeln!(stdin, "!exit").expect("write exit");
-        // stdin dropped here, closing the pipe.
+            received.store(true, Ordering::SeqCst);
+            let reply =
+                serde_json::json!({ "text": format!("Echo: {}", text.unwrap_or_default()) });
+            if let Err(e) = echo_api.send_message_to_id(&sender, reply, None) {
+                tracing::warn!("[e2e peer] echo send back to {sender} failed: {e:?}");
+            }
+        });
+        api.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.set_on_message(Some(handler)));
     }
 
-    let output = child.wait_with_output().expect("wait for chat");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains(&format!("{echo_handle}: Echo: Hello, echo")),
-        "expected the echoed reply in the transcript; stdout was:\n{stdout}"
-    );
+    /// Full chat epic over a real localnet, driving the compiled `chat` binary:
+    ///  1. **first-run registration** — `chat --passphrase --handle` registers "sender" on-chain and
+    ///     writes its state file (folds in the old `live_first_run_*` test);
+    ///  2. **second run needs no credentials** — the send run below starts from only `--state_file`
+    ///     (no `--passphrase`), and reaching delivery proves the engine started (folds in
+    ///     `live_chat_starts_engine_and_reaches_started`);
+    ///  3. **send + receive/print** — a line typed into the REPL is delivered to the in-process peer,
+    ///     which echoes back; the CLI prints the reply, which we assert on its stdout (folds in
+    ///     `live_repl_send_to_echo_peer_prints_reply`).
+    #[ntest::timeout(300_000)]
+    #[serial_test::serial(localnet_chat)]
+    #[test]
+    fn chat_registers_sends_and_receives_over_localnet() {
+        if !provision::localnet_available() {
+            eprintln!(
+                "skipping localnet chat e2e: algokit localnet not reachable at localhost:4001"
+            );
+            return;
+        }
+        test_util::init_test_logging();
+
+        let cfg = test_util::localnet_config();
+        // Fund every account we use (relays + sender + receiver).
+        setup_localnet::ensure_localnet_accounts_funded(
+            &cfg,
+            &[
+                test_util::ADDRESS_SPEND,
+                test_util::ADDRESS_RECEIVE,
+                test_util::ADDRESS_10MIL,
+                RECEIVER_ADDRESS,
+            ],
+        )
+        .expect("fund localnet accounts");
+
+        // Deploy app + asset, register two root relays, bring up STUN.
+        let creator = test_util::ops_from_mnemonic(
+            test_util::ADDRESS_SPEND,
+            test_util::PASSPHRASE_SPEND,
+            cfg.clone(),
+        );
+        let (app_id, asset_id) =
+            test_util::deploy_bingle_app_and_asset(&creator, "BINGLE$", 1_000_000);
+
+        let r1_port = test_util::find_unused_loopback_port();
+        let r2_port = test_util::find_unused_loopback_port();
+        let relay1_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r1_port);
+        let relay2_addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), r2_port);
+        provision::register_relays(app_id, asset_id, relay1_addr, relay2_addr);
+
+        let relay1 = test_util::start_root_relay(
+            "relay1",
+            relay1_addr,
+            test_util::PASSPHRASE_SPEND,
+            app_id,
+            cfg.clone(),
+        );
+        let relay2 = test_util::start_root_relay(
+            "relay2",
+            relay2_addr,
+            test_util::PASSPHRASE_RECEIVE,
+            app_id,
+            cfg.clone(),
+        );
+
+        let (mut s1, mut s2, stun_list) = provision::setup_stun_servers(false);
+        let stun_arg = format!("{},{}", stun_list[0], stun_list[1]);
+
+        // Register the receiver ("receiver") on-chain and start it as an in-process echo peer.
+        test_util::register_client_on_blockchain(
+            RECEIVER_ADDRESS,
+            RECEIVER_PASSPHRASE,
+            "receiver",
+            app_id,
+            asset_id,
+            &creator,
+            cfg.clone(),
+        );
+        let receiver = provision::start_client(
+            "receiver",
+            RECEIVER_PASSPHRASE,
+            stun_list.clone(),
+            app_id,
+            cfg.clone(),
+        );
+        let received = Arc::new(AtomicBool::new(false));
+        let got_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        install_echo_handler(&receiver, &received, &got_text);
+        assert!(
+            test_util::wait_for_registered(&receiver, Duration::from_secs(180)),
+            "receiver did not reach Registered state"
+        );
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sender_state = dir.path().join("sender.state.json");
+        let sender_state_s = sender_state.to_string_lossy().into_owned();
+        let node_file = dir.path().join("localnet.node.json");
+        provision::write_localnet_node_file(&node_file, app_id, asset_id);
+        let node_file_s = node_file.to_string_lossy().into_owned();
+
+        // (1) First run: register "sender" on-chain from a funded passphrase and write the state
+        // file. stdin is closed (EOF), so after registration the engine starts and the REPL exits
+        // cleanly with status 0.
+        let reg = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
+            .args([
+                "chat",
+                "--info",
+                "--state_file",
+                &sender_state_s,
+                "--node-file",
+                &node_file_s,
+                "--stun-servers",
+                &stun_arg,
+                "--passphrase",
+                test_util::PASSPHRASE_10MIL,
+                "--handle",
+                "sender",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("run first-run registration");
+        assert!(
+            reg.status.success(),
+            "first-run registration should exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&reg.stderr)
+        );
+        assert!(
+            sender_state.exists(),
+            "sender state file should be written on first run"
+        );
+        // Make sure the freshly registered handle is visible before the second run resolves it.
+        assert!(
+            relay_test_util::wait_for_handles_visible(
+                cfg.clone(),
+                app_id,
+                &["sender"],
+                Duration::from_secs(60),
+            ),
+            "sender handle did not become visible via indexer within 60s"
+        );
+
+        // (2)+(3) Second run: start from only the saved state file (no --passphrase), send a line
+        // from the REPL to the peer, and expect the echoed reply back in the CLI's stdout. Keep
+        // stdin open so the REPL + background retry can complete before teardown.
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bingle_cli"))
+            .args([
+                "chat",
+                "--info",
+                "--state_file",
+                &sender_state_s,
+                "--node-file",
+                &node_file_s,
+                "--stun-servers",
+                &stun_arg,
+                "--to",
+                "receiver",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn bingle_cli chat");
+
+        let mut child_stdin = child.stdin.take().expect("child stdin");
+        let mut child_stdout = child.stdout.take().expect("child stdout");
+        // Drain stdout on a background thread so we can assert on the transcript after teardown.
+        let stdout_reader = std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = child_stdout.read_to_string(&mut buf);
+            buf
+        });
+
+        // Give the CLI a moment to start its engine and reach listening before sending.
+        std::thread::sleep(Duration::from_secs(20));
+        writeln!(child_stdin, "Hello from CLI").expect("write message to chat stdin");
+        child_stdin.flush().ok();
+
+        // Wait for the peer to receive it (the pending-retry model keeps trying while the relay path
+        // settles).
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(120) {
+            if received.load(Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        // Give the echo reply time to travel back and print in the CLI transcript.
+        std::thread::sleep(Duration::from_secs(10));
+
+        // Tear down the chat process (drop stdin first so the REPL sees EOF), then collect stdout.
+        drop(child_stdin);
+        let _ = child.kill();
+        let _ = child.wait();
+        let transcript = stdout_reader.join().unwrap_or_default();
+
+        let got = received.load(Ordering::SeqCst);
+        let text = got_text.lock().expect("lock text").clone();
+
+        // Tear down infra before asserting so a failure doesn't leak relays/STUN.
+        relay1.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        relay2.access_unsafe_for_tests(|r: &mut BingleApiImpl| r.stop());
+        receiver.access_unsafe_for_tests(|c: &mut BingleApiImpl| c.stop());
+        s1.stop();
+        s2.stop();
+
+        assert!(
+            got,
+            "peer did not get the message from the chat CLI within the timeout"
+        );
+        assert_eq!(
+            text.as_deref(),
+            Some("Hello from CLI"),
+            "peer got an unexpected message payload"
+        );
+        assert!(
+            transcript.contains("receiver: Echo: Hello from CLI"),
+            "CLI transcript should show the peer's echoed reply; stdout was:\n{transcript}"
+        );
+    }
 }
