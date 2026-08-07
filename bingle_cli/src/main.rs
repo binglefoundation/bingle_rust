@@ -716,6 +716,11 @@ fn cmd_chat(args: Vec<String>) {
 /// tick, not the retry interval (that is `bingle_local::api::send_retry::RETRY_BACKOFF`).
 const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
+/// How long the chat REPL waits for the node to reach the listening state before showing the prompt
+/// (issue #91). On timeout it proceeds best-effort so the REPL never hangs — outbound messages are
+/// still queued and retried by the background worker.
+const LISTENING_WAIT_TIMEOUT: Duration = Duration::from_secs(45);
+
 /// `MessageSender` backed by the live engine: sends by handle or id.
 struct EngineSender {
     api: Arc<BingleApiImpl>,
@@ -764,10 +769,15 @@ fn run_chat_session(
     let api = BingleApiImpl::new(&opts);
     // The prompt currently shown, so async prints (received messages, retry results) can redraw it.
     let prompt_line = Arc::new(std::sync::Mutex::new(CurrentRecipient::None.prompt()));
+    // Readiness gate: flipped true by the `on_listening(true, …)` callback once the node is actually
+    // listening on the network. The REPL waits on this before showing the prompt so the user cannot
+    // send (and lose) a message before there is a return path (issue #91).
+    let listening_gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
 
     {
         let shared_for_msg = shared.clone();
         let prompt_for_msg = prompt_line.clone();
+        let listening_gate_cb = listening_gate.clone();
         api.access(|api_mut| {
             let on_message: Arc<OnMessageHandler> =
                 Arc::new(move |sender, sender_handle, message| {
@@ -806,6 +816,15 @@ fn run_chat_session(
 
             let on_listening: Arc<OnListeningHandler> = Arc::new(move |listening, _nat_type| {
                 tracing::debug!("chat: listening={}", listening);
+                // Signal the readiness gate once (and only once) the node is listening, so the REPL
+                // can stop waiting and show the prompt (issue #91).
+                if listening
+                    && let Ok(mut ready) = listening_gate_cb.0.lock()
+                    && !*ready
+                {
+                    *ready = true;
+                    listening_gate_cb.1.notify_all();
+                }
             });
             api_mut.set_on_listening(Some(on_listening));
         });
@@ -893,6 +912,38 @@ fn run_chat_session(
         "chat: started as '{}'. Type a message, /handle to switch recipient, or !exit.",
         opts.handle
     );
+
+    // Wait for the node to actually be listening before showing the prompt, so the first typed
+    // message is not sent (and its reply lost) before there is a return path (issue #91). Incoming
+    // messages and retry results still print during the wait — their callbacks/thread are already
+    // installed. Bounded by a timeout so an unreachable network never wedges the REPL.
+    {
+        println!("Connecting to the network…");
+        let _ = std::io::stdout().flush();
+        let (lock, cvar) = &*listening_gate;
+        let ready = match lock.lock() {
+            Ok(guard) => cvar
+                .wait_timeout_while(guard, LISTENING_WAIT_TIMEOUT, |ready| !*ready)
+                .map(|(guard, _)| *guard)
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if ready {
+            println!("Connected — ready to chat.");
+        } else {
+            warn!(
+                "chat: still connecting after {}s; proceeding best-effort.",
+                LISTENING_WAIT_TIMEOUT.as_secs()
+            );
+            let hint = if retries_enabled {
+                "messages you send will be queued and retried until the connection is ready"
+            } else {
+                "a message you send now may fail if the connection is not yet ready"
+            };
+            println!("Still connecting; {hint}.");
+        }
+        let _ = std::io::stdout().flush();
+    }
 
     // Interactive loop on the main thread (engine + retry worker run on their own threads).
     let sender = EngineSender { api: api.clone() };
