@@ -122,8 +122,27 @@ bingle_cli run \
   --passphrase "word1 word2 ... word25"
 ```
 
-Run `bingle_cli` with no arguments to see the full usage for every command (`run`, `register`,
-`buybingle`, `sellbingle`, `checkrelays`).
+Run `bingle_cli` with no arguments to see the full usage for every command (`run`, `chat`,
+`register`, `buybingle`, `sellbingle`, `checkrelays`).
+
+### Interactive chat
+
+`bingle_cli chat` is an interactive terminal chat client. Point it at a state file (which stores
+your registered account and conversation history) and a recipient, then type messages. A public
+`echo-test-1` peer runs on mainnet and replies `Echo: <text>`, so you can try it end to end:
+
+```bash
+bingle_cli chat --node-file nodely_deployed_mainnet_node.json \
+  --passphrase "word1 ... word25" --handle <my-handle> \
+  --to echo-test-1 --state_file tmp/<my-handle>_state.json \
+  --stun-servers-file stunservers.txt
+```
+
+On first run this registers `<my-handle>` on mainnet (the passphrase must name a funded account);
+later runs read the account from the state file. The prompt shows the current recipient; type a
+line to send it, `/<handle>` to switch recipient, and `!exit` (or Ctrl-D) to quit. See the
+[Developer Guide](DEVELOPER.md#interactive-chat) for the first-run registration flow and a full
+worked example.
 
 ### Running a relay
 
