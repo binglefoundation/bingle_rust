@@ -78,7 +78,7 @@ fn chat_help_still_exits_0() {
 /// account) with a test that stands up the whole environment itself.
 #[cfg(not(target_os = "ios"))]
 mod localnet {
-    use std::io::{Read, Write};
+    use std::io::{BufRead, Write};
     use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
@@ -292,16 +292,50 @@ mod localnet {
             .expect("spawn bingle_cli chat");
 
         let mut child_stdin = child.stdin.take().expect("child stdin");
-        let mut child_stdout = child.stdout.take().expect("child stdout");
-        // Drain stdout on a background thread so we can assert on the transcript after teardown.
-        let stdout_reader = std::thread::spawn(move || {
-            let mut buf = String::new();
-            let _ = child_stdout.read_to_string(&mut buf);
-            buf
-        });
+        let child_stdout = child.stdout.take().expect("child stdout");
+        // Drain stdout on a background thread, accumulating the transcript and flipping `ready` once
+        // the CLI reports it is listening (issue #91). We assert on the transcript after teardown and
+        // use `ready` to time the first send precisely instead of a blind sleep.
+        let transcript_buf = Arc::new(Mutex::new(String::new()));
+        let ready = Arc::new(AtomicBool::new(false));
+        let stdout_reader = {
+            let transcript_buf = transcript_buf.clone();
+            let ready = ready.clone();
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(child_stdout);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break, // EOF (child exited / stdout closed)
+                        Ok(_) => {
+                            if line.contains("ready to chat") {
+                                ready.store(true, Ordering::SeqCst);
+                            }
+                            if let Ok(mut buf) = transcript_buf.lock() {
+                                buf.push_str(&line);
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })
+        };
 
-        // Give the CLI a moment to start its engine and reach listening before sending.
-        std::thread::sleep(Duration::from_secs(20));
+        // Wait for the CLI to reach the listening state (the readiness gate from issue #91) before
+        // sending, rather than a blind sleep — this exercises the new gate. Fall back after 60s so a
+        // stuck connection surfaces as a normal assertion failure below.
+        let ready_deadline = Instant::now();
+        while ready_deadline.elapsed() < Duration::from_secs(60) {
+            if ready.load(Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        assert!(
+            ready.load(Ordering::SeqCst),
+            "CLI did not report 'ready to chat' (listening) within 60s"
+        );
         writeln!(child_stdin, "Hello from CLI").expect("write message to chat stdin");
         child_stdin.flush().ok();
 
@@ -321,7 +355,8 @@ mod localnet {
         drop(child_stdin);
         let _ = child.kill();
         let _ = child.wait();
-        let transcript = stdout_reader.join().unwrap_or_default();
+        let _ = stdout_reader.join();
+        let transcript = transcript_buf.lock().map(|b| b.clone()).unwrap_or_default();
 
         let got = received.load(Ordering::SeqCst);
         let text = got_text.lock().expect("lock text").clone();
@@ -341,6 +376,16 @@ mod localnet {
             text.as_deref(),
             Some("Hello from CLI"),
             "peer got an unexpected message payload"
+        );
+        // The readiness gate (issue #91) must announce it is connecting and then confirm it is ready
+        // before the prompt/first send — so the first message is not lost.
+        assert!(
+            transcript.contains("Connecting to the network"),
+            "CLI transcript should show the connecting notice; stdout was:\n{transcript}"
+        );
+        assert!(
+            transcript.contains("ready to chat"),
+            "CLI transcript should confirm it reached the listening state; stdout was:\n{transcript}"
         );
         assert!(
             transcript.contains("receiver: Echo: Hello from CLI"),
