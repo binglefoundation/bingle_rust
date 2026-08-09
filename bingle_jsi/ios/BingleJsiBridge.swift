@@ -257,8 +257,8 @@ class BingleJsiBridge: RCTEventEmitter {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let result = try api.registerKeypair(handle: handle)
-                resolve(result)
+                try api.registerKeypair(handle: handle)
+                resolve(nil)
             } catch {
                 reject("BINGLE_ERROR", "\(error)", error)
             }
