@@ -64,5 +64,3 @@ field_reassign_with_default = "allow"
 items_after_test_module = "allow"
 # #38 / #32 duplicate_mod is the shared-#[path] test module problem (tracked in #32)
 duplicate_mod = "allow"
-# #39 possible dropped future — flagged for correctness review, not autofix
-let_underscore_future = "allow"

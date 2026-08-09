@@ -287,7 +287,6 @@ pub mod openssl_impl {
         async_queue: Arc<AsyncPeerQueue>,
         peer_handle: Option<PeerHandle>,
         is_connecting_peer: bool,
-        is_announced_client_cert_peer: bool,
         handshake_logged: bool,
         cipher_suite: Option<String>,
         generation: u64,
@@ -309,7 +308,6 @@ pub mod openssl_impl {
             async_queue: Arc::new(AsyncPeerQueue::new(ASYNC_PEER_QUEUE_CAPACITY)),
             peer_handle: None,
             is_connecting_peer: false,
-            is_announced_client_cert_peer: false,
             handshake_logged: false,
             cipher_suite: None,
             generation,
@@ -347,12 +345,6 @@ pub mod openssl_impl {
         }
         peer_state.async_queue.close();
     }
-
-    // Internal control message prefix used to announce our own certificate to the peer at the
-    // application-data layer when the server's CertificateRequest CA list would otherwise prevent
-    // the client from sending its certificate. This message is intercepted by the DTLS layer and
-    // never delivered to the user's handle_message callback.
-    const CERT_ANNOUNCE_PREFIX: &[u8] = b"DTLS-CERT-ANNOUNCE:";
 
     /// Accept-path background thread entry point.
     ///
@@ -1605,7 +1597,7 @@ pub mod openssl_impl {
             //builder.set_verify_cert_store(store).map_err(|e| format!("server: set verify cert store failed: {}", e))?;
             // Build and set the acceptable CA names list sent in CertificateRequest
             // Intentionally do not advertise a client CA list or request client certificates during handshake.
-            // Client identity is validated at the application layer via peer_certificate_handler and DTLS-CERT-ANNOUNCE.
+            // Client identity is validated at the application layer via peer_certificate_handler.
             let _ = ca_pem; // suppress unused warning
 
             // Constrain to DTLSv1.2 only
@@ -2188,7 +2180,6 @@ pub mod openssl_impl {
                 ps.issuer.clear();
                 ps.peer_handle = Some(peer_handle.clone());
                 ps.is_connecting_peer = true;
-                ps.is_announced_client_cert_peer = false;
                 ps.handshake_logged = false;
                 tracing::debug!(
                     "[DtlsOpenSsl:::send] assigned generation {} for {}",
@@ -2415,45 +2406,6 @@ pub mod openssl_impl {
                     #[allow(unused)]
                     {}
                     return Err("no peer certificate presented".to_string());
-                }
-            }
-
-            // Announce client certificate to the server while we still hold the stream guard.
-            // This must happen before we split the stream, so that the guard is the only writer.
-            if let Some(cert_pem) = self.client_cert.get() {
-                let mut should_send = false;
-                {
-                    let peers = &self.peer_states;
-                    let _ = peers.lock().map(|mut m| {
-                        if let Some(ps) = m.get_mut(&key_to)
-                            && !ps.is_announced_client_cert_peer
-                        {
-                            ps.is_announced_client_cert_peer = true;
-                            should_send = true;
-                        }
-                    });
-                }
-                if should_send {
-                    let ca_pem = self.ca_cert.get().map(|v| v.as_slice()).unwrap_or(&[]);
-                    let mut msg = Vec::with_capacity(
-                        CERT_ANNOUNCE_PREFIX.len() + cert_pem.len() + 1 + ca_pem.len(),
-                    );
-                    msg.extend_from_slice(CERT_ANNOUNCE_PREFIX);
-                    msg.extend_from_slice(cert_pem);
-                    // Separate with a newline if the cert block doesn't already end with one
-                    if !cert_pem.last().map(|b| *b == b'\n').unwrap_or(false) {
-                        msg.push(b'\n');
-                    }
-                    msg.extend_from_slice(ca_pem);
-                    tracing::debug!(
-                        "[DtlsOpenSsl:::send] announcing client cert to {} (cert_len={} ca_len={})",
-                        to,
-                        cert_pem.len(),
-                        ca_pem.len()
-                    );
-                    #[allow(unused)]
-                    {}
-                    let _ = stream.write_all(&msg);
                 }
             }
 
