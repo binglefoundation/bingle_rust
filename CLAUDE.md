@@ -1,20 +1,36 @@
 # Project Guidelines
 
-## Test structure
+## Issue conventions
+
+- Provide acceptance criteria / deliverables.
+- Before the issue is ready to code, describe a solution.
+- Do not reference the bingle_admin repository, the bingle_notify repository or the user richdrich.
+
+## Test structure (rust)
 
 - Put Rust unit and integration tests in the `tests` directory, in a subfolder matching the `src` subfolder (e.g. tests for `src/api` go in `tests/api`).
 - Do not put tests inline with the code — keep them in the test tree (Java-style).
 - Mark all tests with `#[test]` and use a separate `#[cfg(...)]` attribute where needed so that IntelliJ can discover them.
 - Ensure all tests are referenced in `Cargo.toml`.
 
-## Code conventions
+## Code conventions (rust)
 
-- Do not use default values on traits outside test-only code. Defaults on traits can be used for testing, but should panic if called in non-test code.
+- Do not use default values on traits outside test-only code. Defaults on traits may be used for testing, but must panic if called in non-test code.
 - All state should be in a struct, not global or thread-local, except in very special cases — ask before using global or thread-local storage.
 - Always validate that a call returning `Option` succeeds before using the value.
+
+## Code conventions (generic)
+
 - Do not prefix an in-use parameter name with `_` — that prefix signals an intentionally unused parameter.
 - Do not use Title Case in comments.
-- where there are worktrees in a checked out repo, the root directory of the repo should have `deployed` checked out and should not be altered
+- Expand acronyms on first use in documents.
+- Shell commands in docs should be a single line to ease cut/paste/edit.
+
+## Worktrees
+
+- The repository root checkout holds the canonical branch for the repo (`deployed`, `staging`, or `master`) and must not be altered directly.
+- Do all development in a worktree — the worktree is the prime working checkout.
+- This repo's prime working checkout is `.claude/worktrees/staging`.
 
 ## Files
 
@@ -24,9 +40,10 @@
 
 1. Run the `unit` test target and verify all tests pass with no warnings.
 2. Ensure `tests`, `bingle_jsi`, `bingle_local`, `bingle_cli`, and `bingle_webserver` trees all compile.
-3. Ensure `scripts/run_quality_checks.sh --strict` passes
+3. Ensure `scripts/run_quality_checks.sh --strict` passes.
 
 ## Git notes
 
-- if you are still modifying a PR, put it in draft until it is ready for review/merge
-- however if the PR is believed to be complete and meet all requirements, put it in ready for review/merge
+- While still modifying a PR, keep it in draft until it is ready for review/merge.
+- When the PR is complete and meets all requirements, mark it ready for review/merge.
+- Do not commit without asking for review.
