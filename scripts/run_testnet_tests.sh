@@ -8,7 +8,11 @@ if [[ "$LEAVE_CONTAINERS" != "1" ]]; then
   DOCKER_RUN_RM=(--rm)
 fi
 
-CREATOR_PASSPHRASE="version rural bring cushion ball case borrow present avoid else pupil alcohol marine attitude extra favorite mass move midnight symbol sibling latin language able borrow"
+# Accounts directory used by bingle_admin for account-based signing. The latest
+# bingle_admin no longer takes a creator --passphrase for usersettings; it signs the
+# on-chain allow_relay/allow_static calls with APP_ADMIN.json from this directory.
+# Override with TESTNET_ACCOUNTS_DIR; defaults to the shared staging testnet account set.
+ACCOUNTS_DIR="${TESTNET_ACCOUNTS_DIR:-/Users/richardparratt/dev/bingle_rust_branches/testnet_accounts}"
 
 # Ensure cleanup of background containers on exit
 cleanup() {
@@ -68,6 +72,15 @@ PINGABLE_PORT=30001
 NAT_MODE=${NAT_MODE:-All}
 MEASURE_MEMORY=${MEASURE_MEMORY:-0}
 
+# Subnet prefix for the dedicated bingle_testnet docker network. The pingable
+# containers are pinned to static IPs in <prefix>.0.100+, so the network subnet and
+# those IPs both derive from this single prefix. Default avoids 172.17/172.18, which
+# docker's default bridge and algokit localnet (algokit_sandbox_default) commonly use
+# and which caused "Pool overlaps with other one on this address space". Override with
+# TESTNET_SUBNET_PREFIX if this one clashes too (must be a two-octet /16 prefix).
+TESTNET_SUBNET_PREFIX="${TESTNET_SUBNET_PREFIX:-172.28}"
+TESTNET_SUBNET="${TESTNET_SUBNET_PREFIX}.0.0/16"
+
 # Common docker run flags
 COMMON_ARGS=()
 if [[ "$MEASURE_MEMORY" == "1" ]]; then
@@ -81,18 +94,64 @@ else
   PING_INIT_MODE="$NAT_MODE"
 fi
 
-# Update these users
-bingle_admin root $RELAY_A_ADDRESS --enable \
- --node-file nodely_staging_testnet_node.json \
- --passphrase "$CREATOR_PASSPHRASE"
+# Ensure the persistent test accounts are opted into the current app and have their
+# handles registered. Required after an app redeploy: the usersettings grants below and
+# the e2e tests both assume these accounts already hold local state on the app the node
+# file points at (a fresh app leaves them opted into the previous app only). Idempotent —
+# accounts already registered are skipped. EXTRA_RELAY is honoured (relayextra included).
+scripts/bootstrap_testnet_accounts.sh --node-file nodely_staging_testnet_node.json
+if [ $? -ne 0 ]; then
+  echo "ERROR: testnet account bootstrap failed" >&2
+  exit 1
+fi
 
-bingle_admin root $RELAY_B_ADDRESS --enable \
- --node-file nodely_staging_testnet_node.json \
- --passphrase "$CREATOR_PASSPHRASE"
+# Enable relay + static-IP permission on-chain for the root relay accounts.
+# Latest bingle_admin: the old `root <ID> --enable --passphrase <mnemonic>` form is now
+# `usersettings <ID> --enable-relay --enable-static --accounts <DIR>` (APP_ADMIN signs).
+# Both permissions are required: relays register a static endpoint (allow_static) and now
+# refuse to start unless allow_relay is set (see check_allow_relay in bingle_core).
+if [[ ! -f "$ACCOUNTS_DIR/APP_ADMIN.json" ]]; then
+  echo "ERROR: accounts directory '$ACCOUNTS_DIR' is missing APP_ADMIN.json" >&2
+  echo "       set TESTNET_ACCOUNTS_DIR to the staging testnet account set" >&2
+  exit 1
+fi
 
-# Ensure a dedicated test network exists with custom subnet for IP assignment
-if ! docker network inspect bingle_testnet >/dev/null 2>&1; then
-  docker network create --subnet=172.18.0.0/16 bingle_testnet >/dev/null
+for RELAY_ADDR in "$RELAY_A_ADDRESS" "$RELAY_B_ADDRESS"; do
+  bingle_admin usersettings "$RELAY_ADDR" --enable-relay --enable-static \
+    --accounts "$ACCOUNTS_DIR" \
+    --node-file nodely_staging_testnet_node.json
+  if [ $? -ne 0 ]; then
+    echo "ERROR: bingle_admin usersettings failed for relay $RELAY_ADDR" >&2
+    exit 1
+  fi
+done
+
+# Ensure a dedicated test network exists with the fixed subnet used for --ip assignment.
+if docker network inspect bingle_testnet >/dev/null 2>&1; then
+  : # already present, reuse it
+elif docker network create --subnet="$TESTNET_SUBNET" bingle_testnet >/dev/null 2>&1; then
+  echo "Created docker network bingle_testnet ($TESTNET_SUBNET)"
+else
+  # Create failed — almost always because $TESTNET_SUBNET overlaps an existing network
+  # (docker's default bridge, algokit localnet, a compose network, etc.). Identify the
+  # squatter so the fix is obvious instead of surfacing the raw daemon message.
+  owner=""
+  for id in $(docker network ls -q); do
+    if docker network inspect "$id" \
+         --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null \
+         | grep -q "^${TESTNET_SUBNET}$"; then
+      owner=$(docker network inspect "$id" --format '{{.Name}}' 2>/dev/null)
+      break
+    fi
+  done
+  if [ -n "$owner" ]; then
+    echo "ERROR: subnet $TESTNET_SUBNET is already used by docker network '$owner'." >&2
+    echo "       Free it (e.g. 'docker network rm $owner') or set TESTNET_SUBNET_PREFIX" >&2
+    echo "       to an unused two-octet /16 prefix, then re-run." >&2
+  else
+    echo "ERROR: failed to create docker network bingle_testnet ($TESTNET_SUBNET)" >&2
+  fi
+  exit 1
 fi
 
 # Start two local STUN servers in Docker (coturn in STUN-only mode)
@@ -215,6 +274,16 @@ wait_for_file "$SENT_DIR/$RELAY_A_SENT" 180 || exit 1
 wait_for_file "$SENT_DIR/$RELAY_B_SENT" 180 || exit 1
 
 if [[ -n "${EXTRA_RELAY:-}" ]]; then
+  # The extra relay also runs with --relay, so it needs allow_relay set on-chain. It is
+  # STUN_ONLY and registers no static endpoint, so static permission is not required.
+  bingle_admin usersettings "$RELAY_EXTRA_ADDRESS" --enable-relay \
+    --accounts "$ACCOUNTS_DIR" \
+    --node-file nodely_staging_testnet_node.json
+  if [ $? -ne 0 ]; then
+    echo "ERROR: bingle_admin usersettings failed for extra relay $RELAY_EXTRA_ADDRESS" >&2
+    exit 1
+  fi
+
   docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}"  -d \
    --name bingle_relay_extra \
    --network bingle_testnet \
@@ -245,7 +314,7 @@ fi
 echo "Restarting ping target mode ${PING_INIT_MODE}"
 # Initialize IP address tracking for bingle_pingable container
 PINGABLE_IP_SUFFIX=100
-echo "Using IP address 172.18.0.$PINGABLE_IP_SUFFIX for initial bingle_pingable"
+echo "Using IP address ${TESTNET_SUBNET_PREFIX}.0.$PINGABLE_IP_SUFFIX for initial bingle_pingable"
 PING_INIT_SENT="pingable_${PING_INIT_MODE}_${PINGABLE_PORT}.sentinel"
 echo "Delete sentinel ${SENT_DIR}/${PING_INIT_SENT}"
 rm -f "$SENT_DIR/$PING_INIT_SENT"
@@ -256,7 +325,7 @@ PING_EXTRA_ARGS="--log-debug"
 docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}"  -d \
  --name bingle_pingable \
  --network bingle_testnet \
- --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
+ --ip "${TESTNET_SUBNET_PREFIX}.0.$PINGABLE_IP_SUFFIX" \
  --cap-add NET_ADMIN \
  -e RUST_BACKTRACE=1 \
  -e EXTRA_ARGS="$PING_EXTRA_ARGS" \
@@ -287,7 +356,15 @@ export TESTNET_USER=$TESTNET_USER
 export TESTNET_PASSPHRASE="$TESTNET_PASSPHRASE"
 
 scripts/build_cli_image.sh --tag bingle:local
+if [ $? -ne 0 ]; then
+  echo "ERROR: failed to build bingle:local image" >&2
+  exit 1
+fi
 scripts/build_tests_image.sh --tag bingle-tests:local
+if [ $? -ne 0 ]; then
+  echo "ERROR: failed to build bingle-tests:local image" >&2
+  exit 1
+fi
 
 # Run the prebuilt test inside the dedicated tests image
 # NAT_MODE can be set by the caller to control iptables behavior in the test container: Direct|Full|Restricted|All
@@ -327,6 +404,10 @@ fi
 if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" || "$RUN_TESTS" == "ping" ]]; then
   # Build image for ping_registered_node test once
   scripts/build_tests_image.sh --tag bingle-tests:ping --test ping_registered_node
+  if [ $? -ne 0 ]; then
+    echo "ERROR: failed to build bingle-tests:ping image; skipping ping tests" >&2
+    exit 1
+  fi
 
   # Set explicit filter to the ping test function
   PING_FILTER="testnet_send_ping_to_registered_node"
@@ -358,14 +439,14 @@ if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" |
       docker rm -f bingle_pingable >/dev/null 2>&1 || true
       # Increment IP address for new container
       PINGABLE_IP_SUFFIX=$((PINGABLE_IP_SUFFIX + 1))
-      echo "Using IP address 172.18.0.$PINGABLE_IP_SUFFIX for bingle_pingable restart"
+      echo "Using IP address ${TESTNET_SUBNET_PREFIX}.0.$PINGABLE_IP_SUFFIX for bingle_pingable restart"
       PING_SENT="pingable_${MODE}_${PINGABLE_PORT}.sentinel"
       echo "Removing $SENT_DIR/$PING_SENT"
       rm -f "$SENT_DIR/$PING_SENT"
       docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}" -d \
         --name bingle_pingable \
         --network bingle_testnet \
-        --ip "172.18.0.$PINGABLE_IP_SUFFIX" \
+        --ip "${TESTNET_SUBNET_PREFIX}.0.$PINGABLE_IP_SUFFIX" \
         --cap-add NET_ADMIN \
         -e RUST_BACKTRACE=1 \
         -e EXTRA_ARGS="$PING_EXTRA_ARGS" \
