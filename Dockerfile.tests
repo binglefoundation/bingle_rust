@@ -11,8 +11,10 @@ ARG TARGETPLATFORM=linux/arm64
 FROM --platform=$TARGETPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2023 AS base
 
 # Install minimal runtime dependencies (bash for scripts, CA certs, OpenSSL if dynamically linked)
-# Include iproute for IP autodiscovery in docker_start.sh when EXTERNAL_IP is not provided
-RUN dnf install -y \
+# Include iproute for IP autodiscovery in docker_start.sh when EXTERNAL_IP is not provided.
+# --allowerasing lets the full `curl` package replace the `curl-minimal` that Amazon Linux
+# 2023 ships preinstalled; without it dnf aborts the whole install on a file conflict.
+RUN dnf install -y --allowerasing \
     bash \
     ca-certificates \
     openssl \
