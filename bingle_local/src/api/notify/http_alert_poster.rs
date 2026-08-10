@@ -54,7 +54,10 @@ impl AlertPoster for HttpAlertPoster {
                         // 200/202 accepted; 429 is the gateway coalescing/rate-limiting per caller
                         // — all fine. Anything else is logged and ignored.
                         if alert_status_accepted(status) {
-                            tracing::debug!(
+                            // Info, not debug: the give-up nudge is a rare, significant event, so
+                            // its outcome (including a 429 = gateway coalesced) should be visible at
+                            // the default log level.
+                            tracing::info!(
                                 "[notify][alert] gateway accepted alert for '{}' (status {})",
                                 body.audience,
                                 status
