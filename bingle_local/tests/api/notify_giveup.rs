@@ -196,11 +196,12 @@ fn giveup_with_no_url_sends_nothing() {
     assert!(poster.calls().is_empty(), "no URL must send no alert");
 }
 
-/// The nudge fires exactly once on give-up — never on an intermediate transient retry — and posts a
-/// valid signed envelope to `{url}/alert` for the recipient.
+/// The nudge fires on the first unreachable/failed report — waking the offline recipient while the
+/// message is still retrying — and then never again for that message: not on later retries, not on a
+/// subsequent give-up. It posts a valid signed envelope to `{url}/alert` for the recipient.
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn giveup_fires_once_not_per_retry() {
+fn nudge_fires_once_on_first_unreachable_not_per_retry() {
     let (mut api, poster) = giveup_api(Some("https://gw.example/"), true);
     api.add_message(
         ALERT_ISS.into(),
@@ -211,23 +212,47 @@ fn giveup_fires_once_not_per_retry() {
     )
     .expect("add message");
 
-    // A transient failure keeps the message pending and must NOT nudge.
-    api.update_message_status(7, 0.0, Some("Retryable: offline".into()))
-        .expect("transient update");
-    assert!(
-        poster.calls().is_empty(),
-        "a transient retry must not fire the nudge"
-    );
-
-    // Give-up: terminal failure fires exactly one nudge for the recipient.
-    api.update_message_status(7, 1.0, Some("permanent".into()))
-        .expect("terminal update");
+    // First unreachable report (transient, still retrying, progress < 1.0) fires exactly one nudge —
+    // this is the case give-up-only nudging never reached, since an unreachable message retries
+    // forever and never gives up.
+    api.update_message_status(
+        7,
+        0.0,
+        Some("Recipient unreachable — will keep retrying".into()),
+    )
+    .expect("first transient update");
     let calls = poster.calls();
-    assert_eq!(calls.len(), 1, "give-up fires exactly one alert");
+    assert_eq!(
+        calls.len(),
+        1,
+        "the first unreachable report fires one alert"
+    );
     let (url, req) = &calls[0];
     assert_eq!(url, "https://gw.example/");
     assert_eq!(req.iss, ALERT_ISS);
     assert_eq!(req.audience, ALERT_AUDIENCE);
+
+    // A later retry of the same message must not re-nudge.
+    api.update_message_status(
+        7,
+        0.0,
+        Some("Recipient unreachable — will keep retrying".into()),
+    )
+    .expect("second transient update");
+    assert_eq!(
+        poster.calls().len(),
+        1,
+        "a later retry of the same message must not re-nudge"
+    );
+
+    // A subsequent give-up must not re-nudge either — the message was already nudged once.
+    api.update_message_status(7, 1.0, Some("permanent".into()))
+        .expect("terminal update");
+    assert_eq!(
+        poster.calls().len(),
+        1,
+        "give-up after an unreachable nudge must not re-nudge"
+    );
 
     // The posted signature is a valid alert envelope for the recorded nonce/exp.
     let expected = api
@@ -246,6 +271,32 @@ fn giveup_fires_once_not_per_retry() {
     assert_eq!(
         req.sig, expected,
         "posted signature must be a valid alert envelope"
+    );
+}
+
+/// The notify gate applies to the unreachable path too: with the flag off, an unreachable retry
+/// sends no `/alert` even though a URL is configured.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn unreachable_with_flag_off_sends_nothing() {
+    let (mut api, poster) = giveup_api(Some("https://gw.example"), false);
+    api.add_message(
+        ALERT_ISS.into(),
+        vec![ALERT_AUDIENCE.into()],
+        11,
+        "hi".into(),
+        None,
+    )
+    .expect("add message");
+    api.update_message_status(
+        11,
+        0.0,
+        Some("Recipient unreachable — will keep retrying".into()),
+    )
+    .expect("transient update");
+    assert!(
+        poster.calls().is_empty(),
+        "flag off must send no alert on an unreachable retry"
     );
 }
 

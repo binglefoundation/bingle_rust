@@ -8,7 +8,7 @@ use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::error::AlgoErrorKind;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Configuration for the local API implementation.
@@ -145,6 +145,11 @@ pub struct BingleApiLocalImpl {
     // Best-effort sender for the give-up nudge to the notify gateway (bingle_notify #11). Defaults
     // to the real HTTP poster; a seam so tests can observe the nudge without a live gateway.
     alert_poster: Arc<dyn AlertPoster>,
+    // Message timestamps we have already nudged for, so the unreachable/give-up nudge fires at most
+    // once per message even though update_message_status is called on every retry (bingle_notify
+    // #11/#17). In-memory only: a restart may re-nudge a still-pending message, which is acceptable
+    // (it only re-wakes an offline recipient so the pending retries can land).
+    nudged_messages: Mutex<HashSet<i64>>,
 }
 
 /// How long a `network_available` probe result is reused before re-probing.
@@ -164,6 +169,7 @@ impl BingleApiLocalImpl {
             last_status: Mutex::new(None),
             last_network_check: Mutex::new(None),
             alert_poster: Arc::new(HttpAlertPoster::new()),
+            nudged_messages: Mutex::new(HashSet::new()),
         }
     }
 
@@ -189,10 +195,12 @@ impl BingleApiLocalImpl {
         }
     }
 
-    /// Fire the best-effort give-up nudge for the recipients we gave up on (bingle_notify #11).
+    /// Fire the best-effort notify nudge for recipients a send could not reach — either still
+    /// unreachable and retrying, or terminally given up (bingle_notify #11/#17). The caller
+    /// (`update_message_status`) dedups so this fires at most once per message.
     ///
     /// Gated on `notify_on_giveup` and a configured `notify_gateway_url`; when either is off this is
-    /// a no-op and give-up behaves exactly as before. Resolves the local (sender) handle and the
+    /// a no-op and sending behaves exactly as before. Resolves the local (sender) handle and the
     /// active keypair, then delegates the per-recipient sign-and-post to
     /// [`post_giveup_alerts`](crate::api::notify::post_giveup_alerts). Never blocks or fails
     /// delivery: a missing handle, signing failure, or transport error is logged and swallowed.
@@ -796,19 +804,20 @@ impl BingleLocalApi for BingleApiLocalImpl {
             }
         };
 
-        // On give-up (a terminal failure: progress >= 1.0 with a failure_reason) fire the notify
-        // nudge for this message's recipients. A transient failure (progress < 1.0) keeps the
-        // message pending and does not nudge, so the nudge fires only on give-up — never per retry
-        // — and a successful send (progress 1.0, no reason) does not nudge either.
-        let giveup_recipients = {
+        // Fire the notify nudge whenever a send reports a failure — the recipient is unreachable and
+        // still retrying (progress < 1.0), or the send has terminally given up (progress >= 1.0).
+        // Waking an offline recipient with a content-free push lets the pending retries land, so the
+        // nudge must fire while the message is still unreachable, not only on give-up (which, for a
+        // transient "keep retrying" failure, never happens) — bingle_notify #11/#17. A successful
+        // send (progress 1.0, no failure_reason) never nudges. Dedup happens below.
+        let failed_recipients = {
             if let Some(msg) = guard.iter_mut().find(|m| m.timestamp == timestamp) {
                 msg.progress = Some(progress);
-                let is_giveup = progress >= 1.0 && failure_reason.is_some();
                 if failure_reason.is_some() || progress >= 1.0 {
                     msg.failure_reason = failure_reason;
                 }
-                if is_giveup {
-                    Some(msg.recipient_handles.clone())
+                if msg.failure_reason.is_some() {
+                    Some((msg.timestamp, msg.recipient_handles.clone()))
                 } else {
                     None
                 }
@@ -822,8 +831,22 @@ impl BingleLocalApi for BingleApiLocalImpl {
         // Release the messages lock before nudging: notify_giveup takes other locks (keypair /
         // algo_ops) and hands off to the poster, which must not run under the messages lock.
         drop(guard);
-        if let Some(recipients) = giveup_recipients {
-            self.notify_giveup(&recipients);
+        if let Some((ts, recipients)) = failed_recipients {
+            // Nudge at most once per message: HashSet::insert returns true only the first time this
+            // timestamp is seen, so repeated retries of the same unreachable message don't re-nudge.
+            let first_nudge = match self.nudged_messages.lock() {
+                Ok(mut nudged) => nudged.insert(ts),
+                Err(e) => {
+                    tracing::error!(
+                        "[update_message_status] Failed to lock nudged_messages: {}",
+                        e
+                    );
+                    false
+                }
+            };
+            if first_nudge {
+                self.notify_giveup(&recipients);
+            }
         }
         Ok(())
     }
