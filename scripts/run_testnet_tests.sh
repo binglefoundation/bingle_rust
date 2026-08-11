@@ -8,11 +8,7 @@ if [[ "$LEAVE_CONTAINERS" != "1" ]]; then
   DOCKER_RUN_RM=(--rm)
 fi
 
-# Accounts directory used by bingle_admin for account-based signing. The latest
-# bingle_admin no longer takes a creator --passphrase for usersettings; it signs the
-# on-chain allow_relay/allow_static calls with APP_ADMIN.json from this directory.
-# Override with TESTNET_ACCOUNTS_DIR; defaults to the shared staging testnet account set.
-ACCOUNTS_DIR="${TESTNET_ACCOUNTS_DIR:-/path/to/testnet_accounts}"
+# Set TESTNET_ACCOUNTS_DIR to the testnet dir
 
 # Ensure cleanup of background containers on exit
 cleanup() {
