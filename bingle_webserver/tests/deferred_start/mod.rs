@@ -46,6 +46,10 @@ impl BingleLocalApi for ControllableLocalApi {
         Ok(true)
     }
 
+    fn register_apns_token(&self, _token: Vec<u8>) -> Result<bool, BingleError> {
+        Ok(true)
+    }
+
     fn get_algo_ops(&self) -> Result<AlgoOps, BingleError> {
         Err(BingleError::Other("not configured".to_string()))
     }

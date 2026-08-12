@@ -1081,12 +1081,12 @@ impl BingleJsiApi for BingleJsiApiImpl {
     fn request_push_registration(&self) -> Result<(), BingleJsiError> {
         // Rust cannot call the UIKit registration APIs; it asks the host, whose thin Swift bridge
         // does the platform calls and later returns the token via register_apns_token.
-        let guard = self
-            .push_registration_callback
-            .lock()
-            .map_err(|_| BingleJsiError::InternalError {
-                reason: "push_registration_callback lock poisoned".to_string(),
-            })?;
+        let guard =
+            self.push_registration_callback
+                .lock()
+                .map_err(|_| BingleJsiError::InternalError {
+                    reason: "push_registration_callback lock poisoned".to_string(),
+                })?;
         match guard.as_ref() {
             Some(cb) => {
                 cb.on_request_registration();
@@ -1100,7 +1100,9 @@ impl BingleJsiApi for BingleJsiApiImpl {
 
     fn register_apns_token(&self, token: Vec<u8>) -> Result<bool, BingleJsiError> {
         let guard = local_api_guard(&self.local_api)?;
-        guard.register_apns_token(token).map_err(bingle_error_to_jsi)
+        guard
+            .register_apns_token(token)
+            .map_err(bingle_error_to_jsi)
     }
 
     fn apns_registration_failed(&self, reason: String) {

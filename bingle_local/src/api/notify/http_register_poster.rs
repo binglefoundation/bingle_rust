@@ -29,13 +29,9 @@ impl Default for HttpRegisterPoster {
 }
 
 impl RegisterPoster for HttpRegisterPoster {
-    fn post_register(
-        &self,
-        gateway_url: &str,
-        body: RegisterRequest,
-    ) -> Result<bool, BingleError> {
+    fn post_register(&self, gateway_url: &str, body: RegisterRequest) -> Result<bool, BingleError> {
         let endpoint = format!("{}/register", gateway_url.trim_end_matches('/'));
-        let joined = std::thread::Builder::new()
+        std::thread::Builder::new()
             .name("bingle-notify-register".to_string())
             .spawn(move || {
                 let client = reqwest::blocking::Client::builder()
@@ -49,17 +45,20 @@ impl RegisterPoster for HttpRegisterPoster {
                     .map_err(|e| BingleError::Other(format!("transport error: {e}")))?;
                 let status = resp.status().as_u16();
                 if (200..300).contains(&status) {
-                    tracing::info!("[notify][register] gateway accepted registration (status {status})");
+                    tracing::info!(
+                        "[notify][register] gateway accepted registration (status {status})"
+                    );
                     Ok(true)
                 } else {
                     // 400 (malformed token), 401 (auth) etc. — the caller surfaces this; do not retry.
-                    tracing::warn!("[notify][register] gateway rejected registration (status {status})");
+                    tracing::warn!(
+                        "[notify][register] gateway rejected registration (status {status})"
+                    );
                     Ok(false)
                 }
             })
             .map_err(|e| BingleError::Other(format!("could not spawn register thread: {e}")))?
             .join()
-            .map_err(|_| BingleError::Other("register thread panicked".to_string()))?;
-        joined
+            .map_err(|_| BingleError::Other("register thread panicked".to_string()))?
     }
 }
