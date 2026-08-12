@@ -9,10 +9,6 @@ use bingle_core::api::bingle_api::BingleError;
 use bingle_core::blockchain::algo_ops::AlgoOps;
 use serde::Serialize;
 
-/// APNs device tokens are 32 bytes. The gateway rejects any other length as `BadDeviceToken`, so we
-/// reject a mis-sized token here — before signing or sending — rather than register a dead token.
-pub const APNS_TOKEN_BYTES: usize = 32;
-
 /// Body of a `POST /register` to the notify gateway. Field names match the gateway's request schema
 /// (`bingle_notify/src/handlers/register.ts`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -34,14 +30,15 @@ pub struct RegisterRequest {
 /// Hex-encode a raw APNs device token exactly as APNs expects it (lowercase, no separators).
 ///
 /// This is the single place the raw `Data` from iOS becomes a token string — keeping it out of the
-/// Swift bridge is why the 80-byte-token bug (a mis-encoded capture) cannot recur. Errors if the
-/// token is not [`APNS_TOKEN_BYTES`] long.
+/// Swift bridge means the encoding can't be mis-captured on the way through. Modern APNs device
+/// tokens are no longer a fixed 32 bytes, so length is not validated beyond rejecting an empty
+/// token: APNs is the authority on validity (a bad token is pruned on the 410 at fan-out), matching
+/// the gateway's `/register` contract (bingle_notify: relax token validation).
 pub fn encode_apns_token(raw: &[u8]) -> Result<String, BingleError> {
-    if raw.len() != APNS_TOKEN_BYTES {
-        return Err(BingleError::Other(format!(
-            "APNs device token must be {APNS_TOKEN_BYTES} bytes, got {}",
-            raw.len()
-        )));
+    if raw.is_empty() {
+        return Err(BingleError::Other(
+            "APNs device token must not be empty".to_string(),
+        ));
     }
     let mut hex = String::with_capacity(raw.len() * 2);
     for byte in raw {

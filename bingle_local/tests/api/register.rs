@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use bingle_local::api::notify::register::{APNS_TOKEN_BYTES, RegisterRequest, encode_apns_token};
+use bingle_local::api::notify::register::{RegisterRequest, encode_apns_token};
 use bingle_local::api::notify::RegisterPoster;
 use bingle_local::api::{BingleApiLocalImpl, BingleLocalApi, LocalApiConfig};
 use bingle_core::api::bingle_api::BingleError;
@@ -58,9 +58,9 @@ fn register_api(
     (api, poster)
 }
 
-/// A raw 32-byte token whose ascending bytes make the expected hex obvious.
+/// A representative 32-byte token whose ascending bytes make the expected hex obvious.
 fn ascending_token() -> Vec<u8> {
-    (0u8..APNS_TOKEN_BYTES as u8).collect()
+    (0u8..32).collect()
 }
 
 #[test]
@@ -74,11 +74,15 @@ fn encode_apns_token_is_lowercase_hex() {
 }
 
 #[test]
-fn encode_apns_token_rejects_wrong_length() {
-    assert!(encode_apns_token(&[0u8; 31]).is_err(), "31 bytes must fail");
-    assert!(encode_apns_token(&[0u8; 33]).is_err(), "33 bytes must fail");
-    // The exact real-world failure: an 80-byte token must be rejected, not stored.
-    assert!(encode_apns_token(&[0u8; 80]).is_err(), "80 bytes must fail");
+fn encode_apns_token_accepts_variable_length() {
+    // Modern APNs tokens are no longer a fixed 32 bytes, so any non-empty length is accepted and
+    // hex-encoded (2 chars per byte); APNs is the authority on validity.
+    for len in [1usize, 31, 33, 80] {
+        let hex = encode_apns_token(&vec![0u8; len]).expect("non-empty token encodes");
+        assert_eq!(hex.len(), len * 2, "{len} bytes -> {} hex chars", len * 2);
+    }
+    // Only an empty token is rejected — there is nothing to register.
+    assert!(encode_apns_token(&[]).is_err(), "empty token must fail");
 }
 
 #[test]
@@ -125,11 +129,23 @@ fn register_uses_configured_env() {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn register_rejects_wrong_length_token_without_posting() {
+fn register_accepts_over_long_token() {
+    // A token longer than the legacy 32 bytes is valid now and must be posted, not rejected.
     let (api, poster) = register_api(Some(GATEWAY), "sandbox");
-    let err = api.register_apns_token(vec![0u8; 80]);
-    assert!(err.is_err(), "an 80-byte token must be rejected");
-    assert!(poster.calls().is_empty(), "nothing is posted for a bad token");
+    api.register_apns_token(vec![0xabu8; 80])
+        .expect("an over-long token must be accepted");
+    let calls = poster.calls();
+    assert_eq!(calls.len(), 1, "the over-long token is posted");
+    assert_eq!(calls[0].1.token, "ab".repeat(80), "hex of the 80-byte token");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn register_rejects_empty_token_without_posting() {
+    let (api, poster) = register_api(Some(GATEWAY), "sandbox");
+    let err = api.register_apns_token(Vec::new());
+    assert!(err.is_err(), "an empty token must be rejected");
+    assert!(poster.calls().is_empty(), "nothing is posted for an empty token");
 }
 
 #[test]
