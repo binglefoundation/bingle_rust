@@ -35,6 +35,10 @@ impl BingleLocalApi for DummyLocal {
         Ok(true)
     }
 
+    fn register_apns_token(&self, _token: Vec<u8>) -> Result<bool, BingleError> {
+        Ok(true)
+    }
+
     fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> {
         Ok(None)
     }

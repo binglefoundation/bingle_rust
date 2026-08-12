@@ -86,6 +86,15 @@ pub trait BingleLocalApi: Send + Sync {
     /// - handle: the user's unique handle to register on-chain
     fn register_keypair(&self, handle: String) -> Result<bool, BingleError>;
 
+    /// Register a raw APNs device token with the notify gateway so it can fan out `/alert` nudges to
+    /// this device (bingle_notify #i).
+    ///
+    /// `token` is the raw 32-byte token exactly as iOS delivered it to the Swift bridge — hex
+    /// encoding, envelope building, signing, and the POST all happen here (the bridge stays pure).
+    /// Errors if the token is not 32 bytes, if there is no local handle/keypair to sign with, or if
+    /// no `notify_gateway_url` is configured. Returns whether the gateway accepted the registration.
+    fn register_apns_token(&self, token: Vec<u8>) -> Result<bool, BingleError>;
+
     /// Migrate this account's local state to the configured (new) app from a blessed ancestor
     /// app, if needed. Intended to be called once at activation, before deciding the account
     /// needs a fresh registration. Returns Ok(Some(txid)) if a migration was performed,
