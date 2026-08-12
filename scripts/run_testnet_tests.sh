@@ -106,8 +106,8 @@ fi
 # `usersettings <ID> --enable-relay --enable-static --accounts <DIR>` (APP_ADMIN signs).
 # Both permissions are required: relays register a static endpoint (allow_static) and now
 # refuse to start unless allow_relay is set (see check_allow_relay in bingle_core).
-if [[ ! -f "$ACCOUNTS_DIR/APP_ADMIN.json" ]]; then
-  echo "ERROR: accounts directory '$ACCOUNTS_DIR' is missing APP_ADMIN.json" >&2
+if [[ ! -f "$TESTNET_ACCOUNTS_DIR/APP_ADMIN.json" ]]; then
+  echo "ERROR: accounts directory '$TESTNET_ACCOUNTS_DIR' is missing APP_ADMIN.json" >&2
   echo "       set TESTNET_ACCOUNTS_DIR to the staging testnet account set" >&2
   exit 1
 fi
