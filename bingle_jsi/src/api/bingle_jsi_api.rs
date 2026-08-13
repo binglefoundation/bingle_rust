@@ -1,4 +1,6 @@
-use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
+use crate::api::callback::{
+    ListeningCallback, LogCallback, MessageCallback, PushRegistrationCallback,
+};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
@@ -120,6 +122,24 @@ pub trait BingleJsiApi: Send + Sync {
         exp: i64,
     ) -> Result<String, BingleJsiError>;
 
+    /// Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
+    /// [`PushRegistrationCallback`] so the thin Swift bridge performs the platform calls
+    /// (`requestAuthorization` + `registerForRemoteNotifications`). Returns once the callback has
+    /// been dispatched; the token arrives asynchronously via [`register_apns_token`]. Errors if no
+    /// push-registration callback is set.
+    fn request_push_registration(&self) -> Result<(), BingleJsiError>;
+
+    /// Hand the raw APNs device token (exactly as iOS delivered it) to Rust, which hex-encodes,
+    /// signs, and POSTs the `/register` envelope to the notify gateway (bingle_notify #i). The Swift
+    /// bridge forwards the bytes and nothing else. Returns whether the gateway accepted it. Errors
+    /// if the token is empty, there is no keypair/handle to sign with, or no gateway URL is
+    /// configured.
+    fn register_apns_token(&self, token: Vec<u8>) -> Result<bool, BingleJsiError>;
+
+    /// Report that iOS push registration failed (permission denied or APNs error). Logged for
+    /// diagnostics; there is no token to register.
+    fn apns_registration_failed(&self, reason: String);
+
     /// Add a contact to the local store.
     fn add_contact(
         &self,
@@ -202,6 +222,10 @@ pub trait BingleJsiApi: Send + Sync {
     /// Replaces any previously registered callback.
     /// The callback receives a boolean (listening) and the NAT type as a string.
     fn set_listening_callback(&self, callback: Box<dyn ListeningCallback>);
+
+    /// Register a callback invoked when [`request_push_registration`] asks the host to start iOS
+    /// push registration. Replaces any previously registered callback.
+    fn set_push_registration_callback(&self, callback: Box<dyn PushRegistrationCallback>);
 
     // ── Engine lifecycle ─────────────────────────────────────────────
 

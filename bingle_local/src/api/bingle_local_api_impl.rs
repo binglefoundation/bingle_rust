@@ -1,4 +1,8 @@
-use crate::api::notify::{AlertPoster, HttpAlertPoster, post_giveup_alerts};
+use crate::api::notify::envelope::{fresh_nonce, now_secs};
+use crate::api::notify::{
+    AlertPoster, HttpAlertPoster, HttpRegisterPoster, RegisterPoster, build_register_request,
+    encode_apns_token, post_giveup_alerts,
+};
 use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
@@ -27,6 +31,15 @@ pub struct LocalApiConfig {
     /// `{notify_gateway_url}/alert`. When `None`, the nudge is skipped even if `notify_on_giveup`
     /// is set — each caller opts in per instance by providing the URL.
     pub notify_gateway_url: Option<String>,
+    /// APNs environment a `/register` token is registered under: `"sandbox"` or `"production"`.
+    /// Defaults to [`default_notify_env`] (sandbox); a production build overrides it.
+    pub notify_env: String,
+}
+
+/// The APNs environment assumed when a caller does not specify one: `"sandbox"`, matching a dev /
+/// Xcode build. A production (TestFlight/App Store) build overrides this via `notify_env`.
+pub fn default_notify_env() -> String {
+    "sandbox".to_string()
 }
 
 impl Default for LocalApiConfig {
@@ -39,6 +52,7 @@ impl Default for LocalApiConfig {
             asset_id: 0,
             notify_on_giveup: true,
             notify_gateway_url: None,
+            notify_env: default_notify_env(),
         }
     }
 }
@@ -61,6 +75,7 @@ impl LocalApiConfig {
             asset_id,
             notify_on_giveup: notify_on_giveup.unwrap_or(true),
             notify_gateway_url,
+            notify_env: default_notify_env(),
         }
     }
 }
@@ -145,6 +160,9 @@ pub struct BingleApiLocalImpl {
     // Best-effort sender for the give-up nudge to the notify gateway (bingle_notify #11). Defaults
     // to the real HTTP poster; a seam so tests can observe the nudge without a live gateway.
     alert_poster: Arc<dyn AlertPoster>,
+    // Synchronous sender for the `/register` envelope (bingle_notify #i). Defaults to the real HTTP
+    // poster; a seam so tests can observe the registration without a live gateway.
+    register_poster: Arc<dyn RegisterPoster>,
     // Message timestamps we have already nudged for, so the unreachable/give-up nudge fires at most
     // once per message even though update_message_status is called on every retry (bingle_notify
     // #11/#17). In-memory only: a restart may re-nudge a still-pending message, which is acceptable
@@ -169,8 +187,15 @@ impl BingleApiLocalImpl {
             last_status: Mutex::new(None),
             last_network_check: Mutex::new(None),
             alert_poster: Arc::new(HttpAlertPoster::new()),
+            register_poster: Arc::new(HttpRegisterPoster::new()),
             nudged_messages: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Override the `/register` sender (bingle_notify #i). Intended for tests, which inject a
+    /// recording poster to observe the registration without a live gateway.
+    pub fn set_register_poster(&mut self, poster: Arc<dyn RegisterPoster>) {
+        self.register_poster = poster;
     }
 
     /// Override the give-up nudge sender (bingle_notify #11). Intended for tests, which inject a
@@ -459,6 +484,38 @@ impl BingleLocalApi for BingleApiLocalImpl {
             *g = Some(app_id);
         }
         Ok(true)
+    }
+
+    fn register_apns_token(&self, token: Vec<u8>) -> Result<bool, BingleError> {
+        // Hex-encode the raw 32-byte token here (never in the Swift bridge). A mis-sized token is
+        // rejected before we sign or send, so the 80-byte-token failure cannot recur.
+        let token_hex = encode_apns_token(&token)?;
+
+        // A registration needs somewhere to send it.
+        let Some(gateway_url) = self.config.notify_gateway_url.as_deref() else {
+            return Err(BingleError::Other(
+                "notify_gateway_url is not configured; cannot register APNs token".to_string(),
+            ));
+        };
+        let env = self.config.notify_env.clone();
+
+        // The envelope issuer is the local handle; the signer binds to the active keypair (no
+        // network). Either missing means we cannot produce a valid envelope.
+        let iss = self.sender_handle()?;
+        let ops = self.get_algo_ops()?;
+
+        let nonce = fresh_nonce();
+        // Short freshness window (the contract allows up to 60s ahead), matching the alert envelope.
+        let exp = now_secs() + 45;
+        let req = build_register_request(&ops, &iss, &token_hex, &env, &nonce, exp)?;
+
+        tracing::info!(
+            "[notify][register] registering APNs token for '{}' (env {}) -> {}",
+            iss,
+            env,
+            gateway_url
+        );
+        self.register_poster.post_register(gateway_url, req)
     }
 
     fn ensure_local_migrated(&self) -> Result<Option<String>, BingleError> {

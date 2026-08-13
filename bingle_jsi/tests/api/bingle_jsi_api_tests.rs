@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use bingle_jsi::api::bingle_jsi_api::BingleJsiApi;
-use bingle_jsi::api::callback::{ListeningCallback, LogCallback, MessageCallback};
+use bingle_jsi::api::callback::{
+    ListeningCallback, LogCallback, MessageCallback, PushRegistrationCallback,
+};
 use bingle_jsi::api::error::BingleJsiError;
 use bingle_jsi::api::types::{
     BingleMessage, Contact, ContactSource, HandleLookupPartialResult, Keypair,
@@ -257,6 +259,26 @@ impl BingleJsiApi for StubApi {
     }
 
     fn set_listening_callback(&self, _callback: Box<dyn ListeningCallback>) {
+        // no-op stub
+    }
+
+    fn set_push_registration_callback(&self, _callback: Box<dyn PushRegistrationCallback>) {
+        // no-op stub
+    }
+
+    fn request_push_registration(&self) -> Result<(), BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "request_push_registration".to_string(),
+        })
+    }
+
+    fn register_apns_token(&self, _token: Vec<u8>) -> Result<bool, BingleJsiError> {
+        Err(BingleJsiError::NotImplemented {
+            reason: "register_apns_token".to_string(),
+        })
+    }
+
+    fn apns_registration_failed(&self, _reason: String) {
         // no-op stub
     }
 

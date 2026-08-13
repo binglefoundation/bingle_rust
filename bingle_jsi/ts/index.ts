@@ -28,6 +28,7 @@ export type {
   MessageCallback,
   LogCallback,
   ListeningCallback,
+  PushRegistrationCallback,
   BingleJsiApi,
 } from "./NativeBingleJsi";
 
@@ -114,6 +115,16 @@ export const BingleJsi = BingleJsiNative as {
     nonce: string,
     exp: number,
   ): Promise<string>;
+  /** Ask the host to begin iOS push registration (bingle_notify #i). Invokes the registered
+   * PushRegistrationCallback so the thin Swift bridge performs the platform calls; the token arrives
+   * asynchronously via registerApnsToken. Rejects if no push-registration callback is set. */
+  requestPushRegistration(): Promise<void>;
+  /** Hand the raw APNs device token (exactly as iOS delivered it) to Rust, which hex-encodes,
+   * signs, and POSTs the /register envelope. Resolves to whether the gateway accepted it. Rejects
+   * if the token is not 32 bytes, there is no keypair/handle, or no gateway URL is configured. */
+  registerApnsToken(token: Uint8Array): Promise<boolean>;
+  /** Report that iOS push registration failed (permission denied or APNs error); logged only. */
+  apnsRegistrationFailed(reason: string): Promise<void>;
   addContact(handle: string, id: string, source: string): Promise<void>;
   blockContact(id: string): Promise<void>;
   removeContact(id: string): Promise<void>;
@@ -159,6 +170,9 @@ export const BingleJsi = BingleJsiNative as {
   setLogCallback(logLevel: string | null): Promise<void>;
   setMessageCallback(): Promise<void>;
   setListeningCallback(): Promise<void>;
+  /** Register a callback invoked when requestPushRegistration asks the host to start iOS push
+   * registration (bingle_notify #i). Replaces any previously registered callback. */
+  setPushRegistrationCallback(): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
   isStarted(): Promise<boolean>;
