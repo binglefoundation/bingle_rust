@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 
+# ============================================================================================
+# DEPRECATED — DO NOT USE.
+#
+# This docker-based testnet end-to-end runner is obsolete and is being retired. The approach of
+# deploying a fresh standalone app + asset per run (and funding the deploy/role accounts from
+# FUNDER) proved unworkable: each run permanently consumes several ALGO of creator min-balance
+# and app-account funding that is never reclaimed, so it drains the funder and does not scale.
+#
+# It is superseded by a planned admin-side end-to-end + monitoring tool that spins up two
+# clients, exchanges messages between them (plus echo), and validates both relays are reachable
+# — covering both the release E2E check and continuous network-health monitoring. That work is
+# tracked separately.
+#
+# The recent fresh-app-per-run / auto-funding changes are committed only to preserve the history
+# of the attempt; do not run this script. Revisit or delete once the replacement lands.
+# ============================================================================================
+
 # LEAVE_CONTAINERS=1 keeps docker run containers around after exit (no --rm)
 LEAVE_CONTAINERS=${LEAVE_CONTAINERS:-0}
 
@@ -92,32 +109,292 @@ else
   PING_INIT_MODE="$NAT_MODE"
 fi
 
-# Ensure the persistent test accounts are opted into the current app and have their
-# handles registered. Required after an app redeploy: the usersettings grants below and
-# the e2e tests both assume these accounts already hold local state on the app the node
-# file points at (a fresh app leaves them opted into the previous app only). Idempotent —
-# accounts already registered are skipped. EXTRA_RELAY is honoured (relayextra included).
-scripts/bootstrap_testnet_accounts.sh --node-file nodely_staging_testnet_node.json
-if [ $? -ne 0 ]; then
-  echo "ERROR: testnet account bootstrap failed" >&2
-  exit 1
-fi
+# Prepare tmp early so the generated node file below has a home (later steps re-run this).
+mkdir -p tmp
 
-# Enable relay + static-IP permission on-chain for the root relay accounts.
-# Latest bingle_admin: the old `root <ID> --enable --passphrase <mnemonic>` form is now
-# `usersettings <ID> --enable-relay --enable-static --accounts <DIR>` (APP_ADMIN signs).
-# Both permissions are required: relays register a static endpoint (allow_static) and now
-# refuse to start unless allow_relay is set (see check_allow_relay in bingle_core).
+# The deploy and the relay/static-IP grants below need the granular role accounts
+# (APP_CREATOR, APP_ADMIN, ASSET_*) in the accounts directory. Fail early with a clear
+# message rather than deep inside deploy if the set is incomplete.
 if [[ ! -f "$ACCOUNTS_DIR/APP_ADMIN.json" ]]; then
   echo "ERROR: accounts directory '$ACCOUNTS_DIR' is missing APP_ADMIN.json" >&2
   echo "       set TESTNET_ACCOUNTS_DIR to the staging testnet account set" >&2
   exit 1
 fi
 
+# Generated node file for this run: a copy of the committed staging node file. We deploy a fresh,
+# STANDALONE app + asset into it (below) so every run starts against a clean decentralized
+# database (DDB) with no stale relays (bingle_rust #105) — and so it runs ALONGSIDE the enduring
+# manual-test app (768197837 in the committed file) without touching it. The committed
+# nodely_staging_testnet_node.json is never mutated; we write the freshly deployed ids into this
+# copy, and every downstream step and container uses the copy.
+GEN_NODE_FILE="$PWD/tmp/testnet_node_generated.json"
+cp nodely_staging_testnet_node.json "$GEN_NODE_FILE"
+
+# Zero the app_id/asset_id in our copy BEFORE deploying. bingle_admin deploy treats an app_id
+# present in the node file as an ancestor to bless: it deploys a SUCCESSOR that copies the
+# ancestor's global state (including its stale relays) and ties the new app to it — and --new-app
+# does not suppress that. With no ancestor (id 0), deploy instead creates a brand-new, independent
+# app with empty state, leaving the enduring manual-test app untouched.
+python3 - "$GEN_NODE_FILE" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["app_id"] = 0; d["asset_id"] = 0
+json.dump(d, open(p, "w"), indent=2)
+PY
+
+# --- Fund on-chain accounts from FUNDER, before deploying ------------------------------------
+# Both the deploy (its role accounts — APP_CREATOR creates the app + asset, raising its own
+# min-balance every run) and the account bootstrap (opt-in + buybingle + register per test
+# account, each raising min-balance) need spendable ALGO or they fail on-chain. Top up any
+# account whose balance is below its current min-balance plus an operating buffer, drawing from
+# FUNDER. If FUNDER cannot cover the shortfall, print its address + a dispenser link and stop,
+# so a run is never left half-funded. algokit's bundled binary needs SSL_CERT_FILE set or it
+# fails TLS with CERTIFICATE_VERIFY_FAILED; there is no bingle_cli/bingle_admin raw-pay.
+FUND_BUFFER_MICRO=${FUND_BUFFER_MICRO:-800000}   # spendable headroom to keep above min-balance
+# APP_CREATOR needs far more: a deploy does not just raise its min-balance, it also spends ~3
+# ALGO per run funding the new application account (box/state storage) plus app + asset creation
+# — and that spend is not reclaimed while on-chain cleanup is skipped. Give the deploy signer a
+# large dedicated headroom over its current min-balance so the deploy has room to run; if FUNDER
+# cannot cover it, the coverage check below prompts a dispenser top-up instead of a chain 400.
+FUND_DEPLOY_BUFFER_MICRO=${FUND_DEPLOY_BUFFER_MICRO:-5000000}   # extra headroom for APP_CREATOR
+
+if [[ ! -f "$ACCOUNTS_DIR/FUNDER.json" ]]; then
+  echo "ERROR: $ACCOUNTS_DIR/FUNDER.json not found; cannot fund accounts" >&2
+  exit 1
+fi
+
+# algod REST base URL for balance queries, derived from the node file (network only; the
+# app_id in the copy is irrelevant here — we query account balances, not app state).
+FUND_API_BASE=$(python3 - "$GEN_NODE_FILE" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+url = d["client_api_url"]; port = d.get("client_api_port")
+if port and int(port) not in (80, 443):
+    url = f"{url}:{port}"
+print(url)
+PY
+)
+FUNDER_ADDR=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['address'])" "$ACCOUNTS_DIR/FUNDER.json")
+
+# Echoes "<amount> <min-balance>" for an account, or "0 100000" if not found / unfunded.
+account_amt_min() {
+  curl -fsS "$FUND_API_BASE/v2/accounts/$1" 2>/dev/null | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin); print(d.get('amount', 0), d.get('min-balance', 100000))
+except Exception:
+    print(0, 100000)
+"
+}
+
+# Accounts to keep funded: the deploy role accounts (whichever role files exist in the accounts
+# dir) followed by the persistent relay/user/ping accounts. Deduplicated, order preserved, and
+# FUNDER itself is never included.
+FUND_TARGETS=()
+add_fund_target() {
+  local a="$1"
+  [[ -z "$a" || "$a" == "$FUNDER_ADDR" ]] && return 0
+  local existing
+  for existing in "${FUND_TARGETS[@]}"; do [[ "$existing" == "$a" ]] && return 0; done
+  FUND_TARGETS+=("$a")
+}
+for ROLE in APP_CREATOR APP_ADMIN APP_WITHDRAWER ASSET_CREATOR ASSET_RESERVE ASSET_MANAGER ASSET_FREEZE ASSET_CLAWBACK; do
+  [[ -f "$ACCOUNTS_DIR/$ROLE.json" ]] || continue
+  add_fund_target "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('address',''))" "$ACCOUNTS_DIR/$ROLE.json")"
+done
+# APP_CREATOR is the deploy signer/payer; remember its address so the balance loop gives it the
+# larger deploy headroom.
+APP_CREATOR_ADDR=""
+[[ -f "$ACCOUNTS_DIR/APP_CREATOR.json" ]] && APP_CREATOR_ADDR=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('address',''))" "$ACCOUNTS_DIR/APP_CREATOR.json")
+add_fund_target "$RELAY_A_ADDRESS"
+add_fund_target "$RELAY_B_ADDRESS"
+add_fund_target "$TESTNET_ADDRESS"
+add_fund_target "$PINGABLE_ADDRESS"
+if [[ -n "${EXTRA_RELAY:-}" ]]; then
+  add_fund_target "$RELAY_EXTRA_ADDRESS"
+fi
+
+echo "Checking account balances (keeping each >= min-balance + ${FUND_BUFFER_MICRO} microAlgos)..."
+FUND_DO_ADDR=()
+FUND_DO_AMT=()
+TOTAL_NEEDED=0
+for ADDR in "${FUND_TARGETS[@]}"; do
+  read -r BAL MINBAL < <(account_amt_min "$ADDR"); BAL=${BAL:-0}; MINBAL=${MINBAL:-100000}
+  if [[ -n "$APP_CREATOR_ADDR" && "$ADDR" == "$APP_CREATOR_ADDR" ]]; then
+    REQUIRED=$(( MINBAL + FUND_DEPLOY_BUFFER_MICRO ))
+  else
+    REQUIRED=$(( MINBAL + FUND_BUFFER_MICRO ))
+  fi
+  if (( BAL < REQUIRED )); then
+    DEFICIT=$(( REQUIRED - BAL ))
+    FUND_DO_ADDR+=("$ADDR"); FUND_DO_AMT+=("$DEFICIT")
+    TOTAL_NEEDED=$(( TOTAL_NEEDED + DEFICIT ))
+    echo "  $ADDR: bal $BAL, min $MINBAL -> top up $DEFICIT"
+  else
+    echo "  $ADDR: bal $BAL, min $MINBAL (ok, skip)"
+  fi
+done
+
+if (( ${#FUND_DO_ADDR[@]} > 0 )); then
+  # Verify FUNDER can cover every top-up plus per-transfer fees before spending anything, so a
+  # short FUNDER prompts a single top-up instead of failing halfway through.
+  read -r FUNDER_AMT FUNDER_MINBAL < <(account_amt_min "$FUNDER_ADDR")
+  FUNDER_AMT=${FUNDER_AMT:-0}; FUNDER_MINBAL=${FUNDER_MINBAL:-100000}
+  FEES=$(( ${#FUND_DO_ADDR[@]} * 1000 ))
+  FUNDER_SPENDABLE=$(( FUNDER_AMT - FUNDER_MINBAL ))
+  if (( TOTAL_NEEDED + FEES > FUNDER_SPENDABLE )); then
+    SHORT=$(( TOTAL_NEEDED + FEES - FUNDER_SPENDABLE ))
+    echo "ERROR: FUNDER cannot cover the required top-ups." >&2
+    echo "  FUNDER address  : $FUNDER_ADDR" >&2
+    echo "  FUNDER spendable: $FUNDER_SPENDABLE microAlgos" >&2
+    echo "  needed (w/ fees): $(( TOTAL_NEEDED + FEES )) microAlgos  (short by $SHORT)" >&2
+    echo "  Top up FUNDER, then re-run. Dispenser:" >&2
+    echo "    https://bank.testnet.algorand.network/?account=$FUNDER_ADDR" >&2
+    exit 1
+  fi
+
+  FUNDER_MN=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['passphrase'])" "$ACCOUNTS_DIR/FUNDER.json")
+
+  # algokit reads the sender mnemonic from a masked prompt that it reads from the controlling
+  # terminal, so a piped/here-string mnemonic on stdin is ignored (it just aborts). Drive it
+  # through a pseudo-terminal and type FUNDER's mnemonic (from FUNDER.json, kept in clear on
+  # testnet) at the prompt. The mnemonic is passed via the MNEMONIC env var, not argv, so it
+  # never appears in the process list. The helper is written to tmp (gitignored).
+  PTY_DRIVER="$PWD/tmp/algokit_pty_transfer.py"
+  cat > "$PTY_DRIVER" <<'PYEOF'
+import os, sys, pty, select, re, time
+
+mnemonic = os.environ.get("MNEMONIC", "")
+cmd = sys.argv[1:]
+if not cmd or not mnemonic:
+    sys.stderr.write("usage: MNEMONIC=... algokit_pty_transfer.py <cmd> [args...]\n")
+    sys.exit(2)
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(cmd[0], cmd)
+    os._exit(127)
+
+buf = b""
+sent = False
+deadline = time.time() + 90
+while True:
+    remaining = deadline - time.time()
+    if remaining <= 0:
+        sys.stderr.write("\n[pty] timed out waiting for algokit\n")
+        break
+    r, _, _ = select.select([fd], [], [], remaining)
+    if not r:
+        continue
+    try:
+        data = os.read(fd, 4096)
+    except OSError:
+        break
+    if not data:
+        break
+    os.write(1, data)  # mirror algokit output (masked input is not echoed)
+    buf += data
+    low = buf.lower()
+    if not sent and b"mnemonic" in low:
+        os.write(fd, (mnemonic + "\n").encode())
+        sent = True
+        buf = b""
+        deadline = time.time() + 90  # allow time to submit + confirm on-chain
+    elif sent and (b"[y/n]" in low or b"confirm" in low or b"proceed" in low):
+        os.write(fd, b"y\n")
+        buf = b""
+
+_, status = os.waitpid(pid, 0)
+sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
+PYEOF
+
+  for i in "${!FUND_DO_ADDR[@]}"; do
+    RCV="${FUND_DO_ADDR[$i]}"; AMT="${FUND_DO_AMT[$i]}"
+    echo "Funding $RCV with $AMT microAlgos from FUNDER..."
+    MNEMONIC="$FUNDER_MN" SSL_CERT_FILE=/etc/ssl/cert.pem REQUESTS_CA_BUNDLE=/etc/ssl/cert.pem \
+      python3 "$PTY_DRIVER" algokit task transfer -s "$FUNDER_ADDR" -r "$RCV" -a "$AMT" -n testnet
+    if [ $? -ne 0 ]; then
+      echo "ERROR: funding transfer to $RCV failed" >&2
+      exit 1
+    fi
+  done
+else
+  echo "All accounts already funded above min-balance + buffer; no funding needed."
+fi
+# --------------------------------------------------------------------------------------------
+
+echo "Deploying a fresh standalone testnet app + asset for this run..."
+DEPLOY_OUT=$(bingle_admin deploy dapp_projects/smart_contracts/artifacts/bingle_dapp \
+  --new-app --new-asset \
+  --accounts "$ACCOUNTS_DIR" \
+  --node-file "$GEN_NODE_FILE" 2>&1)
+DEPLOY_RC=$?
+printf '%s\n' "$DEPLOY_OUT"
+if [ $DEPLOY_RC -ne 0 ]; then
+  echo "ERROR: fresh app+asset deploy failed" >&2
+  exit 1
+fi
+
+# deploy does not update the node file, so parse the new ids from its output line
+# "deploy complete: app_id=<n>, asset_id=<n>" and write them into the generated node file.
+read -r NEW_APP_ID NEW_ASSET_ID < <(printf '%s\n' "$DEPLOY_OUT" | python3 -c "
+import sys, re
+app = asset = None
+for line in sys.stdin:
+    m = re.search(r'deploy complete:\s*app_id=(\d+),\s*asset_id=(\d+)', line)
+    if m:
+        app, asset = m.group(1), m.group(2)
+print((app or ''), (asset or ''))
+")
+if [[ -z "${NEW_APP_ID:-}" || -z "${NEW_ASSET_ID:-}" ]]; then
+  echo "ERROR: could not parse new app_id/asset_id from deploy output" >&2
+  exit 1
+fi
+python3 - "$GEN_NODE_FILE" "$NEW_APP_ID" "$NEW_ASSET_ID" <<'PY'
+import json, sys
+p, app, asset = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+d = json.load(open(p)); d["app_id"] = app; d["asset_id"] = asset
+json.dump(d, open(p, "w"), indent=2)
+PY
+echo "Deployed fresh standalone app_id=$NEW_APP_ID asset_id=$NEW_ASSET_ID (alongside enduring manual-test app)"
+
+# App creation sets admin/withdrawer but not the Bingle$ price. The account bootstrap below
+# reads BinglePrice from the app to size its buybingle payments and fails if it is unset, so
+# set a nominal price here (0.000001 ALGO = 1 microAlgo, matching the localnet deploy helper).
+bingle_admin setprice 0.000001 \
+  --accounts "$ACCOUNTS_DIR" \
+  --node-file "$GEN_NODE_FILE"
+if [ $? -ne 0 ]; then
+  echo "ERROR: bingle_admin setprice failed on the freshly deployed app" >&2
+  exit 1
+fi
+
+# Mount the generated node file over the image's baked-in path so every container (relays,
+# pingable, and the test runners) uses this run's fresh app_id/asset_id. The cli/relay/
+# pingable image reads $NODE_FILE (default /app/nodely_staging_testnet_node.json); the test
+# runner binaries read the relative nodely_staging_testnet_node.json from their /app workdir.
+# Both resolve to the same path, so a single read-only bind mount covers every container.
+NODE_MOUNT=(-v "$GEN_NODE_FILE":/app/nodely_staging_testnet_node.json:ro)
+
+# Ensure the persistent test accounts are opted into the freshly deployed app and have their
+# handles registered. Required after the redeploy above: the usersettings grants below and
+# the e2e tests both assume these accounts already hold local state on the app the node
+# file points at (a fresh app leaves them opted into the previous app only). Idempotent —
+# accounts already registered are skipped. EXTRA_RELAY is honoured (relayextra included).
+scripts/bootstrap_testnet_accounts.sh --node-file "$GEN_NODE_FILE"
+if [ $? -ne 0 ]; then
+  echo "ERROR: testnet account bootstrap failed" >&2
+  exit 1
+fi
+
+# Enable relay + static-IP permission on-chain for the root relay accounts.
+# `usersettings <ID> --enable-relay --enable-static --accounts <DIR>` (APP_ADMIN signs).
+# Both permissions are required: relays register a static endpoint (allow_static) and now
+# refuse to start unless allow_relay is set (see check_allow_relay in bingle_core).
 for RELAY_ADDR in "$RELAY_A_ADDRESS" "$RELAY_B_ADDRESS"; do
   bingle_admin usersettings "$RELAY_ADDR" --enable-relay --enable-static \
     --accounts "$ACCOUNTS_DIR" \
-    --node-file nodely_staging_testnet_node.json
+    --node-file "$GEN_NODE_FILE"
   if [ $? -ne 0 ]; then
     echo "ERROR: bingle_admin usersettings failed for relay $RELAY_ADDR" >&2
     exit 1
@@ -240,6 +517,7 @@ docker run --platform linux/arm64 -m 512m --memory-swap 512m "${COMMON_ARGS[@]}"
  -e OUT_FILE="/out/relay_a.out" \
  -v "$PWD/tmp/sentinels":/sentinels \
  -v "$PWD/tmp/test_out":/out \
+ "${NODE_MOUNT[@]}" \
  "bingle:local"
 
 if [ $? -ne 0 ]; then
@@ -259,6 +537,7 @@ docker run --platform linux/arm64 -m 512m --memory-swap 512m "${COMMON_ARGS[@]}"
  -e OUT_FILE="/out/relay_b.out" \
  -v "$PWD/tmp/sentinels":/sentinels \
  -v "$PWD/tmp/test_out":/out \
+ "${NODE_MOUNT[@]}" \
  "bingle:local"
 
 if [ $? -ne 0 ]; then
@@ -276,7 +555,7 @@ if [[ -n "${EXTRA_RELAY:-}" ]]; then
   # STUN_ONLY and registers no static endpoint, so static permission is not required.
   bingle_admin usersettings "$RELAY_EXTRA_ADDRESS" --enable-relay \
     --accounts "$ACCOUNTS_DIR" \
-    --node-file nodely_staging_testnet_node.json
+    --node-file "$GEN_NODE_FILE"
   if [ $? -ne 0 ]; then
     echo "ERROR: bingle_admin usersettings failed for extra relay $RELAY_EXTRA_ADDRESS" >&2
     exit 1
@@ -296,6 +575,7 @@ if [[ -n "${EXTRA_RELAY:-}" ]]; then
    -v "$PWD/tmp/sentinels":/sentinels \
    -v "$PWD/tmp/test_out":/out \
    -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+   "${NODE_MOUNT[@]}" \
    "bingle:local"
 
   if [ $? -ne 0 ]; then
@@ -336,6 +616,7 @@ docker run --platform linux/arm64 "${COMMON_ARGS[@]}" "${DOCKER_RUN_RM[@]}"  -d 
  -v "$PWD/tmp/sentinels":/sentinels \
  -v "$PWD/tmp/test_out":/out \
  -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+ "${NODE_MOUNT[@]}" \
  "bingle:local"
 
 if [ $? -ne 0 ]; then
@@ -390,6 +671,7 @@ if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Init" |
     -e OUT_FILE="/out/$(basename "$MAIN_OUT")" \
     -v "$PWD/tmp/test_out":/out \
     -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+    "${NODE_MOUNT[@]}" \
     "bingle-tests:local"
   MAIN_RC=$?
 
@@ -457,6 +739,7 @@ if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" |
         -v "$PWD/tmp/sentinels":/sentinels \
         -v "$PWD/tmp/test_out":/out \
         -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+        "${NODE_MOUNT[@]}" \
         "bingle:local"
       if [ $? -ne 0 ]; then
         echo "ERROR: Failed to start bingle_pingable container for mode $MODE" >&2
@@ -491,6 +774,7 @@ if [[ "$RUN_TESTS" == "All" || "$RUN_TESTS" == "all" || "$RUN_TESTS" == "Ping" |
       -e OUT_FILE="$OUT_FILE_MODE" \
       -v "$PWD/tmp/test_out":/out \
       -v "$PWD/tmp/stunservers.txt":/app/stunservers.txt:ro \
+      "${NODE_MOUNT[@]}" \
       "bingle-tests:ping"
     rc=$?
     if [ $rc -ne 0 ]; then
