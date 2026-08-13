@@ -7,7 +7,9 @@ use std::thread::JoinHandle;
 use serde_json::Value as JsonValue;
 
 use crate::api::bingle_jsi_api::BingleJsiApi;
-use crate::api::callback::{ListeningCallback, LogCallback, MessageCallback};
+use crate::api::callback::{
+    ListeningCallback, LogCallback, MessageCallback, PushRegistrationCallback,
+};
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
     BingleJsiConfig, BingleMessage, Contact, ContactSource, HandleLookupPartialResult,
@@ -39,6 +41,7 @@ pub struct BingleJsiApiImpl {
     nat_type: Arc<Mutex<String>>,
     message_callback: Arc<Mutex<Option<Box<dyn MessageCallback>>>>,
     listening_callback: Arc<Mutex<Option<Box<dyn ListeningCallback>>>>,
+    push_registration_callback: Arc<Mutex<Option<Box<dyn PushRegistrationCallback>>>>,
     listening: Arc<AtomicBool>,
     processing_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     started: Arc<Mutex<bool>>,
@@ -307,13 +310,18 @@ impl BingleJsiApiImpl {
             // Give-up nudge (bingle_notify #11/#17): the feature stays on by default; supplying a
             // gateway URL is what activates it. An explicit `notify_on_giveup: false` disables it
             // even when a URL is set.
-            let cfg = LocalApiConfig::with_notify(
+            let mut cfg = LocalApiConfig::with_notify(
                 opts.algo_provider_config.clone().unwrap_or_default(),
                 opts.app_id.unwrap_or(0),
                 opts.asset_id.unwrap_or(0),
                 config.notify_on_giveup,
                 config.notify_gateway_url.clone(),
             );
+            // Thread the build's APNs environment through for `/register` (defaults to sandbox when
+            // the caller leaves it null).
+            if let Some(env) = config.notify_env.clone() {
+                cfg.notify_env = env;
+            }
             let mut impl_api = BingleApiLocalImpl::new(cfg);
             if path.exists()
                 && let Err(e) = impl_api.load(path.to_string_lossy().as_ref())
@@ -342,6 +350,7 @@ impl BingleJsiApiImpl {
             nat_type: nat_type.clone(),
             message_callback: message_callback.clone(),
             listening_callback: listening_callback.clone(),
+            push_registration_callback: Arc::new(Mutex::new(None)),
             listening: listening.clone(),
             processing_thread: processing_thread.clone(),
             started: started.clone(),
@@ -811,6 +820,7 @@ impl BingleJsiApiImpl {
             nat_type,
             message_callback: Arc::new(Mutex::new(None)),
             listening_callback: Arc::new(Mutex::new(None)),
+            push_registration_callback: Arc::new(Mutex::new(None)),
             listening,
             processing_thread: Arc::new(Mutex::new(None)),
             started,
@@ -1068,6 +1078,37 @@ impl BingleJsiApi for BingleJsiApiImpl {
             })
     }
 
+    fn request_push_registration(&self) -> Result<(), BingleJsiError> {
+        // Rust cannot call the UIKit registration APIs; it asks the host, whose thin Swift bridge
+        // does the platform calls and later returns the token via register_apns_token.
+        let guard =
+            self.push_registration_callback
+                .lock()
+                .map_err(|_| BingleJsiError::InternalError {
+                    reason: "push_registration_callback lock poisoned".to_string(),
+                })?;
+        match guard.as_ref() {
+            Some(cb) => {
+                cb.on_request_registration();
+                Ok(())
+            }
+            None => Err(BingleJsiError::InternalError {
+                reason: "no push registration callback set".to_string(),
+            }),
+        }
+    }
+
+    fn register_apns_token(&self, token: Vec<u8>) -> Result<bool, BingleJsiError> {
+        let guard = local_api_guard(&self.local_api)?;
+        guard
+            .register_apns_token(token)
+            .map_err(bingle_error_to_jsi)
+    }
+
+    fn apns_registration_failed(&self, reason: String) {
+        tracing::warn!("[notify][register] iOS push registration failed: {reason}");
+    }
+
     fn add_contact(
         &self,
         handle: String,
@@ -1235,6 +1276,17 @@ impl BingleJsiApi for BingleJsiApiImpl {
             tracing::info!("[BingleJsiApiImpl][set_message_callback] Registered message callback");
         } else {
             tracing::error!("Failed to lock message_callback");
+        }
+    }
+
+    fn set_push_registration_callback(&self, callback: Box<dyn PushRegistrationCallback>) {
+        if let Ok(mut guard) = self.push_registration_callback.lock() {
+            *guard = Some(callback);
+            tracing::info!(
+                "[BingleJsiApiImpl][set_push_registration_callback] Registered push registration callback"
+            );
+        } else {
+            tracing::error!("Failed to lock push_registration_callback");
         }
     }
 

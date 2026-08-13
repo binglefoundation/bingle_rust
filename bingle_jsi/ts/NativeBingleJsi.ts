@@ -106,6 +106,10 @@ export interface BingleJsiConfig {
   /** Override for the give-up nudge gate (bingle_notify #11). null keeps the default (enabled);
    * false disables the nudge even when a gateway URL is set. */
   notify_on_giveup: boolean | null;
+  /** APNs environment this build's device tokens belong to: "sandbox" (Xcode/dev builds) or
+   * "production" (TestFlight/App Store). Used as the `env` when registering the device token via
+   * /register (bingle_notify #i). null defaults to "sandbox". */
+  notify_env: string | null;
 }
 
 // ── Enums ────────────────────────────────────────────────────────────
@@ -145,6 +149,12 @@ export interface ListeningCallback {
   onListening(listening: boolean, natType: string): void;
 }
 
+export interface PushRegistrationCallback {
+  /** Called when the host should ask iOS for an APNs device token (permission prompt + register).
+   * The thin Swift bridge does the platform calls; the token comes back via registerApnsToken. */
+  onRequestRegistration(): void;
+}
+
 // ── API interface ────────────────────────────────────────────────────
 
 export interface BingleJsiApi {
@@ -182,6 +192,9 @@ export interface BingleJsiApi {
     nonce: string,
     exp: number,
   ): string;
+  requestPushRegistration(): void;
+  registerApnsToken(token: Uint8Array): boolean;
+  apnsRegistrationFailed(reason: string): void;
   addContact(handle: string, id: string, source: ContactSource): void;
   blockContact(id: string): void;
   removeContact(id: string): void;
@@ -216,6 +229,7 @@ export interface BingleJsiApi {
   setMessageCallback(callback: MessageCallback): void;
   setLogCallback(callback: LogCallback): void;
   setListeningCallback(callback: ListeningCallback): void;
+  setPushRegistrationCallback(callback: PushRegistrationCallback): void;
 
   // Events (emitted by the native bridge)
   // onMessage: { sender_id: string; sender_handle: string; message: BingleMessage }
