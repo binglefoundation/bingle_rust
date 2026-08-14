@@ -15,6 +15,74 @@ use serde_json::Value as JsonValue;
 use std::sync::Mutex;
 use std::time::Duration;
 
+/// Typed cause of an outbound-message send failure (issue #99).
+///
+/// Emitted at the point in the send pipeline where the cause is actually known, so the reason is
+/// reliable rather than reverse-engineered from a display string by the client. A send flows
+/// `handle -> id -> endpoint -> DTLS`; each variant records where and why it stopped. Clients use
+/// [`SendFailureKind::is_retryable`] to decide whether to keep a message pending for retry versus
+/// mark it permanently failed, and can show cause-specific messaging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SendFailureKind {
+    // --- resolution: handle -> id ---
+    /// The handle is not registered on chain, so it resolves to no account (permanent).
+    HandleNotFound,
+    /// Resolving the handle failed because the blockchain/node call errored (transient while the
+    /// node is unreachable; the handle may resolve once the node recovers).
+    HandleLookupFailed,
+    // --- resolution: id -> endpoint ---
+    /// The recipient id has no AdvertRecord in the distributed database (DDB): the user is not
+    /// currently connected/advertising (transient; they may reconnect).
+    RecipientNotAdvertised,
+    /// The recipient id is not a valid account address (base32 decode / length check failed)
+    /// (permanent).
+    InvalidRecipientId,
+    // --- transport / relay ---
+    /// No relay was available to route the message or to query the DDB through (transient).
+    NoRelayAvailable,
+    /// A relay channel could not be allocated for the recipient (relay Call failed) (transient).
+    RelayAllocationFailed,
+    /// The recipient's endpoint is resolved but the peer could not be reached over DTLS
+    /// (connect timeout / no route — peer offline) (transient).
+    PeerUnreachable,
+    /// A request was sent but the peer or relay did not answer within the timeout (transient).
+    NoResponse,
+    // --- protocol / data ---
+    /// The recipient's AdvertRecord was present but unusable (bad signature, missing host/port,
+    /// or neither relayId nor endpoint) (permanent).
+    MalformedAdvert,
+    /// A network peer returned an unexpected/protocol-invalid response (permanent).
+    ProtocolError,
+    // --- engine / catch-all ---
+    /// The local engine or account was not ready to send (transient).
+    NotReady,
+    /// The cause was not captured or does not fit another variant (treated as permanent).
+    Unknown,
+}
+
+impl SendFailureKind {
+    /// Whether a message that failed with this cause should stay pending and be retried, rather
+    /// than being marked permanently failed. Retryable causes are transient (connectivity, the
+    /// recipient not being connected yet, a slow/absent response); permanent causes reflect a
+    /// stable condition (unknown handle, invalid id, malformed data) that a retry cannot fix.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            SendFailureKind::HandleLookupFailed
+            | SendFailureKind::RecipientNotAdvertised
+            | SendFailureKind::NoRelayAvailable
+            | SendFailureKind::RelayAllocationFailed
+            | SendFailureKind::PeerUnreachable
+            | SendFailureKind::NoResponse
+            | SendFailureKind::NotReady => true,
+            SendFailureKind::HandleNotFound
+            | SendFailureKind::InvalidRecipientId
+            | SendFailureKind::MalformedAdvert
+            | SendFailureKind::ProtocolError
+            | SendFailureKind::Unknown => false,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum BingleError {
     #[error("Blockchain error: {0}")]
@@ -26,6 +94,13 @@ pub enum BingleError {
     /// funding/other failure. The payload is the owning account address.
     #[error("Handle already in use by {0}")]
     HandleTaken(String),
+    /// A send failed with a typed, reliably-classified cause (issue #99). `detail` carries the
+    /// underlying human-readable message for logging/display; `kind` drives retry and UX decisions.
+    #[error("Send failed ({kind:?}): {detail}")]
+    Send {
+        kind: SendFailureKind,
+        detail: String,
+    },
     #[error("{0}")]
     Other(String),
 }

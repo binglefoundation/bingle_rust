@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use bingle_core::api::bingle_api::BingleError;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 
 /// Enum describing how a contact was added to the local store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +36,11 @@ pub struct Message {
     pub progress: Option<f32>, // 0.0 to 1.0 (1.0 = completed/sent/failed-permanently)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
+    /// Typed cause of the send failure (issue #99), set alongside `failure_reason` when a send
+    /// fails. `None` while pending or delivered. `serde(default)` so message files written before
+    /// this field existed still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<SendFailureKind>,
 }
 
 /// Generated Algorand keypair details.
@@ -142,12 +147,15 @@ pub trait BingleLocalApi: Send + Sync {
         text: String,
     ) -> Result<(), BingleError>;
 
-    /// Update the status of a message.
+    /// Update the status of a message. `failure_kind` carries the typed cause (issue #99) alongside
+    /// the human-readable `failure_reason`; pass `None` for both on success or when no typed cause
+    /// is available.
     fn update_message_status(
         &mut self,
         timestamp: i64,
         progress: f32,
         failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError>;
 
     /// Get all messages that are pending (progress < 1.0).

@@ -731,17 +731,16 @@ impl bingle_cli::chat_send::MessageSender for EngineSender {
         &self,
         target: &bingle_cli::chat_send::SendTarget,
         message: &serde_json::Value,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, bingle_core::api::bingle_api::BingleError> {
         use bingle_cli::chat_send::SendTarget;
+        // Return the typed error unchanged so the send-failure cause survives to the classifier
+        // (issue #99).
         match target {
-            SendTarget::Handle(handle) => self
-                .api
-                .send_message_to_handle(handle, message.clone(), None)
-                .map_err(|e| e.to_string()),
-            SendTarget::Id(id) => self
-                .api
-                .send_message_to_id(id, message.clone(), None)
-                .map_err(|e| e.to_string()),
+            SendTarget::Handle(handle) => {
+                self.api
+                    .send_message_to_handle(handle, message.clone(), None)
+            }
+            SendTarget::Id(id) => self.api.send_message_to_id(id, message.clone(), None),
         }
     }
 }

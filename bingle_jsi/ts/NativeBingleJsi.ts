@@ -58,6 +58,23 @@ export interface HandleLookupPartialResult {
   canonical_handle: string;
 }
 
+/** Typed cause of a send failure (issue #99). Mirrors the Rust `FailureKind`; use this to process
+ * failures reliably instead of parsing `failure_reason`. Whether a kind is retryable is derived via
+ * the `failureKindIsRetryable` helper, not stored per message. */
+export type FailureKind =
+  | 'HandleNotFound'
+  | 'HandleLookupFailed'
+  | 'RecipientNotAdvertised'
+  | 'InvalidRecipientId'
+  | 'NoRelayAvailable'
+  | 'RelayAllocationFailed'
+  | 'PeerUnreachable'
+  | 'NoResponse'
+  | 'MalformedAdvert'
+  | 'ProtocolError'
+  | 'NotReady'
+  | 'Unknown';
+
 export interface Message {
   sender_handle: string;
   recipient_handles: string[];
@@ -70,6 +87,9 @@ export interface Message {
   progress: number;
   /** Human-readable reason for the last failure, if any. */
   failure_reason: string | null;
+  /** Typed cause of the last failure (issue #99); null while pending or delivered. Derive whether
+   * it is retryable with `failureKindIsRetryable`. */
+  failure_kind: FailureKind | null;
 }
 
 export interface KeypairStatusResponse {

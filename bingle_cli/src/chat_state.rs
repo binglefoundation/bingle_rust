@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bingle_core::api::bingle_api::{BingleError, StartOptions};
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind, StartOptions};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_local::api::bingle_local_api::{BingleLocalApi, ContactSource, Message, REQUIRED_ALGO};
 use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfig};
@@ -222,7 +222,7 @@ impl ChatState {
             )
             .map_err(|e| e.to_string())?;
         self.local
-            .update_message_status(timestamp, 0.0, None)
+            .update_message_status(timestamp, 0.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()?;
         Ok(timestamp)
@@ -231,7 +231,7 @@ impl ChatState {
     /// Mark a previously queued outbound message (by `timestamp`) delivered, and save.
     pub fn mark_delivered(&mut self, timestamp: i64) -> Result<(), String> {
         self.local
-            .update_message_status(timestamp, 1.0, None)
+            .update_message_status(timestamp, 1.0, None, None)
             .map_err(|e| e.to_string())?;
         self.save_state()
     }
@@ -243,11 +243,12 @@ impl ChatState {
         &mut self,
         timestamp: i64,
         reason: &str,
+        failure_kind: Option<SendFailureKind>,
         permanent: bool,
     ) -> Result<(), String> {
         let progress = if permanent { 1.0 } else { 0.0 };
         self.local
-            .update_message_status(timestamp, progress, Some(reason.to_string()))
+            .update_message_status(timestamp, progress, Some(reason.to_string()), failure_kind)
             .map_err(|e| e.to_string())?;
         self.save_state()
     }

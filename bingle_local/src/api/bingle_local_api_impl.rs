@@ -7,7 +7,7 @@ use crate::api::{
     BingleLocalApi, ChainRegistrationOps, Contact, ContactSource, Keypair, KeypairStatus, Message,
     REQUIRED_ALGO, run_registration,
 };
-use bingle_core::api::bingle_api::BingleError;
+use bingle_core::api::bingle_api::{BingleError, SendFailureKind};
 use bingle_core::blockchain::algo_bingle::AlgoBingle;
 use bingle_core::blockchain::algo_ops::{AlgoChainConfig, AlgoOps};
 use bingle_core::blockchain::error::AlgoErrorKind;
@@ -779,6 +779,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             cipher_suite,
             progress: Some(1.0),
             failure_reason: None,
+            failure_kind: None,
         };
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -832,6 +833,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
             cipher_suite: None,
             progress: Some(0.0),
             failure_reason: None,
+            failure_kind: None,
         };
 
         let mut guard = match self.messages.lock() {
@@ -851,6 +853,7 @@ impl BingleLocalApi for BingleApiLocalImpl {
         timestamp: i64,
         progress: f32,
         failure_reason: Option<String>,
+        failure_kind: Option<SendFailureKind>,
     ) -> Result<(), BingleError> {
         let mut guard = match self.messages.lock() {
             Ok(g) => g,
@@ -872,6 +875,9 @@ impl BingleLocalApi for BingleApiLocalImpl {
                 msg.progress = Some(progress);
                 if failure_reason.is_some() || progress >= 1.0 {
                     msg.failure_reason = failure_reason;
+                    // Keep the typed cause in lockstep with the reason: set on failure, cleared on
+                    // a successful/terminal send with no reason (issue #99).
+                    msg.failure_kind = failure_kind;
                 }
                 if msg.failure_reason.is_some() {
                     Some((msg.timestamp, msg.recipient_handles.clone()))

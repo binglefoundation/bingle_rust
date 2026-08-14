@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::api::bingle_api::{
     BingleApi, BingleError, Handle, NetworkEndpoint, OnConnectHandler, OnMessageHandler,
-    ProgressCallback, StartOptions, UserId,
+    ProgressCallback, SendFailureKind, StartOptions, UserId,
 };
 use crate::api::pki::generate_pki_from_ops;
 use crate::blockchain::algo_bingle::AccountsCache;
@@ -462,7 +462,12 @@ impl BingleApiImpl {
                 if err.contains("rejecting") {
                     Ok(false)
                 } else {
-                    Err(BingleError::Retryable(err))
+                    // The endpoint resolved but the peer could not be reached over DTLS (connect
+                    // timeout / no route — peer offline): a transient, retryable cause (issue #99).
+                    Err(BingleError::Send {
+                        kind: SendFailureKind::PeerUnreachable,
+                        detail: err,
+                    })
                 }
             }
         }
@@ -1026,7 +1031,16 @@ impl BingleApi for BingleApiImpl {
                 if let Some(cb) = progress.as_ref() {
                     cb(100, format!("Handle lookup failed: {}", e));
                 }
-                return Err(e);
+                // The handle could not be resolved because the blockchain/node call errored — a
+                // transient condition while the node is unreachable (issue #99). Preserve any
+                // already-typed cause; otherwise classify as a handle-lookup failure.
+                return Err(match e {
+                    BingleError::Send { .. } => e,
+                    other => BingleError::Send {
+                        kind: SendFailureKind::HandleLookupFailed,
+                        detail: other.to_string(),
+                    },
+                });
             }
         };
 
@@ -1048,8 +1062,14 @@ impl BingleApi for BingleApiImpl {
             if let Some(cb) = progress.as_ref() {
                 cb(100, format!("Handle not found: {}", handle));
             }
-            tracing::info!("[BingleApiImpl::send_message_to_handle][exit] return=false");
-            Ok(false)
+            tracing::info!("[BingleApiImpl::send_message_to_handle][exit] return=HandleNotFound");
+            // The handle is not registered on chain: a permanent failure. Return a typed cause
+            // rather than the ambiguous `Ok(false)` so the client can distinguish "no such handle"
+            // from a transient delivery failure (issue #99).
+            Err(BingleError::Send {
+                kind: SendFailureKind::HandleNotFound,
+                detail: format!("handle not found: {}", handle),
+            })
         }
     }
 
@@ -1125,7 +1145,13 @@ impl BingleApi for BingleApiImpl {
                         if let Some(cb) = progress.as_ref() {
                             cb(100, "Self-relay with no relay address".to_string());
                         }
-                        return Ok(false);
+                        return Err(BingleError::Send {
+                            kind: SendFailureKind::RelayAllocationFailed,
+                            detail: format!(
+                                "self-relay but no relay address for user_id {}",
+                                user_id
+                            ),
+                        });
                     }
                 } else {
                     tracing::info!(
@@ -1173,7 +1199,10 @@ impl BingleApi for BingleApiImpl {
                             if let Some(cb) = progress.as_ref() {
                                 cb(100, format!("Relay allocation failed: {}", err));
                             }
-                            return Ok(false);
+                            return Err(BingleError::Send {
+                                kind: SendFailureKind::RelayAllocationFailed,
+                                detail: format!("relay channel allocation failed: {}", err),
+                            });
                         }
                     }
                 }
@@ -1185,7 +1214,13 @@ impl BingleApi for BingleApiImpl {
             );
             self.send_over_dtls(&effective_nsk, message)
         } else {
-            Ok(false)
+            // The recipient id is not a valid account address (base32 decode / length check failed
+            // above): a permanent failure, surfaced as a typed cause rather than `Ok(false)`
+            // (issue #99).
+            Err(BingleError::Send {
+                kind: SendFailureKind::InvalidRecipientId,
+                detail: format!("invalid recipient id: {}", user_id),
+            })
         };
 
         let ok = ok_res.as_ref().copied().unwrap_or(false);
@@ -1372,7 +1407,12 @@ impl BingleApi for BingleApiImpl {
             #[allow(unused)]
             {}
             if sent_ok {
-                Err(BingleError::Retryable(err))
+                // The request was sent but the peer/relay did not answer within the timeout: a
+                // transient, retryable cause (issue #99).
+                Err(BingleError::Send {
+                    kind: SendFailureKind::NoResponse,
+                    detail: err,
+                })
             } else {
                 Err(BingleError::Other(err))
             }

@@ -2,7 +2,9 @@ use bingle_core::engine::BingleAccessUnsafeForTests;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use bingle_core::api::bingle_api::{BingleApi, NetworkEndpoint, StartOptions};
+use bingle_core::api::bingle_api::{
+    BingleApi, BingleError, NetworkEndpoint, SendFailureKind, StartOptions,
+};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::dtls::{Dtls, HandleMessage, HandlePeerCertificate, Result};
 use std::time::Duration;
@@ -210,7 +212,8 @@ pub fn self_relay_converts_to_direct_send() {
 }
 
 /// When a relay endpoint's relay_id matches our own id but relay_address is missing,
-/// send_message_to_network should return false.
+/// send_message_to_network cannot build a route and surfaces the typed RelayAllocationFailed
+/// cause (issue #99).
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn self_relay_no_relay_address_returns_false() {
@@ -232,21 +235,23 @@ pub fn self_relay_no_relay_address_returns_false() {
     );
 
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
-    let ok = api
-        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-            a.send_message_to_network(
-                &relay_nsk,
-                &target_uid,
-                serde_json::json!({"test": true}),
-                None,
-            )
-        })
-        .unwrap();
+    let result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(
+            &relay_nsk,
+            &target_uid,
+            serde_json::json!({"test": true}),
+            None,
+        )
+    });
 
-    assert!(
-        !ok,
-        "send_message_to_network should return false for self-relay with no relay_address"
-    );
+    match result {
+        Err(BingleError::Send { kind, .. }) => assert_eq!(
+            kind,
+            SendFailureKind::RelayAllocationFailed,
+            "self-relay with no relay_address should be RelayAllocationFailed"
+        ),
+        other => panic!("expected a typed RelayAllocationFailed send error, got {other:?}"),
+    }
     assert_eq!(
         sent_vec.lock().unwrap().len(),
         0,
@@ -256,7 +261,8 @@ pub fn self_relay_no_relay_address_returns_false() {
 
 /// When a relay endpoint's relay_id does NOT match our own id, the self-relay
 /// detection should not trigger (the normal relay Call path would be attempted).
-/// Since there is no real relay to call in this test, the call will fail and return false.
+/// Since there is no real relay to call in this test, the relay Call times out and the send
+/// surfaces the typed RelayAllocationFailed cause (issue #99).
 #[test]
 #[cfg(not(target_os = "ios"))]
 pub fn non_self_relay_is_not_converted() {
@@ -280,23 +286,26 @@ pub fn non_self_relay_is_not_converted() {
     );
 
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
-    let ok = api
-        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-            a.send_message_to_network(
-                &relay_nsk,
-                &target_uid,
-                serde_json::json!({"test": true}),
-                None,
-            )
-        })
-        .unwrap();
+    let result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(
+            &relay_nsk,
+            &target_uid,
+            serde_json::json!({"test": true}),
+            None,
+        )
+    });
 
-    // The relay Call path is attempted (sends a Call message to the relay via MockDtls),
-    // but the response times out since there is no actual relay, so result should be false.
-    assert!(
-        !ok,
-        "send_message_to_network should fail for non-self relay (no real relay to call)"
-    );
+    // The relay Call path is attempted (sends a Call message to the relay via MockDtls), but the
+    // response times out since there is no actual relay, so the allocation fails with a typed,
+    // retryable cause.
+    match result {
+        Err(BingleError::Send { kind, .. }) => assert_eq!(
+            kind,
+            SendFailureKind::RelayAllocationFailed,
+            "expected RelayAllocationFailed"
+        ),
+        other => panic!("expected a typed RelayAllocationFailed send error, got {other:?}"),
+    }
 }
 
 /// When no issuer is set (get_my_id returns None), the self-relay detection
@@ -316,21 +325,23 @@ pub fn self_relay_no_issuer_does_not_match() {
     let relay_nsk = NetworkEndpoint::new_relay(relay_id.to_string(), Some(relay_addr), None);
 
     let target_uid = test_util::ADDRESS_RECEIVE.to_string();
-    let ok = api
-        .access_unsafe_for_tests(|a: &mut BingleApiImpl| {
-            a.send_message_to_network(
-                &relay_nsk,
-                &target_uid,
-                serde_json::json!({"test": true}),
-                None,
-            )
-        })
-        .unwrap();
+    let result = api.access_unsafe_for_tests(|a: &mut BingleApiImpl| {
+        a.send_message_to_network(
+            &relay_nsk,
+            &target_uid,
+            serde_json::json!({"test": true}),
+            None,
+        )
+    });
 
-    // With no issuer, my_id is None, so is_self_relay is false.
-    // The relay Call path is attempted but times out, so result should be false.
-    assert!(
-        !ok,
-        "send_message_to_network should fail when issuer is not set (relay Call fails)"
-    );
+    // With no issuer, my_id is None, so is_self_relay is false. The relay Call path is attempted
+    // but times out, so the allocation fails with a typed cause (issue #99).
+    match result {
+        Err(BingleError::Send { kind, .. }) => assert_eq!(
+            kind,
+            SendFailureKind::RelayAllocationFailed,
+            "no-issuer relay Call failure should be RelayAllocationFailed"
+        ),
+        other => panic!("expected a typed RelayAllocationFailed send error, got {other:?}"),
+    }
 }

@@ -73,6 +73,73 @@ pub struct Contact {
     pub fields: HashMap<String, String>,
 }
 
+/// Typed cause of a send failure, exposed to the client (issue #99).
+///
+/// Mirrors `bingle_core`'s `SendFailureKind` (named `FailureKind` here to match the other FFI
+/// enums, which drop the crate-internal prefix — cf. `NatType`, `KeypairStatus`). A client uses
+/// this to process failures reliably — distinguishing e.g. an unknown handle from a recipient who
+/// is simply offline — instead of parsing the human-readable `failure_reason` string. Whether a
+/// kind is transient/retryable is derived, not stored: call [`failure_kind_is_retryable`].
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureKind {
+    /// The handle is not registered, so it resolves to no account (permanent).
+    HandleNotFound,
+    /// Resolving the handle failed because the blockchain/node call errored (transient).
+    HandleLookupFailed,
+    /// The recipient has no advert record: they are not currently connected (transient).
+    RecipientNotAdvertised,
+    /// The recipient address is not valid (permanent).
+    InvalidRecipientId,
+    /// No relay was available to route the message (transient).
+    NoRelayAvailable,
+    /// A relay channel could not be allocated for the recipient (transient).
+    RelayAllocationFailed,
+    /// The recipient's endpoint resolved but the peer could not be reached (transient).
+    PeerUnreachable,
+    /// A request was sent but the peer or relay did not answer in time (transient).
+    NoResponse,
+    /// The recipient's connection record was present but unusable (permanent).
+    MalformedAdvert,
+    /// A peer returned an unexpected/protocol-invalid response (permanent).
+    ProtocolError,
+    /// The local engine or account was not ready to send (transient).
+    NotReady,
+    /// The cause was not captured (treated as permanent).
+    Unknown,
+}
+
+impl FailureKind {
+    /// Map this FFI kind back to the canonical `bingle_core` kind, so the retryable classification
+    /// stays single-sourced in `SendFailureKind::is_retryable` rather than duplicated here.
+    fn to_core(self) -> bingle_core::api::bingle_api::SendFailureKind {
+        use bingle_core::api::bingle_api::SendFailureKind as K;
+        match self {
+            FailureKind::HandleNotFound => K::HandleNotFound,
+            FailureKind::HandleLookupFailed => K::HandleLookupFailed,
+            FailureKind::RecipientNotAdvertised => K::RecipientNotAdvertised,
+            FailureKind::InvalidRecipientId => K::InvalidRecipientId,
+            FailureKind::NoRelayAvailable => K::NoRelayAvailable,
+            FailureKind::RelayAllocationFailed => K::RelayAllocationFailed,
+            FailureKind::PeerUnreachable => K::PeerUnreachable,
+            FailureKind::NoResponse => K::NoResponse,
+            FailureKind::MalformedAdvert => K::MalformedAdvert,
+            FailureKind::ProtocolError => K::ProtocolError,
+            FailureKind::NotReady => K::NotReady,
+            FailureKind::Unknown => K::Unknown,
+        }
+    }
+}
+
+/// Whether a message that failed with `kind` will keep being retried (transient) or is permanent.
+///
+/// Exposed as a helper (issue #99 review) so the retryable/permanent split is *derived* from the
+/// `FailureKind` rather than stored as a duplicate field on every [`Message`]. Delegates to
+/// `bingle_core`'s single source of truth so the two cannot drift.
+#[uniffi::export]
+pub fn failure_kind_is_retryable(kind: FailureKind) -> bool {
+    kind.to_core().is_retryable()
+}
+
 /// A stored message.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct Message {
@@ -84,7 +151,12 @@ pub struct Message {
     /// Derived by the receiving client from the connection; not transmitted on the wire.
     pub cipher_suite: Option<String>,
     pub progress: Option<f32>,
+    /// Human-readable failure reason for display. Unchanged from before issue #99; kept so existing
+    /// clients keep working.
     pub failure_reason: Option<String>,
+    /// Typed failure cause (issue #99) for reliable processing. `None` while pending or delivered.
+    /// Derive whether it is retryable with [`failure_kind_is_retryable`].
+    pub failure_kind: Option<FailureKind>,
 }
 
 /// Keypair funding / registration status.

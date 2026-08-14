@@ -11,6 +11,7 @@ import { NativeModules, Platform } from "react-native";
 import type {
   BingleJsiConfig,
   BingleJsiApi,
+  FailureKind,
 } from "./NativeBingleJsi";
 
 export type {
@@ -22,6 +23,7 @@ export type {
   Contact,
   HandleLookupPartialResult,
   Message,
+  FailureKind,
   KeypairStatusResponse,
   NatTypeResponse,
   BingleJsiConfig,
@@ -37,6 +39,34 @@ export {
   KeypairStatus,
   NatType,
 } from "./NativeBingleJsi";
+
+/**
+ * The permanent (non-retryable) failure kinds. A send that failed with any other kind is transient
+ * and will keep being retried. Mirrors `SendFailureKind::is_retryable` in bingle_core (issue #99).
+ */
+const PERMANENT_FAILURE_KINDS: ReadonlySet<FailureKind> = new Set<FailureKind>([
+  "HandleNotFound",
+  "InvalidRecipientId",
+  "MalformedAdvert",
+  "ProtocolError",
+  "Unknown",
+]);
+
+/**
+ * Whether a message that failed with `kind` will keep being retried (transient) or is permanent.
+ *
+ * Derives the retryable/permanent split from a message's `failure_kind` instead of the value being
+ * stored per message (issue #99). A `null`/`undefined` kind (pending or delivered) is not a failure,
+ * so it is reported as not retryable.
+ */
+export function failureKindIsRetryable(
+  kind: FailureKind | null | undefined
+): boolean {
+  if (kind == null) {
+    return false;
+  }
+  return !PERMANENT_FAILURE_KINDS.has(kind);
+}
 
 /**
  * The raw native module registered by the platform bridge code.
@@ -148,6 +178,9 @@ export const BingleJsi = BingleJsiNative as {
       cipher_suite: string | null;
       progress?: number;
       failure_reason?: string | null;
+      // Typed failure cause (issue #99); absent while pending or delivered. Derive retryability
+      // with `failureKindIsRetryable`.
+      failure_kind?: FailureKind | null;
     }[]
   >;
   queueMessage(recipientHandles: string[], text: string): Promise<void>;

@@ -12,11 +12,13 @@ use crate::api::callback::{
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleJsiConfig, BingleMessage, Contact, ContactSource, HandleLookupPartialResult,
+    BingleJsiConfig, BingleMessage, Contact, ContactSource, FailureKind, HandleLookupPartialResult,
     InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, NatType,
     NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
-use bingle_core::api::bingle_api::{BingleApi, BingleApiBoth, BingleError, StartOptions};
+use bingle_core::api::bingle_api::{
+    BingleApi, BingleApiBoth, BingleError, SendFailureKind, StartOptions,
+};
 use bingle_core::api::bingle_api_impl::BingleApiImpl;
 use bingle_core::api::network_endpoint::NetworkEndpoint;
 use bingle_core::blockchain::error::AlgoErrorKind;
@@ -29,7 +31,9 @@ use bingle_local::api::bingle_local_api_impl::{BingleApiLocalImpl, LocalApiConfi
 // Shared outbound-send retry policy (issue #82). Re-exported so existing
 // `bingle_jsi::api::bingle_jsi_api_impl::{is_transient_send_failure, pending_failure_reason}`
 // paths (and tests) keep resolving after the move to bingle_local.
-use bingle_local::api::send_retry::{RETRY_BACKOFF, select_sendable_message};
+use bingle_local::api::send_retry::{
+    RETRY_BACKOFF, SendFailure, classify_send_error, select_sendable_message,
+};
 pub use bingle_local::api::send_retry::{is_transient_send_failure, pending_failure_reason};
 
 /// Concrete implementation of BingleJsiApi backed by BingleApiImpl and BingleApiLocalImpl.
@@ -157,6 +161,25 @@ fn parse_keypair_status(status: &str) -> KeypairStatus {
         "ACTIVE" => KeypairStatus::Active,
         "UPGRADE_REQUIRED" => KeypairStatus::UpgradeRequired,
         _ => KeypairStatus::None,
+    }
+}
+
+/// Map the core `SendFailureKind` to the FFI-exposed `FailureKind` (issue #99). Same pattern as the
+/// `KeypairStatus` mapping: the enum is defined at the FFI boundary and translated here.
+fn send_failure_kind_to_ffi(kind: SendFailureKind) -> FailureKind {
+    match kind {
+        SendFailureKind::HandleNotFound => FailureKind::HandleNotFound,
+        SendFailureKind::HandleLookupFailed => FailureKind::HandleLookupFailed,
+        SendFailureKind::RecipientNotAdvertised => FailureKind::RecipientNotAdvertised,
+        SendFailureKind::InvalidRecipientId => FailureKind::InvalidRecipientId,
+        SendFailureKind::NoRelayAvailable => FailureKind::NoRelayAvailable,
+        SendFailureKind::RelayAllocationFailed => FailureKind::RelayAllocationFailed,
+        SendFailureKind::PeerUnreachable => FailureKind::PeerUnreachable,
+        SendFailureKind::NoResponse => FailureKind::NoResponse,
+        SendFailureKind::MalformedAdvert => FailureKind::MalformedAdvert,
+        SendFailureKind::ProtocolError => FailureKind::ProtocolError,
+        SendFailureKind::NotReady => FailureKind::NotReady,
+        SendFailureKind::Unknown => FailureKind::Unknown,
     }
 }
 
@@ -591,7 +614,10 @@ impl BingleJsiApiImpl {
         // Scheduler -> worker: the pending message to send. Worker -> scheduler: the outcome
         // (timestamp, progress, failure_reason) to persist.
         let (req_tx, req_rx) = std::sync::mpsc::channel::<PendingMsg>();
-        let (res_tx, res_rx) = std::sync::mpsc::channel::<(i64, f32, Option<String>)>();
+        // Worker -> scheduler result: (timestamp, progress, failure_reason, failure_kind). The typed
+        // kind (issue #99) is carried alongside the human reason so it is persisted on the message.
+        let (res_tx, res_rx) =
+            std::sync::mpsc::channel::<(i64, f32, Option<String>, Option<SendFailureKind>)>();
 
         // Dedicated sender worker: owns every send_message_to_handle call. It blocks here (never on
         // the scheduler) if a send is slow; a panic is contained by catch_unwind so it can't die.
@@ -611,12 +637,13 @@ impl BingleJsiApiImpl {
                                         timestamp,
                                         percent as f32 / 100.0,
                                         None,
+                                        None,
                                     );
                                 }
                             });
 
                         let mut all_success = true;
-                        let mut last_error: Option<String> = None;
+                        let mut last_failure: Option<SendFailure> = None;
                         for handle in &msg.recipient_handles {
                             let payload = serde_json::json!({ "text": msg.text });
                             tracing::info!(
@@ -639,23 +666,23 @@ impl BingleJsiApiImpl {
                                         "[BingleJsiApiImpl] send_message_to_handle panicked for {:?}",
                                         handle
                                     );
-                                    Err(BingleError::Retryable("send panicked".to_string()))
+                                    Err(BingleError::Send {
+                                        kind: SendFailureKind::NotReady,
+                                        detail: "send panicked".to_string(),
+                                    })
                                 }
                             };
-                            match res {
-                                Ok(true) => {}
-                                Ok(false) => {
-                                    all_success = false;
-                                    last_error = Some("Send returned false".to_string());
-                                }
-                                Err(BingleError::Retryable(e)) => {
-                                    all_success = false;
-                                    last_error = Some(format!("Retryable: {}", e));
+                            // Classify the typed cause directly from the result (issue #99); no
+                            // string parsing. `None` means delivered.
+                            if let Some(failure) = classify_send_error(&res) {
+                                all_success = false;
+                                let retryable = failure.kind.is_retryable();
+                                last_failure = Some(failure);
+                                // Stop trying further recipients on a transient failure (the
+                                // transport is likely down); a permanent one falls through to the
+                                // next recipient. Mirrors the pre-#99 behaviour.
+                                if retryable {
                                     break;
-                                }
-                                Err(e) => {
-                                    all_success = false;
-                                    last_error = Some(e.to_string());
                                 }
                             }
                         }
@@ -663,27 +690,34 @@ impl BingleJsiApiImpl {
                         // A transient failure keeps the message pending (progress 0.0) for retry;
                         // only a permanent failure is marked terminal (progress 1.0).
                         let result = if all_success {
-                            (timestamp, 1.0_f32, None)
+                            (timestamp, 1.0_f32, None, None)
                         } else {
-                            let err =
-                                last_error.unwrap_or_else(|| "unknown send failure".to_string());
-                            let transient = is_transient_send_failure(&err);
-                            let (progress, level) =
-                                if transient { (0.0_f32, "transient") } else { (1.0_f32, "permanent") };
-                            // Log the raw error for debugging, but surface a concise, human-readable
-                            // failure_reason on the queued message so the app can indicate the error
-                            // (issue #43). Transient failures stay pending (progress 0.0) and keep
-                            // retrying; the reason clears automatically on the next successful send.
+                            let failure = last_failure.unwrap_or_else(|| SendFailure {
+                                kind: SendFailureKind::Unknown,
+                                reason: "unknown send failure".to_string(),
+                            });
+                            let transient = failure.kind.is_retryable();
+                            let (progress, level) = if transient {
+                                (0.0_f32, "transient")
+                            } else {
+                                (1.0_f32, "permanent")
+                            };
+                            // Surface a concise, human-readable failure_reason plus the typed kind on
+                            // the queued message so the app can process the error reliably (issues
+                            // #43, #99). Transient failures stay pending (progress 0.0) and keep
+                            // retrying; both clear automatically on the next successful send.
                             tracing::debug!(
-                                "[BingleJsiApiImpl] pending message {} send failed ({}): {}",
+                                "[BingleJsiApiImpl] pending message {} send failed ({}, {:?}): {}",
                                 timestamp,
                                 level,
-                                err
+                                failure.kind,
+                                failure.reason
                             );
                             (
                                 timestamp,
                                 progress,
-                                Some(pending_failure_reason(&err, transient)),
+                                Some(failure.reason),
+                                Some(failure.kind),
                             )
                         };
                         if res_tx.send(result).is_err() {
@@ -707,9 +741,9 @@ impl BingleJsiApiImpl {
         while *started.lock().unwrap_or_else(|e| e.into_inner()) {
             // Reap a completed result (blocks up to 200ms — responsive, no busy-spin).
             match res_rx.recv_timeout(std::time::Duration::from_millis(200)) {
-                Ok((ts, progress, reason)) => {
+                Ok((ts, progress, reason, kind)) => {
                     if let Ok(mut guard) = local_api.lock() {
-                        let _ = guard.update_message_status(ts, progress, reason);
+                        let _ = guard.update_message_status(ts, progress, reason, kind);
                     }
                     // progress >= 1.0 is terminal (delivered or permanently failed): no more
                     // retries. Otherwise the message stays pending — back it off so it yields the
@@ -1198,6 +1232,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 cipher_suite: m.cipher_suite,
                 progress: m.progress,
                 failure_reason: m.failure_reason,
+                failure_kind: m.failure_kind.map(send_failure_kind_to_ffi),
             })
             .collect())
     }
@@ -1223,8 +1258,10 @@ impl BingleJsiApi for BingleJsiApiImpl {
         failure_reason: Option<String>,
     ) -> Result<(), BingleJsiError> {
         let mut guard = local_api_guard(&self.local_api)?;
+        // The FFI method is unchanged (issue #99): the app supplies only a reason string, so no
+        // typed cause is available on this direct path — the worker path carries the real kind.
         guard
-            .update_message_status(timestamp, progress, failure_reason)
+            .update_message_status(timestamp, progress, failure_reason, None)
             .map_err(bingle_error_to_jsi)?;
         drop(guard);
         save_if_configured(&self.local_api, &self.local_file);
@@ -1516,6 +1553,7 @@ mod tests {
             cipher_suite: None,
             progress: Some(0.0),
             failure_reason: None,
+            failure_kind: None,
         }
     }
 
