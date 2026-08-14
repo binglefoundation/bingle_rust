@@ -43,7 +43,11 @@ const defaultConfig: BingleJsiConfig = {
   asset_id: null,
   handle_cache_expiry_secs: null,
   debug: true,
-  local: null,
+  // Enable the bingle_local API (keypair/contacts/messages) with a state-file path. Local methods
+  // — generateKeypair, keypairStatus, getMessages (and the #99 failure_kind), etc. — require this;
+  // with `local: null` they fail because the local API is never created. On the iOS simulator the
+  // app can write to the host's /tmp; a real device/app supplies a path in its sandbox.
+  local: '/tmp/bingle_jsi_harness_state.json',
 };
 
 type CommandStatus = 'idle' | 'running' | 'ok' | 'error';
@@ -150,7 +154,8 @@ function App(): React.JSX.Element {
           onChangeText={setCommand}
           autoCapitalize="none"
           autoCorrect={false}
-          multiline
+          spellCheck={false}
+          keyboardType="ascii-capable"
         />
         <TouchableOpacity
           testID="cmd-run"

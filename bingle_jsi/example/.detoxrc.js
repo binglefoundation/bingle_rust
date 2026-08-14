@@ -21,8 +21,11 @@ module.exports = {
       type: 'ios.app',
       binaryPath:
         'ios/build/Build/Products/Debug-iphonesimulator/BingleJsiExample.app',
+      // ARCHS=arm64 restricts the build to the Apple-silicon simulator arch, matching the fast
+      // sim-only xcframework (BINGLE_IOS_SIM_ONLY=1 build_ios.sh, which omits the x86_64 slice).
+      // For an Intel host or CI, build the full xcframework (default build_ios.sh) and drop ARCHS.
       build:
-        'xcodebuild -workspace ios/BingleJsiExample.xcworkspace -scheme BingleJsiExample -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build',
+        'xcodebuild -workspace ios/BingleJsiExample.xcworkspace -scheme BingleJsiExample -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES',
     },
   },
   devices: {
