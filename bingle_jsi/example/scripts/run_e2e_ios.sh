@@ -10,6 +10,13 @@ set -euo pipefail
 #   bash bingle_jsi/example/scripts/run_e2e_ios.sh              # full: build everything, then test
 #   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only  # fast: skip setup, just run the e2e
 #
+# Backend for the network e2e (issue #111), via environment:
+#   BINGLE_E2E_BACKEND=testnet|localnet   default testnet; localnet not yet implemented
+#   BINGLE_E2E_PASSPHRASE=<mnemonic>      funded, already-registered sender account (send/echo test)
+#   BINGLE_E2E_HANDLE=<handle>            that account's registered handle
+#   BINGLE_E2E_ECHO_TO=<handle>           a live echo peer/relay to send to (replies "Echo: ...")
+# The messaging test skips cleanly when these are unset; the smoke test ignores them.
+#
 # One-time prerequisites: Xcode + command-line tools, CocoaPods, Node, Rust with iOS targets, and
 # applesimutils (a newer Homebrew needs the tap trusted):
 #   brew tap wix/brew && brew trust wix/brew && brew install applesimutils
@@ -17,6 +24,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXAMPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 JSI_DIR="$(cd "$EXAMPLE_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$JSI_DIR/.." && pwd)"
 
 TEST_ONLY=false
 [[ "${1:-}" == "--test-only" ]] && TEST_ONLY=true
@@ -26,6 +34,29 @@ if ! command -v applesimutils >/dev/null 2>&1; then
   echo "  brew tap wix/brew && brew trust wix/brew && brew install applesimutils" >&2
   exit 1
 fi
+
+# Backend selector (issue #111): stage the node-file + STUN list the network e2e will init() with,
+# to a simulator-readable path (the sim can read the Mac's /tmp). Tests that need a real network
+# read BINGLE_E2E_* from the environment; the smoke test ignores them.
+export BINGLE_E2E_BACKEND="${BINGLE_E2E_BACKEND:-testnet}"
+export BINGLE_E2E_NODE_FILE=/tmp/bingle_e2e_node.json
+export BINGLE_E2E_STUN_FILE=/tmp/bingle_e2e_stun.txt
+case "$BINGLE_E2E_BACKEND" in
+  testnet)
+    cp "$ROOT_DIR/nodely_staging_testnet_node.json" "$BINGLE_E2E_NODE_FILE"
+    cp "$ROOT_DIR/stunservers.txt" "$BINGLE_E2E_STUN_FILE"
+    echo "==> Backend: testnet (staged node-file at $BINGLE_E2E_NODE_FILE)"
+    ;;
+  localnet)
+    echo "Error: BINGLE_E2E_BACKEND=localnet is not implemented yet (#111 follow-up)." >&2
+    echo "       It needs an echo peer + relays booted alongside the simulator; use testnet." >&2
+    exit 1
+    ;;
+  *)
+    echo "Error: unknown BINGLE_E2E_BACKEND='$BINGLE_E2E_BACKEND' (expected testnet|localnet)" >&2
+    exit 1
+    ;;
+esac
 
 cd "$EXAMPLE_DIR"
 

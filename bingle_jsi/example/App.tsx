@@ -58,7 +58,11 @@ type CommandStatus = 'idle' | 'running' | 'ok' | 'error';
  * method name falls through to `BingleJsi[method]` in {@link runCommand}.
  */
 const extraDispatch: Record<string, (...args: any[]) => unknown> = {
-  init: (config?: BingleJsiConfig) => initBingleJsi(config ?? defaultConfig),
+  // Merge the passed (partial) config over the defaults, so a test can override just the fields it
+  // needs — e.g. `{ handle, passphrase, node_file, stun_servers_file }` to point at a real network
+  // with a funded account (issue #111) — while keeping the rest of the harness defaults.
+  init: (config?: Partial<BingleJsiConfig>) =>
+    initBingleJsi({...defaultConfig, ...(config ?? {})}),
   failureKindIsRetryable: (kind: FailureKind) => failureKindIsRetryable(kind),
 };
 
