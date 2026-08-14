@@ -468,6 +468,43 @@ ruby -I /opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/xcodeproj-1.27.0/li
 
 ---
 
+### End-to-end tests (Detox — Layer 3)
+
+Layer 3 drives the **real TypeScript → native → Rust path** in an iOS simulator
+via [Detox](https://wix.github.io/Detox/), through the example app's
+command-dispatcher harness (issue #109/#116). Unlike the Layer 2 Swift tests
+(Swift bridge → Rust), these exercise the shipped `ts/` interface exactly as a
+React Native app calls it.
+
+One-time prerequisite (a newer Homebrew needs the third-party tap trusted):
+
+```bash
+brew tap wix/brew && brew trust wix/brew && brew install applesimutils
+```
+
+Then run the whole suite from a clean checkout with a single command:
+
+```bash
+bash bingle_jsi/example/scripts/run_e2e_ios.sh
+```
+
+That builds the simulator xcframework, installs JS + pods, builds the app with
+Detox, starts Metro, runs the e2e, and stops Metro on exit. To iterate on the
+tests without rebuilding (app already built, faster):
+
+```bash
+bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
+```
+
+The smoke suite (`bingle_jsi/example/e2e/smoke.test.js`) launches the app, calls
+`version()` before init, then inits (enabling the `bingle_local` API via a
+state-file path) and round-trips a generated keypair. Add coverage by dropping a
+new `e2e/*.test.js` that uses the `call({ method, args })` helper in
+`e2e/harness.js` — no per-method UI. Notes and gotchas are documented in
+`bingle_jsi/example/README.md` and inline in those files.
+
+---
+
 ### API Reference
 
 The full API is defined in `src/api/bingle_jsi_api.rs`. Key methods:
