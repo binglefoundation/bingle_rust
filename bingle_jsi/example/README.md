@@ -96,29 +96,44 @@ the app.
 ### End-to-end tests (Detox)
 
 The e2e suite drives the harness in an iOS simulator. Detox iOS needs **no**
-native project changes — it is configured entirely in `.detoxrc.js`; just run
-`pod install` first (the Quick Start above covers that). One-time tool install:
+native project changes — it is configured entirely in `.detoxrc.js`. One-time
+tool install (newer Homebrew requires trusting the third-party tap):
 
 ```bash
-npm install -g detox-cli && brew tap wix/brew && brew install applesimutils
+brew tap wix/brew && brew trust wix/brew && brew install applesimutils
 ```
 
-Then, from `bingle_jsi/example/` (after `npm install` and `pod install`):
+Then, from `bingle_jsi/example/` (after `npm install` and, in `ios/`,
+`RCT_NEW_ARCH_ENABLED=0 pod install`):
 
 ```bash
-# Build the app in the Detox debug configuration
+# 1. Build the arm64 simulator xcframework (fast) — matches the ARCHS=arm64 Detox build
+BINGLE_IOS_SIM_ONLY=1 bash ../scripts/build_ios.sh
+
+# 2. Build the app in the Detox debug configuration
 npm run e2e:build:ios
 
-# Run the e2e suite against the simulator
+# 3. Start Metro in another terminal (Debug loads JS from the packager)
+npx react-native start
+
+# 4. Run the e2e suite against the simulator
 npm run e2e:test:ios
 ```
 
 The smoke test (`e2e/smoke.test.js`) launches the app, calls `version()` before
-init, then inits, generates a keypair, and reads it back — proving the full
-TypeScript → native → Rust path. Adding coverage for another method needs only a
-new `e2e/*.test.js` using the `call({ method, args })` helper in
-`e2e/harness.js`; no UI changes. Messaging (#111), typed failure causes (#112),
-and account lifecycle (#113) build on this.
+init, then inits (which enables the bingle_local API via a state-file path) and
+round-trips a generated keypair — proving the full TypeScript → native → Rust
+path. Adding coverage for another method needs only a new `e2e/*.test.js` using
+the `call({ method, args })` helper in `e2e/harness.js`; no UI changes.
+Messaging (#111), typed failure causes (#112), and account lifecycle (#113)
+build on this.
+
+A few Detox specifics that the harness/tests depend on (see the comments in
+those files): Metro must be running for a Debug build; Detox synchronization is
+disabled because the P2P engine never goes idle (timing is driven by polling);
+value assertions use Node's `assert` (Detox overrides the global `expect`); and
+the command box is single-line (a multiline box truncates JSON under Detox's
+`replaceText`).
 
 ---
 

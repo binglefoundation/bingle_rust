@@ -10,6 +10,9 @@ set -euo pipefail
 #
 # Usage:
 #   bash bingle_jsi/scripts/build_ios.sh
+#   BINGLE_IOS_SIM_ONLY=1 bash bingle_jsi/scripts/build_ios.sh   # fast: Apple-silicon simulator
+#                                                                # slice only (local Detox iteration;
+#                                                                # not the shipped/committed artifact)
 #
 # Output:
 #   bingle_jsi/ios/BingleJsi.xcframework   -- fat static library
@@ -103,9 +106,23 @@ fi
 
 # ── build static libraries ───────────────────────────────────────────
 
-echo "Building $CRATE_NAME for aarch64-apple-ios..."
-RUSTFLAGS="$(ios_rustflags arm64-apple-ios13.0)" \
-  "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios
+# Fast local-iteration mode: build only the Apple-silicon simulator slice and package a
+# simulator-only XCFramework. Skips the device (aarch64-apple-ios) and Intel-simulator
+# (x86_64-apple-ios) slices, so a rebuild is ~3x faster. Use for Detox e2e on an Apple-silicon
+# Mac (`BINGLE_IOS_SIM_ONLY=1`). Do NOT commit the resulting sim-only XCFramework as the shipped
+# artifact — that one must be the full build (device + both simulator archs).
+SIM_ONLY=false
+if [[ "${BINGLE_IOS_SIM_ONLY:-0}" == "1" ]]; then
+  SIM_ONLY=true
+  HAS_X64_SIM=false
+  echo "BINGLE_IOS_SIM_ONLY=1 -> building simulator slice only (aarch64-apple-ios-sim)."
+fi
+
+if ! $SIM_ONLY; then
+  echo "Building $CRATE_NAME for aarch64-apple-ios..."
+  RUSTFLAGS="$(ios_rustflags arm64-apple-ios13.0)" \
+    "${CARGO_CMD[@]}" build -p "$CRATE_NAME" --lib --release --target aarch64-apple-ios
+fi
 
 echo "Building $CRATE_NAME for aarch64-apple-ios-sim..."
 RUSTFLAGS="$(ios_rustflags arm64-apple-ios13.0-simulator)" \
@@ -118,7 +135,9 @@ if $HAS_X64_SIM; then
 fi
 
 LIB_DEVICE="$BUILD_DIR/aarch64-apple-ios/release/libBingleJsi.a"
-cp "$BUILD_DIR/aarch64-apple-ios/release/lib${CRATE_NAME}.a" "$LIB_DEVICE"
+if ! $SIM_ONLY; then
+  cp "$BUILD_DIR/aarch64-apple-ios/release/lib${CRATE_NAME}.a" "$LIB_DEVICE"
+fi
 
 LIB_SIM_ARM64="$BUILD_DIR/aarch64-apple-ios-sim/release/libBingleJsi.a"
 cp "$BUILD_DIR/aarch64-apple-ios-sim/release/lib${CRATE_NAME}.a" "$LIB_SIM_ARM64"
@@ -128,7 +147,13 @@ if $HAS_X64_SIM && [[ -f "$BUILD_DIR/x86_64-apple-ios/release/lib${CRATE_NAME}.a
   cp "$BUILD_DIR/x86_64-apple-ios/release/lib${CRATE_NAME}.a" "$LIB_SIM_X64"
 fi
 
-for lib in "$LIB_DEVICE" "$LIB_SIM_ARM64"; do
+# The bindings/headers are architecture-independent, so any built slice works for generation.
+BINDGEN_LIB="$LIB_DEVICE"
+$SIM_ONLY && BINDGEN_LIB="$LIB_SIM_ARM64"
+
+REQUIRED_LIBS=("$LIB_SIM_ARM64")
+$SIM_ONLY || REQUIRED_LIBS=("$LIB_DEVICE" "$LIB_SIM_ARM64")
+for lib in "${REQUIRED_LIBS[@]}"; do
   if [[ ! -f "$lib" ]]; then
     echo "Missing library: $lib" >&2
     exit 1
@@ -144,7 +169,7 @@ mkdir -p "$GENERATED_DIR"
 # uniffi-bindgen is provided as a binary target in the bingle_jsi crate
 # (src/bin/uniffi-bindgen.rs) via the uniffi "cli" feature.
 "${CARGO_CMD[@]}" run -p bingle_jsi --bin uniffi-bindgen -- generate \
-  --library "$LIB_DEVICE" \
+  --library "$BINDGEN_LIB" \
   --language swift \
   --out-dir "$GENERATED_DIR"
 
@@ -186,10 +211,17 @@ fi
 XCFRAMEWORK_PATH="$IOS_DIR/BingleJsi.xcframework"
 rm -rf "$XCFRAMEWORK_PATH"
 
-xcodebuild -create-xcframework \
-  -library "$LIB_DEVICE" -headers "$HEADERS_DIR" \
-  -library "$SIM_LIB" -headers "$HEADERS_DIR" \
-  -output "$XCFRAMEWORK_PATH"
+if $SIM_ONLY; then
+  # Simulator-only XCFramework for fast local Detox iteration (not for commit).
+  xcodebuild -create-xcframework \
+    -library "$SIM_LIB" -headers "$HEADERS_DIR" \
+    -output "$XCFRAMEWORK_PATH"
+else
+  xcodebuild -create-xcframework \
+    -library "$LIB_DEVICE" -headers "$HEADERS_DIR" \
+    -library "$SIM_LIB" -headers "$HEADERS_DIR" \
+    -output "$XCFRAMEWORK_PATH"
+fi
 
 # ── guard: fail if any build-machine path leaked into the static libs ─
 source "$(dirname "$0")/../../scripts/scan_native_leaks.sh"
