@@ -12,9 +12,9 @@ use crate::api::callback::{
 };
 use crate::api::error::BingleJsiError;
 use crate::api::types::{
-    BingleJsiConfig, BingleMessage, Contact, ContactSource, FailureCategory,
-    HandleLookupPartialResult, InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse,
-    Message, NatType, NatTypeResponse, NetworkSourceKey, VersionInfo,
+    BingleJsiConfig, BingleMessage, Contact, ContactSource, FailureKind, HandleLookupPartialResult,
+    InetSocketAddress, Keypair, KeypairStatus, KeypairStatusResponse, Message, NatType,
+    NatTypeResponse, NetworkSourceKey, VersionInfo,
 };
 use bingle_core::api::bingle_api::{
     BingleApi, BingleApiBoth, BingleError, SendFailureKind, StartOptions,
@@ -164,22 +164,22 @@ fn parse_keypair_status(status: &str) -> KeypairStatus {
     }
 }
 
-/// Map the core `SendFailureKind` to the FFI-exposed `FailureCategory` (issue #99). Same pattern as
-/// the `KeypairStatus` mapping: the enum is defined at the FFI boundary and translated here.
-fn failure_kind_to_category(kind: SendFailureKind) -> FailureCategory {
+/// Map the core `SendFailureKind` to the FFI-exposed `FailureKind` (issue #99). Same pattern as the
+/// `KeypairStatus` mapping: the enum is defined at the FFI boundary and translated here.
+fn send_failure_kind_to_ffi(kind: SendFailureKind) -> FailureKind {
     match kind {
-        SendFailureKind::HandleNotFound => FailureCategory::HandleNotFound,
-        SendFailureKind::HandleLookupFailed => FailureCategory::HandleLookupFailed,
-        SendFailureKind::RecipientNotAdvertised => FailureCategory::RecipientNotAdvertised,
-        SendFailureKind::InvalidRecipientId => FailureCategory::InvalidRecipientId,
-        SendFailureKind::NoRelayAvailable => FailureCategory::NoRelayAvailable,
-        SendFailureKind::RelayAllocationFailed => FailureCategory::RelayAllocationFailed,
-        SendFailureKind::PeerUnreachable => FailureCategory::PeerUnreachable,
-        SendFailureKind::NoResponse => FailureCategory::NoResponse,
-        SendFailureKind::MalformedAdvert => FailureCategory::MalformedAdvert,
-        SendFailureKind::ProtocolError => FailureCategory::ProtocolError,
-        SendFailureKind::NotReady => FailureCategory::NotReady,
-        SendFailureKind::Unknown => FailureCategory::Unknown,
+        SendFailureKind::HandleNotFound => FailureKind::HandleNotFound,
+        SendFailureKind::HandleLookupFailed => FailureKind::HandleLookupFailed,
+        SendFailureKind::RecipientNotAdvertised => FailureKind::RecipientNotAdvertised,
+        SendFailureKind::InvalidRecipientId => FailureKind::InvalidRecipientId,
+        SendFailureKind::NoRelayAvailable => FailureKind::NoRelayAvailable,
+        SendFailureKind::RelayAllocationFailed => FailureKind::RelayAllocationFailed,
+        SendFailureKind::PeerUnreachable => FailureKind::PeerUnreachable,
+        SendFailureKind::NoResponse => FailureKind::NoResponse,
+        SendFailureKind::MalformedAdvert => FailureKind::MalformedAdvert,
+        SendFailureKind::ProtocolError => FailureKind::ProtocolError,
+        SendFailureKind::NotReady => FailureKind::NotReady,
+        SendFailureKind::Unknown => FailureKind::Unknown,
     }
 }
 
@@ -1232,8 +1232,7 @@ impl BingleJsiApi for BingleJsiApiImpl {
                 cipher_suite: m.cipher_suite,
                 progress: m.progress,
                 failure_reason: m.failure_reason,
-                failure_category: m.failure_kind.map(failure_kind_to_category),
-                failure_retryable: m.failure_kind.map(|k| k.is_retryable()),
+                failure_kind: m.failure_kind.map(send_failure_kind_to_ffi),
             })
             .collect())
     }

@@ -284,16 +284,18 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
             );
             assert_eq!(reason, "Recipient unreachable — will keep retrying");
             // The typed failure cause is surfaced alongside the reason (issue #99): a transient
-            // connectivity failure maps to PeerUnreachable and is marked retryable.
+            // connectivity failure maps to PeerUnreachable, and its retryability is derived via the
+            // helper rather than stored per message.
             assert_eq!(
-                m.failure_category,
-                Some(bingle_jsi::api::types::FailureCategory::PeerUnreachable),
-                "transient send failure should surface a PeerUnreachable category"
+                m.failure_kind,
+                Some(bingle_jsi::api::types::FailureKind::PeerUnreachable),
+                "transient send failure should surface a PeerUnreachable kind"
             );
-            assert_eq!(
-                m.failure_retryable,
-                Some(true),
-                "a transient failure must be reported as retryable"
+            assert!(
+                bingle_jsi::api::types::failure_kind_is_retryable(
+                    bingle_jsi::api::types::FailureKind::PeerUnreachable
+                ),
+                "a transient failure must be derivable as retryable"
             );
             saw_failure_reason = true;
             break;
@@ -317,7 +319,7 @@ fn queued_message_gains_failure_reason_then_clears_on_success() {
                 "failure_reason must clear once delivery succeeds"
             );
             assert!(
-                m.failure_category.is_none() && m.failure_retryable.is_none(),
+                m.failure_kind.is_none(),
                 "the typed failure cause must clear once delivery succeeds"
             );
             cleared = true;
