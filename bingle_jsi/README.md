@@ -489,8 +489,9 @@ bash bingle_jsi/example/scripts/run_e2e_ios.sh
 ```
 
 That builds the simulator xcframework, installs JS + pods, builds the app with
-Detox, starts Metro, runs the e2e, and stops Metro on exit. To iterate on the
-tests without rebuilding (app already built, faster):
+Detox, opens Metro in its own Terminal window (like `react-native run-ios`, left
+running), and runs the e2e. To iterate on the tests without rebuilding (app
+already built, faster):
 
 ```bash
 bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
