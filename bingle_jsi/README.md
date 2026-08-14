@@ -516,16 +516,16 @@ sender are provided via the environment (so the default run stays offline):
 | `BINGLE_E2E_BACKEND` | `testnet` (default) or `localnet` (not yet supported) |
 | `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered sender account |
 | `BINGLE_E2E_HANDLE` | that account's registered handle |
-| `BINGLE_E2E_ECHO_TO` | a live echo peer/relay handle (replies `Echo: <text>`) |
+| `BINGLE_E2E_ECHO_TO` | echo peer handle; defaults to `echo-testnet-1` on testnet |
 
 `run_e2e_ios.sh` stages the node-file (`nodely_staging_testnet_node.json` for
-testnet) and `stunservers.txt` to `/tmp` and passes the env through. Example:
+testnet) and `stunservers.txt` to `/tmp` and passes the env through. On testnet
+`BINGLE_E2E_ECHO_TO` defaults to the always-live `echo-testnet-1`, so you only
+supply the funded sender:
 
 ```bash
-BINGLE_E2E_BACKEND=testnet \
 BINGLE_E2E_PASSPHRASE="word word … word" \
 BINGLE_E2E_HANDLE=my-testnet-handle \
-BINGLE_E2E_ECHO_TO=<live-echo-relay-handle> \
   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
 ```
 

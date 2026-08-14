@@ -45,7 +45,10 @@ case "$BINGLE_E2E_BACKEND" in
   testnet)
     cp "$ROOT_DIR/nodely_staging_testnet_node.json" "$BINGLE_E2E_NODE_FILE"
     cp "$ROOT_DIR/stunservers.txt" "$BINGLE_E2E_STUN_FILE"
-    echo "==> Backend: testnet (staged node-file at $BINGLE_E2E_NODE_FILE)"
+    # `echo-testnet-1` is the always-live testnet echo peer (counterpart of mainnet `echo-test-1`);
+    # default to it so only the funded sender (BINGLE_E2E_HANDLE + BINGLE_E2E_PASSPHRASE) is needed.
+    export BINGLE_E2E_ECHO_TO="${BINGLE_E2E_ECHO_TO:-echo-testnet-1}"
+    echo "==> Backend: testnet (staged node-file at $BINGLE_E2E_NODE_FILE; echo -> $BINGLE_E2E_ECHO_TO)"
     ;;
   localnet)
     echo "Error: BINGLE_E2E_BACKEND=localnet is not implemented yet (#111 follow-up)." >&2
