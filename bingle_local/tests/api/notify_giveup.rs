@@ -173,7 +173,7 @@ fn giveup_with_flag_off_sends_nothing() {
         None,
     )
     .expect("add message");
-    api.update_message_status(42, 1.0, Some("permanent".into()))
+    api.update_message_status(42, 1.0, Some("permanent".into()), None)
         .expect("update");
     assert!(poster.calls().is_empty(), "flag off must send no alert");
 }
@@ -191,7 +191,7 @@ fn giveup_with_no_url_sends_nothing() {
         None,
     )
     .expect("add message");
-    api.update_message_status(42, 1.0, Some("permanent".into()))
+    api.update_message_status(42, 1.0, Some("permanent".into()), None)
         .expect("update");
     assert!(poster.calls().is_empty(), "no URL must send no alert");
 }
@@ -219,6 +219,7 @@ fn nudge_fires_once_on_first_unreachable_not_per_retry() {
         7,
         0.0,
         Some("Recipient unreachable — will keep retrying".into()),
+        None,
     )
     .expect("first transient update");
     let calls = poster.calls();
@@ -237,6 +238,7 @@ fn nudge_fires_once_on_first_unreachable_not_per_retry() {
         7,
         0.0,
         Some("Recipient unreachable — will keep retrying".into()),
+        None,
     )
     .expect("second transient update");
     assert_eq!(
@@ -246,7 +248,7 @@ fn nudge_fires_once_on_first_unreachable_not_per_retry() {
     );
 
     // A subsequent give-up must not re-nudge either — the message was already nudged once.
-    api.update_message_status(7, 1.0, Some("permanent".into()))
+    api.update_message_status(7, 1.0, Some("permanent".into()), None)
         .expect("terminal update");
     assert_eq!(
         poster.calls().len(),
@@ -292,6 +294,7 @@ fn unreachable_with_flag_off_sends_nothing() {
         11,
         0.0,
         Some("Recipient unreachable — will keep retrying".into()),
+        None,
     )
     .expect("transient update");
     assert!(
@@ -313,7 +316,7 @@ fn giveup_fires_once_per_recipient() {
         None,
     )
     .expect("add message");
-    api.update_message_status(9, 1.0, Some("permanent".into()))
+    api.update_message_status(9, 1.0, Some("permanent".into()), None)
         .expect("terminal update");
     let audiences: Vec<String> = poster
         .calls()
@@ -338,7 +341,8 @@ fn successful_send_does_not_nudge() {
         None,
     )
     .expect("add message");
-    api.update_message_status(3, 1.0, None).expect("update");
+    api.update_message_status(3, 1.0, None, None)
+        .expect("update");
     assert!(
         poster.calls().is_empty(),
         "a delivered message must not nudge"
@@ -360,7 +364,7 @@ fn giveup_nudge_does_not_affect_delivery_outcome() {
         None,
     )
     .expect("add message");
-    let result = api.update_message_status(5, 1.0, Some("permanent".into()));
+    let result = api.update_message_status(5, 1.0, Some("permanent".into()), None);
     assert!(result.is_ok(), "the nudge must never fail delivery");
     assert_eq!(poster.calls().len(), 1, "the nudge was exercised");
 

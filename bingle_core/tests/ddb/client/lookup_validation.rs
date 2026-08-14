@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use crate::util::reusable_mock_api::{InnerBingleApi, MockApiBoth, to_weak_api_both};
-use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint};
+use bingle_core::api::bingle_api::{BingleError, NetworkEndpoint, SendFailureKind};
 use bingle_core::ddb::{AdvertRecord, DdbClient, DdbClientImpl, InetSocketAddress};
 use bingle_core::relay::relay_finder::RelayInfo;
 
@@ -87,11 +87,15 @@ fn ddb_client_lookup_fails_on_invalid_signature() {
     let result = cli.lookup("some-id");
 
     match result {
-        Err(BingleError::Other(e)) => {
+        // A bad AdvertRecord is now a typed MalformedAdvert cause (issue #99).
+        Err(BingleError::Send {
+            kind: SendFailureKind::MalformedAdvert,
+            detail,
+        }) => {
             assert!(
-                e.contains("signature"),
+                detail.contains("signature"),
                 "Error message should mention signature failure, got: {}",
-                e
+                detail
             );
         }
         _ => panic!("Expected signature verification error, got {:?}", result),
@@ -135,11 +139,14 @@ fn ddb_client_lookup_fails_on_missing_signature() {
     let result = cli.lookup("some-id");
 
     match result {
-        Err(BingleError::Other(e)) => {
+        Err(BingleError::Send {
+            kind: SendFailureKind::MalformedAdvert,
+            detail,
+        }) => {
             assert!(
-                e.contains("missing signature") || e.contains("signature"),
+                detail.contains("missing signature") || detail.contains("signature"),
                 "Error message should mention signature, got: {}",
-                e
+                detail
             );
         }
         _ => panic!("Expected signature verification error, got {:?}", result),

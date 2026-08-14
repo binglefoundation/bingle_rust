@@ -73,6 +73,40 @@ pub struct Contact {
     pub fields: HashMap<String, String>,
 }
 
+/// Typed cause of a send failure, exposed to the client (issue #99).
+///
+/// Mirrors `bingle_core`'s `SendFailureKind`. A client uses this to process failures reliably —
+/// distinguishing e.g. an unknown handle from a recipient who is simply offline — instead of
+/// parsing the human-readable `failure_reason` string. `failure_retryable` on [`Message`] gives the
+/// retryable/permanent split directly.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureCategory {
+    /// The handle is not registered, so it resolves to no account (permanent).
+    HandleNotFound,
+    /// Resolving the handle failed because the blockchain/node call errored (transient).
+    HandleLookupFailed,
+    /// The recipient has no advert record: they are not currently connected (transient).
+    RecipientNotAdvertised,
+    /// The recipient address is not valid (permanent).
+    InvalidRecipientId,
+    /// No relay was available to route the message (transient).
+    NoRelayAvailable,
+    /// A relay channel could not be allocated for the recipient (transient).
+    RelayAllocationFailed,
+    /// The recipient's endpoint resolved but the peer could not be reached (transient).
+    PeerUnreachable,
+    /// A request was sent but the peer or relay did not answer in time (transient).
+    NoResponse,
+    /// The recipient's connection record was present but unusable (permanent).
+    MalformedAdvert,
+    /// A peer returned an unexpected/protocol-invalid response (permanent).
+    ProtocolError,
+    /// The local engine or account was not ready to send (transient).
+    NotReady,
+    /// The cause was not captured (treated as permanent).
+    Unknown,
+}
+
 /// A stored message.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct Message {
@@ -84,7 +118,14 @@ pub struct Message {
     /// Derived by the receiving client from the connection; not transmitted on the wire.
     pub cipher_suite: Option<String>,
     pub progress: Option<f32>,
+    /// Human-readable failure reason for display. Unchanged from before issue #99; kept so existing
+    /// clients keep working.
     pub failure_reason: Option<String>,
+    /// Typed failure cause (issue #99) for reliable processing. `None` while pending or delivered.
+    pub failure_category: Option<FailureCategory>,
+    /// Whether the failure is transient and the message will keep being retried (`true`) or is
+    /// permanent (`false`). Derived from `failure_category`; `None` while pending or delivered.
+    pub failure_retryable: Option<bool>,
 }
 
 /// Keypair funding / registration status.

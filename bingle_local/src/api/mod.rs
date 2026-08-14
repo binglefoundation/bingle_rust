@@ -20,5 +20,8 @@ pub use notify::{AlertPoster, AlertRequest, HttpAlertPoster, build_alert_request
 // Shared outbound-send retry policy (issue #82): used by bingle_jsi (RN client) and bingle_cli chat.
 pub mod send_retry;
 pub use send_retry::{
-    RETRY_BACKOFF, is_transient_send_failure, pending_failure_reason, select_sendable_message,
+    RETRY_BACKOFF, SendFailure, classify_send_error, is_transient_send_failure,
+    pending_failure_reason, select_sendable_message,
 };
+// Typed send-failure cause (issue #99), re-exported for clients that classify send results.
+pub use bingle_core::api::bingle_api::SendFailureKind;

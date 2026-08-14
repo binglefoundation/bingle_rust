@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 
-use crate::api::bingle_api::{BingleError, NetworkEndpoint};
+use crate::api::bingle_api::{BingleError, NetworkEndpoint, SendFailureKind};
 use crate::messages::types::*;
 use crate::messages::{Message, to_json_value};
 use crate::relay::relay_finder::{RelayFinderTrait, RelayInfo};
@@ -636,7 +636,12 @@ impl DdbClient for DdbClientImpl {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("[DdbClientImpl::lookup] find_relay failed: {}", e);
-                return Err(e);
+                // No relay was available to query the distributed database (DDB) through: a
+                // transient, retryable cause (issue #99).
+                return Err(BingleError::Send {
+                    kind: SendFailureKind::NoRelayAvailable,
+                    detail: format!("no relay available to resolve recipient: {}", e),
+                });
             }
         };
         let relay_user_b64 = match Self::relay_user_id(relay.id()) {
@@ -672,20 +677,31 @@ impl DdbClient for DdbClientImpl {
                     "[DdbClientImpl::lookup] send_message_to_network_with_response failed: {}",
                     e
                 );
-                return Err(e);
+                // We found a relay but could not complete the DDB query through it (no response /
+                // relay unreachable): a transient, retryable cause (issue #99).
+                return Err(BingleError::Send {
+                    kind: SendFailureKind::NoRelayAvailable,
+                    detail: format!("recipient lookup via relay failed: {}", e),
+                });
             }
         };
 
         let is_ddb = resp.get("app").and_then(|v| v.as_str()) == Some("ddb");
         let ty = resp.get("type").and_then(|v| v.as_str());
         if !is_ddb || ty != Some("queryResponse") {
-            return Err(BingleError::Other(
-                "unexpected response (expected DdbQueryResponse)".to_string(),
-            ));
+            return Err(BingleError::Send {
+                kind: SendFailureKind::ProtocolError,
+                detail: "unexpected response (expected DdbQueryResponse)".to_string(),
+            });
         }
         let found = resp.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
         if !found {
-            return Err(BingleError::Retryable("not found in DDB".to_string()));
+            // The recipient has no AdvertRecord in the DDB: they are not currently connected /
+            // advertising. Transient — they may reconnect (issue #99).
+            return Err(BingleError::Send {
+                kind: SendFailureKind::RecipientNotAdvertised,
+                detail: format!("recipient {} not found in DDB", id),
+            });
         }
         // Build NetworkEndpoint from advert (supporting both direct endpoint and relay_id)
         let advert = match resp.get("advert") {
@@ -693,20 +709,25 @@ impl DdbClient for DdbClientImpl {
             None => {
                 let err = "missing advert".to_string();
                 tracing::error!("[DdbClientImpl::lookup] {}", err);
-                return Err(BingleError::Other(err));
+                return Err(BingleError::Send {
+                    kind: SendFailureKind::MalformedAdvert,
+                    detail: err,
+                });
             }
         };
 
         // Deserialize advert record and validate signature
-        let record: AdvertRecord = serde_json::from_value(advert.clone()).map_err(|e| {
-            BingleError::Other(format!("Failed to deserialize AdvertRecord: {}", e))
-        })?;
+        let record: AdvertRecord =
+            serde_json::from_value(advert.clone()).map_err(|e| BingleError::Send {
+                kind: SendFailureKind::MalformedAdvert,
+                detail: format!("Failed to deserialize AdvertRecord: {}", e),
+            })?;
 
         if !record.verify() {
-            return Err(BingleError::Other(format!(
-                "AdvertRecord signature verification failed for {}",
-                id
-            )));
+            return Err(BingleError::Send {
+                kind: SendFailureKind::MalformedAdvert,
+                detail: format!("AdvertRecord signature verification failed for {}", id),
+            });
         }
 
         // Check if this is a relay-based record
@@ -716,7 +737,10 @@ impl DdbClient for DdbClientImpl {
                 None => {
                     let err = "relayId is not a string".to_string();
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(BingleError::Other(err));
+                    return Err(BingleError::Send {
+                        kind: SendFailureKind::MalformedAdvert,
+                        detail: err,
+                    });
                 }
             };
 
@@ -732,7 +756,10 @@ impl DdbClient for DdbClientImpl {
                 None => {
                     let err = "missing endpoint.host".to_string();
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(BingleError::Other(err));
+                    return Err(BingleError::Send {
+                        kind: SendFailureKind::MalformedAdvert,
+                        detail: err,
+                    });
                 }
             };
             let port = match endpoint.get("port").and_then(|v| v.as_u64()) {
@@ -740,7 +767,10 @@ impl DdbClient for DdbClientImpl {
                 None => {
                     let err = "missing endpoint.port".to_string();
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(BingleError::Other(err));
+                    return Err(BingleError::Send {
+                        kind: SendFailureKind::MalformedAdvert,
+                        detail: err,
+                    });
                 }
             };
             let ip: IpAddr = match host.parse::<IpAddr>() {
@@ -748,20 +778,27 @@ impl DdbClient for DdbClientImpl {
                 Ok(_) => {
                     let err = format!("invalid host '{}': IPv6 addresses are not supported", host);
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(BingleError::Other(err));
+                    return Err(BingleError::Send {
+                        kind: SendFailureKind::MalformedAdvert,
+                        detail: err,
+                    });
                 }
                 Err(_) => {
                     let err = format!("invalid host '{}': not an IP address", host);
                     tracing::error!("[DdbClientImpl::lookup] {}", err);
-                    return Err(BingleError::Other(err));
+                    return Err(BingleError::Send {
+                        kind: SendFailureKind::MalformedAdvert,
+                        detail: err,
+                    });
                 }
             };
             let addr = SocketAddr::new(ip, port);
             return Ok(NetworkEndpoint::new_direct(addr));
         }
 
-        Err(BingleError::Other(
-            "AdvertRecord contains neither relayId nor endpoint".to_string(),
-        ))
+        Err(BingleError::Send {
+            kind: SendFailureKind::MalformedAdvert,
+            detail: "AdvertRecord contains neither relayId nor endpoint".to_string(),
+        })
     }
 }

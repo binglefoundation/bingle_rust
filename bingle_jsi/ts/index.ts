@@ -11,6 +11,7 @@ import { NativeModules, Platform } from "react-native";
 import type {
   BingleJsiConfig,
   BingleJsiApi,
+  FailureCategory,
 } from "./NativeBingleJsi";
 
 export type {
@@ -22,6 +23,7 @@ export type {
   Contact,
   HandleLookupPartialResult,
   Message,
+  FailureCategory,
   KeypairStatusResponse,
   NatTypeResponse,
   BingleJsiConfig,
@@ -148,6 +150,9 @@ export const BingleJsi = BingleJsiNative as {
       cipher_suite: string | null;
       progress?: number;
       failure_reason?: string | null;
+      // Typed failure cause + retryable flag (issue #99); absent while pending or delivered.
+      failure_category?: FailureCategory | null;
+      failure_retryable?: boolean | null;
     }[]
   >;
   queueMessage(recipientHandles: string[], text: string): Promise<void>;

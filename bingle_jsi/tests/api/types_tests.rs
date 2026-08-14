@@ -173,6 +173,8 @@ fn message_construction() {
         cipher_suite: None,
         progress: Some(1.0),
         failure_reason: None,
+        failure_category: None,
+        failure_retryable: None,
     };
     assert_eq!(msg.sender_handle, "alice");
     assert_eq!(msg.recipient_handles.len(), 2);
@@ -191,6 +193,8 @@ fn message_with_cipher_suite() {
         cipher_suite: Some("TLS_AES_256_GCM_SHA384".to_string()),
         progress: Some(0.5),
         failure_reason: Some("Retrying...".to_string()),
+        failure_category: None,
+        failure_retryable: None,
     };
     let cs = msg.cipher_suite.expect("cipher_suite should be Some");
     assert_eq!(cs, "TLS_AES_256_GCM_SHA384");

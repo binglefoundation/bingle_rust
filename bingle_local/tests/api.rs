@@ -27,6 +27,9 @@ mod offline_send_resilience;
 #[path = "api/notify_giveup.rs"]
 mod notify_giveup;
 
+#[path = "api/send_retry_classify.rs"]
+mod send_retry_classify;
+
 #[path = "api/register.rs"]
 mod register;
 
