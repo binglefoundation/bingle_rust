@@ -64,11 +64,24 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
       .toHaveText('ready')
       .withTimeout(30000);
 
-    // Init as the funded, registered account against the selected network.
+    // Init against the selected network with a messaging-specific state file (so a keypair a prior
+    // smoke run left in the shared state file is not loaded instead of ours).
     await call({
       method: 'init',
-      args: [{handle, passphrase, node_file: nodeFile, stun_servers_file: stunFile}],
+      args: [
+        {
+          handle,
+          passphrase,
+          node_file: nodeFile,
+          stun_servers_file: stunFile,
+          local: '/tmp/bingle_e2e_messaging_state.json',
+        },
+      ],
     });
+    // init only loads local state + sets the engine passphrase; it does NOT import the passphrase
+    // into the local API keypair. Import the funded account explicitly (replaces any loaded keypair)
+    // so start() sees FUNDED/ACTIVE rather than the Unfunded default (issue #111).
+    await call({method: 'importKeypair', args: [passphrase]});
     // Activate the inbound-message + listening callbacks so the harness event feed receives them.
     await call({method: 'setMessageCallback', args: []});
     await call({method: 'setListeningCallback', args: []});

@@ -48,6 +48,9 @@ case "$BINGLE_E2E_BACKEND" in
     # `echo-testnet-1` is the always-live testnet echo peer (counterpart of mainnet `echo-test-1`);
     # default to it so only the funded sender (BINGLE_E2E_HANDLE + BINGLE_E2E_PASSPHRASE) is needed.
     export BINGLE_E2E_ECHO_TO="${BINGLE_E2E_ECHO_TO:-echo-testnet-1}"
+    # Start the messaging test from a clean local state so the funded account (imported from the
+    # passphrase) is used, not a keypair left over from a previous run.
+    rm -f /tmp/bingle_e2e_messaging_state.json
     echo "==> Backend: testnet (staged node-file at $BINGLE_E2E_NODE_FILE; echo -> $BINGLE_E2E_ECHO_TO)"
     ;;
   localnet)
