@@ -87,7 +87,15 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
     await call({method: 'setListeningCallback', args: []});
     // Start the P2P engine and wait until it reports a usable return path.
     await call({method: 'start', args: []});
-    await waitForFeed('onListening true', LISTEN_TIMEOUT);
+    try {
+      await waitForFeed('onListening true', LISTEN_TIMEOUT);
+    } catch (e) {
+      // Surface the engine's log output (routed into the event feed) so a listening failure is
+      // diagnosable from the test output.
+      // eslint-disable-next-line no-console
+      console.log('DIAG event-feed at listening timeout:\n' + (await textOf('event-feed')));
+      throw e;
+    }
   });
 
   afterAll(async () => {

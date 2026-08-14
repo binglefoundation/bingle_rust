@@ -67,7 +67,7 @@ const extraDispatch: Record<string, (...args: any[]) => unknown> = {
 };
 
 /** How many event-feed lines to keep in view. */
-const MAX_EVENT_LINES = 50;
+const MAX_EVENT_LINES = 300;
 
 function App(): React.JSX.Element {
   const [ready, setReady] = useState(false);
@@ -103,8 +103,8 @@ function App(): React.JSX.Element {
       ),
       emitter.addListener(
         'onListening',
-        (e: {listening: boolean; natType: string}) => {
-          pushEvent(`onListening ${e.listening} ${e.natType}`);
+        (e: {listening: boolean; nat_type: string}) => {
+          pushEvent(`onListening ${e.listening} ${e.nat_type}`);
         },
       ),
     ];
