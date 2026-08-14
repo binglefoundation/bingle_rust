@@ -1,23 +1,35 @@
 /**
- * BingleJsi Example App
+ * BingleJsi Example App — Detox command-dispatcher harness (issue #109).
  *
- * Minimal React Native application that initializes the Bingle JSI module
- * and calls `version()`, logging the result to the console.
+ * Instead of one screen per API method (churn) or a JavaScript `eval` console (Hermes restricts
+ * `eval`, and it is unreliable on iOS), this harness exposes a single command box. You type a JSON
+ * command `{ "method": "...", "args": [...] }`; a dispatch table calls the matching method on the
+ * `BingleJsi` proxy (plus a couple of extras), awaits it, and renders the JSON result. Native
+ * callbacks (onLog / onMessage / onListening) are appended to an event feed. Every element a test
+ * drives or reads carries a stable `testID` so Detox can operate the whole API surface without any
+ * per-method UI.
  */
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
-  ActivityIndicator,
   NativeEventEmitter,
   NativeModules,
 } from 'react-native';
 
-import {initBingleJsi, BingleJsi} from 'react-native-bingle-jsi';
-import type {BingleJsiConfig} from 'react-native-bingle-jsi';
+import {
+  initBingleJsi,
+  BingleJsi,
+  failureKindIsRetryable,
+} from 'react-native-bingle-jsi';
+import type {BingleJsiConfig, FailureKind} from 'react-native-bingle-jsi';
 
+/** Default config used when `init` is invoked without an explicit argument. */
 const defaultConfig: BingleJsiConfig = {
   handle: 'example-user',
   passphrase: null,
@@ -34,124 +46,184 @@ const defaultConfig: BingleJsiConfig = {
   local: null,
 };
 
+type CommandStatus = 'idle' | 'running' | 'ok' | 'error';
+
+/**
+ * Extra dispatch entries that are not plain methods on the `BingleJsi` proxy: `init` (a top-level
+ * export that must run before other methods) and the pure `failureKindIsRetryable` helper. Any other
+ * method name falls through to `BingleJsi[method]` in {@link runCommand}.
+ */
+const extraDispatch: Record<string, (...args: any[]) => unknown> = {
+  init: (config?: BingleJsiConfig) => initBingleJsi(config ?? defaultConfig),
+  failureKindIsRetryable: (kind: FailureKind) => failureKindIsRetryable(kind),
+};
+
+/** How many event-feed lines to keep in view. */
+const MAX_EVENT_LINES = 50;
+
 function App(): React.JSX.Element {
-  const [versionInfo, setVersionInfo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [command, setCommand] = useState('{"method":"version","args":[]}');
+  const [status, setStatus] = useState<CommandStatus>('idle');
+  const [output, setOutput] = useState('');
+  const [events, setEvents] = useState<string[]>([]);
+  const eventsRef = useRef<string[]>([]);
 
-  useEffect(() => {
-    async function run() {
-      try {
-        // Set up log forwarding BEFORE init so that logs emitted during
-        // initialization are captured in the JS console.
-        const emitter = new NativeEventEmitter(NativeModules.BingleJsi);
-        emitter.addListener('onLog', (event: {timestamp: number; level: string; message: string}) => {
-          const ts = new Date(event.timestamp).toISOString();
-          const line = `[Bingle/${event.level}] ${ts} ${event.message}`;
-          switch (event.level) {
-            case 'ERROR':
-              console.error(line);
-              break;
-            case 'WARN':
-              console.warn(line);
-              break;
-            case 'DEBUG':
-            case 'TRACE':
-              console.debug(line);
-              break;
-            default:
-              console.log(line);
-              break;
-          }
-        });
-        await BingleJsi.setLogCallback(defaultConfig.log_level);
-        console.log('[BingleJsiExample] Log callback registered (before init).');
-
-        // version() can also be called before init
-        console.log('[BingleJsiExample] Calling version() (before init)...');
-        const version = await BingleJsi.version();
-        const versionStr = `v${version.version} (build ${version.build_number}, ${version.build_timestamp})`;
-        console.log(`[BingleJsiExample] Version: ${versionStr}`);
-        setVersionInfo(versionStr);
-
-        console.log('[BingleJsiExample] Initializing BingleJsi...');
-        await initBingleJsi(defaultConfig);
-        console.log('[BingleJsiExample] BingleJsi initialized successfully.');
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[BingleJsiExample] Error: ${msg}`);
-        setError(msg);
-      } finally {
-        setLoading(false);
-      }
-    }
-    run();
+  const pushEvent = useCallback((line: string) => {
+    const next = [...eventsRef.current, line].slice(-MAX_EVENT_LINES);
+    eventsRef.current = next;
+    setEvents(next);
   }, []);
+
+  // Register native event listeners once, before any command runs, so callbacks emitted during init
+  // or delivery are captured. We deliberately do NOT auto-init: the e2e drives the lifecycle via the
+  // command box so each test controls it.
+  useEffect(() => {
+    const emitter = new NativeEventEmitter(NativeModules.BingleJsi);
+    const subs = [
+      emitter.addListener(
+        'onLog',
+        (e: {timestamp: number; level: string; message: string}) => {
+          pushEvent(`onLog ${e.level} ${e.message}`);
+        },
+      ),
+      emitter.addListener(
+        'onMessage',
+        (e: {senderId: string; senderHandle: string; message: unknown}) => {
+          pushEvent(`onMessage ${e.senderHandle} ${JSON.stringify(e.message)}`);
+        },
+      ),
+      emitter.addListener(
+        'onListening',
+        (e: {listening: boolean; natType: string}) => {
+          pushEvent(`onListening ${e.listening} ${e.natType}`);
+        },
+      ),
+    ];
+    // Route native logs into the event feed from the start (safe before init).
+    BingleJsi.setLogCallback(defaultConfig.log_level)
+      .catch((err: unknown) =>
+        pushEvent(`setLogCallback error: ${String(err)}`),
+      )
+      .finally(() => setReady(true));
+    return () => subs.forEach(s => s.remove());
+  }, [pushEvent]);
+
+  const runCommand = useCallback(async () => {
+    setStatus('running');
+    setOutput('');
+    try {
+      const parsed = JSON.parse(command) as {method?: string; args?: unknown[]};
+      const method = parsed.method;
+      const args = parsed.args ?? [];
+      if (!method) {
+        throw new Error('command must include a "method"');
+      }
+      const fn =
+        extraDispatch[method] ?? (BingleJsi as Record<string, any>)[method];
+      if (typeof fn !== 'function') {
+        throw new Error(`unknown method: ${method}`);
+      }
+      const result = await fn.apply(BingleJsi, args as unknown[]);
+      // `undefined` (void methods) render as `null` so the output element is always valid JSON.
+      setOutput(JSON.stringify(result ?? null));
+      setStatus('ok');
+    } catch (e: unknown) {
+      setOutput(e instanceof Error ? e.message : String(e));
+      setStatus('error');
+    }
+  }, [command]);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Bingle JSI Example</Text>
+        <Text style={styles.title}>Bingle JSI Harness</Text>
+        <Text testID="app-ready" style={styles.ready}>
+          {ready ? 'ready' : 'starting'}
+        </Text>
 
-        {loading && (
-          <View style={styles.row}>
-            <ActivityIndicator size="small" />
-            <Text style={styles.label}> Initializing...</Text>
-          </View>
-        )}
+        <Text style={styles.label}>Command (JSON: {'{'}method, args{'}'})</Text>
+        <TextInput
+          testID="cmd-input"
+          style={styles.input}
+          value={command}
+          onChangeText={setCommand}
+          autoCapitalize="none"
+          autoCorrect={false}
+          multiline
+        />
+        <TouchableOpacity
+          testID="cmd-run"
+          style={styles.button}
+          onPress={runCommand}>
+          <Text style={styles.buttonText}>Run</Text>
+        </TouchableOpacity>
 
-        {versionInfo && (
-          <View style={styles.row}>
-            <Text style={styles.label}>Version: </Text>
-            <Text style={styles.value}>{versionInfo}</Text>
-          </View>
-        )}
+        <Text style={styles.label}>Status</Text>
+        <Text testID="cmd-status" style={styles.value}>
+          {status}
+        </Text>
 
-        {error && (
-          <View style={styles.row}>
-            <Text style={styles.error}>Error: {error}</Text>
-          </View>
-        )}
+        <Text style={styles.label}>Output</Text>
+        <ScrollView style={styles.outputBox}>
+          <Text testID="cmd-output" style={styles.mono}>
+            {output}
+          </Text>
+        </ScrollView>
+
+        <Text style={styles.label}>Events</Text>
+        <ScrollView style={styles.eventBox}>
+          <Text testID="event-feed" style={styles.mono}>
+            {events.join('\n')}
+          </Text>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  container: {flex: 1, backgroundColor: '#f5f5f5'},
+  content: {flex: 1, padding: 16},
+  title: {fontSize: 22, fontWeight: 'bold', color: '#333'},
+  ready: {fontSize: 14, color: '#0a7', marginBottom: 12},
+  label: {fontSize: 13, color: '#666', marginTop: 12, marginBottom: 4},
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    padding: 8,
+    minHeight: 60,
+    fontFamily: 'Courier',
+    fontSize: 13,
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
+  button: {
+    marginTop: 10,
+    backgroundColor: '#2563eb',
+    borderRadius: 6,
+    paddingVertical: 10,
     alignItems: 'center',
-    padding: 20,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 30,
-    color: '#333',
+  buttonText: {color: '#fff', fontWeight: '600', fontSize: 15},
+  value: {fontSize: 15, fontWeight: '600', color: '#333'},
+  outputBox: {
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    padding: 8,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 8,
+  eventBox: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    padding: 8,
   },
-  label: {
-    fontSize: 16,
-    color: '#666',
-  },
-  value: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  error: {
-    fontSize: 16,
-    color: '#cc0000',
-  },
+  mono: {fontFamily: 'Courier', fontSize: 12, color: '#333'},
 });
 
 export default App;
