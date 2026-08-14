@@ -66,8 +66,8 @@ bash bingle_jsi/scripts/build_ios.sh
 cd bingle_jsi/example
 npm install --legacy-peer-deps
 
-# 3. Generate the Xcode project (first time only)
-npx --yes @react-native-community/cli init BingleJsiExample --version 0.85.2 --directory /tmp/rn-init --skip-install --skip-git-init
+# 3. Generate the Xcode project (first time only). Version tracks the pin in package.json (0.84.1).
+npx --yes @react-native-community/cli init BingleJsiExample --version 0.84.1 --directory /tmp/rn-init --skip-install --skip-git-init
 cp -R /tmp/rn-init/ios/* ios/
 rm -rf /tmp/rn-init
 

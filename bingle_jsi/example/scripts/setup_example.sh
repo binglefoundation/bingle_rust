@@ -49,11 +49,14 @@ XCODEPROJ="$EXAMPLE_DIR/ios/BingleJsiExample.xcodeproj"
 if [[ ! -d "$XCODEPROJ" ]]; then
   echo "Step 3: Generating Xcode project..."
   # Use react-native's init to create ios/ project scaffolding
-  # We use a temp project and copy the ios/ folder
+  # We use a temp project and copy the ios/ folder.
+  # The scaffold version tracks the example's pinned react-native (see package.json),
+  # currently 0.84.1 (Detox-supported; see #109/#115). NOTE: this generation path is not yet
+  # validated end to end on 0.84.1 — see the #109 native-build sub-issue.
   TMPDIR_INIT="$(mktemp -d)"
   cd "$TMPDIR_INIT"
 
-  npx --yes @react-native-community/cli@12.3.6 init BingleJsiExample --version 0.73.4 --skip-install --skip-git-init 2>&1 || true
+  npx --yes @react-native-community/cli@latest init BingleJsiExample --version 0.84.1 --skip-install --skip-git-init 2>&1 || true
 
   if [[ -d "$TMPDIR_INIT/BingleJsiExample/ios" ]]; then
     # Copy generated ios project files (keep our Podfile)
