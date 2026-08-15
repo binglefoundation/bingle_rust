@@ -15,7 +15,9 @@ set -euo pipefail
 #   BINGLE_E2E_PASSPHRASE=<mnemonic>      funded, already-registered sender account (send/echo test)
 #   BINGLE_E2E_HANDLE=<handle>            that account's registered handle
 #   BINGLE_E2E_ECHO_TO=<handle>           a live echo peer/relay to send to (replies "Echo: ...")
-# The messaging test skips cleanly when these are unset; the smoke test ignores them.
+#   BINGLE_E2E_OFFLINE_HANDLE=<handle>    (optional) a handle registered but offline, for the
+#                                         RecipientNotAdvertised failure-cause case (#112)
+# The messaging/failure tests skip cleanly when these are unset; the smoke test ignores them.
 #
 # One-time prerequisites: Xcode + command-line tools, CocoaPods, Node, Rust with iOS targets, and
 # applesimutils (a newer Homebrew needs the tap trusted):
@@ -48,9 +50,9 @@ case "$BINGLE_E2E_BACKEND" in
     # `echo-testnet-1` is the always-live testnet echo peer (counterpart of mainnet `echo-test-1`);
     # default to it so only the funded sender (BINGLE_E2E_HANDLE + BINGLE_E2E_PASSPHRASE) is needed.
     export BINGLE_E2E_ECHO_TO="${BINGLE_E2E_ECHO_TO:-echo-testnet-1}"
-    # Start the messaging test from a clean local state so the funded account (imported from the
+    # Start the network tests from clean local state so the funded account (imported from the
     # passphrase) is used, not a keypair left over from a previous run.
-    rm -f /tmp/bingle_e2e_messaging_state.json
+    rm -f /tmp/bingle_e2e_messaging_state.json /tmp/bingle_e2e_failure_state.json
     echo "==> Backend: testnet (staged node-file at $BINGLE_E2E_NODE_FILE; echo -> $BINGLE_E2E_ECHO_TO)"
     ;;
   localnet)

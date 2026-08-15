@@ -517,6 +517,7 @@ sender are provided via the environment (so the default run stays offline):
 | `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered sender account |
 | `BINGLE_E2E_HANDLE` | that account's registered handle |
 | `BINGLE_E2E_ECHO_TO` | echo peer handle; defaults to `echo-testnet-1` on testnet |
+| `BINGLE_E2E_OFFLINE_HANDLE` | optional; a handle registered but offline, for the `RecipientNotAdvertised` failure-cause case (#112) |
 
 `run_e2e_ios.sh` stages the node-file (`nodely_staging_testnet_node.json` for
 testnet) and `stunservers.txt` to `/tmp` and passes the env through. On testnet
@@ -528,6 +529,12 @@ BINGLE_E2E_PASSPHRASE="word word … word" \
 BINGLE_E2E_HANDLE=my-testnet-handle \
   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
 ```
+
+`e2e/messaging.test.js` (#111) covers send + echo; `e2e/failure_causes.test.js`
+(#112, validates #99) covers typed failure causes — an unregistered handle →
+`HandleNotFound` (permanent), and, when `BINGLE_E2E_OFFLINE_HANDLE` is set, a
+registered-but-offline recipient → `RecipientNotAdvertised` (retryable) — read
+via `getMessages().failure_kind` and the `failureKindIsRetryable` helper.
 
 ---
 
