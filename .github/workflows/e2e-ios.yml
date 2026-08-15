@@ -63,7 +63,11 @@ jobs:
           # Use the qemu driver: Colima's default vz (Virtualization.framework) driver fails to boot
           # the VM on GitHub's Apple-silicon macOS runners (fatal during disk conversion). qemu with
           # HVF acceleration boots reliably there.
-          colima start --vm-type=qemu --cpu 2 --memory 4 --disk 20
+          # --mount-type=9p: algokit localnet's algod container chowns a bind-mounted host dir
+          # (~/.config/algokit/.../goal_mount); the default mount driver rejects chown ("permission
+          # denied"). 9p persists ownership via mapped xattrs so the chown succeeds. (virtiofs would
+          # also work but needs the vz driver, which does not boot here.)
+          colima start --vm-type=qemu --mount-type=9p --cpu 2 --memory 4 --disk 20
           colima status
           echo "DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock" >> "$GITHUB_ENV"
 
