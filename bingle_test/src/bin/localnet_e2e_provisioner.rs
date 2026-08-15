@@ -226,6 +226,14 @@ fn main() {
         "[provision] ready: app_id={app_id} asset_id={asset_id} sender='{SENDER_HANDLE}' \
          echo='{ECHO_HANDLE}' offline='{OFFLINE_HANDLE}'"
     );
+    // One-shot mode (CI smoke, issue #127): provisioning succeeded (the env file is only written
+    // after the relays reach Available and handles are indexer-visible), so exit cleanly instead of
+    // parking. Real e2e runs leave this unset so the relays/echo peer stay alive for the simulator.
+    if std::env::var_os("BINGLE_E2E_PROVISION_ONESHOT").is_some() {
+        println!("PROVISIONER READY (env file: {env_file}). One-shot mode: exiting 0.");
+        return;
+    }
+
     println!("PROVISIONER READY (env file: {env_file}). Ctrl-C / SIGTERM to stop.");
 
     // Park until killed. The relays/echo peer/STUN servers are threads/sockets in this process and

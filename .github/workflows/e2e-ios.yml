@@ -1,0 +1,104 @@
+name: e2e-ios
+
+# Localnet end-to-end (e2e) for bingle_jsi on a macOS runner (issue #110).
+#
+# This first stage (issue #127) boots an Algorand localnet via Colima + algokit and runs the
+# localnet provisioner (bingle_test's localnet_e2e_provisioner) headless to readiness — proving the
+# Docker-on-macOS path works before the iOS simulator + Detox suites are added (#128). The iOS
+# simulator forces a macOS runner, and GitHub-hosted macOS runners have no Docker, so algokit
+# localnet (Docker Compose) is brought up via Colima on the same host.
+#
+# Runs on pushes to staging and manual dispatch only, to keep macOS runner usage (a limited
+# public-repo resource) bounded. See CI-E2E.md.
+on:
+  push:
+    # TEMP (#127 validation): also run on the feature branch so the workflow can be exercised before
+    # it lands on the default branch (workflow_dispatch only works once the file is on staging).
+    # Revert to `[staging]` before marking the PR ready.
+    branches: [staging, feat/127-e2e-ci-localnet-provision]
+  workflow_dispatch:
+
+# Latest-push-wins ("heap not queue"): a newer run in the same group cancels the older in-flight one,
+# so staging is always graded on its most recent push rather than queueing runs.
+concurrency:
+  group: e2e-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  localnet-provision:
+    name: localnet-provision
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # algokit is a Python CLI; the provisioner shells out to `algokit goal ...` / `algokit
+      # localnet ...`. pipx and python3 are preinstalled on the macOS image.
+      - name: Install algokit
+        run: |
+          pipx install algokit
+          pipx ensurepath
+          algokit --version
+
+      # GitHub macOS runners ship no Docker daemon. Colima provides one (Virtualization.framework on
+      # Apple silicon). Symlink the compose binary into the CLI plugins dir so `docker compose` (the
+      # form algokit uses) resolves, and export the Colima socket for the later steps.
+      - name: Start Docker (Colima)
+        run: |
+          brew install colima docker docker-compose
+          mkdir -p ~/.docker/cli-plugins
+          ln -sfn "$(brew --prefix)/bin/docker-compose" ~/.docker/cli-plugins/docker-compose
+          colima start --cpu 2 --memory 4 --disk 20
+          echo "DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock" >> "$GITHUB_ENV"
+
+      - name: Verify Docker
+        run: |
+          docker version
+          docker compose version
+
+      # Pulls the algod/indexer images and starts the containers; blocks until healthy. The extra
+      # port probe is belt-and-suspenders before the provisioner connects to algod (4001) /
+      # indexer (8980).
+      - name: Start algokit localnet
+        run: |
+          algokit localnet start
+          for _ in $(seq 1 60); do
+            if nc -z localhost 4001 && nc -z localhost 8980; then break; fi
+            sleep 2
+          done
+          nc -z localhost 4001 && nc -z localhost 8980 || { echo "localnet not reachable on 4001/8980"; exit 1; }
+
+      - name: Build provisioner
+        run: cargo build --locked -p bingle_test --features localnet --bin localnet_e2e_provisioner
+
+      # One-shot: the provisioner deploys the app+asset, brings up relays/STUN/echo peer, registers
+      # the fixtures, and writes the readiness env file — only after the relays reach Available and
+      # the handles are indexer-visible. In one-shot mode it then exits 0 instead of parking, so a
+      # written env file with the expected keys means provisioning succeeded.
+      - name: Provision localnet (one-shot) and assert readiness
+        env:
+          BINGLE_E2E_PROVISION_ONESHOT: "1"
+        run: |
+          rm -f /tmp/bingle_e2e_localnet.env
+          ./target/debug/localnet_e2e_provisioner
+          echo "== readiness env file =="
+          cat /tmp/bingle_e2e_localnet.env
+          test "$(grep -c '^export BINGLE_E2E_' /tmp/bingle_e2e_localnet.env)" -ge 6
+
+      - name: Teardown
+        if: always()
+        run: |
+          algokit localnet stop || true
+          colima stop || true
