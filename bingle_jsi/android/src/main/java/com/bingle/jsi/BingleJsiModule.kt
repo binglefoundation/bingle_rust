@@ -34,7 +34,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     debug = if (config.hasKey("debug")) config.getBoolean("debug") else false,
                     local = config.tryGetString("local"),
                     notifyGatewayUrl = config.tryGetString("notify_gateway_url"),
-                    notifyOnGiveup = config.tryGetBoolean("notify_on_giveup")
+                    notifyOnGiveup = config.tryGetBoolean("notify_on_giveup"),
+                    notifyEnv = config.tryGetString("notify_env")
                 )
                 val api = createBingleApi(jsiConfig)
                 apiInstance = api
@@ -120,14 +121,11 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun version(promise: Promise) {
-        val api = apiInstance
-        if (api == null) {
-            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
-            return
-        }
         Thread {
             try {
-                val info = api.version()
+                // version() works before init — it only reads compile-time constants. Delegate to the
+                // instance if initialized, else use the free getVersion() (mirrors the iOS bridge).
+                val info = apiInstance?.version() ?: getVersion()
                 val map = Arguments.createMap()
                 map.putString("version", info.version)
                 if (info.gitSha != null) map.putString("git_sha", info.gitSha) else map.putNull("git_sha")
@@ -385,7 +383,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 val handles = mutableListOf<String>()
                 for (i in 0 until recipientHandles.size()) {
-                    handles.add(recipientHandles.getString(i))
+                    recipientHandles.getString(i)?.let { handles.add(it) }
                 }
                 api.addMessage(senderHandle, handles, timestamp.toLong(), text, cipherSuite)
                 promise.resolve(null)
@@ -415,7 +413,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     map.putDouble("timestamp", m.timestamp.toDouble())
                     map.putString("text", m.text)
                     if (m.cipherSuite != null) map.putString("cipher_suite", m.cipherSuite) else map.putNull("cipher_suite")
-                    map.putDouble("progress", m.progress.toDouble())
+                    map.putDouble("progress", (m.progress ?: 0.0f).toDouble())
                     if (m.failureReason != null) map.putString("failure_reason", m.failureReason) else map.putNull("failure_reason")
                     // Typed failure cause (issue #99); without this the kind never reaches JS.
                     if (m.failureKind != null) map.putString("failure_kind", failureKindToString(m.failureKind!!)) else map.putNull("failure_kind")
@@ -439,7 +437,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 val handles = mutableListOf<String>()
                 for (i in 0 until recipientHandles.size()) {
-                    handles.add(recipientHandles.getString(i))
+                    recipientHandles.getString(i)?.let { handles.add(it) }
                 }
                 api.queueMessage(handles, text)
                 promise.resolve(null)
@@ -597,6 +595,31 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
+    // Route engine logs into "onLog" events. Works before init: if the API is initialized, register
+    // on the instance; otherwise set the global log callback so logs during init are captured
+    // (mirrors the iOS bridge).
+    @ReactMethod
+    fun setLogCallback(logLevel: String?, promise: Promise) {
+        val bridge = LogCallbackBridge(reactApplicationContext)
+        val api = apiInstance
+        if (api != null) {
+            api.setLogCallback(bridge)
+        } else {
+            setLogCallbackGlobal(bridge, logLevel)
+        }
+        promise.resolve(null)
+    }
+
+    // Required by React Native's NativeEventEmitter on Android. RCTDeviceEventEmitter needs no
+    // per-listener bookkeeping here, so these are no-ops that simply satisfy the interface.
+    @ReactMethod
+    fun addListener(eventName: String) {
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+    }
+
     // -- Helper conversions --
 
     private fun ReadableMap.tryGetString(key: String): String? =
@@ -614,7 +637,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         tag = map.tryGetString("tag"),
         responseTag = map.tryGetString("response_tag"),
         text = map.tryGetString("text"),
-        data = map.tryGetString("data")
+        data = map.tryGetString("data"),
+        cipherSuite = map.tryGetString("cipher_suite")
     )
 
     private fun messageToMap(msg: BingleMessage): WritableMap {
@@ -625,6 +649,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         if (msg.responseTag != null) map.putString("response_tag", msg.responseTag) else map.putNull("response_tag")
         if (msg.text != null) map.putString("text", msg.text) else map.putNull("text")
         if (msg.data != null) map.putString("data", msg.data) else map.putNull("data")
+        if (msg.cipherSuite != null) map.putString("cipher_suite", msg.cipherSuite) else map.putNull("cipher_suite")
         return map
     }
 
@@ -706,5 +731,22 @@ class ListeningCallbackBridge(private val reactContext: ReactApplicationContext)
         reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onListening", body)
+    }
+}
+
+/**
+ * Bridges uniffi's LogCallback to React Native "onLog" events, so engine logs surface in JS
+ * (mirrors the iOS bridge).
+ */
+class LogCallbackBridge(private val reactContext: ReactApplicationContext) : LogCallback {
+    override fun onLog(timestamp: Long, level: String, message: String) {
+        val body = Arguments.createMap()
+        body.putDouble("timestamp", timestamp.toDouble())
+        body.putString("level", level)
+        body.putString("message", message)
+
+        reactContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onLog", body)
     }
 }
