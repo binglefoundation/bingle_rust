@@ -58,12 +58,16 @@ type CommandStatus = 'idle' | 'running' | 'ok' | 'error';
  * method name falls through to `BingleJsi[method]` in {@link runCommand}.
  */
 const extraDispatch: Record<string, (...args: any[]) => unknown> = {
-  init: (config?: BingleJsiConfig) => initBingleJsi(config ?? defaultConfig),
+  // Merge the passed (partial) config over the defaults, so a test can override just the fields it
+  // needs — e.g. `{ handle, passphrase, node_file, stun_servers_file }` to point at a real network
+  // with a funded account (issue #111) — while keeping the rest of the harness defaults.
+  init: (config?: Partial<BingleJsiConfig>) =>
+    initBingleJsi({...defaultConfig, ...(config ?? {})}),
   failureKindIsRetryable: (kind: FailureKind) => failureKindIsRetryable(kind),
 };
 
 /** How many event-feed lines to keep in view. */
-const MAX_EVENT_LINES = 50;
+const MAX_EVENT_LINES = 300;
 
 function App(): React.JSX.Element {
   const [ready, setReady] = useState(false);
@@ -99,8 +103,8 @@ function App(): React.JSX.Element {
       ),
       emitter.addListener(
         'onListening',
-        (e: {listening: boolean; natType: string}) => {
-          pushEvent(`onListening ${e.listening} ${e.natType}`);
+        (e: {listening: boolean; nat_type: string}) => {
+          pushEvent(`onListening ${e.listening} ${e.nat_type}`);
         },
       ),
     ];

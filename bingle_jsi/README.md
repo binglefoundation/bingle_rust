@@ -504,6 +504,31 @@ new `e2e/*.test.js` that uses the `call({ method, args })` helper in
 `e2e/harness.js` — no per-method UI. Notes and gotchas are documented in
 `bingle_jsi/example/README.md` and inline in those files.
 
+#### Network e2e — send + echo (issue #111)
+
+`e2e/messaging.test.js` drives the full send/receive path against a real network:
+it sends a message to a live echo peer and asserts both delivery and the echoed
+reply. It **skips cleanly** unless a backend and a funded, already-registered
+sender are provided via the environment (so the default run stays offline):
+
+| Env var | Meaning |
+| --- | --- |
+| `BINGLE_E2E_BACKEND` | `testnet` (default) or `localnet` (not yet supported) |
+| `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered sender account |
+| `BINGLE_E2E_HANDLE` | that account's registered handle |
+| `BINGLE_E2E_ECHO_TO` | echo peer handle; defaults to `echo-testnet-1` on testnet |
+
+`run_e2e_ios.sh` stages the node-file (`nodely_staging_testnet_node.json` for
+testnet) and `stunservers.txt` to `/tmp` and passes the env through. On testnet
+`BINGLE_E2E_ECHO_TO` defaults to the always-live `echo-testnet-1`, so you only
+supply the funded sender:
+
+```bash
+BINGLE_E2E_PASSPHRASE="word word … word" \
+BINGLE_E2E_HANDLE=my-testnet-handle \
+  bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only
+```
+
 ---
 
 ### API Reference
