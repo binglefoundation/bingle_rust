@@ -57,10 +57,14 @@ jobs:
       # form algokit uses) resolves, and export the Colima socket for the later steps.
       - name: Start Docker (Colima)
         run: |
-          brew install colima docker docker-compose
+          brew install colima docker docker-compose qemu
           mkdir -p ~/.docker/cli-plugins
           ln -sfn "$(brew --prefix)/bin/docker-compose" ~/.docker/cli-plugins/docker-compose
-          colima start --cpu 2 --memory 4 --disk 20
+          # Use the qemu driver: Colima's default vz (Virtualization.framework) driver fails to boot
+          # the VM on GitHub's Apple-silicon macOS runners (fatal during disk conversion). qemu with
+          # HVF acceleration boots reliably there.
+          colima start --vm-type=qemu --cpu 2 --memory 4 --disk 20
+          colima status
           echo "DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock" >> "$GITHUB_ENV"
 
       - name: Verify Docker
