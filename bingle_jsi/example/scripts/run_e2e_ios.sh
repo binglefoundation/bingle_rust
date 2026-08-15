@@ -11,13 +11,20 @@ set -euo pipefail
 #   bash bingle_jsi/example/scripts/run_e2e_ios.sh --test-only  # fast: skip setup, just run the e2e
 #
 # Backend for the network e2e (issue #111), via environment:
-#   BINGLE_E2E_BACKEND=testnet|localnet   default testnet; localnet not yet implemented
-#   BINGLE_E2E_PASSPHRASE=<mnemonic>      funded, already-registered sender account (send/echo test)
-#   BINGLE_E2E_HANDLE=<handle>            that account's registered handle
+#   BINGLE_E2E_BACKEND=testnet|localnet   default testnet
+#   BINGLE_E2E_PASSPHRASE=<mnemonic>      funded, already-registered sender account (testnet only)
+#   BINGLE_E2E_HANDLE=<handle>            that account's registered handle (testnet only)
 #   BINGLE_E2E_ECHO_TO=<handle>           a live echo peer/relay to send to (replies "Echo: ...")
 #   BINGLE_E2E_OFFLINE_HANDLE=<handle>    (optional) a handle registered but offline, for the
 #                                         RecipientNotAdvertised failure-cause case (#112)
 # The messaging/failure tests skip cleanly when these are unset; the smoke test ignores them.
+#
+# localnet (issue #123) is self-provisioning: a Rust provisioner binary (bingle_test
+# localnet_e2e_provisioner) stands up a deployed app + asset, two root relays, STUN servers, an
+# in-process echo peer and funded/registered sender + offline-fixture accounts on the running
+# `algokit localnet`, then writes the node-file, STUN list and a BINGLE_E2E_* env file this script
+# sources — so no credentials need to be supplied by hand. It needs `algokit localnet` running and
+# the `algokit`/`goal` CLIs on PATH.
 #
 # One-time prerequisites: Xcode + command-line tools, CocoaPods, Node, Rust with iOS targets, and
 # applesimutils (a newer Homebrew needs the tap trusted):
@@ -37,12 +44,23 @@ if ! command -v applesimutils >/dev/null 2>&1; then
   exit 1
 fi
 
+# Background processes we own; killed on exit via a single cleanup trap so neither the localnet
+# provisioner nor a headless Metro instance is left running after the suite finishes.
+PROVISIONER_PID=""
+METRO_BG_PID=""
+cleanup() {
+  [[ -n "$PROVISIONER_PID" ]] && kill "$PROVISIONER_PID" 2>/dev/null || true
+  [[ -n "$METRO_BG_PID" ]] && kill "$METRO_BG_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # Backend selector (issue #111): stage the node-file + STUN list the network e2e will init() with,
 # to a simulator-readable path (the sim can read the Mac's /tmp). Tests that need a real network
 # read BINGLE_E2E_* from the environment; the smoke test ignores them.
 export BINGLE_E2E_BACKEND="${BINGLE_E2E_BACKEND:-testnet}"
 export BINGLE_E2E_NODE_FILE=/tmp/bingle_e2e_node.json
 export BINGLE_E2E_STUN_FILE=/tmp/bingle_e2e_stun.txt
+export BINGLE_E2E_ENV_FILE=/tmp/bingle_e2e_localnet.env
 case "$BINGLE_E2E_BACKEND" in
   testnet)
     cp "$ROOT_DIR/nodely_staging_testnet_node.json" "$BINGLE_E2E_NODE_FILE"
@@ -56,9 +74,24 @@ case "$BINGLE_E2E_BACKEND" in
     echo "==> Backend: testnet (staged node-file at $BINGLE_E2E_NODE_FILE; echo -> $BINGLE_E2E_ECHO_TO)"
     ;;
   localnet)
-    echo "Error: BINGLE_E2E_BACKEND=localnet is not implemented yet (#111 follow-up)." >&2
-    echo "       It needs an echo peer + relays booted alongside the simulator; use testnet." >&2
-    exit 1
+    if ! command -v algokit >/dev/null 2>&1; then
+      echo "Error: BINGLE_E2E_BACKEND=localnet needs the algokit CLI on PATH." >&2
+      exit 1
+    fi
+    echo "==> Backend: localnet (self-provisioning via localnet_e2e_provisioner)"
+    echo "==> Ensuring algokit localnet is running"
+    algokit localnet start
+
+    echo "==> Building the localnet provisioner (bingle_test, localnet feature)"
+    cargo build --manifest-path "$ROOT_DIR/Cargo.toml" -p bingle_test --features localnet \
+      --bin localnet_e2e_provisioner
+
+    # The provisioner writes the env file last, as its readiness signal; remove any stale copy so we
+    # don't source a previous run's ids. Also clear the network tests' local state (as testnet does).
+    rm -f "$BINGLE_E2E_ENV_FILE" /tmp/bingle_e2e_messaging_state.json /tmp/bingle_e2e_failure_state.json
+    echo "==> Starting the localnet provisioner in the background"
+    "$ROOT_DIR/target/debug/localnet_e2e_provisioner" >/tmp/bingle_e2e_provisioner.log 2>&1 &
+    PROVISIONER_PID=$!
     ;;
   *)
     echo "Error: unknown BINGLE_E2E_BACKEND='$BINGLE_E2E_BACKEND' (expected testnet|localnet)" >&2
@@ -80,6 +113,30 @@ if ! $TEST_ONLY; then
 
   echo "==> Building the app in the Detox debug configuration"
   npm run e2e:build:ios
+fi
+
+# For localnet, wait for the provisioner to publish credentials (node-file/STUN already staged by
+# it) and source them, so the messaging + failure-cause tests have BINGLE_E2E_* set. The build above
+# runs concurrently with provisioning, so by now it is usually already up.
+if [[ "$BINGLE_E2E_BACKEND" == "localnet" ]]; then
+  echo "==> Waiting for the localnet provisioner to become ready (env file $BINGLE_E2E_ENV_FILE)"
+  for _ in $(seq 1 600); do
+    [[ -f "$BINGLE_E2E_ENV_FILE" ]] && break
+    if ! kill -0 "$PROVISIONER_PID" 2>/dev/null; then
+      echo "Error: the localnet provisioner exited before becoming ready. Last log lines:" >&2
+      tail -n 40 /tmp/bingle_e2e_provisioner.log >&2 || true
+      exit 1
+    fi
+    sleep 1
+  done
+  if [[ ! -f "$BINGLE_E2E_ENV_FILE" ]]; then
+    echo "Error: the localnet provisioner did not become ready within 600s." >&2
+    tail -n 40 /tmp/bingle_e2e_provisioner.log >&2 || true
+    exit 1
+  fi
+  # shellcheck disable=SC1090
+  source "$BINGLE_E2E_ENV_FILE"
+  echo "==> localnet ready: sender='$BINGLE_E2E_HANDLE' echo -> $BINGLE_E2E_ECHO_TO offline='$BINGLE_E2E_OFFLINE_HANDLE'"
 fi
 
 # The Debug app loads JS from Metro. Match `react-native run-ios`: run Metro in its own foreground
@@ -109,8 +166,7 @@ OSA
 else
   echo "==> Starting Metro in the background (no Terminal available)"
   npx react-native start >/tmp/bingle_metro.log 2>&1 &
-  # shellcheck disable=SC2064
-  trap "kill $! 2>/dev/null || true" EXIT
+  METRO_BG_PID=$!
   wait_for_metro
 fi
 

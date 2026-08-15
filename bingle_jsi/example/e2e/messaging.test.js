@@ -6,7 +6,7 @@
  *
  * Backend + credentials come from the environment (staged by run_e2e_ios.sh). The suite skips
  * cleanly when they are unset, so it is a no-op without a funded account:
- *   BINGLE_E2E_BACKEND     testnet|localnet (localnet not yet supported)
+ *   BINGLE_E2E_BACKEND     testnet|localnet (localnet is self-provisioned by run_e2e_ios.sh, #123)
  *   BINGLE_E2E_NODE_FILE   staged node-file path (e.g. /tmp/bingle_e2e_node.json)
  *   BINGLE_E2E_STUN_FILE   staged STUN list path
  *   BINGLE_E2E_PASSPHRASE  mnemonic of a funded, already-registered sender account
