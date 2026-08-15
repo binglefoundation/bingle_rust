@@ -1,9 +1,11 @@
 /**
- * Detox configuration for the bingle_jsi example harness (issue #109).
+ * Detox configuration for the bingle_jsi example harness (issue #109; Android added in #130).
  *
  * iOS needs no native project changes — Detox is configured entirely here; just run
- * `cd ios && pod install` before the first build. The app is driven through the command-dispatcher
- * screen in App.tsx (see e2e/*.test.js), so this same config exercises the whole BingleJsi surface.
+ * `cd ios && pod install` before the first build. Android needs the Detox instrumentation wired into
+ * `android/app` (androidTest deps + a DetoxTest runner + a test-runner override in build.gradle).
+ * The app is driven through the command-dispatcher screen in App.tsx (see e2e/*.test.js), so the
+ * same config exercises the whole BingleJsi surface on both platforms.
  */
 /** @type {Detox.DetoxConfig} */
 module.exports = {
@@ -27,6 +29,16 @@ module.exports = {
       build:
         'xcodebuild -workspace ios/BingleJsiExample.xcworkspace -scheme BingleJsiExample -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES',
     },
+    'android.debug': {
+      type: 'android.apk',
+      binaryPath: 'android/app/build/outputs/apk/debug/app-debug.apk',
+      testBinaryPath:
+        'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk',
+      // Build both the app and the androidTest (Detox instrumentation) APKs.
+      build:
+        'cd android && ./gradlew :app:assembleDebug :app:assembleAndroidTest -DtestBuildType=debug && cd ..',
+      reversePorts: [8081],
+    },
   },
   devices: {
     simulator: {
@@ -36,11 +48,22 @@ module.exports = {
         type: 'iPhone 16',
       },
     },
+    emulator: {
+      type: 'android.emulator',
+      device: {
+        // Adjust to any installed AVD (`emulator -list-avds`). CI creates its own AVD (#132).
+        avdName: 'Pixel_3a_API_34_extension_level_7_arm64-v8a',
+      },
+    },
   },
   configurations: {
     'ios.sim.debug': {
       device: 'simulator',
       app: 'ios.debug',
+    },
+    'android.emu.debug': {
+      device: 'emulator',
+      app: 'android.debug',
     },
   },
 };

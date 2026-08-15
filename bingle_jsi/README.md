@@ -18,9 +18,10 @@ apps can call the Bingle engine in
 It is part of [`bingle_rust`](https://github.com/binglefoundation/bingle_rust), the Rust reference implementation of
 the Bingle protocol.
 
-> **Android is under development and unsupported.** Only the iOS bridge is currently supported. The
-> Android bindings and build scripts are provided for development purposes, may be incomplete or
-> broken, and should not be relied on.
+> **Android is under development.** The iOS bridge is the primary supported target. The Android
+> bridge now builds and links, and the example app runs the Detox e2e harness on an emulator (issue
+> #130); messaging/failure-cause coverage and a CI lane are in progress (issues #131, #132). Treat
+> Android as not yet production-ready.
 
 ## Installing
 

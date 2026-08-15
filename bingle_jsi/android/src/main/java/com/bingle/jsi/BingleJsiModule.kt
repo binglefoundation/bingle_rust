@@ -34,7 +34,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     debug = if (config.hasKey("debug")) config.getBoolean("debug") else false,
                     local = config.tryGetString("local"),
                     notifyGatewayUrl = config.tryGetString("notify_gateway_url"),
-                    notifyOnGiveup = config.tryGetBoolean("notify_on_giveup")
+                    notifyOnGiveup = config.tryGetBoolean("notify_on_giveup"),
+                    notifyEnv = config.tryGetString("notify_env")
                 )
                 val api = createBingleApi(jsiConfig)
                 apiInstance = api
@@ -385,7 +386,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 val handles = mutableListOf<String>()
                 for (i in 0 until recipientHandles.size()) {
-                    handles.add(recipientHandles.getString(i))
+                    recipientHandles.getString(i)?.let { handles.add(it) }
                 }
                 api.addMessage(senderHandle, handles, timestamp.toLong(), text, cipherSuite)
                 promise.resolve(null)
@@ -415,7 +416,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     map.putDouble("timestamp", m.timestamp.toDouble())
                     map.putString("text", m.text)
                     if (m.cipherSuite != null) map.putString("cipher_suite", m.cipherSuite) else map.putNull("cipher_suite")
-                    map.putDouble("progress", m.progress.toDouble())
+                    map.putDouble("progress", (m.progress ?: 0.0f).toDouble())
                     if (m.failureReason != null) map.putString("failure_reason", m.failureReason) else map.putNull("failure_reason")
                     // Typed failure cause (issue #99); without this the kind never reaches JS.
                     if (m.failureKind != null) map.putString("failure_kind", failureKindToString(m.failureKind!!)) else map.putNull("failure_kind")
@@ -439,7 +440,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
             try {
                 val handles = mutableListOf<String>()
                 for (i in 0 until recipientHandles.size()) {
-                    handles.add(recipientHandles.getString(i))
+                    recipientHandles.getString(i)?.let { handles.add(it) }
                 }
                 api.queueMessage(handles, text)
                 promise.resolve(null)
@@ -614,7 +615,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         tag = map.tryGetString("tag"),
         responseTag = map.tryGetString("response_tag"),
         text = map.tryGetString("text"),
-        data = map.tryGetString("data")
+        data = map.tryGetString("data"),
+        cipherSuite = map.tryGetString("cipher_suite")
     )
 
     private fun messageToMap(msg: BingleMessage): WritableMap {
@@ -625,6 +627,7 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         if (msg.responseTag != null) map.putString("response_tag", msg.responseTag) else map.putNull("response_tag")
         if (msg.text != null) map.putString("text", msg.text) else map.putNull("text")
         if (msg.data != null) map.putString("data", msg.data) else map.putNull("data")
+        if (msg.cipherSuite != null) map.putString("cipher_suite", msg.cipherSuite) else map.putNull("cipher_suite")
         return map
     }
 

@@ -12,11 +12,12 @@ apply plugin: 'kotlin-android'
 
 android {
     namespace 'com.bingle.jsi'
-    compileSdkVersion 34
+    // Match the example app's compileSdk; react-android (RN 0.84) requires a recent compileSdk.
+    compileSdkVersion 36
 
     defaultConfig {
-        minSdkVersion 21
-        targetSdkVersion 34
+        minSdkVersion 24
+        targetSdkVersion 36
     }
 
     sourceSets {
@@ -30,13 +31,14 @@ android {
         }
     }
 
+    // RN 0.84's react-android is built for Java 17; consumers must compile at 17 too.
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 }
 
