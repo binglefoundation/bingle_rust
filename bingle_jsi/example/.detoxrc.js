@@ -37,7 +37,9 @@ module.exports = {
       // Build both the app and the androidTest (Detox instrumentation) APKs.
       build:
         'cd android && ./gradlew :app:assembleDebug :app:assembleAndroidTest -DtestBuildType=debug && cd ..',
-      reversePorts: [8081],
+      // 8081 = Metro. 4001/8980 = algod/indexer: the Android emulator's localhost is the emulator,
+      // not the host, so adb-reverse the localnet ports the app connects to (localhost:4001/8980).
+      reversePorts: [8081, 4001, 8980],
     },
   },
   devices: {

@@ -121,14 +121,11 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun version(promise: Promise) {
-        val api = apiInstance
-        if (api == null) {
-            promise.reject("BINGLE_NOT_INITIALIZED", "BingleJsi not initialized. Call init first.")
-            return
-        }
         Thread {
             try {
-                val info = api.version()
+                // version() works before init — it only reads compile-time constants. Delegate to the
+                // instance if initialized, else use the free getVersion() (mirrors the iOS bridge).
+                val info = apiInstance?.version() ?: getVersion()
                 val map = Arguments.createMap()
                 map.putString("version", info.version)
                 if (info.gitSha != null) map.putString("git_sha", info.gitSha) else map.putNull("git_sha")
@@ -598,6 +595,31 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
+    // Route engine logs into "onLog" events. Works before init: if the API is initialized, register
+    // on the instance; otherwise set the global log callback so logs during init are captured
+    // (mirrors the iOS bridge).
+    @ReactMethod
+    fun setLogCallback(logLevel: String?, promise: Promise) {
+        val bridge = LogCallbackBridge(reactApplicationContext)
+        val api = apiInstance
+        if (api != null) {
+            api.setLogCallback(bridge)
+        } else {
+            setLogCallbackGlobal(bridge, logLevel)
+        }
+        promise.resolve(null)
+    }
+
+    // Required by React Native's NativeEventEmitter on Android. RCTDeviceEventEmitter needs no
+    // per-listener bookkeeping here, so these are no-ops that simply satisfy the interface.
+    @ReactMethod
+    fun addListener(eventName: String) {
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+    }
+
     // -- Helper conversions --
 
     private fun ReadableMap.tryGetString(key: String): String? =
@@ -709,5 +731,22 @@ class ListeningCallbackBridge(private val reactContext: ReactApplicationContext)
         reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onListening", body)
+    }
+}
+
+/**
+ * Bridges uniffi's LogCallback to React Native "onLog" events, so engine logs surface in JS
+ * (mirrors the iOS bridge).
+ */
+class LogCallbackBridge(private val reactContext: ReactApplicationContext) : LogCallback {
+    override fun onLog(timestamp: Long, level: String, message: String) {
+        val body = Arguments.createMap()
+        body.putDouble("timestamp", timestamp.toDouble())
+        body.putString("level", level)
+        body.putString("message", message)
+
+        reactContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onLog", body)
     }
 }

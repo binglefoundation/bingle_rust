@@ -95,5 +95,11 @@ else
   lsof -iTCP:8081 -sTCP:LISTEN -n >/dev/null 2>&1 || { echo "Error: Metro did not come up on :8081" >&2; exit 1; }
 fi
 
+# Pre-warm the Android JS bundle: the first cold Metro bundle can take longer than Detox's 60s
+# RN-context wait, which makes the app time out before the JS context is ready. Building it once now
+# (Metro caches it) means the app's fetch is fast and lands within Detox's window.
+echo "==> Pre-warming the Android JS bundle"
+curl -s -o /dev/null "http://localhost:8081/index.bundle?platform=android&dev=true&minify=false" || true
+
 echo "==> Running the Detox Android e2e suite"
 npm run e2e:test:android
