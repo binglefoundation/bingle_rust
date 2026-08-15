@@ -11,6 +11,14 @@ name = "bingle_test"
 path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
 
+# Localnet backend provisioner for the bingle_jsi Detox e2e (issue #123): stands up relays, STUN,
+# an echo peer and funded/registered accounts on a running algokit localnet, then parks until
+# killed. Needs the `localnet` feature (which pulls in bingle_core/test-hooks).
+[[bin]]
+name = "localnet_e2e_provisioner"
+path = "src/bin/localnet_e2e_provisioner.rs"
+required-features = ["localnet"]
+
 [dependencies]
 base64 = "0.21"
 data-encoding = "2"

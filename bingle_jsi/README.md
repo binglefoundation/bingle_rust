@@ -513,9 +513,9 @@ sender are provided via the environment (so the default run stays offline):
 
 | Env var | Meaning |
 | --- | --- |
-| `BINGLE_E2E_BACKEND` | `testnet` (default) or `localnet` (not yet supported) |
-| `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered sender account |
-| `BINGLE_E2E_HANDLE` | that account's registered handle |
+| `BINGLE_E2E_BACKEND` | `testnet` (default) or `localnet` (self-provisioning, #123) |
+| `BINGLE_E2E_PASSPHRASE` | mnemonic of a funded, registered sender account (testnet) |
+| `BINGLE_E2E_HANDLE` | that account's registered handle (testnet) |
 | `BINGLE_E2E_ECHO_TO` | echo peer handle; defaults to `echo-testnet-1` on testnet |
 | `BINGLE_E2E_OFFLINE_HANDLE` | optional; a handle registered but offline, for the `RecipientNotAdvertised` failure-cause case (#112) |
 
@@ -535,6 +535,29 @@ BINGLE_E2E_HANDLE=my-testnet-handle \
 `HandleNotFound` (permanent), and, when `BINGLE_E2E_OFFLINE_HANDLE` is set, a
 registered-but-offline recipient → `RecipientNotAdvertised` (retryable) — read
 via `getMessages().failure_kind` and the `failureKindIsRetryable` helper.
+
+##### localnet backend (issue #123)
+
+For CI and offline runs, `BINGLE_E2E_BACKEND=localnet` needs no credentials: the
+script ensures `algokit localnet` is running, builds and launches the Rust
+provisioner (`bingle_test`'s `localnet_e2e_provisioner`), and waits for it to
+come up. The provisioner deploys the Bingle app + asset, stands up two root
+relays and STUN servers, registers and starts an in-process echo peer
+(`echo-localnet-1`, the counterpart of testnet's `echo-testnet-1`), and registers
+a funded sender plus a registered-but-offline fixture. It writes the node-file,
+STUN list and a `BINGLE_E2E_*` env file (`/tmp/bingle_e2e_localnet.env`, its
+readiness signal) that the script sources, so all credentials are derived
+automatically. The provisioner is killed on exit. Requires `algokit` +
+`algokit localnet` and the `goal` CLI on `PATH`.
+
+On localnet the provisioner registers the offline fixture and exports
+`BINGLE_E2E_OFFLINE_HANDLE` automatically, so the failure suite's
+`RecipientNotAdvertised` case runs too.
+
+```bash
+BINGLE_E2E_BACKEND=localnet \
+  bash bingle_jsi/example/scripts/run_e2e_ios.sh
+```
 
 ---
 
