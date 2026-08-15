@@ -417,6 +417,8 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
                     if (m.cipherSuite != null) map.putString("cipher_suite", m.cipherSuite) else map.putNull("cipher_suite")
                     map.putDouble("progress", m.progress.toDouble())
                     if (m.failureReason != null) map.putString("failure_reason", m.failureReason) else map.putNull("failure_reason")
+                    // Typed failure cause (issue #99); without this the kind never reaches JS.
+                    if (m.failureKind != null) map.putString("failure_kind", failureKindToString(m.failureKind!!)) else map.putNull("failure_kind")
                     arr.pushMap(map)
                 }
                 promise.resolve(arr)
@@ -640,6 +642,23 @@ class BingleJsiModule(reactContext: ReactApplicationContext) :
         KeypairStatus.FUNDED -> "Funded"
         KeypairStatus.ACTIVE -> "Active"
         KeypairStatus.UPGRADE_REQUIRED -> "UpgradeRequired"
+    }
+
+    // Map the typed send-failure cause (issue #99) to the FailureKind string the TypeScript layer
+    // expects (matches the FailureKind union in ts/NativeBingleJsi.ts).
+    private fun failureKindToString(kind: FailureKind): String = when (kind) {
+        FailureKind.HANDLE_NOT_FOUND -> "HandleNotFound"
+        FailureKind.HANDLE_LOOKUP_FAILED -> "HandleLookupFailed"
+        FailureKind.RECIPIENT_NOT_ADVERTISED -> "RecipientNotAdvertised"
+        FailureKind.INVALID_RECIPIENT_ID -> "InvalidRecipientId"
+        FailureKind.NO_RELAY_AVAILABLE -> "NoRelayAvailable"
+        FailureKind.RELAY_ALLOCATION_FAILED -> "RelayAllocationFailed"
+        FailureKind.PEER_UNREACHABLE -> "PeerUnreachable"
+        FailureKind.NO_RESPONSE -> "NoResponse"
+        FailureKind.MALFORMED_ADVERT -> "MalformedAdvert"
+        FailureKind.PROTOCOL_ERROR -> "ProtocolError"
+        FailureKind.NOT_READY -> "NotReady"
+        FailureKind.UNKNOWN -> "Unknown"
     }
 }
 

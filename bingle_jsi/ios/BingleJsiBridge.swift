@@ -491,6 +491,10 @@ class BingleJsiBridge: RCTEventEmitter {
                         "cipher_suite": $0.cipherSuite as Any,
                         "progress": $0.progress as Any,
                         "failure_reason": $0.failureReason as Any,
+                        // Typed failure cause (issue #99). Without this the kind is plumbed through
+                        // Rust/uniffi but never reaches JS. Serialized as the FailureKind string
+                        // (null while pending/delivered); derive retryability with failureKindIsRetryable.
+                        "failure_kind": $0.failureKind.map { self.failureKindToString($0) } as Any,
                     ] as [String: Any]
                 })
             } catch {
@@ -747,6 +751,25 @@ class BingleJsiBridge: RCTEventEmitter {
         case .funded: return "Funded"
         case .active: return "Active"
         case .upgradeRequired: return "UpgradeRequired"
+        }
+    }
+
+    /// Map the typed send-failure cause (issue #99) to the FailureKind string the TypeScript layer
+    /// expects (matches the `FailureKind` union in ts/NativeBingleJsi.ts).
+    private func failureKindToString(_ kind: FailureKind) -> String {
+        switch kind {
+        case .handleNotFound: return "HandleNotFound"
+        case .handleLookupFailed: return "HandleLookupFailed"
+        case .recipientNotAdvertised: return "RecipientNotAdvertised"
+        case .invalidRecipientId: return "InvalidRecipientId"
+        case .noRelayAvailable: return "NoRelayAvailable"
+        case .relayAllocationFailed: return "RelayAllocationFailed"
+        case .peerUnreachable: return "PeerUnreachable"
+        case .noResponse: return "NoResponse"
+        case .malformedAdvert: return "MalformedAdvert"
+        case .protocolError: return "ProtocolError"
+        case .notReady: return "NotReady"
+        case .unknown: return "Unknown"
         }
     }
 }
