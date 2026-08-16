@@ -47,4 +47,5 @@
 
 - While still modifying a PR, keep it in draft until it is ready for review/merge.
 - When the PR is complete and meets all requirements, mark it ready for review/merge.
+- Any PR that is not a draft must target the repository's default branch. Keep stacked work in draft with its feature-branch base until that base merges, then retarget the PR to the default branch and mark it ready. A ready PR based on another feature branch merges into that branch — not the default branch — so the work shows as merged on GitHub yet silently never reaches it. Continuous integration can enforce this with a default-branch check.
 - Do not commit without asking for review.
