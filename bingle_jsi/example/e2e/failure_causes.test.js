@@ -12,7 +12,7 @@
  *                              used for the RecipientNotAdvertised case; that case skips if unset.
  */
 const assert = require('assert');
-const {call, textOf, sleep} = require('./harness');
+const {call, textOf, sleep, resolveNetworkInputs, localStatePath} = require('./harness');
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -60,15 +60,18 @@ describeOrSkip(`bingle_jsi typed failure causes (${backend})`, () => {
       .toHaveText('ready')
       .withTimeout(30000);
 
+    // Platform-appropriate network inputs: STUN inline, node_file on-device for Android (#131).
+    const net = await resolveNetworkInputs(nodeFile, stunFile);
+
     await call({
       method: 'init',
       args: [
         {
           handle,
           passphrase,
-          node_file: nodeFile,
-          stun_servers_file: stunFile,
-          local: '/tmp/bingle_e2e_failure_state.json',
+          node_file: net.node_file,
+          stun_servers: net.stun_servers,
+          local: localStatePath('bingle_e2e_failure_state.json'),
         },
       ],
     });
