@@ -83,6 +83,9 @@ jobs:
           chmod +x ktlint && sudo mv ktlint /usr/local/bin/
 
       - name: Build the Android native library (jniLibs + Kotlin bindings)
+        # The CI emulator is x86_64, so build only that ABI (fast) rather than all three.
+        env:
+          BINGLE_ANDROID_ABIS: x86_64
         run: bash bingle_jsi/scripts/build_android.sh
 
       - name: Install JS dependencies

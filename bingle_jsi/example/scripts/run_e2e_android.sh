@@ -73,7 +73,9 @@ cd "$EXAMPLE_DIR"
 
 if ! $TEST_ONLY; then
   echo "==> Building the Android native library (jniLibs + Kotlin bindings)"
-  bash "$JSI_DIR/scripts/build_android.sh"
+  # Build only the emulator's ABI for a fast test build (like the iOS sim-only build). Defaults to
+  # arm64-v8a (Apple-silicon emulator); override for an x86_64 emulator, e.g. BINGLE_ANDROID_ABIS=x86_64.
+  BINGLE_ANDROID_ABIS="${BINGLE_ANDROID_ABIS:-arm64-v8a}" bash "$JSI_DIR/scripts/build_android.sh"
 
   echo "==> Installing JS dependencies"
   npm install --legacy-peer-deps
