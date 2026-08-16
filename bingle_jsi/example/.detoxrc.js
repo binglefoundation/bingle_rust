@@ -53,8 +53,11 @@ module.exports = {
     emulator: {
       type: 'android.emulator',
       device: {
-        // Adjust to any installed AVD (`emulator -list-avds`). CI creates its own AVD (#132).
-        avdName: 'Pixel_3a_API_34_extension_level_7_arm64-v8a',
+        // Adjust to any installed AVD (`emulator -list-avds`). CI (#132) sets BINGLE_E2E_AVD to the
+        // AVD the emulator-runner boots, and Detox reuses that already-running emulator.
+        avdName:
+          process.env.BINGLE_E2E_AVD ||
+          'Pixel_3a_API_34_extension_level_7_arm64-v8a',
       },
       // The emulator's default (qemu-proxied) DNS can fail ("res_stats_usable_server: too many
       // resolution errors"), which hangs engine start() when the node endpoint is a hostname
