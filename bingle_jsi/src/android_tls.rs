@@ -11,9 +11,9 @@
 //! `rustls_platform_verifier::android::init_with_env`, which stores the handles globally for the
 //! reqwest verifier to use. Initialization is idempotent (backed by a `OnceCell`).
 
+use jni::EnvUnowned;
 use jni::objects::JObject;
 use jni::sys::jboolean;
-use jni::EnvUnowned;
 
 /// Native impl of `com.bingle.jsi.BingleJsiTls.nativeInitTls(Context): Boolean`. Exported with the
 /// JNI-mangled name so `System.loadLibrary("bingle_jsi")` + a Kotlin `external fun` resolves it.
