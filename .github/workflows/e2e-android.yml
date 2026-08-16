@@ -119,7 +119,7 @@ jobs:
           arch: x86_64
           avd-name: detox_avd
           force-avd-creation: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -dns-server 8.8.8.8
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -netdelay none -netspeed full
           disable-animations: true
           script: bash bingle_jsi/example/scripts/ci_run_android_e2e.sh
 
