@@ -19,6 +19,13 @@ adb shell settings put global hide_error_dialogs 1 || true
 adb shell settings put secure lockscreen.disabled 1 || true
 adb shell input keyevent 82 || true
 
+# Connectivity probe (issue #135 follow-up): the network suites need the emulator to reach testnet
+# over the internet. Diagnose DNS vs connectivity so a HostUnreachable is actionable from the log.
+echo "== emulator connectivity probe =="
+adb shell ping -c2 8.8.8.8 || echo "  (no route to 8.8.8.8)"
+adb shell ping -c2 testnet-api.4160.nodely.dev || echo "  (cannot resolve/reach testnet-api)"
+adb shell getprop | grep -iE "net.dns|ro.kernel.ndns" || true
+
 # testnet backend: stage the node-file + STUN list the tests read on the runner host. The messaging/
 # failure suites additionally need BINGLE_E2E_PASSPHRASE/HANDLE (from CI secrets); without them they
 # skip cleanly and only the smoke suite runs.
