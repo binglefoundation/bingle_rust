@@ -73,6 +73,22 @@ jobs:
           done
           nc -z localhost 4001 && nc -z localhost 8980 || { echo "localnet not reachable"; exit 1; }
 
+      # The provisioner deploys the BingleDapp; its compiled artifacts (TEAL + arc56) are gitignored
+      # build outputs (see dapp_projects/README.md), so build them here with puya. We invoke the puya
+      # compile directly rather than `python -m smart_contracts build` to skip typed-client generation
+      # (algokitgen-py): the Rust provisioner only reads the .approval.teal/.clear.teal/.arc56.json
+      # that compile emits. algokit is already installed (pipx) by the localnet step; poetry provides
+      # the algorand-python (algopy) stubs the compile imports.
+      - name: Build the dapp artifacts (puya)
+        working-directory: dapp_projects
+        run: |
+          pipx install poetry
+          poetry install
+          poetry run algokit --no-color compile python \
+            smart_contracts/bingle_dapp/contract.py \
+            --out-dir "$(pwd)/smart_contracts/artifacts/bingle_dapp" \
+            --output-source-map
+
       - name: Install Android SDK packages (NDK, platform, cmake)
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" \
