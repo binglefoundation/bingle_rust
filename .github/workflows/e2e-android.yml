@@ -57,6 +57,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # The smoke suite's default init points at localnet (localhost:4001); Detox adb-reverses
+      # 4001/8980 to the runner host, so bring up algokit localnet there for the chain query to
+      # resolve. Linux runners have Docker natively (no Colima needed, unlike macOS — see #110).
+      - name: Start algokit localnet
+        run: |
+          pipx install algokit
+          algokit localnet start
+          for _ in $(seq 1 60); do
+            (nc -z localhost 4001 && nc -z localhost 8980) && break
+            sleep 2
+          done
+          nc -z localhost 4001 && nc -z localhost 8980 || { echo "localnet not reachable"; exit 1; }
+
       - name: Install Android SDK packages (NDK, platform, cmake)
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" \
