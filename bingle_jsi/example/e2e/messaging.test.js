@@ -14,7 +14,7 @@
  *   BINGLE_E2E_ECHO_TO     a live echo peer/relay handle that replies "Echo: <text>"
  */
 const assert = require('assert');
-const {call, textOf, sleep} = require('./harness');
+const {call, textOf, sleep, resolveNetworkInputs, localStatePath} = require('./harness');
 
 const backend = process.env.BINGLE_E2E_BACKEND || 'testnet';
 const passphrase = process.env.BINGLE_E2E_PASSPHRASE || '';
@@ -64,6 +64,10 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
       .toHaveText('ready')
       .withTimeout(30000);
 
+    // Resolve platform-appropriate network inputs: STUN inline, and node_file on-device for Android
+    // (the emulator has its own filesystem, unlike the iOS simulator). See harness.js (#131).
+    const net = await resolveNetworkInputs(nodeFile, stunFile);
+
     // Init against the selected network with a messaging-specific state file (so a keypair a prior
     // smoke run left in the shared state file is not loaded instead of ours).
     await call({
@@ -72,9 +76,9 @@ describeOrSkip(`bingle_jsi messaging (${backend})`, () => {
         {
           handle,
           passphrase,
-          node_file: nodeFile,
-          stun_servers_file: stunFile,
-          local: '/tmp/bingle_e2e_messaging_state.json',
+          node_file: net.node_file,
+          stun_servers: net.stun_servers,
+          local: localStatePath('bingle_e2e_messaging_state.json'),
         },
       ],
     });

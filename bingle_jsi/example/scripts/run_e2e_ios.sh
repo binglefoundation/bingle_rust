@@ -108,8 +108,10 @@ if ! $TEST_ONLY; then
   echo "==> Installing JS dependencies"
   npm install --legacy-peer-deps
 
-  echo "==> pod install (old architecture: bingle_jsi is a classic bridge)"
-  ( cd ios && RCT_NEW_ARCH_ENABLED=0 pod install )
+  # RN 0.84 is New-Architecture-only, so RCT_NEW_ARCH_ENABLED=0 is not honoured; bingle_jsi is a
+  # classic bridge and works through the New-Arch interop layer.
+  echo "==> pod install"
+  ( cd ios && pod install )
 
   echo "==> Building the app in the Detox debug configuration"
   npm run e2e:build:ios

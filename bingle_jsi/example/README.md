@@ -103,8 +103,7 @@ tool install (newer Homebrew requires trusting the third-party tap):
 brew tap wix/brew && brew trust wix/brew && brew install applesimutils
 ```
 
-Then, from `bingle_jsi/example/` (after `npm install` and, in `ios/`,
-`RCT_NEW_ARCH_ENABLED=0 pod install`):
+Then, from `bingle_jsi/example/` (after `npm install` and, in `ios/`, `pod install`):
 
 ```bash
 # 1. Build the arm64 simulator xcframework (fast) — matches the ARCHS=arm64 Detox build
