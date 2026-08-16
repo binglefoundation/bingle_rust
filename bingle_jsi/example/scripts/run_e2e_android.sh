@@ -84,6 +84,30 @@ if ! $TEST_ONLY; then
   npm run e2e:build:android
 fi
 
+# Boot + harden the emulator ourselves, then let Detox reuse it (it attaches to a running AVD that
+# matches the .detoxrc device). A fresh boot's SystemUI can become "not responding" and its dialog
+# steals window focus from Espresso ("Waited for the root ... to have window focus ... 10 seconds"),
+# even on an otherwise-idle machine. Suppressing error dialogs + the lock screen prevents that.
+AVD="${BINGLE_E2E_AVD:-Pixel_3a_API_34_extension_level_7_arm64-v8a}"
+export BINGLE_E2E_AVD="$AVD"
+if adb devices | grep -q "emulator-"; then
+  echo "==> Reusing the running emulator"
+else
+  echo "==> Booting emulator $AVD"
+  "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -no-snapshot -netdelay none -netspeed full \
+    -dns-server 8.8.8.8 >/tmp/bingle_emulator.log 2>&1 &
+  adb wait-for-device
+  echo "    waiting for boot to complete ..."
+  for _ in $(seq 1 120); do
+    [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
+    sleep 2
+  done
+fi
+echo "==> Hardening emulator (suppress ANR / lock-screen dialogs that steal window focus)"
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell settings put secure lockscreen.disabled 1 || true
+adb shell input keyevent 82 || true
+
 # The Debug app loads JS from Metro; Detox adb-reverses port 8081 (reversePorts in .detoxrc.js) so
 # the emulator reaches it. Match run_e2e_ios.sh: run Metro in its own foreground Terminal window and
 # leave it running (so you can watch bundling/logs). Reuse an instance already on 8081. Under CI (or
