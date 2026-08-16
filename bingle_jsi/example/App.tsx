@@ -38,7 +38,11 @@ const defaultConfig: BingleJsiConfig = {
   stun_servers: null,
   stun_servers_file: null,
   node_file: null,
-  log_level: 'info',
+  // 'warn' (not 'info'): at 'info' the engine floods onLog events once started, which continuously
+  // re-renders the event feed. On Android that keeps the view hierarchy laying out so Espresso never
+  // sees a stable/focused frame ("not request layout for 10 seconds"). e2e assertions rely on
+  // onListening/onMessage feed lines, not logs, so 'warn' is sufficient (issue #131).
+  log_level: 'warn',
   app_id: null,
   asset_id: null,
   handle_cache_expiry_secs: null,
