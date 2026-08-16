@@ -1,19 +1,20 @@
 name: e2e-android
 
-# Android Detox end-to-end (e2e) on a Linux runner (issue #132). Unlike macOS runners (no Docker /
-# no nested virt — see #110), ubuntu-latest has KVM, so a hardware-accelerated Android emulator runs
-# here. This lane runs the Detox smoke suite, which queries an in-CI algokit localnet reached via
-# adb-reverse.
+# Android Detox end-to-end (e2e) on a Linux runner (issues #132/#137). Unlike macOS runners (no
+# Docker / no nested virt — see #110), ubuntu-latest has KVM (accelerated emulator) and native Docker
+# (algokit localnet), so the full suite runs hermetically here.
 #
-# The messaging/failure network suites are NOT run here: the CI emulator has no outbound internet
-# (verified — no route to 8.8.8.8), so the testnet path is impossible in CI. Hermetic network
-# coverage needs the localnet emulator-mode provisioner (10.0.2.2, no internet) — follow-up #37.
-# Until then, run the network suites locally (run_e2e_android.sh, an emulator with internet + #135).
+# All three suites (smoke, messaging, failure_causes) run against an in-CI localnet: the provisioner
+# runs in emulator mode (relays/STUN advertised at 10.0.2.2), the app reaches host services via the
+# emulator's qemu gateway 10.0.2.2, and a 10.0.2.2 loopback alias lets the in-process host echo peer
+# reach the same address. Everything is IP-based, so no internet/DNS/secrets are needed — which is
+# essential because the CI emulator has no outbound internet (so testnet is impossible in CI).
 #
 # Runs on pushes to staging and manual dispatch only. See CI-E2E.md.
 on:
   push:
-    branches: [staging]
+    # TEMP (#137 validation): also run on the feature branch. Revert to [staging] before merge.
+    branches: [staging, feat/137-android-localnet]
   workflow_dispatch:
 
 # Latest-push-wins ("heap not queue").
@@ -106,14 +107,33 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The in-process host echo peer reaches the relays/STUN advertised at 10.0.2.2 via this loopback
+      # alias; the emulator reaches the same address via its qemu gateway. (Linux: no sudo prompt.)
+      - name: Add 10.0.2.2 loopback alias
+        run: sudo ip addr add 10.0.2.2/32 dev lo
+
+      # Start the localnet provisioner in emulator mode on the runner host (background). It deploys
+      # the app+asset, brings up relays/STUN/echo peer, registers the fixtures, and writes the
+      # node-file/STUN list (advertising 10.0.2.2) + an env file with the derived creds that the
+      # emulator script sources. Backgrounded processes survive into the emulator step.
+      - name: Start localnet provisioner (emulator mode)
+        run: |
+          cargo build --locked -p bingle_test --features localnet --bin localnet_e2e_provisioner
+          rm -f /tmp/bingle_e2e_localnet.env
+          # nohup + setsid so the provisioner survives this step's shell into the emulator step.
+          BINGLE_E2E_EMULATOR_HOST=10.0.2.2 \
+            setsid nohup ./target/debug/localnet_e2e_provisioner >/tmp/bingle_e2e_provisioner.log 2>&1 &
+          echo "waiting for provisioner readiness ..."
+          for _ in $(seq 1 600); do
+            [[ -f /tmp/bingle_e2e_localnet.env ]] && break
+            sleep 1
+          done
+          [[ -f /tmp/bingle_e2e_localnet.env ]] || { echo "provisioner not ready:"; tail -n 60 /tmp/bingle_e2e_provisioner.log; exit 1; }
+          cat /tmp/bingle_e2e_localnet.env
+
       - name: Run Detox e2e on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          BINGLE_E2E_BACKEND: testnet
-          BINGLE_E2E_ECHO_TO: echo-testnet-1
-          # Intentionally NOT passing the funded-sender secrets: the CI emulator has no internet, so
-          # the testnet network suites can't run here — they skip cleanly (smoke only). Network
-          # coverage arrives with the localnet emulator-mode (#37), which needs no secrets.
           BINGLE_E2E_AVD: detox_avd
         with:
           api-level: 34
